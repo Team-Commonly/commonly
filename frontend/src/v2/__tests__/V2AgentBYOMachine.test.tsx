@@ -77,6 +77,27 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-machine-select')).toHaveTextContent('Sam’s MacBook');
   });
 
+  test('the preview note names the daemon machine in "on my computer" mode (#TASK-163)', async () => {
+    // Before TASK-163 the note read "Appears in the pod once your runtime
+    // connects with the token" in EVERY non-hosted mode, and this mode issues
+    // no token at all — ux-lead measured it drawing README frame 5. The name
+    // is derived once from machines+machineId, so this pins that it FOLLOWS
+    // the picker rather than merely being present.
+    const second = { id: 'm2', machineId: 'mach-b', name: 'Studio', status: 'online', agentStates: [] };
+    mockGet({ machines: [machineRow, second] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+
+    // Default mode is 'byo', where the token wording is still correct.
+    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once your runtime connects with the token.');
+
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once the daemon on Sam’s MacBook starts it.');
+
+    fireEvent.change(screen.getByTestId('byo-machine-select'), { target: { value: 'mach-b' } });
+    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once the daemon on Studio starts it.');
+  });
+
   test('no machines — no card, and the one-paste setup panel shows instead', async () => {
     mockGet({ machines: [] });
     renderPage();
@@ -172,5 +193,30 @@ describe('BYO on-my-computer mode', () => {
     expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
       config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', model: 'opus' } }),
     }), expect.anything());
+  });
+
+  test('every avatar the route renders is under the one carrier the square rule is scoped to (TASK-166 item 7)', async () => {
+    // The rule is `.v2-byo__layout .v2-avatar` — a descendant selector, so its
+    // correctness is a DOM fact, not a CSS one: it goes silently dead the day an
+    // avatar moves outside that div (the TASK-160 shape, a rule that matches
+    // nothing). jsdom matches selectors even without a layout engine, so this is
+    // testable here; what stays ux-lead's browser gate is the rendered box (the
+    // 4px square and the cobalt dot), which jsdom structurally cannot see.
+    mockGet();
+    const { container } = renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-preview')).toBeInTheDocument());
+
+    const matched = container.querySelectorAll('.v2-byo__layout .v2-avatar');
+    const page = container.querySelectorAll('.v2-feature__body .v2-avatar');
+    expect(matched.length).toBeGreaterThan(0);
+    // Both directions, scoped to the page's own content: an avatar inside the
+    // page but outside the carrier keeps the global round radius while its
+    // neighbours are square — the defect item 7 exists to prevent.
+    expect(page.length).toBe(matched.length);
+    // Non-vacuity for that scoping, and the named exception: the rail's account
+    // avatar is chrome outside the page body, still round with a green lens. The
+    // row leaves it alone on purpose (it is a pre-existing consumer on every
+    // route), so this asserts the exclusion is real rather than an empty set.
+    expect(container.querySelectorAll('.v2-rail__account .v2-avatar').length).toBe(1);
   });
 });

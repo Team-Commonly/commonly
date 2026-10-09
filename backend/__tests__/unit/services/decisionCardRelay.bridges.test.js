@@ -3,10 +3,28 @@ jest.mock('../../../models/Integration', () => ({
   findByIdAndUpdate: jest.fn(),
 }));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
-jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
+// Stub the network, keep the behaviour: the bridge escapes through this module's
+// escapeHtml, so a bare stub leaves it undefined and the send is swallowed.
+jest.mock('../../../services/telegramService', () => ({
+  ...jest.requireActual('../../../services/telegramService'),
+  sendMessage: jest.fn(),
+}));
 jest.mock('../../../services/connectorSecrets', () => ({ get: jest.fn() }));
-jest.mock('../../../services/slackApi', () => jest.fn());
-jest.mock('../../../services/connectorRelayPolicy', () => ({ shouldEscalate: jest.fn(() => false) }));
+// Constructor stubbed (the network), the escape real: the renderer the bridges
+// share calls it, so a bare stub would leave it undefined.
+jest.mock('../../../services/slackApi', () => {
+  const actual = jest.requireActual('../../../services/slackApi');
+  const mock = jest.fn();
+  mock.escapeSlackMrkdwn = actual.escapeSlackMrkdwn;
+  return mock;
+});
+// Delegate to the real module: the bridges also read isGatedPodTarget /
+// isRoutedPodTarget from here, and a factory that stubs the whole module makes
+// them undefined (TASK-156).
+jest.mock('../../../services/connectorRelayPolicy', () => ({
+  ...jest.requireActual('../../../services/connectorRelayPolicy'),
+  shouldEscalate: jest.fn(() => false),
+}));
 jest.mock('../../../services/channelVerdictService', () => ({ record: jest.fn() }));
 
 const Integration = require('../../../models/Integration');

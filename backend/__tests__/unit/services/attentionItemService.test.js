@@ -8,6 +8,8 @@ const mockUserFind = jest.fn();
 
 jest.mock('../../../models/AttentionItem', () => ({ updateOne: mockUpdateOne, updateMany: mockUpdateMany, find: mockFind, exists: mockExists }));
 jest.mock('../../../models/Pod', () => ({ findById: mockPodFindById, find: mockPodFind }));
+const mockTaskFind = jest.fn();
+jest.mock('../../../models/Task', () => ({ find: mockTaskFind }));
 const mockUserFindById = jest.fn();
 jest.mock('../../../models/User', () => ({ find: mockUserFind, findById: mockUserFindById }));
 const mockMongoMessageFindById = jest.fn();
@@ -212,6 +214,37 @@ describe('attentionItemService', () => {
     );
   });
 
+  it('hides a mention when the same message already has a decision row — in any state, not only open', async () => {
+    const recipient = '507f191e810c19729de860ea';
+    const mention = { _id: 'attention-m', recipientUserId: recipient, podId: 'pod-1', kind: 'mention', source: { type: 'message', id: 'msg-1' }, messageId: 'msg-1', title: 'Ada mentioned you', createdAt: new Date('2026-09-01T00:00:00Z') };
+    const decision = { _id: 'attention-d', recipientUserId: recipient, podId: 'pod-1', kind: 'decision', source: { type: 'decision_request', id: 'd-1' }, messageId: 'msg-1', title: 'Which?', createdAt: new Date('2026-09-01T00:00:00Z') };
+    let open = [mention, decision];
+    let decisionState = 'open';
+    mockFind.mockImplementation((query) => (query.kind === 'decision'
+      ? chain([{ _id: 'attention-d', podId: 'pod-1', messageId: 'msg-1', status: decisionState }])
+      : { sort: () => ({ lean: async () => open }) }));
+    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: recipient, members: [] }]));
+
+    const both = await AttentionItemService.getOpenQueue(recipient);
+    expect(both.items).toEqual([expect.objectContaining({ attentionItemId: 'attention-d', kind: 'decision' })]);
+    expect(both.count).toBe(1);
+    expect(both.countsByKind).toEqual({ decision: 1 });
+    expect(both.countsByPod).toEqual({ 'pod-1': 1 });
+    // The decision row is what makes the mention redundant, so the lookup must
+    // not be narrowed to open rows: a resolved decision keeps the presentation.
+    expect(mockFind).toHaveBeenCalledWith({ recipientUserId: recipient, kind: 'decision', messageId: { $in: ['msg-1'] } });
+
+    // The same message with the decision answered: the row leaves the open
+    // queue and the mention must leave with it, not arrive a beat later as a
+    // fresh pending item.
+    decisionState = 'resolved';
+    open = [mention];
+    const answered = await AttentionItemService.getOpenQueue(recipient);
+    expect(answered.items).toEqual([]);
+    expect(answered.count).toBe(0);
+    expect(answered.countsByKind).toEqual({});
+  });
+
   it('keeps the composer target from the newest global mention beyond the page', async () => {
     const recipient = '507f191e810c19729de860ea';
     const rows = [
@@ -392,12 +425,15 @@ describe('attentionItemService', () => {
   });
 
   it('acknowledges only recipient-owned mentions and handoffs, never decisions or approvals', async () => {
-    await AttentionItemService.acknowledgeMention('sam', '507f191e810c19729de860eb');
+    // The recipient is a real ObjectId, not a placeholder: `acknowledgeAttention`
+    // refuses a caller id it cannot cast BEFORE it reaches the update, and the
+    // subject of this arm is the `$or` selector, not the spelling of the id.
+    await AttentionItemService.acknowledgeMention('507f191e810c19729de860ea', '507f191e810c19729de860eb');
 
     const selector = mockUpdateOne.mock.calls.at(-1)[0];
     expect(selector).toEqual({
       _id: '507f191e810c19729de860eb',
-      recipientUserId: 'sam',
+      recipientUserId: '507f191e810c19729de860ea',
       status: 'open',
       $or: [
         { kind: 'mention' },
@@ -408,6 +444,38 @@ describe('attentionItemService', () => {
     expect(mockUpdateOne.mock.calls.at(-1)[1]).toEqual({
       $set: expect.objectContaining({ status: 'resolved', resolvedBy: 'acknowledged' }),
     });
+  });
+
+  it('sweeps open handoffs whose task is already done, and leaves the others (dry run counts, apply writes)', async () => {
+    const chainLean = (v) => ({ sort: () => ({ lean: async () => v }), lean: async () => v, select: () => ({ lean: async () => v }) });
+    // Source keys carry `task._id || task.taskId`: an ObjectId-shaped key and a
+    // `TASK-134`-style key both occur, and the latter must never reach `_id`.
+    const DONE = '66f000000000000000000001';
+    const OPEN = '66f000000000000000000002';
+    const GONE = '66f000000000000000000003';
+    mockFind.mockReturnValue(chainLean([
+      { _id: 'a1', source: { type: 'task', id: `${DONE}:u1` }, status: 'open' },
+      { _id: 'a2', source: { type: 'task', id: `${OPEN}:u2` }, status: 'open' },
+      { _id: 'a3', source: { type: 'task', id: 'TASK-134:u3' }, status: 'open' },
+      { _id: 'a4', source: { type: 'task', id: `${GONE}:u4` }, status: 'open' },
+    ]));
+    mockTaskFind.mockReturnValue(chainLean([
+      { _id: { toString: () => DONE }, status: 'done' },
+      { _id: { toString: () => OPEN }, status: 'pending' },
+      { _id: { toString: () => '66f000000000000000000009' }, taskId: 'TASK-134', status: 'done' },
+    ]));
+    const dry = await AttentionItemService.sweepDoneTaskHandoffs();
+    expect(dry).toEqual({ scanned: 4, eligible: 2, resolved: 0, missing: 1, apply: false });
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+    const [selector] = mockTaskFind.mock.calls[0];
+    expect(selector).toEqual({ $or: [{ _id: { $in: [DONE, OPEN, GONE] } }, { taskId: { $in: ['TASK-134'] } }] });
+    mockUpdateMany.mockResolvedValue({ modifiedCount: 2 });
+    const applied = await AttentionItemService.sweepDoneTaskHandoffs({ apply: true });
+    expect(applied).toEqual({ scanned: 4, eligible: 2, resolved: 2, missing: 1, apply: true });
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { _id: { $in: ['a1', 'a3'] }, kind: 'handoff', status: 'open' },
+      { $set: expect.objectContaining({ status: 'resolved' }) },
+    );
   });
 
   it('resolves every outstanding fact for a task once the task no longer needs a human', async () => {

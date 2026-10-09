@@ -40,6 +40,7 @@ jest.mock('../../../models/Integration', () => {
   }
 
   Integration.findById = jest.fn();
+  Integration.findOne = jest.fn();
   Integration.findByIdAndUpdate = jest.fn();
   Integration.aggregate = jest.fn().mockResolvedValue([]);
   Integration.__getLastInstance = () => lastInstance;
@@ -63,9 +64,54 @@ describe('integration manifest validation', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: { toString: () => 'user-1' } });
+    // The pod lists the caller: a real pod lists its creator, and the
+    // connector sites read `pod.members` alone (TASK-161).
+    Pod.findById.mockResolvedValue({
+      _id: 'pod-1',
+      createdBy: { toString: () => 'user-1' },
+      members: [{ toString: () => 'user-1' }],
+    });
     User.findById.mockResolvedValue({ _id: 'user-1' });
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    Integration.findOne.mockResolvedValue(null);
+  });
+
+  it('rejects github-app on the member-gated connector route by name', async () => {
+    const res = await request(app)
+      .post('/api/integrations')
+      .send({ podId: 'pod-1', type: 'github-app', config: {} });
+    expect(res.status).toBe(400);
+    expect(Pod.findById).not.toHaveBeenCalled();
+  });
+
+  it('creates a user-scoped GitHub App connection without a pod', async () => {
+    const res = await request(app)
+      .post('/api/integrations/github-app')
+      .send({ installationId: '42', owner: 'Team-Commonly', repo: 'commonly' });
+    expect(res.status).toBe(201);
+    const instance = Integration.__getLastInstance();
+    expect(instance.scope).toBe('user');
+    expect(instance.status).toBe('connected');
+    expect(instance.podId).toBeUndefined();
+    expect(instance.config).toEqual({ installationId: '42', owner: 'Team-Commonly', repo: 'commonly' });
+  });
+
+  it('keeps an existing GitHub App row immutable and rejects retargeting', async () => {
+    const existing = {
+      type: 'github-app',
+      config: { installationId: '42', owner: 'Team-Commonly', repo: 'commonly' },
+      save: jest.fn(),
+    };
+    Integration.findOne.mockResolvedValue(existing);
+    const same = await request(app)
+      .post('/api/integrations/github-app')
+      .send({ installationId: '42', owner: 'Team-Commonly', repo: 'commonly' });
+    expect(same.status).toBe(200);
+    expect(existing.save).not.toHaveBeenCalled();
+    const changed = await request(app)
+      .post('/api/integrations/github-app')
+      .send({ installationId: '42', owner: 'other', repo: 'repo' });
+    expect(changed.status).toBe(409);
   });
 
   afterEach(() => {
@@ -154,15 +200,45 @@ describe('integration manifest validation', () => {
   });
 
   it('rejects discord creation when required fields are missing', async () => {
+    // The serverId is a well-formed snowflake on purpose: this test is about
+    // the missing-field check, and a malformed id now stops at the shape
+    // refusal above it (TASK-123 a), which would pass this assertion for the
+    // wrong reason.
     const res = await request(app)
       .post('/api/integrations')
       .send({
         podId: 'pod-1',
         type: 'discord',
-        config: { serverId: 'server-1' },
+        config: { serverId: '123456789012345678' },
       });
 
     expect(res.status).toBe(400);
     expect(res.body.missing).toEqual(expect.arrayContaining(['channelId']));
+  });
+
+  it('refuses to create a connection for a pod the caller created and then left', async () => {
+    // TASK-161, from Vera 74671: `:393` is the write gate, and the population it
+    // exists to refuse is exactly the departed creator — the one person the
+    // permissive predicate admitted. Every other create arm here lists the
+    // caller in `members`, so before this arm the site had no witness at all:
+    // `createdBy` merely identifies the owner and must not stand in for it.
+    Pod.findById.mockResolvedValue({
+      _id: 'pod-1',
+      createdBy: { toString: () => 'user-1' },
+      members: [],
+    });
+    const before = Integration.__getLastInstance();
+
+    const res = await request(app)
+      .post('/api/integrations')
+      .send({
+        podId: 'pod-1',
+        type: 'groupme',
+        config: { webhookListenerEnabled: true },
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toBe('Access denied');
+    expect(Integration.__getLastInstance()).toBe(before);
   });
 });

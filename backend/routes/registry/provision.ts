@@ -4,6 +4,7 @@ export {};
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
 const Pod = require('../../models/Pod');
@@ -31,6 +32,7 @@ const {
   resolveRuntimeInstanceId,
 } = require('./helpers');
 const {
+  revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
   issueUserTokenForInstallation,
 } = require('./tokens');
@@ -53,6 +55,7 @@ const provisionRateLimit = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
   skip: () => process.env.NODE_ENV === 'test',
   handler: (_req: any, res: any) => res.status(429).json({
     message: 'rate limit exceeded: 30 provision requests per 60s',
@@ -180,23 +183,20 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
     });
     await AgentIdentityService.ensureAgentInPod(agentUser, podId);
 
+    if (force) {
+      await revokeRuntimeTokensForAgent({
+        agentUser,
+        agentName: installation.agentName || name,
+        instanceId: normalizedInstanceId,
+        installation,
+      });
+    }
     const runtimeIssued = await issueRuntimeTokenForAgent(
       agentUser,
       label || `Provisioned ${normalizedInstanceId}`,
       installation,
       { ownerUserId: req.user?.id || req.user?._id },
     );
-
-    if (runtimeIssued.existing && force) {
-      agentUser.agentRuntimeTokens = [];
-      const freshToken = await issueRuntimeTokenForAgent(
-        agentUser,
-        label || `Provisioned ${normalizedInstanceId}`,
-        installation,
-        { ownerUserId: req.user?.id || req.user?._id },
-      );
-      Object.assign(runtimeIssued, freshToken);
-    }
 
     let userIssued = null;
     if (includeUserToken || runtimeType === 'moltbot') {

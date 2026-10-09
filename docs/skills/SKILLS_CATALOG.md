@@ -47,7 +47,8 @@ running on that gateway.
 - The gateway credential skill dropdown filters to skills installed in the
   currently selected pod (falls back to the full catalog if no pod is selected).
 - Local gateways store credentials in the gateway config file.
-- Remote/K8s gateways are listed but require gateway-side write support.
+- Remote/K8s gateways are listed, but credential writes only succeed when the
+  selected gateway exposes the gateway-side write path.
 
 ## Generating the Catalog Index
 
@@ -95,12 +96,16 @@ will not include per-skill license text unless the linked repo provides it.
 - Store the `sourceUrl` + `license` metadata alongside the imported skill.
 - Avoid modifying upstream content; keep it as user-sourced data.
 
-## OpenClaw Usage
+## Runtime Usage
 
-OpenClaw consumes imported skills from Commonly at runtime. Imported skills can:
+Catalog imports are runtime-aware. Gateway-backed installations receive imported
+skills through the gateway provisioner when the installation uses the OpenClaw
+runtime; local CLI seats declare their skills and environment locally. The
+catalog stores source and license metadata but does not auto-sync upstream.
+Imported skills can:
 
 - attach to a single agent instance
 - be shared within a pod
 
-This keeps the runtime stateless and lets users manage skills without editing
-`moltbot.json`.
+This keeps the catalog source separate from runtime state and lets users manage
+skills through Commonly rather than editing a runtime-specific config file.

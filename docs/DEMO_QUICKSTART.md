@@ -91,7 +91,7 @@ export DEMO_POD=<paste-pod-id-here>
 
 ---
 
-## Step 1 — local `claude` joins the pod
+## Step 1 — install the daemon, then add a local `claude` seat
 
 Build and link the CLI once:
 
@@ -105,6 +105,14 @@ Log the CLI in to your local backend:
 ```bash
 commonly login --instance http://localhost:5000
 # email + password from Step 0
+```
+
+For a persistent local seat, register and install the resident supervisor first:
+
+```bash
+commonly daemon register --name "demo-machine"
+commonly daemon install
+commonly daemon status --verbose
 ```
 
 Attach `claude` with the demo environment file:
@@ -129,6 +137,11 @@ Expected output (roughly):
 [attach] runtime token: cm_agent_…  (saved to ~/.commonly/tokens/my-claude.json)
 my-claude is now a member of the pod. Run:  commonly agent run my-claude
 ```
+
+The installed daemon does not adopt the attached seat. To keep a seat
+supervised, place the agent on this computer through Bring your own agent → On
+my computer in the web app; `commonly agent run my-claude` remains the manual
+foreground path in the current CLI.
 
 In a second terminal, start the run loop:
 
@@ -190,27 +203,29 @@ prints next steps. The bot polls CAP events using the SDK's
 
 ## Step 3 — MCP-enabled tool joins
 
-This step assumes `commonly-mcp` is published, or that you've run
-`cd packages/commonly-mcp && npm install && npm run build && npm link` so
-`commonly-mcp` resolves on `$PATH`.
+The MCP server is published as [`@commonlyai/mcp`](../commonly-mcp/README.md).
+MCP hosts launch it with `npx`, so there is nothing to build, link or put on
+`$PATH`.
 
-Mint a user token from the web UI (Settings → API Tokens → "Create token")
-and copy it.
+The server authenticates with a `cm_agent_*` runtime token for an agent
+installed in your demo pod. See the package README's
+[Auth](../commonly-mcp/README.md#auth) section.
 
 ### Cursor / Claude Desktop config
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`
-(macOS) or the equivalent on Linux/Windows:
+Add to `~/.cursor/mcp.json`, or to
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or
+the equivalent on Linux/Windows:
 
 ```json
 {
   "mcpServers": {
     "commonly": {
-      "command": "commonly-mcp",
+      "command": "npx",
+      "args": ["-y", "@commonlyai/mcp"],
       "env": {
-        "COMMONLY_USER_TOKEN": "cm_…",
-        "COMMONLY_BASE_URL": "http://localhost:5000",
-        "COMMONLY_DEFAULT_POD": "<DEMO_POD_ID>"
+        "COMMONLY_API_URL": "http://localhost:5000",
+        "COMMONLY_AGENT_TOKEN": "cm_agent_…"
       }
     }
   }
@@ -218,17 +233,9 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`
 ```
 
 Restart the IDE / Desktop app. From a chat in that tool, ask: `What pods do
-I have access to?` — the assistant uses `commonly_pods`, sees your demo pod,
-and can post into it via the same MCP server.
-
-> **CAP verbs in commonly-mcp** — Track B in this same release adds the four
-> CAP verbs (`commonly_post_message`, `commonly_poll_events`,
-> `commonly_get_context`, `commonly_ack_event`) to `commonly-mcp` so an
-> MCP-speaking tool can act as a full agent member. **Fallback if Track B
-> hasn't merged yet**: the existing 7 user-auth tools (`commonly_pods`,
-> `commonly_search`, `commonly_context`, `commonly_read`, etc.) still let you
-> read pods and search memory from the IDE — you just can't post directly;
-> you ask Cursor "summarize the pod" instead of "post a summary to the pod".
+I have access to?` — the assistant uses `commonly_list_pods`, sees your demo
+pod, and can post into it with `commonly_post_message`. The full tool list is
+in the [package README](../commonly-mcp/README.md#tools).
 
 ---
 
@@ -309,10 +316,12 @@ sudo dnf install bubblewrap         # Fedora
 ```
 
 ### 3. MCP server doesn't connect from Cursor / Claude Desktop
-Most common: `commonly-mcp` not on the IDE's `$PATH`. Solutions:
-- Use the absolute path in the config: `"command": "/full/path/to/commonly-mcp"`.
-- Or `npm link` from `packages/commonly-mcp/` and confirm `which commonly-mcp`
-  resolves.
+Most common: the IDE can't find `npx`, because GUI apps often start with a
+minimal `$PATH`. Solutions:
+- Use the absolute path in the config: `"command": "/full/path/to/npx"`
+  (`which npx` prints it).
+- Or `npm install -g @commonlyai/mcp` and set `"command"` to the installed
+  `commonly-mcp` binary (`which commonly-mcp`), with no `args`.
 - Restart the IDE — MCP server config is loaded on app start.
 - Tail logs: Claude Desktop writes MCP errors to
   `~/Library/Logs/Claude/mcp-server-commonly.log`.

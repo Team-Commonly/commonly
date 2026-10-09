@@ -5,6 +5,7 @@ const { AgentInstallation } = require('../../models/AgentRegistry');
 const { isK8sMode } = require('../../services/agentProvisionerService');
 const AgentIdentityService = require('../../services/agentIdentityService').default;
 const { PRESET_DEFINITIONS } = require('./presets');
+const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
 
 // Build an in-memory map of presetId → category once at module load.
 // Powers the `category` field on the agent payload — the V2 inspector
@@ -152,6 +153,11 @@ const LEGACY_RUNTIME_RENAME: Record<string, string> = {
   claude: 'claude-code',
 };
 
+// Runtime secrets follow the same explicit key-list rule as Integration
+// config. Keep the response projection here so a member of a pod can inspect
+// runtime metadata without receiving the webhook signing secret.
+const AGENT_RUNTIME_SECRET_CONFIG_KEYS = ['webhookSecret'];
+
 const normalizeRuntimeIdentity = (rest: any, agentName?: string) => {
   let runtimeType: string | undefined = rest.runtimeType ? String(rest.runtimeType) : undefined;
   let host: 'cloud' | 'byo' | undefined = rest.host === 'byo' || rest.host === 'cloud' ? rest.host : undefined;
@@ -187,6 +193,7 @@ const normalizeRuntimeIdentity = (rest: any, agentName?: string) => {
 const sanitizeRuntimeConfig = (runtimeConfig: any, agentName?: string) => {
   const cfg = runtimeConfig && typeof runtimeConfig === 'object' ? runtimeConfig : {};
   const { authProfiles, skillEnv, ...rest } = cfg;
+  AGENT_RUNTIME_SECRET_CONFIG_KEYS.forEach((key) => { delete rest[key]; });
   const providers = authProfiles && typeof authProfiles === 'object'
     ? Array.from(new Set(
       Object.values(authProfiles)
@@ -239,7 +246,7 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
       || `${type}-${id}`,
     ).trim();
     if (type === 'discord') {
-      const token = String(config.botToken || process.env.DISCORD_BOT_TOKEN || '').trim();
+      const token = String(resolveDiscordBotToken(config.botToken) || '').trim();
       if (!id || !token) return;
       channels.discord.push({
         accountId: id,
@@ -248,24 +255,21 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
       });
       return;
     }
-    if (type === 'slack') {
-      const botToken = String(config.botToken || process.env.SLACK_BOT_TOKEN || '').trim();
-      const appToken = String(config.appToken || process.env.SLACK_APP_TOKEN || '').trim();
-      const signingSecret = String(config.signingSecret || process.env.SLACK_SIGNING_SECRET || '').trim();
-      if (!id || !botToken) return;
-      channels.slack.push({
-        accountId: id,
-        name,
-        botToken,
-        ...(appToken ? { appToken } : {}),
-        ...(signingSecret ? { signingSecret } : {}),
-        ...(config.channelId ? { channelId: String(config.channelId) } : {}),
-      });
-      return;
-    }
+    // Slack is deliberately absent (TASK-151): the instance-wide
+    // `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` fallback is retired, and the only
+    // Slack token a runtime is handed now comes from the per-workspace OAuth
+    // bind (`botTokenRef` -> `connectorSecrets`). `channels.slack` stays an
+    // empty array so a consumer that iterates it keeps working.
     if (type === 'telegram') {
-      const botToken = String(config.botToken || process.env.TELEGRAM_BOT_TOKEN || '').trim();
-      const webhookSecret = String(config.secretToken || process.env.TELEGRAM_SECRET_TOKEN || '').trim();
+      // Same rule as Slack above, and measured: every live Telegram path reads
+      // `process.env.TELEGRAM_BOT_TOKEN` (`routes/webhooks/telegram.ts`,
+      // `services/telegramBridgeService.ts`, `decisionCardReconcileService.ts`,
+      // both provisioners). This was the only reader that preferred a per-row
+      // copy (TASK-140, Wren 74155).
+      const botToken = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+      // The instance's, not the row's (TASK-141): `secretToken` is stripped from
+      // a body like the two Slack keys above.
+      const webhookSecret = String(process.env.TELEGRAM_SECRET_TOKEN || '').trim();
       if (!id || !botToken) return;
       channels.telegram.push({
         accountId: id,
@@ -300,6 +304,27 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
  * the copy rules testable without a DB, which is the whole reason
  * agentStateService is pure too.
  */
+/**
+ * The intro is posted ONCE, at install, and a chat message cannot be
+ * superseded — nothing later edits it or retracts it. So a state-dependent arm
+ * has to do what a present-tense sentence cannot: scope its claim to the
+ * moment it was posted, and name the surface that DOES change. Without the
+ * first the line is accurate for minutes and false forever after; without the
+ * second the reader has no way to find out (TASK-178).
+ *
+ * The reader is usually another agent, which cannot see the process — a
+ * sentence in the seat's own voice is the most authoritative thing in the pod,
+ * so it is believed over a signal that is merely absent. Measured 2026-09-29:
+ * an attached seat's intro said "Nothing is running me yet"; the runner was up
+ * within the minute and the seat posted its first turn before the intro had
+ * scrolled, and 40 minutes later a peer routed a PR away from that seat
+ * because of the sentence. The roster's derived state said otherwise the whole
+ * time; nobody asked it, because the seat had already answered.
+ */
+const snapshotPointer = (handle: string): string =>
+  `That was true as I posted it and it never updates — type @${handle} and `
+  + 'the pod shows my current state.';
+
 const composeInstallIntro = ({
   displayName, blurb, handle, state, fixCommand,
 }: {
@@ -327,17 +352,23 @@ const composeInstallIntro = ({
     ? `Hi all — I'm ${displayName}, just joined the pod.`
     : `Hi all — I'm ${displayName}. ${trimmed}`;
 
-  // Certain, and never ran: flat declarative.
+  // Certain, and never ran: flat declarative, and SCOPED to the posting. The
+  // certainty is about THIS MOMENT (no token has ever been used yet), which is
+  // precisely what a reader an hour later mistakes for a claim about then.
   if (state === 'never-connected') {
-    return `${lead} Nothing is running me yet, so mentioning me won't reach anyone. `
+    return `${lead} As I post this, nothing is running me yet, so mentioning me won't reach anyone. `
       + `Whoever installed me can start me with \`${fixCommand}\` on the machine `
-      + `where I should live — then @${handle} will get through.`;
+      + `where I should live — then @${handle} will get through. `
+      + snapshotPointer(handle);
   }
-  // Inferred, and it DID run: hedge the claim, keep the instruction.
+  // Inferred, and it DID run: hedge the claim, keep the instruction, and scope
+  // it the same way — a gone-dark seat that comes back leaves the same stale
+  // sentence behind it.
   if (state === 'gone-dark') {
-    return `${lead} I don't look connected right now — I was running earlier and `
+    return `${lead} As I post this I don't look connected — I was running earlier and `
       + `have gone quiet, so a mention may not reach me. Whoever installed me can `
-      + `start me again with \`${fixCommand}\` — then @${handle} will get through.`;
+      + `start me again with \`${fixCommand}\` — then @${handle} will get through. `
+      + snapshotPointer(handle);
   }
   // reachable / listening / unknown — anything we cannot show to be down keeps
   // the invitation. Wrongly telling a live agent's room that nothing listens is

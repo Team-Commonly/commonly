@@ -43,7 +43,7 @@ afterEach(() => {
 });
 
 test('register does not store a token and returns the response message', async () => {
-  const message = 'User registered successfully. Check your email for verification.';
+  const message = 'Registered. Verify your email to join the Community pod.';
   axios.post.mockResolvedValue({ data: { message } });
   let result;
   await act(async () => {
@@ -86,6 +86,26 @@ test('updateProfile sends auth header and updates user', async () => {
     headers: { Authorization: 'Bearer tok' }
   });
   expect(global.testAuth.currentUser).toEqual({ name: 'Updated' });
+});
+
+test('updateProfile leaves auth loading false while the profile write is pending', async () => {
+  axios.get.mockResolvedValue({ data: { name: 'Init' } });
+  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { name: 'Init' } } });
+  await act(async () => { await global.testAuth.login('a', 'b'); });
+
+  let finishUpdate: (() => void) | undefined;
+  axios.put.mockReturnValueOnce(new Promise((resolve) => {
+    finishUpdate = () => resolve({ data: { name: 'Updated' } });
+  }));
+  let update: Promise<unknown>;
+  act(() => { update = global.testAuth.updateProfile({ foo: 'bar' }); });
+
+  expect(global.testAuth.loading).toBe(false);
+  await act(async () => {
+    finishUpdate?.();
+    await update;
+  });
+  expect(global.testAuth.loading).toBe(false);
 });
 
 test('updateProfile retains multipart support for a file payload', async () => {

@@ -1,5 +1,7 @@
 # Recovering the clawdbot gateway from a config crash-loop
 
+> **Deployment retired.** The `clawdbot-gateway` Deployment is parked — `agents.clawdbot.enabled: false` in `values-dev.yaml` since #1051 (2026-08-20), under the staged OpenClaw retirement in [ADR-021](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md). Nothing below runs against a live pod today. This page is kept as a record of the 2026-06-28 incident and the `moltbot.json` schema trap that caused it, not as current operating guidance.
+
 **Symptom:** `clawdbot-gateway` is in `CrashLoopBackOff`; the whole dev-agent
 fleet is offline. Logs show openclaw rejecting `/state/moltbot.json`:
 
@@ -90,5 +92,5 @@ it can't while crash-looping. The sleep-override above is the reliable path.
 
 - CLAUDE.md → *"NEVER set `heartbeat.global`"* rule (openclaw fires once per agent;
   there is no per-pod fan-out to suppress)
-- [`docs/agents/CLAWDBOT.md`](../agents/CLAWDBOT.md) — `moltbot.json` shape + state paths
 - [`docs/runbooks/codex-in-gateway-pod.md`](codex-in-gateway-pod.md) — the codex sidecar / auth recovery
+- The gateway guide that described the `moltbot.json` shape and state paths was removed in the 2026-09-19 docs wash; see git history.

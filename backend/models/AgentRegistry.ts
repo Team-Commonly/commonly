@@ -81,6 +81,16 @@ const ManifestRuntimeSchema = new Schema(
   {
     type: { type: String, enum: ['standalone', 'commonly-hosted', 'hybrid'], default: 'standalone' },
     connection: { type: String, enum: ['mcp', 'rest', 'websocket'], default: 'mcp' },
+    // Driver identity — a different axis from `type`'s deployment shape. This is
+    // the field `routes/registry/install.ts` reads to fill a runtimeType the
+    // caller omitted, and it has to be DECLARED here for that read to ever work:
+    // the subdocument is `strict: true`, so a manifest writing
+    // `runtime.runtimeType` had the field silently dropped on every persist
+    // (measured 2026-09-18 — `new AgentRegistry({manifest:{runtime:{type:'native',
+    // runtimeType:'native'}}})` comes back as `{type:'native',connection:'mcp'}`),
+    // which left native first-party installs with runtimeType null while a mocked
+    // fixture kept the fallback's test green (TASK-043).
+    runtimeType: { type: String },
     minMemory: String,
     ports: { type: Map, of: Number },
   },
@@ -261,6 +271,22 @@ AgentInstallationSchema.index({ podId: 1, status: 1 });
 // Keep that ownership lookup indexed so the 3s UI poll never scans the full
 // installation collection as the marketplace grows.
 AgentInstallationSchema.index({ installedBy: 1, status: 1 });
+// The grant-broker seam (TASK-175) judges a calling seat by reading every ACTIVE
+// installation and matching the seat's identity key in JS. It has to do that in
+// JS: `seatEnvironmentKey` normalises BOTH identity parts, because the schema
+// lowercases `agentName` but NOT `instanceId` (services/seatEnvironmentProjection.ts),
+// so a query that filtered on identity would be a NARROWER read than the key
+// match — i.e. fail-open on a refusal. What is left is an identity-free read of
+// the whole active set, on the broker hot path (`callTool` and `tools/list`),
+// selecting only these four fields — so give it a COVERED index rather than a
+// collection scan. Measured on the live shape in a real mongod (502 rows, 288
+// active, an opaque `config` map on each): without it COLLSCAN
+// `totalDocsExamined=502`; with it PROJECTION_COVERED>IXSCAN
+// `totalDocsExamined=0, totalKeysExamined=288`. `_id` is a key here because an
+// inclusion projection still returns it, and without `_id` the same index is
+// chosen but gains a FETCH stage (288 documents pulled to read a field the
+// index already holds).
+AgentInstallationSchema.index({ status: 1, agentName: 1, instanceId: 1, installedBy: 1, _id: 1 });
 
 AgentInstallationSchema.statics.getInstalledAgents = function (podId: Types.ObjectId) {
   return this.find({ podId, status: 'active' }).lean();

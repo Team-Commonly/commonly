@@ -2,10 +2,13 @@
 // Signal Connectors page: rows preserve the Phase 1 verbs while the selected
 // channel owns code, confirmation, relay controls, and disconnect in its aside.
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2ConnectorsPage, { INSTALL_LOCK_TTL_MS, installableLifecyclePath } from '../components/V2ConnectorsPage';
+import { PlatformGlyph } from '../icons/platforms';
 import { AuthContext } from '../../context/AuthContext';
+import en from '../../i18n/locales/en.json';
+import i18n, { i18nReady } from '../../i18n';
 
 jest.mock('axios', () => {
   const mock = {
@@ -44,7 +47,7 @@ const connectors = [
     type: 'telegram',
     status: 'pending',
     createdAt: new Date(Date.now() - 60_000).toISOString(),
-    config: { connectCode: 'abc123', connectCodeExpiresAt: new Date(Date.now() + 60_000).toISOString() },
+    config: { connectCode: 'abc123', connectCodeExpiresAt: new Date(Date.now() + 5 * 60_000).toISOString() },
     podId: { _id: 'p1', name: 'Rewire Live Demo' },
   },
   {
@@ -59,9 +62,10 @@ const connectors = [
   },
 ];
 
-const mockGets = (list = connectors) => {
+const mockGets = (list = connectors, installables = null) => {
   axios.get.mockImplementation((url) => {
     if (url === '/api/integrations/user/all') return Promise.resolve({ data: list });
+    if (url === '/api/installables' && installables) return Promise.resolve({ data: { installables } });
     if (url === '/api/pods') {
       return Promise.resolve({
         data: [
@@ -74,6 +78,20 @@ const mockGets = (list = connectors) => {
   });
 };
 
+const hostedLinearCatalogEntry = (connectionId = 'i-linear') => ({
+  installableId: 'linear',
+  list: 'tools',
+  label: 'Linear',
+  description: 'Read Linear issues and projects.',
+  connectionType: 'hosted-mcp',
+  entryId: 'linear',
+  available: true,
+  tools: [],
+  connections: [{ connectionId, owner: 'sam', repo: '' }],
+  installation: null,
+  integration: null,
+});
+
 const renderPage = () => render(
   <AuthContext.Provider value={authValue}>
     <MemoryRouter>
@@ -81,6 +99,11 @@ const renderPage = () => render(
     </MemoryRouter>
   </AuthContext.Provider>,
 );
+
+// The reconciler's own constant — the reason a person reads when the channel
+// record behind a connector is gone. It replaced the old 'projection missing'
+// wording in the TASK-131 copy pass (wren 73914, vera 73915).
+const REASON_CHANNEL_GONE = "This connector's channel is gone. Retry to rebuild it.";
 
 describe('V2ConnectorsPage', () => {
   beforeEach(() => {
@@ -91,17 +114,206 @@ describe('V2ConnectorsPage', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
+  it('Direction A: a linked row carries a mono kicker, a relay mark with its sentence in the label, and Manage as the gear', async () => {
+    mockGets([connectors[1]]);
+    renderPage();
+    const manage = await screen.findByRole('button', { name: 'Manage' });
+    expect(manage).toHaveClass('v2-connector-row__action--icon');
+    expect(manage).toHaveAttribute('title', 'Manage');
+    expect(manage.textContent).toBe('');
+    expect(manage.querySelector('svg')).not.toBeNull();
+    const row = manage.closest('.v2-connector-row');
+    expect(row?.querySelector('.v2-connector-row__kicker')?.textContent).toMatch(/ · added /);
+    const mark = row?.querySelector('.v2-connector-row__mark');
+    expect(mark).not.toBeNull();
+    expect(mark).toHaveAttribute('role', 'img');
+    // TASK-162 (3): the glyph carries the MODE WORD (what the mark means); the
+    // consequence is the visible words beside it, so line 3 is never a bare mark.
+    expect(mark?.getAttribute('aria-label')).toMatch(/^(attention|mirror|relay off)$/);
+    expect(mark?.getAttribute('title')).toBe(mark?.getAttribute('aria-label'));
+    expect(row?.querySelector('.v2-connector-row__mark-text')?.textContent).toBe('messages stay in the pod');
+    // The mode word is NOT repeated on line 3: at ≤760 the kicker carries it, so
+    // 'relay off · messages stay in the pod' said it twice (TASK-162 UX gate).
+    expect(row?.querySelector('.v2-connector-row__mark-text')?.textContent).not.toMatch(/^(attention|mirror|relay off) ·/);
+    expect(row?.querySelector('.v2-connector-row__kicker-mode')?.textContent).toMatch(/attention|mirror|relay off/);
+    expect(row?.querySelector('.v2-connector-row__when')).toBeNull();
+  });
+
+  // TASK-177. The mark and the Tools glyph agree at 14px through TWO independent
+  // literals in two files: `size={14}` at the mark's call site, and
+  // V2ConnectorTools' own local `G` (`:157`, `width="14" height="14"`) — it does
+  // not import `MarkGlyph`, and `icons/glyphs.tsx`'s `G` defaults to 16.
+  // So nothing shared carries the agreement and nothing tested it: drop the prop
+  // and the mark renders 16 while Tools stays 14, silently desyncing the two rows
+  // v2.css claims cannot drift. And a `14` asserted in one file would have passed
+  // through every misreading of this chain, so what is pinned is the AGREEMENT:
+  // whichever number the design lands on, both glyphs must carry it. The absolute
+  // size stays the gate's decision, not this test's.
+  it('TASK-177: the connector mark and the Tools mode glyph render at the same size', async () => {
+    const toolsEntry = {
+      installableId: 'github', list: 'tools', label: 'GitHub', description: 'Issues and pull requests.', available: true,
+      broker: { id: 'commonly-grant-broker' },
+      tools: [{ name: 'github.list_issues', requiredWriteMode: 'read', irreversible: false }],
+      connections: [],
+    };
+    const grant = {
+      grantId: 'grant_live', installationId: 'inst-1', target: { kind: 'pod', id: 'p1' }, tools: ['github.list_issues'],
+      writeMode: 'read', budget: { calls: 50, windowMs: 3600000 }, effectiveAudience: [],
+      expiresAt: new Date(Date.now() + 6 * 86400000).toISOString(), revokedAt: null, revokedBy: null,
+      parentGrantId: null, rootGrantId: null, createdAt: new Date().toISOString(), grantedBy: 'u1',
+    };
+    axios.get.mockImplementation((url) => {
+      if (url === '/api/integrations/user/all') return Promise.resolve({ data: [connectors[1]] });
+      if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Launch pod', type: 'chat' }] });
+      if (url === '/api/installables') return Promise.resolve({ data: { installables: [toolsEntry] } });
+      if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [grant] } });
+      if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
+      if (url.includes('/calls')) {
+        return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    const { container } = renderPage();
+    // Both glyphs have to actually BE there, or the comparison would pass on two
+    // absent nodes — the vacuity the same-size claim is easiest to fake.
+    const markSvg = await waitFor(() => {
+      expect(container.querySelector('.v2-connector-row__mark svg')).not.toBeNull();
+      return container.querySelector('.v2-connector-row__mark svg') as SVGElement;
+    });
+    const modeSvg = await waitFor(() => {
+      expect(container.querySelector('.v2-tools__mode svg')).not.toBeNull();
+      return container.querySelector('.v2-tools__mode svg') as SVGElement;
+    });
+    // Positive control: these attributes are the instrument, so prove they carry a
+    // value at all (an empty string would make the equality below meaningless).
+    // Both attributes, both glyphs: controlling only `width` left the height
+    // comparison able to pass on null === null — strip `height` from *both* `G`
+    // components and a width-only control stays green (sprint-review's gate).
+    expect(markSvg.getAttribute('width')).toMatch(/^\d+$/);
+    expect(markSvg.getAttribute('height')).toMatch(/^\d+$/);
+    expect(modeSvg.getAttribute('width')).toMatch(/^\d+$/);
+    expect(modeSvg.getAttribute('height')).toMatch(/^\d+$/);
+    expect(markSvg.getAttribute('width')).toBe(modeSvg.getAttribute('width'));
+    expect(markSvg.getAttribute('height')).toBe(modeSvg.getAttribute('height'));
+  });
+
+  it('TASK-162: line 3 never repeats the mode word the kicker already carries', async () => {
+    // The prefixes lived in the component's defaultValue, which is exactly where
+    // they could not be guarded: once the key exists in the catalog the catalog
+    // wins, so reverting the defaultValue changes nothing rendered. The copy now
+    // lives in en.json, so that is where the rule is asserted.
+    const kickerByRow: Array<[keyof typeof en.connectors, string]> = [
+      ['rowAttention', 'attention'],
+      ['rowMirror', 'mirror'],
+      ['rowRelayOff', 'relay off'],
+    ];
+    for (const [key, modeWord] of kickerByRow) {
+      expect(en.connectors[key]).toBeTruthy();
+      expect(en.connectors[key].startsWith(modeWord)).toBe(false);
+    }
+  });
+
+  it('TASK-162: the not-yet channel names are separate elements, with a separator that only shows at ≤760', async () => {
+    mockGets([]);
+    const { container } = renderPage();
+    await waitFor(() => expect(container.querySelector('.v2-connector-row--not-yet')).not.toBeNull());
+    const names = container.querySelector('.v2-connector-row--not-yet .v2-connector-row__names');
+    expect(names).not.toBeNull();
+    // Separate elements, not one joined string: above 760 they stack in the name
+    // track, so a joined string would be a single 140px-wide line that runs into
+    // the details column. TASK-024 left this row one name — Discord is a built
+    // connector and now arrives through the catalog — so the LIST is what is
+    // asserted and the separator count follows from its length. Nothing renders a
+    // `__name-sep` until a second unbuilt provider joins WhatsApp; the rule that
+    // shows it at ≤760 stays pinned in v2-layout-invariants.test.ts.
+    expect(Array.from(names!.querySelectorAll('.v2-connector-row__name-item')).map((item) => item.textContent)).toEqual(['WhatsApp']);
+    expect(names!.querySelectorAll('.v2-connector-row__name-sep')).toHaveLength(0);
+  });
+
+  it('TASK-131: relative ages advance in place, and a returning tab re-reads, without a reload', async () => {
+    // Fake the clock so the minute tick is deterministic. The fixture's age
+    // only moves if the page re-renders it, which is the defect being pinned.
+    jest.useFakeTimers();
+    try {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString();
+      mockGets([{ ...connectors[1], createdAt: fiveMinutesAgo, updatedAt: fiveMinutesAgo }]);
+      renderPage();
+
+      await screen.findByText(/added 5m$/);
+
+      await act(async () => { jest.advanceTimersByTime(2 * 60_000); });
+      expect(screen.getByText(/added 7m$/)).toBeInTheDocument();
+
+      const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/integrations/user/all').length;
+      const before = reads();
+      document.dispatchEvent(new Event('visibilitychange'));
+      await waitFor(() => expect(reads()).toBeGreaterThan(before));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('renders the Signal row list and opens the pending channel in the selected aside', async () => {
     mockGets();
     const { container } = renderPage();
 
     await screen.findByRole('button', { name: 'View Telegram' });
-    expect(screen.getByText('Waiting for one message in your Telegram chat.')).toBeInTheDocument();
+    expect(screen.getByText('Send /commonly-enable in your Telegram chat.')).toBeInTheDocument();
+    expect(screen.getByText('Code expires in 5 min')).toBeInTheDocument();
     expect(screen.getByText('Rewire crew · linked to Ops')).toBeInTheDocument();
-    expect(screen.getByText('Discord · WhatsApp')).toBeInTheDocument();
+    const notYetNames = container.querySelector('.v2-connector-row--not-yet .v2-connector-row__names');
+    // TASK-024: this row is "we have not built it", so it lists only providers
+    // with no manifest at all. Discord is a built connector (routes/discord.ts;
+    // discordProvider.ts) and reaches the page through the catalog — available, or
+    // the not-enabled row when the instance lacks its credentials — so naming it
+    // here asserted something false. Scoped to this row deliberately: a plain
+    // queryByText would also fail if a later fixture adds Discord as a catalog row.
+    expect(notYetNames?.textContent).toBe('WhatsApp');
     expect(screen.getByText('/commonly-enable abc1 23')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy command' })).toBeInTheDocument();
     expect(container.querySelectorAll('.v2-connector-row__glyph')).toHaveLength(3);
+  });
+
+  // TASK-156. A linked Slack stores its workspace in `teamName`
+  // (slackOAuthService) and never in `chatTitle`, so the row read "Slack ·
+  // linked to Ops" beside the word Slack. The workspace name belongs on the
+  // detail line, not in the name slot — the name stays the platform.
+  describe('the row names the Slack workspace (TASK-156)', () => {
+    const slackRow = (config, podId = { _id: 'p2', name: 'Ops' }) => ({
+      _id: 'i-slack',
+      installationId: 'install-slack-u1',
+      type: 'slack',
+      status: 'connected',
+      createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+      updatedAt: new Date().toISOString(),
+      config,
+      podId,
+    });
+
+    it('reads the teamName when the link carries no chatTitle', async () => {
+      mockGets([slackRow({ teamName: 'Acme', liveRelay: false })]);
+      renderPage();
+
+      expect(await screen.findByText('Acme · linked to Ops')).toBeInTheDocument();
+      expect(screen.queryByText('Slack · linked to Ops')).toBeNull();
+      const row = screen.getByText('Acme · linked to Ops').closest('.v2-connector-row');
+      expect(row?.querySelector('.v2-connector-row__name')?.textContent).toContain('Slack');
+    });
+
+    it('reads the teamName on the not-linked variant too', async () => {
+      mockGets([slackRow({ teamName: 'Acme', liveRelay: false }, null)]);
+      renderPage();
+
+      expect(await screen.findByText('Acme · not linked to a pod')).toBeInTheDocument();
+    });
+
+    it('keeps chatTitle winning when the link carries both', async () => {
+      mockGets([slackRow({ chatTitle: 'Rewire crew', teamName: 'Acme', liveRelay: false })]);
+      renderPage();
+
+      expect(await screen.findByText('Rewire crew · linked to Ops')).toBeInTheDocument();
+      expect(screen.queryByText('Acme · linked to Ops')).toBeNull();
+    });
   });
 
   it('offers a new code from the row and aside when the Telegram code has expired', async () => {
@@ -235,7 +447,26 @@ describe('V2ConnectorsPage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
-    expect(await screen.findByText(/bound to Rewire Live Demo/)).toBeInTheDocument();
+    const refusal = await screen.findByText(/bound to Rewire Live Demo/);
+    expect(refusal).toBeInTheDocument();
+    // TASK-154 item 6 (wren): the old copy ('Remove it to bind a different
+    // pod') taught the one-pod model. The refusal is about the bind, and other
+    // pods reach the channel through the switches. TASK-173: the arm used to
+    // pin the word 'gate switches', which is this file's internal name and no
+    // string the page renders — so the witnessed wording went stale in the
+    // same direction the copy did. It now matches the label the user can
+    // actually look for, and the phrase is longer than the section title so a
+    // page that merely renders the section cannot satisfy it.
+    expect(screen.getByText(/through "Pods that reach this channel"/)).toBeInTheDocument();
+    expect(screen.queryByText(/gate switches/)).toBeNull();
+    // The verdict that narrowed this twice: "Channel details" is the aside's
+    // `aria-label` (:1220, :1286) and never visible text, so naming it in the
+    // copy sends a sighted user after a string the page does not render. That
+    // the phrase is an attribute and not text is witnessed where the aside is
+    // actually rendered (the gates scenario below); here the copy is checked,
+    // which is the half that can be checked in this state.
+    expect(refusal.textContent).not.toMatch(/Channel details/);
+    expect(screen.queryByText(/Remove it to bind/)).toBeNull();
     expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
   });
 
@@ -314,7 +545,7 @@ describe('V2ConnectorsPage', () => {
     expect(slackWindow.opener).toBeNull();
   });
 
-  it('keeps a Slack authorization failure generic in the selected aside', async () => {
+  it('keeps an un-coded Slack authorization failure generic — the fallback, row and aside (Row C control)', async () => {
     mockGets([{
       _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
       config: {}, podId: { _id: 'p1', name: 'Rewire Live Demo' },
@@ -328,7 +559,70 @@ describe('V2ConnectorsPage', () => {
       {},
       expect.objectContaining({ withCredentials: true }),
     ));
-    expect(await screen.findByText('Could not begin Slack authorization. Try again in a moment.')).toBeInTheDocument();
+    // A refusal with no body still gets the generic sentence — the fallback the
+    // named codes must not have replaced.
+    const shown = await screen.findAllByText('Could not begin Slack authorization. Try again in a moment.');
+    expect(shown.length).toBeGreaterThan(0);
+  });
+
+  it('names a refused Slack authorize on the row that asked, not only at the page foot (Row C)', async () => {
+    mockGets([{
+      _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: {}, podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockRejectedValue({
+      response: { status: 409, data: { code: 'slack_already_authorized', error: 'Upstream wording that a known code must not surface.' } },
+    });
+    renderPage();
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Authorize in Slack' }))[0]);
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+
+    const row = (await screen.findByRole('button', { name: 'View Slack' })).closest('article') as HTMLElement;
+    expect(row).not.toBeNull();
+    // The code's own copy, not the server sentence the same body also carries.
+    expect(within(row).getByRole('alert')).toHaveTextContent('Slack is already awaiting confirmation or connected.');
+    expect(within(row).queryByText(/Upstream wording/)).toBeNull();
+    // ...and beside the button in the selected row's aside.
+    const aside = document.querySelector('.v2-connectors__aside') as HTMLElement;
+    expect(within(aside).getByRole('alert')).toHaveTextContent('Slack is already awaiting confirmation or connected.');
+    // Placement is the defect (Row C): the page-level slot used to be the only one.
+    expect(document.querySelector('.v2-connectors__error')).toBeNull();
+  });
+
+  it('uses the server sentence when the refusal code is not one the page knows (Row C)', async () => {
+    mockGets([{
+      _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: {}, podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockRejectedValue({
+      response: { status: 503, data: { code: 'slack_upstream_unavailable', error: 'Slack refused the handshake.' } },
+    });
+    renderPage();
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Authorize in Slack' }))[0]);
+    const row = (await screen.findByRole('button', { name: 'View Slack' })).closest('article') as HTMLElement;
+    await waitFor(() => expect(within(row).getByRole('alert')).toHaveTextContent('Slack refused the handshake.'));
+  });
+
+  it('names a failed Slack confirm on the row, not in the page slot (Row C)', async () => {
+    mockGets([{
+      _id: 'i-slack-pending', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: { pendingBind: { teamName: 'Commonly HQ', slackUserName: 'sam' } },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockRejectedValue({
+      response: { status: 409, data: { code: 'slack_bind_expired', error: 'Upstream wording that a known code must not surface.' } },
+    });
+    renderPage();
+
+    expect(await screen.findByText('Commonly HQ wants to connect as @sam.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm connection' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/installables/slack/confirm', {}, expect.anything()));
+
+    const row = (await screen.findByRole('button', { name: 'View Slack' })).closest('article') as HTMLElement;
+    expect(within(row).getByRole('alert')).toHaveTextContent('Slack authorization expired. Start again.');
+    expect(document.querySelector('.v2-connectors__error')).toBeNull();
   });
 
   it('moves Slack confirmation and rejection to the selected aside', async () => {
@@ -387,6 +681,78 @@ describe('V2ConnectorsPage', () => {
     expect(window.location.search).toBe('');
   });
 
+  it('shows the server-owned provider revoke page after a hosted-MCP reconnect needs manual withdrawal', async () => {
+    const revokePage = 'https://linear.app/settings/security';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=linear&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-linear', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'linear', revokePage },
+    }], [hostedLinearCatalogEntry()]);
+    renderPage();
+
+    const reviewLink = await screen.findByRole('link', { name: "Open Linear's connected apps" });
+    expect(reviewLink).toHaveAttribute('href', revokePage);
+    expect(reviewLink).toHaveAttribute('target', '_blank');
+    expect(reviewLink).toHaveAttribute('rel', 'noopener noreferrer');
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent(
+      'Your previous Linear account may still have Commonly connected. Switch to it on Linear, then remove Commonly there.',
+    );
+    expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
+    expect(window.location.search).toBe('');
+  });
+
+  it('the manual-revoke notice tells the person to switch to the account they connected before', async () => {
+    const revokePage = 'https://linear.app/settings/security';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=linear&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-linear', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'linear', revokePage },
+    }], [hostedLinearCatalogEntry()]);
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      renderPage();
+
+      const reviewLink = await screen.findByRole('link', { name: '打开 Linear 的已连接应用' });
+      expect(reviewLink).toHaveAttribute('href', revokePage);
+      const notice = screen.getByRole('status');
+      expect(notice).toHaveTextContent(
+        '你之前的 Linear 账号可能仍保留对 Commonly 的授权。请在 Linear 切换到那个账号，再在那里移除 Commonly。',
+      );
+      expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
+      expect(window.location.search).toBe('');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  it('does not turn a callback query into a provider link unless it matches the row', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/v2/connectors?hostedMcp=connected&entryId=linear&revokeAt=https%3A%2F%2Fevil.example%2F',
+    );
+    mockGets([{
+      _id: 'i-linear', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'linear', revokePage: 'https://linear.app/settings/security' },
+    }], [hostedLinearCatalogEntry()]);
+    renderPage();
+
+    const linearDescription = await screen.findByText('Read Linear issues and projects.');
+    expect(linearDescription.closest('.v2-connector-row')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).toBe(''));
+    expect(screen.queryByRole('link', { name: "Open Linear's connected apps" })).toBeNull();
+  });
+
   it('shows the error reconnect action and retains the separate removal action', async () => {
     mockGets([{
       _id: 'i-slack-error', installationId: 'install-slack-u1', type: 'slack', status: 'error',
@@ -407,16 +773,137 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByRole('button', { name: /Really remove/ })).toBeInTheDocument();
   });
 
+  it('names the reason a connector needs attention when the server sent one', async () => {
+    // The row's line is the only place a person sees why relaying stopped. A
+    // classified permanent failure writes `errorMessage`; the generic sentence
+    // is the fallback for everything else, not a replacement for it.
+    const reason = 'Telegram stopped delivering: the bot was blocked or removed from this chat.';
+    mockGets([{
+      _id: 'i-tg-error', installationId: 'install-tg-u1', type: 'telegram', status: 'error', errorMessage: reason,
+      // The flag is what makes the message readable to a person: it is set by
+      // connectorDeliveryFailureService, the writer that owns the pair.
+      errorMessageUserFacing: true,
+      config: { chatTitle: 'Ops chat', liveRelay: true },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    renderPage();
+
+    expect((await screen.findAllByText(reason)).length).toBeGreaterThan(0);
+    expect(screen.queryByText('The connection dropped.')).toBeNull();
+  });
+
+  it('does not print a provider error text in a connector row, only a message written for a person (vera 73848)', async () => {
+    // `Integration.errorMessage` has an older writer: externalFeedService copies
+    // a provider's response, or a raw exception message, into it for the `x` and
+    // `instagram` rows. Those rows reach this same error branch, so a value in
+    // the field is not permission to render it — `errorMessageUserFacing` is,
+    // and it is absent here. The row still shows the generic sentence.
+    const raw = 'connect ECONNREFUSED 10.4.4.7:443';
+    mockGets([{
+      _id: 'i-x-error', installationId: 'install-x-u1', type: 'x', status: 'error', errorMessage: raw,
+      config: { chatTitle: 'Feed' },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    renderPage();
+
+    expect((await screen.findAllByText('The connection dropped.')).length).toBeGreaterThan(0);
+    expect(screen.queryByText(raw)).toBeNull();
+  });
+
   it('derives the installable lifecycle target from the connector row type', () => {
     expect(installableLifecyclePath('slack')).toBe('/api/installables/slack/install');
   });
   // D8 Phase 2: rows keyed by the capability catalog (D1/D2), the aside's
   // gate list (D4), and the not-linked row (#1551).
   describe('catalog rows', () => {
+    // TASK-155. The walk found that adding a channel with a live row selected
+    // left the panel on that row: the row's detail kept the aside and the form
+    // was rendered beside the list instead, so the picker appeared somewhere
+    // other than the panel the page uses for the thing you are doing.
+    const asidePanel = () => document.querySelector('.v2-connectors__aside') as HTMLElement;
+
+    it('TASK-155: adding a channel moves the panel to the picker', async () => {
+      mockCatalog([
+        entry(),
+        entry({ installableId: 'slack', label: 'Slack', installation: { status: 'active', boundPodId: 'p1' }, integration: liveIntegration() }),
+      ]);
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'View Slack' }));
+      expect(within(asidePanel()).getByText('What the channel sees')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+      expect(within(asidePanel()).getByLabelText('Pod to bridge')).toBeInTheDocument();
+      expect(within(asidePanel()).queryByText('What the channel sees')).toBeNull();
+      // One form, not two: the left-column copy the walk could not see is gone.
+      expect(screen.getAllByLabelText('Pod to bridge')).toHaveLength(1);
+    });
+
+    it('TASK-155: "Connect a channel" moves the panel while a row is selected', async () => {
+      mockCatalog([
+        entry(),
+        entry({ installableId: 'slack', label: 'Slack', installation: { status: 'active', boundPodId: 'p1' }, integration: liveIntegration() }),
+      ]);
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'View Slack' }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Connect a channel' }));
+
+      expect(within(asidePanel()).getByLabelText('Pod to bridge')).toBeInTheDocument();
+      expect(screen.getAllByLabelText('Pod to bridge')).toHaveLength(1);
+    });
+
+    it('TASK-155: selecting a row while the form is open closes the form', async () => {
+      mockCatalog([
+        entry(),
+        entry({ installableId: 'slack', label: 'Slack', installation: { status: 'active', boundPodId: 'p1' }, integration: liveIntegration() }),
+      ]);
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+      expect(within(asidePanel()).getByLabelText('Pod to bridge')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'View Slack' }));
+
+      // The form wins the aside while it is open, so the row click has to close
+      // it — otherwise this is the walk's symptom pointed the other way
+      // (connector-ops 74623 item 1).
+      expect(within(asidePanel()).getByText('What the channel sees')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Pod to bridge')).toBeNull();
+    });
+
+    it('TASK-155: the picker takes focus when the form opens', async () => {
+      mockCatalog([entry()]);
+      renderPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+
+      // At 390 the panel is below the fold of the page's scroller; focus is
+      // what scrolls the picker into view (connector-ops 74623 item 2).
+      expect(screen.getByLabelText('Pod to bridge')).toHaveFocus();
+    });
+
+    it('TASK-155: the picker defaults to a room, never a personal pod', async () => {
+      mockCatalog([entry()], [], [
+        { _id: 'p-scout', name: 'Scout (Default)', type: 'agent-room', members: [] },
+        { _id: 'p1', name: 'Rewire Live Demo', type: 'chat', members: [] },
+        { _id: 'p2', name: 'Ops', type: 'team', members: [] },
+      ]);
+      renderPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+
+      const picker = screen.getByLabelText('Pod to bridge') as HTMLSelectElement;
+      expect(picker.value).toBe('p1');
+      // A DM stays selectable: it is a legal target, just never the default.
+      expect(Array.from(picker.options).map((option) => option.textContent)).toContain('Scout (Default)');
+    });
+
     const entry = (over = {}) => ({
       installableId: 'telegram',
       label: 'Telegram',
-      description: 'One Telegram chat, one pod.',
+      // Mirror of the provider manifest's copy, which the server sends as the
+      // entry's description. The source pin is backend manifestReadiness.
+      description: 'Link your Telegram chat to Commonly — every pod you turn on reaches it.',
       available: true,
       installation: null,
       integration: null,
@@ -435,23 +922,192 @@ describe('V2ConnectorsPage', () => {
       podId: 'p1',
       ...over,
     });
-    const mockCatalog = (installables, list = []) => {
+    const mockCatalog = (installables, list = [], pods = [
+      { _id: 'p1', name: 'Rewire Live Demo', type: 'chat', members: [{ _id: 'b1', username: 'vale', isBot: true }] },
+      { _id: 'p2', name: 'Ops', type: 'team', members: [] },
+    ]) => {
       axios.get.mockImplementation((url) => {
         if (url === '/api/integrations/user/all') return Promise.resolve({ data: list });
         if (url === '/api/installables') return Promise.resolve({ data: { installables } });
-        if (url === '/api/pods') {
-          return Promise.resolve({
-            data: [
-              { _id: 'p1', name: 'Rewire Live Demo', type: 'chat', members: [{ _id: 'b1', username: 'vale', isBot: true }] },
-              { _id: 'p2', name: 'Ops', type: 'team', members: [] },
-            ],
-          });
-        }
+        if (url === '/api/pods') return Promise.resolve({ data: pods });
         return Promise.resolve({ data: [] });
       });
     };
 
-    it('renders an unavailable provider without a control and an available one with Connect', async () => {
+    it('TASK-131: a catalog failure prints the generic sentence, not the raw exception that wrote the row', async () => {
+      // The catalogue half reads `InstallableInstallation.errorMessage`, whose
+      // projection-failure writer stores `error.message` verbatim. Same rule as
+      // the pod-scoped half: a value in the field is not permission to render
+      // it, and the flag is absent on this fixture.
+      const raw = 'connect ECONNREFUSED 10.4.4.7:443';
+      mockCatalog([
+        entry({ installation: { status: 'error', errorMessage: raw } }),
+      ]);
+      renderPage();
+
+      expect((await screen.findAllByText('Setup didn’t finish.')).length).toBeGreaterThan(0);
+      expect(screen.queryByText(raw)).toBeNull();
+    });
+
+    it('TASK-131: a catalog message written for a person still renders verbatim', async () => {
+      // The reconciler's own reasons are written for the person reading this row,
+      // and the flag the builder sets beside them is what keeps them readable once
+      // the generic sentence became the fallback.
+      const reason = REASON_CHANNEL_GONE;
+      mockCatalog([
+        entry({ installation: { status: 'error', errorMessage: reason, errorMessageUserFacing: true } }),
+      ]);
+      renderPage();
+
+      expect((await screen.findAllByText(reason)).length).toBeGreaterThan(0);
+      expect(screen.queryByText('Setup didn’t finish.')).toBeNull();
+    });
+
+    // Tools plan (Sam's option A, two lists): a tool Installable shares the
+    // catalogue response but belongs to the Tools page, never to this one.
+    it('a tool Installable in the catalogue never renders as a channel row', async () => {
+      mockCatalog([
+        {
+          installableId: 'github',
+          list: 'tools',
+          label: 'GitHub',
+          description: 'Issues and pull requests.',
+          available: true,
+          broker: { id: 'commonly-grant-broker' },
+          tools: [{ name: 'github.list_issues', requiredWriteMode: 'read', irreversible: false }],
+          connections: [],
+          installation: null,
+          integration: null,
+        },
+        entry({ list: 'channels' }),
+      ]);
+      renderPage();
+
+      expect(await screen.findByText('Link your Telegram chat to Commonly — every pod you turn on reaches it.')).toBeInTheDocument();
+      expect(screen.queryByText('GitHub')).toBeNull();
+      expect(screen.queryByText('Issues and pull requests.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'View GitHub' })).toBeNull();
+      expect(screen.getAllByRole('button', { name: 'Add' })).toHaveLength(1);
+    });
+
+    it('keeps tool-only connections out of Channels and refuses an unknown type as a row title', async () => {
+      mockCatalog([entry()], [
+        {
+          // Real hosted-MCP rows have no installationId; filter them by type.
+          _id: 'i-hosted-linear', type: 'hosted-mcp', status: 'connected',
+          config: { entryId: 'linear' },
+        },
+        {
+          _id: 'i-github-app', installationId: 'github-install', type: 'github-app', status: 'connected',
+        },
+        {
+          _id: 'i-unknown-channel', type: 'custom-messaging-platform', status: 'connected',
+        },
+      ]);
+      renderPage();
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'View Telegram' })).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /hosted-mcp|github-app/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'View Custom Messaging Platform' })).toBeNull();
+      expect(screen.queryByText('hosted-mcp')).toBeNull();
+      expect(screen.queryByText('github-app')).toBeNull();
+      expect(screen.queryByText('Hosted tool')).toBeNull();
+      expect(screen.queryByText('GitHub App')).toBeNull();
+      expect(screen.queryByText('custom-messaging-platform')).toBeNull();
+    });
+
+    // TASK-024. Discord is a shipping connector (routes/discord.ts: install
+    // link, callback, binding, uninstall) that read as "we don't build this"
+    // because its manifest declared no readiness(), which is what the catalog
+    // filters on. Once it declares one the catalog owns every claim about it:
+    // configured -> a connectable row, not configured -> the not-enabled row
+    // that already exists for slack. The not-yet row must stop covering it.
+    const glyphPath = (type: string): string | null => {
+      const { container } = render(<PlatformGlyph type={type} />);
+      return container.querySelector('svg path')?.getAttribute('d') || null;
+    };
+
+    it('describes Discord only through the catalog, never as a provider we have not built', async () => {
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: false, unavailableReason: 'not_configured' }),
+      ]);
+      renderPage();
+
+      const notEnabled = (await screen.findByText('Not enabled on this instance.')).closest('.v2-connector-row');
+      expect(notEnabled).toHaveClass('v2-connector-row--not-enabled');
+
+      const notYet = (await screen.findByText(/Not yet\. Tell us which channel/)).closest('.v2-connector-row') as HTMLElement;
+      expect(notYet).toHaveClass('v2-connector-row--not-yet');
+      expect(notYet.textContent).toContain('WhatsApp');
+      expect(notYet.textContent).not.toContain('Discord');
+
+      // The glyph tracks the label: the row is about WhatsApp now, and the two
+      // glyphs differ, so this cannot pass by comparing a value to itself.
+      const whatsapp = glyphPath('whatsapp');
+      expect(whatsapp).not.toBeNull();
+      expect(whatsapp).not.toBe(glyphPath('discord'));
+      expect(notYet.querySelector('svg path')?.getAttribute('d')).toBe(whatsapp);
+    });
+
+    it('offers a rostered provider with Add, and an unmapped one inherits no onboarding sentence', async () => {
+      // Slack's line is in the map; Discord's is not. The point of the map is
+      // that Discord renders NO sentence rather than Slack's (Vera 71165).
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: true, offered: true }),
+        entry({ installableId: 'slack', label: 'Slack', available: true, offered: true }),
+      ]);
+      renderPage();
+
+      const discord = (await screen.findByText('Discord')).closest('.v2-connector-row') as HTMLElement;
+      expect(discord.textContent).not.toContain('one click in your workspace');
+      expect(discord.textContent).not.toContain('one message');
+      expect(within(discord).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+
+      const slack = screen.getByText('Slack').closest('.v2-connector-row') as HTMLElement;
+      expect(slack.textContent).toContain('one click in your workspace');
+
+      const notYet = screen.getByText(/Not yet\. Tell us which channel/).closest('.v2-connector-row') as HTMLElement;
+      expect(notYet.textContent).toContain('WhatsApp');
+      expect(notYet.textContent).not.toContain('Discord');
+    });
+
+    it('reads a usable-but-unrostered provider as not connectable, with no Add anywhere', async () => {
+      // The ruled middle state (Wren 71170/71174): this instance can use Discord
+      // and there is no builtin Installable row to install, so the row states the
+      // state and offers no action. Before this, the row rendered an Add whose
+      // click ended in 404 installable_not_found (Wren 71162/71163).
+      mockCatalog([
+        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false }),
+      ]);
+      renderPage();
+
+      const roster = (await screen.findByText('Not connectable yet.')).closest('.v2-connector-row') as HTMLElement;
+      expect(roster).toHaveClass('v2-connector-row--not-enabled');
+      expect(roster.textContent).toContain('Discord');
+      expect(roster.querySelector('svg path')?.getAttribute('d')).toBe(glyphPath('discord'));
+      expect(within(roster).queryByRole('button', { name: 'Add' })).toBeNull();
+      // The only action left is the Ask link the not-enabled row shares; there is
+      // no Add and no connect verb. `row.notEnabled` drives that link, so both
+      // no-action catalog states carry it.
+      const actions = roster.querySelectorAll('.v2-connector-row__action');
+      expect(actions).toHaveLength(1);
+      expect(actions[0].textContent).toBe('Ask');
+
+      // The eyebrow must not contradict the line under it. `notEnabled` drives
+      // this row's class and Ask link, so it also drove the kicker: the keys-set
+      // render read "not enabled" directly above "Not connectable yet." — asking
+      // an operator for credentials the instance already has (Vera, #1826).
+      expect(roster.querySelector('.v2-connector-row__kicker')).toHaveTextContent(/^not yet$/);
+      expect(roster.querySelector('.v2-connector-row__kicker')).not.toHaveTextContent('not enabled');
+
+      // The Add verb itself must be gone, not merely unused: an offered provider
+      // is the only thing that may produce it, and there is none in this catalog.
+      expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Connect a channel' })).toBeNull();
+      expect(await screen.findByText(/Not yet\. Tell us which channel/)).toBeInTheDocument();
+    });
+
+    it('renders an unavailable provider with a state line and an available one with Add', async () => {
       mockCatalog([
         entry(),
         entry({ installableId: 'slack', label: 'Slack', available: false, unavailableReason: 'not_configured' }),
@@ -460,13 +1116,26 @@ describe('V2ConnectorsPage', () => {
       renderPage();
 
       expect(await screen.findByText('Not enabled on this instance.')).toBeInTheDocument();
+      // This commit's own copy expectations are NOT merged: they asserted the
+      // one-pod Telegram sentence TASK-154 reversed, and the absence of the
+      // "ask your operator" detail — which #1557 landed AFTER the 09-04 ruling
+      // this commit cites, and which main's tests assert is present. What
+      // survives from it is the CODE (an offered provider is the only thing that
+      // may draw Add; each unconnectable provider gets its own state line),
+      // which is what these assertions exercise.
       expect(screen.getByText('ask your operator')).toBeInTheDocument();
-      expect(screen.getByText('One Telegram chat, one pod.')).toBeInTheDocument();
-      expect(screen.getByText('not connected')).toBeInTheDocument();
+      expect(screen.getByText('Link your Telegram chat to Commonly — every pod you turn on reaches it.')).toBeInTheDocument();
+      expect(screen.getByText(/not connected/)).toBeInTheDocument();
       expect(screen.queryByText('not_configured')).toBeNull();
-      const connects = screen.getAllByRole('button', { name: 'Connect' });
-      expect(connects).toHaveLength(1);
-      fireEvent.click(connects[0]);
+      const ask = screen.getAllByRole('link', { name: 'Ask' }).find((link) => link.closest('.v2-connector-row')?.classList.contains('v2-connector-row--not-enabled'));
+      expect(ask).toBeDefined();
+      expect(ask).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request');
+      expect(ask).toHaveClass('v2-connector-row__action--secondary');
+      expect(ask.closest('.v2-connector-row')).toHaveClass('v2-connector-row--not-enabled');
+      expect(ask.closest('.v2-connector-row')?.querySelector('.v2-connector-row__detail')).toHaveTextContent('ask your operator');
+      const choosePod = screen.getAllByRole('button', { name: 'Add' });
+      expect(choosePod).toHaveLength(1);
+      fireEvent.click(choosePod[0]);
       expect(screen.getByRole('button', { name: 'Telegram' })).toHaveClass('v2-connectors__provider--selected');
       expect(screen.queryByRole('button', { name: 'Slack' })).toBeNull();
       fireEvent.click(document.querySelector('.v2-connectors__create'));
@@ -475,6 +1144,106 @@ describe('V2ConnectorsPage', () => {
         { podId: 'p1' },
         expect.anything(),
       ));
+    });
+
+    // TASK-140: a not-enabled row has no connection at all, so its pod slot
+    // said `no pod` — false about a row whose blocker is the instance itself,
+    // and it reads as a missing pod rather than a disabled provider.
+    it('TASK-140: a not-enabled row names its blocker in the kicker, never "no pod"', async () => {
+      mockCatalog([
+        entry({ installableId: 'slack', label: 'Slack', available: false, unavailableReason: 'not_configured' }),
+        entry({
+          installableId: 'telegram',
+          label: 'Telegram',
+          available: true,
+          installation: { status: 'active', updatedAt: new Date().toISOString(), components: [] },
+          integration: liveIntegration({ _id: 'i-tg', installationId: 'install-telegram-u1', type: 'telegram' }),
+        }),
+      ]);
+      renderPage();
+
+      const ask = (await screen.findAllByRole('link', { name: 'Ask' }))
+        .find((link) => link.closest('.v2-connector-row')?.classList.contains('v2-connector-row--not-enabled'));
+      expect(ask).toBeDefined();
+      expect(ask?.closest('.v2-connector-row')?.querySelector('.v2-connector-row__kicker'))
+        .toHaveTextContent(/^not enabled$/);
+      expect(screen.queryByText('no pod')).toBeNull();
+
+      // Positive control: the row that DOES carry a connection still names its
+      // pod, so the assertion above cannot pass by every kicker reading alike.
+      const linked = (await screen.findAllByRole('button', { name: 'View Telegram' }))[0];
+      expect(linked.querySelector('.v2-connector-row__kicker')?.textContent).toMatch(/^Rewire Live Demo · /);
+    });
+
+    it('labels the row step separately from the final connect action', async () => {
+      mockCatalog([entry()]);
+      renderPage();
+
+      const choosePod = await screen.findByRole('button', { name: 'Add' });
+      expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+
+      fireEvent.click(choosePod);
+      expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
+    });
+
+    it('gives a zero-pod owner a path to create a pod before connecting', async () => {
+      axios.get.mockImplementation((url) => {
+        if (url === '/api/integrations/user/all') return Promise.resolve({ data: [] });
+        if (url === '/api/installables') return Promise.resolve({ data: { installables: [entry()] } });
+        if (url === '/api/pods') return Promise.resolve({ data: [] });
+        return Promise.resolve({ data: [] });
+      });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/connectors']}>
+            <Routes>
+              <Route path="/v2/connectors" element={<V2ConnectorsPage />} />
+              <Route path="/v2" element={<div>pods list</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+      expect(screen.queryByLabelText('Pod to bridge')).toBeNull();
+      expect(screen.queryByRole('group', { name: 'Channel provider' })).toBeNull();
+      expect(screen.getByText('No pod yet. Create one, then come back to connect a channel.')).toBeInTheDocument();
+      expect(screen.queryByText('Choose a channel and the pod it should join.')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Create a pod' }));
+      expect(await screen.findByText('pods list')).toBeInTheDocument();
+    });
+
+    it('keeps the existing picker visible while pod membership is still loading', async () => {
+      axios.get.mockImplementation((url) => {
+        if (url === '/api/integrations/user/all') return Promise.resolve({ data: [] });
+        if (url === '/api/installables') return Promise.resolve({ data: { installables: [entry()] } });
+        if (url === '/api/pods') return new Promise(() => {});
+        return Promise.resolve({ data: [] });
+      });
+      renderPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+      expect(screen.getByRole('group', { name: 'Channel provider' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+      expect(screen.queryByText('No pod yet. Create one, then come back to connect a channel.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Create a pod' })).toBeNull();
+    });
+
+    it('keeps the existing picker visible when pod membership cannot be read', async () => {
+      axios.get.mockImplementation((url) => {
+        if (url === '/api/integrations/user/all') return Promise.resolve({ data: [] });
+        if (url === '/api/installables') return Promise.resolve({ data: { installables: [entry()] } });
+        if (url === '/api/pods') return Promise.reject(new Error('pods unavailable'));
+        return Promise.resolve({ data: [] });
+      });
+      renderPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+      expect(screen.getByRole('group', { name: 'Channel provider' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+      expect(screen.queryByText('No pod yet. Create one, then come back to connect a channel.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Create a pod' })).toBeNull();
     });
 
     it('shows Setting up… without a control while the claim is fresh, and Cancel once it is stale', async () => {
@@ -497,13 +1266,23 @@ describe('V2ConnectorsPage', () => {
 
     it('offers Retry on an error parent, posting the bound pod, and Remove in the aside', async () => {
       mockCatalog([entry({
-        installation: { status: 'error', errorMessage: 'projection missing', boundPodId: 'p2', updatedAt: new Date().toISOString(), components: [] },
+        // The reconciler's own reason, and since TASK-131 it travels with the flag
+        // that says so: the row's line renders a message only when a writer
+        // declared it was written for a person.
+        installation: {
+          status: 'error',
+          errorMessage: REASON_CHANNEL_GONE,
+          errorMessageUserFacing: true,
+          boundPodId: 'p2',
+          updatedAt: new Date().toISOString(),
+          components: [],
+        },
       })]);
       axios.post.mockResolvedValue({ data: { status: 'installing' } });
       axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
       renderPage();
 
-      expect((await screen.findAllByText('projection missing')).length).toBeGreaterThan(0);
+      expect((await screen.findAllByText(REASON_CHANNEL_GONE)).length).toBeGreaterThan(0);
       expect(screen.getByText('retry, or remove it')).toBeInTheDocument();
       fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]);
       await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
@@ -538,7 +1317,7 @@ describe('V2ConnectorsPage', () => {
       renderPage();
 
       expect((await screen.findAllByText('Paused by an administrator. Spam report under review.')).length).toBeGreaterThan(0);
-      expect(screen.getByText('paused 2m ago')).toBeInTheDocument();
+      expect(screen.getByText(/paused 2m$/)).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
       expect(screen.queryByRole('checkbox', { name: 'Relay' })).toBeNull();
@@ -579,6 +1358,27 @@ describe('V2ConnectorsPage', () => {
       ));
     });
 
+    // TASK-164: the gate line was the last raw English relative time on this page —
+    // `since ${relativeTime(...)}` built its own sentence and no key could reach it.
+    it('the gate line reads in zh-CN, not English (TASK-164)', async () => {
+      mockCatalog([entry({
+        installableId: 'slack',
+        label: 'Slack',
+        installation: { status: 'active', updatedAt: new Date().toISOString(), components: [] },
+        integration: liveIntegration(),
+      })]);
+      await i18nReady;
+      await act(async () => { await i18n.changeLanguage('zh-CN'); });
+      try {
+        renderPage();
+        const line = await screen.findByText(/前起$/);
+        expect(line.textContent).toMatch(/^(刚刚|\d+(分钟|小时|天)前)起$/);
+        expect(screen.queryByText(/^since /)).toBeNull();
+      } finally {
+        await act(async () => { await i18n.changeLanguage('en'); });
+      }
+    });
+
     it('lists every pod with its gate, marks the active pod, and writes the whole gates map on a switch', async () => {
       mockCatalog([entry({
         installableId: 'slack',
@@ -591,6 +1391,13 @@ describe('V2ConnectorsPage', () => {
 
       expect(await screen.findByText('Rewire crew · linked to Rewire Live Demo')).toBeInTheDocument();
       expect(screen.getByText('Pods that reach this channel')).toBeInTheDocument();
+      // The anchors, measured rather than assumed (Vera's gate): the aside that
+      // holds that section is reachable by its ACCESSIBLE NAME and never as
+      // text. A copy that names it sends a sighted user hunting, which is the
+      // defect TASK-173 was opened for — so the distinction is witnessed here,
+      // where the aside renders, and the copy is checked against it above.
+      expect(screen.getByLabelText('Channel details')).toBeInTheDocument();
+      expect(screen.queryAllByText(/^Channel details$/)).toHaveLength(0);
       expect(screen.getByText('active')).toBeInTheDocument();
       expect(screen.getByText('off')).toBeInTheDocument();
       expect(screen.getByText(/^since /)).toBeInTheDocument();

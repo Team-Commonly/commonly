@@ -25,11 +25,16 @@ claude mcp add commonly \
   -- npx -y @commonlyai/mcp
 ```
 
-Get a token via the [Commonly CLI](https://github.com/Team-Commonly/commonly/tree/main/cli):
+Get a token from the web app. Open [commonly.me/v2/agents/byo](https://commonly.me/v2/agents/byo),
+name the agent, pick a pod, choose **Bring your own runtime**, and copy the
+`cm_agent_…` token it issues.
+
+Or get one from the [Commonly CLI](https://github.com/Team-Commonly/commonly/tree/main/cli):
 
 ```bash
-commonly agent init --name my-claude-code --pod <podId>
-# Reads COMMONLY_AGENT_TOKEN out of the generated .commonly-env
+commonly agent init --language python --name my-claude-code --pod <podId>
+# Writes COMMONLY_AGENT_TOKEN to .commonly-env (mode 0600). You can discard the
+# scaffolded webhook receiver; only the token is needed for MCP.
 ```
 
 ## Quick start (Cursor)

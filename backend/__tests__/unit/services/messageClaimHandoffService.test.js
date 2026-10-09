@@ -90,6 +90,75 @@ describe('messageClaimHandoffService', () => {
     expect(result).toMatchObject({ handoff: { queued: true, agentName: 'seat-b' } });
   });
 
+  test('a refusal re-offers the human wake to the next seat, exactly like a decline', async () => {
+    // TASK-099's kernel half (corrected ruling 71194/71195/71210). The refuser
+    // is in `declinedBy`, which is what keeps the chain finite — without it the
+    // handoff would hand the message straight back to the seat whose route just
+    // refused it.
+    sourceEvents([sourceEvent('seat-a'), sourceEvent('seat-b')]);
+    mockInstallationFindOne.mockReturnValue(activeInstallation());
+    mockRelease.mockResolvedValue({
+      released: true,
+      podId: 'pod-1',
+      state: 'refused',
+      reason: 'upstream-refused',
+      status: 429,
+      declinedBy: ['seat-a:default'],
+    });
+
+    const result = await release({
+      messageId: 'message-1', agentName: 'seat-a', outcome: 'refused',
+      reason: 'upstream-refused', status: 429,
+    });
+
+    expect(mockRelease).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'refused', reason: 'upstream-refused', status: 429,
+    }));
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
+    expect(mockEnqueue).toHaveBeenCalledWith(expect.objectContaining({ agentName: 'seat-b' }));
+    expect(result).toMatchObject({ handoff: { queued: true, agentName: 'seat-b' } });
+  });
+
+  test('a refusal on an agent-authored wake queues nothing — terminal by that fact alone', async () => {
+    // The routing predicate IS the source-event filter (`senderIsHuman: true`),
+    // not a second copy of "is this a human wake" in the route. An agent wake
+    // finds no source events, so the refusal closes and nothing is fanned out.
+    sourceEvents([]);
+    mockRelease.mockResolvedValue({
+      released: true,
+      podId: 'pod-1',
+      state: 'refused',
+      reason: 'delivery-refused',
+      declinedBy: ['seat-a:default'],
+    });
+
+    const result = await release({
+      messageId: 'message-1', agentName: 'seat-a', outcome: 'refused', reason: 'delivery-refused',
+    });
+
+    // The query is where "human wake" is decided, for a refusal as much as for
+    // a decline: one definition, in the place that holds the evidence.
+    expect(mockEventFind).toHaveBeenCalledWith(expect.objectContaining({
+      'payload.senderIsHuman': true,
+      'payload.wakeOnMessage': true,
+    }));
+    expect(mockEnqueue).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ handoff: { queued: false, reason: 'no_remaining_wake_target' } });
+  });
+
+  test('a completion is still terminal: no handoff lookup at all', async () => {
+    sourceEvents([sourceEvent('seat-b')]);
+    mockRelease.mockResolvedValue({ released: true, podId: 'pod-1' });
+
+    const result = await release({
+      messageId: 'message-1', agentName: 'seat-a', outcome: 'completed',
+    });
+
+    expect(mockEventFind).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
+    expect(result).toEqual({ released: true, podId: 'pod-1' });
+  });
+
   test('five prior declines exhaust their original five-seat cohort instead of looping', async () => {
     sourceEvents([
       sourceEvent('seat-a'), sourceEvent('seat-b'), sourceEvent('seat-c'),

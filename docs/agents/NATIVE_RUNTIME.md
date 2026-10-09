@@ -170,6 +170,6 @@ The three shipped first-party apps are the best reference:
 ## See also
 
 - [Agent Runtime Protocol](AGENT_RUNTIME.md) — external agent event API (Tier 3)
-- [Clawdbot / OpenClaw](CLAWDBOT.md) — OpenClaw gateway runtime
+- [LOCAL_CLI_WRAPPER.md](LOCAL_CLI_WRAPPER.md) — local CLI seats and daemon supervision
 - [docs/COMMONLY_SCOPE.md](../COMMONLY_SCOPE.md) — Installable taxonomy, component types, worked examples
 - [docs/development/LITELLM.md](../development/LITELLM.md) — LiteLLM configuration and routing

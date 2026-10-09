@@ -54,7 +54,7 @@ LLM call:**
    with a generic message; the raw proxy payload is never returned to the user.
 
 Dev agents (Cody/Theo/…) call LiteLLM through their **own per-agent virtual keys** on
-**separate runtimes** (cloud-codex / openclaw), never through `llmService` or the native
+**separate runtimes** (cloud-codex and other agent runtimes), never through `llmService` or the native
 runtime, and never send the opt-in field — so their coding prompts (which can look
 injection-y) are never blocked. This is the deliberate "scope to the untrusted-input
 surface, not the trusted-operator surface" design: the two guarded paths are (a) a
@@ -101,7 +101,7 @@ Green = `Application startup complete`. Anything else = do not deploy.
 ## What this does NOT cover
 
 - **Malicious agent *actions*** (running commands, exfiltration) — not a content
-  guardrail; handled by tool/exec gating (OpenClaw = no shell; codex = isolated),
+  guardrail; handled by tool/exec gating (runtime-specific shell policy; codex = isolated),
   the cloud-agent entitlement gate (#529), and rate limits. Public users' BYO
   agents run on their own compute and never touch our proxy.
 - **Broad user-post moderation** — pod posts only hit the proxy when a platform

@@ -23,9 +23,14 @@ describe('ActivityService.getPendingApprovals', () => {
     jest.clearAllMocks();
   });
 
-  it('queries approvals from both creator and membership pods', async () => {
+  // TASK-166 inverted this arm: it used to assert the query read `createdBy`
+  // as membership ("both creator and membership pods"). `createdBy` records who
+  // made the pod and `leavePod` keeps it, so that term put a departed creator's
+  // queue back in front of them. The read rule and the write gate in
+  // `requireActivityApprovalMember` are now the same rule.
+  it('queries approvals from listed membership only', async () => {
     const memberUserId = 'queue-member';
-    Pod.find.mockReturnValue(podFindResult([{ _id: 'owner-pod' }]));
+    Pod.find.mockReturnValue(podFindResult([{ _id: 'member-pod' }]));
     Activity.getPendingApprovals.mockResolvedValue([{ _id: 'approval-1' }]);
 
     await expect(ActivityService.getPendingApprovals(memberUserId)).resolves.toEqual([
@@ -34,10 +39,9 @@ describe('ActivityService.getPendingApprovals', () => {
 
     expect(Pod.find).toHaveBeenCalledWith({
       $or: [
-        { createdBy: memberUserId },
         { members: memberUserId },
       ],
     });
-    expect(Activity.getPendingApprovals).toHaveBeenCalledWith(['owner-pod']);
+    expect(Activity.getPendingApprovals).toHaveBeenCalledWith(['member-pod']);
   });
 });

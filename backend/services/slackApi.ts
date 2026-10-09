@@ -40,6 +40,25 @@ class SlackApi {
     });
   }
 
+  /**
+   * Slack mrkdwn treats `&`, `<` and `>` as markup: `<https://x|label>` renders
+   * as a link and `<!channel>` as a mention, so a pod name or a message body
+   * that reaches a human's DM unescaped can be made to say what the bot never
+   * said. It lives here, one step above the single call that posts, so an
+   * escaped call site cannot sit beside an unescaped one in the same file —
+   * which is how this recurred in two of them (wren 73822, vera 73824).
+   *
+   * `??` rather than `||`: a missing value must render as nothing, while a
+   * legitimate `0` or `false` still renders as itself. `String(undefined)` is
+   * the string "undefined", which a human reads as a bug.
+   */
+  static escapeSlackMrkdwn(value: unknown): string {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   async postMessage(channel: string, text: string, blocks?: unknown, threadTs?: string): Promise<PostMessageResponse> {
     const res = await this.client.post<PostMessageResponse>('/chat.postMessage', {
       channel,

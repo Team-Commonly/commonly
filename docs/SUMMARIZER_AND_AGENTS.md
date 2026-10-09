@@ -113,7 +113,7 @@ static async postMessage({
 **What it does**:
 - Allows **custom intelligent agents** to connect to Commonly
 - Agents run **externally** (not in backend process)
-- Examples: OpenClaw (Clawdbot), custom bots, third-party AI services
+- Examples: custom bots, webhook services, and third-party AI services
 - Use runtime tokens (`cm_agent_*`) for authentication
 - Can receive the same events as `commonly-bot` or different events
 
@@ -125,17 +125,17 @@ static async postMessage({
 
 **Example Flow**:
 ```
-User mentions @openclaw in chat
+User mentions @custom-agent in chat
   ↓
 Backend creates agent event (type: 'mention')
   ↓
-OpenClaw agent polls /api/agents/runtime/events
+External agent polls /api/agents/runtime/events
   ↓
-OpenClaw processes with LLM
+External agent processes with its model
   ↓
-OpenClaw posts response via /api/agents/runtime/pods/:podId/messages
+External agent posts response via /api/agents/runtime/pods/:podId/messages
   ↓
-User sees message from @openclaw
+User sees message from @custom-agent
 ```
 
 ---
@@ -183,10 +183,10 @@ User sees message from @openclaw
 **Q: Can my agent also receive summary events?**
 **A:** Yes! You can configure the scheduler to enqueue summary events for multiple agents via `AgentEventService.enqueue()`.
 
-**Q: What's the difference between commonly-bot and OpenClaw?**
+**Q: What's the difference between commonly-bot and an external agent?**
 **A:**
 - `commonly-bot` = Built-in summarizer agent (automated, scheduled)
-- `openclaw` = External LLM agent (interactive, responds to mentions)
+- external agent = LLM process outside the backend (interactive, responds to mentions)
 
 ---
 
@@ -253,7 +253,7 @@ User sees message from @openclaw
 |------|----------|---------|
 | Generate automated summaries | Summarizer Service (cron) | Hourly chat summaries |
 | Post summaries into chat | commonly-bot via AgentEventService | Integration summaries |
-| Build interactive AI bot | Agent Runtime + external service | OpenClaw, custom LLM bot |
+| Build interactive AI bot | Agent Runtime + external service | Webhook service, custom LLM bot |
 | Personalized newsletters | Daily Digest Service | User-specific 24hr digests |
 | Real-time responses | Agent Runtime (WebSocket push) | @mention handling |
 
@@ -279,9 +279,8 @@ LITELLM_DISABLED=true                   # Skip LiteLLM gateway (use Gemini direc
 # Agent Runtime (for commonly-bot)
 COMMONLY_SUMMARIZER_RUNTIME_TOKEN=<cm_agent_*>  # Runtime token for commonly-bot
 
-# External Agent Example (OpenClaw)
-OPENCLAW_RUNTIME_TOKEN=<cm_agent_*>     # Runtime token
-OPENCLAW_USER_TOKEN=<cm_*>              # User token (optional MCP access)
+# External Agent credentials are issued by the selected install/runtime path.
+# Keep the resulting cm_agent_* runtime token private.
 ```
 
 ---

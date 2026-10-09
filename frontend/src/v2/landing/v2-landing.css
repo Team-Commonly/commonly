@@ -1,8 +1,12 @@
 /* V2 landing — token-aligned, single accent, borders not shadows. A marketing
- * surface: the deep-navy proof/CTA bands and the one allowed soft shadow (on
- * floating screenshot cards) are the only departures from in-app chrome rules.
+ * surface: the one allowed soft shadow (on floating screenshot cards) is the
+ * only departure from in-app chrome rules — rows D and E took the navy out of
+ * the proof and the close, so both are panels and type on the page's own
+ * white.
  * Sentence case, no emoji in chrome, calm motion. Full-bleed bands; content
- * centered at 1120px via a max() padding trick.
+ * centered at 1312px via a max() padding trick (row A, TASK-192: the product
+ * frame and the demo inside it are the same 1312 wide, so the page and the
+ * product share one measure).
  */
 
 /* The landing is its own scroll container. .v2-root (the app shell) is
@@ -13,29 +17,61 @@
   height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
+  /* The scroller is the containing block for the absolutely-positioned
+     `.v2-demo__sr` inside the hero demo (TASK-167 row A, ux-lead's #2018 finding
+     9: without it that node resolves against the document and extends it — a
+     wheel-overscroll at the footer scrolled the WINDOW 401px on live, pushing the
+     bar off and showing blank grey). Nothing moves: measured at 1440 and 390. */
+  position: relative;
   background: var(--v2-bg, #ffffff);
   color: var(--v2-text-primary);
   font-family: var(--v2-font);
   -webkit-font-smoothing: antialiased;
-  scroll-behavior: smooth;
+  /* TASK-205: a first-click anchor landed the section short and then under the
+     bar. Two causes, one rule each.
+     scroll-padding-top here, on the SCROLLER rather than as scroll-margin on
+     each section, so hash navigation, scrollIntoView and keyboard focus all
+     inherit it — focus was landing under the bar too. 72 is the frosted bar
+     plus 40 of air; the phone block below drops it to 88 (64 + 24).
+     `scroll-behavior: smooth` used to sit here unconditionally, which beat the
+     no-preference block at the foot of this file (0,2,0 against 0,1,0) and so
+     animated the jump for visitors who had asked for reduced motion. Deleted
+     rather than overridden: smooth scrolling now has exactly one source, and a
+     reduced-motion visitor gets an instant jump. */
+  scroll-padding-top: 112px;
 }
 
 .v2-landing__bar,
 .v2-landing__hero,
+/* The product frame is OUTSIDE the band (row A, ux-lead's #2018 finding 1), and
+   it carries the page measure like every band does, so the demo does not drift
+   to the viewport edge once it stops being a child of the hero. */
+.v2-landing__hero-art,
 .v2-landing__trusted,
 .v2-landing__section,
 .v2-landing__wedge,
 .v2-landing__proof,
 .v2-landing__cta,
 .v2-landing__footer {
-  padding-left: max(24px, calc((100% - 1120px) / 2));
-  padding-right: max(24px, calc((100% - 1120px) / 2));
+  padding-left: max(24px, calc((100% - 1312px) / 2));
+  padding-right: max(24px, calc((100% - 1312px) / 2));
 }
 
 /* Suffix after the rotating term (zh: 「与你的___对话」). Same visual
    weight as the title; the space is handled by the margin, not the string. */
 .v2-landing__title-suffix {
   margin-left: 0.18em;
+  /* TASK-211: the zh hero is 「与你的___对话」, so this suffix is a word the
+     reader has to see whole. At 390 with the "Claude Code" term the two
+     characters straddled the wrap: the h1's content box ran 24 → 366, so 对
+     fitted (348.5, i.e. 17.5px inside the right edge) and it was 话 — 44.3px
+     wide, which would have ended at 392.8, 26.8px past it — that sat alone on
+     line 3. nowrap makes the suffix one unbreakable
+     unit: it moves to the next line as a pair instead of splitting. Measured
+     live at 390 (44px/46px) and again at 320, where the 整个团队 term split it
+     the same way. en ships an empty suffix and renders no span, so this is
+     zh-only and cannot move the English hero. */
+  white-space: nowrap;
 }
 
 /* ---------- Top bar (sticky) ---------- */
@@ -46,28 +82,64 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 64px;
+  height: 72px;
   background: rgba(255, 255, 255, 0.86);
   backdrop-filter: saturate(180%) blur(12px);
   border-bottom: 1px solid var(--v2-border-soft);
 }
+/* One element, two states. While the cobalt band is under the bar the bar is
+   cobalt too — #1d3fd1, a white hairline, no blur — so the band reads as one
+   block from the top of the page; past the band's bottom edge it is the white
+   bar above. The class is set once by an IntersectionObserver on the band (see
+   V2LandingPage), and the class starts ON so first paint is the band state and
+   there is no white flash before the observer runs. */
+.v2-landing__bar--band {
+  background: #1d3fd1;
+  backdrop-filter: none;
+  border-bottom-color: rgba(255, 255, 255, 0.22);
+}
 .v2-landing__brand { display: flex; align-items: center; gap: 8px; }
-.v2-landing__mark { display: inline-flex; color: var(--v2-accent); }
+/* Wordmark only — the band carries no glyph mark, and the board sets the name
+   in the display face at 24. */
 .v2-landing__brand-name {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   color: var(--v2-text-primary);
 }
-.v2-landing__nav { display: flex; align-items: center; gap: 22px; }
+.v2-landing__nav { display: flex; align-items: center; gap: 28px; }
 .v2-landing__navlink {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--v2-text-secondary);
   text-decoration: none;
   transition: color 80ms ease;
 }
 .v2-landing__navlink:hover { color: var(--v2-text-primary); }
+.v2-landing__bar--band .v2-landing__brand-name { color: #ffffff; }
+.v2-landing__bar--band .v2-landing__navlink { color: rgba(255, 255, 255, 0.86); }
+.v2-landing__bar--band .v2-landing__navlink:hover { color: #ffffff; }
+/* The language trigger is a <button> owned by v2.css (.v2-lang-switch__trigger,
+   (0,1,0)) and already re-pinned at the rail by a (0,2,0) override in the
+   layout invariants. The band override has to outrank both, so it carries the
+   same .v2-root prefix plus the band class. The dropdown menu keeps v2.css. */
+.v2-root .v2-landing__bar--band button.v2-lang-switch__trigger { color: #ffffff; }
+.v2-root .v2-landing__bar--band button.v2-lang-switch__trigger:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+/* Bar CTA: 40 tall in both states (the board's own height), white with cobalt
+   text while the band is under it. */
+.v2-landing__bar .v2-landing__btn--sm { height: 40px; padding: 0 16px; font-size: 15px; font-weight: 600; }
+.v2-root .v2-landing__bar--band .v2-landing__btn--primary {
+  color: #1d3fd1;
+  background: #ffffff;
+  border-color: #ffffff;
+}
+.v2-root .v2-landing__bar--band .v2-landing__btn--primary:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.9);
+}
 
 /* ---------- Buttons (anchors / links — not affected by the v2 <button> reset) ---------- */
 .v2-landing__btn {
@@ -85,7 +157,6 @@
   transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
 }
 .v2-landing__btn--sm { height: 36px; padding: 0 16px; font-size: 14px; }
-.v2-landing__btn-mark { display: inline-flex; }
 .v2-landing__btn--primary {
   color: #ffffff;
   background: var(--v2-accent);
@@ -107,7 +178,7 @@
 .v2-landing__btn--onaccent-ghost {
   color: #ffffff;
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 .v2-landing__btn--onaccent-ghost:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.7); }
 
@@ -122,39 +193,85 @@
 .v2-root .v2-landing__btn--onaccent-ghost { color: #ffffff; }
 
 .v2-landing__cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+/* The hero's two CTAs are one group and the install box follows them in the
+   same wrap row, so at 1440 and 1200 all three sit inline (~1,099 of 1,152 at
+   1200) and anywhere narrower the box takes its own row — the 390 board draws
+   both states. */
+.v2-landing__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 22px 24px;
+  margin-top: 10px;
+}
+.v2-landing__hero-actions .v2-landing__cta-row { margin-top: 0; }
+.v2-landing__hero-actions .v2-landing__btn,
+.v2-landing__cta .v2-landing__btn { height: 56px; font-size: 17px; }
+/* White on cobalt, not cobalt on cobalt (ux-lead's #2018 finding 2: the primary
+   fill IS the band's colour, so the button had no shape). Self-host is the
+   outlined sibling of the same pair, so the two rules move together. The CTA
+   band's own button sits on the page's white and keeps --primary. */
+.v2-landing__hero-actions .v2-landing__btn--onaccent,
+.v2-landing__cta .v2-landing__btn--primary { padding: 0 26px; font-weight: 700; }
+.v2-landing__hero-actions .v2-landing__btn--onaccent-ghost,
+.v2-landing__cta .v2-landing__btn--ghost { padding: 0 22px; }
 
-/* ---------- Hero ---------- */
+/* ---------- Hero ----------
+/* Copy above, the product below. The hero demo (TASK-147) is the real thing
+   at 1312 itself, so it needs the full content column rather than the old
+   two-column split with a screenshot beside the copy. */
+/* The band. Cobalt as a BLOCK on the front door (signal-identity rule 1) rather
+   than as an accent: the whole hero is the colour, and everything inside it is
+   white at one of four opacities. The band's own box ends 376 below the last
+   control and the demo pulls back up by 360 of that, so the frame sits half on
+   the band (board: band 920 tall, demo starting at 560) and the 16 left over is
+   the gap the caption occupies. */
 .v2-landing__hero {
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
-  gap: 56px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  /* No grid gap: the art column's -360 pull-up has to be measured from the
+     band's own bottom padding, and a row gap here would add to it silently. */
+  gap: 0;
+  align-items: start;
   padding-top: 72px;
-  padding-bottom: 72px;
+  padding-bottom: 376px;
+  background: #1d3fd1;
+  color: #ffffff;
+}
+/* No width cap here: the copy column and the actions row share this box, and a
+   1000px cap wrapped the install box onto its own line at 1440 and 1200
+   (ux-lead's #2018 finding 3 — 288 + 24 + 784 = 1096). The 1000 is on the title
+   and the 780 on the lede, which is what the board caps. */
+.v2-landing__hero-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 .v2-landing__eyebrow {
+  font-family: var(--v2-font-mono);
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--v2-accent);
-  margin-bottom: 16px;
+  color: rgba(255, 255, 255, 0.72);
+  margin-bottom: 0;
 }
 .v2-landing__title {
   margin: 0;
+  max-width: 1000px;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: clamp(34px, 4.4vw, 50px);
-  line-height: 1.06;
+  font-size: clamp(44px, 7vw, 84px);
+  line-height: 1;
   font-weight: 850;
   letter-spacing: -0.03em;
-  color: var(--v2-text-primary);
+  color: #ffffff;
 }
 .v2-landing__lede {
-  margin: 20px 0 0;
-  max-width: 560px;
-  font-size: 18px;
-  line-height: 1.5;
-  color: var(--v2-text-secondary);
+  margin: 0;
+  max-width: 780px;
+  font-size: 20px;
+  line-height: 32px;
+  color: rgba(255, 255, 255, 0.88);
 }
 .v2-landing__inline-code {
   font-family: var(--v2-font-mono);
@@ -182,66 +299,147 @@
 }
 .v2-landing__badge svg { font-size: 16px; color: var(--v2-accent); }
 
-/* Hero install line */
+/* Hero install line. The horizontal scroll lives on the inner wrapper, not the
+   box, so the Copy control beside it stays visible at every width and scroll
+   position — at 390 the box is 340 wide against a 721 command, so only 37 of 86
+   characters show and `cd commonly && ./install.sh` is entirely off-screen
+   (TASK-154, measured by ux-lead on the live hero). */
 .v2-landing__install {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 24px;
-  padding: 12px 16px;
-  background: var(--v2-surface-tint);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius);
+  margin-top: 0;
+  padding: 8px 16px;
+  /* The line stays 46px tall: the copy pill is taller than the command text, so
+     its height comes out of this padding, and min-height pins the box against a
+     future pill/line-height change rather than letting the row grow. */
+  min-height: 46px;
+  /* On the band the box is a transparent outline: the tint surface and the
+     accent prompt both vanish against cobalt, which is the disappearances the
+     board avoids by drawing the prompt and the command in text white. The
+     pinned 8px 16px padding and 46 min-height win over the board's 10 12. */
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+.v2-landing__install-scroll {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
 }
-.v2-landing__install-prompt { color: var(--v2-accent); font-family: var(--v2-font-mono); font-weight: 700; }
+.v2-landing__install-prompt { color: rgba(255, 255, 255, 0.72); font-family: var(--v2-font-mono); font-weight: 700; }
 .v2-landing__install-cmd {
   font-family: var(--v2-font-mono);
   font-size: 13px;
-  color: var(--v2-text-primary);
+  color: rgba(255, 255, 255, 0.72);
   white-space: nowrap;
 }
-.v2-landing__hero-by { margin-top: 20px; font-size: 13px; color: var(--v2-text-tertiary); }
-.v2-landing__hero-by a { color: var(--v2-accent); text-decoration: none; }
-.v2-landing__hero-by a:hover { text-decoration: underline; }
-
-.v2-landing__hero-art { display: flex; justify-content: center; min-width: 0; max-width: 100%; }
+/* The BYO add-computer pill (.v2-byo__copy), restated under this surface's own
+   name: the two are styled separately even though the shape is the same.
+   Qualified as `.v2-root button.` exactly as .v2-byo__copy is, because the v2
+   button reset (`.v2-root button:not(.MuiButtonBase-root)`, v2.css:201) is
+   (0,2,1) and clears padding, border, background and colour: unqualified, this
+   rule is (0,1,0) and lost all four, so the pill computed as bare 27×18 text
+   with a 27×44 phone target (ux-lead's design gate on #1868; a scratch build
+   then measured the pill at 49.1×28, zh 46.5×28, and the target at 47.1×44).
+   Same tier as the reset, and this sheet loads after v2.css — the landing page
+   is a lazy route, so its chunk's CSS follows the shell's. */
+.v2-root button.v2-landing__install-copy {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #ffffff;
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+.v2-root button.v2-landing__install-copy:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+.v2-root button.v2-landing__install-copy:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+/* The Copied state is announced by a live region, not read from the button's own
+   label swap, so it is out of flow and silent to sighted users. It carries the
+   whole visually-hidden pattern including `clip-path`, because it is the member
+   the wedge copy's required set is DERIVED from — a declaration missing here is
+   a declaration nothing requires of the copy (TASK-218). */
+.v2-landing__install-status {
+  color: #ffffff;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+/* The demo is half on the band: this column is the band's NEXT SIBLING and
+   pulls up 360 of the band's 376 bottom padding (board line 45), so the frame's
+   top third is cobalt and the pull-up is measured from the band's bottom edge
+   rather than from the last control inside it (ux-lead's #2018 finding 1: as a
+   child of the band, -360 measured from the last control and laid the demo over
+   the title, both CTAs and the install box). Its 94 below the frame is now the
+   strip's own `margin-top`: on the board that gap is the frame container's 456
+   minus the 360 pull-up, on the page's white, and dropping the strip's grey is
+   row B's own edit to this rule (measured: row B's first CSS hunk inserts
+   inside `.v2-landing__trusted`), so the gap and the grey moved together there
+   rather than being split across two rows. It is a MARGIN because as top
+   padding the gap fell inside the strip's top hairline and the hairline sat on
+   the frame's bottom edge (ux-lead's #2019 finding 1). */
+.v2-landing__hero-art {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: -360px;
+}
 
 /* Overflow guard: grid/flex children default to min-width:auto, so the hero's
    nowrap install line (and the wide screenshot) can force the column past the
    viewport — the root's overflow-x:hidden then CLIPS the hero text + caption on
    mobile. min-width:0 lets the column shrink so the install line scrolls inside
    its own overflow-x:auto instead of blowing out the page width. */
-.v2-landing__hero > * { min-width: 0; }
+.v2-landing__hero > *,
+.v2-landing__hero-art,
+.v2-landing__hero-art > * { min-width: 0; }
 .v2-landing__shot,
 .v2-landing__shot-frame { max-width: 100%; }
 
-/* ---------- Screenshot card (the one allowed shadow — floating UI) ---------- */
+/* ---------- Screenshot card: flat like every other card (1px border, radius 6) ---------- */
 .v2-landing__shot { display: block; width: 100%; margin: 0; }
 .v2-landing__shot-frame {
   background: var(--v2-surface);
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
-  box-shadow: 0 16px 40px rgba(17, 24, 39, 0.10);
   overflow: hidden;
 }
-.v2-landing__shot-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  background: var(--v2-surface-tint);
-  border-bottom: 1px solid var(--v2-border-soft);
-}
-.v2-landing__shot-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--v2-border-strong); }
 .v2-landing__shot-img { display: block; width: 100%; height: auto; }
-.v2-landing__shot-cap {
-  margin: 12px 4px 0;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--v2-text-tertiary);
-  text-align: center;
+/* `.v2-landing__shot-cap` lived here until row A's rework: the caption left the
+   figure for the band (finding 1), so nothing rendered it. */
+/* The demo's caption is the band's LAST child and sits ABOVE the frame — 44
+   below the last control (28 at ≤760), with no bottom margin. The 16 above the
+   frame is the band's leftover padding (376 − 360), not this box's own margin,
+   which is why the caption has to stay inside the band while the frame leaves
+   it. A sentence, so not mono. */
+.v2-landing__demo-cap {
+  margin: 44px 0 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: #ffffff;
+  text-align: left;
 }
 
 /* ---------- Affiliation proof strip ---------- */
@@ -251,18 +449,39 @@
   align-items: center;
   justify-content: center;
   gap: 14px;
-  padding-top: 22px;
-  padding-bottom: 22px;
-  background: var(--v2-bg-subtle);
+  /* 94 below the demo frame (48 at ≤760) — the strip is the first thing after
+     the band, so this is the band-to-strip distance the board draws. A MARGIN,
+     not padding: inside the border it was a gap the hairline could not straddle,
+     so the hairline sat on the frame's bottom edge (0 px) and the box measured
+     178 where the board draws 132 (ux-lead's #2019 finding 1, measured on a
+     production build of row B at 1440/1200/760/390). Outside the border the gap
+     is the gap and the 132 min-height is the box — 94 / 132 / 36 / 36 at 1440
+     and 1200, 48 / 132 / 36 / 36 at 760, 48 / 110 / 28 / 28 at 390. It is also
+     why the ≤680 `padding: 24px 0` below can no longer eat the 48. Row B owns
+     this rule and drops the grey here. */
+  margin-top: 94px;
+  /* 22 above and below, and a floor rather than the board's spacing: with the
+     min-height and `justify-content: center` doing the centring, this is what
+     the reduced-motion wrap falls back to when the logos need a second line. */
+  padding: 22px 0;
+  min-height: 132px;
+  /* No fill: the board draws the strip on the page background and frames it
+     with two hairlines instead. The tint fill was what made it read as a card. */
+  border-top: 1px solid var(--v2-border-soft);
+  border-bottom: 1px solid var(--v2-border-soft);
   color: var(--v2-text-tertiary);
   text-align: center;
 }
 
+/* Mono, like every other label on the page (signal-identity §1 rule 3: a label
+   is mono, a sentence is Plex). */
 .v2-landing__trusted-label {
   flex: 0 0 auto;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--v2-text-muted);
 }
@@ -314,11 +533,33 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* No `flex-wrap` on the track. It wrapped nothing — the track's only visible
+     child is one nowrap set — and it was the declaration that satisfied the old
+     substring pin (`toContain('flex-wrap: wrap')`) while 3 / 4 / 7 / 8 of the 11
+     logos clipped. The wrap belongs to the child that overflows, below; the test
+     asserts this rule does NOT carry it. */
   .v2-landing__trusted-track {
     animation: none;
     width: auto;
+    justify-content: center;
+  }
+  /* The SET is the element that has to wrap. Putting `flex-wrap` on the track
+     alone was the whole fix until row B, and it wrapped nothing: the track's
+     only visible child is one nowrap set, so the set ran past the marquee's
+     `overflow: hidden` and clipped 3 / 4 / 7 / 8 of the 11 logos at 1440 / 1200 /
+     760 / 390 (ux-lead's #2019 non-blocking finding). Two classes deliberately:
+     the ≤680 `.v2-landing__trusted-set` rule below is a one-class selector
+     declared later in the sheet and would win a specificity tie. The mask comes
+     off with it — at 390 its fade is 31px wide and would eat the first logo. */
+  .v2-landing__trusted-marquee .v2-landing__trusted-set {
     flex-wrap: wrap;
     justify-content: center;
+    row-gap: 12px;
+    padding: 0 24px;
+  }
+  .v2-landing__trusted-marquee {
+    -webkit-mask-image: none;
+    mask-image: none;
   }
   /* Without motion the duplicate set is pure noise — hide it. */
   .v2-landing__trusted-set[aria-hidden='true'] {
@@ -331,17 +572,24 @@
 .v2-landing__features {
   display: flex;
   flex-direction: column;
-  gap: 72px;
+  gap: 96px;
 }
 
+/* 762 + 64 + 486 is the whole 1312 measure, so the row fills it exactly instead
+   of leaving a remainder that lands on whichever column the browser rounds
+   down. `minmax(0, …)` on both sides is load-bearing: `fr` alone has an
+   automatic minimum of `auto`, so a wide screenshot in the media column would
+   push the copy narrower rather than letting the image shrink. */
 .v2-landing__feature-row {
   display: grid;
-  grid-template-columns: 1.15fr 1fr;
-  gap: 48px;
+  grid-template-columns: minmax(0, 762fr) minmax(0, 486fr);
+  gap: 64px;
   align-items: center;
 }
 
-/* Alternate sides: even rows put the copy first. */
+/* Alternate sides: even rows put the copy first, and mirror the columns so the
+   shot keeps the wide one (Landing.dc.html rows 2 and 4). */
+.v2-landing__feature-row:nth-child(even) { grid-template-columns: minmax(0, 486fr) minmax(0, 762fr); }
 .v2-landing__feature-row:nth-child(even) .v2-landing__feature-media { order: 2; }
 .v2-landing__feature-row:nth-child(even) .v2-landing__feature-copy { order: 1; }
 
@@ -351,20 +599,43 @@
   height: auto;
 }
 
+/* The copy column owns its spacing: `gap` on the column replaces the UA margins
+   on <p>/<h3>/<ul> plus the per-element margins the old stacked layout needed,
+   so the four blocks sit 16 apart rather than 16 plus whatever each element
+   happens to carry. */
+.v2-landing__feature-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.v2-landing__feature-copy .v2-landing__kicker,
+.v2-landing__feature-copy .v2-landing__feature-title,
+.v2-landing__feature-copy .v2-landing__feature-text,
+.v2-landing__feature-copy .v2-landing__feature-points { margin: 0; }
+
+/* 4 on top of the column's 16, so the list sits 20 below the paragraph and 4
+   further from it than the kicker and the title sit from the text. */
+.v2-landing__feature-copy .v2-landing__feature-points { margin-top: 4px; }
+
+/* `--font-display` was never defined, so these titles fell back to Plex while
+   the wedge and the h2 beside them were set in the display face. */
 .v2-landing__feature-title {
   margin: 10px 0 12px;
-  font-family: var(--font-display, inherit);
-  font-size: 26px;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 36px;
+  line-height: 40px;
   font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  color: var(--v2-text-primary);
 }
 
 .v2-landing__feature-text {
-  margin: 0 0 16px;
-  font-size: 15px;
-  line-height: 1.65;
-  color: #4b5563;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--v2-text-secondary);
 }
 
 .v2-landing__feature-points {
@@ -373,435 +644,708 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
+/* The mark is a flex item rather than an absolutely-positioned glyph: a square
+   has no baseline, so `align-items: center` on the row is what holds it against
+   a two-line point. */
 .v2-landing__feature-points li {
-  position: relative;
-  padding-left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-left: 0;
   font-size: 14px;
-  color: #111827;
+  line-height: 20px;
+  color: var(--v2-text-primary);
 }
 
 .v2-landing__feature-points li::before {
-  content: '✓';
-  position: absolute;
-  left: 0;
-  color: #2f6feb;
-  font-weight: 700;
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background: var(--v2-text-primary);
 }
 
 /* ---------- Wedge band ---------- */
+/* No rules of its own: the trusted strip above it now carries the hairline, and
+   keeping these drew the same line twice, 80px apart. Left-aligned like every
+   other section — the centered band was the last of the old page's shapes. */
 .v2-landing__wedge {
-  padding-top: 56px;
-  padding-bottom: 56px;
-  text-align: center;
-  border-top: 1px solid var(--v2-border-soft);
-  border-bottom: 1px solid var(--v2-border-soft);
+  padding-top: 80px;
+  padding-bottom: 80px;
 }
 .v2-landing__wedge-line {
-  margin: 0 auto;
-  max-width: 820px;
+  margin: 0;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: clamp(24px, 3vw, 34px);
-  line-height: 1.18;
-  font-weight: 750;
-  letter-spacing: -0.02em;
+  font-size: 56px;
+  line-height: 58px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   color: var(--v2-text-primary);
 }
+/* The wedge line's sentence, for the accessibility tree only. It is content
+   rather than a name: ARIA prohibits naming role=paragraph, and every word of
+   this line is aria-hidden, so an `aria-label` was the sentence's ONLY exposure
+   — Chromium computes that name (measured on live `9ac94e95`, en and zh) while
+   a conforming consumer need not, which makes the sentence's reach a property
+   of the browser. As a text node it is read by every consumer (TASK-216).
+   Declared in full rather than by inheritance: the visually-hidden family is
+   discovered by declaration shape, not by name, so the copy that drops one is
+   the one nobody notices (TASK-199's finding, one host over). */
+.v2-landing__wedge-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 .v2-landing__wedge-sub {
-  margin: 16px auto 0;
-  max-width: 680px;
-  font-size: 16px;
-  line-height: 1.5;
+  margin: 22px 0 0;
+  max-width: 900px;
+  font-size: 20px;
+  line-height: 32px;
   color: var(--v2-text-secondary);
 }
 
 /* ---------- Sections ---------- */
-.v2-landing__section { padding-top: 72px; padding-bottom: 72px; }
-.v2-landing__section--tint { background: var(--v2-bg-subtle); }
-.v2-landing__section-head { max-width: 1120px; margin: 0 auto 32px; }
+/* The rhythm is bottom-only: each section carries the 120 that separates it from
+   the next one, so the gap belongs to the section above rather than being split
+   across two top paddings that can drift. */
+.v2-landing__section { padding-top: 0; padding-bottom: 120px; }
+.v2-landing__section-head { max-width: 1312px; margin: 0 auto 56px; }
+/* The features head is the exception: the board draws it 40 above the rows, and
+   at a phone width the section's 24 top padding plus the wedge's 24 below is the
+   48 the board draws. */
+.v2-landing__section--features .v2-landing__section-head { margin-bottom: 40px; }
 .v2-landing__kicker {
+  font-family: var(--v2-font-mono);
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--v2-accent);
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
-.v2-landing__kicker--light { color: rgba(255, 255, 255, 0.6); }
 .v2-landing__h2 {
   margin: 0;
+  max-width: 900px;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 30px;
-  line-height: 1.15;
-  font-weight: 750;
-  letter-spacing: -0.025em;
+  font-size: 44px;
+  line-height: 48px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
   color: var(--v2-text-primary);
 }
+/* The section head's sub, shared by architecture and pricing: the board's
+   lede scale, and the head's own gap supplies the 12 above it. */
 .v2-landing__sub {
-  margin: 12px 0 0;
-  max-width: 620px;
-  font-size: 16px;
-  line-height: 1.5;
+  margin: 20px 0 0;
+  max-width: 900px;
+  font-size: 20px;
+  line-height: 32px;
   color: var(--v2-text-secondary);
 }
 
-/* How-it-works steps */
-.v2-landing__steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+/* How-it-works steps. The card treatment is gone: on the board a step is a
+   number and a copy column, so the 28px track is the number's own width and
+   the grid is what holds them apart. */
+.v2-landing__steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 64px; margin-bottom: 56px; }
 .v2-landing__step {
-  padding: 22px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: baseline;
 }
+.v2-landing__step-copy { display: flex; flex-direction: column; gap: 10px; }
 .v2-landing__step-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--v2-radius-pill);
-  background: var(--v2-accent-soft);
+  margin: 0;
+  font-family: var(--v2-font-mono);
+  font-size: 13px;
+  font-weight: 500;
   color: var(--v2-accent);
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 14px;
 }
-.v2-landing__step-title { font-size: 16px; font-weight: 700; color: var(--v2-text-primary); margin-bottom: 8px; }
-.v2-landing__step-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--v2-text-secondary); }
+.v2-landing__step-title {
+  margin: 0;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 24px;
+  line-height: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  color: var(--v2-text-primary);
+}
+.v2-landing__step-text { margin: 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
 
-/* Adapters */
-.v2-landing__adapters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+/* Adapters. A hairline above the row replaces the three cards; the ink blocks
+   below each label are what the board draws. */
+.v2-landing__adapters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  border-top: 1px solid var(--v2-border-soft);
+  padding-top: 56px;
+}
 .v2-landing__adapter {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 18px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
 }
-.v2-landing__adapter-title { font-size: 15px; font-weight: 700; color: var(--v2-text-primary); }
-.v2-landing__adapter-sub { margin: 4px 0 12px; font-size: 13px; color: var(--v2-text-secondary); }
-.v2-landing__code {
-  margin: auto 0 0;
-  padding: 12px;
-  background: var(--v2-surface-tint);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius);
-  font-family: var(--v2-font-mono);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--v2-text-primary);
-  overflow-x: auto;
-  white-space: pre;
-}
-
-/* Why open-source */
-.v2-landing__open-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
-.v2-landing__open-lede { margin: 16px 0 24px; font-size: 17px; line-height: 1.5; color: var(--v2-text-secondary); }
-.v2-landing__open .v2-landing__cta-row { margin-top: 0; }
-.v2-landing__open-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
-.v2-landing__open-item { display: flex; gap: 12px; font-size: 15px; line-height: 1.5; color: var(--v2-text-secondary); }
-.v2-landing__open-item strong { color: var(--v2-text-primary); font-weight: 650; }
-.v2-landing__open-ic {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--v2-radius);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent);
-  font-size: 20px;
-}
-
-/* Value cards */
-.v2-landing__cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-.v2-landing__card {
-  padding: 22px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
-}
-.v2-landing__card-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--v2-radius);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent);
-  font-size: 22px;
-  margin-bottom: 14px;
-}
-.v2-landing__card-title { font-size: 16px; font-weight: 700; color: var(--v2-text-primary); margin-bottom: 8px; }
-.v2-landing__card-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--v2-text-secondary); }
-
-/* Use cases */
-.v2-landing__usecases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.v2-landing__usecase {
-  display: block;
-  padding: 20px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
-  text-decoration: none;
-  transition: border-color 120ms ease, background 120ms ease;
-}
-.v2-landing__usecase:hover { border-color: var(--v2-border-strong); background: var(--v2-surface-hover); }
-.v2-landing__usecase-title { font-size: 16px; font-weight: 700; color: var(--v2-text-primary); margin-bottom: 6px; }
-.v2-landing__usecase-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--v2-text-secondary); }
-
-/* 3-tile architecture */
-.v2-landing__tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.v2-landing__tile {
-  padding: 22px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
-}
-.v2-landing__tile-num {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--v2-accent);
-  margin-bottom: 12px;
-}
-.v2-landing__tile-title { font-size: 17px; font-weight: 700; color: var(--v2-text-primary); margin-bottom: 8px; }
-.v2-landing__tile-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--v2-text-secondary); }
-
-/* ---------- Built-by-agents proof band (deep navy) ---------- */
-.v2-landing__proof {
-  background: var(--v2-accent-deep);
-  padding-top: 64px;
-  padding-bottom: 64px;
-}
-.v2-landing__proof-inner { max-width: 820px; margin: 0 auto; text-align: center; }
-.v2-landing__proof-title {
+.v2-landing__adapter-title {
   margin: 0;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 30px;
-  line-height: 1.18;
-  font-weight: 750;
-  letter-spacing: -0.02em;
-  color: #ffffff;
-}
-.v2-landing__proof-sub {
-  margin: 14px auto 0;
-  max-width: 640px;
-  font-size: 16px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.8);
-}
-.v2-landing__proof-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 48px; margin-top: 36px; }
-.v2-landing__proof-stat { display: flex; flex-direction: column; gap: 2px; }
-.v2-landing__proof-num { font-size: 30px; font-weight: 750; letter-spacing: -0.02em; color: #ffffff; }
-.v2-landing__proof-label { font-size: 13px; color: rgba(255, 255, 255, 0.7); }
-
-/* ---------- Pricing ---------- */
-.v2-landing__price { max-width: 1120px; margin: 0 auto; }
-.v2-landing__price-card {
-  max-width: 560px;
-  margin: 0 auto;
-  padding: 32px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  text-align: center;
-}
-.v2-landing__price-tag {
-  font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 48px;
-  font-weight: 850;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--v2-text-primary);
 }
-.v2-landing__price-text { margin: 8px auto 20px; max-width: 460px; font-size: 16px; line-height: 1.5; color: var(--v2-text-secondary); }
-.v2-landing__price-list { list-style: none; margin: 0 auto 24px; padding: 0; max-width: 420px; text-align: left; display: flex; flex-direction: column; gap: 10px; }
-.v2-landing__price-list li { display: flex; align-items: center; font-size: 14px; color: var(--v2-text-secondary); }
+.v2-landing__adapter-sub { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--v2-text-secondary); }
+.v2-landing__code {
+  /* 1 1 auto, not auto 0 0: the three blocks sit on one line and must share a
+     height, so the tallest command is what the row agrees on. */
+  margin: 12px 0 0;
+  flex: 1 1 auto;
+  padding: 16px 18px;
+  background: var(--v2-text-primary);
+  border: none;
+  border-radius: 4px;
+  font-family: var(--v2-font-mono);
+  font-size: 14px;
+  line-height: 22px;
+  color: #ffffff;
+  overflow-x: auto;
+  white-space: pre;
+}
+.v2-landing__code-comment { color: #98a2b3; }
+
+/* Why open-source */
+.v2-landing__open-grid { display: grid; grid-template-columns: minmax(0, 608fr) minmax(0, 640fr); gap: 64px; align-items: start; }
+.v2-landing__open-lede { margin: 20px 0 0; font-size: 20px; line-height: 32px; color: var(--v2-text-secondary); }
+.v2-landing__open .v2-landing__cta-row { margin-top: 24px; }
+/* This section's own button is the bordered one: row A's hero owns the page's
+   fill, and row D's Pro tier takes the one cobalt button. */
+.v2-landing__open .v2-landing__btn { height: 48px; padding: 0 20px; font-size: 16px; font-weight: 600; }
+/* One bordered list, rows divided by hairlines, with the corners on the frame
+   so a hovered row cannot paint outside the radius. */
+.v2-landing__open-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+}
+.v2-landing__open-item { display: block; padding: 20px 24px; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
+.v2-landing__open-item + .v2-landing__open-item { border-top: 1px solid var(--v2-border-soft); }
+.v2-landing__open-item strong {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
+}
+
+/* Value cards */
+.v2-landing__cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.v2-landing__card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 28px 32px;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+}
+.v2-landing__card-title {
+  margin: 0;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 24px;
+  line-height: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
+}
+.v2-landing__card-text { margin: 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
+
+/* Use cases: one bordered list, a row per case, price-list-shaped. The frame
+   carries the radius and clips the hover fill, so a row's own corners never
+   round. */
+.v2-landing__usecases {
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  overflow: hidden;
+}
+.v2-landing__usecase {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr) 16px;
+  grid-template-areas: 'title text arrow';
+  gap: 32px;
+  align-items: baseline;
+  padding: 22px 28px;
+  text-decoration: none;
+  transition: background 120ms ease;
+}
+.v2-landing__usecase + .v2-landing__usecase { border-top: 1px solid var(--v2-border-soft); }
+.v2-landing__usecase:hover { background: var(--v2-surface-hover); }
+/* v2.css's focus ring is an OUTER box-shadow, which the frame's overflow:hidden
+   clips — the ring would simply not appear on these rows. The inset form draws
+   it inside the row; (0,3,0) outranks the shared (0,2,1) `.v2-root a` rule. */
+.v2-root .v2-landing__usecase:focus-visible { box-shadow: inset var(--v2-focus-ring); }
+.v2-landing__usecase-title {
+  grid-area: title;
+  margin: 0;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
+}
+.v2-landing__usecase-text { grid-area: text; margin: 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
+.v2-landing__usecase-arrow { grid-area: arrow; align-self: center; display: block; color: var(--v2-text-tertiary); }
+
+/* Architecture: shell over kernel over drivers, drawn as one bordered stack.
+   A layer is not a step, so the 01/02/03 are gone with the cards. */
+.v2-landing__tiles {
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+}
+.v2-landing__tile {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 32px;
+  align-items: baseline;
+  padding: 28px 32px;
+}
+.v2-landing__tile + .v2-landing__tile { border-top: 1px solid var(--v2-border-soft); }
+.v2-landing__tile-title {
+  margin: 0;
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 24px;
+  line-height: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
+}
+.v2-landing__tile-text { margin: 0; max-width: 760px; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
+
+/* ---------- Built-by-agents proof — ruling A, a quiet panel ---------- */
+/* The band is gone: no navy, no padding of its own, the frame above supplies
+   the margins like every other section, and the proof is a bordered panel on
+   --v2-bg-subtle (the card surface the board draws). */
+.v2-landing__proof-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 28px 64px;
+  padding: 56px 64px;
+  background: var(--v2-bg-subtle);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-lg);
+}
+/* 1 1 480px: the copy takes the rest of the row beside the stats at 1440 and
+   1200 — a four-digit count still fits — and the stats wrap under it below
+   about 1140, so no breakpoint is needed for the two arrangements. */
+.v2-landing__proof-copy { flex: 1 1 480px; min-width: 0; }
+.v2-landing__proof-sub { margin: 20px 0 0; max-width: 640px; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
+.v2-landing__proof-stats { display: flex; flex: 0 0 auto; flex-wrap: nowrap; justify-content: flex-start; gap: 56px; margin: 0; }
+.v2-landing__proof-stat { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.v2-landing__proof-num {
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 56px;
+  line-height: 56px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
+}
+.v2-landing__proof-label { font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; font-weight: 500; color: var(--v2-text-tertiary); white-space: nowrap; }
+
+/* ---------- Pricing ---------- */
+/* The tier lists: the same 6px ink square as the feature rows, not a glyph and
+   not an accent dot. Every tier's list is this one rule — the tiers carry no
+   override, because the board's own list margin is the base margin. */
+.v2-landing__price-list {
+  list-style: none;
+  margin: 24px 0 32px;
+  padding: 24px 0 0;
+  border-top: 1px solid var(--v2-border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2-landing__price-list li { display: flex; align-items: flex-start; gap: 12px; font-size: 14px; line-height: 20px; color: var(--v2-text-primary); }
 .v2-landing__price-list li::before {
   content: "";
-  flex-shrink: 0;
+  flex: none;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
-  background: var(--v2-accent);
-  margin-right: 12px;
-}
-.v2-landing__price-card .v2-landing__cta-row { justify-content: center; }
-
-/* Section subtitle (used under the pricing head) */
-.v2-landing__section-sub {
-  margin: 12px auto 0;
-  max-width: 640px;
-  font-size: 16px;
-  line-height: 1.5;
-  color: var(--v2-text-secondary);
+  /* 7px centres the 6px square on the 20px line box. */
+  margin-top: 7px;
+  background: var(--v2-text-primary);
 }
 
 /* ---------- Pricing tiers ---------- */
 .v2-landing__tiers {
-  max-width: 1120px;
+  max-width: 1312px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
   align-items: stretch;
 }
 .v2-landing__tier {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 28px 24px;
+  min-width: 0;
+  padding: 32px;
   background: var(--v2-surface);
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
   text-align: left;
 }
-/* Featured tier: accent border (borders-not-shadows), no elevation. */
-.v2-landing__tier--featured { border-color: var(--v2-accent); }
+/* Featured tier: a 2px cobalt rule, and the padding drops by the extra pixel
+   so Pro's contents stay on the same lines as the two beside it. Still
+   borders-not-shadows; no elevation. The name carries the cobalt too. */
+.v2-landing__tier--featured { border: 2px solid var(--v2-accent); padding: 31px; }
+.v2-landing__tier--featured .v2-landing__tier-name { color: var(--v2-accent); }
 .v2-landing__tier-name {
+  font-family: var(--v2-font-mono);
   font-size: 12px;
-  font-weight: 700;
+  line-height: 20px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: var(--v2-text-tertiary);
 }
+/* The price and its period share a baseline and wrap together at 390. */
 .v2-landing__tier-price {
-  margin-top: 8px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 34px;
-  font-weight: 850;
+  font-size: 56px;
+  line-height: 56px;
+  font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--v2-text-primary);
 }
 .v2-landing__tier-price span {
   font-family: var(--v2-font);
   font-size: 15px;
+  line-height: 20px;
   font-weight: 500;
   letter-spacing: 0;
   color: var(--v2-text-tertiary);
 }
-.v2-landing__tier-note { margin: 6px 0 18px; font-size: 14px; line-height: 1.45; color: var(--v2-text-secondary); }
-.v2-landing__tier .v2-landing__price-list { margin: 0 0 24px; max-width: none; }
-.v2-landing__tier .v2-landing__btn { margin-top: auto; width: 100%; justify-content: center; }
+.v2-landing__tier-note { margin: 12px 0 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
+/* Pro's button is the section's one cobalt fill, and it is the widest type in
+   the row: 700 rather than the 600 the bordered buttons carry. */
+.v2-landing__tier .v2-landing__btn { margin-top: auto; width: 100%; justify-content: center; height: 48px; padding: 0 20px; font-size: 16px; }
+.v2-landing__tier--featured .v2-landing__btn { font-weight: 700; }
 
+/* Enterprise is a row, not a third box: same frame as the lists above it. */
 .v2-landing__tier-enterprise {
-  max-width: 1120px;
-  margin: 20px auto 0;
-  display: flex;
+  max-width: 1312px;
+  margin: 12px auto 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 24px;
   padding: 18px 24px;
-  background: var(--v2-bg-subtle);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
-  font-size: 15px;
-  line-height: 1.5;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  font-size: 16px;
+  line-height: 26px;
   color: var(--v2-text-secondary);
 }
-.v2-landing__tier-enterprise strong { color: var(--v2-text-primary); }
-.v2-landing__tier-enterprise .v2-landing__btn { flex-shrink: 0; }
+.v2-landing__tier-enterprise strong {
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
+}
+.v2-landing__tier-enterprise .v2-landing__btn { padding: 0 20px; }
 .v2-landing__price-foot {
-  max-width: 1120px;
+  max-width: 1312px;
   margin: 24px auto 0;
-  text-align: center;
+  text-align: left;
   font-size: 13px;
+  line-height: 20px;
   color: var(--v2-text-tertiary);
 }
 
-/* ---------- Closing CTA band (deep navy) ---------- */
+/* ---------- Closing CTA ---------- */
+/* Row E: the band is gone. No navy, no centring — the close is type on the
+   page like every other section, and its own hairline is what separates it
+   from pricing. The frame above still sets its 1312 measure. */
 .v2-landing__cta {
-  background: var(--v2-accent-deep);
-  padding-top: 64px;
-  padding-bottom: 64px;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+  padding-top: 80px;
+  padding-bottom: 80px;
+  border-top: 1px solid var(--v2-border-soft);
 }
+/* 64/64 and no text-wrap: balance: the board's note records that balancing
+   split the sentence ("…has / a chat."). */
 .v2-landing__cta-title {
-  margin: 0 auto;
-  max-width: 680px;
+  margin: 0;
   font-family: var(--v2-font-display, var(--v2-font));
-  font-size: 30px;
-  line-height: 1.18;
-  font-weight: 750;
-  letter-spacing: -0.02em;
-  color: #ffffff;
+  font-size: 64px;
+  line-height: 64px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
 }
-.v2-landing__cta-sub {
-  margin: 14px auto 0;
-  max-width: 600px;
-  font-size: 16px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.8);
-}
-.v2-landing__cta .v2-landing__cta-row { justify-content: center; }
+/* One sentence, two blocks: each span starts a line, and the space between two
+   blocks makes no line box — so the heading's accessible name still reads as
+   one sentence while the break belongs to the copy rather than the viewport. */
+.v2-landing__cta-line { display: block; }
+/* The flex gap spaces the row from the title; the row's own margin goes. */
+.v2-landing__cta .v2-landing__cta-row { margin-top: 0; }
 
 /* ---------- Footer ---------- */
+/* Row E: the wordmark, then the four link columns on one row. The board's 1440
+   tracks are 591.1 / 182.1 / 87.1 / 71.3 / 124.3 — a 1fr brand track, a 64px
+   gap, and the columns as auto tracks summing to the rest of the 1312. */
 .v2-landing__footer {
-  padding-top: 40px;
-  padding-bottom: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 64px;
+  padding-top: 48px;
+  padding-bottom: 0;
   border-top: 1px solid var(--v2-border-soft);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 32px;
-  justify-content: space-between;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--v2-text-tertiary);
 }
-.v2-landing__footer-brand { display: flex; align-items: center; gap: 8px; color: var(--v2-text-primary); }
-.v2-landing__footer-cols { display: flex; flex-wrap: wrap; gap: 48px; }
-.v2-landing__footer-col { display: flex; flex-direction: column; gap: 8px; }
+.v2-landing__footer-brand { align-self: start; }
+/* Row A's 24px wordmark is the bar's; the footer's is 16/20. (0,2,0), so this
+   also outranks row A's ≤680 22px. */
+.v2-landing__footer .v2-landing__brand-name { font-size: 16px; line-height: 20px; }
+.v2-landing__footer-cols {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 64px;
+  padding-bottom: 48px;
+}
+.v2-landing__footer-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .v2-landing__footer-title {
+  font-family: var(--v2-font-mono);
   font-size: 12px;
-  font-weight: 700;
+  line-height: 20px;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--v2-text-tertiary, var(--v2-text-secondary));
-  margin-bottom: 2px;
+  color: var(--v2-text-primary);
+  margin-bottom: 4px;
 }
+/* No colour here on purpose: `.v2-root a { color: inherit }` (0,1,1) outranks a
+   single class, so the links take the container's tertiary — which is why the
+   container carries it. The hover is (0,2,0) and still wins. */
 .v2-landing__footer-link {
-  font-size: 14px;
-  color: var(--v2-text-secondary);
   text-decoration: none;
   transition: color 80ms ease;
 }
 .v2-landing__footer-link:hover { color: var(--v2-accent); }
+/* The legal line spans both tracks and closes the footer. It sits HERE, beside
+   the rest of the footer, because an equal-specificity base rule declared after
+   the phone block beats the phone padding it would have to give up. */
+.v2-landing__footer-legal {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 18px 0 22px;
+  border-top: 1px solid var(--v2-border-soft);
+  font-size: 12px;
+  line-height: 18px;
+}
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1024px) {
-  .v2-landing__usecases { grid-template-columns: repeat(2, 1fr); }
   .v2-landing__feature-row { gap: 32px; }
 }
 
 @media (max-width: 900px) {
-  .v2-landing__hero { grid-template-columns: 1fr; gap: 36px; padding-top: 48px; padding-bottom: 48px; }
-  .v2-landing__hero-art { order: -1; }
-  .v2-landing__open-grid { grid-template-columns: 1fr; gap: 28px; }
-  .v2-landing__tiles,
+  /* The hero's own responsive values live in the 760 and 680 blocks: the band,
+     its bottom padding and the demo's negative margin change together, so
+     splitting them across a third breakpoint is how they drift apart. */
+  .v2-landing__open-grid { grid-template-columns: 1fr; gap: 32px; }
   .v2-landing__adapters,
   .v2-landing__steps,
   .v2-landing__cards,
   .v2-landing__tiers { grid-template-columns: 1fr; }
-  .v2-landing__tier-enterprise { flex-direction: column; align-items: flex-start; }
-  .v2-landing__proof-stats { gap: 28px; }
+  .v2-landing__steps { row-gap: 28px; }
+  .v2-landing__adapters { row-gap: 24px; }
+  /* A use-case row keeps its frame and drops to two tracks: title beside the
+     arrow, and the text under both of them. */
+  .v2-landing__usecase {
+    grid-template-columns: minmax(0, 1fr) 16px;
+    grid-template-areas: 'title arrow' 'text text';
+    align-items: center;
+    gap: 4px 12px;
+  }
+  /* The stack stays ONE bordered box, so it is deliberately not in the
+     one-column group above; its rows become a column instead — a layer's title
+     sits over its own text rather than in a track beside it. */
+  .v2-landing__tile { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
+  .v2-landing__tier-enterprise { grid-template-columns: minmax(0, 1fr); gap: 14px; justify-items: start; }
+  /* Row E: at 64 the close's first line is 820.7 wide, so "chat." orphans below
+     a viewport of 869 — it steps down here. The footer's column track moves
+     under the wordmark and the four columns pair into 2×2. */
+  .v2-landing__cta-title { font-size: 48px; line-height: 50px; }
+  .v2-landing__footer { grid-template-columns: minmax(0, 1fr); }
+  .v2-landing__footer-cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 28px 24px;
+    padding: 24px 0 32px;
+  }
+}
+
+@media (max-width: 760px) {
+  /* The overlap shrinks with the band: 376/360 becomes 196/180, so the frame
+     still sits half on the cobalt at 390 rather than swallowing it. The
+     caption's own offsets shrink with it (44 → 28), which is the 16px the band
+     gave up, not a separate decision. */
+  .v2-landing__hero { padding-bottom: 196px; }
+  .v2-landing__hero-art { margin-top: -180px; }
+  .v2-landing__demo-cap { margin: 28px 0 0; }
+  /* 48 at ≤760, also a margin so that the ≤680 block's `padding: 24px 0` below
+     cannot override it (it did while this was padding-top, which is how the 48
+     went missing at 390). */
+  .v2-landing__trusted { margin-top: 48px; }
+  /* A thumb-sized target (44px) without growing the visible pill: the extension
+     is transparent and stays inside the box's own padding. */
+  .v2-landing__install-copy { position: relative; }
+  .v2-landing__install-copy::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+  /* The command wraps instead of scrolling: 86 characters at 390 is a value no
+     thumb reaches the end of, and the board draws it on two lines. The scroll
+     wrapper stays for the widths in between. */
+  .v2-landing__install { align-items: flex-start; }
+  .v2-landing__install-cmd {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    line-height: 18px;
+  }
 }
 
 @media (max-width: 680px) {
+  .v2-landing__bar { height: 64px; }
+  /* TASK-205: 64 bar + 24, keeping the same air as the 112 above. Same
+     specificity as the base rule (0,2,0), later in the file, so it wins. */
+  .v2-root.v2-landing { scroll-padding-top: 88px; }
+  .v2-landing__brand-name { font-size: 22px; }
+  .v2-landing__hero { padding-top: 40px; }
+  .v2-landing__hero-inner { gap: 16px; }
+  .v2-landing__hero-actions { gap: 16px; margin-top: 8px; }
+  .v2-landing__hero-actions .v2-landing__btn,
+  .v2-landing__cta .v2-landing__btn { height: 48px; }
+  .v2-landing__hero-actions .v2-landing__btn--onaccent,
+  .v2-landing__cta .v2-landing__btn--primary { padding: 0 20px; font-size: 16px; }
+  /* Self-host takes the board's 16 as well (finding 4); it inherited 17 from
+     the row above, which the fill button does not. */
+  .v2-landing__hero-actions .v2-landing__btn--onaccent-ghost { padding: 0 18px; font-size: 16px; }
+  .v2-landing__cta .v2-landing__btn--ghost { padding: 0 18px; font-size: 16px; }
+  .v2-landing__cta { padding-top: 48px; padding-bottom: 48px; gap: 20px; }
+  .v2-landing__cta-title { font-size: 36px; line-height: 38px; }
+  .v2-landing__footer { padding-top: 32px; }
+  .v2-landing__footer-legal { padding: 16px 0 20px; }
+  .v2-landing__title { font-size: 44px; line-height: 46px; }
+  /* TASK-213 (lily-shen's ruling, option 1): on a phone the suffix takes its own
+     line, so the title is 「与你的 / <term> / 对话」 at every width and only the
+     term rotates. Without this the h1 is 94.6px under three of the four terms
+     and 140.6px under the fourth at 320–414, so the lede, the CTAs and every
+     section below jumped 46px once per cycle (measured on main abe19fe0 and
+     again on #2033). `margin-left: 0` is part of the rule rather than tidying:
+     the base rule's .18em is the inline separator, and on its own line it would
+     indent 对 by 7.9px. Specificity is the base rule's (0,1,0) and this block is
+     later in the sheet, so it wins by order — the same mechanism the TASK-205
+     scroll-padding-top above documents. TASK-211's nowrap still applies here;
+     this rule changes `display`, so the two compose. */
+  .v2-landing__title-suffix { display: block; margin-left: 0; }
+  .v2-landing__lede { font-size: 16px; line-height: 26px; }
   .v2-landing__nav { gap: 14px; }
   .v2-landing__nav .v2-landing__navlink { display: none; }
-  .v2-landing__section { padding-top: 52px; padding-bottom: 52px; }
-  .v2-landing__usecases { grid-template-columns: 1fr; }
+  /* Square-ish phone rhythm: the section's own bottom padding is the gap, and
+     the features section gets 24 on top so the board's 48 under the wedge is
+     24 (wedge) + 24 (here). */
+  .v2-landing__section { padding-top: 0; padding-bottom: 64px; }
+  .v2-landing__section--features { padding-top: 24px; }
+  .v2-landing__section-head { margin-bottom: 32px; }
+  .v2-landing__kicker { margin-bottom: 10px; }
+  .v2-landing__h2 { font-size: 30px; line-height: 34px; }
+  .v2-landing__trusted { min-height: 110px; padding: 24px 0; gap: 12px; }
+  .v2-landing__trusted-logo { height: 22px; }
+  /* Both halves of the loop move together: the gap and the padding-right are
+     what make the two sets identical, so changing one alone makes the track
+     jump by 24px every cycle. */
+  .v2-landing__trusted-set { gap: 32px; padding-right: 32px; }
+  .v2-landing__wedge { padding-top: 48px; padding-bottom: 24px; }
+  .v2-landing__wedge-line { font-size: 34px; line-height: 36px; }
+  .v2-landing__wedge-sub { margin-top: 16px; font-size: 16px; line-height: 26px; }
+  .v2-landing__features { gap: 56px; }
+  .v2-landing__feature-copy { gap: 12px; }
+  .v2-landing__feature-title { font-size: 26px; line-height: 30px; }
+  .v2-landing__feature-text { font-size: 16px; line-height: 26px; }
+  .v2-landing__steps { margin-bottom: 32px; }
+  .v2-landing__step-title { font-size: 22px; line-height: 26px; }
+  .v2-landing__adapters { padding-top: 32px; }
+  .v2-landing__code { padding: 14px; font-size: 12px; line-height: 20px; }
+  .v2-landing__open-lede { margin-top: 16px; font-size: 16px; line-height: 26px; }
+  .v2-landing__open .v2-landing__cta-row { margin-top: 20px; }
+  .v2-landing__open-item { padding: 16px 18px; }
+  .v2-landing__card { padding: 20px 22px; }
+  .v2-landing__card-title { font-size: 22px; line-height: 26px; }
+  /* Row D: the same rows, tighter. The use-case frame keeps its 18px side
+     padding, and the proof panel's stats spread the full width under the copy
+     rather than sitting beside it. */
+  .v2-landing__usecase { padding: 16px 18px; }
+  .v2-landing__tile { padding: 18px 20px; }
+  .v2-landing__tile-title { font-size: 22px; line-height: 26px; }
+  .v2-landing__sub { margin-top: 16px; font-size: 16px; line-height: 26px; }
+  .v2-landing__proof-inner { padding: 28px 22px; }
+  .v2-landing__proof-sub { margin-top: 16px; }
+  .v2-landing__proof-stats { flex: 1 1 100%; justify-content: space-between; gap: 16px; }
+  .v2-landing__proof-stat { gap: 6px; }
+  .v2-landing__proof-num { font-size: 36px; line-height: 36px; }
+  .v2-landing__tier { padding: 24px; }
+  .v2-landing__tier--featured { padding: 23px; }
+  .v2-landing__tier-price { font-size: 44px; line-height: 44px; }
+  .v2-landing__price-list { margin: 24px 0 24px; }
+  .v2-landing__tier-enterprise { padding: 16px 18px; }
+  .v2-landing__price-foot { margin-top: 20px; }
   /* Stack feature rows; media always on top regardless of alternation. */
   .v2-landing__feature-row { grid-template-columns: 1fr; gap: 20px; }
+  /* (0,2,0) outranks the stacking rule above, so even rows must stack by name. */
+  .v2-landing__feature-row:nth-child(even) { grid-template-columns: 1fr; }
   .v2-landing__feature-row:nth-child(even) .v2-landing__feature-media { order: 1; }
   .v2-landing__feature-row:nth-child(even) .v2-landing__feature-copy { order: 2; }
-  .v2-landing__title { font-size: clamp(30px, 8vw, 40px); }
-  .v2-landing__lede { font-size: 16px; }
-  .v2-landing__footer { gap: 24px; }
-  .v2-landing__footer-cols { gap: 28px; }
 }
 
 /* ============================================================
@@ -872,15 +1416,21 @@
   .v2-landing {
     scroll-behavior: smooth;
   }
+}
 
-  /* Screenshot cards get the existing 120ms card-hover treatment plus a
-     1px lift — still borders-not-shadows, no new shadow tokens. */
-  .v2-landing__shot-frame {
-    transition: transform 120ms ease;
+/* The bar's two states are the one place colour moves in the hero: 120ms, and
+   only for visitors who have not asked for reduced motion — inside the
+   no-preference block, so a reduced-motion visitor gets the switch instantly
+   rather than a transition with no duration. */
+@media (prefers-reduced-motion: no-preference) {
+  .v2-landing__bar {
+    transition: background 120ms ease, border-color 120ms ease;
   }
-
-  .v2-landing__shot:hover .v2-landing__shot-frame {
-    transform: translateY(-2px);
+  .v2-landing__brand-name,
+  .v2-landing__navlink,
+  .v2-landing__bar .v2-landing__btn,
+  .v2-root .v2-landing__bar button.v2-lang-switch__trigger {
+    transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
   }
 }
 
@@ -935,7 +1485,7 @@
   display: inline-block;
   overflow: hidden;
   vertical-align: bottom;
-  color: var(--v2-accent);
+  color: #ffffff;
   padding-bottom: 0.06em; /* keep descenders (y, p) out of the clip */
   /* Width tracks the active term (via the sizer) — smooth the resize so the
      suffix glides rather than jumps when a shorter/longer term rotates in. */
@@ -974,11 +1524,32 @@
   }
 }
 
-/* Footer legal line — © + license + trademark note. */
-.v2-landing__footer-legal {
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--v2-border-soft);
-  font-size: 12px;
-  color: var(--v2-text-tertiary);
+
+/* ---------- zh: no optical negative tracking ----------
+   Every negative letter-spacing below is a latin optical adjustment — the
+   display face tightened at 40px+ so a line of English reads as one shape.
+   Han and Kana glyphs are already set on their own fixed advance, so the same
+   tightening pulls them into each other instead, which is what the shell's
+   `.v2-root :lang(zh) .v2-lang-switch__trigger { letter-spacing: 0 }` reset
+   exists for. This is that reset for the landing, and it lists every selector
+   the sheet tightens, so the two move together (asserted in
+   `v2-layout-invariants.test.ts`, which reads this file and fails on
+   disagreement in either direction — the count is deliberately not repeated
+   here, because a number in this comment is one more thing that goes stale). */
+:lang(zh) .v2-landing__brand-name,
+:lang(zh) .v2-landing__title,
+:lang(zh) .v2-landing__feature-title,
+:lang(zh) .v2-landing__wedge-line,
+:lang(zh) .v2-landing__h2,
+:lang(zh) .v2-landing__step-title,
+:lang(zh) .v2-landing__adapter-title,
+:lang(zh) .v2-landing__open-item strong,
+:lang(zh) .v2-landing__card-title,
+:lang(zh) .v2-landing__usecase-title,
+:lang(zh) .v2-landing__tile-title,
+:lang(zh) .v2-landing__proof-num,
+:lang(zh) .v2-landing__tier-price,
+:lang(zh) .v2-landing__tier-enterprise strong,
+:lang(zh) .v2-landing__cta-title {
+  letter-spacing: 0;
 }

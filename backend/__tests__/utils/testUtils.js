@@ -13,6 +13,28 @@ let mongoServer;
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
+// Registration queues its workspace onboarding off the response path (TASK-149):
+// the pod row is there at the 201 (the landing guard depends on it), while the
+// PG mirror, the starter checklist and the Guide's install land just after it.
+// Tests asserting those later effects poll instead of racing the queue — an
+// effect that is genuinely asynchronous has to be asserted as one, and a bare
+// sleep long enough to be safe is the flake it pretends to prevent.
+//
+// The predicate must return a truthy value when satisfied; the failure mode is
+// an explicit timeout rather than an assertion pointing at the wrong line.
+const waitFor = async (predicate, { timeout = 5000, interval = 10 } = {}) => {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await predicate()) return true;
+    if (Date.now() >= deadline) {
+      throw new Error(`waitFor: condition not met within ${timeout}ms`);
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(interval);
+  }
+};
+
 // Defense-in-depth: globalSetup pre-caches the binary once, but retry the
 // create() anyway to absorb any residual lock/CDN hiccup in parallel workers.
 const createMongoServer = async () => {
@@ -273,4 +295,5 @@ module.exports = {
   createTestUser,
   createTestPod,
   createTestMessage,
+  waitFor,
 };

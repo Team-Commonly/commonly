@@ -131,6 +131,32 @@
 .api-dev-endpoint-path {
     font-family: 'JetBrains Mono', 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
     font-size: 0.95rem;
+    /* A path is one unbreakable token, so with no break opportunity its
+       min-content width held the summary row wider than the accordion's box,
+       and the accordion's `overflow: hidden` clipped the row (TASK-143).
+       This last-resort break only fires when the path is wider than the line
+       it has been given, which is what the rule below controls. */
+    overflow-wrap: anywhere;
+}
+
+/* The path is the only item in this row that can shrink, so on a narrow
+   viewport the flex row either clips it or -- with `anywhere` and no floor --
+   squeezes it toward a column of single glyphs (measured at 390: 9px wide, 33
+   lines, a 776px row; TASK-143). Below 768px the row wraps and the path is
+   given a line of its own, so the method chip, the description and the Auth
+   badge give way instead. Clipping is gone by 700px and still present at 640px
+   (measured across 390/480/560/600/640/700/768/900/1200), so the cut sits above
+   both ends with margin. `.api-dev-accordion-row` is the flex Box in
+   `ApiDevPage.tsx` -- MUI's own content div is not the flex container here, and
+   wrapping it does nothing. */
+@media (max-width: 767px) {
+    .api-dev-accordion-row {
+        flex-wrap: wrap;
+    }
+
+    .api-dev-endpoint-path {
+        flex: 1 1 100%;
+    }
 }
 
 .api-dev-root .MuiButton-root {

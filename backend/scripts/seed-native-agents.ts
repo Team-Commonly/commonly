@@ -200,6 +200,30 @@ async function retireHelloNative(): Promise<void> {
 }
 
 /**
+ * The AgentRegistry manifest a first-party app publishes — and the ONE place its
+ * driver identity is declared.
+ *
+ * Two axes, and the seeder used to conflate them: `runtime.type` is the
+ * deployment shape (`standalone` / `commonly-hosted` / `hybrid`, enforced by
+ * ManifestRuntimeSchema's enum) while `runtime.runtimeType` is which driver
+ * actually runs the agent. The seeder wrote `type: 'native'` — not a member of
+ * that enum — plus a `runtimeType` that had no schema path at all, so the
+ * subdocument's `strict: true` dropped the identity and kept the invalid shape.
+ * That is why `routes/registry/install.ts`'s manifest fallback read nothing:
+ * a native app installed from the Hub, which sends no runtimeType of its own,
+ * landed with an unset runtimeType and had its events queued for a listener that
+ * does not exist (TASK-043).
+ */
+export function buildRegistryManifest(app: NativeAgentDefinition): Record<string, unknown> {
+  return {
+    name: app.agentName,
+    version: VERSION,
+    description: app.description,
+    runtime: { runtimeType: 'native' },
+  };
+}
+
+/**
  * Upserts one first-party app: AgentRegistry row, agent User, installation
  * in the demo pod, and pod membership. Config is refreshed on every run so
  * edits to system prompt / model / tools / triggers land on the next
@@ -228,12 +252,7 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
           verified: true,
           status: 'active',
           categories: app.categories || ['utility'],
-          manifest: {
-            name: app.agentName,
-            version: VERSION,
-            description: app.description,
-            runtime: { type: 'native', runtimeType: 'native' },
-          },
+          manifest: buildRegistryManifest(app),
           latestVersion: VERSION,
         },
         $setOnInsert: {
@@ -241,12 +260,7 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
           versions: [
             {
               version: VERSION,
-              manifest: {
-                name: app.agentName,
-                version: VERSION,
-                description: app.description,
-                runtime: { type: 'native', runtimeType: 'native' },
-              },
+              manifest: buildRegistryManifest(app),
               publishedAt: new Date(),
             },
           ],
@@ -424,4 +438,4 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
 // CJS compat so `require('./scripts/seed-native-agents').seedNativeAgents(...)`
 // works the same as the rest of the backend.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { seedNativeAgents, buildInstallationConfig };
+module.exports = { seedNativeAgents, buildInstallationConfig, buildRegistryManifest };

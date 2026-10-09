@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import type { Request, Response } from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -100,7 +101,7 @@ const taskWriteRateLimitKey = (req: Request): string => {
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
-  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  return cloudflareIpRateLimitKeyGenerator(req as never);
 };
 
 // Create and claim were limited; complete, updates and patch were not, though
@@ -256,20 +257,58 @@ router.post('/:podId', rateLimit({
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     if (sourceRef) {
-      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef }) as { status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updates: Array<{ text: string; author: string; authorId: string | null; createdAt: Date }>; save: () => Promise<void>; toObject: () => unknown } | null;
+      // A create's identity is the (sourceRef, title) PAIR: the ref says where
+      // the ask came from, the title says which ask it is. Keying on the ref
+      // alone made a second ask from one source adopt the first ask's row and
+      // discard the caller's title (TASK-063). Same pair = idempotent retry.
+      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef, title }) as { title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updates: Array<{ text: string; author: string; authorId: string | null; createdAt: Date }>; save: () => Promise<void>; toObject: () => unknown } | null;
       if (existing) {
         if (existing.status === 'done') {
+          // `sourceRef` + `title` are an idempotency key (a unique partial
+          // index backs the pair), so a settled row with the same ref AND the
+          // same title is reopened in place rather than duplicated — the same
+          // source is active again.
+          //
+          // It deliberately does NOT discard the previous `notes`. They are
+          // moved into the append-only `updates` history before the reopen note
+          // replaces them; a reopen used to overwrite a completed row's writeup
+          // with one sentence, losing the only durable record of that work.
+          //
+          // A differing title cannot reach this branch: it is a different ask,
+          // and the pre-check above does not match it. It used to reopen here
+          // and report the mismatch, which put a completed row back to pending
+          // under a title its caller never chose (TASK-063).
+          const previousNotes = (existing.notes || '').trim();
+          if (previousNotes) {
+            existing.updates.push({
+              text: `Previous notes preserved from the completed run:\n${previousNotes}`,
+              author: 'system',
+              authorId: null,
+              createdAt: new Date(),
+            });
+          }
           existing.status = 'pending';
           existing.assignee = assignee || undefined;
           existing.claimedAt = null;
           existing.claimExpiresAt = null;
           existing.notes = 'Reopened — the same source is active again.';
-          existing.updates.push({ text: 'Reopened: task was done but its source is active again — picking up again.', author: 'system', authorId: null, createdAt: new Date() });
+          existing.updates.push({
+            text: 'Reopened: task was done but its source is active again — picking up again.',
+            author: 'system',
+            authorId: null,
+            createdAt: new Date(),
+          });
           await existing.save();
           const reopenedObj = existing.toObject();
           emitTaskUpdated(podId, reopenedObj, 'updated');
           notifyAgents(req, podId, reopenedObj, 'updated');
-          return res.json({ task: reopenedObj, alreadyExists: false, reopened: true });
+          // `alreadyExists: true`, because it does: this request did not create
+          // a row, it reopened one. It used to answer `false`, and
+          // `alreadyExists` is the field a caller branches on to decide whether
+          // its create landed — so a caller concluded it had created a task
+          // while holding a different task's row (TASK-063). `reopened` carries
+          // what happened instead.
+          return res.json({ task: reopenedObj, alreadyExists: true, reopened: true });
         }
         return res.json({ task: existing.toObject(), alreadyExists: true });
       }
@@ -295,16 +334,35 @@ router.post('/:podId', rateLimit({
         keyPattern?: Record<string, number>;
         message?: string;
       };
+      // A database still carrying the pre-TASK-063 ref-only index cannot honour
+      // the (sourceRef, title) key: a second title under one ref collides there,
+      // so the create the caller asked for is not the create this database can
+      // perform. Name the migration instead of returning a generic 500 — the
+      // operator response is a command, not a code hunt.
+      const legacySourceRefIndex = duplicate.code === 11000
+        && !!sourceRef
+        && duplicate.keyPattern?.podId === 1
+        && duplicate.keyPattern?.sourceRef === 1
+        && duplicate.keyPattern?.title === undefined
+        && duplicate.keyPattern?.taskId === undefined;
       const sourceRefIndexCollision = duplicate.code === 11000
         && !!sourceRef
         && (
           (
             duplicate.keyPattern?.podId === 1
             && duplicate.keyPattern?.sourceRef === 1
+            && duplicate.keyPattern?.title === 1
             && duplicate.keyPattern?.taskId === undefined
           )
-          || duplicate.message?.includes('podId_1_sourceRef_1_partial')
+          || duplicate.message?.includes('podId_1_sourceRef_1_title_1_partial')
         );
+      if (legacySourceRefIndex) {
+        console.error('POST /tasks: tasks index is still podId_1_sourceRef_1_partial — run `npm run migrate:task-source-ref-identity`');
+        return res.status(503).json({
+          error: 'task sourceRef index migration pending: run `npm run migrate:task-source-ref-identity`',
+          code: 'task_source_ref_index_migration_pending',
+        });
+      }
       if (!sourceRefIndexCollision) throw createErr;
 
       // The pre-check can lose a race to another request. Re-read the winner
@@ -314,6 +372,7 @@ router.post('/:podId', rateLimit({
       const existing = await Task.findOne({
         podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
         sourceRef,
+        title,
       }) as { toObject: () => unknown } | null;
       if (!existing) throw createErr;
       return res.json({ task: existing.toObject(), alreadyExists: true });
@@ -527,6 +586,11 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     } catch (triggerErr) {
       console.warn('[system-exchange] task-completed dispatch failed:', (triggerErr as Error).message);
     }
+    // A done task needs no human: close its outstanding handoff cards. The
+    // PATCH gate already does this on a status change; this route wrote
+    // `done` without it, and 11 of 12 open handoffs on 2026-09-19 pointed at
+    // tasks completed here.
+    await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
     notifyAgents(req, podId, task, 'updated');
     return res.json({ task });

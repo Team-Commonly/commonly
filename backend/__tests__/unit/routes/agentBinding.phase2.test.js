@@ -15,8 +15,9 @@ jest.mock('../../../middleware/auth', () => {
 });
 
 const { hash } = require('../../../utils/secret');
+const agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth');
 
-let mongod; let app; let AgentCredential; let User; let AgentInstallation; let Machine;
+let mongod; let app; let AgentCredential; let User; let AgentInstallation; let Machine; let Pod; let RoomGrant;
 const DAEMON_A = `cm_daemon_${'a'.repeat(32)}`;
 const DAEMON_B = `cm_daemon_${'b'.repeat(32)}`;
 
@@ -26,6 +27,8 @@ beforeAll(async () => {
   AgentCredential = require('../../../models/AgentCredential');
   User = require('../../../models/User');
   Machine = require('../../../models/Machine');
+  Pod = require('../../../models/Pod');
+  RoomGrant = require('../../../models/RoomGrant');
   AgentInstallation = require('../../../models/AgentRegistry').AgentInstallation;
   app = express();
   app.use(express.json());
@@ -34,10 +37,11 @@ beforeAll(async () => {
 
 afterAll(async () => { await mongoose.disconnect(); await mongod.stop(); });
 
-let owner; let bot; let daemonCredA;
+let owner; let bot; let pod; let daemonCredA;
 beforeEach(async () => {
   await Promise.all([
     User.deleteMany({}), AgentCredential.deleteMany({}), AgentInstallation.deleteMany({}), Machine.deleteMany({}),
+    Pod.deleteMany({}), RoomGrant.deleteMany({}),
   ]);
   owner = await User.create({ username: `o${Date.now() % 1e6}`, email: `o${Date.now()}@x.com`, password: 'x'.repeat(12) });
   global.__CALLER_ID = String(owner._id);
@@ -45,8 +49,9 @@ beforeEach(async () => {
     username: `b${Date.now() % 1e6}`, email: `b${Date.now()}@agents.commonly.local`, password: 'x'.repeat(12),
     isBot: true, botMetadata: { agentName: 'wren-test', instanceId: 'default' },
   });
+  pod = await Pod.create({ name: `p${Date.now()}`, createdBy: owner._id, members: [owner._id, bot._id] });
   await AgentInstallation.create({
-    agentName: 'wren-test', instanceId: 'default', podId: new mongoose.Types.ObjectId(),
+    agentName: 'wren-test', instanceId: 'default', podId: pod._id,
     version: '1.0.0', status: 'active', installedBy: owner._id,
     config: {
       runtime: { runtimeType: 'wrapper', model: 'claude-opus-5' },
@@ -65,6 +70,10 @@ beforeEach(async () => {
           transport: 'stdio',
           url: 'https://mcp.commonly.me',
           command: ['npx', 'commonly-mcp'],
+          headers: {
+            Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}',
+            'X-Private': 'must-not-travel',
+          },
           env: {
             COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
             COMMONLY_API_URL: 'literal-api-value-must-not-travel',
@@ -106,6 +115,18 @@ const mint = (tok, body = {}) => request(app)
   .post('/api/agent-binding/runtime-token')
   .set('Authorization', `Bearer ${tok}`)
   .send({ agentName: 'wren-test', instanceId: 'default', ...body });
+
+const runtimeAuthProbe = (token) => new Promise((resolve, reject) => {
+  let status = 200;
+  const req = {
+    header: (name) => name.toLowerCase() === 'authorization' ? `Bearer ${token}` : undefined,
+  };
+  const res = {
+    status: (code) => { status = code; return res; },
+    json: (body) => resolve({ status, body }),
+  };
+  Promise.resolve(agentRuntimeAuth(req, res, () => resolve({ status: 200 }))).catch(reject);
+});
 
 describe('placement request', () => {
   it('records a directive without binding, and null withdraws it', async () => {
@@ -168,6 +189,7 @@ describe('daemon work list', () => {
           transport: 'stdio',
           url: 'https://mcp.commonly.me',
           command: ['npx', 'commonly-mcp'],
+          headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
           env: {
             COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
             COMMONLY_INSTANCE_URL: '${COMMONLY_INSTANCE_URL}',
@@ -181,6 +203,68 @@ describe('daemon work list', () => {
 
     const seenByB = await assigned(DAEMON_B);
     expect(seenByB.body.agents).toEqual([]);
+  });
+
+  it('projects live broker grants into the audience seat environment', async () => {
+    const seatId = String(bot._id);
+    await RoomGrant.create({
+      grantId: 'grant-seat-live', connectionId: 'connection-1', installationId: 'installation-1',
+      target: { kind: 'seat', id: seatId }, audience: [seatId], tools: ['github.list_issues'],
+      writeMode: 'read', expiresAt: new Date(Date.now() + 60000), brokerId: 'commonly-grant-broker',
+    });
+    await RoomGrant.create({
+      grantId: 'grant-seat-revoked', connectionId: 'connection-1', installationId: 'installation-1',
+      target: { kind: 'seat', id: seatId }, audience: [seatId], tools: ['github.list_issues'],
+      writeMode: 'read', expiresAt: new Date(Date.now() + 60000), brokerId: 'commonly-grant-broker',
+      revokedAt: new Date(),
+    });
+    await RoomGrant.create({
+      grantId: 'grant-seat-expired', connectionId: 'connection-1', installationId: 'installation-1',
+      target: { kind: 'seat', id: seatId }, audience: [seatId], tools: ['github.list_issues'],
+      writeMode: 'read', expiresAt: new Date(Date.now() - 60000), brokerId: 'commonly-grant-broker',
+    });
+    await RoomGrant.create({
+      grantId: 'grant-foreign-broker', connectionId: 'connection-1', installationId: 'installation-1',
+      target: { kind: 'seat', id: seatId }, audience: [seatId], tools: ['github.list_issues'],
+      writeMode: 'read', expiresAt: new Date(Date.now() + 60000), brokerId: 'other-broker',
+    });
+
+    await requestPlacement('machine-a');
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents[0].environment.mcp).toEqual([
+      expect.objectContaining({ name: 'commonly', transport: 'stdio' }),
+      {
+        name: 'commonly-grant-broker',
+        transport: 'http',
+        url: '${COMMONLY_API_URL}/api/mcp/grants/grant-seat-live',
+        headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+      },
+    ]);
+  });
+
+  it('requires current pod membership before projecting a pod grant', async () => {
+    const seatId = String(bot._id);
+    await RoomGrant.create({
+      grantId: 'grant-pod-live', connectionId: 'connection-1', installationId: 'installation-1',
+      target: { kind: 'pod', id: String(pod._id) }, audience: [seatId], tools: ['github.list_issues'],
+      writeMode: 'read', expiresAt: new Date(Date.now() + 60000), brokerId: 'commonly-grant-broker',
+    });
+    await requestPlacement('machine-a');
+    let seenByA = await assigned(DAEMON_A);
+    expect(seenByA.body.agents[0].environment.mcp).toEqual([
+      expect.objectContaining({ name: 'commonly', transport: 'stdio' }),
+      expect.objectContaining({
+        name: 'commonly-grant-broker',
+        url: '${COMMONLY_API_URL}/api/mcp/grants/grant-pod-live',
+      }),
+    ]);
+
+    await Pod.updateOne({ _id: pod._id }, { $pull: { members: bot._id } });
+    seenByA = await assigned(DAEMON_A);
+    expect(seenByA.body.agents[0].environment.mcp).toEqual([
+      expect.objectContaining({ name: 'commonly', transport: 'stdio' }),
+    ]);
   });
 
   it('flips to bound after adopt, and adopt consumes the request', async () => {
@@ -203,6 +287,146 @@ describe('daemon work list', () => {
     });
     const seenByA = await assigned(DAEMON_A);
     expect(seenByA.body.agents).toEqual([]);
+  });
+
+  // The sole-installer clause (ownsAgent) is a BIND-TIME check: adoption 403s
+  // with another_installer. A second installer can appear afterwards, and then
+  // the `installedBy: machine.ownerUserId` filter on the work list is the only
+  // thing holding — it is what decides whether a stranger's runtime config, MCP
+  // servers and pod can reach this daemon's seat record.
+  it('ignores another installer\u2019s installation of the same identity', async () => {
+    await requestPlacement('machine-a');
+    expect((await adopt(DAEMON_A)).status).toBe(200);
+
+    const other = await User.create({
+      username: 'other-installer', email: 'oi@agents.commonly.local', password: 'x'.repeat(12),
+    });
+    const otherPod = await Pod.create({
+      name: 'other-installer-pod', createdBy: other._id, members: [other._id, bot._id],
+    });
+    await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: otherPod._id,
+      version: '1.0.0', status: 'active', installedBy: other._id,
+      config: {
+        runtime: { runtimeType: 'wrapper', model: 'stranger-model' },
+        environment: { version: 1, mcp: [{ name: 'stranger-mcp', transport: 'stdio' }] },
+      },
+    });
+
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents).toHaveLength(1);
+    const [agent] = seenByA.body.agents;
+    expect(agent.runtime).toEqual(expect.objectContaining({ model: 'claude-opus-5' }));
+    // The stranger's pod is not a pod this seat was installed into.
+    expect(agent.podIds).toEqual([String(pod._id)]);
+    const projected = JSON.stringify(agent);
+    expect(projected).not.toContain('stranger-model');
+    expect(projected).not.toContain('stranger-mcp');
+    expect(projected).not.toContain(String(otherPod._id));
+  });
+
+  // An identity installed by its owner in several pods (the taxonomy's
+  // one-install-fans-out) is ONE row: the daemon mints one seat per identity,
+  // so podIds is the union and the row is never duplicated.
+  it('projects one row per identity across its owner\u2019s installations, unioning podIds', async () => {
+    const secondPod = await Pod.create({
+      name: 'second-pod', createdBy: owner._id, members: [owner._id, bot._id],
+    });
+    await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: secondPod._id,
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      config: {
+        runtime: { runtimeType: 'wrapper', model: 'second-model' },
+        environment: { version: 1, model: 'second-install-model' },
+      },
+    });
+    await requestPlacement('machine-a');
+
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.body.agents).toHaveLength(1);
+    const [agent] = seenByA.body.agents;
+    expect(agent.podIds).toEqual(expect.arrayContaining([String(pod._id), String(secondPod._id)]));
+    // The pair comes from the OLDEST installation that declares either half
+    // (TASK-019 ruling, option i). The base fixture is created first, so BOTH
+    // halves are its values and the second installation's are never used —
+    // under the previous per-field fill the runtime could have come from one
+    // row and the environment from the other.
+    expect(agent.runtime).toEqual(expect.objectContaining({ model: 'claude-opus-5' }));
+    expect(agent.environment?.model).toBe('gpt-5.4');
+    const projected = JSON.stringify(agent);
+    expect(projected).not.toContain('second-model');
+    expect(projected).not.toContain('second-install-model');
+  });
+
+  // The half the source installation is SILENT about stays empty: a later
+  // installation's environment must not be grafted onto an older runtime. This
+  // is only visible when the two halves live on different rows.
+  it('never fills a silent half from a sibling installation', async () => {
+    await AgentInstallation.deleteMany({});
+    const runtimeOnly = await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: pod._id,
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      config: { runtime: { runtimeType: 'wrapper', model: 'oldest-runtime-model' } },
+    });
+    const envOnlyPod = await Pod.create({
+      name: 'env-only-pod', createdBy: owner._id, members: [owner._id, bot._id],
+    });
+    const envOnly = await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: envOnlyPod._id,
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      config: { environment: { version: 1, model: 'later-install-model' } },
+    });
+    // The fixture is what the test assumes it is: the runtime-only row is older.
+    expect(String(runtimeOnly._id) < String(envOnly._id)).toBe(true);
+    await requestPlacement('machine-a');
+
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents).toHaveLength(1);
+    const [agent] = seenByA.body.agents;
+    expect(agent.runtime).toEqual(expect.objectContaining({ model: 'oldest-runtime-model' }));
+    expect(agent.environment).toBeUndefined();
+    expect(JSON.stringify(agent)).not.toContain('later-install-model');
+    // podIds is still the union across the identity's installations.
+    expect(agent.podIds).toEqual(expect.arrayContaining([String(pod._id), String(envOnlyPod._id)]));
+  });
+
+  // The ordering clause is witnessable at this tier after all, and this is the
+  // shape that does it (Vera, on the fold at 59d99388): in-memory Mongo returns
+  // documents in INSERTION order, so a fixture inserted in `_id` order cannot
+  // tell a sorted find from an unsorted one. Creating the ObjectIds explicitly
+  // and inserting the NEWER row FIRST makes insertion order and `_id` order
+  // disagree, so only the find's `.sort({ _id: 1 })` can pick the older pair.
+  it('takes the pair from the oldest _id even when that row was inserted last', async () => {
+    await AgentInstallation.deleteMany({});
+    const older = new mongoose.Types.ObjectId();
+    const newer = new mongoose.Types.ObjectId();
+    // The fixture is what the test assumes it is, asserted rather than assumed.
+    expect(String(older) < String(newer)).toBe(true);
+    const newerPod = await Pod.create({
+      name: 'inserted-first-pod', createdBy: owner._id, members: [owner._id, bot._id],
+    });
+    await AgentInstallation.create({
+      _id: newer, agentName: 'wren-test', instanceId: 'default', podId: newerPod._id,
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      config: { runtime: { runtimeType: 'wrapper', model: 'inserted-first-model' } },
+    });
+    await AgentInstallation.create({
+      _id: older, agentName: 'wren-test', instanceId: 'default', podId: pod._id,
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      config: { runtime: { runtimeType: 'wrapper', model: 'oldest-by-id-model' } },
+    });
+    await requestPlacement('machine-a');
+
+    const seenByA = await assigned(DAEMON_A);
+    expect(seenByA.status).toBe(200);
+    expect(seenByA.body.agents).toHaveLength(1);
+    const [agent] = seenByA.body.agents;
+    expect(agent.runtime).toEqual(expect.objectContaining({ model: 'oldest-by-id-model' }));
+    expect(JSON.stringify(agent)).not.toContain('inserted-first-model');
+    // The union is unaffected by which installation wins.
+    expect(agent.podIds).toEqual(expect.arrayContaining([String(pod._id), String(newerPod._id)]));
   });
 
   it('warns when an embedded MCP placeholder is dropped', async () => {
@@ -298,10 +522,71 @@ describe('runtime-token mint', () => {
     expect(install.runtimeTokens || []).toEqual([]);
   });
 
+  it('detects installation-only legacy tokens and invalidates both auth paths on rotate', async () => {
+    await adopt(DAEMON_A);
+    const oldUserToken = `cm_agent_${'u'.repeat(64)}`;
+    const oldInstallationToken = `cm_agent_${'i'.repeat(64)}`;
+    await User.updateOne(
+      { _id: bot._id },
+      {
+        $set: {
+          agentRuntimeTokens: [{ tokenHash: hash(oldUserToken), label: 'user legacy', createdAt: new Date() }],
+        },
+      },
+    );
+    await AgentInstallation.updateMany(
+      { agentName: 'wren-test', instanceId: 'default' },
+      {
+        $set: {
+          runtimeTokens: [{ tokenHash: hash(oldInstallationToken), label: 'installation legacy', createdAt: new Date() }],
+        },
+      },
+    );
+    await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: new mongoose.Types.ObjectId(),
+      version: '1.0.0', status: 'active', installedBy: owner._id,
+      runtimeTokens: [{ tokenHash: hash(oldInstallationToken), label: 'sibling legacy', createdAt: new Date() }],
+    });
+
+    const refused = await mint(DAEMON_A);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('token_exists');
+
+    const rotated = await mint(DAEMON_A, { rotate: true });
+    expect(rotated.status).toBe(201);
+    expect(rotated.body.token).not.toBe(oldUserToken);
+
+    const userAuth = await runtimeAuthProbe(oldUserToken);
+    const installationAuth = await runtimeAuthProbe(oldInstallationToken);
+    const freshAuth = await runtimeAuthProbe(rotated.body.token);
+    expect(userAuth.status).toBe(401);
+    expect(installationAuth.status).toBe(401);
+    expect(freshAuth.status).toBe(200);
+
+    const identity = await User.findById(bot._id).lean();
+    expect(identity.agentRuntimeTokens.map((token) => token.tokenHash)).not.toContain(hash(oldUserToken));
+    const installations = await AgentInstallation.find({ agentName: 'wren-test', instanceId: 'default' }).lean();
+    expect(installations.flatMap((install) => install.runtimeTokens || [])).toEqual([]);
+  });
+
   it('never mints for a daemon whose machine does not hold the binding', async () => {
     await adopt(DAEMON_A);
     const res = await mint(DAEMON_B);
     expect(res.status).toBe(409);
     expect(res.body.boundTo).toBe('machine-a');
+  });
+
+  it('rotates installations stored with mixed-case instance IDs', async () => {
+    await AgentInstallation.updateMany(
+      { agentName: 'wren-test', instanceId: 'default' },
+      { $set: { instanceId: 'DeFaUlT' } },
+    );
+    expect((await adopt(DAEMON_A)).status).toBe(200);
+    const first = await mint(DAEMON_A);
+    expect(first.status).toBe(201);
+    const rotated = await mint(DAEMON_A, { rotate: true });
+    expect(rotated.status).toBe(201);
+    expect(rotated.body.token).not.toBe(first.body.token);
+    expect((await runtimeAuthProbe(first.body.token)).status).toBe(401);
   });
 });

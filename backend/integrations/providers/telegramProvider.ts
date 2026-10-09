@@ -61,10 +61,6 @@ try {
   };
 }
 
-function verifyTelegramSecret(headerToken: unknown, expectedToken: unknown): boolean {
-  return !!headerToken && !!expectedToken && headerToken === expectedToken;
-}
-
 function normalizeTelegram(update: unknown): NormalizedTelegramMessage | null {
   if (!update) return null;
   const u = update as TelegramUpdate;
@@ -109,13 +105,13 @@ function createTelegramProvider(integration: { _id: unknown; config?: Record<str
     getWebhookHandlers() {
       return {
         events: async (req: { headers: Record<string, unknown>; body: unknown }, res: { status: (n: number) => { send: (s: string) => unknown }; sendStatus: (n: number) => unknown }) => {
-          if (config.secretToken) {
-            const headerToken = req.headers['x-telegram-bot-api-secret-token'];
-            if (!verifyTelegramSecret(headerToken, config.secretToken)) {
-              return res.status(401).send('invalid secret token');
-            }
-          }
-
+          // No second verification here (TASK-141). This handler is reached only
+          // from `routes/webhooks/telegram.ts`, which has already verified the
+          // `x-telegram-bot-api-secret-token` header against
+          // `TELEGRAM_SECRET_TOKEN` and fails closed. Re-checking
+          // `config.secretToken` against the same header 401'd an update the route
+          // had just accepted — the same disagreement as `slackProvider.ts`'s,
+          // where the reader was made env-only instead.
           const normalized = normalizeTelegram(req.body);
           const bufferMessage = normalizeBufferMessage(normalized);
           if (!bufferMessage) return res.sendStatus(200);

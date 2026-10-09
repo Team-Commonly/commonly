@@ -4,7 +4,8 @@
 // the service as defense in depth.
 // ESM import (not require) so CodeQL's js/missing-rate-limiting query
 // recognises the limiter on the POST route — same pattern as messages.ts.
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import type { Request } from 'express';
 
@@ -30,7 +31,7 @@ const approvalResolveLimit = rateLimit({
     if (authHeader) {
       return `apr:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req, res) => res.status(429).json({ error: 'rate limit exceeded: 30 approval decisions per 60s' }),
 });
@@ -71,13 +72,15 @@ router.get('/pending', approvalResolveLimit, auth, async (req: AuthedReq & { que
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ApprovalAction = require('../models/ApprovalAction');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { buildCardPayload } = require('../services/approvalActionService');
+    const { buildCardPayload, buildOwnerCardPayload } = require('../services/approvalActionService');
     const rows = await ApprovalAction.find({ podId, status: 'flagged' })
       .sort({ createdAt: -1 })
       .limit(50);
     return res.status(200).json({
       approvals: rows.map((row: unknown) => ({
-        ...buildCardPayload(row),
+        ...((row as { actionType?: string }).actionType === 'tool_call'
+          ? buildOwnerCardPayload(row, callerUserId)
+          : buildCardPayload(row)),
         messageId: (row as { messageId?: string }).messageId || null,
         createdAt: (row as { createdAt?: Date }).createdAt || null,
       })),

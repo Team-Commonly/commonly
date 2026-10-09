@@ -2,6 +2,11 @@
 
 This guide covers deploying Commonly to Kubernetes clusters (GKE, EKS, AKS, or self-hosted).
 
+The current hosted dev values disable the legacy `agents.clawdbot` gateway
+profile. The gateway sections below are retained for operators who explicitly
+enable that profile; they are not a description of the current hosted runtime
+deployment.
+
 ## Prerequisites
 
 - Kubernetes cluster (1.24+)
@@ -75,7 +80,6 @@ kubectl create secret generic api-keys \
   --from-literal=x-oauth-client-secret='' \
   --from-literal=clawdbot-gateway-token='' \
   --from-literal=commonly-bot-runtime-token='' \
-  --from-literal=slack-bot-token='' \
   --from-literal=groupme-bot-id='' \
   --from-literal=telegram-bot-token='' \
   --from-literal=litellm-master-key=''
@@ -149,14 +153,14 @@ helm upgrade commonly ./k8s/helm/commonly -n commonly -f ./k8s/helm/commonly/val
 helm upgrade commonly-dev ./k8s/helm/commonly -n commonly-dev -f ./k8s/helm/commonly/values-dev.yaml
 ```
 
-Gateway restart (when runtime configs or auth profiles change):
+Optional legacy gateway restart (when its runtime configs or auth profiles change):
 
 ```bash
 kubectl rollout restart deployment/clawdbot-gateway -n commonly
 kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
 ```
 
-Gateway rollout strategy note:
+Legacy gateway rollout strategy note:
 - `clawdbot-gateway` should use deployment strategy `Recreate`.
 - Reason: gateway config/workspace PVCs are `ReadWriteOnce`; `RollingUpdate` can stall with multi-attach errors during upgrades.
 
@@ -189,7 +193,7 @@ kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
 
 When `AGENT_PROVISIONER_K8S=1`, backend provisioning needs namespace RBAC for:
 - `deployments`, `configmaps`, `pods`, `pods/log`, `services`, `persistentvolumeclaims`, `secrets`
-- `pods/exec` (required for writing OpenClaw workspace files like `HEARTBEAT.md` in gateway pods)
+- `pods/exec` (required for writing legacy gateway workspace files like `HEARTBEAT.md` in gateway pods)
 
 If `pods/exec` is missing, provisioning can still update ConfigMaps/tokens, but heartbeat file updates will fail.
 

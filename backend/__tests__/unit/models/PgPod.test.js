@@ -23,7 +23,6 @@ jest.mock('../../../models/pg/Pod', () => ({
   delete: jest.fn(),
   addMember: jest.fn(),
   removeMember: jest.fn(),
-  isMember: jest.fn(),
 }));
 
 describe('PostgreSQL Pod Model Tests', () => {
@@ -236,13 +235,5 @@ describe('PostgreSQL Pod Model Tests', () => {
       expect(Pod.removeMember).toHaveBeenCalledWith('pod123', 'user456');
     });
 
-    it('should correctly check if a user is a member of a pod', async () => {
-      Pod.isMember.mockResolvedValue(true);
-
-      const result = await Pod.isMember('pod123', 'user456');
-
-      expect(result).toBe(true);
-      expect(Pod.isMember).toHaveBeenCalledWith('pod123', 'user456');
-    });
   });
 });

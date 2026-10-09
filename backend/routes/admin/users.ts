@@ -9,6 +9,8 @@ const InvitationCode = require('../../models/InvitationCode');
 const WaitlistRequest = require('../../models/WaitlistRequest');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { sendEmail } = require('../../services/emailService');
+const Integration = require('../../models/Integration');
+const { HOSTED_MCP_TYPE } = require('../../services/connectionRemovalService');
 
 const router = express.Router();
 
@@ -284,6 +286,58 @@ router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
       if (adminCount <= 1) {
         return res.status(400).json({ error: 'Cannot delete the last global admin' });
       }
+    }
+
+    // Deleting the person leaves their hosted connections behind for whoever
+    // happens to look. An admin CAN finish the removal — `canDeleteIntegration`
+    // answers true on `role === 'admin'` before it reads `createdBy`
+    // (`routes/integrations.ts:173`), and `GET /api/integrations/admin/all`
+    // still lists the row (it filters on `isActive`, so the orphan comes back
+    // with `createdBy: null`) — but nothing prompts the look, so until someone
+    // takes it the grants and the material outlive the person they act for.
+    // Refusing here does that cleanup at the one moment an admin is already
+    // acting on this user, and hands over the ids and entries to do it with.
+    //
+    // The predicate is the EXISTENCE of the row — not `status`, not the presence
+    // of material (wren 75857, reverting my material-keyed version). Both
+    // narrower keys let a live connect through. `status` waves past the row a
+    // failed provider revoke left `disconnected` with its material still on it
+    // (`markDisconnected` writes that at step 2, the material does not go until
+    // step 4). Material waves past the row that is mid-exchange: the callback
+    // unsets `config.pendingAuth` at `:341`, then makes its upstream calls, and
+    // `config.credentialRef` is not written until `:427` — and each failure
+    // branch in between (`issuer_unreachable`, `exchange_refused`,
+    // `exchange_unreachable`, `exchange_incomplete`) returns a redirect with the
+    // row left exactly so. A row holding no ref is therefore not a dead stub:
+    // it is a connect that lands material seconds later, or one that already
+    // failed while owing a cleanup.
+    //
+    // The cost of the coarser predicate is bounded and falls on a caller who can
+    // pay it: a genuinely dead attempt costs one DELETE from the ids this
+    // response lists. `createdBy` is the right owner term for the same reason it
+    // is exact — `routes/grants.ts:266` resolves an owner as `createdBy ||
+    // config.linkedUserId`, and a hosted row never gets the second.
+    //
+    // The remedy is the ordinary removal, which admits admins and runs the whole
+    // sequence (grants first); this endpoint never calls a vendor, the same way
+    // pod delete does not.
+    const ownedConnections = await Integration.find({
+      type: HOSTED_MCP_TYPE,
+      createdBy: target._id,
+    }).select('_id config.entryId').lean() as Array<{ _id: unknown; config?: { entryId?: string } }>;
+    if (ownedConnections.length > 0) {
+      return res.status(409).json({
+        error: 'This user still owns hosted connections. Remove them first.',
+        code: 'hosted_mcp_connection_owned',
+        // The id AND the entry, per the plan's §7 body (plan doc :192): the pair
+        // is exactly what `DELETE /api/integrations/:id` takes, so an admin
+        // reading this knows which row to delete for which app without a second
+        // lookup. A parallel array of entries would couple by index and drift.
+        connections: ownedConnections.map((connection) => ({
+          id: String(connection._id),
+          entryId: connection.config?.entryId || null,
+        })),
+      });
     }
 
     await target.deleteOne();

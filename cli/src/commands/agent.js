@@ -17,6 +17,13 @@ import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 
 import { createClient } from '../lib/api.js';
+import {
+  buildSpawnId,
+  createSpawnCredentialLease,
+  readSpawnPolicy,
+  resolveSpawnTtlSeconds,
+  revokeOrphanedSpawnCredentials,
+} from '../lib/spawn-credential.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
 import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
@@ -32,14 +39,27 @@ import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
-import { parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
+import { normalizeSandboxTrust, parseEnvironmentFile, resolveWorkspace, validateEnvironmentSpec } from '../lib/environment.js';
+import { ADAPTERS_WITH_DEFAULT_MCP, defaultMcpServers } from '../lib/default-environment.js';
+import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import {
   FOCUS_FRAME_MAX_CODE_POINTS,
   formatPodFocusFrame,
   readPodFocus,
 } from '../lib/pod-focus.js';
+import { claimReleaseFor, ackResultFor } from '../lib/claim-outcome.js';
+import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
+import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
+import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
+import {
+  DEFAULT_HOOK_TIMEOUT_MS,
+  clampHookTimeoutMs,
+  forwardHookEvent,
+  resolveHookToken,
+  writeHooksConfig,
+} from '../lib/hooks-config.js';
 import {
   formatRetryDelay,
   spawnRetryJitter,
@@ -105,7 +125,31 @@ export const deleteAgentToken = (name) => {
 // podId) or is a local fact (which CLI binary to wrap). Returns a record ready
 // for saveAgentToken, or null when COMMONLY_AGENT_TOKEN isn't set (caller
 // falls back to the attach hint).
-export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex'];
+export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
+
+// ── `agent run --adapter` against an existing token file (#2098) ────────────
+// The flag picks the CLI once, at first-run bootstrap; after that the token
+// file's adapter is what runs. A different `--adapter` used to be dropped
+// without a word, so "switch this agent to Codex" kept running Claude and read
+// as Codex misbehaving. Refuse instead, and name the way out for each path:
+// a foreground run re-bootstraps from the Connect page's env exports after the
+// local record is removed; a daemon-managed seat is switched through the
+// registry, which the daemon applies on its next pass.
+export const checkRunAdapterRequest = ({ record, requestedAdapter, tokenPath }) => {
+  const requested = String(requestedAdapter || '').trim().toLowerCase();
+  if (!requested) return { ok: true };
+  const bound = String(record?.adapter || '').trim().toLowerCase();
+  if (!bound || bound === requested) return { ok: true };
+  const name = record.agentName;
+  return {
+    ok: false,
+    message: [
+      `'${name}' is bound to the ${bound} adapter by its token file (${tokenPath}); --adapter ${requested} was not applied.`,
+      `To run it with ${requested} here: commonly agent detach ${name} --force, then re-run with the Connect-page env exports and --adapter ${requested}.`,
+      `A daemon-managed seat switches with: commonly agent config ${name} --adapter ${requested}`,
+    ].join('\n'),
+  };
+};
 
 export const bootstrapAgentRecordFromEnv = async ({
   name,
@@ -171,6 +215,7 @@ export const bootstrapAgentRecordFromEnv = async ({
 
   return {
     agentName,
+    displayName: identity?.displayName || primary?.displayName || agentName,
     instanceId: identity?.instanceId || primary?.instanceId || 'default',
     podId: primary?.podId || null,
     instanceUrl,
@@ -241,14 +286,9 @@ const PRIVATE_RESPONSE_EVENT_TYPES = new Set(['agent.ask', 'agent.ask.response']
 
 // ── default environment for adapters that benefit from auto-MCP wiring ─────
 
-// Adapters that can consume `mcp[]` from the resolved environment spec.
-// `claude` reads it via --mcp-config (see adapters/claude.js); `codex` via
-// `-c mcp_servers.*` config overrides (see adapters/codex.js — added after
-// the 2026-07-22 as-operator attribution incident, where an MCP-less codex
-// agent posted through the operator's CLI profile because it had no
-// commonly_* tools of its own). `stub` does not. Returning null means "no
-// default" — the wrapper proceeds with environment=null exactly like before.
-const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex']);
+// Which adapters can consume `mcp[]`, and the server declaration they get by
+// default, live in lib/default-environment.js — the daemon's per-seat token
+// provisioning reads the same module, so the two can never drift apart.
 const CODEX_PERMISSION_PROFILE_MIN_VERSION = [0, 138, 0];
 
 const versionAtLeast = (version, minimum) => {
@@ -279,23 +319,11 @@ const BUNDLED_COMMONLY_SKILL_DIR = pathResolve(
 // reply conversationally, use the roster, don't double-post). Without the
 // skill, wrapper-spawned CLIs fly blind and behave inconsistently — some
 // narrate after tool-posting (double-post), some default to NO_REPLY on a
-// normal question. ${COMMONLY_API_URL} / ${COMMONLY_AGENT_TOKEN} are
-// substituted at spawn-time by the adapter so the env file stays secret-free.
+// normal question. Returning null means "no default" — a non-consuming adapter
+// proceeds with environment=null exactly like before.
 export const buildDefaultEnvironment = (adapterName) => {
   if (!ADAPTERS_WITH_DEFAULT_MCP.has(adapterName)) return null;
-  const environment = {
-    mcp: [
-      {
-        name: 'commonly',
-        transport: 'stdio',
-        command: ['npx', '-y', '@commonlyai/mcp@latest'],
-        env: {
-          COMMONLY_API_URL: '${COMMONLY_API_URL}',
-          COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
-        },
-      },
-    ],
-  };
+  const environment = { mcp: defaultMcpServers(adapterName) };
   // Only advertise the skill if it actually shipped (defensive: a broken
   // package that dropped the skills/ dir shouldn't hand mountSkills a
   // missing-source path every spawn).
@@ -312,8 +340,9 @@ export const buildDefaultEnvironment = (adapterName) => {
  * enforced sandbox.
  *
  * The public-agent sandbox is real and attack-tested, but it only engages once
- * `sandbox.trust` and `sandbox.mode` are declared: `sandbox.mode` defaults to
- * `'none'`, and nothing previously connected "this pod is public" to "this
+ * an enforced sandbox is declared: `sandbox.trust: 'public'` (the adapters then
+ * resolve the mode for the host at spawn) or an explicit non-'none'
+ * `sandbox.mode`. Nothing previously connected "this pod is public" to "this
  * agent must be confined". An agent attached with no sandbox block simply ran
  * unconfined, silently, with the operator none the wiser.
  *
@@ -335,9 +364,20 @@ export const assertSandboxDeclaredForPublicPod = async ({
 }) => {
   if (!podId || !client) return;
 
-  const mode = environment?.sandbox?.mode;
-  const trust = environment?.sandbox?.trust;
-  const declared = Boolean(trust) && Boolean(mode) && mode !== 'none';
+  // Normalized FIRST (Vera 71715, Wren 71718): the predicate below reads a
+  // legacy `internal` record as the `public` it means, the same mapping the
+  // attach gate and both adapters use. Reading it raw refused a record that
+  // means public one call before the gate #1840 fixes — TASK-113 claims
+  // attach's inconsistent derivation is closed, and this path is attach's.
+  const sandbox = normalizeSandboxTrust(environment?.sandbox);
+  const mode = sandbox?.mode;
+  const trust = sandbox?.trust;
+  // An ENFORCED declaration is one the adapters act on: a public trust (whose
+  // mode they resolve per host at spawn) or an explicit non-'none' mode. This
+  // mirrors the daemon's predicate in lib/default-environment.js, so the shape
+  // the daemon writes for an unconfigured seat is one attach also accepts.
+  const declared = mode !== 'none'
+    && (trust === 'public' || typeof mode === 'string');
   if (declared) return;
 
   let pod = null;
@@ -360,10 +400,11 @@ export const assertSandboxDeclaredForPublicPod = async ({
     + 'people you do not control — but its environment declares no sandbox, and '
     + 'an undeclared sandbox means NO sandbox.\n\n'
     + 'Add a sandbox block to the environment file and retry:\n\n'
-    + '  "sandbox": { "trust": "public", "mode": "read-only" }\n\n'
-    + 'Modes for a public agent: "read-only" or "workspace" (macOS Seatbelt / '
-    + 'Linux bwrap). To attach an agent to a private pod instead, pass that '
-    + 'pod id.',
+    + '  "sandbox": { "trust": "public" }\n\n'
+    + 'That is the whole declaration: the adapters pick the enforced mode for '
+    + 'the host (Seatbelt on macOS, bwrap on Linux). Pin one explicitly with '
+    + '"mode": "read-only" or "workspace" if you want a specific access level. '
+    + 'To attach an agent to a private pod instead, pass that pod id.',
   );
 };
 
@@ -476,6 +517,70 @@ export const updateAgentConfiguration = async ({
 // ── attach: register a local-CLI-wrapped agent (ADR-005) ────────────────────
 
 /**
+ * The sandbox an attach will actually run under — derived, then gated.
+ *
+ * The trust is normalized ONCE, before it is used for anything. A stored
+ * `internal` means `public` (environment.js, Wren 69585), and resolving the mode
+ * off the raw value made this gate disagree with the adapters in BOTH
+ * directions: `{ trust: 'internal' }` with no declared mode left the attach-time
+ * mode at `'none'` and refused nothing here, and `internal` beside
+ * `mode: 'workspace'` was refused outright as "implemented only for public codex
+ * or Claude adapters" — turning away a record both adapters confine happily.
+ *
+ * This does NOT take the confinement decision from the adapters. They normalize
+ * and re-derive from the environment themselves (claude.js:615, codex.js:546) and
+ * the attach-time value never reaches them, so a legacy record was confined
+ * either way; what was wrong is that this gate's verdict contradicted theirs, and
+ * its refusal for the `mode: 'none'` shape landed later, at adapter spawn, after
+ * attach had already published and minted. Normalizing here makes the two agree
+ * and puts the refusal where the user can see it (Kai, TASK-113; re-measured at
+ * source after Vera 71664).
+ *
+ * Whether the resolved mode is AVAILABLE here — bwrap installed, macOS for
+ * Seatbelt, the codex permission-profile version — is deliberately not this
+ * function's question: that needs the host and the detected version and stays at
+ * the call site. What an adapter can honour at all is just a mode and a name, so
+ * that check is in here, with witnesses of both signs.
+ *
+ * Why this gate was the one that disagreed: the resolver compared the RAW trust,
+ * so a caller that did not normalize first read a legacy `internal` record as
+ * non-public. The adapters normalize at their own entry (claude.js:615,
+ * codex.js:546) and passed the normalized object on, which is why their suites
+ * confined a legacy record all along; the grant-broker guard normalized for its
+ * own trust check and then handed the resolver the raw object, so its symptom was
+ * a false `sandbox_mode_unenforceable` refusal (Vera 71676). Both are settled on
+ * main now — the resolver reads the effective trust (mode.js:38) and the guard
+ * imports the same reader from environment.js (grant-broker-guard.js:186) — so
+ * this helper needs no coupling to them: it normalizes once, here, before its own
+ * two gates, because those gates compare `trust` directly.
+ */
+export const resolveAttachSandbox = ({
+  environment, adapterName, platform = process.platform,
+} = {}) => {
+  const sandbox = normalizeSandboxTrust(environment?.sandbox);
+  const trust = sandbox?.trust;
+  const mode = sandbox?.mode
+    || (trust === 'public' ? resolvePublicSandboxMode(sandbox, platform) : 'none');
+  if (trust === 'public' && mode === 'none') {
+    throw new Error(
+      'sandbox.trust=public requires an enforced sandbox mode; refusing to attach unsandboxed',
+    );
+  }
+  // Moved in from the call site (Vera 71675): this is the check the raw compare
+  // used to fail closed on, refusing `internal` beside `mode: 'workspace'`. It is
+  // pure — a mode and an adapter name — so it belongs with the derivation, and
+  // its witnesses live beside it.
+  if ((mode === 'workspace' || mode === 'read-only')
+    && (trust !== 'public' || !['codex', 'claude'].includes(adapterName))) {
+    throw new Error(
+      `sandbox.mode=${mode} is currently implemented only for public `
+      + 'codex or Claude adapters',
+    );
+  }
+  return { mode, trust };
+};
+
+/**
  * Publish, install, and mint a runtime token for a local-CLI-wrapped agent.
  * Pure core — the commander action wraps this with config loading + logging.
  */
@@ -511,13 +616,7 @@ export const performAttach = async ({
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
-    const sandboxMode = environment.sandbox?.mode || 'none';
-    const sandboxTrust = environment.sandbox?.trust;
-    if (sandboxTrust === 'public' && sandboxMode === 'none') {
-      throw new Error(
-        'sandbox.trust=public requires an enforced sandbox mode; refusing to attach unsandboxed',
-      );
-    }
+    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName });
     if (sandboxMode === 'bwrap') {
       const bwrap = detectBwrap();
       if (!bwrap.available) {
@@ -530,12 +629,6 @@ export const performAttach = async ({
         );
       }
     } else if (sandboxMode === 'workspace' || sandboxMode === 'read-only') {
-      if (sandboxTrust !== 'public' || !['codex', 'claude'].includes(adapterName)) {
-        throw new Error(
-          `sandbox.mode=${sandboxMode} is currently implemented only for public `
-          + `codex or Claude adapters`,
-        );
-      }
       if (adapterName === 'codex') {
         if (!versionAtLeast(detected.version, CODEX_PERMISSION_PROFILE_MIN_VERSION)) {
           throw new Error(
@@ -664,6 +757,7 @@ export const performAttach = async ({
     runtimeToken,
     detected,
     wrappedCli: adapter.name,
+    displayName: installation.displayName || displayName || agentName,
     environment,
     workspace,
   };
@@ -840,6 +934,7 @@ export const performRun = ({
   token,
   adapter,
   agentName,
+  displayName = null,
   instanceId = 'default',
   podId = null,
   environment = null,
@@ -865,9 +960,66 @@ export const performRun = ({
   // Kept injectable for small-page regression cases; the runtime ships with
   // the server's ordinary ten-event page.
   inboxBatchLimit = 10,
+  // TASK-102 part B. Undefined means "use the server's published default"; a
+  // number here is the operator's ask, and the policy read at boot is what
+  // makes a clamp visible instead of silent.
+  spawnCredentialTtlSeconds = null,
+  spawnCredentialLeaseFactory = createSpawnCredentialLease,
+  revokeOrphansImpl = revokeOrphanedSpawnCredentials,
   sleepImpl = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 }) => {
   const client = createClient({ instance: instanceUrl, token });
+
+  // THE BOOT SWEEP IS THE SECOND NET, AND IT HAPPENS ONCE PER PROCESS. A seat
+  // that dies mid-turn (kill, crash, reboot) leaves its child credential live
+  // until its own TTL expires, because `close()` never ran; this is what collects
+  // those. Fire-and-forget by contract: `performRun` is synchronous for its
+  // callers, the sweep is best-effort, and a sweep that failed must not stop a
+  // seat from spawning — it logs and returns. Per process rather than per spawn
+  // because the orphans being collected belong to the PREVIOUS process.
+  //
+  // The promise wrapper is not ceremony: it makes a throwing OR rejecting
+  // implementation of the seam a log line instead of an unhandled rejection,
+  // which is the difference between a diagnostic and a crash in a seat that is
+  // otherwise fine.
+  void Promise.resolve()
+    .then(() => revokeOrphansImpl({ client, log }))
+    .catch((err) => log(`spawn credential boot sweep failed (${err?.message ?? err})`));
+
+  // The bounds the server will clamp to. READ ONLY IF THERE IS AN ASK TO CLAMP:
+  // with no `COMMONLY_SPAWN_TTL_SECONDS` the cli sends no `ttlSeconds` at all
+  // and the server's default is what it is, so a per-run read would be a request
+  // on every seat's boot in exchange for nothing. Read once and cached, because
+  // the bounds are constants for the life of a process. `readSpawnPolicy` never
+  // rejects (a failure resolves to null), so this cannot fail a spawn; it just
+  // sends the ask unclamped and lets the server decide.
+  let spawnPolicyPromise = null;
+  const spawnPolicyForAsk = () => {
+    if (spawnCredentialTtlSeconds === null || spawnCredentialTtlSeconds === undefined) return null;
+    if (spawnPolicyPromise === null) spawnPolicyPromise = readSpawnPolicy({ client, log });
+    return spawnPolicyPromise;
+  };
+
+  // THE SEAT'S OWN RECORD IS THE ONLY DECLARATION THERE IS. The broker reaches a
+  // seat as an injected MCP entry written by hand into its environment — no
+  // server projection puts it there (`GRANT_BROKER_URL` is imported by one
+  // route, the daemon assignment, and that one already refuses). So a seat run
+  // by `commonly agent run` under launchd spawns the entry verbatim, and the
+  // confinement it promises is declared in a different field (`sandbox`), which
+  // can disagree. The daemon half of this refusal already runs
+  // (`daemon-supervisor.js`); this is the same predicate at the only other site
+  // that can see the record — same code, so one refusal with two emitters.
+  //
+  // IN MEMORY, RECORD UNTOUCHED (wren 71641): the withheld environment is what
+  // the adapter spawns with, and the stored record keeps its broker, so the
+  // daemon stays the layer that judges a host it knows. Applied once for the
+  // run rather than per turn: `agent run` reads its record once at boot.
+  const seatEnvironment = withholdGrantBroker(environment, adapter?.name, {
+    instanceUrl,
+    onRefuse: (refusal, names) => log(
+      `${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`,
+    ),
+  });
   let running = true;
   // Stop-after-N-auth-failures: without this, a revoked token leaves the
   // poller hammering 401s forever at 60s backoff — invisible to the user.
@@ -1042,6 +1194,7 @@ export const performRun = ({
       // goes in a sibling field instead of being spelled into the reason.
       return {
         outcome: 'no_action',
+        refused: { reason: 'cascade-cap' },
         reason: 'cascade-cap',
         details: {
           // The id of what was dropped. `reason` and `streak` say a refusal
@@ -1136,16 +1289,19 @@ export const performRun = ({
     } finally {
       // A silent, normally completed human wake is an explicit decline, not
       // a successful answer. Tell the kernel so it can hand the message to
-      // exactly one remaining original listener. Any posted reply, refusal
-      // with a reason, or thrown spawn retains completion/legacy semantics:
-      // re-offering those would duplicate a visible response or defeat normal
-      // at-least-once redelivery after an infrastructure failure.
-      const claimOutcome = event.type === 'message.posted'
-        && event.payload?.senderIsHuman === true
-        && turnResult?.outcome === 'no_action' && !turnResult?.reason
-        ? 'declined'
-        : (turnResult ? 'completed' : undefined);
-      await claimKeeper?.release(claimOutcome);
+      // exactly one remaining original listener. A refusal — the upstream
+      // route down, or the server refusing the post — is NAMED (TASK-099): it
+      // carries its class so the kernel's record can tell "answered" from
+      // "never ran", and on a human wake the kernel hands it on exactly as it
+      // does a decline, because a failure local to THIS seat must not make a
+      // human's message disappear. A thrown spawn keeps the legacy release, so
+      // normal at-least-once redelivery still happens after an infrastructure
+      // failure. One decision point, shared with the batch path — see
+      // lib/claim-outcome.js.
+      const release = claimReleaseFor(event, turnResult);
+      await claimKeeper?.release(release.outcome, {
+        reason: release.reason, status: release.status,
+      });
     }
   };
 
@@ -1182,21 +1338,111 @@ export const performRun = ({
     const promptWithFocus = `${focusFrame}\n\n${prompt}`;
 
     log(`[${event.type}] spawning ${adapter.name}`);
-    const result = await adapter.spawn(frameDecisionForkRule(promptWithFocus), {
-      sessionId,
-      cwd: agentCwd,
-      env: process.env,
-      memoryLongTerm,
-      environment,
-      // Runtime context the Claude/Codex adapters expose only to their
-      // per-spawn MCP environment. Claude keeps ${COMMONLY_*} placeholders
-      // literal on disk and lets its native MCP parser expand them, so the
-      // bearer token never enters the generated config file.
-      runtimeToken: token,
-      instanceUrl,
-      agentName,
-      metadata: { event },
+    // TASK-102 part B. The CHILD gets a scoped credential; the wrapper keeps
+    // the seat token for its own polling, claiming and posting (`client` was
+    // built from `token` above and is not touched here). The lease renews while
+    // the child runs and revokes when it returns, so the window in which a
+    // leaked child credential is usable is one turn rather than a seat's life.
+    //
+    // A refusal throws: `openSpawnCredential` only falls back to the seat token
+    // for capacity, and a verdict (401/403/400/404/409) must fail the spawn
+    // rather than restore the authority the refusal was about. The catch below
+    // turns that throw into a NAMED refusal on the turn result, so the claim is
+    // released as `delivery-refused` instead of being re-delivered forever.
+    const spawnPolicyOrNull = spawnPolicyForAsk();
+    const lease = spawnCredentialLeaseFactory({
+      client,
+      seatToken: token,
+      spawnId: buildSpawnId({ agentName, eventId: event?._id || event?.payload?.batchEventIds || null }),
+      desiredTtlSeconds: spawnCredentialTtlSeconds,
+      policy: spawnPolicyOrNull === null ? null : await spawnPolicyOrNull,
+      log,
     });
+    let opened;
+    try {
+      opened = await lease.open();
+    } catch (err) {
+      // A VERDICT IS NOT A CRASH, AND IT IS NOT A NO-OP (wren 72153, vera
+      // 72157). Letting it escape as a bare throw left `turnResult` undefined,
+      // so `claimReleaseFor` returned the legacy holder-only DELETE — right for
+      // a transient failure, wrong for a refusal that recurs on every
+      // redelivery: the wake loops forever with one local log line as its only
+      // record. Naming it on the turn result is what lets the release carry the
+      // class, and on a human wake lets the kernel hand the message to a
+      // remaining listener instead of stranding it.
+      if (!err?.spawnCredentialRefused) {
+        // ONLY a verdict is named as a refusal. An unexpected failure inside
+        // the lease — a bug in our own code, not the server's answer — keeps
+        // the legacy release, because `delivery-refused` would hand a human's
+        // message away and close the row on the strength of our own defect.
+        // Redelivery is the right remedy for a crash.
+        log(`spawn credential lease failed (${err?.message ?? err}) — not spawning`);
+        throw err;
+      }
+      const status = Number.isInteger(err.status) ? err.status : null;
+      const code = typeof err.body?.code === 'string' ? err.body.code : null;
+      log(`spawn credential refused (HTTP ${status ?? 'no response'}) — not spawning`);
+      // `delivery-refused` claims the least of the three classes: the model
+      // never ran, and the refuser is our own mint rather than the model
+      // provider (that would be `upstream-refused`, and its status is the HTTP
+      // status of an upstream call — a meaning this refusal does not have, so
+      // the number travels in the ack instead of on the claim record).
+      return {
+        outcome: 'no_action',
+        refused: { reason: 'delivery-refused' },
+        reason: `spawn-credential-refused-${status ?? 'unknown'}`,
+        details: {
+          ...(status !== null ? { status } : {}),
+          ...(code !== null ? { code } : {}),
+        },
+      };
+    }
+    let result;
+    let commitAttribution = null;
+    try {
+      // The local CLI is a wrapper for a Commonly seat, so its Git commits
+      // carry the seat and the adapter's selected model/effort. `stub` exists
+      // only for tests and has no commit-making child process.
+      if (adapter?.name !== 'stub') {
+        commitAttribution = prepareCommitAttribution({
+          cwd: agentCwd,
+          env: process.env,
+          agentName,
+          displayName,
+          instanceId,
+          adapter: adapter?.name,
+          model: seatEnvironment?.model,
+          effort: seatEnvironment?.effort,
+        });
+      }
+      result = await adapter.spawn(frameDecisionForkRule(promptWithFocus), {
+        sessionId,
+        cwd: agentCwd,
+        env: commitAttribution?.env || process.env,
+        commitAttributionEnv: commitAttribution?.sandboxEnv || null,
+        memoryLongTerm,
+        environment: seatEnvironment,
+        // Runtime context the Claude/Codex adapters expose only to their
+        // per-spawn MCP environment. Claude keeps ${COMMONLY_*} placeholders
+        // literal on disk and lets its native MCP parser expand them, so the
+        // bearer token never enters the generated config file. Since TASK-102
+        // part B this is the per-spawn credential when one could be minted, and
+        // the seat token only when the server could not mint.
+        runtimeToken: opened.token,
+        instanceUrl,
+        agentName,
+        metadata: { event },
+      });
+    } finally {
+      try {
+        commitAttribution?.cleanup();
+      } finally {
+        // Best-effort by construction: `close` logs and returns on a failed
+        // revoke, so a turn that already produced an answer is not failed by
+        // cleanup. The boot sweep collects anything left behind.
+        await lease.close();
+      }
+    }
 
     if (result.newSessionId) {
       setSession(agentName, eventPodId, result.newSessionId);
@@ -1247,13 +1493,22 @@ export const performRun = ({
     const heartbeatControlReply = (event.type === 'heartbeat' || event.payload?.hasHeartbeat === true)
       && /^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(replyText);
     const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply;
+    // A refused model route is not a silent turn. pi reports the refusal on its
+    // own JSON stream and exits 0 with no text, so before this the seat log read
+    // `no wrapper-post (empty output)` and the cause — a 429 budget message — was
+    // nowhere (TASK-096; two and a half days of this on one seat).
+    const upstream = result.upstream || null;
     let delivered = agentPostedItself;
     let deliveryRefusal = null;
 
     if (event.type === 'agent.ask') {
       if (silentReply) {
         const reason = heartbeatControlReply ? replyText : (replyText || 'empty output');
-        log(`[${event.type}] no private response (${reason})`);
+        // The same naming rule as the chat path below: an ask that went
+        // unanswered because the route refused must not read as the agent
+        // having nothing to say.
+        if (upstream) log(`[${event.type}] ${describeUpstreamRefusal(upstream)} — no private response`);
+        else log(`[${event.type}] no private response (${reason})`);
       } else {
         try {
           await client.post(
@@ -1302,6 +1557,11 @@ export const performRun = ({
           + `(matched message ${suppressedBy.id} by ${suppressedBy.author} `
           + `via ${suppressedBy.basis})`,
         );
+      } else if (upstream) {
+        // The status is always named; the body only when the keep-list kept one.
+        // No retry is added: the adapter's own ladder has already run, and a
+        // refused route is refused on the next attempt too.
+        log(`[${event.type}] ${describeUpstreamRefusal(upstream)} — nothing posted this turn`);
       } else {
         log(`[${event.type}] no wrapper-post (${reason}) — nothing posted this turn`);
       }
@@ -1380,6 +1640,7 @@ export const performRun = ({
     if (deliveryRefusal) {
       return {
         outcome: 'no_action',
+        refused: { reason: 'delivery-refused' },
         reason: deliveryRefusal.reason,
         details: {
           mode: deliveryRefusal.mode,
@@ -1389,6 +1650,29 @@ export const performRun = ({
             ? { consecutive: deliveryRefusal.consecutive }
             : {}),
           ...(deliveryRefusal.guidance ? { guidance: deliveryRefusal.guidance } : {}),
+        },
+      };
+    }
+    // A refusal is not a decline, and it is not a close either. `no_action`
+    // with no reason means "the agent chose not to answer" and hands a human
+    // wake to one remaining listener; nothing about the agent's choice happened
+    // here — the model never ran — so the release says WHICH class of refusal
+    // it was (TASK-099). The kernel routes from there: on a human wake the
+    // message is handed to one remaining listener exactly as a decline is
+    // (this seat's upstream route being down says nothing about theirs), and on
+    // any other wake it is terminal. The free-text detail stays in the seat
+    // log and the event ack; the kernel records the class.
+    if (!delivered && upstream) {
+      return {
+        outcome: 'no_action',
+        refused: {
+          reason: 'upstream-refused',
+          ...(Number.isInteger(upstream.status) ? { status: upstream.status } : {}),
+        },
+        reason: `upstream-refused-${upstream.status}`,
+        details: {
+          status: upstream.status,
+          ...(upstream.detail ? { detail: upstream.detail } : {}),
         },
       };
     }
@@ -1429,6 +1713,7 @@ export const performRun = ({
 
   const batchAdmissionResult = (event, admission) => ({
     outcome: 'no_action',
+    refused: { reason: 'cascade-cap' },
     reason: 'cascade-cap',
     details: {
       messageId: event?.payload?.messageId || null,
@@ -1614,14 +1899,14 @@ export const performRun = ({
         .filter((entry) => entry.claimKeeper)
         .map(async (entry) => {
           // Preserve ADR-018 D6.1 per binding message: a silent human
-          // broadcast may be handed to one remaining listener, while every
-          // other completed batch item closes normally.
-          const claimOutcome = entry.event.type === 'message.posted'
-            && entry.event.payload?.senderIsHuman === true
-            && turnResult?.outcome === 'no_action' && !turnResult?.reason
-            ? 'declined'
-            : (turnResult ? 'completed' : undefined);
-          await entry.claimKeeper.release(claimOutcome);
+          // broadcast may be handed to one remaining listener, a refusal
+          // closes with its reason, and every other completed batch item
+          // closes normally. Same decision point as the single-event path.
+          // Same decision point as the single-event path.
+          const release = claimReleaseFor(entry.event, turnResult);
+          await entry.claimKeeper.release(release.outcome, {
+            reason: release.reason, status: release.status,
+          });
         }));
     }
   };
@@ -1711,7 +1996,7 @@ export const performRun = ({
             try {
               const deliveryId = event.payload?.deliveryId;
               await client.post(`/api/agents/runtime/events/${event._id}/ack`, {
-                result: entry.result,
+                result: ackResultFor(entry.result),
                 ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
               });
             } catch (ackErr) {
@@ -1811,7 +2096,7 @@ export const performRun = ({
         try {
           const deliveryId = event.payload?.deliveryId;
           await client.post(`/api/agents/runtime/events/${event._id}/ack`, {
-            result,
+            result: ackResultFor(result),
             ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
           });
         } catch (ackErr) {
@@ -2275,7 +2560,7 @@ Docs:
         const envAbsPath = opts.env ? pathResolve(opts.env) : null;
         const {
           installation, instanceId, runtimeToken, detected, wrappedCli,
-          environment, workspace,
+          displayName, environment, workspace,
         } = await performAttach({
           client,
           adapterName,
@@ -2289,6 +2574,7 @@ Docs:
 
         saveAgentToken(opts.name, {
           agentName: opts.name,
+          displayName,
           instanceId,
           podId: opts.pod,
           instanceUrl,
@@ -2428,7 +2714,7 @@ Docs:
     .command('run <name>')
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
-    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex); ignored when a token file already exists')
+    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex); an existing token file bound to a different adapter stops the run')
     .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
@@ -2460,6 +2746,14 @@ Docs:
         }
       }
 
+      const adapterRequest = checkRunAdapterRequest({
+        record, requestedAdapter: opts.adapter, tokenPath: tokenFile(name),
+      });
+      if (!adapterRequest.ok) {
+        console.error(`${stamp()} [${name}] ${adapterRequest.message}`);
+        process.exit(1);
+      }
+
       const adapter = getAdapter(record.adapter);
       if (!adapter) {
         console.error(`Unknown adapter '${record.adapter}' in token file. Known: ${listAdapterNames().join(', ')}`);
@@ -2481,12 +2775,17 @@ Docs:
         token: record.runtimeToken,
         adapter,
         agentName: record.agentName,
+        displayName: record.displayName || record.agentName,
         instanceId: record.instanceId,
         podId: record.podId,
         environment: record.environment || null,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
         ...cascadeOverridesFromOpts(opts),
+        // TASK-102 part B: the operator's TTL ask, if any. Unset means the
+        // server's published default, which is the only lifetime we can justify
+        // without an operator saying otherwise.
+        spawnCredentialTtlSeconds: resolveSpawnTtlSeconds(process.env),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
         // Both sinks are stamped, and both must be — but not for the reason
         // this comment gave until now, which its own PR falsified.
@@ -2816,4 +3115,76 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
         process.exit(1);
       }
     });
+
+  // ── hooks-config (piece 7) ───────────────────────────────────────────────
+  agent
+    .command('hooks-config <name>')
+    .description('Write Claude Code HTTP hook entries for an attached agent')
+    .option('--scope <scope>', 'Write project or user settings', 'project')
+    .option('--pod <podId>', 'Pod to receive hook events (defaults to the attached pod)')
+    .option('--file <path>', 'Explicit Claude settings file')
+    .option('--timeout <ms>', 'Hook request timeout in milliseconds', String(DEFAULT_HOOK_TIMEOUT_MS))
+    .action((name, opts) => {
+      const record = loadAgentToken(name);
+      if (!record?.runtimeToken) {
+        console.error(`No runtime token found for '${name}'. Run commonly agent attach first.`);
+        process.exit(1);
+      }
+      const podId = opts.pod || record.podId;
+      if (!podId) {
+        console.error('A pod is required (pass --pod or attach the agent to a pod).');
+        process.exit(1);
+      }
+      const timeoutMs = Number(opts.timeout);
+      if (!Number.isFinite(timeoutMs) || timeoutMs < 250) {
+        console.error('--timeout must be at least 250 milliseconds.');
+        process.exit(1);
+      }
+      const effectiveTimeoutMs = clampHookTimeoutMs(timeoutMs);
+      const result = writeHooksConfig({
+        filePath: opts.file ? pathResolve(opts.file) : null,
+        scope: opts.scope,
+        agentName: name,
+        timeoutMs: effectiveTimeoutMs,
+      });
+      console.log(`✓ Claude hooks written to ${result.filePath}`);
+      console.log(`  Events: PreToolUse, PostToolUse, Stop, SubagentStop (timeout ${Math.ceil(effectiveTimeoutMs / 1000)}s)`);
+    });
+
+  // ── hooks-forward (internal command emitted by hooks-config) ─────────────
+  agent
+    .command('hooks-forward <name>')
+    .description('Forward one Claude Code hook event to Commonly')
+    .option('--pod <podId>', 'Pod to receive hook events (defaults to the attached pod)')
+    .option('--timeout <ms>', 'Hook request timeout in milliseconds', String(DEFAULT_HOOK_TIMEOUT_MS))
+    .action(async (name, opts) => {
+      const record = loadAgentToken(name);
+      const podId = opts.pod || record?.podId;
+      const instanceUrl = record?.instanceUrl || process.env.COMMONLY_API_URL || resolveInstanceUrl(undefined);
+      // Read the credential the way the runtime that spawned this hook carries
+      // it: the launcher FILE first, the value variable second. Reading the bare
+      // variable is what this did, and `resolveHookToken` therefore existed,
+      // was tested, and never ran on a real hook — so on a seat whose MCP
+      // declaration moved to the file, the token was absent, `forwardHookEvent`
+      // returned `hook_unavailable`, and the hook silently stopped deciding
+      // anything (the fail-open posture makes that a silence, not an error).
+      const token = resolveHookToken({ env: process.env });
+      const chunks = [];
+      if (!process.stdin.isTTY) {
+        for await (const chunk of process.stdin) chunks.push(chunk);
+      }
+      const input = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : '{}';
+      await forwardHookEvent({
+        endpoint: podId
+          ? `${instanceUrl.replace(/\/$/, '')}/api/agents/runtime/pods/${encodeURIComponent(podId)}/hooks`
+          : null,
+        token,
+        input,
+        timeoutMs: Number(opts.timeout),
+      });
+    });
 };
+
+// Re-exported for consumers that build their own wrapper command rather than
+// invoking commander (and for unit tests of the config contract).
+export { forwardHookEvent, writeHooksConfig } from '../lib/hooks-config.js';

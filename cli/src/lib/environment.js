@@ -46,8 +46,45 @@ const ALLOWED_TOP_KEYS = new Set([
 const ALLOWED_SANDBOX_MODES = new Set([
   'none', 'workspace', 'read-only', 'bwrap', 'firejail', 'container', 'managed',
 ]);
-const ALLOWED_SANDBOX_TRUST = new Set(['public', 'internal']);
+const ALLOWED_SANDBOX_TRUST = new Set(['public']);
 const ALLOWED_NETWORK_POLICIES = new Set(['unrestricted', 'restricted']);
+
+// `trust: 'internal'` was accepted by this schema and read by NO adapter. On the
+// attach path it could only name a mode the platform cannot resolve; on the
+// daemon path it was silently inert — claude fell through to a bare unconfined
+// spawn and codex took `--dangerously-bypass-approvals-and-sandbox` — so a
+// declaration that reads as "confine me, not as a public agent" meant the
+// opposite of what it said (Vera 69592). It is refused for new declarations
+// above, and a record that already carries it is resolved TOWARD confinement,
+// never toward the bare spawn (Wren 69585): `internal` is read as `public`, so
+// such a seat is confined where it can be and refuses to derive where it
+// cannot. A real middle trust arrives as its own adapter that reads it.
+export const LEGACY_SANDBOX_TRUST = Object.freeze({ internal: 'public' });
+export const isLegacySandboxTrust = (sandbox) => (
+  typeof sandbox?.trust === 'string'
+  && Object.prototype.hasOwnProperty.call(LEGACY_SANDBOX_TRUST, sandbox.trust)
+);
+export const normalizeSandboxTrust = (sandbox) => (
+  isLegacySandboxTrust(sandbox)
+    ? { ...sandbox, trust: LEGACY_SANDBOX_TRUST[sandbox.trust] }
+    : sandbox
+);
+/**
+ * A declared trust resolved THROUGH the legacy table: `internal` → `public`,
+ * anything else (including absent) is itself.
+ *
+ * Exported so every gate reads the mapping once. `normalizeSandboxTrust` above
+ * rewrites a whole sandbox object; this is the scalar form for a site that only
+ * compares the trust and must not write anything back. The server spells the
+ * same predicate `effectiveSandboxTrust` (`grantBrokerConfinement.ts`) — the two
+ * sides have to read `internal` the same way or one of them confines a seat the
+ * other withholds from (Wren 71662).
+ */
+export const effectiveSandboxTrust = (trust) => (
+  typeof trust === 'string' && Object.prototype.hasOwnProperty.call(LEGACY_SANDBOX_TRUST, trust)
+    ? LEGACY_SANDBOX_TRUST[trust]
+    : trust
+);
 
 const expandHome = (p) => {
   if (!p || typeof p !== 'string') return p;
@@ -172,7 +209,11 @@ export const validateEnvironmentSpec = (spec) => {
         errors.push(`sandbox.mode must be one of: ${[...ALLOWED_SANDBOX_MODES].join(', ')}`);
       }
       if (trust !== undefined && !ALLOWED_SANDBOX_TRUST.has(trust)) {
-        errors.push(`sandbox.trust must be one of: ${[...ALLOWED_SANDBOX_TRUST].join(', ')}`);
+        errors.push(
+          "sandbox.trust must be 'public' — it marks a seat anyone in the pod can "
+          + 'talk to; omit it for your own seat '
+          + `(got ${JSON.stringify(trust)})`,
+        );
       }
       if (network !== undefined) {
         if (typeof network !== 'object' || network === null) {
@@ -221,6 +262,22 @@ export const validateEnvironmentSpec = (spec) => {
     }
   }
 
+  // A TRANSPORT DECIDES THE ENTRY, so the fields must agree with it (TASK-071,
+  // Vera's ruling 2026-09-19). This block is MIRRORED, not shared: the other
+  // writer-side check is the backend's, in
+  // backend/utils/environmentSpecValidation.ts, called from the
+  // `PATCH /api/registry/pods/:podId/agents/:name` handler that stores
+  // `config.environment` for the owner's daemon. The two cannot share code at
+  // runtime — this is a published ESM package, that is the CJS backend — so
+  // the wording here and there is kept parallel deliberately and the two must
+  // move together. This one refuses a hand-written `--environment <file>`; the
+  // backend's refuses a stored row.
+  //
+  // The shape rule is not decoration: every adapter branches on it
+  // (isStdioServer/isHttpServer in adapters/pi-mcp-client.mjs), and `command`
+  // is an argv ARRAY — `connectStdioMcp` destructures `const [cmd, ...args] =
+  // command`. An entry whose fields contradict its transport is a record whose
+  // reader has to pick a winner, and the readers do not agree on which.
   if (spec.mcp !== undefined) {
     if (!Array.isArray(spec.mcp)) {
       errors.push('mcp must be an array');
@@ -236,6 +293,31 @@ export const validateEnvironmentSpec = (spec) => {
         if (server.transport !== undefined
           && !['http', 'stdio', 'sse'].includes(server.transport)) {
           errors.push(`mcp[${i}].transport must be one of: http, stdio, sse`);
+          // The agreement rule below is defined in terms of a transport this
+          // entry does not have; judging it here would mean inventing the
+          // second definition that rule exists to avoid.
+          return;
+        }
+        const argv = Array.isArray(server.command) && server.command.length > 0
+          && server.command.every((part) => typeof part === 'string' && part.trim().length > 0);
+        const hasUrl = typeof server.url === 'string' && server.url.trim().length > 0;
+        if (server.transport === 'http' || server.transport === 'sse') {
+          if (!hasUrl) {
+            errors.push(`mcp[${i}].url is required when transport is ${server.transport}: a ${server.transport} server is reached by URL, and this entry declares no URL to reach`);
+          }
+          if (server.command !== undefined) {
+            errors.push(`mcp[${i}].command must not be set when transport is ${server.transport}: with a url and a command in one entry each reader picks a different winner, so the record does not say what runs`);
+          }
+        } else {
+          // stdio, or absent transport — the historical default.
+          if (!argv) {
+            errors.push(server.command === undefined
+              ? `mcp[${i}].command is required for a stdio entry (and for an entry that declares no transport): with no command and no url there is nothing to run`
+              : `mcp[${i}].command must be a non-empty array of strings (argv, e.g. ["npx", "-y", "@commonlyai/mcp@latest"]); a string command is not a command line any reader in this repo executes`);
+          }
+          if (hasUrl) {
+            errors.push(`mcp[${i}].url must not be set for a stdio entry (and for an entry that declares no transport): a url here is a second, contradictory way to reach the server`);
+          }
         }
       });
     }

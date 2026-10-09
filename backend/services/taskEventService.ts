@@ -61,6 +61,39 @@ export function emitPodFocusUpdated(podId: unknown, revision: number): void {
   }
 }
 
+type OfferRevision = {
+  _id?: unknown;
+  taskId?: unknown;
+  updatedAt?: unknown;
+};
+
+/**
+ * Stamp only the exact task revisions offered. A concurrent board edit leaves
+ * its newer updatedAt unmatched and due for the next sweep.
+ */
+async function stampOfferedRevisions(revisions: OfferRevision[]): Promise<void> {
+  const candidates = revisions.filter((revision) => revision._id && revision.updatedAt);
+  if (!candidates.length) return;
+
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const Task = require('../models/Task');
+  await Promise.all(candidates.map(async (revision) => {
+    try {
+      await Task.updateOne(
+        { _id: revision._id, updatedAt: revision.updatedAt },
+        { $set: { offeredAt: revision.updatedAt } },
+        { timestamps: false },
+      );
+    } catch (err) {
+      console.warn(
+        '[task-event] offered-at stamp failed for '
+          + String(revision.taskId || revision._id) + ':',
+        (err as Error).message,
+      );
+    }
+  }));
+}
+
 /**
  * Wake the pod's agents on a board change (ADR-024 D1, "producer parity").
  *
@@ -207,9 +240,9 @@ export async function notifyPodAgents(
     const actorKey = actor?.isAgent && actor?.agentName
       ? `${String(actor.agentName).toLowerCase()}::${String(actor.instanceId || 'default')}`
       : null;
-    await Promise.all(installs.map(async (install: Record<string, unknown>) => {
+    const outcomes = await Promise.all(installs.map(async (install: Record<string, unknown>) => {
       const installKey = `${String(install.agentName || '').toLowerCase()}::${String(install.instanceId || 'default')}`;
-      if (actorKey && installKey === actorKey) return;
+      if (actorKey && installKey === actorKey) return null;
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
       try {
@@ -239,11 +272,12 @@ export async function notifyPodAgents(
           // Rewrite the content to reflect the true count. Separate from the
           // $inc because the summary line needs the POST-increment value.
           const extra = Number(folded.payload?.boardChanges || 1);
-          await AgentEvent.updateOne(
+          const rewrite = await AgentEvent.updateOne(
             { _id: folded._id, status: 'pending' },
             { $set: { 'payload.content': buildContent(extra) } },
           );
-          return;
+          if (rewrite?.matchedCount === 0) return undefined;
+          return true;
         }
 
         await AgentEventService.enqueue({
@@ -264,15 +298,23 @@ export async function notifyPodAgents(
             dmKind,
           },
         });
+        return true;
       } catch (err) {
         console.warn(`[task-event] enqueue failed for ${agentName}:`, (err as Error).message);
       }
     }));
+    const failed = outcomes.some((outcome) => outcome === undefined);
+    const offered = outcomes.some((outcome) => outcome === true);
+    if (offered && !failed) {
+      await stampOfferedRevisions([task]);
+    }
   } catch (err) {
     // A board change must never fail because the agent fan-out did.
     console.warn('[task-event] agent notify failed:', (err as Error).message);
   }
 }
+
+const MAX_NAMED_ITEMS = 5;
 
 /**
  * Kernel-sweep wake (#1044): the pod has actionable work — pending, unassigned
@@ -294,10 +336,13 @@ export async function notifyPodAgents(
  *   Known bounded leak, recorded not fixed (same stance as fable's 55846): an
  *   agent change folding into a pending kernel wake rides under kernel
  *   pricing — at most one per drain.
+ * - The sweep passes every due row for stamping, though only five are named in
+ *   the wake. Revisions are stamped only after every eligible seat succeeds;
+ *   one failure leaves the batch due for the next pass.
  */
 export async function notifyFoundWork(
   podId: unknown,
-  items: Array<{ taskId?: string; title?: string; lapsedFrom?: string | null }>,
+  items: Array<OfferRevision & { title?: string; lapsedFrom?: string | null }>,
   totalCount: number,
   now: Date = new Date(),
 ): Promise<{ woken: number }> {
@@ -320,13 +365,16 @@ export async function notifyFoundWork(
     // thing standing between that and a duplicate implementation is whether a
     // peer happens to be reading the pod. Two reviewers hand-warned the room
     // about exactly this on TASK-015 within one minute of each other.
-    const listed = items
+    const namedItems = items.slice(0, MAX_NAMED_ITEMS);
+    const listed = namedItems
       .map((t) => {
         const line = `- ${t.taskId || '?'} — ${String(t.title || '(untitled)').slice(0, 80)}`;
         return t.lapsedFrom ? `${line}  [lapsed from ${t.lapsedFrom} — check their work before starting]` : line;
       })
       .join('\n');
-    const more = totalCount > items.length ? `\n…and ${totalCount - items.length} more on the board.` : '';
+    const more = totalCount > namedItems.length
+      ? `\n…and ${totalCount - namedItems.length} more on the board.`
+      : '';
     const content = [
       `[The kernel found unclaimed work in this pod — ${totalCount} pending, unassigned:]`,
       '',
@@ -339,7 +387,7 @@ export async function notifyFoundWork(
     ].join('\n');
 
     let woken = 0;
-    await Promise.all(installs.map(async (install: Record<string, unknown>) => {
+    const outcomes = await Promise.all(installs.map(async (install: Record<string, unknown>) => {
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
       try {
@@ -350,7 +398,7 @@ export async function notifyFoundWork(
           { $set: { 'payload.content': content, 'payload.foundWorkAt': now } },
           { new: true },
         );
-        if (folded) { woken += 1; return; }
+        if (folded) { woken += 1; return true; }
         await AgentEventService.enqueue({
           agentName,
           instanceId,
@@ -367,10 +415,14 @@ export async function notifyFoundWork(
           },
         });
         woken += 1;
+        return true;
       } catch (err) {
         console.warn(`[task-event] found-work enqueue failed for ${agentName}:`, (err as Error).message);
       }
     }));
+    if (woken > 0 && outcomes.every((outcome) => outcome === true)) {
+      await stampOfferedRevisions(items);
+    }
     return { woken };
   } catch (err) {
     console.warn('[task-event] found-work notify failed:', (err as Error).message);

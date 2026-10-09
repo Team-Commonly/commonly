@@ -13,6 +13,7 @@ const {
   COMMUNITY_LISTING_QUERY,
   NON_LISTABLE_POD_TYPES,
   communityDiscoverQuery,
+  defaultListingTypeFilter,
   isDirectlyJoinable,
 } = require('../services/podListing');
 const User = require('../models/User');
@@ -163,7 +164,20 @@ const installDefaultAgentForPod = async ({ pod, userId }: { pod: any; userId: an
 // Get all pods or filter by type
 exports.getAllPods = async (req: any, res: any) => {
   try {
-    const { type } = req.query;
+    // `?type=` is a user-supplied value that used to reach the Mongo query
+    // below unchecked, and `req.query` is parsed by qs: `?type[$ne]=agent-admin`
+    // arrives as an OBJECT, so a caller could supply query operators instead of
+    // a pod type (CodeQL js/sql-injection, "Database query built from
+    // user-controlled sources", raised on this function). Only a string is
+    // honoured — what every real caller sends and what the schema stores — and
+    // anything else returns the same empty list an unknown type always did.
+    //
+    // Deliberately NOT an allowlist of the model's type enum: rows can predate
+    // the enum (the V2 router still knows 'gaming'), and this endpoint's job is
+    // to filter the caller's pods, not to police type names.
+    const rawType = req.query?.type;
+    const type = typeof rawType === 'string' ? rawType : undefined;
+    const hasUnusableType = rawType !== undefined && type === undefined;
     const scope = String(req.query?.scope || 'mine').toLowerCase();
     const isCommunityScope = scope === 'community';
     const isDiscoverScope = scope === 'discover';
@@ -175,8 +189,10 @@ exports.getAllPods = async (req: any, res: any) => {
       }
       scopedCallerId = new mongoose.Types.ObjectId(rawCallerId);
     }
-    // Exclude agent-admin DM pods from default listing; only show when
-    // explicitly requested and the caller is a member.
+    if (hasUnusableType) return res.json([]);
+    // The default listing hides the types no connector may target, from one
+    // constant (`services/podListing.ts`), so a type cannot be hidden here and
+    // still be gateable through the API (TASK-171).
     // Community and Discover are explicit, additive discovery scopes. Personal
     // pod types stay excluded even if a malformed/admin-created row has the
     // listing/read flags forced true.
@@ -194,13 +210,7 @@ exports.getAllPods = async (req: any, res: any) => {
           ? { $eq: type, $nin: NON_LISTABLE_POD_TYPES }
           : { $nin: NON_LISTABLE_POD_TYPES },
       }
-      : (type ? { type } : { type: { $ne: 'agent-admin' } });
-
-    let pods = await Pod.find(query)
-      .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture isBot')
-      .populate('parentPod', 'name _id')
-      .sort({ updatedAt: -1 });
+      : defaultListingTypeFilter(type);
 
     // Membership filter — return only pods the requester belongs to.
     //
@@ -221,14 +231,42 @@ exports.getAllPods = async (req: any, res: any) => {
     // private DM in the instance leaks into their sidebar (which made
     // xcjsam see — and try to post into — sam-demo's agent-rooms).
     const isPersonal = isPersonalPodType(type);
+    let membershipFilterToMine = false;
+    let memberId: any = null;
     if (req.userId && !isCommunityScope && !isDiscoverScope) {
       const wantsAll = scope === 'all';
       const isAdmin = wantsAll ? await isGlobalAdminRequest(req) : false;
-      const filterToMine = isPersonal || !wantsAll || !isAdmin;
-      if (filterToMine) {
+      membershipFilterToMine = isPersonal || !wantsAll || !isAdmin;
+      if (membershipFilterToMine) {
         const uid = String(req.userId);
-        pods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
+        memberId = mongoose.Types.ObjectId.isValid(uid) ? new mongoose.Types.ObjectId(uid) : null;
       }
+    }
+
+    // Push the membership predicate into Mongo rather than materialising every
+    // pod on the instance and discarding all but the caller's in JS (TASK-151).
+    // Measured before this change, for a caller with ONE pod: 118-182 ms on a
+    // 200-pod instance, 412-515 ms on 1,200, 644-767 ms on 4,200 — the cost was
+    // proportional to everyone else's pods (collection scan + in-memory sort +
+    // populate across all of them) while the response was byte-identical. After:
+    // the same three cases are flat (see the benchmark in the PR). Falls back to
+    // the JS filter only when the caller id is not castable, which preserves the
+    // previous behaviour exactly (no pods match, empty list) instead of throwing
+    // a CastError out of the query.
+    const listedQuery = memberId ? { ...query, members: memberId } : query;
+
+    let pods = await Pod.find(listedQuery)
+      .populate('createdBy', 'username profilePicture')
+      .populate('members', 'username profilePicture isBot')
+      .populate('parentPod', 'name _id')
+      .sort({ updatedAt: -1 });
+
+    if (membershipFilterToMine && !memberId) {
+      const uid = String(req.userId);
+      // `m &&` : populate leaves a null in place of a member whose User row is
+      // gone, and the previous `m._id` would throw on it — turning one stale
+      // reference anywhere on the instance into a 500 for the whole sidebar.
+      pods = pods.filter((p: any) => (p.members || []).some((m: any) => m && String(m._id || m) === uid));
     }
 
     // Attach last-message preview per pod for the sidebar snippet. Single
@@ -551,6 +589,19 @@ exports.leavePod = async (req: any, res: any) => {
 
     if (!pod) {
       return res.status(404).json({ msg: 'Pod not found' });
+    }
+
+    // TASK-166: the creator cannot leave. `createdBy` is written only at
+    // creation and nothing transfers it, while `removeMember` is gated on it
+    // with no admin fallback — so a creator who left would strand the pod with
+    // nobody able to remove a member. Refused rather than stripped: the field
+    // records who made the pod, and the membership readers no longer read it as
+    // membership.
+    if (String(pod.createdBy) === String(req.userId)) {
+      return res.status(409).json({
+        msg: 'A pod creator cannot leave their own pod.',
+        code: 'creator_cannot_leave',
+      });
     }
 
     // Check if user is a member

@@ -8,6 +8,7 @@ import i18n, { i18nReady } from '../../i18n';
 import V2PodsSidebar, {
   groupPodsByKind, podKind, recentPods,
 } from '../components/V2PodsSidebar';
+import { characterAvatarFor, paperAvatarFor } from '../utils/avatars';
 import { POD_VISITS_KEY } from '../lib/podRecency';
 
 const mockCreatePod = jest.fn();
@@ -86,6 +87,7 @@ const renderSidebar = (pods, selectedPodId = 'sharpen', extra = {}) => render(
       attentionCountByPod={{ sharpen: 2, connectors: 1, naming: 0, hq: 91 }}
       podsState={{
         pods, loading: false, error: null, createPod: mockCreatePod, patchLastMessage: jest.fn(),
+        refresh: jest.fn(() => Promise.resolve()),
       }}
       {...extra}
     />
@@ -159,6 +161,34 @@ describe('V2PodsSidebar — direction C', () => {
     const dm = screen.getByRole('button', { name: /DM test/ });
     expect(dm.querySelector('.v2-pods__row-mark--avatar')).toBeTruthy();
     expect(within(dm).getByText('1d')).toBeInTheDocument();
+  });
+
+  test('direct rows render the peer character for agents and Paper for unpicked people', () => {
+    const agentDm = pod('agent-dm', 'Helper Agent', 'agent-dm', [
+      human('me'), { ...agent('builder-id'), username: 'Builder' },
+    ]);
+    const agentRoom = pod('agent-room', 'Scout', 'agent-room', [
+      human('me'), { ...agent('scout-id'), username: 'Scout' },
+    ]);
+    const humanDm = pod('human-dm', 'Direct chat', 'chat', [
+      human('me'), { ...human('sam-id'), username: 'Sam' },
+    ]);
+    renderSidebar([agentDm, agentRoom, humanDm], 'none');
+
+    const agentRow = screen.getByRole('button', { name: /Helper Agent/ });
+    const agentImage = within(agentRow).getByRole('img', { name: 'Builder' });
+    const agentSource = characterAvatarFor('builder-id', 'agent');
+    expect(agentSource).not.toBeNull();
+    expect(agentImage).toHaveAttribute('src', agentSource);
+
+    const agentRoomRow = screen.getByRole('button', { name: /^Scout/ });
+    expect(within(agentRoomRow).getByRole('img', { name: 'Scout' })).toHaveAttribute(
+      'src', characterAvatarFor('scout-id', 'agent'),
+    );
+
+    const humanRow = screen.getByRole('button', { name: /Direct chat/ });
+    const humanImage = within(humanRow).getByRole('img', { name: 'Sam' });
+    expect(humanImage).toHaveAttribute('src', paperAvatarFor('sam-id'));
   });
 
   test('Recent is ordered by my last visit, not by the last message; the time column stays the last message', () => {

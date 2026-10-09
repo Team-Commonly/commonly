@@ -1,0 +1,53 @@
+GET
+
+/api/integrations/catalog
+
+Get manifest-driven integration catalog entries
+
+Auth Required
+Request
+Expected Response:
+{
+  "entries": [
+    {
+      "id": "slack",
+      "requiredConfig": [],
+      "catalog": {
+        "label": "Slack",
+        "category": "chat",
+        "capabilities": [
+          "webhook",
+          "summary",
+          "commands"
+        ]
+      },
+      "stats": {
+        "activeIntegrations": 2
+      }
+    },
+    {
+      "id": "discord",
+      "requiredConfig": [
+        "serverId",
+        "channelId"
+      ],
+      "catalog": {
+        "label": "Discord",
+        "category": "chat",
+        "capabilities": [
+          "webhook",
+          "gateway",
+          "summary",
+          "commands"
+        ]
+      },
+      "stats": {
+        "activeIntegrations": 1
+      }
+    }
+  ]
+}
+Test Endpoint
+Response
+
+Click "Test Endpoint" to see the response

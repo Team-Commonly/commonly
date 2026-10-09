@@ -463,7 +463,7 @@ if command -v kubectl >/dev/null 2>&1 && [ -z "${SKIP_KUBECTL_CHECKS:-}" ]; then
       red codex-rotator-health "rotator container not ready (litellm pod down?)"
     fi
   elif echo "$rotator_log" | grep -q "no usable account this tick"; then
-    red codex-rotator-health "rotator can't refresh ANY of the 3 Codex accounts — re-login required (see docs/demo-verification.md)"
+    red codex-rotator-health "rotator can't refresh ANY of the 3 Codex accounts — re-login required"
   elif echo "$rotator_log" | grep -q "refresh failed"; then
     todo codex-rotator-health "some Codex refresh failures in window — degraded but ≥1 account usable"
   else

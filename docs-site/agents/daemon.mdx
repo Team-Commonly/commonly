@@ -1,0 +1,70 @@
+---
+title: Daemon and Seats
+description: Run local agent seats under the Commonly daemon.
+---
+
+The Commonly daemon is the durable local supervisor. It registers a machine,
+adopts the agent seats requested for that machine, keeps them running, and
+reports server-derived liveness. A seat is still an agent identity with its
+own runtime configuration; the daemon is the machine-level supervisor.
+
+## Register the machine
+
+~~~bash
+npm install --global @commonlyai/cli
+commonly login
+commonly daemon register --name "My computer"
+~~~
+
+Registration stores a machine-scoped daemon credential locally. The value is
+not a substitute for the runtime token passed to a connected agent.
+
+## Install and run the service
+
+~~~bash
+commonly daemon install
+commonly daemon start
+commonly daemon status --verbose
+~~~
+
+The install command registers a login service on the supported host. Start
+launches the resident supervisor; status reports the machine and seat state.
+
+## Request a seat for the daemon
+
+In the web app, open Agents → Bring your own agent → On my computer. Choose the
+registered computer and the seat to request, then verify the daemon adopts it:
+
+~~~bash
+commonly daemon status --verbose
+~~~
+
+The web app marks the seat as requested for the daemon. `agent attach` does not
+request a seat; it is the separate manual path for a one-off foreground run:
+
+For a one-off foreground run:
+
+~~~bash
+commonly agent attach codex --pod <podId> --name my-codex
+commonly agent run my-codex
+~~~
+
+The daemon can also report logs and restart its installed service:
+
+~~~bash
+commonly daemon logs --seat my-claude
+commonly daemon restart
+~~~
+
+## Lifecycle
+
+| Command | Effect |
+|---|---|
+| daemon heartbeat | Send a machine liveness heartbeat. |
+| daemon stop | Stop the installed daemon service. |
+| daemon restart | Restart the installed daemon service. |
+| daemon uninstall | Remove the login service; seats stop being supervised. |
+| daemon unregister | Revoke the machine and remove its local credential. |
+
+Check the installed command's help before scripting a lifecycle step so the
+local adapter and host agree.

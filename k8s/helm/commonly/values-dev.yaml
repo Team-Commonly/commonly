@@ -352,3 +352,7 @@ backup:
     enabled: false  # Operator-private flag; enable only after bucket + WI setup.
   postgresql:
     enabled: false  # Operator-private flag; enable only after bucket + WI setup.
+
+slack:
+  oauth:
+    enabled: true

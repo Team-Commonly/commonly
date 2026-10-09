@@ -220,6 +220,43 @@ test('renders system messages as lightweight notices', async () => {
   expect(container.querySelector('.system-message')).toBeTruthy();
 });
 
+// The approval card is posted with `message_type: 'card'` and its `content` is
+// the plain-text fallback for legacy surfaces. This bubble only rendered a body
+// for 'text' (or 'image'), so a member reading a room here saw the author and a
+// timestamp over nothing. The card component is v2-only, so the fallback text is
+// the whole message on this surface. (TASK-056)
+test('an approval card renders its plain-text fallback instead of an empty bubble', async () => {
+  axios.get
+    .mockResolvedValueOnce({
+      data: {
+        _id: '1',
+        name: 'Room',
+        members: [{ _id: 'u' }],
+        createdBy: { _id: 'u', username: 'me', profilePicture: null }
+      }
+    })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({
+      data: [{
+        _id: 'm-card',
+        content: '[approval needed] create a GitHub issue titled "C4 run"',
+        messageType: 'card',
+        userId: { _id: 'a1', username: 'c4-smoke', profilePicture: null },
+        createdAt: '2026-01-01T00:00:00.000Z'
+      }]
+    })
+    .mockResolvedValueOnce({ data: [] })
+    .mockResolvedValueOnce({ data: { entries: [] } });
+
+  await TestUtils.act(async () => { root.render(<ChatRoom />); });
+  await TestUtils.act(async () => Promise.resolve());
+
+  const bubble = container.querySelector('.message-bubble.received');
+  expect(bubble).toBeTruthy();
+  expect(bubble.textContent).toContain('[approval needed] create a GitHub issue titled "C4 run"');
+});
+
 // Pod Tools renders an image message by its src; since PR #1579 an image goes
 // out as the same `[[upload:…|image]]` manifest a file does, so the src must
 // be rebuilt from the manifest's key. Reverting to the bare content left the

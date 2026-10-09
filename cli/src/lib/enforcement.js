@@ -434,7 +434,7 @@ export const createClaimKeeper = (client, {
       if (timer && typeof timer.unref === 'function') timer.unref();
     },
 
-    async release(outcome) {
+    async release(outcome, { reason, status } = {}) {
       stopRenewal();
       if (!acquired || lost) return;
       try {
@@ -442,7 +442,35 @@ export const createClaimKeeper = (client, {
         // outcome. Besides keeping old clients' DELETE shape intact, callers
         // that assert their transport arguments must not see a synthetic
         // `undefined` body. An explicit outcome is the new D6.1 contract.
-        await (outcome ? client.del(path, { outcome }) : client.del(path));
+        //
+        // `reason` and `status` ride only with a refusal (TASK-099) and only
+        // when the producer named them: the kernel stores the class as the
+        // record of why a delivery never happened, so an absent reason must
+        // stay absent rather than become the string "undefined".
+        if (!outcome) {
+          await client.del(path);
+          return;
+        }
+        const body = {
+          outcome,
+          ...(reason ? { reason } : {}),
+          ...(status !== undefined ? { status } : {}),
+        };
+        try {
+          await client.del(path, body);
+        } catch (err) {
+          // An older kernel validates the outcome against its own
+          // decline/completed enum and answers 400 — as it does for a reason
+          // it does not recognise. A CLI that ships before (or runs against a
+          // server earlier than) the third outcome must still release its
+          // lease, or the message stays claimed until it expires: one retry as
+          // `completed`, which is exactly what the old release did. Bounded to
+          // a 400 — a 500 or a timeout is not turned into a second write, and
+          // a second 400 is not retried again.
+          if (outcome !== 'refused' || err?.status !== 400) throw err;
+          log(`claim on message ${messageId}: kernel rejected the refused outcome (400) — releasing as completed`);
+          await client.del(path, { outcome: 'completed' });
+        }
       } catch {
         // Best-effort: a miss just means the lease already expired.
       }

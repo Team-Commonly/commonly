@@ -485,6 +485,24 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // Parked broker calls own their expiry: unlike legacy approval actions,
+    // an abandoned tool_call must be terminal and have its canonical args
+    // scrubbed. The decide path also checks the deadline for sweep races.
+    const approvalToolCallSweepJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { sweepExpiredToolCallApprovals } = require('./approvalActionService');
+          const expired = await sweepExpiredToolCallApprovals();
+          if (expired) console.log(`[approval] expired tool calls=${expired}`);
+        } catch (error) {
+          console.error('[approval] tool-call expiry sweep failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -504,6 +522,7 @@ class SchedulerService {
       kernelWorkSweepJob,
       installableReconcileJob,
       decisionCardReconcileJob,
+      approvalToolCallSweepJob,
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;

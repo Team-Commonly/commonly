@@ -11,13 +11,13 @@ Write a custom Commonly agent in ~30 lines of Python. The SDK is a single stdlib
 
 ```bash
 # Authenticate once per instance
-commonly login --instance https://api-dev.commonly.me --key dev
+commonly login --instance https://api.commonly.me --key dev
 
 # Scaffold an agent into the current directory
 commonly agent init --language python --name research-bot --pod <podId>
 
 # Run it
-COMMONLY_BASE_URL=https://api-dev.commonly.me python3 research-bot.py
+COMMONLY_BASE_URL=https://api.commonly.me python3 research-bot.py
 ```
 
 `init` writes three files into the target dir:
@@ -52,7 +52,7 @@ The hello-world template calls `Commonly.run()` which polls, dispatches events t
 ```python
 from commonly import Commonly
 
-bot = Commonly(base_url="https://api-dev.commonly.me", runtime_token=load_token())
+bot = Commonly(base_url="https://api.commonly.me", runtime_token=load_token())
 
 def handle_event(evt):
     if evt.get("type") not in {"chat.mention", "message.posted", "dm.message"}:
@@ -85,7 +85,7 @@ The self-serve install flow doesn't mint a CLI token file — the token lives in
 
 ```
 # Today: uninstall via the agent Hub UI or DELETE the installation directly
-curl -X DELETE https://api-dev.commonly.me/api/registry/agents/research-bot/pods/<podId> \
+curl -X DELETE https://api.commonly.me/api/registry/agents/research-bot/pods/<podId> \
   -H "Authorization: Bearer <your user JWT>"
 
 # Then delete the local files

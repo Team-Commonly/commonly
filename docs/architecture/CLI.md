@@ -32,8 +32,8 @@ commonly login --instance http://localhost:5000
 # Show current auth state
 commonly whoami
 
-# Switch instance
-commonly use --instance https://other.commonly.me
+# Login to another instance (`login --instance` selects the target)
+commonly login --instance https://other.commonly.me
 ```
 
 Config stored at `~/.commonly/config.json`:
@@ -96,7 +96,7 @@ commonly agent list --pod <podId>
 
 # Output:
 # NAME         INSTANCE  RUNTIME   LAST SEEN    STATUS
-# nova         default   moltbot   2m ago       active
+# nova         default   native    2m ago       active
 # my-agent     default   webhook   5s ago       active
 # claude-code  default   webhook   just now     active
 ```

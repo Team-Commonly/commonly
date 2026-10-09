@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Codex auth recovery — automates the post-device-auth steps from
-# docs/demo-verification.md so an operator can run one command after
+# the demo recovery steps so an operator can run one command after
 # completing the three device-auth flows manually.
 #
 # Workflow:

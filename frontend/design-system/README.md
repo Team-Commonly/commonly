@@ -175,7 +175,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 ### Imagery vibe
 
 - **No stock photography or illustration in chrome.** When images appear, they are user-generated (uploaded files in messages, avatars, screenshots in posts).
-- Avatars use **4px square frames**. Uploaded photos win; otherwise known humans and agents render deterministic **DiceBear Big Smile** faces, with separate background families. The compact chat and thread style keeps those faces (Sam, 2026-09-08); initials are a fallback for unknown identity or generation failure. Seed on the user ID when available so chat and the inspector agree, with `agentName:instanceId` as the agent fallback. Display-name changes must not change the face. Big Smile is **CC BY 4.0**; retain the visible DiceBear credit on login. The brand mascot is separate from the avatar system.
+- Avatars use **4px square frames**. Uploaded photos win; otherwise known humans and agents render deterministic faces from **Commonly's own avatar kit** ("Cut", `src/v2/utils/avatarKit.ts`: flat paper shapes, about 1 KB of SVG each), with separate background families, and agents dressed in ink with a cobalt collar. The compact chat and thread style keeps those faces (Sam, 2026-09-08); initials are a fallback for unknown identity or generation failure. Seed on the user ID when available so chat and the inspector agree, with `agentName:instanceId` as the agent fallback. Display-name changes must not change the face. Big Smile is **CC BY 4.0**; retain the visible DiceBear credit on login. The brand mascot is separate from the avatar system.
 
 ### Layout rules
 
@@ -207,6 +207,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 - **Style**: outlined / line icons at `20–24px`, `1.5–2px` stroke weight (MUI default outlined). Filled variants are used for **active states only** (e.g. starred pod, selected tab).
 - **No emoji in chrome.** Emoji are reserved for user-typed content (reactions, message body). The marketplace and pods do not use emoji as identifiers.
 - **No unicode glyph icons** (no `→`, `✓`, `★` as decoration). Real SVG/icon-font icons only.
+- **Categories are glyphs; only the deciding act is a word** (Sam, 2026-09-11). Ask kinds, modes, statuses, platforms and outcomes render as 16px marks (`frontend/src/v2/icons/glyphs.tsx`); secondary acts are 32px icon buttons with the word in `title` and the accessible name; the primary act keeps its label. Full rule and the measurement behind it: `docs/design/signal-identity.md` §4 *Marks and acts*.
 - **Brand mark**: `assets/commonly-mark.svg` — a stylized C arc with three centered dots. Uses `currentColor` so it inherits the brand blue at 28×28 in the rail; switches to white on the marketing dark hero. Full logo PNG (`assets/commonly-logo.png`) is reserved for marketing, README, and login.
 - **Avatar fallbacks** are uppercase initials on a role-tinted circle — the "icon" of every user/agent.
 
@@ -230,6 +231,6 @@ Sam chose this on the Shell Parity canvas from three directions (Studio, Worksho
 - **Grey ramp (complete):** ground `#eef0f4` · border `#d0d5dd` · divider `#e4e7ec` · tint `#f2f4f7` · panel `#f9fafb` · muted `#667085` · secondary `#475467` · placeholder `#98a2b3` · ink `#101828`.
 - **Engagement is behaviour, not paint:** a card settles when you pick, a status flips when an agent takes a row, presence is a live dot. Do not add colour to add energy.
 
-The canvas is the spec of record for every screen: https://claude.ai/code/artifact/3c07344a-86f2-4296-b3f0-a49a0b451503 (pages: Workspace in C · Front door · Directions · Coverage). A screen is done when it matches its artboard at 1440 and 390 in a real browser.
+The canvas is the spec of record for every screen: https://claude.ai/code/artifact/3c07344a-86f2-4296-b3f0-a49a0b451503 (pages: Workspace in C · Front door · Directions · Coverage). A screen is done when it matches its artboard at 1200 and 390 in a real browser.
 
 **The full system — state grammar, component grammar with exact values, copy rules, the process that made it land, and how to add a screen — is [`docs/design/signal-identity.md`](../../docs/design/signal-identity.md).** This section is the short form; when the two disagree, fix both in the same PR.

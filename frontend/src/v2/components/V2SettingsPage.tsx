@@ -1,17 +1,28 @@
 import { Link } from 'react-router-dom';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import { getAvatarSrc } from '../../utils/avatarUtils';
 import { useAuth } from '../../context/AuthContext';
 import AppsManagement from '../../components/AppsManagement';
 import V2BillingPanel from './V2BillingPanel';
 import V2DevicesPanel from './V2DevicesPanel';
 import V2Avatar from './V2Avatar';
+import V2AvatarCropDialog from './V2AvatarCropDialog';
+import { nextPaperAvatarPreset } from '../utils/avatarPresets';
 
 type TokenStatus = {
   hasToken?: boolean;
-  token?: string;
   createdAt?: string;
+  scopes?: string[];
+  last4?: string | null;
+};
+
+const formatTokenCreatedAt = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const month = date.toLocaleDateString('en-US', { month: 'short' });
+  return `Created ${date.getDate()} ${month} ${date.getFullYear()}`;
 };
 
 const LANGUAGE_OPTIONS = [
@@ -58,14 +69,24 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({ id, title, children }
 
 const V2AccountSection: React.FC = () => {
   const { currentUser, updateProfile } = useAuth();
+  const { t } = useTranslation();
   const accountName = String(currentUser?.displayName || currentUser?.username || 'Your account');
   const accountUsername = String(currentUser?.username || '');
   const accountEmail = String(currentUser?.email || '');
+  const profilePicture = String(currentUser?.profilePicture || 'default');
+  const hasFaceOrPhoto = profilePicture.startsWith('bigsmile:')
+    || (!profilePicture.startsWith('paper:') && Boolean(getAvatarSrc(profilePicture)));
   const [name, setName] = useState(accountName);
   const [email, setEmail] = useState(accountEmail);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [regeneratingAvatar, setRegeneratingAvatar] = useState(false);
+  const [savingPhoto, setSavingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadPhotoButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     setName(accountName);
@@ -95,6 +116,65 @@ const V2AccountSection: React.FC = () => {
     }
   };
 
+  const choosePhoto = () => fileInputRef.current?.click();
+
+  const regenerateAvatar = async () => {
+    setRegeneratingAvatar(true);
+    setPhotoError(null);
+    setError(null);
+    setNotice(null);
+    try {
+      const userId = String(currentUser?._id || currentUser?.id || '');
+      const profilePicture = nextPaperAvatarPreset(userId, currentUser?.profilePicture);
+      await updateProfile({ profilePicture });
+      setNotice(t('settings.avatar.regenerated'));
+    } catch {
+      setPhotoError(t('settings.avatar.regenerateFailed'));
+    } finally {
+      setRegeneratingAvatar(false);
+    }
+  };
+
+  const selectPhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setPhotoError(t('settings.avatar.imageTypeRequired'));
+      setError(null);
+      return;
+    }
+    setPhotoError(null);
+    setError(null);
+    setNotice(null);
+    setAvatarFile(file);
+  };
+
+  const saveCroppedPhoto = async (image: Blob) => {
+    setSavingPhoto(true);
+    setPhotoError(null);
+    setError(null);
+    setNotice(null);
+    let uploaded = false;
+    try {
+      const formData = new FormData();
+      formData.append('image', image, 'avatar.png');
+      const upload = await axios.post<{ url?: string }>('/api/uploads', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const profilePicture = upload.data?.url;
+      if (!profilePicture?.startsWith('/api/uploads/')) throw new Error('Upload path was not returned');
+      uploaded = true;
+      await updateProfile({ profilePicture });
+      setNotice(t('settings.avatar.photoSaved'));
+      setAvatarFile(null);
+    } catch {
+      setPhotoError(t(uploaded ? 'settings.avatar.profileSaveFailed' : 'settings.avatar.uploadFailed'));
+    } finally {
+      setSavingPhoto(false);
+    }
+  };
+
   return (
     <form className="v2-settings__account" onSubmit={save}>
       <div className="v2-settings__account-row">
@@ -102,6 +182,7 @@ const V2AccountSection: React.FC = () => {
           className="v2-settings__avatar"
           name={name || accountName}
           src={currentUser?.profilePicture || undefined}
+          kind="human"
           seed={currentUser?._id || currentUser?.id}
           title={`${name || accountName} avatar`}
         />
@@ -111,6 +192,40 @@ const V2AccountSection: React.FC = () => {
         </div>
         <div className="v2-settings__account-type">{currentUser?.role === 'admin' ? 'administrator' : 'member'}</div>
       </div>
+      <input
+        ref={fileInputRef}
+        className="v2-settings__avatar-file-input"
+        type="file"
+        accept="image/*"
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={selectPhoto}
+      />
+      <div className="v2-settings__avatar-actions">
+        <button
+          className="v2-settings__secondary"
+          type="button"
+          onClick={() => { if (!regeneratingAvatar && !savingPhoto) void regenerateAvatar(); }}
+          aria-disabled={regeneratingAvatar || savingPhoto}
+        >
+          {t('settings.avatar.regenerate')}
+        </button>
+        <button
+          ref={uploadPhotoButtonRef}
+          className="v2-settings__secondary"
+          type="button"
+          onClick={choosePhoto}
+          disabled={regeneratingAvatar || savingPhoto}
+        >
+          {t('settings.avatar.uploadPhoto')}
+        </button>
+      </div>
+      <p className="v2-settings__avatar-description">
+        {t(hasFaceOrPhoto ? 'settings.avatar.descriptionAfterChoice' : 'settings.avatar.description')}
+      </p>
+      {photoError && !avatarFile && (
+        <p className="v2-settings__message v2-settings__message--error" role="alert">{photoError}</p>
+      )}
       <div className="v2-settings__account-fields">
         <label>
           <span>Name</span>
@@ -133,13 +248,25 @@ const V2AccountSection: React.FC = () => {
       <div className="v2-settings__actions">
         <button className="v2-settings__primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
       </div>
+      {avatarFile && (
+        <V2AvatarCropDialog
+          file={avatarFile}
+          saving={savingPhoto}
+          error={photoError}
+          returnFocusElement={uploadPhotoButtonRef.current}
+          onCancel={() => { setAvatarFile(null); setPhotoError(null); }}
+          onSave={(image) => { void saveCroppedPhoto(image); }}
+        />
+      )}
     </form>
   );
 };
 
 const V2ApiTokenSection: React.FC = () => {
+  const [hasToken, setHasToken] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
+  const [last4, setLast4] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [busy, setBusy] = useState<'generate' | 'revoke' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -150,9 +277,12 @@ const V2ApiTokenSection: React.FC = () => {
     const load = async () => {
       try {
         const response = await axios.get<TokenStatus>('/api/auth/api-token');
-        if (!active || !response.data?.hasToken) return;
-        setToken(response.data.token || null);
-        setCreatedAt(response.data.createdAt || null);
+        if (!active) return;
+        setHasToken(Boolean(response.data?.hasToken));
+        setToken(null);
+        setCreatedAt(response.data?.createdAt || null);
+        setLast4(response.data?.last4 || null);
+        setShowToken(false);
       } catch {
         // A missing token is an expected state. The generate action remains available.
       }
@@ -167,8 +297,11 @@ const V2ApiTokenSection: React.FC = () => {
     setNotice(null);
     try {
       const response = await axios.post<{ apiToken?: string; createdAt?: string }>('/api/auth/api-token/generate', {});
-      setToken(response.data.apiToken || null);
+      const generatedToken = response.data.apiToken || null;
+      setHasToken(true);
+      setToken(generatedToken);
       setCreatedAt(response.data.createdAt || null);
+      setLast4(generatedToken ? generatedToken.slice(-4) : null);
       setShowToken(true);
       setNotice('New API token generated. Copy it now; treat it like a password.');
     } catch {
@@ -184,8 +317,10 @@ const V2ApiTokenSection: React.FC = () => {
     setNotice(null);
     try {
       await axios.delete('/api/auth/api-token');
+      setHasToken(false);
       setToken(null);
       setCreatedAt(null);
+      setLast4(null);
       setShowToken(false);
       setNotice('API token revoked.');
     } catch {
@@ -206,21 +341,27 @@ const V2ApiTokenSection: React.FC = () => {
   };
 
   const maskedToken = '••••••••••••••••••••••••••••••••';
+  const createdLabel = createdAt ? formatTokenCreatedAt(createdAt) : null;
 
   return (
     <div className="v2-settings__token">
       {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
       {notice && <p className="v2-settings__message" role="status">{notice}</p>}
-      {token ? (
+      {hasToken ? (
         <>
           <div className="v2-settings__token-value">
-            <code>{showToken ? token : maskedToken}</code>
-            <button type="button" className="v2-settings__secondary" onClick={() => setShowToken((visible) => !visible)}>
-              {showToken ? 'Hide' : 'Show'}
-            </button>
-            <button type="button" className="v2-settings__secondary" onClick={() => void copy()}>Copy</button>
+            <code>{token && showToken ? token : maskedToken}</code>
+            {token && (
+              <>
+                <button type="button" className="v2-settings__secondary" onClick={() => setShowToken((visible) => !visible)}>
+                  {showToken ? 'Hide' : 'Show'}
+                </button>
+                <button type="button" className="v2-settings__secondary" onClick={() => void copy()}>Copy</button>
+              </>
+            )}
           </div>
-          {createdAt && <p className="v2-settings__meta">created {new Date(createdAt).toLocaleString()}</p>}
+          {!token && <p className="v2-settings__token-meta">Shown once, when generated.{last4 ? ` Ends in ${last4}.` : ''}</p>}
+          {createdLabel && <p className="v2-settings__token-meta">{createdLabel}</p>}
           <div className="v2-settings__actions">
             <button type="button" className="v2-settings__secondary" onClick={() => void generate()} disabled={busy !== null}>
               {busy === 'generate' ? 'Regenerating…' : 'Regenerate'}

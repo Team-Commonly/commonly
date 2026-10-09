@@ -6,14 +6,14 @@ Chosen by Sam on 2026-09-03 from three named directions (Studio, Workshop, Signa
 - Tokens: `frontend/src/v2/v2.css` (ships) and `frontend/design-system/tokens.css` (mirror). They move together in one PR.
 - Anchor: `frontend/design-system/README.md` § *Identity: Signal* carries the short form of this page.
 
-A screen is done when it matches its artboard at 1440 and 390 in a real browser. Nothing is pressed on a description; Sam sees it live beside its artboard.
+A screen is done when it matches its artboard at 1200 and 390 in a real browser (evidence widths per Sam, 68655; confirmed 2026-09-23). Nothing is pressed on a description; Sam sees it live beside its artboard.
 
 ## 1. The five rules
 
 1. **One colour, two volumes.** Cobalt `#1d3fd1` is the only accent. On the *front door* (landing, connect, create account, invite, reset password) it is a **block**: the hero band, a full panel, a wordmark underline. *Inside the app* it is only ever a **mark**: the live dot, an agent's name in mono, a link, the focus edge, and the single card that needs you (2px ring). The same hex, never a tint of it as a background inside the app.
 2. **Ink acts.** Every filled control inside the app is ink `#101828` on white: Send, Answer, Press, Create, Save. Cobalt fills a control inside the app in exactly one place: the **primary option of an open decision card** — the one thing the page is asking of you, and the second cobalt block on the page beside the selected room. Nothing else. Secondary controls are a 1px `#d0d5dd` border. The rare cobalt fill (Copy on a command block) sits on an ink ground, so it is a mark on ink, not a button on white.
 3. **Three faces, one job each.** Bricolage Grotesque 700/800 for display, letter-spacing −0.03em. IBM Plex Sans 400/500/600 for body and controls, 14/20. IBM Plex Mono 500 for meta: timestamps, ids, counts, status, lowercase labels, commands. Meta is mono *because* it is data; a sentence is never mono.
-4. **Hard edges, no shadows.** Radius 4 on controls, rows, chips, avatars and marks; 6 on cards, panels and the content card. No shadow anywhere; elevation is a border. Avatars keep the 4px square frame and render uploaded photos or stable Big Smile faces for people and agents, including chat, thread previews and the pod inspector (Sam, 2026-09-08). Initials are a fallback, not a replacement for a known identity.
+4. **Hard edges, no shadows.** Radius 4 on controls, rows, chips, avatars and marks; 6 on cards, panels and the content card. No shadow anywhere; elevation is a border. Avatars keep the 4px square frame and render uploaded photos or stable faces from Commonly's own kit (`frontend/src/v2/utils/avatarKit.ts`, the "Cut" direction) for people and agents, including chat, thread previews and the pod inspector (Sam, 2026-09-08; kit chosen 2026-09-23). People wear light shirts; agents wear ink with a cobalt collar, on the cool background family. Initials are a fallback, not a replacement for a known identity.
 5. **Engagement is behaviour, not paint.** A card settles when you pick; a row flips when an agent takes it; presence is a pulsing dot (1.6s, respects reduced motion). Energy comes from things changing, never from adding colour. When a screen feels flat, remove something.
 
 Agent identity must survive both history reads and live message broadcasts: `userId.isBot` identifies the author before a refresh. Verify a newly arriving agent message as well as a reloaded thread; a history-only check misses incomplete socket payloads.
@@ -60,6 +60,11 @@ Counts live in mono next to the thing they count (`7 open · 2 need you`), never
 - **Front door.** `grid-template-columns: minmax(0,1fr) 560px`: a cobalt panel with the wordmark, one display line at 64/64 with `text-wrap: balance`, one 18/28 sentence at 86% white, one mono footer; a white panel with the form, a 32/36 display title, 48px controls. Reset password, invite and create account are the same frame with different words.
 - **Phone (390).** The rail becomes a bottom bar; the content card loses its border and goes edge to edge; the inspector is a sheet. See *Workspace · 390* on the canvas; no per-page phone artboards are drawn, the shell rule fixes every page.
 
+- **Marks and acts (Sam, 2026-09-11 — canvas "Signal, quieter", direction A).** Measured at 1440 with three asks open, Activity carried 120 words, 17 worded buttons and no icons; every meaning on the row was a word, including the ones that are categories. Three rules, applied to every row-like surface (Activity, Connectors and Tools, Your Team, Artifacts, the inspector) and nothing else changes:
+  1. *Categories are glyphs.* Anything with a fixed set of values — ask kind, write mode, status, platform, outcome — renders as a 16px 2px-stroke mark with its word in `title` and the accessible name, never as a word in the row and never as a unicode character. The mark's colour keeps saying who is asking (an agent is cobalt).
+  2. *Only the deciding act is a word.* Approve, Reply, the cobalt option, a row's single act keep their label. Mark handled, Deny, Open pod, Manage-beside-a-primary become 32px square icon buttons (44 under 760) with the word in `title` and the accessible name. Nothing moves into an overflow menu: a secondary act stays one click away, beside the primary.
+  3. *Meta is mono chips.* Pod and time are the row's kicker — mono 11 above the title (`launch pod · 5m`), as the build and the canvas draw it; the kicker no longer names the kind. Titles and detail sentences are untouched — an ask is a sentence someone wrote, and the words that are sentences stay.
+
 ## 5. Copy
 
 The product's nouns are the only nouns: **pod** (never room, channel-as-pod, or space), **agent**, **connector**, **decision**. An artboard is a spec, so a synonym written on it becomes a product term; change a noun only with Sam, deliberately.
@@ -72,8 +77,8 @@ Real copy on every artboard, final draft, in the product's voice: short declarat
 1. **Directions before deliverables.** When a direction is open, three *named* candidates on one page, each built around the *same product moment* with the *same fixed copy*, so the only variable is the design. Five shades of one idea is not a choice.
 2. **The chosen one gets clickable.** The winning direction is applied to the screen people live in as a working prototype (state changes, not a tour) before any other screen is drawn.
 3. **One system, two volumes.** Every later screen is the same system; the only knob is front door (blocks) vs in-app (marks). A screen that needs a new colour or radius is wrong, not the system.
-4. **Canvas first, code second.** No component work starts before the artboard exists and Sam has looked at it. The artboard is the spec; the PR carries 1440 and 390 screenshots of the real screen beside it.
-5. **Survey what is left.** Periodically screenshot every live route at 1440 and 390 into one sheet (the *Coverage* page shows the shape); each uncovered screen gets a call — draw, fold into a drawn screen, or delete — and Sam rules on the deletes.
+4. **Canvas first, code second.** No component work starts before the artboard exists and Sam has looked at it. The artboard is the spec; the PR carries 1200 and 390 screenshots of the real screen beside it.
+5. **Survey what is left.** Periodically screenshot every live route at 1200 and 390 into one sheet (the *Coverage* page shows the shape); each uncovered screen gets a call — draw, fold into a drawn screen, or delete — and Sam rules on the deletes.
 6. **A screen ships whole, never in slices.** A new sidebar beside an old composer is parity and misalignment, not progress (Sam, 2026-09-05). When an artboard covers several components, their PRs stack and press within the hour, deploy once, and the old components are deleted in the same cutover — no flags, no half-states in production.
 7. **Pin the load-bearing CSS.** Layout rules a browser could silently break are pinned in `frontend/src/v2/__tests__/v2-layout-invariants.test.ts`; a restyle re-pins, never deletes.
 
@@ -86,6 +91,7 @@ Real copy on every artboard, final draft, in the product's voice: short declarat
 
 ## History
 
+- 2026-09-23 — Avatar kit: Sam chose "Cut" (flat paper shapes) over "Mark" and "Grid" on the canvas and it replaced DiceBear Big Smile everywhere through the one character tier. Stored picks keep their seeds and redraw; the licence credit on the login page went with it.
 - 2026-09-03 — direction chosen (C · Signal). Tokens landed in #1530; Activity rebuilt to its artboard in #1522.
 - 2026-09-05 — Active goal: the workspace is the preview. Sidebar, inspector, thread, decision card and composer rebuilt as new components to `Workspace · clickable`, one cutover; decision loop closed both ways (card → pick → event to the agent → Telegram).
 - 2026-09-04 — Coverage page: 18 uncovered screens surveyed, six drawn (invite, connectors, settings, board, bring your own, reset password); delete or fold proposed for feed, digest, analytics, dashboard, skills, manage agents, profile, devices — pending Sam. Chat + inspector restyle in progress.

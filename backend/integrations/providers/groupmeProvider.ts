@@ -110,7 +110,10 @@ function createGroupMeProvider(integration: { _id: unknown; config?: Record<stri
 
   return {
     async validateConfig() {
-      validateRequiredConfig(config, manifests.groupme);
+      validateRequiredConfig(
+        { ...config, botId: config.botId || process.env.GROUPME_BOT_ID },
+        manifests.groupme,
+      );
     },
 
     // @ts-ignore — handler param types are more specific than generic interface allows
@@ -131,7 +134,11 @@ function createGroupMeProvider(integration: { _id: unknown; config?: Record<stri
           const command = lowerText.split(/\s+/)[0];
           const isSummaryCommand = /^!summary\b/i.test(text);
           const isPodCommand = /^!pod(-summary|summary)?\b/i.test(text);
-          const { botId } = effectiveConfig as { botId?: string };
+          const botId = String(
+            (effectiveConfig as { botId?: string }).botId
+              || process.env.GROUPME_BOT_ID
+              || '',
+          ).trim();
 
           if (botId && text.startsWith('!')) {
             console.log('GroupMe command received', {

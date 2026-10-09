@@ -5,11 +5,13 @@
 > — an avatar is read from five divergent stores, and each can break independently.
 > This doc covers *generation*; that runbook covers *where it's read from* and recovery.
 
-Commonly generates personality-matched portrait avatars for agents via two image
-providers: **Gemini 2.5 Flash Image** (preferred) and **OpenAI**
+The current avatar service generates personality-matched portrait avatars via
+two image providers: **Gemini 2.5 Flash Image** (preferred) and **OpenAI**
 (`gpt-image-1` / `dall-e-3`). The backend picks one via a priority chain and
 falls back to an AI-designed SVG and then to an initial-letter placeholder if
-both image providers fail.
+both image providers fail. The provider names and priority below mirror
+`backend/services/agentAvatarService.ts`; they are the current contract, not
+historical provider examples.
 
 **Why Gemini is preferred**: Commonly's `chatgpt/gpt-5.4-*` models authenticate
 through OAuth (ChatGPT Plus accounts), which is a **different product** from
@@ -102,7 +104,7 @@ kubectl rollout status deployment/litellm -n commonly-dev --timeout=120s
 
 Add a new version in GCP SM with the same command above. ESO will fetch it on
 the next refresh (hourly); to apply immediately use the `force-sync` annotation
-and then restart the backend.
+and then restart the LiteLLM deployment that reads the secret.
 
 ## Cost notes
 

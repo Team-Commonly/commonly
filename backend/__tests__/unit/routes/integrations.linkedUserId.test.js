@@ -220,7 +220,7 @@ describe('PATCH /api/integrations/:id — user-scoped connector gates', () => {
 
   it('checks every requested gate before writing any of them', async () => {
     Pod.findById
-      .mockResolvedValueOnce({ _id: allowedPodId, createdBy: 'user-1', members: [] })
+      .mockResolvedValueOnce({ _id: allowedPodId, createdBy: 'someone-else', members: ['user-1'] })
       .mockResolvedValueOnce({ _id: forbiddenPodId, createdBy: 'someone-else', members: [] });
 
     const res = await request(app)
@@ -239,7 +239,9 @@ describe('PATCH /api/integrations/:id — user-scoped connector gates', () => {
   });
 
   it('allows the linked owner to write gates for pods they belong to', async () => {
-    Pod.findById.mockResolvedValue({ _id: allowedPodId, createdBy: 'user-1', members: [] });
+    // Listed in `members`, which is what "belong to" means — the fixture used to
+    // leave `members` empty and lean on `createdBy` (TASK-161).
+    Pod.findById.mockResolvedValue({ _id: allowedPodId, createdBy: 'someone-else', members: ['user-1'] });
 
     const res = await request(app)
       .patch(`/api/integrations/${userScopedIntegrationId}`)
@@ -251,7 +253,7 @@ describe('PATCH /api/integrations/:id — user-scoped connector gates', () => {
   });
 
   it('allows the linked owner to select a member pod as the active inbound destination', async () => {
-    Pod.findById.mockResolvedValue({ _id: allowedPodId, createdBy: 'user-1', members: [] });
+    Pod.findById.mockResolvedValue({ _id: allowedPodId, createdBy: 'someone-else', members: ['user-1'] });
 
     const res = await request(app)
       .patch(`/api/integrations/${userScopedIntegrationId}`)
@@ -260,6 +262,74 @@ describe('PATCH /api/integrations/:id — user-scoped connector gates', () => {
     expect(res.status).toBe(200);
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
     expect(update.podId).toBe(allowedPodId);
+  });
+
+  it.each([
+    ['created and then left', { _id: 'pod', createdBy: 'user-1', members: [] }],
+    ['never a member', { _id: 'pod', createdBy: 'someone-else', members: [] }],
+  ])('refuses a gate for a pod the linked owner %s', async (_label, podDoc) => {
+    // TASK-161: `leavePod` filters `members` and never clears `createdBy`, so
+    // the first cell is a creator who left. Both must refuse, or a connector
+    // could aim inbound messages at a pod its owner cannot post in.
+    Pod.findById.mockResolvedValue({ ...podDoc, _id: allowedPodId });
+
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send({ config: { gates: { [allowedPodId]: { enabled: true } } } });
+
+    expect(res.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['created and then left', { _id: 'pod', createdBy: 'user-1', members: [] }],
+    ['never a member', { _id: 'pod', createdBy: 'someone-else', members: [] }],
+  ])('refuses selecting a pod the linked owner %s as the active destination', async (_label, podDoc) => {
+    Pod.findById.mockResolvedValue({ ...podDoc, _id: allowedPodId });
+
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send({ podId: allowedPodId });
+
+    expect(res.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  // TASK-171: listed membership is half the rule; the pod's type is the other
+  // half. `agent-admin` is hidden from the default listing the page is built
+  // from, so a gate written for one — or an active pod set to one — is a switch
+  // its owner never sees. The caller here IS listed in the pod, which is what
+  // separates this from the membership arms above.
+  it.each([
+    ['a gate key', (id) => ({ config: { gates: { [id]: { enabled: true } } } })],
+    ['the active pod', (id) => ({ podId: id })],
+  ])('refuses %s naming an agent-admin pod the linked owner is listed in', async (_label, body) => {
+    Pod.findById.mockResolvedValue({
+      _id: allowedPodId, type: 'agent-admin', createdBy: 'someone-else', members: ['user-1'],
+    });
+
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send(body(allowedPodId));
+
+    expect(res.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a gate key', (id) => ({ config: { gates: { [id]: { enabled: true } } } })],
+    ['the active pod', (id) => ({ podId: id })],
+  ])('still accepts %s naming a team pod the linked owner is listed in', async (_label, body) => {
+    Pod.findById.mockResolvedValue({
+      _id: allowedPodId, type: 'team', createdBy: 'someone-else', members: ['user-1'],
+    });
+
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send(body(allowedPodId));
+
+    expect(res.status).toBe(200);
+    expect(Integration.findByIdAndUpdate).toHaveBeenCalledTimes(1);
   });
 
   it('refuses selecting an active pod the linked owner is no longer a member of', async () => {
@@ -354,6 +424,22 @@ describe('POST /api/integrations — create-path guards', () => {
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/liveRelay must be true or false/);
     expect(Integration.prototype.save).not.toHaveBeenCalled();
+  });
+
+  // TASK-171: creating a connector is a target write, so it carries the type
+  // half of the rule as well as membership. The caller is listed in both pods
+  // here, which is what isolates the type.
+  it.each([
+    ['agent-admin', 403],
+    ['team', 201],
+  ])('create against a %s pod the caller is listed in returns %p', async (type, expected) => {
+    Pod.findById.mockResolvedValue({ _id: 'pod-1', type, members: ['user-1'] });
+
+    const res = await request(app)
+      .post('/api/integrations')
+      .send({ podId: 'pod-1', type: 'telegram', config: {} });
+
+    expect(res.status).toBe(expected);
   });
 
   it('refuses non-members of the target pod', async () => {

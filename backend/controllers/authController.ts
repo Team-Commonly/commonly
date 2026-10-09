@@ -90,24 +90,74 @@ const sendVerificationEmail = async (user: any) => {
   });
 };
 
-// Give every new signup a default private workspace pod so the BYO
-// onboarding flow has a target to install/talk-to an agent in. Matches
-// the Mongo Pod shape created by podController.createPod (type 'chat',
-// creator = sole member); joinPolicy 'invite-only' keeps it private.
-// Best-effort: a pod-create hiccup must never fail signup — the user
-// can always create a pod from the UI later. Shared by password
-// registration and the OAuth signup path (oauthController).
-const createDefaultWorkspacePod = async (userId: any) => {
-  try {
-    const pod = await Pod.create({
-      name: 'My Workspace',
-      description: 'Your private workspace',
-      type: 'chat',
-      joinPolicy: 'invite-only',
-      createdBy: userId,
-      members: [userId],
-    });
+// Registration must not wait on the mail provider. SMTP2GO's send routinely
+// takes seconds and emailService sets a 30s timeout, so awaiting it here was the
+// whole of a six-second signup (6211 ms measured on POST /api/auth/register,
+// build 58a6f2c2, 2026-09-23). TASK-142.
+//
+// Best-effort and deliberately in-process: one immediate retry covers a
+// transient socket or provider blip, and a failure that survives it is
+// recoverable without a durability layer — an unverified account is shown a
+// banner whose resend button hits POST /api/auth/resend-verification, which is
+// separately rate-limited. It is NOT durable across a pod restart; that limit
+// is stated on the task rather than implied away.
+//
+// resendVerification still awaits its own send on purpose: there the user asked
+// for the mail, so a 502 is feedback they can act on.
+const sendVerificationEmailInBackground = (user: any) => {
+  void (async () => {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const smtpRes = await sendVerificationEmail(user);
+        console.log('SMTP2GO send response:', smtpRes?.data);
+        return;
+      } catch (sendError: any) {
+        const reason = sendError?.response?.data || sendError?.message;
+        if (attempt === 2) {
+          console.error(
+            `[register] verification email failed for user ${user._id} after ${attempt} attempts:`,
+            reason,
+          );
+          return;
+        }
+        console.error(
+          `[register] verification email attempt ${attempt} failed for user ${user._id}, retrying:`,
+          reason,
+        );
+      }
+    }
+  })();
+};
 
+// Everything a new workspace needs AFTER its own pod row: the PG mirror, the
+// starter checklist, and the Guide's install + welcome.
+//
+// Split out of createDefaultWorkspacePod by TASK-149. Registration was awaiting
+// these ~11 sequential remote ops after the user row was written (register p50
+// 1.59-1.76 s measured 2026-09-24 against a ~0.20 s floor and ~0.12 s of
+// bcrypt, so the tail was ~1.0 s of it) and nothing in the 201 depends on
+// them. The order below is inherited unchanged and is load-bearing, not
+// cosmetic: the user must be mirrored before the pod (the pod's member insert
+// would fail its user_id FK) and the pod's PG row must exist before the
+// Guide's welcome (AgentMessageService.postMessage inserts a message against
+// it). One consequence, stated rather than implied: the pod now exists in
+// Mongo ~1 s before it exists in PG, so any *non-message* PG op on a
+// brand-new workspace has a one-second window exactly like the 2026-07-24
+// re-home incident (the lazy backfill still catches it afterwards).
+//
+// Every step is best-effort and individually caught, and the outer catch makes
+// this function total — it never rejects, which is what lets the caller fire
+// it without an unhandled-rejection risk. Read that as a contract, not as
+// boilerplate: the outer catch is unreachable as written (a reviewer's
+// rethrow mutant changes no test, because each step below swallows its own
+// error already), and it is therefore NOT dead code to delete. It is the
+// backstop for a fourth step added outside an inner catch — without it, that
+// step's rejection surfaces as an unhandled rejection from the `void
+// finishWorkspaceOnboarding(...)` call site, which is a process crash under
+// Node's default --unhandled-rejections=throw, on the register path.
+const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
+  try {
     // Mirror the workspace into PostgreSQL immediately. The UI path
     // (`createPod`) already does this, but registration's workspace pod did
     // not — so every new user's workspace lived only in Mongo until its first
@@ -153,9 +203,10 @@ const createDefaultWorkspacePod = async (userId: any) => {
           notes: 'Workspaces are better shared — humans and agents in the same room, one project memory. Use the pod invite link from the inspector panel.',
         },
       ];
-      // Distinct sourceRefs give each seed a stable identity under the
-      // unique (podId, sourceRef) partial index — re-running the seeding
-      // for a pod can never silently duplicate the checklist.
+      // Distinct sourceRefs — each with a fixed title — give every seed a
+      // stable identity under the unique (podId, sourceRef, title) partial
+      // index, so re-running the seeding for a pod cannot silently duplicate
+      // the checklist.
       await Task.create(starter.map((t, i) => ({
         podId: pod._id,
         taskNum: i + 1,
@@ -255,6 +306,37 @@ const createDefaultWorkspacePod = async (userId: any) => {
     } catch (scoutError: any) {
       console.warn('[register] guide agent install failed:', scoutError?.message);
     }
+  } catch (onboardingError: any) {
+    console.warn('[register] workspace onboarding failed:', onboardingError?.message);
+  }
+};
+
+// Give every new signup a default private workspace pod so the BYO
+// onboarding flow has a target to install/talk-to an agent in. Matches
+// the Mongo Pod shape created by podController.createPod (type 'chat',
+// creator = sole member); joinPolicy 'invite-only' keeps it private.
+// Best-effort: a pod-create hiccup must never fail signup — the user
+// can always create a pod from the UI later. Shared by password
+// registration and the OAuth signup path (oauthController).
+//
+// TASK-149: only the pod row is awaited. The client needs it to exist by the
+// 201 — the V2 landing guard reads GET /api/pods immediately after register
+// (TASK-144) — and needs nothing else, so onboarding is queued instead of
+// awaited. The queued call is not tracked anywhere: a pod-restart mid-tail
+// leaves a workspace with no Guide and no starter checklist, the same
+// best-effort limit the verification email already carries.
+const createDefaultWorkspacePod = async (userId: any) => {
+  try {
+    const pod = await Pod.create({
+      name: 'My Workspace',
+      description: 'Your private workspace',
+      type: 'chat',
+      joinPolicy: 'invite-only',
+      createdBy: userId,
+      members: [userId],
+    });
+
+    void finishWorkspaceOnboarding(pod, userId);
   } catch (podError: any) {
     console.warn('[register] default workspace pod creation failed:', podError?.message);
   }
@@ -277,6 +359,7 @@ exports.isEnvInvitationCodeValid = isEnvInvitationCodeValid;
 exports.consumeDbInvitationCode = consumeDbInvitationCode;
 exports.redeemInvitationCode = redeemInvitationCode;
 exports.createDefaultWorkspacePod = createDefaultWorkspacePod;
+exports.finishWorkspaceOnboarding = finishWorkspaceOnboarding;
 
 // 📌 Register User
 exports.register = async (req: any, res: any) => {
@@ -294,6 +377,24 @@ exports.register = async (req: any, res: any) => {
 
     if (!normalizedUsername || !normalizedEmail || !rawPassword) {
       return res.status(400).json({ error: 'Username, email, and password are required.' });
+    }
+
+    // Reserved for agents (TASK-133 b). A row that takes an agent's derived name
+    // or its address IS the row an install would adopt, and registration is the
+    // only moment it can be defended: once it exists, the install's choice is
+    // between adopting it and failing closed. Refused here with a 409 the
+    // frontend can show, rather than as a refused install much later.
+    const reservedIdentity = await AgentIdentityService.resolveAccountNameConflict({
+      username: normalizedUsername,
+      email: normalizedEmail,
+    });
+    if (reservedIdentity) {
+      return res.status(409).json({
+        error: reservedIdentity === 'agent_email_reserved'
+          ? 'That email address is reserved for agents.'
+          : 'That username is reserved for agents.',
+        code: reservedIdentity,
+      });
     }
 
     // Check if email or username already exists
@@ -374,27 +475,14 @@ exports.register = async (req: any, res: any) => {
     if (shouldAutoVerify) joinCommunityPodBestEffort(user._id);
 
     if (hasEmailConfig) {
-      try {
-        console.log('SMTP2GO send attempt:', {
-          to: user.email,
-          sender: process.env.SMTP2GO_FROM_EMAIL,
-          fromName: process.env.SMTP2GO_FROM_NAME,
-        });
-        const smtpRes = await sendVerificationEmail(user);
-        console.log('SMTP2GO send response:', smtpRes?.data);
-      } catch (sendError: any) {
-        console.error('SMTP2GO error during registration:', sendError?.response?.data || sendError.message);
-        return res.status(502).json({
-          error: 'Email delivery failed. Please verify SMTP2GO configuration.',
-        });
-      }
+      sendVerificationEmailInBackground(user);
     }
 
     return res
       .status(201)
       .json({
         message: hasEmailConfig
-          ? 'User registered successfully. Check your email for verification.'
+          ? 'Registered. Verify your email to join the Community pod.'
           : 'User registered successfully. Email verification is not required.',
       });
   } catch (err: any) {
@@ -665,7 +753,12 @@ exports.login = async (req: any, res: any) => {
   const email = normalizeEmail(req.body?.email);
   try {
     if (!email) return res.status(400).json({ error: 'User not found' });
-    const user = await User.findOne({ email });
+    // `isBot` matches the two recovery paths beside it (forgotPassword,
+    // resendVerification). An agent row is a User and can carry a password hash,
+    // and this route is the one that MINTS a password session — which every user
+    // session verifier then accepted, because a bot is neither banned nor
+    // otherwise marked (TASK-133). A bot row still has its runtime token.
+    const user = await User.findOne({ email, isBot: { $ne: true } });
     if (!user) return res.status(400).json({ error: 'User not found' });
 
     // Admin moderation: banned accounts cannot start a session.
@@ -715,7 +808,7 @@ exports.login = async (req: any, res: any) => {
 // 🔄 Refresh Token — issue a new 7d token from a still-valid token
 exports.refresh = async (req: any, res: any) => {
   try {
-    const user = await User.findById(req.userId).select('-password -deviceTokens');
+    const user = await User.findById(req.userId).select('-password -deviceTokens -agentRuntimeTokens');
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
@@ -732,7 +825,7 @@ exports.refresh = async (req: any, res: any) => {
 // New method to get user profile
 exports.getProfile = async (req: any, res: any) => {
   try {
-    const user = await User.findById(req.userId).select('-password -deviceTokens');
+    const user = await User.findById(req.userId).select('-password -deviceTokens -agentRuntimeTokens');
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (err: any) {
@@ -743,7 +836,7 @@ exports.getProfile = async (req: any, res: any) => {
 // Get current user information
 exports.getCurrentUser = async (req: any, res: any) => {
   try {
-    const user = await User.findById(req.userId).select('-password -deviceTokens');
+    const user = await User.findById(req.userId).select('-password -deviceTokens -agentRuntimeTokens');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -774,7 +867,7 @@ exports.updateProfile = async (req: any, res: any) => {
     await AgentIdentityService.syncUserToPostgreSQL(user);
 
     // Return the updated user without the password
-    const updatedUser = await User.findById(userId).select('-password -deviceTokens');
+    const updatedUser = await User.findById(userId).select('-password -deviceTokens -agentRuntimeTokens');
     res.json(updatedUser);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

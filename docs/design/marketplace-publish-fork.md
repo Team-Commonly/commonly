@@ -9,7 +9,6 @@ surface area read the routes in `backend/routes/marketplace*.ts`.
 **Date:** 2026-04-17
 **Branch:** `feat/marketplace-publish-fork` (merged)
 **References:**
-- [AGENT_DISTRIBUTION_PLATFORM.md](AGENT_DISTRIBUTION_PLATFORM.md) — overarching vision (agent registry as package manager)
 - [ADR-001 (Installable taxonomy)](../adr/ADR-001-installable-taxonomy.md) — unified Installable model
 - [ADR-006 (Webhook SDK + Self-serve install)](../adr/ADR-006-webhook-sdk-and-self-serve-install.md) — ephemeral installs
 
@@ -44,7 +43,7 @@ follow-up.
 
 ### Current state
 
-AGENT_DISTRIBUTION_PLATFORM.md defines the vision: an agent registry that
+The pre-ADR distribution draft (removed in the 2026-09-19 docs wash; see git history) defined the vision: an agent registry that
 works like `apt install` for AI agents — manifest-driven, versioned,
 discoverable. The checklist from that doc:
 

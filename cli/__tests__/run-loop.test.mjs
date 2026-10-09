@@ -56,6 +56,15 @@ const {
 } = await import('../src/lib/session-store.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
+// TASK-102 part B: the spawn-credential mint is a POST through the same mocked
+// client, so "nothing was posted" has to name the paths it means. The invariant
+// these tests defend is that a failed turn posts no reply and no ack — minting a
+// credential is neither, and asserting on the whole mock would have made the
+// invariant pass by accident on any implementation that forgot to mint.
+const callsTo = (mockPost, fragment) => mockPost.mock.calls.filter(([p]) => String(p).includes(fragment));
+const replyPosts = (mockPost) => callsTo(mockPost, '/messages');
+const ackPosts = (mockPost) => callsTo(mockPost, '/ack');
+
 const makeEvent = (overrides = {}) => ({
   _id: 'evt-1',
   type: 'chat.mention',
@@ -83,20 +92,35 @@ const drainMicrotasks = async () => {
   }
 };
 
+let savedGitConfig;
+
 describe('performRun', () => {
   beforeEach(() => {
+    savedGitConfig = new Map(['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0']
+      .map((name) => [name, process.env[name]]));
     jest.clearAllMocks();
     fs.rmSync(path.join(sessionsTmpDir, '.commonly'), { recursive: true, force: true });
   });
 
-  test('event with content → adapter.spawn → message posted → event acked', async () => {
+  afterEach(() => {
+    for (const [name, value] of savedGitConfig) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  test('event with content → adapter.spawn receives sandboxed attribution → reply posted → acked', async () => {
+    // Make the full attribution env differ from sandboxEnv at the adapter seam.
+    process.env.GIT_CONFIG_COUNT = '1';
+    process.env.GIT_CONFIG_KEY_0 = 'http.extraHeader';
+    process.env.GIT_CONFIG_VALUE_0 = 'Authorization: Bearer planted-caller-value';
     const events = [makeEvent({ payload: { content: 'hello from tester', deliveryId: 'delivery-abc' } })];
     const mockGet = jest.fn().mockResolvedValue({ events });
     const mockPost = jest.fn().mockResolvedValue({});
     createClient.mockReturnValue({ get: mockGet, post: mockPost });
 
     const spawn = jest.fn(async () => ({ text: 'hello back' }));
-    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const adapter = { name: 'codex', detect: stubAdapter.detect, spawn };
 
     const { stop } = performRun({
       instanceUrl: 'http://localhost:5000',
@@ -119,6 +143,19 @@ describe('performRun', () => {
     // behind a prior single-event turn.
     expect(mockGet.mock.calls[0][1].limit).toBe(10);
     expect(spawn).toHaveBeenCalledTimes(1);
+    const spawnedEnv = spawn.mock.calls[0][1].env;
+    const configIndex = Number(process.env.GIT_CONFIG_COUNT || 0);
+    expect(spawnedEnv[`GIT_CONFIG_KEY_${configIndex}`]).toBe('core.hooksPath');
+    expect(spawnedEnv.COMMONLY_AGENT_SEAT_NAME).toBe('my-stub');
+    expect(spawnedEnv.COMMONLY_AGENT_SEAT_ID).toBe('WyJteS1zdHViIiwiZGVmYXVsdCJd');
+    expect(spawnedEnv.COMMONLY_AGENT_ADAPTER).toBe('codex');
+    expect(spawnedEnv.COMMONLY_AGENT_MODEL).toBe('default');
+    expect(fs.existsSync(spawnedEnv[`GIT_CONFIG_VALUE_${configIndex}`])).toBe(false);
+    const sandboxEnv = spawn.mock.calls[0][1].commitAttributionEnv;
+    expect(sandboxEnv.GIT_CONFIG_COUNT).toBe('1');
+    expect(sandboxEnv.GIT_CONFIG_KEY_0).toBe('core.hooksPath');
+    expect(sandboxEnv.GIT_CONFIG_VALUE_0).toBe(spawnedEnv[`GIT_CONFIG_VALUE_${configIndex}`]);
+    expect(sandboxEnv.COMMONLY_AGENT_GIT_CONFIG_BASE_COUNT).toBe('0');
     expect(spawn.mock.calls[0][0]).toContain('[Inbox batch: 1 new event');
     expect(spawn.mock.calls[0][0]).toContain('hello from tester');
 
@@ -129,6 +166,85 @@ describe('performRun', () => {
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
       { result: { outcome: 'posted' }, deliveryId: 'delivery-abc' },
+    );
+  });
+
+  test('a refused model route is named in the log and reported, not posted as silence', async () => {
+    // TASK-096. pi exits 0 with no text when the route refuses, so this turn
+    // used to reach the seat log as `no wrapper-post (empty output)` — the same
+    // line a seat that simply had nothing to say produces. Measured cost of that
+    // ambiguity: two and a half days of a 429 budget refusal read as an agent
+    // fault (Kai, 2026-09-20..22).
+    const lines = [];
+    const events = [makeEvent({ payload: { content: 'are you there?' } })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({
+      text: '',
+      upstream: { status: 429, detail: 'Budget has been exceeded! Current cost: 12.34, Max budget: 10.00' },
+    }));
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      log: (line) => lines.push(line),
+    });
+    await drainMicrotasks();
+    stop();
+
+    const refusalLine = lines.find((line) => line.includes('upstream refused'));
+    expect(refusalLine).toContain('upstream refused 429');
+    expect(refusalLine).toContain('Budget has been exceeded!');
+    // The old line must be GONE for this case, not merely accompanied: a reader
+    // grepping for `no wrapper-post` should find only genuine silence.
+    expect(lines.some((line) => line.includes('no wrapper-post'))).toBe(false);
+
+    // Nothing was delivered, and the ack says why rather than saying "declined" —
+    // `no_action` with no reason would hand a human wake to another listener
+    // while a route-wide refusal queues every other seat behind the same wall.
+    expect(mockPost).not.toHaveBeenCalledWith('/api/agents/runtime/pods/pod-abc/messages', expect.anything());
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'upstream-refused-429',
+          details: { status: 429, detail: 'Budget has been exceeded! Current cost: 12.34, Max budget: 10.00' },
+        },
+      },
+    );
+  });
+
+  test('an empty turn with no refusal still reads as ordinary silence', async () => {
+    const lines = [];
+    const events = [makeEvent({ payload: { content: 'noop' } })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: '', upstream: null }));
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      log: (line) => lines.push(line),
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(lines.some((line) => line.includes('no wrapper-post (empty output)'))).toBe(true);
+    expect(lines.some((line) => line.includes('upstream refused'))).toBe(false);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      { result: { outcome: 'no_action' } },
     );
   });
 
@@ -664,7 +780,8 @@ describe('performRun', () => {
       '/api/agents/runtime/events/evt-hb/ack',
       { result: { outcome: 'no_action' } },
     );
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(ackPosts(mockPost)).toHaveLength(1);
   });
 
   test('heartbeat event posts substantive output before acking', async () => {
@@ -957,7 +1074,8 @@ describe('performRun', () => {
       '/api/agents/runtime/events/evt-nopod/ack',
       { result: { outcome: 'no_action', reason: 'no-prompt' } },
     );
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(ackPosts(mockPost)).toHaveLength(1);
   });
 
   test('adapter.spawn throws → no post, no ack (re-delivery path)', async () => {
@@ -1023,7 +1141,8 @@ describe('performRun', () => {
     expect(logs.filter((l) => /claude process died/.test(l))).toHaveLength(1);
 
     // CRITICAL: no message post, no ack — kernel MUST re-deliver.
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(ackPosts(mockPost)).toHaveLength(0);
   });
 
   test('first processing failure stops the fetched batch before another model launch', async () => {
@@ -1055,7 +1174,8 @@ describe('performRun', () => {
     stop();
 
     expect(spawn).toHaveBeenCalledTimes(1);
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(ackPosts(mockPost)).toHaveLength(0);
     expect(scheduled).toHaveLength(1);
     expect(scheduled[0].delayMs).toBe(5000);
   });
@@ -1298,7 +1418,8 @@ describe('performRun', () => {
 
     expect(spawn).toHaveBeenCalledTimes(2);
     expect(wasEventHandled('my-stub', event._id)).toBe(false);
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    expect(ackPosts(mockPost)).toHaveLength(0);
   });
 
   test('ack failure persists the handled id, so a second run skips spawn and re-acks', async () => {
@@ -1695,6 +1816,12 @@ describe('performRun', () => {
     // The claude adapter uses these to substitute ${COMMONLY_AGENT_TOKEN}
     // and ${COMMONLY_API_URL} placeholders in MCP env values, so users can
     // keep their checked-in env files free of secrets.
+    //
+    // SINCE TASK-102 part B this is also the FALLBACK witness: `mockPost` answers
+    // the mint with `{}`, which carries no token, so the lease falls back and the
+    // seat token is what reaches the adapter. The minted path has its own test
+    // below — without both, this one would pass on an implementation that never
+    // minted at all.
     const events = [makeEvent()];
     const mockGet = jest.fn().mockResolvedValue({ events });
     const mockPost = jest.fn().mockResolvedValue({});
@@ -1716,6 +1843,158 @@ describe('performRun', () => {
     const ctx = spawn.mock.calls[0][1];
     expect(ctx.runtimeToken).toBe('cm_agent_specific_token');
     expect(ctx.instanceUrl).toBe('https://api-dev.commonly.me');
+  });
+
+  test('TASK-102 part B: a minted spawn credential is what the CHILD gets, and it is revoked when the turn ends', async () => {
+    // The wiring witness. A unit test of the lease cannot prove the adapter was
+    // handed the scoped token rather than the seat token, and that substitution
+    // is the entire point of the change.
+    const events = [makeEvent({ payload: { content: 'hello', deliveryId: 'delivery-child' } })];
+    const childToken = 'cm_agent_child_of_seat';
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn(async (path) => (
+      path === '/api/agents/runtime/spawn-credentials'
+        ? { token: childToken, credentialId: 'cred-child', expiresAt: new Date(Date.now() + 900000).toISOString() }
+        : {}
+    ));
+    const del = jest.fn(async () => ({ revoked: true }));
+    createClient.mockReturnValue({ get: mockGet, post: mockPost, del });
+
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api.commonly.me',
+      token: 'cm_agent_seat_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    // The child holds the scoped credential, not the seat's.
+    expect(spawn.mock.calls[0][1].runtimeToken).toBe(childToken);
+    expect(spawn.mock.calls[0][1].runtimeToken).not.toBe('cm_agent_seat_token');
+
+    // The ledger names the spawn it was minted for, and the turn's credential is
+    // revoked once the child returns — the window is one turn, not a seat's life.
+    // The ledger names the spawn it was minted for. The id is the BATCH event's,
+    // not the triggering message's: one spawn serves one inbox page, so the page
+    // is what the ledger should name.
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/spawn-credentials',
+      { spawnId: 'my-stub:batch-evt-1' },
+    );
+    expect(del).toHaveBeenCalledWith('/api/agents/runtime/spawn-credentials/cred-child');
+
+    // The wrapper's own posting still goes out under the seat identity it was
+    // built with; minting must not touch the client's token.
+    expect(createClient).toHaveBeenCalledWith({ instance: 'https://api.commonly.me', token: 'cm_agent_seat_token' });
+  });
+
+  test('TASK-102 part B: a REFUSED mint fails the spawn closed instead of falling back to the seat token', async () => {
+    const refusal = Object.assign(new Error('refused'), {
+      spawnCredentialRefused: true,
+      status: 403,
+      body: { code: 'spawn_not_permitted' },
+    });
+    const events = [makeEvent({ payload: { content: 'hello' } })];
+    const logs = [];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn(async (path) => {
+      if (path === '/api/agents/runtime/spawn-credentials') throw refusal;
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: mockPost, del: jest.fn() });
+
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api.commonly.me',
+      token: 'cm_agent_seat_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      log: (l) => logs.push(l),
+    });
+    await drainMicrotasks();
+    stop();
+
+    // No child ran, and no reply was fabricated out of a refusal.
+    expect(spawn).not.toHaveBeenCalled();
+    expect(replyPosts(mockPost)).toHaveLength(0);
+    // The event IS acked now, and that is the fold: this assertion was
+    // `toHaveLength(0)` because a verdict was thrown bare, which released the
+    // claim anonymously and left the kernel re-delivering a 403 forever. The
+    // ack names the class, so "this seat cannot deliver" is a record instead of
+    // a loop. The release shape is asserted in the ADR-018 block below.
+    expect(ackPosts(mockPost)).toHaveLength(1);
+    expect(logs.join('\n')).toContain('spawn credential refused (HTTP 403)');
+  });
+
+  test('TASK-102 part B: the boot sweep runs once per process, before the first spawn, and never blocks it', async () => {
+    // The second net behind `close()`. wren's read found `close()` claiming a
+    // sweep that nothing invoked; this is the wiring that makes the claim true,
+    // and the ordering assertion is the part a unit test of the sweep cannot
+    // make.
+    const order = [];
+    const lines = [];
+    const sweep = jest.fn(async (args) => { order.push('sweep'); return { ok: true, revoked: 2 }; });
+    const events = [makeEvent({ payload: { content: 'hi' } })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get: mockGet, post: mockPost, del: jest.fn() });
+
+    const spawn = jest.fn(async () => { order.push('spawn'); return { text: 'ok' }; });
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api.commonly.me',
+      token: 'cm_agent_seat_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      revokeOrphansImpl: sweep,
+      log: (l) => lines.push(l),
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(sweep).toHaveBeenCalledTimes(1);
+    expect(sweep.mock.calls[0][0].client).toBeDefined();
+    expect(order).toEqual(['sweep', 'spawn']);
+  });
+
+  test('TASK-102 part B: a failing boot sweep is a log line, not a failed seat', async () => {
+    const lines = [];
+    const events = [makeEvent({ payload: { content: 'hi' } })];
+    const mockPost = jest.fn(async () => ({}));
+    createClient.mockReturnValue({
+      get: jest.fn().mockResolvedValue({ events }),
+      post: mockPost,
+      del: jest.fn(),
+    });
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api.commonly.me',
+      token: 'cm_agent_seat_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      // A REJECTING implementation, which the shipped one never is — the point is
+      // that the call site cannot turn one into an unhandled rejection.
+      revokeOrphansImpl: jest.fn(async () => { throw new Error('sweep exploded'); }),
+      log: (l) => lines.push(l),
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(lines.join('\n')).toContain('boot sweep failed (sweep exploded)');
   });
 });
 
@@ -1742,15 +2021,29 @@ describe('performRun — ADR-018 enforcement', () => {
     events,
     messages = [{ _id: 'msg-1', isBot: false, self: false }],
     claimResult = { claimed: true, expiresAt: 'later' },
+    messagesResult = {},
+    spawnCredentialResult = null,
+    delImpl = async () => ({ released: true }),
   }) => {
     const post = jest.fn(async (route) => {
       if (route.endsWith('/claim')) {
         if (claimResult instanceof Error) throw claimResult;
         return typeof claimResult === 'function' ? claimResult() : claimResult;
       }
+      if (route === '/api/agents/runtime/spawn-credentials') {
+        // The mint, driven through the real `openSpawnCredential` — so what the
+        // test throws is what the HTTP layer would have thrown, and the
+        // module's own classification decides the arm.
+        if (spawnCredentialResult instanceof Error) throw spawnCredentialResult;
+        if (typeof spawnCredentialResult === 'function') return spawnCredentialResult();
+        return {};
+      }
+      if (route.startsWith('/api/agents/runtime/pods/') && route.endsWith('/messages')) {
+        return messagesResult;
+      }
       return {};
     });
-    const del = jest.fn(async () => ({ released: true }));
+    const del = jest.fn(delImpl);
     const get = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
       if (route.endsWith('/messages')) return { messages };
@@ -1853,6 +2146,301 @@ describe('performRun — ADR-018 enforcement', () => {
     stop();
 
     expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
+  });
+
+  // TASK-096 / vera (71090, 71091): the release outcome keys on the PRESENCE
+  // of a reason, not its value. TASK-099 then split that reason-bearing case
+  // out into its own outcome, and the corrected ruling (71194/71195/71210)
+  // made the CLASS an enum: `upstream-refused` (+ the HTTP status),
+  // `cascade-cap`, `delivery-refused`. These tests move together — each
+  // differs in one input, so a rule change that reddens one and not the other
+  // says which side moved.
+  test('a human broadcast refused upstream releases refused, with its class and status', async () => {
+    const { post, del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+    });
+    const spawn = jest.fn(async () => ({
+      text: '',
+      upstream: { status: 429, detail: 'Budget has been exceeded!' },
+    }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    // `refused`, not `declined`: the message was not declined, THIS runtime
+    // could not take it — and the kernel hands it to one remaining listener
+    // for exactly that reason. The class and status are what let the kernel's
+    // record answer "how many 429s" instead of erasing both causes with a
+    // DELETE. The free text stays in the log and the ack.
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, {
+      outcome: 'refused',
+      reason: 'upstream-refused',
+      status: 429,
+    });
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'upstream-refused-429',
+          details: { status: 429, detail: 'Budget has been exceeded!' },
+        },
+      },
+    );
+  });
+
+  test('a server refusal to deliver releases refused as delivery-refused', async () => {
+    // The SECOND producer of `refused`: the post route answers 200 with
+    // { refused: true } rather than erroring. Same outcome, different class —
+    // no upstream HTTP status exists here, so none is recorded. The server's
+    // own wording (`consecutive_run_cap`) is free text and stays in the log.
+    const { del } = makeClient({
+      events: [makeClaimEvent()],
+      messagesResult: {
+        success: false,
+        refused: true,
+        reason: 'consecutive_run_cap',
+        consecutive: 3,
+        guidance: 'Wait for someone else to speak; do not retry unchanged.',
+      },
+    });
+    const spawn = jest.fn(async () => ({ text: 'a reply the server will refuse' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, {
+      outcome: 'refused',
+      reason: 'delivery-refused',
+    });
+  });
+
+  test('a MINT VERDICT releases refused as delivery-refused and acks the class (wren 72153 / vera 72157)', async () => {
+    // The THIRD producer of `refused`, and the one that used to be invisible: a
+    // verdict escaped `runTurn` as a bare throw, so `turnResult` was undefined
+    // and the release was the legacy holder-only DELETE. A malicious or
+    // misconfigured seat gets a 403 on every redelivery, so that shape is an
+    // infinite wake whose only record is one local log line.
+    const verdict = Object.assign(new Error('refused'), {
+      spawnCredentialRefused: true,
+      status: 403,
+      body: { code: 'spawn_not_permitted' },
+    });
+    const { post, del } = makeClient({
+      events: [makeClaimEvent()],
+      spawnCredentialResult: verdict,
+    });
+    const spawn = jest.fn(async () => ({ text: 'never runs' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, {
+      outcome: 'refused',
+      reason: 'delivery-refused',
+    });
+    // The number is deliberately NOT on the release: `status` on a claim record
+    // means an upstream call's HTTP status, and this refusal never made one
+    // (vera 72157 accepted that narrowing; wren 72153 asked for the class). The
+    // number and the server's own code stay in the ack instead.
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/evt-1/ack', {
+      result: {
+        outcome: 'no_action',
+        reason: 'spawn-credential-refused-403',
+        details: { status: 403, code: 'spawn_not_permitted' },
+      },
+    });
+    expect(replyPosts(post).filter(([p]) => !String(p).endsWith('/claim'))).toHaveLength(0);
+  });
+
+  test('a mint verdict in a BATCH refuses every binding message, not just the first', async () => {
+    // The batch path is the one `message.posted` actually reaches, and one spawn
+    // serves the whole page — so one refused mint refuses the page. Pinned here
+    // because the release loop reads `turnResult` directly: if the refusal were
+    // still a bare throw, `entry.result` would never be assigned and the page's
+    // entries would release anonymously.
+    const verdict = Object.assign(new Error('refused'), {
+      spawnCredentialRefused: true,
+      status: 401,
+    });
+    const { post, del } = makeClient({
+      events: [makeClaimEvent({ _id: 'evt-a' }), makeClaimEvent({ _id: 'evt-b' })],
+      spawnCredentialResult: verdict,
+    });
+    const spawn = jest.fn(async () => ({ text: 'never runs' }));
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { inboxBatchLimit: 2 },
+    );
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(del).toHaveBeenCalledTimes(2);
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, {
+      outcome: 'refused',
+      reason: 'delivery-refused',
+    });
+    const acks = callsTo(post, '/ack');
+    expect(acks).toHaveLength(2);
+    expect(acks.map(([, body]) => body.result.reason)).toEqual([
+      'spawn-credential-refused-401',
+      'spawn-credential-refused-401',
+    ]);
+  });
+
+  test('the paired control: a NON-verdict failure inside the lease keeps the legacy release', async () => {
+    // One field apart from the test above (`spawnCredentialRefused` absent) and
+    // the routing inverts, which is the whole discriminator. A crash must keep
+    // at-least-once redelivery: naming it `delivery-refused` would hand a
+    // human's message away and close the row on the strength of our own bug.
+    //
+    // Driven through the LEASE SEAM rather than the mint route, because a mint
+    // failure is classified by `openSpawnCredential` before it can reach this
+    // catch — a 500 there is capacity, and capacity correctly spawns on the
+    // seat token (asserted below). What only this seam can produce is a crash
+    // with no classification, which is the case the discriminator exists for.
+    const { del } = makeClient({ events: [makeClaimEvent()] });
+    const spawn = jest.fn(async () => ({ text: 'never runs' }));
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      {
+        spawnCredentialLeaseFactory: () => ({
+          open: async () => { throw new Error('lease exploded'); },
+          close: async () => ({ revoked: false, reason: 'nothing-to-revoke' }),
+        }),
+      },
+    );
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    // One argument: the legacy holder-only DELETE. No body is sent at all, so
+    // this is also the assertion that nothing synthetic was invented for it.
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH);
+  });
+
+  test('the paired control: a CAPACITY failure still spawns on the seat token and releases completed', async () => {
+    // vera 72157: "capacity fallbacks are unaffected — those spawn successfully
+    // on the seat token and release normally." Same input shape as the verdict
+    // above, different class, so the two arms are pinned against each other
+    // rather than asserted separately.
+    const busy = Object.assign(new Error('busy'), { status: 503 });
+    const { del } = makeClient({
+      events: [makeClaimEvent()],
+      spawnCredentialResult: busy,
+    });
+    const spawn = jest.fn(async () => ({ text: 'a normal reply' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
+  });
+
+  test('the paired control: the same wake with no refusal still releases declined', async () => {
+    // Identical to the test above except that the refusal is absent. That one
+    // difference is the entire routing input, so this assertion is what fails
+    // if the pair ever stops differing — the NO_REPLY test above reaches
+    // `declined` by a different route and cannot stand in for it.
+    const { del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'declined' });
+  });
+
+  test('an older kernel that rejects the refused outcome still releases — one fallback', async () => {
+    // The deploy window the enum makes unavoidable: the CLI ships before the
+    // server it talks to understands the third outcome, and that server answers
+    // 400 ("outcome must be declined or completed"). Without a fallback the
+    // release is lost and the lease is held to expiry — the seat's message
+    // stays claimed with nobody on it. One retry as `completed` is exactly what
+    // the release did before this outcome existed.
+    const rejected = Object.assign(new Error('outcome must be declined or completed'), { status: 400 });
+    const { del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+      delImpl: async (_path, body) => {
+        if (body?.outcome === 'refused') throw rejected;
+        return { released: true };
+      },
+    });
+    const spawn = jest.fn(async () => ({
+      text: '',
+      upstream: { status: 429, detail: 'Budget has been exceeded!' },
+    }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenNthCalledWith(1, CLAIM_PATH, {
+      outcome: 'refused', reason: 'upstream-refused', status: 429,
+    });
+    expect(del).toHaveBeenNthCalledWith(2, CLAIM_PATH, { outcome: 'completed' });
+    expect(del).toHaveBeenCalledTimes(2);
+  });
+
+  test('the fallback is bounded to a 400 — a 500 is not a second write', async () => {
+    // A 5xx says the server is broken, not that it does not know the outcome.
+    // Retrying a refusal on a 500 would turn one failed release into two writes
+    // for no benefit — and the lease is already best-effort from here.
+    const broke = Object.assign(new Error('claim_release_failed'), { status: 500 });
+    const { del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+      delImpl: async () => { throw broke; },
+    });
+    const spawn = jest.fn(async () => ({
+      text: '',
+      upstream: { status: 429, detail: 'Budget has been exceeded!' },
+    }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, {
+      outcome: 'refused', reason: 'upstream-refused', status: 429,
+    });
+  });
+
+  test('the fallback is bounded to a refusal — a 400 on another outcome is not retried', async () => {
+    // The fallback exists because an OLDER KERNEL does not know `refused`. A
+    // 400 on a decline or a completion means something else is wrong with the
+    // request, and re-sending it as `completed` would silently write a
+    // different outcome than the one this seat decided on.
+    const rejected = Object.assign(new Error('bad request'), { status: 400 });
+    const { del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+      delImpl: async () => { throw rejected; },
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'declined' });
   });
 
   test('a claim-route failure fails OPEN: the turn proceeds unguarded (#887 rule)', async () => {
@@ -2428,5 +3016,122 @@ describe('performRun — ADR-018 enforcement', () => {
       '/api/agents/runtime/events/evt-1/ack',
       { result: { outcome: 'posted' } },
     );
+  });
+});
+
+// TASK-111, ruling B (wren 71640/71641): the withhold goes at the performRun
+// site, in memory, record untouched. The broker arrives as an injected MCP
+// entry written by hand into the seat's own record — there is no server
+// projection to gate (`GRANT_BROKER_URL` is imported by one route, the daemon
+// assignment, and that one already refuses) — so `commonly agent run` under
+// launchd is the only other site that can see the declaration.
+describe('performRun — the grant broker is withheld where no daemon will judge it', () => {
+  const INSTANCE = 'http://localhost:5000';
+  const BROKER = { name: 'commonly-grant-broker', url: '${COMMONLY_API_URL}/api/mcp/grants/g1' };
+  const OTHER = { name: 'commonly', url: '${COMMONLY_API_URL}/api/mcp' };
+
+  let delivery = 0;
+  const runOnce = async ({ environment, adapterName = 'claude' }) => {
+    // A unique delivery per call: the file's earlier tests record handled
+    // deliveries in the same store, and a reused id is answered with
+    // `duplicate delivery … re-acking without batch spawn` — which reads as a
+    // broker bug when it is only a fixture collision.
+    delivery += 1;
+    const events = [makeEvent({
+      _id: `evt-broker-${delivery}`,
+      payload: { content: 'hello', deliveryId: `delivery-broker-${delivery}` },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const spawn = jest.fn(async () => ({ text: 'hello back' }));
+    const adapter = { name: adapterName, detect: stubAdapter.detect, spawn };
+    const log = jest.fn();
+    const { stop } = performRun({
+      instanceUrl: INSTANCE,
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      instanceId: 'default',
+      setTimeoutImpl: noopTimeout,
+      environment,
+      log,
+    });
+    // Drain until the turn reaches the adapter rather than a fixed depth: the
+    // file's DRAIN_DEPTH assumes the chain is 10 await boundaries, and the
+    // ordering of its macrotasks relative to a full-file run is not guaranteed
+    // (the fixed depth was enough in isolation and one boundary short here).
+    // Waiting on the condition is what the assertion actually needs.
+    for (let i = 0; i < 400 && spawn.mock.calls.length === 0; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setImmediate(r));
+    }
+    stop();
+    expect(spawn).toHaveBeenCalled();
+    const [, options] = spawn.mock.calls[0];
+    return { spawn, log, spawned: options.environment };
+  };
+
+  test('a seat declaring no sandbox does not spawn the broker', async () => {
+    const environment = { mcp: [BROKER] };
+    const { spawned, log } = await runOnce({ environment });
+    expect(spawned.mcp).toEqual([]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('grant_broker_unconfined (sandbox_absent'));
+  });
+
+  test('a confining seat keeps its broker', async () => {
+    const environment = { sandbox: { mode: 'workspace', trust: 'public' }, mcp: [BROKER, OTHER] };
+    const { spawned } = await runOnce({ environment });
+    expect(spawned.mcp).toEqual([BROKER, OTHER]);
+  });
+
+  // Vera's mapping case, at the run path: with no mode declared the legacy
+  // mapping is the only gate on the record, and `internal` reads as `public`.
+  test('a legacy internal trust with no declared mode still carries the broker', async () => {
+    const environment = { sandbox: { trust: 'internal' }, mcp: [BROKER] };
+    const { spawned } = await runOnce({ environment });
+    expect(spawned.mcp).toEqual([BROKER]);
+  });
+
+  test('a non-public trust is withheld, named as its own reason', async () => {
+    const environment = { sandbox: { mode: 'workspace', trust: 'private' }, mcp: [BROKER] };
+    const { spawned, log } = await runOnce({ environment });
+    expect(spawned.mcp).toEqual([]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('sandbox_trust_not_public'));
+  });
+
+  // An adapter that confines on no host cannot be handed a granter's authority
+  // even when it declares a confining sandbox — the declaration is not honoured
+  // there. The suite's own stub adapters are named 'stub', so this is also the
+  // case every other test in this file runs through.
+  test('an adapter that cannot confine loses the broker whatever it declares', async () => {
+    const environment = { sandbox: { mode: 'workspace', trust: 'public' }, mcp: [BROKER] };
+    const { spawned, log } = await runOnce({ environment, adapterName: 'stub' });
+    expect(spawned.mcp).toEqual([]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('adapter_cannot_confine'));
+  });
+
+  test('the record is untouched, and an untouched environment is passed by identity', async () => {
+    // Withheld: the entry stays on the record (the daemon still judges this
+    // host) and the seat spawns from a copy that lacks it.
+    const withheld = { mcp: [BROKER] };
+    const first = await runOnce({ environment: withheld });
+    expect(withheld.mcp).toEqual([BROKER]);
+    expect(first.spawned).not.toBe(withheld);
+    // Nothing to withhold: the same object reaches the adapter, because the
+    // derive sites use identity as their dirty check.
+    const clean = { sandbox: { mode: 'workspace', trust: 'public' }, mcp: [OTHER] };
+    const second = await runOnce({ environment: clean });
+    expect(second.spawned).toBe(clean);
+  });
+
+  test('a foreign server under the broker path is not ours and is left alone', async () => {
+    const foreign = { name: 'someone-else', url: 'https://other.example.com/api/mcp/grants/g1' };
+    const environment = { mcp: [foreign] };
+    const { spawned, log } = await runOnce({ environment });
+    expect(spawned.mcp).toEqual([foreign]);
+    // The loop logs for other reasons (cascade defaults), so the assertion is
+    // about the refusal it did NOT emit, not about silence.
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('grant_broker_unconfined'));
   });
 });

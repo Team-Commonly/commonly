@@ -17,6 +17,8 @@ const Installable = require('../../models/Installable');
 const InstallableInstallation = require('../../models/InstallableInstallation');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { revokeConnectionGrants } = require('../roomGrantService');
 
 export const INSTALL_LOCK_TTL_MS = 60_000;
 
@@ -321,6 +323,32 @@ const claimInstallation = async (
   }
 };
 
+/**
+ * The two ways `InstallableInstallation.errorMessage` gets a value, each with
+ * its provenance attached.
+ *
+ * `errorMessage` alone cannot say the reason is fit to read. Three writers give
+ * it a value: `markProjectionFailure` (a raw exception —
+ * `connect ECONNREFUSED <addr>:443`), and the reconciler's two human-authored
+ * constants. The Connectors page renders every failed installation through one
+ * branch, so "the field has a value" is not the same fact as "the value was
+ * written for a person" (vera 73848). `errorMessageUserFacing` is that fact, and
+ * a message and its flag are written together here so that no writer can set
+ * half of the pair — the catalog row is a stranger's row, and printing our stack
+ * text in it is disclosure, not diagnosis.
+ */
+export const userFacingInstallationError = (reason: string) => ({
+  status: 'error',
+  errorMessage: reason,
+  errorMessageUserFacing: true,
+});
+
+export const diagnosticInstallationError = (error: Error) => ({
+  status: 'error',
+  errorMessage: error.message,
+  errorMessageUserFacing: false,
+});
+
 const throwIfLockLost = (installation: IInstallableInstallation | null): IInstallableInstallation => {
   if (!installation) throw new InstallLockLostError();
   return installation;
@@ -336,8 +364,7 @@ const markProjectionFailure = async (
     { _id: installation._id, status: 'installing', claimId },
     {
       $set: {
-        status: 'error',
-        errorMessage: error.message,
+        ...diagnosticInstallationError(error),
         components,
       },
     },
@@ -496,6 +523,17 @@ const unprojectInstallation = async (
   installedBy: Types.ObjectId,
   claimId: string,
 ): Promise<void> => {
+  // §10.5's grants step, once per uninstall rather than once per projector:
+  // both branches below tombstone the installable's connection row, and a
+  // tombstoned row leaves its grants live and unrevoked even though nothing
+  // can call them any more (TASK-145).
+  const connections = await Integration.find({ installationId: String(installation._id) })
+    .select('_id installationId config.installationId')
+    .lean() as Array<{ _id?: unknown; installationId?: unknown; config?: { installationId?: unknown } }>;
+  for (const connection of connections) {
+    await revokeConnectionGrants({ connection, revokedBy: String(installedBy) });
+  }
+
   if (installable) {
     for (const component of installable.components) {
       const projector = getProjector(component.type);
@@ -688,4 +726,8 @@ module.exports = {
   InstallableNotFoundError,
   install,
   uninstall,
+  // Named here as well as exported above: this file's CommonJS tail replaces the
+  // ES exports, so an `export const` on its own is invisible to every require().
+  userFacingInstallationError,
+  diagnosticInstallationError,
 };

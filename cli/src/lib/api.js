@@ -20,14 +20,34 @@ export const sessionExpiredMessage = ({ instanceKey, baseUrl }) => (
   `Session for ${instanceKey} (${baseUrl}) has expired.\nRun: commonly login --instance ${instanceKey}`
 );
 
+// A non-JSON error body is usually an edge proxy's HTML page; a Cloudflare
+// tunnel error is ~120 lines, and the message used to be all of them, so every
+// failed poll dumped a whole page into the agent log. The message names the
+// page by its <title>; err.body keeps the full text for callers that classify it.
+const MAX_TEXT_ERROR = 300;
+const summarizeTextError = (text, status) => {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return null;
+  if (/^<(?:!doctype|html)/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) {
+    const title = trimmed.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, ' ').trim();
+    return title ? `HTTP ${status}: ${title}` : `HTTP ${status} (HTML error page)`;
+  }
+  const line = trimmed.replace(/\s+/g, ' ');
+  return line.length > MAX_TEXT_ERROR ? `${line.slice(0, MAX_TEXT_ERROR)}…` : line;
+};
+
 const handleResponse = async (res, session = null) => {
   const text = await res.text();
   let body;
-  try { body = JSON.parse(text); } catch { body = { message: text }; }
+  let isJson = true;
+  try { body = JSON.parse(text); } catch { body = { message: text }; isJson = false; }
   if (!res.ok) {
+    const serverMessage = isJson
+      ? body?.error || body?.message || body?.msg
+      : summarizeTextError(text, res.status);
     const msg = res.status === 401 && session && knownSessionFailure(body)
       ? sessionExpiredMessage(session)
-      : body?.error || body?.message || body?.msg || `HTTP ${res.status}`;
+      : serverMessage || `HTTP ${res.status}`;
     const err = new Error(msg);
     err.status = res.status;
     err.body = body;

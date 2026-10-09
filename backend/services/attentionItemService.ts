@@ -11,6 +11,7 @@ const User = require('../models/User');
 const Message = require('../models/Message');
 // eslint-disable-next-line global-require
 const PGMessage = require('../models/pg/Message');
+const Task = require('../models/Task');
 
 type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task';
 type Kind = 'mention' | 'approval' | 'decision' | 'handoff';
@@ -351,6 +352,51 @@ export const resolveTaskAttention = async (task: any): Promise<void> => {
   }
 };
 
+/**
+ * One-shot repair for handoff cards whose task finished without telling the
+ * attention store (the complete route never called resolveTaskAttention until
+ * 2026-09-19). Reads each open handoff's task by the id prefix of its source
+ * key; resolves only those whose task is `done`. A task that no longer exists
+ * is counted as missing and left alone. Dry run unless `apply`.
+ */
+export const sweepDoneTaskHandoffs = async ({ apply = false }: { apply?: boolean } = {}) => {
+  const rows = await AttentionItem.find({ kind: 'handoff', 'source.type': 'task', status: 'open' })
+    .sort({ createdAt: 1 }).lean();
+  // The source key's prefix is `task._id || task.taskId`, so a row may carry a
+  // `TASK-134`-style key. Feeding that to `_id` throws a CastError and would
+  // abort the whole run; look each shape up by its own field.
+  const keys: string[] = [...new Set<string>((rows as any[]).map((row: any) => String(row.source?.id || '').split(':')[0]).filter(Boolean))];
+  const objectIds = keys.filter((key) => /^[0-9a-f]{24}$/i.test(key));
+  const taskKeys = keys.filter((key) => !/^[0-9a-f]{24}$/i.test(key));
+  const clauses = [
+    ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
+    ...(taskKeys.length ? [{ taskId: { $in: taskKeys } }] : []),
+  ];
+  const tasks = clauses.length ? await Task.find({ $or: clauses }).select('status taskId').lean() : [];
+  const statusById = new Map<string, string>();
+  for (const task of tasks as any[]) {
+    statusById.set(String(task._id), task.status);
+    if (task.taskId) statusById.set(String(task.taskId), task.status);
+  }
+  const eligibleIds: unknown[] = [];
+  let missing = 0;
+  for (const row of rows as any[]) {
+    const taskId = String(row.source?.id || '').split(':')[0];
+    const status = statusById.get(taskId);
+    if (status === undefined) { missing += 1; continue; }
+    if (status === 'done') eligibleIds.push(row._id);
+  }
+  let resolved = 0;
+  if (apply && eligibleIds.length) {
+    const result = await AttentionItem.updateMany(
+      { _id: { $in: eligibleIds }, kind: 'handoff', status: 'open' },
+      { $set: { status: 'resolved', resolvedAt: new Date() } },
+    );
+    resolved = Number(result.modifiedCount || 0);
+  }
+  return { scanned: rows.length, eligible: eligibleIds.length, resolved, missing, apply };
+};
+
 export const resolve = async (sourceType: SourceType, sourceId: unknown): Promise<void> => {
   const id = sourceKey(sourceType, sourceId);
   if (!id) return;
@@ -373,11 +419,28 @@ export const resolveMany = async (sourceType: SourceType, sourceIds: unknown[]):
   }
 };
 
+// `${podId}:${messageId}` keys for messages that already have a decision row
+// for this recipient — in ANY state, not only open. A decision card born from a
+// message carries that message's id, and the mention row for the same message
+// is the same ask to the same person, so it is not a second item.
+const decisionBackedMessages = async (recipientUserId: unknown, rows: any[]): Promise<Set<string>> => {
+  const messageIds = [...new Set(rows
+    .filter((row: any) => row.kind === 'mention' && row.messageId)
+    .map((row: any) => String(row.messageId)))];
+  if (!messageIds.length) return new Set();
+  const decisions = await AttentionItem.find({ recipientUserId, kind: 'decision', messageId: { $in: messageIds } })
+    .select('podId messageId').lean();
+  return new Set(decisions
+    .filter((row: any) => row.messageId)
+    .map((row: any) => `${String(row.podId)}:${String(row.messageId)}`));
+};
+
 interface OpenQueueOptions {
   podId?: unknown;
   messageIds?: unknown;
   limit?: number;
   offset?: number;
+  since?: unknown;
 }
 
 export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueOptions = {}): Promise<{
@@ -386,6 +449,8 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   countsByPod: Record<string, number>;
   countsByKind: Record<string, number>;
   composePodId: string | null;
+  windowCount: number;
+  nextSince: string | null;
   offset: number;
   limit: number;
   remaining: number;
@@ -398,11 +463,61 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     : [];
   const limit = Number.isInteger(options.limit) ? Math.min(Math.max(options.limit as number, 1), 50) : 50;
   const offset = Number.isInteger(options.offset) ? Math.max(options.offset as number, 0) : 0;
+  // `since` opens a WINDOW: work created AT OR AFTER an instant. It is what makes
+  // a watcher tick one request instead of a full-queue paging loop (`/api/activity`
+  // is 60 requests a minute per client IP, shared with every session on the host
+  // and with the person's own Activity page).
+  //
+  // The counts below do NOT narrow with it. `count`, `countsByKind`, `countsByPod`
+  // and `composePodId` describe the whole open set, exactly as they did before this
+  // parameter existed, so an Activity badge or any caller that passes no bound sees
+  // no change; a bounded call gets `windowCount` for the window. `offset`/`limit`/
+  // `remaining`/`hasMore` page WITHIN the window, which is the only reading of
+  // "pagination" that can terminate: rows outside the window are never delivered,
+  // so a page count that included them could never be worked off.
+  //
+  // The comparison is INCLUSIVE. A caller's cursor is a bare timestamp, and one
+  // sitting at millisecond T cannot know about a row INSERTED at T after it was
+  // written — an exclusive bound would drop that row from that read and from every
+  // later read, silently and permanently. Re-delivering a row the caller already
+  // has is the recoverable direction, and callers dedupe on `attentionItemId`.
+  //
+  // `createdAt` is stamped by mongoose at insert, from the model's own `now`, and
+  // no writer in this codebase sets it (the source's own time lives in
+  // `sourceCreatedAt`), so it orders rows by when they were STAMPED. That is what
+  // makes the existing `find().sort({ createdAt: -1 })` cheap on the
+  // `{recipientUserId, status, createdAt}` index. This bound never touches that
+  // index: the whole-set counts above require the whole open set, so the window is
+  // applied in memory below, after the read. What it cuts is the size of the
+  // response and the number of round trips (the watcher tick that motivated it
+  // went from eleven requests to one), not the database work.
+  //
+  // Stamp order is NOT commit order, and that is where the residual lives — not in
+  // backdating alone. A row stamped before a cursor can become visible after it
+  // (its write had not committed when the caller read), and a writer whose clock
+  // lags stamps a new row behind a cursor the caller already advanced past; this
+  // bound misses both. Only a caller-side lookback W closes them, and W has to
+  // exceed write-commit latency PLUS writer clock offset — an earlier revision of
+  // this comment said "not skew", and that was wrong. So the bound is a narrowing,
+  // not a guarantee: a caller that must not miss a row re-reads from
+  // `nextSince - W` and dedupes on `attentionItemId`.
+  //
+  // A value that cannot be parsed narrows nothing rather than raising: the route
+  // refuses it with a 400 first, so this is the second line, and of the two ways
+  // to be wrong here, returning a superset is the one that cannot hide a row.
+  // (`podId` above already treats a malformed scope the same way.)
+  const since = options.since instanceof Date
+    ? options.since
+    : (typeof options.since === 'string' && options.since.trim() ? new Date(options.since) : null);
+  const sinceAt = since && Number.isFinite(since.getTime()) ? since : null;
   // Route callers carry a real Mongo id. Returning an empty queue for a bad
   // value keeps malformed/read-only callers from turning a cast error into a
   // 500 and makes the authorization boundary explicit.
   if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) {
-    return { items: [], count: 0, countsByPod: {}, countsByKind: {}, composePodId: null, offset, limit, remaining: 0, hasMore: false };
+    return {
+      items: [], count: 0, countsByPod: {}, countsByKind: {}, composePodId: null,
+      windowCount: 0, nextSince: null, offset, limit, remaining: 0, hasMore: false,
+    };
   }
   // Counts include every accessible open item. The selected pod scope is
   // applied before pagination so a scoped list cannot show a positive count
@@ -412,14 +527,25 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     status: 'open',
     ...(hasMessageFilter ? { messageId: { $in: messageIds } } : {}),
   }).sort({ createdAt: -1 }).lean();
-  const podIds = [...new Set(rows.map((row: any) => String(row.podId)))];
+  // Suppressed before anything is counted, so every number the caller reads —
+  // per-pod, per-kind, total, remaining — counts rows the person can actually
+  // see, in every scope. Keyed on a decision row existing in any state: hiding
+  // only while the decision is open would surface the leftover mention the
+  // moment the decision is answered, i.e. the duplicate arriving in two acts.
+  // The decision row is that message's one presentation for good.
+  const superseded = await decisionBackedMessages(recipientUserId, rows);
+  const visible = superseded.size
+    ? rows.filter((row: any) => !(row.kind === 'mention'
+        && row.messageId && superseded.has(`${String(row.podId)}:${String(row.messageId)}`)))
+    : rows;
+  const podIds = [...new Set(visible.map((row: any) => String(row.podId)))];
   const pods = await Pod.find({ _id: { $in: podIds } }).select('_id name createdBy members').lean();
   const allowed = new Map(pods.filter((pod: any) => isCurrentMember(pod, recipientUserId)).map((pod: any) => [String(pod._id), pod]));
   const priority: Record<string, number> = { approval: 0, decision: 1, handoff: 1, mention: 2 };
   const renderKind = (row: any): Kind => (
     row.kind === 'decision' && row.source?.type === 'task' ? 'handoff' : row.kind
   );
-  const valid = rows.filter((row: any) => allowed.has(String(row.podId))).sort((a: any, b: any) => (
+  const valid = visible.filter((row: any) => allowed.has(String(row.podId))).sort((a: any, b: any) => (
     (priority[a.kind] ?? 9) - (priority[b.kind] ?? 9)
     || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   ));
@@ -444,7 +570,12 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
     counts[kind] = (counts[kind] || 0) + 1;
     return counts;
   }, {});
-  const page = scoped.slice(offset, offset + limit);
+  // The window is applied AFTER the whole-set counts and BEFORE the slice, so
+  // the counts keep their meaning and the page is drawn from the window.
+  const window = sinceAt
+    ? scoped.filter((row: any) => new Date(row.createdAt).getTime() >= sinceAt.getTime())
+    : scoped;
+  const page = window.slice(offset, offset + limit);
   const picked: any[] = [];
   for (const row of page) {
     picked.push({
@@ -453,13 +584,21 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
       messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
     });
   }
-  const remaining = Math.max(scoped.length - offset - picked.length, 0);
+  const remaining = Math.max(window.length - offset - picked.length, 0);
+  // The newest instant actually DELIVERED, so a caller can resume from it. It is
+  // the max over the page rather than over the window: a value the caller has not
+  // seen must not be skipped past.
+  const nextSince = picked.length
+    ? new Date(Math.max(...picked.map((row: any) => new Date(row.createdAt).getTime()))).toISOString()
+    : null;
   return {
     items: picked,
     count: scoped.length,
     countsByPod,
     countsByKind,
     composePodId,
+    windowCount: window.length,
+    nextSince,
     offset,
     limit,
     remaining,
@@ -469,6 +608,19 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
 
 export const acknowledgeAttention = async (recipientUserId: unknown, attentionItemId: string): Promise<{ success: boolean; error?: string }> => {
   if (!/^[a-f\d]{24}$/i.test(String(attentionItemId))) return { success: false, error: 'Invalid attention item' };
+  // Same guard `getOpenQueue` already carries (`:466`), for the same reason and
+  // one more. A recipient id that is not an ObjectId does not reach the update
+  // as "no recipient": it is cast on the way in and throws a CastError, which
+  // the route reports as a 500 'Failed to acknowledge attention'. A malformed
+  // caller id is a client-side fact, so it belongs in the 400 lane beside the
+  // item-id refusal, not in an unhandled throw.
+  //
+  // The cross-recipient read this was first proposed for is NOT what happens:
+  // measured on `bbab5c31`, `recipientUserId: undefined` and `null` are refused
+  // ('Attention item not found') and the other recipient's row stays open, while
+  // `''` and `'not-an-id'` throw. Refuse both shapes here rather than rely on the
+  // filter's behaviour for one of them.
+  if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) return { success: false, error: 'Invalid recipient' };
   const result = await AttentionItem.updateOne(
     {
       _id: attentionItemId,
@@ -502,6 +654,6 @@ export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boo
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };

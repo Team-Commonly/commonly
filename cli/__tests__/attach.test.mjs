@@ -33,7 +33,71 @@ const {
   loadAgentToken,
   buildDefaultEnvironment,
   bootstrapAgentRecordFromEnv,
+  resolveAttachSandbox,
 } = await import('../src/commands/agent.js');
+
+describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)', () => {
+  test('a legacy internal trust resolves a confining mode here, on both hosts', () => {
+    // Named for what this returns — a DECLARATION — not for confinement itself:
+    // the adapters re-derive from the environment and confine either way. What
+    // was wrong is that this gate's verdict contradicted theirs.
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'internal' } }, adapterName: 'claude', platform: 'darwin',
+    })).toEqual({ mode: 'workspace', trust: 'public' });
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { trust: 'internal' } }, adapterName: 'claude', platform: 'linux',
+    })).toEqual({ mode: 'bwrap', trust: 'public' });
+  });
+
+  test('a legacy internal trust beside mode none is refused, not silently run', () => {
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { mode: 'none', trust: 'internal' } },
+    })).toThrow(/refusing to attach unsandboxed/);
+  });
+
+  test("a legacy internal record beside mode 'workspace' attaches, it does not throw (Vera 71675)", () => {
+    // The raw compare failed CLOSED here: `sandboxTrust !== 'public'` was true,
+    // so attach refused a record both adapters confine — the adapter suites pin
+    // that on this exact shape (adapters.claude.environment.test.mjs:444 spawns
+    // sandbox-exec; adapters.codex.test.mjs:257 asserts no bypass flag).
+    for (const adapterName of ['claude', 'codex']) {
+      expect(resolveAttachSandbox({
+        environment: { sandbox: { mode: 'workspace', trust: 'internal' } },
+        adapterName,
+        platform: 'darwin',
+      })).toEqual({ mode: 'workspace', trust: 'public' });
+    }
+  });
+
+  test('that same record is still refused on an adapter that cannot honour it', () => {
+    // The support check moved into the derivation must not become a no-op.
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'pi',
+    })).toThrow(/implemented only for public codex or Claude adapters/);
+  });
+
+  test('an explicit mode is taken as declared, and a public one is guarded', () => {
+    const workspace = resolveAttachSandbox({
+      environment: { sandbox: { mode: 'read-only', trust: 'internal' } },
+      adapterName: 'claude',
+      platform: 'darwin',
+    });
+    expect(workspace).toEqual({ mode: 'read-only', trust: 'public' });
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { mode: 'none', trust: 'public' } },
+    })).toThrow(/refusing to attach unsandboxed/);
+  });
+
+  test('an absent or unrecognised trust is left alone and is not refused', () => {
+    // The regression witness: this gate must keep allowing a seat that never
+    // asked to be confined, or every private agent stops attaching.
+    expect(resolveAttachSandbox({ environment: { model: 'gpt-5.4' } }))
+      .toEqual({ mode: 'none', trust: undefined });
+    expect(resolveAttachSandbox({
+      environment: { sandbox: { mode: 'none', trust: 'private' } },
+    })).toEqual({ mode: 'none', trust: 'private' });
+  });
+});
 
 describe('setWakeOnMessage', () => {
   const record = {
@@ -352,11 +416,12 @@ describe('buildDefaultEnvironment', () => {
     expect(buildDefaultEnvironment('does-not-exist')).toBeNull();
   });
 
-  test.each(['claude', 'codex'])('returns a single mcp entry for %s with placeholder env values', (adapterName) => {
+  test.each(['claude', 'codex', 'pi'])('returns a single mcp entry for %s with placeholder env values', (adapterName) => {
     // codex joined the set after the 2026-07-22 as-operator attribution
     // incident: an MCP-less codex agent has no sanctioned posting tool and
     // falls back to whatever it finds in the shell (the operator's CLI
-    // profile — posting AS the human).
+    // profile — posting AS the human). pi joined with the C4 run (TASK-048),
+    // where the same gap showed up on a daemon-provisioned seat.
     const env = buildDefaultEnvironment(adapterName);
     expect(env.mcp).toHaveLength(1);
     expect(env.mcp[0].name).toBe('commonly');
@@ -526,5 +591,94 @@ describe('bootstrapAgentRecordFromEnv', () => {
       clientFactory: () => ({ get }),
       adapterRegistry: makeRegistry(),
     })).rejects.toThrow(/against https:\/\/api\.example\.test: HTTP 401/);
+  });
+
+  // ── the multi-installation projection (TASK-019) ───────────────────────────
+  // A runtime token carries an IDENTITY, and one identity can hold several
+  // installations. `bootstrapAgentRecordFromEnv` collapses that list into ONE
+  // local record, and the collapse is positional:
+  //   first {type:'installation', status:'active'}  →  else installations[0]  →  else null
+  // Only the first link was covered (the DM-first case above). The other two
+  // decide whether the seat boots against the pod it was installed into or
+  // against whatever the payload happened to list first, so each is pinned
+  // separately here.
+  const project = (installations, identity = {}) => bootstrapAgentRecordFromEnv({
+    name: 'smoke-agent',
+    env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+    clientFactory: makeFactory({
+      agentName: 'smoke-agent', instanceId: 'default', installations, ...identity,
+    }),
+    adapterRegistry: makeRegistry(),
+  });
+
+  test('projection: the FIRST active installation wins when an identity holds several', async () => {
+    const record = await project([
+      { podId: 'pod-a', podType: 'chat', instanceId: 'default', status: 'active', type: 'installation' },
+      { podId: 'pod-b', podType: 'chat', instanceId: 'default', status: 'active', type: 'installation' },
+    ]);
+    // Not "one of" — the first. Nothing in the payload orders these rows, so
+    // which pod a multi-installation seat projects is currently insertion order
+    // (the server's rows come from an un-sorted `AgentInstallation.find`,
+    // agentsRuntime.ts `/installations` ← agentRuntimeAuth.ts:121/:186).
+    // Pinned so a change to that preference has to be deliberate.
+    expect(record.podId).toBe('pod-a');
+  });
+
+  test('projection: with no installation rows at all, the first DM row becomes the pod', async () => {
+    const record = await project([
+      { podId: 'pod-dm', podType: 'agent-admin', instanceId: 'default', status: 'active', type: 'dm' },
+    ]);
+    // Reachable: the endpoint appends DM rows after installations and never
+    // invents an installation row, so a token with no active installation but
+    // an agent-admin pod lands here.
+    expect(record.podId).toBe('pod-dm');
+  });
+
+  test('projection: an empty, missing or non-array list yields no pod and the identity instanceId', async () => {
+    for (const installations of [[], undefined, { podId: 'x' }]) {
+      // eslint-disable-next-line no-await-in-loop
+      const record = await project(installations, { instanceId: 'laptop-1' });
+      expect(record.podId).toBeNull();
+      expect(record.instanceId).toBe('laptop-1');
+    }
+  });
+
+  test('projection: the identity instanceId outranks the chosen row\'s, which is only a fallback', async () => {
+    const record = await project(
+      [{ podId: 'pod-a', podType: 'chat', instanceId: 'row-instance', status: 'active', type: 'installation' }],
+      { instanceId: undefined },
+    );
+    expect(record.instanceId).toBe('row-instance');
+
+    const withIdentity = await project(
+      [{ podId: 'pod-a', podType: 'chat', instanceId: 'row-instance', status: 'active', type: 'installation' }],
+      { instanceId: 'identity-instance' },
+    );
+    expect(withIdentity.instanceId).toBe('identity-instance');
+  });
+
+  test('projection: an installation that is not active is skipped in favour of one that is', async () => {
+    const record = await project([
+      { podId: 'pod-dm', podType: 'agent-admin', instanceId: 'default', status: 'active', type: 'dm' },
+      { podId: 'pod-stale', podType: 'chat', instanceId: 'default', status: 'inactive', type: 'installation' },
+      { podId: 'pod-live', podType: 'chat', instanceId: 'default', status: 'active', type: 'installation' },
+    ]);
+    // This is the case that makes the `status === 'active'` term load-bearing:
+    // drop it and the projection picks pod-stale, the older installation.
+    expect(record.podId).toBe('pod-live');
+  });
+
+  test('projection: with no active installation the FIRST row is projected regardless of status', async () => {
+    const record = await project([
+      { podId: 'pod-stale', podType: 'chat', instanceId: 'default', status: 'inactive', type: 'installation' },
+    ]);
+    // The fallback branch, stated for what it is: a row that is not active is
+    // still projected rather than refused. Unreachable from the live endpoint
+    // today — both auth paths query `status: 'active'` (agentRuntimeAuth.ts:121
+    // for a User-row token, :186 for an installation-bound one) — so this pins
+    // the CLI's behaviour if that endpoint ever widens, where the failure would
+    // otherwise be silent: a seat booting against a pod whose installation is
+    // not live.
+    expect(record.podId).toBe('pod-stale');
   });
 });

@@ -24,6 +24,7 @@ export default defineConfig({
     // so the app actually reads it. Empty string when unset keeps self-hosted
     // same-origin builds on their existing fallback path.
     'process.env.REACT_APP_API_URL': JSON.stringify(process.env.REACT_APP_API_URL || ''),
+    'process.env.REACT_APP_TELEGRAM_BOT_HANDLE': JSON.stringify(process.env.REACT_APP_TELEGRAM_BOT_HANDLE || ''),
     // Same `process.env: {}` clobber trap as REACT_APP_API_URL above: without an
     // explicit define, the showcase pod id fell back to the literal
     // '__SHOWCASE_POD_ID__' placeholder, so /api/showcase/__SHOWCASE_POD_ID__ 404s

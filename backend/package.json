@@ -22,7 +22,12 @@
     "discord:list": "node scripts/register-discord-commands.js list",
     "bootstrap:clawd-bot": "node scripts/bootstrap-clawd-bot.js",
     "backfill:attention-items": "ts-node scripts/backfill-attention-items.ts",
+    "migrate:task-source-ref-identity": "ts-node scripts/migrate-task-source-ref-identity.ts",
     "sweep:resolved-mention-attention": "ts-node scripts/sweep-resolved-mention-attention.ts",
+    "sweep:done-task-handoffs": "ts-node scripts/sweep-done-task-handoffs.ts",
+    "sweep:leftover-runtime-tokens": "ts-node scripts/sweep-leftover-runtime-tokens.ts",
+    "backfill:hosted-mcp-client-id": "ts-node scripts/backfill-hosted-mcp-client-id.ts",
+    "revive:native-installations": "ts-node scripts/revive-native-installations.ts",
     "set:agent-descriptions": "ts-node scripts/set-agent-descriptions.ts",
     "tsc:check": "tsc --noEmit -p tsconfig.typescheck.json",
     "tsc:check:all": "tsc --noEmit"
@@ -31,12 +36,12 @@
     "@google-cloud/secret-manager": "^6.1.1",
     "@google/generative-ai": "^0.2.1",
     "@kubernetes/client-node": "^0.21.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@sendgrid/mail": "^7.7.0",
     "@sentry/node": "^10.65.0",
     "@socket.io/redis-adapter": "^8.3.0",
-    "@types/adm-zip": "^0.5.8",
-    "adm-zip": "^0.5.17",
-    "axios": "^1.10.0",
+    "adm-zip": "^0.6.1",
+    "axios": "^1.20.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "discord.js": "^14.20.0",
@@ -48,7 +53,7 @@
     "mongodb": "^6.3.0",
     "mongoose": "^7.0.3",
     "morgan": "^1.10.0",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.4.0",
     "node-cron": "^3.0.3",
     "node-fetch": "^2.7.0",
     "openai": "^4.104.0",
@@ -58,6 +63,22 @@
     "stripe": "^22.4.0",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1"
+  },
+  "overrides": {
+    "@sendgrid/client": {
+      "axios": "0.34.0"
+    },
+    "fast-uri": "3.1.8",
+    "jsonpath-plus": "10.3.0",
+    "protobufjs": "7.6.6",
+    "request": {
+      "form-data": "2.5.6"
+    },
+    "socket.io-parser": "4.2.7",
+    "tar": "7.5.22",
+    "undici": "6.29.0",
+    "ws": "8.22.0",
+    "proxy-addr": "2.0.8"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",

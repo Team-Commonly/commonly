@@ -6,7 +6,6 @@ const _path = require('path');
 const dotenv = require('dotenv');
 const http = require('http');
 const socketIo = require('socket.io');
-const jwt = require('jsonwebtoken');
 const connectDB = require('./config/db');
 const { connectPG } = require('./config/db-pg');
 const initializePGDB = require('./config/init-pg-db');
@@ -17,6 +16,7 @@ const podRoutes = require('./routes/pods');
 const podInvitesRoutes = require('./routes/podInvites');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
+const { socketAuthMiddleware } = require('./middleware/socketAuth');
 const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
 const integrationRoutes = require('./routes/integrations');
@@ -41,6 +41,7 @@ const gatewayRoutes = require('./routes/gateways');
 const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
 const healthRoutes = require('./routes/health');
+const pgStatusRoutes = require('./routes/pg-status');
 const statsRoutes = require('./routes/stats');
 const emailRoutes = require('./routes/email');
 const showcaseRoutes = require('./routes/showcase');
@@ -52,22 +53,26 @@ const agentEventsAdminRoutes = require('./routes/admin/agentEvents');
 const adminUsersRoutes = require('./routes/admin/users');
 const adminAnalyticsRoutes = require('./routes/admin/analytics');
 const adminInstallableRoutes = require('./routes/admin/installables');
-// Conditionally load PostgreSQL routes and models
+// Conditionally load the PostgreSQL message routes and models. `/api/pg/status`
+// is deliberately NOT in here: it is mounted for every configuration,
+// including PG_HOST unset, where its own `!pool` branch answers
+// available:false — so keeping it conditional would only re-introduce the
+// placeholder handlers the mount site below deletes (TASK-168).
 let pgMessageRoutes: any;
-let pgStatusRoutes: any;
 let PGMessage: any;
 let _PGPod;
 const Message = require('./models/Message');
 const Pod = require('./models/Pod');
 const User = require('./models/User');
 const AgentMentionService = require('./services/agentMentionService');
+const { createPgBoot } = require('./services/pgBootService');
+const { setPgMountProbe, routerIsMounted } = require('./services/pgBootService');
 
 // Global flag to track PostgreSQL availability
 let pgAvailable = false;
 
 if (process.env.PG_HOST) {
   pgMessageRoutes = require('./routes/pg-messages');
-  pgStatusRoutes = require('./routes/pg-status');
   PGMessage = require('./models/pg/Message');
   _PGPod = require('./models/pg/Pod');
 }
@@ -89,11 +94,23 @@ const app = express();
 // any client can spoof req.ip and bypass the IP-keyed rate limiters
 // (express-rate-limit ERR_ERL_PERMISSIVE_TRUST_PROXY). Every real hop in
 // front of us — cloudflared pod, nginx, docker-compose bridge, local dev —
-// sits on a loopback/private address, so trusting only those ranges walks
-// X-Forwarded-For from the right past our own infra and stops at the first
-// public address: the client IP as recorded by Cloudflare. A spoofed header
-// just gets the real client IP appended after it by the edge, so spoofing
-// can't reach req.ip.
+// sits on a loopback/private address, so this list trusts all of them.
+//
+// What that means for `req.ip` was measured on the deployed cluster
+// (2026-09-23), and it is NOT what this comment used to claim: nginx REPLACES
+// X-Forwarded-For with its own peer and parks the incoming chain on
+// X-Original-Forwarded-For, so the chain the backend walks holds one
+// in-cluster address and every entry is trusted. `req.ip` is therefore a
+// cloudflared pod address — one of two — for EVERY external caller, never the
+// client. Do not key an internet-facing rate limiter on `req.ip`; see
+// middleware/ipRateLimit.ts, which keys on `cf-connecting-ip` for that reason.
+// It stays correct for in-cluster callers (clawdbot, commonly-bot,
+// cloud-codex reach the backend Service directly and send no CF header), which
+// is why the trust list is still here.
+//
+// trust proxy is still required for what it was originally added for:
+// `req.protocol`, so a URL built as `${req.protocol}://...` is https behind the
+// TLS edge instead of http (Mixed Content on every page load).
 app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 const buildAllowedOrigins = () => {
   const raw = process.env.FRONTEND_URL;
@@ -192,6 +209,16 @@ app.use(
 );
 
 // Standard JSON for GroupMe and Telegram webhooks
+// Discord's webhook event endpoint also needs the exact JSON bytes for Ed25519
+// verification. Capture them while parsing, just as Slack does above.
+app.use(
+  '/api/webhooks/discord',
+  express.json({
+    verify: (req: any, _res: any, buf: Buffer) => {
+      req.rawBody = buf.toString();
+    },
+  }),
+);
 app.use('/api/webhooks/groupme', express.json());
 app.use('/api/webhooks/telegram', express.json());
 
@@ -208,6 +235,8 @@ app.use('/api/users', userRoutes);
 // GET must mount before `/api/pods`. Its `/:type/:id` catch-all would
 // otherwise consume that request as a pod lookup.
 app.use('/api', podInvitesRoutes);
+// Before podRoutes: its `/:type/:id` catch-all would answer `/:podId/grants` as type=<podId>, id='grants' (Wren 67721).
+app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
 app.use('/api/pods', podRoutes);
 app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
@@ -237,9 +266,14 @@ app.use('/api/v1', contextApiRoutes); // Context API for MCP and external agents
 app.use('/api/v1/tasks', tasksApiRoutes); // Task management for dev agents
 app.use('/api/registry', registryRoutes); // Agent Registry (package manager for agents)
 app.use('/api/credentials', require('./routes/credentials')); // ADR-026 Phase 0: credential lineage + revocation
+app.use('/api/grants', require('./routes/grants')); // ADR-001 room-grant record: server-enforced attenuation + cascade revocation
+app.use('/api/mcp/grants', require('./routes/mcpGrants')); // ADR-001 tool broker: stateless MCP transport + attributed trail
 app.use('/api/agent-binding', require('./routes/agentBinding')); // ADR-026 D3: machine adoption CAS
 app.use('/api/machines', require('./routes/machines')); // ADR-026 Phase 1: local daemon lifecycle
 app.use('/api/hosted', require('./routes/hosted')); // ADR-023 W2: hosted runtime provision surface (metered)
+// TASK-094: per-spawn scoped credentials (mint / renew / revoke / boot sweep).
+// Mounted before the runtime router so the path is unambiguous.
+app.use('/api/agents/runtime/spawn-credentials', require('./routes/spawnCredentials'));
 app.use('/api/agents/runtime', agentsRuntimeRoutes); // Runtime endpoints for external agents
 app.use('/api/federation', federationRoutes); // Cross-pod federation
 app.use('/api/providers/moltbot', moltbotProviderRoutes); // Moltbot provider integration
@@ -323,6 +357,11 @@ mongoose.connection.once('open', () => {
       ).catch((err: any) =>
         console.error('[builtin-connectors] bootstrap failed:', err?.message || err),
       );
+      // Tools plan §2: the first-party GitHub tool Installable is the row the
+      // Tools page draws first and the mint reads its broker from.
+      require('./scripts/seed-builtin-tools').seedBuiltinTools().catch((err: any) =>
+        console.error('[builtin-tools] bootstrap failed:', err?.message || err),
+      );
     })();
   }
 });
@@ -340,133 +379,93 @@ if (process.env.NODE_ENV !== 'test') {
   }
 }
 
-// Connect to PostgreSQL if configured (for chat functionality)
+// PostgreSQL status is mounted unconditionally, and NOT as a placeholder:
+// checkStatus reads the pool and the schema itself, so it answers
+// available:false while PG is unreachable or schema.sql has not been applied
+// yet, and true once it has — correct in every state this pod can be in,
+// including the mount-retry window below. It replaces five copies of a dummy
+// `{ available: false }` handler, one per failure branch, none of which could
+// tell the truth after a late mount. Its POST /sync-user is only ever called
+// by the frontend after a GET said available:true (SocketContext.tsx:45-49),
+// i.e. only when the pool is up.
+app.use('/api/pg/status', pgStatusRoutes);
+
+// Connect to PostgreSQL if configured (for chat functionality).
+//
+// A boot-time connect failure used to be permanent: `connectPG()` ran once, a
+// null result disabled every PG-backed route for the pod's whole life, and
+// nothing gated traffic on it. On 2026-09-25 that reached production — a
+// transient PG connect timeout at boot left the only replica serving without
+// chat history, /api/pg/messages 404ing, socket writes going to Mongo and the
+// retention + cleanup crons never started, until a human did a rollout
+// restart. PG itself was healthy (331ms from that same pod). The retry with
+// backoff, the late mount and the state the health route reads all live in
+// services/pgBootService.ts (TASK-168).
 if (process.env.PG_HOST) {
-  console.log('Attempting to connect to PostgreSQL for chat functionality...');
-  connectPG()
-    .then((pgPool: any) => {
-      if (pgPool) {
-        // Initialize PostgreSQL database
-        initializePGDB()
-          .then((success: any) => {
-            if (success) {
-              // Set global flag that PostgreSQL is available
-              pgAvailable = true;
-              // Register PostgreSQL routes for chat functionality
-              // '/api/pg/pods' is deliberately NOT mounted. It exposed an
-              // unauthorized shadow copy of the pod API: getAllPods returned
-              // every pod on the instance with no membership filter, joinPod
-              // had no join-policy check at all (a non-member could join a
-              // private pod and get a 200), and deletePod gated on a
-              // created_by value that the sync path let a requester claim.
-              // It had zero callers anywhere in the repo — the frontend uses
-              // /api/pods, and only /api/pg/messages + /api/pg/status are live
-              // (ChatRoom, SocketContext). Removed rather than patched.
-              app.use('/api/pg/messages', pgMessageRoutes);
-              app.use('/api/pg/status', pgStatusRoutes);
-              console.log(
-                'PostgreSQL routes registered for chat functionality',
-              );
-              // Kick off the daily 30-day message retention cron. Kept out
-              // of schedulerService.ts on purpose so other tracks can edit
-              // that file without stomping on this cron.
-              if (process.env.NODE_ENV !== 'test') {
-                try {
-                  const { initPgRetention } = require('./services/pgRetentionService');
-                  initPgRetention();
-                } catch (retentionErr: any) {
-                  console.error(
-                    '[pg-retention] failed to initialize:',
-                    retentionErr?.message || retentionErr,
-                  );
-                }
-                try {
-                  require('./services/agentInstallationCleanupService').initInstallationCleanup();
-                } catch (cleanupErr: any) {
-                  console.error(
-                    '[installation-cleanup] failed to initialize:',
-                    cleanupErr?.message || cleanupErr,
-                  );
-                }
-              }
-            } else {
-              pgAvailable = false;
-              console.warn(
-                'PostgreSQL database initialization failed, chat functionality will use MongoDB',
-              );
-              // Register a dummy status endpoint to indicate PostgreSQL is not available
-              app.use('/api/pg/status', (req: any, res: any) => {
-                res.json({ available: false });
-              });
-            }
-          })
-          .catch((err: any) => {
-            pgAvailable = false;
-            console.error('Error initializing PostgreSQL database:', err);
-            // Register a dummy status endpoint to indicate PostgreSQL is not available
-            app.use('/api/pg/status', (req: any, res: any) => {
-              res.json({ available: false });
-            });
-          });
-      } else {
-        pgAvailable = false;
-        console.warn(
-          'PostgreSQL connection failed, chat functionality will use MongoDB',
-        );
-        // Register a dummy status endpoint to indicate PostgreSQL is not available
-        app.use('/api/pg/status', (req: any, res: any) => {
-          res.json({ available: false });
-        });
+  // Readiness asks the route table, not this block's own bookkeeping (TASK-168):
+  // it checks that this very router is on the app, so a pod that mounts PG late
+  // starts passing its readiness probe without being restarted.
+  setPgMountProbe(() => routerIsMounted(app, pgMessageRoutes));
+  createPgBoot({
+    // Mounted only after a connect AND a schema initialization both succeed.
+    // Until then the route is absent rather than present-and-500ing, which is
+    // the honest answer: the capability really is absent, and a caller that
+    // gets 404 must not be told the pod is fine.
+    mountRoutes: () => {
+      app.use('/api/pg/messages', pgMessageRoutes);
+    },
+    connect: connectPG,
+    initialize: initializePGDB,
+    onMounted: () => {
+      pgAvailable = true;
+      // Kick off the daily 30-day message retention cron. Kept out
+      // of schedulerService.ts on purpose so other tracks can edit
+      // that file without stomping on this cron.
+      if (process.env.NODE_ENV !== 'test') {
+        try {
+          const { initPgRetention } = require('./services/pgRetentionService');
+          initPgRetention();
+        } catch (retentionErr: any) {
+          console.error(
+            '[pg-retention] failed to initialize:',
+            retentionErr?.message || retentionErr,
+          );
+        }
+        try {
+          require('./services/agentInstallationCleanupService').initInstallationCleanup();
+        } catch (cleanupErr: any) {
+          console.error(
+            '[installation-cleanup] failed to initialize:',
+            cleanupErr?.message || cleanupErr,
+          );
+        }
       }
-    })
+    },
+  })
+    .start()
     .catch((err: any) => {
-      pgAvailable = false;
-      console.error('Error connecting to PostgreSQL:', err);
-      // Register a dummy status endpoint to indicate PostgreSQL is not available
-      app.use('/api/pg/status', (req: any, res: any) => {
-        res.json({ available: false });
-      });
+      // start() does not reject by construction — it converts every failure
+      // into state + a scheduled retry. This catch exists so a future edit
+      // that breaks that property degrades into a logged warning instead of
+      // an unhandled rejection at boot.
+      console.error('Error starting the PostgreSQL boot retry:', err?.message || err);
     });
 } else {
   pgAvailable = false;
   console.log(
     'PostgreSQL connection not configured. Chat functionality will use MongoDB.',
   );
-  // Register a dummy status endpoint to indicate PostgreSQL is not available
-  app.use('/api/pg/status', (req: any, res: any) => {
-    res.json({ available: false });
-  });
 }
 
 // Sentry's Express error handler must be registered after application routes.
 // It is a no-op when SENTRY_DSN was absent during process startup.
 attachSentryErrorHandler(app);
 
-// Socket.io middleware for authentication
+// Socket.io middleware for authentication. The row read lives in
+// middleware/socketAuth.ts so it is the same one the HTTP middleware and the
+// uploads bearer perform, and so it can be witnessed (TASK-133).
 io.use((socket: any, next: any) => {
-  const { token } = socket.handshake.auth;
-  if (!token) {
-    console.error('Socket auth error: Token not provided');
-    return next(new Error('Authentication error: Token not provided'));
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Handle both token formats: { id: user._id } or { user: { id: user._id } }
-    const userId = decoded.id || (decoded.user && decoded.user.id);
-
-    if (!userId) {
-      console.error('Socket auth error: Invalid token structure');
-      return next(new Error('Authentication error: Invalid token structure'));
-    }
-
-    socket.userId = userId;
-    return next();
-  } catch (err: any) {
-    console.error('Socket auth error:', err.message);
-    return next(new Error('Authentication error: Invalid token'));
-  }
+  void socketAuthMiddleware(socket, next);
 });
 
 const emitPresence = async (podId: any) => {
@@ -486,13 +485,13 @@ const emitPresence = async (podId: any) => {
   }
 };
 
-const isPodMember = (pod: any, userId: any) => {
-  if (!pod || !userId) {
-    return false;
-  }
-
-  return (pod.members || []).some((member: any) => member?.toString() === userId.toString());
-};
+// The pod's own membership rule has ONE definition: `utils/isPodMember`. This
+// module kept a copy, and the copy had already drifted from `createMessage` on
+// populated member docs — `member.toString()` renders `[object Object]`, so a
+// member Mongo had populated was admitted by the write path and refused by the
+// socket that mirrors it. TASK-165.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { isListedPodMember } = require('./utils/isPodMember');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const DMServiceForSocketAuth = require('./services/dmService');
@@ -519,7 +518,7 @@ const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) =>
   const isReadAction = action === 'join';
   const allowed = isReadAction
     ? await DMServiceForSocketAuth.canViewPod(socket.userId, pod)
-    : isPodMember(pod, socket.userId);
+    : isListedPodMember(pod, socket.userId);
 
   if (!allowed) {
     console.error(`Socket error: Not authorized to ${action} for this pod`, {
@@ -797,6 +796,5 @@ if (require.main === module) {
 module.exports = {
   app,
   server,
-  isPodMember,
   authorizeSocketPodAccess,
 };

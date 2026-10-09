@@ -307,7 +307,7 @@ the slash-command / external-webhook tracks; naming them here keeps the enum hon
 row marks the component `stale` (never re-creates silently — a stale connector must not mint a
 code nobody asked for). For every `uninstalled` installation, projections must be inactive.
 For every **`installing`** installation whose `claimedAt` is older than `INSTALL_LOCK_TTL_MS`,
-the sweep sets `status: 'error'` with `errorMessage: 'install lock expired'` — fenced on the
+the sweep sets `status: 'error'` with `errorMessage: 'Setup was interrupted before it finished. Try again.'` — fenced on the
 `claimId` it read, so it cannot race a takeover that happened between its read and its write
 — and the row becomes the ordinary retryable case, and the board-facing state stops lying
 about work in progress. For a stale **`activating`** installation the sweep must **look
@@ -343,7 +343,8 @@ one per user). The projected Integration row keeps today's pod binding: the page
 becomes the **first gate row**, and its pod is written to `Integration.podId` — the "active pod"
 of D12, honestly labelled as the single pod this connector relays until D8 fans out. Relay
 behaviour is byte-for-byte today's. The `Integration.podId` write on install is gated by
-`isPodMember(pod, installer)` — the #1297 write gate, reused.
+`isConnectorTargetPod(pod, installer)` — the #1297 membership write gate, plus the
+type rule that keeps a target on the default listing (TASK-171).
 
 **Phase 2 — D8's schema (separate PR, after this lands).** `Integration.scope: 'user'`,
 `podId` optional under a conditional validator, `config.gates[podId]`, and the outbound lookup
@@ -378,11 +379,12 @@ plan leaves for the marketplace-unlock PR, and the `/browse` filter must admit `
 - `linkedUserId` is stamped from the installer, after the relay default, never from the body.
 - Connect code is minted server-side (`mintConnectCode`); the body cannot supply one, and it
   is minted only by the final activation write — never by a projector (§2 step 6).
-- The chosen pod is gated by `isPodMember` (write predicate, no admin read-bypass).
+- The chosen pod is gated by `isConnectorTargetPod` (write predicate: membership, no
+  admin read-bypass, and a type the default listing shows).
 - Install and uninstall both resolve their target from the caller's identity; neither accepts
   an installation id or a target from the body, so a caller can only ever act on their own row.
 - `grantedScopes` is descriptive, not enforced (Phase 1). Authorization is `auth` +
-  `isPodMember` + identity-derived targets, nothing else.
+  `isConnectorTargetPod` + identity-derived targets, nothing else.
 - The install and uninstall verbs sit behind the integrations write limiter's shared key.
 - The Installable row carries no secret; H3's credential reference is the only future home.
 - Enable-time refusal of a group bind, the string-`'true'` coercion, and the attempt limiter
@@ -420,7 +422,7 @@ Unit (`backend/__tests__/unit/services/installable/`):
 5. Non-member of the chosen pod → 403, nothing written.
 6. Reconciler: a deleted Integration under an active installation marks the component `stale`,
    creates nothing. An `installing` row with `claimedAt` older than the TTL is swept to
-   `error` with `'install lock expired'`. A stale `activating` row whose Integration is still
+   `error` with `'Setup was interrupted before it finished. Try again.'`. A stale `activating` row whose Integration is still
    inactive is swept to `error`; a stale `activating` row whose Integration is already active
    with a code is **completed to `active`**, the code unchanged, `mintConnectCode` not called
    — never demoted, so no redeemable code ever sits under an `error` parent.

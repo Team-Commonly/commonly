@@ -4,6 +4,12 @@
 
 Commonly's Discord integration provides bidirectional synchronization between Discord servers and Commonly pods. The system uses a Discord Gateway connection to buffer inbound messages and hourly summarization to post updates to Commonly pods.
 
+The summarization step is provider-neutral: `summarizerService` uses LiteLLM
+when configured and retains the backend's supported direct-provider fallback.
+It then enqueues a `discord.summary` event for the installed Commonly Bot
+runtime, which posts through `/api/agents/runtime/*`; this is not a hard-coded
+Gemini-to-Discord path.
+
 ## Architecture Design
 
 ### Core Philosophy
@@ -20,7 +26,7 @@ Commonly's Discord integration provides bidirectional synchronization between Di
 **Key Methods:**
 - `syncRecentMessages(timeRangeHours = 1)` - **Unified summary method** used by both manual commands and automatic scheduler (reads buffered messages)
 - `fetchMessages(options)` - Direct Discord API message fetching (reserved for backfill/debug)
-- `createDiscordSummary()` - AI-powered message summarization using Gemini
+- `createDiscordSummary()` - AI-powered message summarization through the backend summarizer service
 - `sendMessage()` - Send messages TO Discord via webhook
 
 **Message Filtering Logic:**
@@ -88,7 +94,7 @@ const filteredMessages = messages.filter(msg => {
     ↓
 [DiscordService.syncRecentMessages(1)]
     ↓
-[AI Summarization via Gemini]
+[AI summarization via backend summarizer service]
     ↓
 [AgentEvent enqueue: discord.summary]
     ↓

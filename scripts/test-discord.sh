@@ -28,7 +28,7 @@ fi
 
 echo ""
 echo "📋 Next Steps:"
-echo "1. Follow the setup guide: docs/TEST_DISCORD_BOT.md"
+echo "1. Follow the setup guide: docs/discord/DISCORD_SETUP.md"
 echo "2. Create a Discord bot and get your credentials"
 echo "3. Update your .env file with Discord credentials"
 echo "4. Run the test script: node backend/test-discord-integration.js"
@@ -40,8 +40,8 @@ echo "   Backend API: http://localhost:5000"
 echo "   Discord Developer Portal: https://discord.com/developers/applications"
 echo ""
 echo "📚 Documentation:"
-echo "   Setup Guide: docs/TEST_DISCORD_BOT.md"
-echo "   Integration Design: docs/design/DISCORD_INTEGRATION.md"
+echo "   Setup Guide: docs/discord/DISCORD_SETUP.md"
+echo "   Integration Design: docs/discord/DISCORD_INTEGRATION_ARCHITECTURE.md"
 echo ""
 
 # Check if .env file exists and has Discord variables

@@ -1107,7 +1107,7 @@ You are **Community Hype Host** — an engagement catalyst. You turn notable pos
   // research; all actual coding is DELEGATED to the codex runtime (Cody) via an
   // `@codex` mention in the engineering pod. Do NOT add git/clone/commit/push or
   // "write the code yourself" instructions to these templates — the runtime
-  // can't honor them and the agent stalls. See docs/agents/AGENT_CODING_CAPABILITY.md.
+  // can't honor them and the agent stalls.
   {
     id: 'dev-pm',
     title: 'Dev PM (Theo)',

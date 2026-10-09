@@ -21,20 +21,20 @@
 // `req.userId` is not set yet, which is why the key generators below hash the
 // Authorization header instead — the idiom `routes/messages.ts` already uses
 // for its pre-auth limiters, and the reason those are clean.
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 const { createHash } = require('crypto');
 
 // Per-caller key that works BEFORE `auth` has run. Hashing the raw header
 // keeps one token's budget isolated from another's without leaking the token
-// into rate-limiter state; unauthenticated callers fall back to
-// ipKeyGenerator so IPv6 clients can't rotate within their /64
-// (ERR_ERL_KEY_GEN_IPV6, #652).
+// into rate-limiter state; unauthenticated callers fall back to the
+// Cloudflare-aware helper (IPv6-safe — see middleware/ipRateLimit.ts).
 const preAuthCallerKey = (req: any) => {
   const authHeader = req.get?.('authorization');
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
-  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  return cloudflareIpRateLimitKeyGenerator(req as never);
 };
 
 const express = require('express');

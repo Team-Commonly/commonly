@@ -45,7 +45,7 @@
 
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
-import { realpathSync } from 'fs';
+import { accessSync, constants, realpathSync } from 'fs';
 import {
   chmod,
   lstat,
@@ -61,13 +61,23 @@ import {
 import { homedir, tmpdir } from 'os';
 import { delimiter, isAbsolute, join } from 'path';
 
-import { mountSkills } from '../environment.js';
-import { wrapArgvWithBwrap } from '../sandbox/bwrap.js';
+import {
+  isLegacySandboxTrust,
+  mountSkills,
+  normalizeSandboxTrust,
+} from '../environment.js';
+import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
+import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import {
   publicClaudeStateRoot,
   wrapArgvWithSeatbelt,
 } from '../sandbox/seatbelt.js';
+import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { supportedGitHooks } from '../commit-attribution.js';
+import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
+import { prepareMcpSpawn } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -81,8 +91,23 @@ const DEFAULT_TIMEOUT_MS = (() => {
 })();
 
 const buildPrompt = buildMemoryPreamble;
+const RUNTIME_CREDENTIAL_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 
-const PUBLIC_SANDBOX_MODES = new Set(['workspace', 'read-only']);
+const QUOTE_SHELL_ARGUMENT = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
+
+const HEADER_TOKEN_HELPER_SOURCE = `import { readFileSync } from 'node:fs';
+
+const credentialFile = process.env.${CREDENTIAL_FILE_VAR};
+if (!credentialFile) throw new Error('missing ${CREDENTIAL_FILE_VAR}');
+const token = readFileSync(credentialFile, 'utf8').trim();
+if (!token) throw new Error('empty ${CREDENTIAL_FILE_VAR}');
+const templates = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+const headers = Object.fromEntries(
+  Object.entries(templates).map(([name, parts]) => [name, parts.join(token)]),
+);
+process.stdout.write(JSON.stringify(headers) + '\\n');
+`;
+
 const PUBLIC_DENIED_TOOLS = [
   'WebSearch',
   'WebFetch',
@@ -172,7 +197,7 @@ const preparePublicClaudeState = async (ctx) => {
   return { statePath, tmpPath, configPath };
 };
 
-const buildClaudeEnv = (input, state, expansionEnv = {}) => {
+const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null) => {
   const source = input || process.env;
   const output = state ? {} : { ...source };
   if (state) {
@@ -186,7 +211,16 @@ const buildClaudeEnv = (input, state, expansionEnv = {}) => {
     output.XDG_DATA_HOME = join(state.statePath, '.local', 'share');
   }
   Object.assign(output, expansionEnv);
-  return output;
+  // `source` is usually the process environment, which is where the documented
+  // bootstrap export lives — so the value has to be taken out here rather than
+  // merely left out of the declaration rewrite. It survives only when THIS
+  // spawn's declaration still references it (claude substitutes args, url and
+  // headers literally, and `buildMcpExpansionEnv` reports that by carrying the
+  // key); the file path goes in either way so a hook child can name it.
+  return withholdRuntimeCredential(output, {
+    credentialFile,
+    keepsValue: expansionEnv[CREDENTIAL_KEY] !== undefined,
+  });
 };
 
 const absoluteToolDeny = (path) => `Read(/${path}/**)`;
@@ -219,7 +253,7 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns) => {
   ];
 };
 
-const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
   const proc = spawnImpl(cmd, args, {
     cwd,
     env,
@@ -250,8 +284,19 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) =
       // at all because of this. It is not only a diagnosability problem: the
       // circuit breaker classifies from the error message, so a blank message
       // downgrades a hard quota failure to RUNTIME and its shortest backoff.
+      //
+      // TASK-103: the tail goes through the same reader pi's refusal log uses.
+      // A non-JSON tail (which this normally is — the usage-limit line above is
+      // prose) is kept whole and only exact-match redacted; a JSON body is
+      // reduced to one named field. The status, when the tail names one, is
+      // attached as `error.status` so a refusal classifies by field rather than
+      // by regex.
       const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join(' | ');
-      return reject(new Error(`claude exited with code ${code}: ${detail.slice(0, 2000)}`));
+      return reject(adapterFailure('claude', detail, {
+        credentials,
+        exitCode: code,
+        limit: 2000,
+      }));
     }
     resolve(stdout);
   });
@@ -261,14 +306,26 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) =
 
 // Keep Commonly placeholders in the MCP JSON and expose their values only in
 // Claude's per-spawn environment. Claude Code natively expands ${VAR} in MCP
-// command/args/env/url fields. Substituting here used to materialize the raw
-// cm_agent_* bearer token in a transient JSON file, which made the token
-// readable to any co-confined child allowed to read that config directory.
+// command/args/env/url/header fields. Token-bearing HTTP headers are routed
+// through headersHelper below, because a literal expansion would put the
+// credential in Claude's environment and every MCP child's environment.
 //
 // Recognised placeholders:
-//   ${COMMONLY_AGENT_TOKEN}   — the per-(agent, pod) cm_agent_* runtime token
+//   ${COMMONLY_TOKEN_FILE}    — the PATH of this spawn's credential file
 //   ${COMMONLY_API_URL}       — the instance URL the agent is attached to
 //   ${COMMONLY_INSTANCE_URL}  — alias for COMMONLY_API_URL (clearer in context)
+//
+// The credential itself is deliberately NOT among these values (TASK-083). It
+// used to be, and that put the bearer token in claude's environment, where every
+// MCP child and every hook inherited it — measured on a live seat: the pi seat's
+// MCP child carried COMMONLY_AGENT_TOKEN and COMMONLY_LITELLM_KEY. What the
+// child gets instead is a path to a 0600 file that only this spawn can name,
+// written into the SAME per-spawn directory claude is already handed for
+// --mcp-config. That directory is not a coincidence: it is the one path outside
+// the workspace that the Seatbelt profile admits (sandbox/seatbelt.js admits
+// `subpath(mcpConfigDir)` and nothing under ~/.commonly but the seat's own
+// statePath), so a credential file placed anywhere else is unreadable by the
+// very child it is written for.
 //
 // Only values actually referenced by this MCP declaration are added to the
 // child environment. Unknown placeholders remain in JSON so Claude's parser
@@ -276,30 +333,111 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) =
 const buildMcpExpansionEnv = (mcpConfig, ctx) => {
   const serialized = JSON.stringify(mcpConfig);
   const values = {
-    COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
+    [CREDENTIAL_FILE_VAR]: ctx.credentialFile || '',
     COMMONLY_API_URL: ctx.instanceUrl || '',
     COMMONLY_INSTANCE_URL: ctx.instanceUrl || '',
+    // Whether THIS one is exposed is decided by the loop below, not here: it is
+    // added only when the value is non-empty AND the declaration still references
+    // it — and `serialized` is the config AFTER the credential rewrite, which is
+    // what moves the default declaration off this value and onto the file. A
+    // reference that cannot use the file channel (args, url, unsupported or
+    // non-HTTP headers, or a string that merely contains the placeholder) keeps
+    // the value for that spawn. createMcpConfig warns when this carve-out applies.
+    COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
   };
   const output = {};
   for (const [key, value] of Object.entries(values)) {
-    if (value && serialized.includes(`\${${key}}`)) output[key] = value;
+    const referenced = serialized.includes(`\${${key}}`)
+      || (key === CREDENTIAL_FILE_VAR && ctx.headersHelperUsesCredentialFile === true);
+    if (value && referenced) output[key] = value;
   }
   return output;
 };
 
-const buildMcpConfig = (mcpServers) => {
+const isHttpTransport = (server) => {
+  const transport = String(server?.transport || server?.type || '').trim().toLowerCase();
+  return transport === 'http' || transport === 'streamable-http';
+};
+
+const getTokenHeaderTemplates = (server) => {
+  if (!isHttpTransport(server) || !server.headers || typeof server.headers !== 'object') return null;
+  const templates = Object.fromEntries(
+    Object.entries(server.headers)
+      .filter(([, value]) => typeof value === 'string' && value.includes(RUNTIME_CREDENTIAL_PLACEHOLDER))
+      .map(([name, value]) => [name, value.split(RUNTIME_CREDENTIAL_PLACEHOLDER)]),
+  );
+  return Object.keys(templates).length > 0 ? templates : null;
+};
+
+const writePrivateFile = async (path, contents) => {
+  await writeFile(path, contents, { encoding: 'utf8', mode: 0o600 });
+  await chmod(path, 0o600);
+};
+
+// Claude's headersHelper is invoked when an HTTP connection is established and
+// again after an authentication retry. Keep the token out of its config and
+// environment: the helper reads the current per-spawn file on every invocation.
+const createTokenHeaderHelpers = async (mcpServers, dir) => {
+  const servers = mcpServers
+    .map((server, index) => ({ server, index, templates: getTokenHeaderTemplates(server) }))
+    .filter((item) => item.templates);
+  if (servers.length === 0) return new Map();
+
+  const scriptPath = join(dir, 'headers-helper.mjs');
+  await writePrivateFile(scriptPath, HEADER_TOKEN_HELPER_SOURCE);
+  const helpers = new Map();
+  for (const { server, index, templates } of servers) {
+    const templatesPath = join(dir, `headers-${index}.json`);
+    await writePrivateFile(templatesPath, JSON.stringify(templates));
+    helpers.set(server.name, {
+      command: [
+        QUOTE_SHELL_ARGUMENT(process.execPath),
+        QUOTE_SHELL_ARGUMENT(scriptPath),
+        QUOTE_SHELL_ARGUMENT(templatesPath),
+      ].join(' '),
+      headerNames: Object.keys(templates),
+    });
+  }
+  return helpers;
+};
+
+const buildMcpConfig = (mcpServers, ctx = {}) => {
   // Shape: `{ mcpServers: { <name>: { ... } } }` — the standard MCP client
   // config, which claude's `--mcp-config` reads directly.
   const mcpServersMap = {};
   for (const server of mcpServers) {
+    // TASK-174: the command this seat will EXECUTE, not the one it declared —
+    // `node <home>/<version>/node_modules/@commonlyai/mcp/<bin>` when the seat's
+    // MCP home has a warmed build, and otherwise the unchanged declaration. The
+    // credential channel below is decided on that same command, so the two can
+    // never disagree about which release is running.
+    const spawnCommand = server.command
+      ? prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl })
+      : null;
+    const executed = spawnCommand ? { ...server, command: spawnCommand } : server;
     const entry = { type: server.transport || 'stdio' };
     if (server.url) entry.url = server.url;
-    if (server.command) {
-      const [command, ...args] = server.command;
+    if (spawnCommand) {
+      const [command, ...args] = spawnCommand;
       entry.command = command;
       if (args.length) entry.args = args;
     }
-    if (server.env) entry.env = { ...server.env };
+    // A declared credential is rewritten to the file channel here, in the
+    // config claude actually reads, so the value never has to exist in the
+    // runtime's environment at all (TASK-083).
+    if (server.env) {
+      entry.env = deliverSeatCredential(executed, {
+        credentialFile: ctx.credentialFile,
+        label: 'claude',
+      }).env;
+    }
+    const headerHelper = ctx.dynamicHeaderHelpers?.get(server.name);
+    if (server.headers) {
+      const headers = { ...server.headers };
+      for (const headerName of headerHelper?.headerNames || []) delete headers[headerName];
+      if (Object.keys(headers).length > 0 || !headerHelper) entry.headers = headers;
+    }
+    if (headerHelper) entry.headersHelper = headerHelper.command;
     mcpServersMap[server.name] = entry;
   }
   return { mcpServers: mcpServersMap };
@@ -313,9 +451,22 @@ const buildMcpConfig = (mcpServers) => {
 const createMcpConfig = async (mcpServers, ctx = {}) => {
   const dir = await mkdtemp(join(tmpdir(), 'commonly-claude-mcp-'));
   const file = join(dir, 'mcp-config.json');
-  const config = buildMcpConfig(mcpServers);
+  let credential = null;
   try {
     await chmod(dir, 0o700);
+    // Written BEFORE the config, because the config may only reference it. It
+    // lives inside `dir` so the spawn's existing finally removes it with the
+    // config — no second lifecycle to get wrong — and so it is inside the one
+    // non-workspace path the Seatbelt profile admits.
+    credential = writeCredentialFile(ctx.runtimeToken, { agentName: ctx.agentName || 'agent', root: dir });
+    const dynamicHeaderHelpers = credential?.path
+      ? await createTokenHeaderHelpers(mcpServers, dir)
+      : new Map();
+    const config = buildMcpConfig(mcpServers, {
+      ...ctx,
+      credentialFile: credential?.path || null,
+      dynamicHeaderHelpers,
+    });
     await writeFile(
       file,
       JSON.stringify(config, null, 2),
@@ -324,11 +475,21 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
     // writeFile's mode only applies when creating. Pin the final mode too so
     // this stays correct if the implementation ever starts reusing the path.
     await chmod(file, 0o600);
-    return {
-      dir,
-      file,
-      expansionEnv: buildMcpExpansionEnv(config, ctx),
-    };
+    const expansionEnv = buildMcpExpansionEnv(config, {
+      ...ctx,
+      credentialFile: credential?.path || null,
+      headersHelperUsesCredentialFile: dynamicHeaderHelpers.size > 0,
+    });
+    if (expansionEnv[CREDENTIAL_KEY]) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[claude] this declaration references ${CREDENTIAL_KEY} in a field claude `
+        + 'substitutes literally (args, url, unsupported headers, or a larger string), so the '
+        + "value stays in claude's environment for this spawn and every MCP child "
+        + `inherits it. Put the credential on the entry's env to get the file channel.`,
+      );
+    }
+    return { dir, file, credential, expansionEnv };
   } catch (err) {
     try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     throw err;
@@ -409,12 +570,42 @@ const prepareArgv = async (innerArgv, ctx) => {
       .map((name) => `mcp__${name}__*`);
   }
 
-  const sandboxMode = env.sandbox?.mode;
   const sandboxTrust = env.sandbox?.trust;
+  const sandboxMode = resolvePublicSandboxMode(env.sandbox);
   const publicNativeSandbox = sandboxTrust === 'public'
     && PUBLIC_SANDBOX_MODES.has(sandboxMode);
-  if (sandboxTrust === 'public' && sandboxMode === 'none') {
-    throw new Error('public Claude agents require an enforced sandbox mode');
+  // A public trust is ONE contract on both platforms: the jail bounds the
+  // filesystem and the policy bounds the tools. The bwrap branch below used to
+  // get the jail only — a derived Linux seat kept Bash/Write/WebFetch and ran on
+  // the operator's own Claude settings inside the namespace (Vera 69578).
+  const publicBwrapSandbox = sandboxTrust === 'public' && sandboxMode === 'bwrap';
+  const commitHooksPath = ctx.commitAttributionEnv?.COMMONLY_AGENT_HOOKS_PATH || null;
+  const originalHooksPath = ctx.commitAttributionEnv?.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH || null;
+  const commitHookExecutables = commitHooksPath
+    ? supportedGitHooks().map((hookName) => join(commitHooksPath, hookName))
+    : [];
+  const originalHookExecutables = originalHooksPath
+    ? supportedGitHooks()
+      .map((hookName) => join(originalHooksPath, hookName))
+      .filter((hookPath) => {
+        try {
+          accessSync(hookPath, constants.X_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+    : [];
+  // A public trust MUST resolve to an enforced mode. Absent mode is resolved
+  // above; anything else that lands here (the literal 'none', a typo, a
+  // non-string) used to fall through to the bare `claude` spawn below — an
+  // unconfined seat with a public record, which is how a record can claim
+  // confinement it never applies (Vera 69548).
+  if (sandboxTrust === 'public' && !publicNativeSandbox && sandboxMode !== 'bwrap') {
+    throw new Error(
+      'public Claude agents require an enforced sandbox mode '
+      + `(workspace or read-only on macOS, bwrap elsewhere), got ${JSON.stringify(sandboxMode)}`,
+    );
   }
   if (publicNativeSandbox) {
     if (process.platform !== 'darwin') {
@@ -431,16 +622,19 @@ const prepareArgv = async (innerArgv, ctx) => {
       ...buildPublicClaudePolicyArgs(allowedPatterns),
     ];
     const claudeBin = resolveClaudePath(claudeEnv);
+    // Only stdio servers have a `command`; an HTTP entry (the grant broker)
+    // carries a `url` instead, and `isAbsolute(undefined)` throws — every
+    // confined spawn of a seat with a broker grant died here (2026-09-18).
     const mcpExecutables = (env.mcp || [])
       .map((server) => server?.command?.[0])
-      .filter((command) => isAbsolute(command));
+      .filter((command) => typeof command === 'string' && isAbsolute(command));
     const wrapped = wrapArgvWithSeatbelt([claudeBin, ...innerArgv], {
       workspacePath: ctx.cwd,
       workspaceAccess: sandboxMode === 'read-only' ? 'read' : 'write',
       claudePath: claudeBin,
       statePath: ctx.publicClaudeState.statePath,
       mcpConfigDir: ctx.mcpConfigDir,
-      executablePaths: mcpExecutables,
+      executablePaths: [...mcpExecutables, ...commitHookExecutables, ...originalHookExecutables],
     });
     return {
       cmd: wrapped[0],
@@ -449,18 +643,30 @@ const prepareArgv = async (innerArgv, ctx) => {
     };
   }
 
-  if (allowedPatterns.length > 0) {
+  if (publicBwrapSandbox) {
+    // The mode is chosen here, so the mechanism is verified here: a missing
+    // bwrap must fail the seat's derivation with an actionable message, not
+    // every one of its spawns with a bare ENOENT (Wren 69586). On a non-Linux
+    // host this reports the macOS-only message, same as the wrapper would.
+    const bwrap = (ctx._detectBwrap || detectBwrap)();
+    if (!bwrap.available) {
+      throw new Error(`public Claude agents require bwrap: ${bwrap.error}`);
+    }
+    innerArgv = [
+      ...innerArgv,
+      ...buildPublicClaudePolicyArgs(allowedPatterns),
+    ];
+  } else if (allowedPatterns.length > 0) {
     innerArgv = [...innerArgv, '--allowedTools', ...allowedPatterns];
   }
   if (sandboxMode === 'bwrap') {
     const claudeBin = resolveClaudePath(claudeEnv);
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
-      readOnlyPaths: ctx.mcpConfigDir ? [ctx.mcpConfigDir] : [],
+      readOnlyPaths: [ctx.mcpConfigDir, commitHooksPath, originalHooksPath].filter(Boolean),
     });
     return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv };
   }
-
   return { cmd: 'claude', args: innerArgv, env: claudeEnv };
 };
 
@@ -498,7 +704,31 @@ export default {
     }
   },
 
-  async spawn(prompt, ctx = {}) {
+  async spawn(prompt, rawCtx = {}) {
+    // `sandbox.trust: 'internal'` is refused for new declarations and read as
+    // `public` for a record that already carries it; such a seat is confined
+    // where it can be and refuses to derive where it cannot (Wren 69585).
+    // Resolved ONCE here and threaded to BOTH consumers — the public-state
+    // preparation below and the argv builder — because two independent reads of
+    // one declaration is exactly how this seat crashed with "public Claude
+    // state was not prepared" instead of spawning confined.
+    const ctx = rawCtx.environment
+      ? {
+        ...rawCtx,
+        environment: {
+          ...rawCtx.environment,
+          sandbox: normalizeSandboxTrust(rawCtx.environment.sandbox),
+        },
+      }
+      : rawCtx;
+    if (isLegacySandboxTrust(rawCtx.environment?.sandbox)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[claude] sandbox.trust=internal is no longer accepted: it reads as '
+        + 'confinement and engaged none. Resolving this seat as trust=public, so '
+        + 'it is confined or it refuses to derive — never unconfined (Wren 69585).',
+      );
+    }
     const isResume = !!ctx.sessionId;
     const sessionId = ctx.sessionId || randomUUID();
     // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
@@ -545,7 +775,7 @@ export default {
     let publicClaudeState = null;
     try {
       const publicNativeSandbox = ctx.environment?.sandbox?.trust === 'public'
-        && PUBLIC_SANDBOX_MODES.has(ctx.environment?.sandbox?.mode);
+        && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
       if (publicNativeSandbox) {
         publicClaudeState = await preparePublicClaudeState(ctx);
       }
@@ -553,18 +783,24 @@ export default {
         mcpConfig = await createMcpConfig(ctx.environment.mcp, {
           runtimeToken: ctx.runtimeToken,
           instanceUrl: ctx.instanceUrl,
+          agentName: ctx.agentName,
         });
+      }
+      const claudeEnv = buildClaudeEnv(
+        ctx.env,
+        publicClaudeState,
+        mcpConfig?.expansionEnv,
+        mcpConfig?.credential?.path || null,
+      );
+      if (publicNativeSandbox && ctx.commitAttributionEnv) {
+        Object.assign(claudeEnv, ctx.commitAttributionEnv);
       }
       const spawnCtx = {
         ...ctx,
         mcpConfigPath: mcpConfig?.file || null,
         mcpConfigDir: mcpConfig?.dir || null,
         publicClaudeState,
-        claudeEnv: buildClaudeEnv(
-          ctx.env,
-          publicClaudeState,
-          mcpConfig?.expansionEnv,
-        ),
+        claudeEnv,
       };
       const { cmd, args, env } = await prepareArgv(baseArgs, spawnCtx);
       const stdout = await runClaude({
@@ -573,6 +809,11 @@ export default {
         cwd: ctx.cwd,
         env,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+        // The values this spawn was handed, for the failure tail's exact-match
+        // check. Snapshot before the spawn: claude is subscription-authenticated
+        // and its provider key is not an env var here, so the seat credential is
+        // the value a tail can echo back.
+        credentials: spawnCredentials(spawnCtx),
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
       });
       return { text: stdout.trim(), newSessionId: sessionId };
@@ -588,7 +829,7 @@ export default {
         // session that misses the durable-state cue.
         const freshPrompt = buildPrompt(prompt, ctx.memoryLongTerm, { freshSession: true });
         const retryBase = ['-p', freshPrompt, '--output-format', 'text', '--session-id', freshId, ...modelArgs];
-        const retry = await prepareArgv(retryBase, {
+        const retryCtx = {
           ...ctx,
           mcpConfigPath: mcpConfig?.file || null,
           mcpConfigDir: mcpConfig?.dir || null,
@@ -597,14 +838,17 @@ export default {
             ctx.env,
             publicClaudeState,
             mcpConfig?.expansionEnv,
+            mcpConfig?.credential?.path || null,
           ),
-        });
+        };
+        const retry = await prepareArgv(retryBase, retryCtx);
         const stdout = await runClaude({
           cmd: retry.cmd,
           args: retry.args,
           cwd: ctx.cwd,
           env: retry.env,
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+          credentials: spawnCredentials(retryCtx),
           spawnImpl: ctx._spawnImpl,
         });
         return { text: stdout.trim(), newSessionId: freshId };

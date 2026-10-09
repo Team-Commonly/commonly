@@ -50,10 +50,18 @@ const userFindOneStatements = () => {
 };
 
 describe('the middleware reads the full User row', () => {
-  it('finds both User.findOne call sites', () => {
+  it('finds every User.findOne call site', () => {
     // Binds the rest of the suite to a known population. If this number
     // changes, the new call site needs the same check, not a bumped constant.
-    expect(userFindOneStatements()).toHaveLength(2);
+    //
+    // Certified 2026-09-22: 2 -> 3 for ADR-026 / TASK-094 (#1814), which added
+    // `resolveSpawnChildAgentUser` — a third read, for a per-spawn child token
+    // whose row lives in the credential ledger rather than in
+    // `agentRuntimeTokens`. It is a full-row read gated on `isBot: true`, it is
+    // inside the `projects neither User.findOne` population below, and it is
+    // called out by name in the certification test under it. The count moves
+    // because the population genuinely grew, not because a check was relaxed.
+    expect(userFindOneStatements()).toHaveLength(3);
   });
 
   it('the file contains exactly one projection, and it is the Pod.find', () => {
@@ -98,10 +106,28 @@ describe('the middleware reads the full User row', () => {
     // finds nothing — and it used to borrow its non-vacuity from a DIFFERENT
     // test, so weakening that one silently gutted this one.
     const statements = userFindOneStatements();
-    expect(statements).toHaveLength(2);
+    expect(statements).toHaveLength(3);
     for (const stmt of statements) {
       expect(stmt).not.toMatch(/\.select\s*\(/);
     }
+  });
+
+  it('certifies the spawn-child read: a full bot row, gated on isBot', () => {
+    // The third site, named rather than counted. `resolveSpawnChildAgentUser`
+    // resolves a child token's seat from the ledger row's `agentUserId`; the
+    // property this file protects is that `req.agentUser` carries the WHOLE
+    // User, because routes/agentsRuntime.ts reads `username` and `botMetadata`
+    // off it. So the same two checks apply: no projection, and the bot gate is
+    // present — a row without it is not an agent identity at all.
+    const spawnSite = userFindOneStatements().find((stmt) => stmt.includes('credential.agentUserId'));
+    expect(spawnSite).toBeDefined();
+    expect(spawnSite).toMatch(/isBot:\s*true/);
+    expect(spawnSite).not.toMatch(/\.select\s*\(/);
+    // Control: the same predicate rejects the embedded-token read, so this test
+    // cannot pass by matching the wrong statement.
+    const embeddedSite = userFindOneStatements().find((stmt) => stmt.includes('agentRuntimeTokens.tokenHash'));
+    expect(embeddedSite).toBeDefined();
+    expect(embeddedSite).not.toMatch(/credential\.agentUserId/);
   });
 
   it('control: the probe DOES detect a projection when one is present', () => {

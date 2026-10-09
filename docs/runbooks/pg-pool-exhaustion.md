@@ -1,6 +1,6 @@
 # PG connection pool exhaustion — diagnosis + recovery
 
-**Symptom**: User-facing PG-backed endpoints (`/api/pods`, `/api/messages/:podId`) hang indefinitely. UI shows perpetual loading. Backend CPU + memory normal. Other endpoints (mongo-backed: `/api/posts`, `/api/auth/me`) respond fast.
+**Symptom**: User-facing PG-backed endpoints (`/api/pods`, `/api/messages/:podId`) hang indefinitely. UI shows perpetual loading. Backend CPU + memory normal. Other endpoints (for example `/api/posts`) respond fast. The old `/api/auth/me` probe is not a live route.
 
 ## Diagnosis flow
 

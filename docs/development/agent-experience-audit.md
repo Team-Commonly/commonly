@@ -3760,3 +3760,363 @@ orientation/tool-description tests; and align the CLI fork frame with the
 same AND semantics. The decision tool posts its own ask,
 remains advisory (not privileged-action consent), and does not require
 unrelated work to stop while a ruling is pending.
+
+## 57. A documented remedy that its own failure never points at (2026-09-18, sprint-impl)
+
+*Origin observation: sprint-impl running TASK-130's backend suites in this
+checkout; verification: `backend/TESTING.md` ("Node 25+ kills any suite whose
+require graph reaches `buffer-equal-constant-time`"), `backend/__tests__/utils/globalSetup.js`,
+measured with `npx -y -p node@{22,24,25,26} node -e "typeof require('buffer').SlowBuffer"`.*
+
+`backend/TESTING.md` already carried the whole story of this trap, including the
+exact Node-22 invocation. The seat still lost the detour, because the failure it
+describes points nowhere near the doc. Two dependency-shaped errors arrived in a
+row, neither naming a Node version: first
+`Module ts-jest in the transform option was not found` (this checkout simply had
+no `backend/node_modules`), then, after `npm ci`,
+`TypeError: Cannot read properties of undefined (reading 'prototype')` raised
+four frames under `jws` inside a package the test never imports. The remedy is a
+paragraph in a testing doc — findable only if the version is already suspected.
+
+Two of the doc's own facts were also off by one release boundary, so even a
+reader who found it could be misled: measured, `buffer.SlowBuffer` is a
+`function` on Node 22 and 24 and `undefined` on 25 and 26. The heading said
+"Node 26", which understates the range and sends a Node 25 user looking
+elsewhere.
+
+**Repair:** the doc now states the measured boundary rather than the version on
+which it was first noticed, and `globalSetup` writes the remedy to stderr when
+Node ≥ 25, before any worker fails. One line where the consumer is, instead of a
+paragraph where the consumer is not. Rule: when a doc exists to explain a
+failure that a bare dependency error will produce, put the pointer at the
+failure, not only in the doc — and state removals as measured boundaries, not as
+the version of the machine you happened to hit them on.
+
+## 58. An acceptance that reads nothing reports success (2026-09-20, kai)
+
+*Origin observation: the deferred post-deploy acceptance for the credential-delivery
+change (#1801); verification: `ps eww` on this box, 2026-09-20 — the same command
+returned 8606 bytes with `PATH=` present for a live codex adapter child and 2166
+bytes for its MCP child, 1.2–1.7 KB for `/opt/homebrew/bin/node` and
+`/usr/bin/python3`, and argv only for `/bin/sleep` (75 bytes), `/bin/bash -c` (70),
+`/usr/bin/tail` (88), the `npm exec` shim (96) and the live pi adapter child (86) —
+including a `sleep` spawned *by* the readable `python3`, so the spawner is not the
+discriminator. `sudo` changed none of it.*
+
+The acceptance for #1801 is "read the spawned adapter child's environment and
+confirm the runtime token is not in it". `ps eww` returns no environment at all for
+some processes — and it does not say so — so the check as written could not
+distinguish "the token was withheld" from "the instrument saw nothing", and it
+reported the former, which is the answer everyone wanted. The failure has no
+signature in its own output: an empty read and a withheld token look identical, and
+the empty read is the one that looks like success. Other processes on the same
+command read in full, so the instrument was not obviously broken — only blind for
+the process the claim happened to be about. **The cause is not established**: an
+earlier draft of this entry blamed the seatbelt sandbox the adapters use, and a
+codex adapter child reading in full on the same host — with nothing under
+`sandbox-exec` in its tree — contradicts that. What is measured is that the read is
+per process, and that the blind case is silent.
+
+Nothing about this is macOS-specific: any negative assertion (`absent`, `empty`,
+`unchanged`, `no leak`) over a read that can silently return nothing has the same
+failure mode, and the more the negative is the desired result, the less likely
+anyone notices.
+
+**Repair:** every env-reading acceptance positive-controls its read — a verdict of
+`withheld` requires a variable that must be present (`PATH` by default) in the same
+output, an empty read is reported as `UNREADABLE` (a statement about the instrument,
+not about the credential), and a *present* token needs no control because finding it
+is itself proof the read reached the block. Where an outside read is blind there is a
+second route: the child reports its own environment, which cannot read nothing, so its
+`withheld` verdict stands without a control and the control is reported as context —
+and the acceptance record says which route it used. A route-2 record also says *where*
+it was made — pid, ppid and the parent argv chain — and the `--seat` label is checked
+against that chain instead of asserted, because a self-report is evidence about *some*
+process, and a label the reporter never verifies is how the evidence ends up attributed
+to the supervisor rather than the adapter. The match has to be the launcher's own
+argument shape (`commonly agent run <seat>`, and not inside a prompt-bearing argv —
+a claude ancestor is `claude -p <whole prompt>`, so pod text that quotes the launcher
+can fake the tokens), and that is not pedantry: a substring match confirms
+labels that are wrong — `--seat commonly`, `--seat run` and `--seat node` each "appear"
+in the supervisor's own command line — and a standalone token is not the seat either,
+since `pi` matches the pi adapter binary. A weak match is reported as *not confirmed*
+rather than as a pass, and the run exits non-zero when it cannot place itself: a withheld
+verdict about a process nobody located is the same shape of non-answer as a blind read,
+so `--self-report` exits 1 unless the label is the launcher's own seat argument, and 3
+when the credential is present — a finding stays distinguishable from a non-answer. That
+is the same rule one level up: an instrument that cannot distinguish looks the same as
+one that can. Both routes check the criterion as
+written, *no `cm_agent_` value in any variable*, not merely the absence of the declared
+token variable, because a value that moved to another name is the same leak. Instrument:
+`scripts/verify-seat-credential-delivery.mjs` (route 1, `--self-report` for route 2)
+with `scripts/lib/credential-env-read.js`, unit-tested in
+`backend/__tests__/unit/scripts/credentialEnvRead.test.js`; its `--self-test` exits
+non-zero if the rule regresses. Rule: before a negative verdict about a process, prove
+the read was live — or say the instrument was blind and name the route that can answer.
+
+**The same rule one turn further out: the process under test must postdate the code
+under test.** A seat-level verdict is evidence about *the code that process loaded*, and a
+seat supervisor loads its cli modules at start — so an adapter fix is live only at that
+seat's next respawn. A peer's `--self-report` returned `3` (`TOKEN PRESENT`) at the fixed
+instrument and it was not the fix failing: their supervisor (pid 1510) began Sep 3 23:03
+against a cli installed Sep 19 19:09, sixteen days older than the code it was being
+measured for. Compare `ps -o lstart= -p <supervisor pid>` with the install mtime before
+believing any seat-level verdict — a pre-fix seat's *finding* is evidence about the old
+code, and a pre-fix seat's `withheld` would be evidence about nothing.
+
+Then run it against **the candidate, not the population you were already reasoning
+about.** The check was applied to the seats under discussion and not to the two seats that
+could actually supply the missing leg — which had started 19 and 21 seconds *after* that
+install, so they needed a turn, not a restart, and the sentence written about them ("only
+on a turn after their next respawn") added a step nobody needed. Executed on the process
+being judged the rule decides something; run against the population it reads as diligence
+and decides nothing. Corollary when planning who supplies an acceptance leg: a post-fix
+seat that shares no pod with the measurer cannot be asked at all — the agent-DM route
+refuses with `sharePod` — so reachability is as load-bearing as freshness.
+
+## 59. A CodeQL PR alert is not necessarily a new alert record (2026-09-22, folio)
+
+*Origin observation: the CodeQL PR check on #1814 reported "N new alerts in code
+changed by this pull request"; verification: Connectors-room messages 71070,
+71071, 71074, and 71075, with the code-scanning alerts API and the changed
+`agentRuntimeAuth` middleware as the comparison surface.*
+
+The wording makes a re-attributed main-branch finding sound like a new
+exposure. On #1814, all 21 reported alerts were already present on `main`. For
+example, alert #676 has been open on `refs/heads/main` since 2026-04-07. The PR
+touched `agentRuntimeAuth`, a middleware shared by every flagged route, so the
+same alert records became reachable from the pull-request ref and were counted
+by the PR check. The message is about the alert's presence on the changed ref,
+not proof that the pull request introduced the vulnerability.
+
+**Repair:** separate the two questions before treating the check as a new
+finding:
+
+1. Compare alert numbers from the paginated code-scanning alerts API on
+   `refs/pull/<n>/head` with the numbers on `refs/heads/main`. An alert number
+   present on both refs is an existing record that the PR re-attributed, not a
+   new alert created by the PR.
+2. For an alert that is newly reachable, inspect the path's precondition. In
+   this case, the relevant lookup runs only for a real spawn credential, so the
+   sink's reachability depends on that credential precondition rather than on
+   every request reaching the code.
+
+Never dismiss an alert just to make a PR check green. A CodeQL alert is one
+record across refs; dismissing it from the PR view dismisses the main-branch
+record too. Report the ref comparison and the sink precondition separately,
+then let the security gate decide whether an alert needs remediation or only
+needs attribution clarified. Vera gates this entry before the press.
+
+## 60. Replicate a breakage on the BASE, not on the branch (2026-09-20, vera)
+
+*Origin observation and rule: @vera, msg 70687, transcribed onto TASK-105 and drafted here by Kai; the fold and its retraction: #1759 and TASK-019 — the behaviour change was pushed onto a cleared tests-only head (`59d99388`), the clearance was withdrawn, and the head was restored to the stamped `36bfadfc` by Kai.*
+
+A reproduction that only fails in the presence of another branch's code is evidence about *that branch*. #1759 had been cleared as tests-only against `main`, and the behavior change folded into it made the tests' discriminating power depend on code that was not on `main` — so a red there would have proved the branch, not the fix, and the reviewer's stamp (given for a tree without it) could not cover what arrived. Nothing was wrong with the tests; the *base* was wrong for them.
+
+**Repair:** run the reproduction against the base the change will actually land on — the fetched `origin/main` at the moment of the run, not the branch under discussion — and if the defect exists only once another PR is present, that PR is a **prerequisite**: merge it, then cut the change from the new base. The ordering is not etiquette. It is the only thing that makes the red attributable, and a fold is the one move that hides a prerequisite inside a review someone already gave.
+
+## 61. Two fixtures that share one document name cannot discriminate the forms (2026-09-20, vera)
+
+*Origin observation and rule: @vera, msg 70690, transcribed onto TASK-105 and drafted here by Kai.*
+
+A reader that resolves its input by name cannot tell which of two similarly-shaped forms it was handed when both fixtures carry the *same* name. The test then asserts the shared name and stays green under either form — including the form the fixture set was supposed to prove impossible. The tell is a fixture pair whose only difference is in the body of the file while the citation, the filename, or the anchor is identical.
+
+**Repair:** give each form its own name, and have the assertion state which name it read. The name is the discriminating input; without it the mutation that swaps the forms has nothing to trip on, and the surviving ledger entry reads like a pass. Where the real surface genuinely does collide on one name, that collision is the thing under test — assert the resolver's tie-break rather than asserting the name.
+
+## 62. A test whose title overclaims its assertion agrees with itself, not with the tree (2026-09-20, wren)
+
+*Origin observation and rule: @wren, msg 70661, transcribed onto TASK-105 and drafted here by Kai.*
+
+A suite's titles are most of what a reviewer at speed actually reads, and a title is a claim about scope. When the assertion is narrower than the title — a prune test named for three states that asserts two, a pairing test that asserts two values without asserting their provenance — the suite is internally consistent and the *reader* is wrong in a direction the author never sees. It is the same failure as entry 1, one layer in: the name is the interface, and nobody runs the assertion to check the name.
+
+**Repair:** either the title names exactly the forms asserted, or the assertion widens to the title's claim. Widen by preference where the formula is cheap: a test named for "completed, abandoned-decline and refusal history" should assert the refusal row is pruned, not assert the array it happens to receive. Mutation is the audit that settles it — if deleting the third form leaves the suite green, the title is overclaiming.
+
+## 63. A mutation survivor can be an unreachable branch, and an explained survivor is evidence while an unexplained one is a hole (2026-09-20, kai)
+
+*Origin observation: TASK-019's ledger on `kai/task019-i-pair-atomic`; gate by @vera.*
+
+Removing `.sort({_id: 1})` from the pairing derivation reddened **nothing**. The mutation was not weak — the fixture could not reach the branch it aimed at, because both halves of the pair came from a single installation whose ordering never decides anything. Reported as a survivor with that explanation, it is information about the fixture: the ordering rule is unproven, and the tripwire says so. Dropped from the table, it reads as 30 quiet greens.
+
+**Lesson:** a `SURVIVED` verdict is a claim about the fixture as much as about the code, and the two readings are not interchangeable. An explained survivor names a branch the suite cannot reach, and that is evidence — usually evidence that the fixture needs a second case, or that the code is dead. An unexplained survivor is a hole in the ledger and must be treated as a red until it is understood.
+
+## 64. A subset run is not the suite, and a wrongly-scoped lint reads as a red gate (2026-09-23, kai)
+
+*Origin observation: #1828's verification; measured against the repo's own scripts at `58232e6a`.*
+
+Two directions of the same error in one turn. Reporting "3 touched suites, 38 passed" is a claim about three suites — the full backend run (`420/420`, `3842 passed`) is the claim a gate can act on. And `npx eslint src __tests__/*.mjs` run from `cli/` returned 324 `'expect' is not defined` errors, which is not a red gate but an invocation that linted test files outside the configured environment: the repo's gate is `npm run lint:cli` from the repository root (`cd cli && eslint src --ext .js`), and it is clean. Both numbers were true when read alone and false as statements about the tree.
+
+**Repair:** a PR asked for gates reports the command the repository names, run from the directory the repository names, over the whole suite — and when a count disagrees with expectations, the first question is what the command actually covered, not whether the code got worse.
+
+## 65. Verify a peer's required refresh by patch-id, and say which paths it covers (2026-09-23, wren)
+
+*Origin observation and rule: @wren's structure re-run on #1826, with the patch-id computed by Kai; mirrored on the PR.*
+
+A refresh that adds only evidence changes the head without touching the reviewed code, so "I refreshed the base" is not something a reviewer can act on — and "the code is unchanged" asserted from a memory of what was pushed is exactly the claim that turns out to be false the one time it matters. The mechanical form is one command over the *code* path: `git diff <stamped-sha> <new-head> -- . ':(exclude)docs/design/evidence'` empty means the stamped range still describes what will land, and the new head needs a re-stamp under the old patch-id rather than a re-review. #1826's refresh resolved to patch-id `668fde6c` against the range Vera had stamped at `5d201069`, which is why the clearance re-attached.
+
+**Repair:** state old head → new head, name the paths the comparison excluded, and print the patch-id. A carry is a per-file claim, not a whole-PR one.
+
+## 66. A harness that reaches a module with a `credentialRoot()` default must inject a root (2026-09-19, kai)
+
+*Origin observation: TASK-085 / #1812; the default root `~/.commonly/credentials` was removed by that change.*
+
+The module read a credential root from the environment with a fallback to the operator's home, and a harness that exercised the writer without setting one therefore wrote into `~/.commonly/credentials` on the machine running the tests. The dangerous case is not the passing run: it is the **mutation** — delete the guard that refuses to write outside a sandboxed home and the test still passes, having quietly written into the operator's real credential store. A mutation harness is exactly the instrument that will do this, because its job is to remove guards.
+
+**Repair:** every harness that can reach such a writer injects an explicit root (a temp dir), asserts the file landed under it, and asserts nothing was created at the default. Then a mutation that deletes the guard fails on a path assertion instead of writing to `$HOME` — the harness owns the blast radius it creates.
+
+## 67. A mutation ledger is an instrument: verify the detector and the fake before trusting the greens (2026-09-23, kai)
+
+*Origin observation: #1828's ledger; @connector-ops raised the survivor, @vera adopted the consequence (msg 71318), rule stated by Kai after two false survivors in one ledger.*
+
+Two `SURVIVED` verdicts in one ledger turned out to be the instrument, in two different places. The **detector** matched only test names that *began* with the expected string, so four genuine reds — whose test names carried the mutation's expectation mid-sentence — were reported as survivors; the other twenty-seven were sound only because their expectations happened to be phrased as prefixes. The **fake** cleared both refusal columns whenever it saw either reset in the SQL, so deleting one of the two assignments could not redden: the fake could not tell a half-reset from a full one.
+
+**Repair:** before trusting a green ledger, prove it can go red — a clean-tree baseline must show zero failure lines, and an injected failure must be detected — and make each fake honour the guard, column or branch the statement actually carries, so a partial deletion is observable. Then look at the survivors first: a survivor that turns out to be the instrument is worth more than thirty quiet greens, which is the whole reason to write the ledger down rather than remember it.
+
+## 68. A predicate's domain comes from its producers, not only from its store (2026-09-23, kai)
+
+*Origin observation: #1852's claim-existence predicate, read independently by @connector-ops (msg 71952) and @vera (msg 71956); the miss was Kai's.*
+
+The predicate asked whether a message id names a row, so I asked Postgres what an id could be — `messages.id` is `SERIAL`, hence the int4 upper bound, and `'999999999999'` raising `22003` was the finding that produced it. That reasoning was sound and complete for the question I asked. It was the wrong question: ids also arrive from **Mongo**. A post-thread comment enters the mention and wake path as an ObjectId (`postController.ts:295` enqueues with `_id: comment._id`; the payload builders stringify it into `messageId`), so the shape test refused a legitimate id, the route answered 404, and every driver's `createClaimKeeper` treats a non-2xx as `{failOpen: true}` — the wake race silently stopped deduping and one comment produced N replies. Nothing shipped only because a reviewer read the callers as well as the column.
+
+The name helped the error along: `isMessageId` reads like *the* id predicate when it was only one namespace's, and a name that claims the whole domain stops the reader asking what else feeds it.
+
+**Repair:** before writing a shape test around a value, enumerate its **producers** — every call site that can supply it — and not just the store that would validate it; an enumeration over the wrong domain is still a guess, however exhaustive it looks. When a shape the predicate does not recognise is answered with a non-2xx by a caller documented to fail **open**, the predicate is an availability decision, not a tidiness one: say which namespaces it verifies, which it passes through unverified, and file the pass-through as the defect it is rather than letting the accepted shape imply the check.
+
+## 69. A name resolves in its own scope: read the definition the call site binds, not the one you already know (2026-09-27, connector-ops)
+
+*Origin observation: TASK-162's scope note 162c, corrected by @wren (Connectors room, msg 74667); the collision is removed by #1943 (TASK-165), open at the time of writing.*
+
+Two functions named `isPodMember` lived in the backend with opposite rules. The util (`utils/isPodMember.ts`) returned true on `pod.createdBy` before looking at `members`; a local copy in `server.ts` (`:503`) read `pod.members` only. Having just spent a row on the util's creator bypass, I read `isPodMember(pod, socket.userId)` at `server.ts:536` as the util and filed "a creator who left can still post over the socket" as a live write-path gap, and repeated it to the operator. The call bound the file's own strict copy three dozen lines up; the socket path had refused a departed creator all along. The name was doing the reasoning, and it pointed at the definition I already had in my head.
+
+**Repair:** before asserting what a call does, resolve the binding in that file (a local `const`, an import, a re-export) and read the body it reaches, not the body its name reminds you of. And when two definitions share a name with different semantics, delete one or rename it, then write the entry: a name that means two things in one codebase will keep producing confident wrong claims until one of the meanings is gone.
+
+## 70. An idempotency key that the tool description never names is read as ordinary metadata (2026-09-25, sprint-impl)
+
+*Origin observation: TASK-063, filed by @pod-architect on 2026-08-25 and reproduced live by @ux-lead at 2026-09-25T08:09Z on TASK-163; repaired by keying the pair.*
+
+`commonly_create_task` listed `sourceRef` as one more optional string. Nothing on the tool surface said it was an idempotency key, so the natural reading — a source is where the ask came from, and each ask gets its own row — was the wrong one, and the failure arrived as a **success**: the route deduped on the ref alone and answered `alreadyExists: false` next to a *different* task's row, discarding the caller's title, and on a settled row it reopened that row to `pending` instead. Two seats concluded they had created tasks they had not; one lost a completed row for 28 seconds and had to re-complete it. The response was self-contradictory, but a caller that reads `alreadyExists` and the returned `_id` — the two fields the shape invites it to branch on — never sees the contradiction.
+
+The second half is that the only place the key was stated anywhere a caller could find it was prose **outside the tool**: the guides promised "the same source reference already has a task → returns the existing task". A guarantee that lives in the guide and not in the tool description is not a contract the caller has, because agents read the tool list.
+
+**Repair:** when a parameter changes what a call *means* rather than only what it carries, name that in the tool description where the tool is listed — and never let a response contradict itself on the field callers branch on (`alreadyExists: true` on a reopen, because it does exist; `reopened` carries what happened). A composite key states both halves in the description. The guides and `docs-site` were corrected in the same change, since a stale promise is how the next caller arrives confidently wrong.
+
+## 71. A wrong commit author is not in any state you can audit (2026-09-27, kai)
+
+*Origin observation: @connector-ops, msgs 74828 and 74854 — `#1957` held `Kai <kai@commonly.me>`, `#1960` held `kai <kai@commonly.me>` (case varies), and the closing instruction was to find it with `env | grep GIT_` plus a config sweep; the env hypothesis was refuted by @vera, msg 74855 (her spawn env carries no `GIT_AUTHOR_*`/`GIT_COMMITTER_*` and her token file declares no `env` block at all); mechanism and re-author trees: @kai, msg 74856.*
+
+A wrong author reads as a **setting**, so the natural instrument is an audit of state: `~/.gitconfig`, a worktree-local config, `~/.commonly`, the launch agents, the spawn environment. That audit came up empty — in every worktree `git config user.name` was already `Lily Shen` with the noreply email, locally *and* globally — and an empty audit does not read as "wrong instrument". It reads as "keep looking", which is where the cost was: two PRs blocked, one dequeued, and a press script refusing with exit 7.
+
+The author had been set by `-c user.name=kai -c user.email=kai@commonly.me` on the `git commit` command line. That is a **per-invocation override**: applied at commit time, recorded in the commit object, recorded nowhere else on disk. Nothing an author can read afterwards — no config file, no env var, no reflog entry — distinguishes it from a config that was later corrected, so every audit of state is guaranteed to come back clean while the commits stay wrong. The commit is the witness, and so is the command that made it.
+
+What made this expensive beyond the two PRs is that the failure is **silent and permanent on the landing side**: the press is where the identity matters, not the push, so a squash on `main` mints a `Co-authored-by:` trailer from a wrong author line that no later amend of the branch can remove.
+
+**Repair:** treat a wrong author as an override question, not a config question. Read it off the commit (`git log -1 --format='%an <%ae>'`) and then look at the command that produced it — shell history, the agent's own commit step — instead of sweeping state, because state cannot contain a per-invocation flag. Never pass `-c user.name=`/`-c user.email=` on a commit at all: the working tree's identity is already correct, and an author that is not the lane's Lily Shen is by definition a deliberate act that needs a reason, not a default. Rectify it without touching the tree (`git commit --amend --reset-author --no-edit`, then `--force-with-lease`), and hand the gate the tree hash: a re-author cannot change a tree, so `<old>^{tree} == <new>^{tree}` plus the author line is the entire re-confirmation (@vera, msgs 74855/74858). The control that actually holds lives at the press — refusing a non-Lily author outright — because no inspection an author performs can catch a flag that only ever existed on someone else's command line.
+
+**Measured on `main`, not hypothesized (verified at the trailers, 2026-09-27).** The press has already minted this five times: `git log origin/main -300 --format='%b' | grep -c 'Co-authored-by: Lily Shen <lily@commonly.me>'` returns **5** — `159bc313`, `f064d578`, `8bfca7b7`, `6e56dfee`, `ce3a8b6b` — each a noreply-Lily squash whose body carries a trailer naming `lily@commonly.me`. Those five are otherwise correct: the **name** was right and the **address** was wrong. That is the generalisation worth carrying, and the one a name-based check misses — **the failure does not need a wrong person, only a wrong email.**
+
+**The audit can also be wrong the same way twice, and its wrong answer is `0`.** Reading `%b` a line at a time loses every trailer — only a body's *first* line carries the format's separator — so the instrument reported a clean tree for a tree with five permanent wrong trailers. The form that does it, quoted so it can be re-run rather than believed:
+
+```
+git log origin/main -300 --format='%h%x09%b' | awk -F'\t' 'NF>1 {print $2}' | grep -c 'Co-authored-by: Lily Shen <lily@commonly.me>'
+→ 0     (on main `ddb089a6`; the same tree gives 5 through --format='%b')
+```
+
+**The near-misses are why that number has to be measured beside the form that produced it, not inferred from what the check intended.** On the same tree: `| cut -f2` — the obvious rebuild — returns **5**, because `cut` passes a line carrying no delimiter through whole; `| cut -s -f2` returns **0**; `--format='%h %b' | awk '{print $2}'` returns **0**, because a trailer's second word is `Co-authored-by:`, not the address. Three commands that all mean "count the trailers", two of which report a clean tree that is not clean. An audit that fails to `0` is indistinguishable from a clean audit — this entry's own subject, one level up — so the count has to come from a reader that keeps multi-line fields whole, and the check has to be able to fail.
+
+**Repair, extended:** compare the **full identity string** (`%an <%ae>` against the lane's exact noreply line), not the name; and check the trailer sources as well as the tip — a squash mints `Co-authored-by:` from the *branch commits'* author lines, so a branch whose commits carry the wrong address lands permanently even when every merge commit is perfect. The reader is `git log <range> --format='%an <%ae>'` over the PR's commits.
+
+*No automated witness: nothing in CI reads this entry, and the audit of state that misses this defect is exactly what makes the prose necessary. The enforcement is the press script's author check.*
+
+## 72. A status sentence posted once is not stale data — it is a permanent answer (2026-09-29, kai)
+
+*Origin observation: @connector-ops, msg 75251 and the notes on TASK-178, which also carried the fix options; the claim repeated by @vera in her clearance, msg 75252, and corrected by her at 75253 once the process was measured; copy, arms and this entry: @kai.*
+
+A seat was attached at 11:15:3xZ, its install intro posted "Nothing is running me yet, so mentioning me won't reach anyone", its launchd runner came up, and its first real turn posted at 11:15:52. Forty minutes later a peer routed a docs-only PR away from that seat because "she isn't running" — by then it had been running for 53 minutes and had already stamped another PR. The instrument that produced the wrong answer was the sentence. The process (`launchd` pid, never restarted) and the derived state both said otherwise the whole time, and the derived state is surfaced where that reader already was: the mention typeahead's subtitle and the direct-room reach banner come from the same `deriveAgentState` verdict (`useV2ThreadMentions`, `V2Thread`).
+
+**The sentence was not wrong when it was written, which is why nothing caught it.** `deriveAgentState` returns `never-connected` structurally — no token has ever been used — so at post time the flat declarative was a fact. What is wrong is that a chat message cannot be superseded: nothing edits it, nothing retracts it, nothing dates it. A reader has no way to tell a sentence written at 11:15 from one written at 11:55, so a claim that was true for under a minute is read as present tense forever. This is not staleness — stale data degrades as it ages, and an audit can find it. It is a **permanent** answer that never becomes wrong, so nothing ever corrects it.
+
+**The cost is amplified by whose voice it is in.** The reader here is usually another agent, which cannot see the process or the host; a sentence attributed to the seat itself is the most authoritative artifact in the pod, and it beats a signal that is merely absent. The message also has two names for one thing — the CLI's `attach` and the registry's `install` both reach the same composer through `POST /api/registry/install` — so a reader who goes looking for "the attach template" in `cli/src` finds nothing, and the sentence keeps its authority precisely because nobody finds the code that writes it.
+
+**Repair:** a one-shot artifact may report a state only if it does both of two things — **scopes the claim to the moment it was written**, and **names the surface that does change**. Either alone leaves the trap open: a scoped claim with no pointer still ends the reader's search, and a pointer on an unscoped claim still reads as present tense. Both state-bearing arms of `composeInstallIntro` now do both ("As I post this…" + a pointer to the seat's live state); the invitation arm asserts no state and was deliberately left alone, because a caveat on a line that claims nothing just adds noise. The codebase already had the other legal shape and it is worth naming as the contrast: the stalled-connect nudge makes the same kind of claim and keeps a **forward commitment** ("I'll post here the moment I connect") with a resolution post that supersedes it. A claim with no resolution to close it has to be self-limiting instead.
+
+**And the reader's half, which is the part an agent needs:** liveness comes from the process or the derived state, never from a sentence — **including a sentence the seat wrote about itself.** A seat that says "nothing is running me" is reporting its install, not its present, and the check that settles it is `deriveAgentState` (the roster, the mention subtitle) or the runner's own process. *Witness: `registry.install-intro-honesty.test.js` — an arm asserting both halves on both state arms, with the invitation arm as the negative control, under an 8-mutation ledger, 8 killed, no survivors.*
+
+## 73. A flag named for the connection answered a question about the turn (2026-09-29, kai)
+
+*Origin and repair: @kai. The rename rides with the park-path refusal fix in the same pull request; the producers were counted rather than remembered.*
+
+`BrokerCallInput.hosted?: boolean` sat in the broker's call input, and `assertSeatCanConfine` opened with `if (input.hosted) return;`. Read as a name, `hosted` says *this call is on a hosted connection* — the adjective belongs to the connection, which the same file spells `connectionType === 'hosted-mcp'` a dozen lines away. On that reading the bypass is a property of the provider, and a reader has two opposite and equally plausible conclusions: that every hosted tool legitimately skips the seat-confinement refusal, or that the GitHub path's refusal and the hosted path's bypass are an inconsistency and one of them is a bug. Both are wrong, and the second one is the kind of wrong that gets "fixed".
+
+What the flag actually means is that the **turn** has no shell: the runtime is Commonly's own (`grantBrokerProjectionService.dispatchHostedBrokerTool`), so there are no shell, web or file tools to confine. A shelled seat may call a hosted tool and must still be judged; a hosted turn calling a GitHub tool would still not be confinable. The name could not express that, and the safety-relevant question it *did* raise — can a caller reach this field? — is not answerable from the name at all. Answering it meant grepping the corpus for producers, which is the tell: **the property that mattered was reachability, and the name advertised a category.**
+
+**Repair:** rename the field to `hostedTurn` in `BrokerCallInput` and in `assertSeatCanConfine`, with the type comment naming the single caller that sets it; `grantBrokerProjectionService` is updated to match, and the four suites that pass the flag follow. The behaviour is unchanged and the gate for it already existed: with the early return deleted, `seatGrantConfinement.test.js`'s "a hosted turn is out of scope" arm goes red (measured — one mutation of the guard, one arm red, no collateral).
+
+**Lesson:** a boolean that switches off a security check names the *condition it excuses*, not the surface it arrived from. `hosted` excused a turn; it named a connection; and the one thing a reader most needs — who can set this — is not in the name in either case.
+
+## 74. `browser_snapshot` answers a different question than "does this element have a name" (2026-09-30, sprint-review + sprint-impl)
+
+*Origin: @sprint-review, whose `browser_snapshot` of the landing page reported TASK-216's wedge line as reading nothing — a reading that survived a positive control. Both instruments, the control redesign, and the cross-build re-runs: @sprint-impl. Both seats can defend the whole entry: the block below was produced independently on each harness, and each of us re-ran the other's control set (msgs 75757, 75764, 75775, 75782–75784).*
+
+Every seat is handed this tool as "Capture accessibility snapshot of the current page, this is better than screenshot", and the question it most invites — *does this element have an accessible name?* — is the question it does not answer. It is wrong in **both** directions, on one page in one session. Driven over stdio (`@playwright/mcp@0.0.83` → `playwright-core 1.64.0-alpha-1790635538000`, browser pinned to `chromium_headless_shell-1243`) against live `commonly.me` with seven labelled siblings injected, it printed:
+
+```
+- generic "CTRL_PLAIN_DIV" [ref=e4]: plain div text
+- generic [ref=e5]: explicit generic text
+- text: span text
+- group "CTRL_GROUP" [ref=e6]: group text
+- generic "CTRL_EMPTY"
+- paragraph [ref=e7]: para text
+- heading "CTRL_HEADING" [level=2] [ref=e8]: heading text
+```
+
+**Direction one — a name it drops that exists.** `paragraph [ref=e7]` carries `aria-label="CTRL_PARA"`, and Chromium's own tree (`Accessibility.getPartialAXTree`) reports `paragraph name="CTRL_PARA" ignored=false`. The snapshot prints no name. On the real page at `9ac94e95` that was TASK-216's wedge line, a `<p aria-label>` whose every word child is `aria-hidden`, so the name was its only exposure until #2042 (`b5a93235`) moved the sentence into a clipped span as content. Over that markup as a static page carrying the shipped `.v2-landing__word { display: inline-block }` rule, `browser_snapshot` prints
+
+```
+- paragraph [ref=e2]:
+  - generic [aria-hidden] [ref=e3]: Teammates,
+  - generic [aria-hidden] [ref=e4]: not
+  - generic [aria-hidden] [ref=e5]: subagents.
+```
+
+with no name on the paragraph, the default `ariaSnapshot()` prints a bare `- paragraph`, and CDP names it `paragraph name="Teammates, not subagents." ignored=false`. The name exists in the browser and the words are visible on screen; **what an assistive technology announces was not measured.**
+
+**Direction two — a name it prints that the model refuses.** `CTRL_PLAIN_DIV` is a bare `<div aria-label>` — implicit `generic` — and it is **named**, while `CTRL_EXPLICIT` (`role="generic"`, same attribute) prints bare. `ariaSnapshot()` over the same sibling set has no such asymmetry: it drops both (`- text: plain div text`, `- generic: explicit generic text`). So the implicit/explicit split is a property of the **mode**, not of a second implementation: `browser_snapshot` *is* `page.ariaSnapshot({ mode: "ai" })` (`playwright-core`'s bundled `tools`, which `@playwright/mcp`'s 747-byte `index.js` re-exports). Re-measured directly on the alpha build — no MCP transport in the path — as a two-axis table with CDP as the browser's answer, the answer moves twice: at role `generic`, an implicit `<div aria-label>` is named and an explicit `role="generic"` is not; and an implicit `<p aria-label>` is not named either, in either mode. Neither report was wrong — they answered different questions.
+
+The empty labelled div is the same disagreement in miniature: the `ai` mode prints `- generic "CTRL_EMPTY"`, the default mode prints **no line at all**, and CDP names it either way.
+
+**Why the control missed direction one.** It was a `heading` — `- heading "CTRL_HEADING" [level=2] [ref=e8]: heading text` — a role whose names the `ai` mode *does* print. The control showed the instrument could print a name and said nothing about the role under test. A control that does not hold the role fixed tests nothing about the element being asked about — and holding only the role fixed is not sufficient either, because the declaration form is a second live variable: direction two above holds the role at `generic` and flips on the declaration alone. Where a claim spans more than one variable the control set is a table, not a specimen.
+
+**Repair:** none in code — the surface is a third-party tool description we do not own, so the repair is a reader. For any ARIA naming question the instrument is CDP `Accessibility.getPartialAXTree` (or `getFullAXTree`), never a snapshot formatter; where a snapshot is wanted anyway, name the call *and its mode*, because `browser_snapshot` is `ariaSnapshot({ mode: "ai" })` — one formatter, and the mode is the thing that changes the answer. Recorded for the next seat in `docs/development/FRONTEND.md` (`## Testing` → "Measuring the accessibility tree — name the instrument", PR #2043), with the three-way table and both disagreement examples, so it does not have to be re-derived.
+
+**Lesson:** a snapshot is a rendering decision, not a measurement. "The accessibility tree says X" was never checkable, and the tool's own description supplies exactly the authority that stops a seat looking — while the two failure directions here are not noise around a correct answer, they are two opposite answers to a question the tool was never asked. Corollary for every future a11y control: showing that an instrument can print *some* name says nothing about the role you are testing — nor about whether the role was declared or implicit. Hold every variable but the one under test.
+
+## 75. A claim names a tree, and a needle is a guess about the code — so a figure without its head reads exactly like evidence (2026-09-30, sprint-impl)
+
+*Origin: @sprint-impl — the recomputation of #2049's figures was taken over a subject `404a8f30` had already replaced, and the three-needle absence of the same session was empty; @sprint-review reached the same false negative independently, from different needles, ten minutes later, and published theirs in a gate (`5362301910`, retracted at `5362406679`); @ux-lead located the read that settled it, `c5c2c38a:1404`. The row-title half was measured on TASK-203 by both seats; the identifier and bucket cases are @sprint-impl's. Every figure below was re-measured for this entry and carries the head it was measured at in the sentence it appears in.*
+
+#2049's comment carried a recomputed table for a slice of `v2-landing.css` — the arithmetic was done correctly, over a read that no longer existed. `404a8f30` had already replaced the construction those numbers described, so the sentence was not stale in its digits; it was stale in its **subject**. Nothing in the artifact can show that: a claim that quotes numbers and a head looks measured, and a reader who checks the arithmetic finds it sound. Stale data degrades, and an audit can find it; this kind does not — it stays exactly as confident as when it was written, about a tree it no longer describes.
+
+**The mirror was measured the same day on a row title, not a comment.** TASK-203's title named head `6cde8789` and carried `c5c2c38a`'s line table. Re-measured both, in `frontend/src/v2/landing/v2-landing.css`: each head carries six `prefers-reduced-motion` matches — five at-rules and a sixth that is a prose line mentioning the property — at `498·1149·1175·1201·1271` with the prose at `1110` for `c5c2c38a`, and at `506·1182·1208·1234·1304` with the prose at `1143` for `6cde8789`. Two facts fall out. The tables are close enough that **no reader can tell by inspection which head the numbers came from** — which is why the head has to be in the sentence and not in the surrounding paragraph. And "six blocks" was wrong for a second reason: five of the six matches are at-rules and the sixth is a comment, so a count of matches is not a count of blocks. The title now labels every figure with its head, and that shape is the repair: *"Figures, each labelled by its head: `c5c2c38a` / `8a692533` share ONE CSS blob — … ; `6cde8789` is a different head — …"*
+
+**The absence was worse than unmeasured, and two seats produced it within ten minutes.** A gate PASS reported the construction absent at #2019's pre-fix heads from three needles, two spelled with a `@media (` prefix the construction does not have and the third the fix's own name (`5362301910`); the same emptiness was reported from scratch patterns at msg 75883. Re-measured at `c5c2c38a`: the read is present at `frontend/src/v2/__tests__/v2-layout-invariants.test.ts:1404` — `landing.slice(landing.indexOf('prefers-reduced-motion'))`, introduced by `c5edaf1c`, removed by `404a8f30`, absent at `cfd74e8f` (0 hits for `indexOf('prefers-reduced-motion'` in `frontend/src`) — while `split('@media (prefers-reduced` finds 0 hits, `reducedMotionBlock` finds 0 (the fix introduced that name — it is on the branch at `6cde8789`, which also removed the `:1404` read, and it reaches `cfd74e8f` with `404a8f30`), and `indexOf('@media (prefers-reduced` finds one hit at `:2853` in `c5c2c38a`'s tree — the same read sits at `:2903` at `cfd74e8f`, so even this line number needs its head — a different read, `v2.indexOf('@media (prefers-reduced-motion: reduce) {', sectionFrom)`. So the needles were not three probes: one was empty because it guessed a prefix the code does not have, one was empty because it named what only the fix adds, and the third returned a hit that had nothing to do with the read under test. Nor do the gate's own cells reproduce: at its three heads, `git grep -F` for its three needles hits in five of nine cells — `indexOf('@media (prefers-reduced` once at each of `8a692533:2853`, `6cde8789:2902` and `0dafe74f:2902`, `reducedMotionBlock` twice at each of `6cde8789` and `0dafe74f` — where the gate reported zero in all nine, and the whole `frontend/src` scope gives the same counts; only `8a692533` of the three was pre-fix. **Agreement between needles none of which was spelled from the tree under test is worth nothing, and a zero that does not reproduce is a fact about its instrument.** What made it travel is that it read like diligence: it entered a gate as a stated gap, the next message built on it, and it reached a board row before `c5c2c38a:1404` stopped it.
+
+**Three more of the same shape, all from the same day.** (a) *An identifier written before the instrument returned it:* a row note carried `5911308544` for a pull-request comment that `gh pr comment` had printed as `5911356163` — a reconstruction of the pattern where a measurement was needed, and the wrong value is unreachable rather than merely wrong. (b) *A bucket that could not answer its own question:* a first scan of #1534–#1749 (194 merged) flagged 43 rows against the count rule, and **40** of those had `title == first commit subject` — identical candidates, so those rows had no answer; fetch both candidates for every row, the discipline the bucket skipped, and the same window holds **3** genuine overrides (#1623, #1644, #1645). The bucket ran to completion and its output looked like a result. (The window slides: the same pages now return #1535–#1750, so the range is stated as measured rather than as a name.) (c) *A column that could not vary:* `git merge-base --is-ancestor origin/main <tip>` was false on all 29 rows measured against `origin/main` = `cfd74e8f` — 22 affected tips and 7 controls — because `origin/main` has advanced past every one, so it separated nothing while reading as a clean split; the parent count is what separates them (22 of 22 against 7 of 7). A measurement that cannot fail is not a measurement, exactly as an assertion that cannot fail is not a test.
+
+**Repair:** the claim half has no code to change and the repair belongs in the artifact. Every figure carries the head it was measured at, in the same sentence. Identifiers are quoted from the tool's own output, never rebuilt from the pattern. Before a column is cited it is shown to take more than one value, and before a bucket is believed it is shown capable of returning the other answer. A needle is never evidence about code that has not been read — spell it from the file, or read the file. The code half of this incident did get a shared reader: `blockContaining` / `reducedMotionBlock` (`frontend/src/v2/__tests__/v2-layout-invariants.test.ts:93-102` at `cfd74e8f` — the name `404a8f30` introduced, rebuilt by `1179018e` on a `blockContaining` it wrote beside `blockAt` in the test file when it collapsed the three brace-walk copies; `07aba418` (#2051) moved both to `../lib/cssBlocks`), which finds the block **carrying** the needle rather than the first block of that kind — **and whose own comment is the rule's next instance**: it names five blocks at `531/1395/1421/1447/1517` with the prose line at `1356`, figures that were true at `b5a93235` and false at every `main` commit that carries the comment, where the same five sit at `535/1399/1425/1451/1521` and the prose at `1360`: `662966ec` (#2046) added four lines above them, it is an ancestor of `828fe52a`, the parent `1179018e` landed on, and `1179018e` is the first `main` commit to carry those figures. The helper built to make a claim checkable carries figures that have never been true on the main it shipped to. (`grep -c` returning six rather than five is the other half of that comment: the sixth match is the prose line itself.)
+
+**Lesson:** a claim's figures and the tree they came from are two facts and only one of them is in the claim. The neighbour is review-checklist rule 49, which holds a *run* against the head it cites; this is that separation one level out — a *claim* against the tree it describes — and it survives every instrument on the author's side, because every one of them reads the tree the author is standing in. The reader's check is cheap and it is the head rather than the figures: ask what those numbers would be one head earlier, and if the answer is "much the same", the claim cannot be checked by reading it.
+
+*Witness: the code half is covered by the suite that now reads through `blockContaining`, with the three replaced copies gone at `cfd74e8f`; the claim half has no test and cannot have one, which is why this is a habit — the rule is the sentence that carries its head.*
+
+## 76. `wakeOnMessage` also decided whether a seat heard the board, so switching it off quietly starved every assigned row (2026-10-06, lily-shen)
+
+*Origin: @lily-shen, the operator who flipped it. Caught by measuring spawns after a 10-05 catch-up showed nothing had merged in four days.*
+
+On 2026-10-01, with the founder's approval, the operator set `config.wakeOnMessage.enabled = false` on 25 fleet installs in team pods, to stop every pod post from waking every seat. Two new seats were minted with ambient wake off, the CLI default. The intent was "hear @mentions and the board, not the chatter." The effect was "hear @mentions only." `boardWakeEnabled()` in `backend/services/agentMentionService.ts` returns `wakeOnMessageEnabled()` whenever `config.boardWake` is absent, and no install carried a `boardWake` key. So task assignments, task deltas and the found-work sweep stopped reaching those seats. Three implementer seats sat on assigned rows (TASK-225, -231 and -232) with **zero spawns from 2026-10-01T23:34Z to 2026-10-06T02:01Z**. Nothing errored and nothing merged; the only evidence was a log line that never appeared.
+
+The name taught the false model. `wakeOnMessage` reads as a chat-only switch. The comment above `boardWakeEnabled` documents the inheritance as the backward-compatible default. That is correct, and it is invisible from the field name an operator actually edits.
+
+**Repair:** set `config.boardWake.enabled = true` explicitly on the 27 affected installs and kept `wakeOnMessage` off. That is the "hear the board without hearing the room" row the predicate already supports. All three seats spawned within a minute of a direct wake.
+
+**Lesson:** a wake flag is a subscription, and a subscription with an inherit branch is two subscriptions under one name. Whoever changes `wakeOnMessage` sets `boardWake` explicitly in the same write. They then check within hours that every affected seat still spawns on an assignment. A seat with zero spawns is a measurement, not a quiet day.
+
+*Witness: the per-seat `spawning` log lines number 0 between the two timestamps above and resume at 02:01:53Z. `boardWake.enabled` is true on 27 of 27 installs, and `wakeOnMessage` is still off on all 27.*

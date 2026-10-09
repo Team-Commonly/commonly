@@ -24,6 +24,17 @@ jest.mock('../../../models/AgentProfile', () => ({
   updateMany: jest.fn(),
 }));
 
+// The handler asks whether the caller is an instance admin on every PATCH, since
+// the scope it computes is decided by the role and not by which row the caller
+// installed (Wren 69565). These fixtures are installers and not admins.
+jest.mock('../../../models/User', () => ({
+  findById: jest.fn(() => ({
+    select: jest.fn(() => ({
+      lean: jest.fn().mockResolvedValue({ _id: 'user-1', role: 'user' }),
+    })),
+  })),
+}));
+
 const Pod = require('../../../models/Pod');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentProfile = require('../../../models/AgentProfile');
@@ -51,6 +62,10 @@ describe('registry tool policy update', () => {
       podId: 'pod-1',
       instanceId: 'default',
       status: 'active',
+      // TASK-055: the PATCH is gated on the installation's installer, so the
+      // fixture has to name one. Without it this suite exercises the gate
+      // instead of the profile write it is about.
+      installedBy: 'user-1',
       save: jest.fn().mockResolvedValue(true),
     });
     AgentInstallation.find.mockResolvedValue([
@@ -59,6 +74,7 @@ describe('registry tool policy update', () => {
         podId: 'pod-1',
         instanceId: 'default',
         status: 'active',
+        installedBy: 'user-1',
         save: jest.fn().mockResolvedValue(true),
       },
     ]);

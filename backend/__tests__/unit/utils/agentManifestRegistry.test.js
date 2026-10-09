@@ -142,3 +142,34 @@ describe('agent manifest registry payload normalization', () => {
     }
   });
 });
+
+// TASK-043: the registry manifest is where routes/registry/install.ts reads a
+// runtimeType the caller omitted. A published manifest that declares one and has
+// it dropped by this normalizer is the same dead fallback one layer up — the
+// publish path is the only writer for every agent the boot seeder did not create.
+describe('manifest.runtime driver identity', () => {
+  const publish = (runtime) => normalizePublishPayload({
+    manifest: {
+      name: 'runtime-wise', version: '1.0.0', description: 'd', runtime,
+    },
+  }).manifest.runtime;
+
+  it('carries a declared driver identity through normalization', () => {
+    expect(publish({ runtimeType: 'native' }).runtimeType).toBe('native');
+  });
+
+  it('normalizes case and padding so the install route reads one spelling', () => {
+    expect(publish({ runtimeType: '  Native  ' }).runtimeType).toBe('native');
+  });
+
+  it('keeps the driver identity and the deployment shape as independent axes', () => {
+    expect(publish({ type: 'hybrid', runtimeType: 'native' }))
+      .toEqual({ type: 'hybrid', runtimeType: 'native' });
+  });
+
+  it('refuses a deployment shape in the driver-identity field', () => {
+    // The two axes are one keystroke apart; refusing the swap here is what stops
+    // a manifest from declaring how it is deployed as what runs it.
+    expect(() => publish({ runtimeType: 'commonly-hosted' })).toThrow(ManifestValidationError);
+  });
+});

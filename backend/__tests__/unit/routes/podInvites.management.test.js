@@ -127,6 +127,53 @@ describe('pod invite management routes', () => {
     expect(invite.save).not.toHaveBeenCalled();
   });
 
+  // ── TASK-166: `createdBy` is not membership ─────────────────────────────
+  // The three site arms below each name one route. A departed creator is
+  // `createdBy: user1` with `members` no longer listing them — the shape
+  // `leavePod` leaves behind, and the only shape the permissive predicate
+  // admitted that the strict one refuses.
+
+  it('refuses to create an invite for a creator who left', async () => {
+    Pod.findById.mockResolvedValue(memberPod({ createdBy: 'user1', members: ['someone-else'] }));
+
+    await request(app).post(`/api/pods/${POD_ID}/invites`).send({}).expect(403);
+
+    const { PodInvite } = require('../../../models/PodInvite');
+    expect(PodInvite.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses to list invites for a creator who left', async () => {
+    Pod.findById.mockResolvedValue(memberPod({ createdBy: 'user1', members: ['someone-else'] }));
+
+    await request(app).get(`/api/pods/${POD_ID}/invites`).expect(403);
+
+    expect(mockFind).not.toHaveBeenCalled();
+  });
+
+  it('refuses to revoke an invite for a creator who left', async () => {
+    const invite = {
+      token: TOKEN, podId: POD_ID, revokedAt: null, save: jest.fn(),
+    };
+    mockFindOne.mockResolvedValue(invite);
+    Pod.findById.mockResolvedValue(memberPod({ createdBy: 'user1', members: ['someone-else'] }));
+
+    await request(app).delete(`/api/invites/${TOKEN}`).expect(403);
+
+    expect(invite.save).not.toHaveBeenCalled();
+  });
+
+  // Positive control: a creator who is ALSO listed still manages invites, so
+  // the three arms above cannot pass by refusing every pod that names a
+  // creator.
+  it('still lets a creator who is also listed manage invites', async () => {
+    Pod.findById.mockResolvedValue(memberPod({ createdBy: 'user1', members: ['user1'] }));
+    mockFind.mockReturnValue(listChain([]));
+
+    await request(app).get(`/api/pods/${POD_ID}/invites`).expect(200);
+
+    expect(mockFind).toHaveBeenCalledWith({ podId: POD_ID, revokedAt: null });
+  });
+
   it('rejects a revoked invite on redemption', async () => {
     mockFindOne.mockResolvedValue({
       token: TOKEN,

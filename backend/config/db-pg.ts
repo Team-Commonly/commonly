@@ -11,7 +11,7 @@ interface PgConfig {
   host: string | undefined;
   port: number | string;
   database: string | undefined;
-  ssl?: { rejectUnauthorized: boolean; ca: string } | false;
+  ssl?: { rejectUnauthorized: boolean; ca?: string } | false;
   // Pool sizing — see #454 (2026-05-26 incident). pg.Pool defaults to
   // max=10 and connectionTimeoutMillis=0 (wait forever). On any traffic
   // surge — e.g. the hourly summarizer fanning out 60 summary.request
@@ -48,29 +48,126 @@ const pgConfig: PgConfig = {
   connectionTimeoutMillis: parsePoolInt(process.env.PG_POOL_CONNECT_TIMEOUT_MS, 5000),
 };
 
-if (process.env.PG_SSL_CA_PATH) {
+/**
+ * Decide the pool's SSL configuration from the environment.
+ *
+ * THREE THINGS THIS USED TO GET WRONG, all in the same direction — SSL on for
+ * a server that has none, which fails the connect where the failure is
+ * permanent and silent (TASK-168, 2026-09-25):
+ *
+ * 1. `PG_SSL_ENABLED` was never read. The chart sets it (`false` locally, `true`
+ *    in dev/prod) and the local secrets file even carries the comment "Empty
+ *    cert — not used when PG_SSL_ENABLED=false", but the decision was made by
+ *    the presence of the PATH alone. So the kind smoke cluster — which mounts
+ *    the local placeholder secret and disables SSL on purpose — put the pool in
+ *    SSL mode against an in-cluster Postgres without TLS. It never connected,
+ *    which nothing noticed until the readiness gate started reporting it.
+ * 2. An EMPTY CA file counted as a CA. `fs.existsSync` was the whole test, and
+ *    the local placeholder secret is a zero-byte `ca.pem` under a real path, so
+ *    `{ ca: '' }` was "configured". That is not a local-only shape: any instance
+ *    whose CA secret materializes empty lands here, and the mode it lands in
+ *    both forces TLS and gives Node nothing to verify against.
+ *
+ * Unset `PG_SSL_ENABLED` keeps the old default (on), so dev and prod — which set
+ * it to "true" and mount a real CA — behave exactly as before.
+ *
+ * UNUSABLE CA DOES NOT MEAN NO TLS (sprint-review, msg 74244 on #1901 — their
+ * point, and correct). The first cut of this function returned `ssl: false` for
+ * a missing / empty / unreadable CA, which fixed the kind cluster by turning a
+ * loud failed handshake into a successful PLAINTEXT connection — a security
+ * direction change, in the file whose whole job is transport security. A
+ * configured `PG_SSL_CA_PATH` with an unusable file is a misconfiguration, not
+ * a request for plaintext: TLS stays required with no custom CA, so the
+ * handshake fails and readiness reports it. An ABSENT `PG_SSL_CA_PATH` is the one
+ * plaintext path, matching the pre-existing behaviour, and `PG_SSL_ENABLED`
+ * remains the explicit way to ask for it.
+ *
+ * PRESENT-BUT-BLANK IS NOT ABSENT (sprint-review, msg 74253 — they drove this
+ * function over all five shapes and found a third one). The first cut decided
+ * "unset" on `(env.PG_SSL_CA_PATH || '').trim()`, so a whitespace-only PATH took
+ * the unset branch and downgraded to plaintext, one line below the empty-FILE
+ * case that correctly fails closed. The distinction is the KEY: absent is "not
+ * configured", anything present but unusable is "configured wrong".
+ *
+ * THE LEVEL IS THE DECISION (sprint-review, msg 74245). Main warned for a
+ * missing CA file (`console.warn`, with `console.error` for an unreadable one);
+ * flattening all of it into one `SSL disabled — …` line at `console.log` would
+ * have reported a failed TLS intent as routine config — the silent-config-failure
+ * shape this row exists to kill, reintroduced by its own fix. `level` is part of
+ * the returned decision so the caller cannot lose it, and the module logs with
+ * it: deliberate config is info, a failed explicit intent is warn.
+ *
+ * WHAT THIS COSTS, stated because it is not free: every environment that
+ * declares a CA path without providing a CA now fails its connect instead of
+ * quietly going unencrypted. The chart already said which it wanted
+ * (`values-local.yaml: pgSslEnabled: "false"`, and the kinds/CI workflows set
+ * `PG_SSL_ENABLED=false`); docker-compose and the backend example env file
+ * declared a path the image does not contain and relied on the silent downgrade,
+ * so both now state the flag too. That is the intended trade: a misconfiguration
+ * that a human reads in a log beats chat that is quietly cleartext.
+ */
+export const resolvePgSsl = (
+  // `Record<string, string | undefined>` rather than a narrow object type:
+  // `process.env` is a `ProcessEnv`, which shares no properties with a literal
+  // shape under this tsconfig (TS2559), and the two keys this reads are the
+  // whole contract anyway.
+  env: Record<string, string | undefined>,
+  readCaFile: (p: string) => { exists: boolean; content: string },
+): {
+  ssl: false | { rejectUnauthorized: boolean; ca?: string };
+  reason: string;
+  level: 'info' | 'warn';
+} => {
+  const enabled = String(env.PG_SSL_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
+  if (!enabled) {
+    return { ssl: false, reason: 'PG_SSL_ENABLED=false', level: 'info' };
+  }
+  // Absent key only — NOT "blank after trimming". A present-but-blank path is a
+  // misconfiguration like an empty file, and goes to keepTls with the rest.
+  if (env.PG_SSL_CA_PATH === undefined || env.PG_SSL_CA_PATH === null) {
+    return { ssl: false, reason: 'no PG_SSL_CA_PATH', level: 'info' };
+  }
+  const caPath = env.PG_SSL_CA_PATH.trim();
+  // The CA path is configured, so TLS was asked for; an unusable file is the
+  // misconfiguration, never a reason to go plaintext. Verified against the
+  // system store instead of a custom CA: a public CA still connects, anything
+  // else fails loudly here rather than reading chat in the clear. `warn`
+  // because every branch below is the failure of an explicit intent.
+  const keepTls = (why: string) => ({
+    ssl: { rejectUnauthorized: true },
+    reason: `${why} — keeping TLS on with no custom CA instead of downgrading to plaintext`,
+    level: 'warn' as const,
+  });
+  if (!caPath) {
+    return keepTls('PG_SSL_CA_PATH is blank');
+  }
+  let ca: { exists: boolean; content: string };
   try {
-    const caPath = process.env.PG_SSL_CA_PATH;
-    console.log(`Using CA certificate from: ${caPath}`);
-    if (fs.existsSync(caPath)) {
-      pgConfig.ssl = {
-        rejectUnauthorized: true,
-        ca: fs.readFileSync(caPath).toString() as string,
-      };
-      console.log('SSL configuration added with CA certificate');
-    } else {
-      console.warn(`CA certificate file not found at: ${caPath}`);
-      pgConfig.ssl = false;
-    }
+    ca = readCaFile(caPath);
   } catch (err) {
     const e = err as { message?: string };
-    console.error('Error loading CA certificate:', e.message);
-    pgConfig.ssl = false;
+    return keepTls(`CA file unreadable at ${caPath}: ${e.message}`);
   }
-} else {
-  console.log('No CA certificate path provided, SSL disabled');
-  pgConfig.ssl = false;
-}
+  if (!ca.exists) {
+    return keepTls(`CA file not found at ${caPath}`);
+  }
+  if (!ca.content.trim()) {
+    return keepTls(`CA file at ${caPath} is empty`);
+  }
+  return {
+    ssl: { rejectUnauthorized: true, ca: ca.content },
+    reason: `CA loaded from ${caPath}`,
+    level: 'info',
+  };
+};
+
+const sslDecision = resolvePgSsl(process.env, (caPath) => {
+  if (!fs.existsSync(caPath)) return { exists: false, content: '' };
+  return { exists: true, content: fs.readFileSync(caPath).toString() };
+});
+pgConfig.ssl = sslDecision.ssl;
+const logSslDecision = sslDecision.level === 'warn' ? console.warn : console.log;
+logSslDecision(`SSL ${sslDecision.ssl ? 'enabled' : 'disabled'} — ${sslDecision.reason}`);
 
 const pool: unknown = pgConfig.host ? new Pool(pgConfig) : null;
 
@@ -140,6 +237,6 @@ const connectPG = async (): Promise<unknown> => {
   }
 };
 
-module.exports = { pool, connectPG };
+module.exports = { pool, connectPG, resolvePgSsl };
 
 export {};

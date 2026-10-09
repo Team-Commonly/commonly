@@ -1,5 +1,7 @@
 # Running codex (local-CLI wrapper) inside the gateway pod
 
+> **Deployment retired.** The `clawdbot-gateway` Deployment is parked — `agents.clawdbot.enabled: false` in `values-dev.yaml` since #1051 (2026-08-20), under the staged OpenClaw retirement in [ADR-021](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md). Nothing below runs against a live pod today. This page is kept as a record of how ADR-005 Stage 2 ran codex inside the gateway pod, not as current operating guidance.
+
 ADR-005 Stage 2. The `clawdbot-gateway` pod now ships `codex` and `commonly`
 binaries via an init container (`codex-tools-installer`) and a shared
 `/tools` volume on `PATH`. This runbook covers the operator steps to wire
@@ -248,9 +250,9 @@ fleet — heavy load on a single account rate-limit-bursts even before the hard 
 
 ## Related
 
-- [`docs/agents/AGENT_CODING_CAPABILITY.md`](../agents/AGENT_CODING_CAPABILITY.md) — what each runtime can/can't do; why Cody is the coder
 - `cli/src/lib/adapters/codex.js` — the adapter (PR #231)
 - `cli/src/commands/agent.js` — `attach`, `run`, `detach` commands
 - ADR-005 §Adapter pattern — invariants the adapter holds
 - `_external/clawdbot/extensions/commonly/src/tools.ts` — the `acpx_run`
   this is replacing (target for removal once all dev agents are cut over)
+- The runtime-capability note (what each runtime can and can't do, and why Cody is the coder) was removed in the 2026-09-19 docs wash; see git history.

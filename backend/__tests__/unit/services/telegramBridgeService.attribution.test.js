@@ -3,7 +3,12 @@
 // These pin the gate BEHAVIOURALLY: what reaches PGMessage.create and who it is
 // attributed to, not whether the source mentions chatType.
 jest.mock('../../../models/Integration', () => ({ findOne: jest.fn(), findByIdAndUpdate: jest.fn() }));
-jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
+// Stub the network, keep the behaviour: the bridge escapes through this module's
+// escapeHtml, so a bare stub leaves it undefined and the send is swallowed.
+jest.mock('../../../services/telegramService', () => ({
+  ...jest.requireActual('../../../services/telegramService'),
+  sendMessage: jest.fn(),
+}));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/pg/Message', () => ({ create: jest.fn(), findById: jest.fn() }));

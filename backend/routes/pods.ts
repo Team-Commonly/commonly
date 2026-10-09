@@ -1,13 +1,14 @@
 import path from 'path';
 import fs from 'fs';
 import { createHash } from 'crypto';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
 const multer = require('multer');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
+const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 // eslint-disable-next-line global-require
 const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod } = require('../controllers/podController');
 // eslint-disable-next-line global-require
@@ -59,7 +60,7 @@ const podJoinRateLimitKey = (req: any) => {
   if (authHeader) {
     return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
   }
-  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  return cloudflareIpRateLimitKeyGenerator(req as never);
 };
 
 const podFocusRateLimit = rateLimit({
@@ -103,7 +104,21 @@ const upload = multer({
   },
 });
 
-router.get('/', auth, getAllPods);
+// The sidebar listing is the heaviest read in the app — it populates
+// createdBy / members / parentPod and joins the last message — and every
+// signed-in load, reconnect and pod invalidation fetches it. CodeQL flags it
+// as `js/missing-rate-limiting`; it has been unlimited since the route landed
+// (routeRateLimitGuard.baseline.json, row deleted with this change). Keyed on
+// the token like the focus readers above, so one client cannot exhaust another
+// client's budget; authorization remains the source of truth behind this.
+const podListingRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+});
+router.get('/', podListingRateLimit, auth, getAllPods);
 router.post('/', auth, createPod);
 
 router.post('/announcement', auth, async (req: AuthReq, res: Res) => {
@@ -389,6 +404,7 @@ const podAdminRateLimit = rateLimit({
   limit: 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
 
 /**
@@ -476,6 +492,7 @@ const agentStatesRateLimit = rateLimit({
   limit: 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
 
 router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthReq, res: Res) => {
@@ -627,6 +644,7 @@ const podVisibilityRateLimit = rateLimit({
   limit: 10,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
 });
 
 /**

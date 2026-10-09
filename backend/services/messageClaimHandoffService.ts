@@ -2,14 +2,15 @@
  * One-seat recovery for ADR-018's claim-then-decline path.
  *
  * A wake-on-message fan-out has already delivered one event per opted-in
- * installation. If the winner declines, those other deliveries have normally
- * stood down and acknowledged. Re-enqueueing the entire fan-out would make
- * every seat race again; doing nothing makes the human's message disappear.
+ * installation. If the winner declines — or refuses, because its own route
+ * refused the turn — those other deliveries have normally stood down and
+ * acknowledged. Re-enqueueing the entire fan-out would make every seat race
+ * again; doing nothing makes the human's message disappear.
  *
  * Instead, reuse one of the original, human-authored wake payloads and enqueue
  * it for the next distinct seat only. `message_claims.declined_by` makes the
- * chain finite: every seat that actually declines is excluded from every later
- * handoff, including across a CLI wrapper and the native runtime.
+ * chain finite: every seat that actually declines or refuses is excluded from
+ * every later handoff, including across a CLI wrapper and the native runtime.
  */
 
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -110,19 +111,29 @@ async function enqueueNextDeclineHandoff({
 }
 
 /**
- * Release a claim and, only for an explicit human-message decline, advance it
- * to one remaining original wake target. `completed` is deliberately terminal
- * and the omitted outcome retains legacy DELETE semantics for older drivers
- * and failure paths that must still be eligible for normal event redelivery.
+ * Release a claim and, for an explicit human-message decline OR refusal,
+ * advance it to one remaining original wake target. `completed` is deliberately
+ * terminal and the omitted outcome retains legacy DELETE semantics for older
+ * drivers and failure paths that must still be eligible for normal event
+ * redelivery.
+ *
+ * The human check is NOT repeated here: `enqueueNextDeclineHandoff` selects its
+ * source events with `payload.senderIsHuman: true`, so a refusal on an
+ * agent-authored wake finds nothing to re-offer and is terminal by that fact.
+ * That is deliberate — one definition of "human wake" in the kernel, in the
+ * place that holds the evidence, rather than one per routing site.
  */
 async function release(options: {
   messageId: string;
   agentName: string;
   instanceId?: string;
-  outcome?: 'declined' | 'completed';
+  outcome?: 'declined' | 'completed' | 'refused';
+  reason?: string;
+  status?: number;
 }): Promise<Record<string, unknown>> {
   const result = await MessageClaimService.release(options);
-  if (!result?.released || options.outcome !== 'declined' || !result.podId) return result;
+  const handoffOutcome = options.outcome === 'declined' || options.outcome === 'refused';
+  if (!result?.released || !handoffOutcome || !result.podId) return result;
 
   try {
     const handoff = await enqueueNextDeclineHandoff({

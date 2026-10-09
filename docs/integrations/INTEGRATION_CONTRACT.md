@@ -1,4 +1,4 @@
-# External Integration Contract (Draft)
+# External Integration Contract (current + planned)
 
 > Goal: make every external chat integration (Discord, WhatsApp, Telegram, Slack, etc.) plug‑and‑play, testable, and contributor‑friendly for open source.
 
@@ -48,7 +48,9 @@ Create one provider per platform implementing these methods:
 3) **Inbound events**: `events` → `ingestEvent` → enqueue messages into buffer.
 4) **Sync job**: scheduler summarizes buffered messages; `syncRecent` is reserved for backfill or manual runs.
 5) **Summarize**: feed normalized messages to summarizer; persist the result as pod memory (`PodAsset`) and enqueue an agent event for external runtimes (e.g., Commonly Bot) to post into pods.
-6) **Health**: `/api/<provider>/health` delegates to `health()`.
+6) **Health**: expose a provider-specific health route when the provider has
+   one; the shared integration surface does not invent a universal health
+   route for providers that do not implement it.
 
 ## Pod memory & agent context
 
@@ -66,10 +68,13 @@ Integration summaries are not just messages:
 - Keeps routing logic out of routes/controllers; enables easy extension.
 
 ## External provider services (planned)
-For externalized providers, a standalone service receives platform webhooks and forwards normalized
-events to the Commonly context layer. The platform should expose an ingest endpoint (for example
-`POST /api/integrations/ingest`) that accepts `{ provider, integrationId, event }` or normalized
-messages and appends them to the integration buffer for summarization.
+For externalized providers, a standalone service receives platform webhooks and
+forwards normalized events to the Commonly context layer. The platform serves
+`POST /api/integrations/ingest`, which accepts `{ provider, integrationId,
+event }` or normalized `messages` and appends them to the integration buffer
+for summarization. Issue an `cm_int_*` ingest token through
+`POST /api/integrations/:id/ingest-tokens`; send it as a Bearer token or
+`x-commonly-integration-token`.
 
 ## Security requirements
 - Webhook signature/verify-token checks mandatory; reject on mismatch.
@@ -89,7 +94,9 @@ messages and appends them to the integration buffer for summarization.
 - Backend code (proposed): `backend/integrations/<provider>/` for provider-specific services, plus `backend/integrations/registry.js` for the factory.
 
 ## Next steps to implement
-1. Add `integrationRegistry` + contract tests scaffold.
-2. Extract Discord into a provider implementing this contract.
-3. Implement WhatsApp provider against the contract.
-4. (Optional) Add Telegram provider to validate multi-provider design.
+1. Expand the shared contract tests around the providers in
+   `backend/integrations/providers/`.
+2. Continue extracting Discord into the provider contract without changing
+   the current `/api/integrations/ingest` boundary.
+3. Implement additional providers only when their webhook/credential
+   contracts are live; do not add documentation for unserved webhook routes.

@@ -7,6 +7,7 @@ import User, { IUser } from '../models/User';
 import { touchLastActive } from './auth';
 import Pod from '../models/Pod';
 import AgentCredential from '../models/AgentCredential';
+import { isSpawnCredential } from '../services/spawnCredentialService';
 
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
@@ -42,6 +43,28 @@ const resolveTokenAgentIdentity = (agentUser: IUser): { agentName: string; insta
   return { agentName, instanceId };
 };
 
+/**
+ * ADR-026 / TASK-094: resolve the agent identity behind a per-spawn child
+ * token.
+ *
+ * A child's bearer is written to the credential ledger only — never to
+ * `User.agentRuntimeTokens` — so the embedded lookup below cannot see it and
+ * the request would 401 with a perfectly valid credential. The row carries
+ * `agentUserId`, so the seat can be resolved directly.
+ *
+ * The spawn-scope requirement is deliberate and is the whole reason this is
+ * not "any row with an agentUserId": making the ledger an authority for
+ * legacy-shaped rows would silently widen authentication for tokens that
+ * today authenticate only through the embedded list. A child is a new kind of
+ * row, and the widening is scoped to that kind.
+ */
+const resolveSpawnChildAgentUser = async (
+  credential: { scopes?: string[]; agentUserId?: unknown } | null | undefined,
+): Promise<IUser | null> => {
+  if (!credential || !isSpawnCredential(credential) || !credential.agentUserId) return null;
+  return User.findOne({ _id: credential.agentUserId, isBot: true });
+};
+
 const extractToken = (req: Request): string | undefined => {
   const authHeader = req.header('Authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -58,6 +81,12 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     }
 
     const tokenHash = hash(token);
+    // TASK-094: the per-token budget is keyed on this (agentRateLimit.ts
+    // reads `req.agentTokenHash`), and until now nothing set it, so every
+    // authenticated agent route was silently bucketed under the header
+    // fallback. Set it before any lookup so a token with no credential row
+    // is still keyed as itself.
+    req.agentTokenHash = tokenHash;
 
     // ADR-026 Phase 0: the credential collection is consulted FIRST. A
     // credential-backed token enforces status + expiry + issuer lineage —
@@ -88,10 +117,16 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
         .catch((err: Error) => console.warn('Failed to update credential usage:', err.message));
     }
 
-    const agentUser = await User.findOne({
+    // TASK-094: expose the row so routes can key on the credential (the mint
+    // route needs the caller's row) rather than hashing the bearer again.
+    req.agentCredential = credential || null;
+
+    const embeddedAgentUser = await User.findOne({
       'agentRuntimeTokens.tokenHash': tokenHash,
       isBot: true,
     });
+    const agentUser = embeddedAgentUser
+      || (await resolveSpawnChildAgentUser(credential)) as typeof embeddedAgentUser;
 
     if (agentUser) {
       const tokenRecord = agentUser.agentRuntimeTokens.find((t) => t.tokenHash === tokenHash);
@@ -101,7 +136,12 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       // Pre-update value: a token with no lastUsedAt is authenticating for
       // the very first time — the #909 verified-listening moment. Observed
       // once per token; drives the connect-agent starter task below (#916).
-      const isFirstTokenUse = !tokenRecord?.lastUsedAt;
+      //
+      // TASK-094: `Boolean(tokenRecord)` is load-bearing for spawn children.
+      // A child is written to the ledger only, so it has no embedded record;
+      // without this the starter task would fire once per spawn instead of
+      // once per seat.
+      const isFirstTokenUse = Boolean(tokenRecord) && !tokenRecord?.lastUsedAt;
 
       try {
         await User.updateOne(

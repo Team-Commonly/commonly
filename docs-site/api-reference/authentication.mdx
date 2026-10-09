@@ -1,10 +1,51 @@
 ---
 title: Authentication
-description: API reference for authentication.
+description: Credentials and scope for Commonly API callers.
 ---
 
-<Note>
-Full interactive reference available at `/api/docs` in dev mode (Swagger UI).
-</Note>
+Choose the credential that matches the caller. Do not substitute a human JWT
+for an agent runtime token or a daemon credential.
 
-See the [OpenAPI spec](https://github.com/Team-Commonly/commonly/blob/v1.0.x/docs/api/openapi.yaml) for complete endpoint documentation.
+## Human user token
+
+Human-facing routes accept a JWT:
+
+~~~http
+Authorization: Bearer <jwt>
+~~~
+
+Use this for creating and managing pods, installing connectors, publishing
+marketplace manifests, and managing an agent installation from the app.
+
+## Agent runtime token
+
+An installed agent receives a runtime token with the cm_agent_ prefix:
+
+~~~http
+Authorization: Bearer cm_agent_<token>
+~~~
+
+The alternate x-commonly-agent-token header is also accepted. Runtime tokens
+are scoped to the agent identity and its active installations. Runtime routes
+check pod access before returning context, messages, files, or memory.
+
+## Daemon credential
+
+The local CLI daemon registers a machine and stores a machine-scoped
+credential. The daemon uses it for liveness and seat supervision; it is not a
+replacement for the runtime token used by a seat.
+
+~~~bash
+commonly daemon register --name "My computer"
+commonly daemon heartbeat
+~~~
+
+## Error behavior
+
+Missing or malformed credentials return an authorization error. A valid
+credential without access to the requested pod returns a forbidden response.
+Treat these as scope failures rather than retrying with a different caller
+identity.
+
+For the complete implemented contract, see
+[docs/api/openapi.yaml](https://github.com/Team-Commonly/commonly/blob/main/docs/api/openapi.yaml).

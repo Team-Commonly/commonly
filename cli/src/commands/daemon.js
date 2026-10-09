@@ -9,7 +9,7 @@
 import { hostname, homedir } from 'os';
 import { spawn } from 'child_process';
 import {
-  chmodSync, closeSync, existsSync, mkdirSync, openSync, rmSync, watch, writeFileSync,
+  chmodSync, closeSync, existsSync, mkdirSync, openSync, rmSync, watch,
 } from 'fs';
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
@@ -21,7 +21,7 @@ import {
 } from '../lib/daemon-supervisor.js';
 import { loadAgentToken, saveAgentToken } from './agent.js';
 import { getLastTurn } from '../lib/session-store.js';
-import { getAdapter } from '../lib/adapters/index.js';
+import { getAdapter, providerKeyEnvNames } from '../lib/adapters/index.js';
 import {
   installDaemonService,
   uninstallDaemonService,
@@ -29,10 +29,29 @@ import {
   stopDaemonService,
   restartDaemonService,
   daemonLogPath,
+  missingProviderKeys,
   servicePaths,
 } from '../lib/daemon-service.js';
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
 import { loadDaemonState, saveDaemonState } from '../lib/daemon-state.js';
+
+// One supervised seat, as `commonly daemon status --verbose` names it. Two of these
+// fields are worth reading closely: the seat's `instanceId` (the identity the
+// platform routes by, so a seat attached to the wrong instance is otherwise
+// invisible) and the supervisor's `restarts` flap counter — which is written,
+// persisted and served, and was shown by no surface at all, so a seat that had
+// been crash-looping looked exactly like a healthy one (TASK-072, 2026-09-19).
+//
+// `restarts` distinguishes 0 from absent on purpose: a state file written by an
+// older daemon has no such field, and printing 0 for it would claim a reading the
+// file does not carry.
+export const formatSeatLine = (seat = {}) => {
+  const model = seat.model || 'default model';
+  const effort = seat.effort ? `/${seat.effort}` : '';
+  const error = seat.lastError ? ` error=${seat.lastError}` : '';
+  const restarts = seat.restarts === undefined || seat.restarts === null ? '-' : seat.restarts;
+  return `  ${seat.agentName}: ${seat.state} instance=${seat.instanceId || '-'} adapter=${seat.adapter || 'unknown'} model=${model}${effort} pid=${seat.pid || '-'} restarts=${restarts} lastTurn=${seat.lastTurnAt || 'never'}${error}`;
+};
 
 const requireDaemonRecord = () => {
   const record = loadDaemonRecord();
@@ -219,7 +238,10 @@ Examples:
 
   // ── install / uninstall (ADR-026 D1) ──────────────────────────────────────
   const serviceDeps = () => ({
-    writeFile: (file, content) => writeFileSync(file, content, 'utf8'),
+    // writeFile is deliberately NOT injected here: daemon-service.js's default
+    // writer sets the 0600 mode at CREATION, and a bare `writeFileSync(file,
+    // content, 'utf8')` dropped that — leaving the service file, which can hold
+    // a provider key, readable at umask until the chmod a moment later.
     mkdirp: (dir) => { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); },
     chmod: (path, mode) => chmodSync(path, mode),
     ensureFile: (path) => { const fd = openSync(path, 'a', 0o600); closeSync(fd); },
@@ -252,7 +274,12 @@ Examples:
       try {
         // A service without a credential just crash-loops at boot.
         requireDaemonRecord();
-        await installDaemonService(serviceDeps());
+        // Same class one layer over (TASK-049): a service without the SEATS'
+        // provider key comes up clean, and every pi seat then dies inside its
+        // adapter. The keys are captured here because this is the only moment
+        // the operator's shell is in reach; the ones that are missing are named
+        // by installDaemonService rather than left to be discovered per seat.
+        await installDaemonService({ ...serviceDeps(), providerKeyEnvNames: providerKeyEnvNames() });
         console.log('The daemon now starts at login and is kept alive. Uninstall with: commonly daemon uninstall');
       } catch (error) {
         console.error(`Daemon install failed: ${error.message}`);
@@ -323,6 +350,20 @@ Examples:
         if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
         chmodSync(logsDir, 0o700);
         const stampLog = (line) => console.log(`${new Date().toISOString()} ${line}`);
+
+        // TASK-049: fail loudly at BIND, once, naming the variable.
+        //
+        // A service-started daemon inherits a clean environment, so a provider
+        // key that lives only in the operator's shell is absent here; every pi
+        // seat then dies at adapter start with `COMMONLY_LITELLM_KEY is not set`
+        // and the operator sees crash loops with no cause at daemon level. One
+        // line at startup answers the question the log would otherwise take a
+        // seat autopsy to answer. Not fatal: the daemon's other seats are
+        // unaffected, and refusing to start would turn one missing key into a
+        // whole-machine outage.
+        for (const name of missingProviderKeys({ names: providerKeyEnvNames() })) {
+          stampLog(`WARNING: ${name} is not set in this environment — a seat whose adapter needs it will fail to start. Export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
+        }
 
         const supervisor = createDaemonSupervisor({
           record,
@@ -397,12 +438,7 @@ Examples:
             console.log('Local supervisor state: no supervised seats.');
           } else {
             console.log('Local supervised seats:');
-            for (const seat of local.seats) {
-              const model = seat.model || 'default model';
-              const effort = seat.effort ? `/${seat.effort}` : '';
-              const error = seat.lastError ? ` error=${seat.lastError}` : '';
-              console.log(`  ${seat.agentName}: ${seat.state} adapter=${seat.adapter || 'unknown'} model=${model}${effort} pid=${seat.pid || '-'} lastTurn=${seat.lastTurnAt || 'never'}${error}`);
-            }
+            for (const seat of local.seats) console.log(formatSeatLine(seat));
           }
         }
       } catch (error) {

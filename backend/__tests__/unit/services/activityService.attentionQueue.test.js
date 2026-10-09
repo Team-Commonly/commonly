@@ -61,7 +61,7 @@ describe('ActivityService.getDecisionQueue', () => {
 
   it('reads settled decisions durably for a current pod member', async () => {
     mockPodFind.mockReturnValue(chain([{
-      _id: 'pod-1', name: 'Current', createdBy: 'owner', members: [{ userId: 'member-1' }],
+      _id: 'pod-1', name: 'Current', createdBy: 'owner', members: ['member-1'],
     }]));
     mockDecisionCountDocuments.mockResolvedValue(1);
     mockDecisionFind.mockReturnValue(decisionChain([{
@@ -79,7 +79,7 @@ describe('ActivityService.getDecisionQueue', () => {
       ruling: expect.objectContaining({ value: 'B', by: 'Sam', messageId: '43' }),
     })]);
     expect(mockPodFind).toHaveBeenCalledWith(expect.objectContaining({
-      _id: 'pod-1', $or: expect.any(Array),
+      _id: 'pod-1', members: 'member-1',
     }));
     expect(mockDecisionFind).toHaveBeenCalledWith({
       podId: { $in: ['pod-1'] }, status: 'ruled', messageId: { $exists: true },
@@ -87,6 +87,53 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(mockDecisionCountDocuments).toHaveBeenCalledWith({
       podId: { $in: ['pod-1'] }, status: 'ruled', messageId: { $exists: true },
     });
+  });
+
+  // TASK-166. `createdBy` is who made the pod, not a standing membership, and
+  // `leavePod` leaves it behind. Two witnesses: the query term, and the
+  // in-process filter that re-checks the returned rows.
+  it('reads settled history by membership only', async () => {
+    mockPodFind.mockReturnValue(chain([{
+      _id: 'pod-1', name: 'Current', createdBy: 'owner', members: ['member-1'],
+    }]));
+
+    await ActivityService.getDecisionHistory('member-1', { podId: 'pod-1' });
+
+    // TASK-170: the two dead spellings are gone; exact equality is the falsifier.
+    expect(mockPodFind).toHaveBeenCalledWith({ _id: 'pod-1', members: 'member-1' });
+  });
+
+  it('does not admit a pod whose member is the legacy `{ userId }` shape', async () => {
+    // The post-filter used to carry the same arm as the query term. Nothing in
+    // the store has that shape (0 of 424 pods), and the selector no longer
+    // returns it, so the filter must not be the one place that still admits it.
+    mockPodFind.mockReturnValue(chain([{
+      _id: 'pod-1', name: 'Legacy', createdBy: 'creator-1', members: [{ userId: 'member-1' }],
+    }]));
+
+    await expect(ActivityService.getDecisionHistory('member-1', { podId: 'pod-1' }))
+      .rejects.toThrow('Access denied');
+    expect(mockDecisionFind).not.toHaveBeenCalled();
+  });
+
+  it('admits a pod whose member carries an `_id` (control for the arm above)', async () => {
+    mockPodFind.mockReturnValue(chain([{
+      _id: 'pod-1', name: 'Object id', createdBy: 'creator-1', members: [{ _id: 'member-1' }],
+    }]));
+
+    await ActivityService.getDecisionHistory('member-1', { podId: 'pod-1' });
+
+    expect(mockDecisionFind).toHaveBeenCalled();
+  });
+
+  it('refuses a creator who left the pod, although createdBy still names them', async () => {
+    mockPodFind.mockReturnValue(chain([{
+      _id: 'pod-1', name: 'Former', createdBy: 'creator-1', members: ['member-1'],
+    }]));
+
+    await expect(ActivityService.getDecisionHistory('creator-1', { podId: 'pod-1' }))
+      .rejects.toThrow('Access denied');
+    expect(mockDecisionFind).not.toHaveBeenCalled();
   });
 
   it('rejects settled history for a viewer outside the requested pod', async () => {

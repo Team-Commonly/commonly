@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../../../models/User');
 const WaitlistRequest = require('../../../models/WaitlistRequest');
+const { AgentRegistry } = require('../../../models/AgentRegistry');
 
 jest.mock('../../../services/communityPodService', () => ({
   ensureUserInCommunityPod: jest.fn().mockResolvedValue(undefined),
@@ -10,8 +11,18 @@ jest.mock('../../../services/communityPodService', () => ({
 jest.mock('../../../services/emailService', () => ({
   sendEmail: jest.fn().mockResolvedValue({ data: { succeeded: 1 } }),
 }));
+// The workspace onboarding tail (TASK-149) is queued off the register response
+// path, so a unit suite has to hold it still: the checklist is the step the test
+// below parks on, and the PG mirror is stubbed here so no test in this file
+// depends on whether the runner happens to export PG_HOST.
+jest.mock('../../../models/Task', () => ({ create: jest.fn().mockResolvedValue([]) }));
+jest.mock('../../../services/pgPodSyncService', () => ({
+  syncPodFromMongo: jest.fn().mockResolvedValue({}),
+}));
 const { ensureUserInCommunityPod } = require('../../../services/communityPodService');
 const { sendEmail } = require('../../../services/emailService');
+const Task = require('../../../models/Task');
+const Pod = require('../../../models/Pod');
 const authController = require('../../../controllers/authController');
 const {
   setupMongoDb,
@@ -108,9 +119,221 @@ describe('Auth Controller Tests', () => {
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: expect.stringContaining('User registered successfully'),
+          message: 'User registered successfully. Email verification is not required.',
         }),
       );
+    });
+
+    // TASK-142: the verification email used to be awaited inline, so signup
+    // blocked on SMTP2GO (6211 ms measured live; emailService allows 30s).
+    // This test is the mutation proof for the fix: it hands the handler a send
+    // that never settles, so `await authController.register(...)` can only
+    // return if the handler does NOT wait for it. Restoring the inline await
+    // makes this test time out rather than fail an assertion.
+    it('responds 201 without waiting for the verification email', async () => {
+      process.env.SMTP2GO_API_KEY = 'smtp-key';
+      process.env.SMTP2GO_FROM_EMAIL = 'mail@example.com';
+      process.env.FRONTEND_URL = 'https://commonly.me';
+
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      const savedUser = {
+        _id: 'mockedUserId',
+        username: 'slowmail',
+        email: 'slow@example.com',
+        password: 'hashedPassword',
+        verified: false,
+      };
+      User.prototype.save = jest.fn().mockResolvedValueOnce(savedUser);
+
+      let releaseSend;
+      sendEmail.mockImplementationOnce(() => new Promise((resolve) => {
+        releaseSend = resolve;
+      }));
+
+      const req = {
+        body: {
+          username: 'slowmail',
+          email: 'slow@example.com',
+          password: 'Password123!',
+        },
+      };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      // The send is still pending at this line; a handler that awaits it never
+      // gets here.
+      await authController.register(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'slow@example.com' }));
+
+      releaseSend({ data: { succeeded: 1 } });
+    });
+
+    // The response must also survive a provider failure, and the failure must
+    // be visible in the logs rather than swallowed: after the inline await was
+    // removed there is no 502 left to tell an operator the mail never went out.
+    it('retries once and logs when the background verification email fails', async () => {
+      process.env.SMTP2GO_API_KEY = 'smtp-key';
+      process.env.SMTP2GO_FROM_EMAIL = 'mail@example.com';
+      process.env.FRONTEND_URL = 'https://commonly.me';
+
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      const savedUser = {
+        _id: 'mockedUserId',
+        username: 'failmail',
+        email: 'fail@example.com',
+        password: 'hashedPassword',
+        verified: false,
+      };
+      User.prototype.save = jest.fn().mockResolvedValueOnce(savedUser);
+
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      sendEmail.mockRejectedValue(new Error('smtp2go unavailable'));
+
+      const req = {
+        body: {
+          username: 'failmail',
+          email: 'fail@example.com',
+          password: 'Password123!',
+        },
+      };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      await authController.register(req, res);
+
+      // Two macrotask turns let both attempts (and the retry) settle.
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(sendEmail).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('verification email failed for user'),
+        expect.anything(),
+      );
+
+      errorSpy.mockRestore();
+    });
+
+    it('names joining the Community pod as the only gate when a mail was sent', async () => {
+      // The verification-required branch, which the suite otherwise never reaches
+      // (it clears SMTP2GO above). Pinned because the frontend picks its success
+      // screen from this sentence: V2Register.test.tsx matches /verify your email/i.
+      process.env.SMTP2GO_API_KEY = 'smtp-key';
+      process.env.SMTP2GO_FROM_EMAIL = 'mail@example.com';
+      process.env.FRONTEND_URL = 'https://commonly.example';
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      User.prototype.save = jest.fn().mockResolvedValueOnce({
+        _id: 'mockedUserId',
+        username: 'testuser',
+        email: 'test@example.com',
+        password: 'hashedPassword',
+        verified: false,
+      });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register({
+        body: { username: 'testuser', email: 'test@example.com', password: 'Password123!' },
+      }, res);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'Registered. Verify your email to join the Community pod.',
+      });
+    });
+
+    // TASK-149: the workspace onboarding tail (PG mirror → starter checklist →
+    // Guide install + welcome) used to be awaited inline before the 201, and it
+    // was ~1.0 s of a 1.59-1.76 s p50 signup. Mutation proof for the split: the
+    // checklist is handed a promise that never settles, so `await register(...)`
+    // can only return if the handler does not wait for the tail. Restoring the
+    // inline await makes this test time out rather than fail an assertion.
+    it('responds 201 without waiting for the workspace onboarding tail', async () => {
+      const oldPgHost = process.env.PG_HOST;
+      delete process.env.PG_HOST;
+
+      // A real ObjectId for the saved row. Note register passes the _id mongoose
+      // assigned to the document, not this mock's return value, so the pod
+      // create succeeds either way — asserted below rather than assumed here.
+      const realUserId = new mongoose.Types.ObjectId();
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      User.prototype.save = jest.fn().mockResolvedValueOnce({
+        _id: realUserId,
+        username: 'slowtail',
+        email: 'slowtail@example.com',
+        password: 'hashedPassword',
+        verified: false,
+      });
+
+      Task.create.mockImplementationOnce(() => new Promise(() => {}));
+      let podVisibleAtResponse = null;
+
+      // The store check below races the queued tail — the pod create can land
+      // while the count query is in flight — so the order is also pinned
+      // synchronously: register has to have RESUMED from the pod create before
+      // it writes the response, which is what dropping the await breaks.
+      let podCreateResolved = false;
+      let podResolvedAtResponse = null;
+      const createPod = Pod.create.bind(Pod);
+      const createSpy = jest.spyOn(Pod, 'create').mockImplementation((...args) => createPod(...args)
+        .then((doc) => {
+          podCreateResolved = true;
+          return doc;
+        }));
+
+      const req = {
+        body: {
+          username: 'slowtail',
+          email: 'slowtail@example.com',
+          password: 'Password123!',
+        },
+      };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        // The pod row has to exist BY the 201 — TASK-144's landing guard reads
+        // GET /api/pods immediately after register — so the check runs inside
+        // the response mock rather than after it. Moving the pod create into
+        // the tail leaves this false, which is the assertion below. Matched by
+        // name rather than by createdBy because register uses the _id mongoose
+        // assigned at construction, not the one this test's save mock returns.
+        json: jest.fn(() => {
+          podResolvedAtResponse = podCreateResolved;
+          podVisibleAtResponse = Pod.countDocuments({ name: 'My Workspace' })
+            .then((count) => count > 0);
+        }),
+      };
+
+      // The tail is still pending at this line; a handler that awaits it never
+      // gets here.
+      await authController.register(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      // And the assertion is non-vacuous: the tail ran PAST the pod row as far
+      // as the checklist before parking, which is what the never-settling
+      // promise is holding. It stays parked for the rest of the test on
+      // purpose — releasing it would drag the Guide's install (and a real
+      // message post) into a unit suite whose subject is the response path.
+      expect(Task.create).toHaveBeenCalledWith([
+        expect.objectContaining({ sourceRef: 'onboarding:connect-agent' }),
+        expect.objectContaining({ sourceRef: 'onboarding:first-task' }),
+        expect.objectContaining({ sourceRef: 'onboarding:invite-teammate' }),
+      ]);
+      expect(await podVisibleAtResponse).toBe(true);
+      expect(podResolvedAtResponse).toBe(true);
+      createSpy.mockRestore();
+
+      if (oldPgHost === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = oldPgHost;
     });
 
     it('should not register a user with an existing email', async () => {
@@ -238,6 +461,66 @@ describe('Auth Controller Tests', () => {
       expect(saveMock).toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(201);
     });
+    it('refuses a registration that takes an agent type name (TASK-133 b)', async () => {
+      const req = {
+        body: { username: 'claude-code', email: 'person@example.com', password: 'Password123!' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register(req, res);
+
+      // Refused before the row exists, which is the only moment the namespace
+      // can be defended: an install's alternative is failing closed much later.
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'agent_username_reserved',
+      }));
+      expect(await User.countDocuments({ username: 'claude-code' })).toBe(0);
+    });
+
+    it('refuses the derived agent address (TASK-133 b)', async () => {
+      const req = {
+        body: {
+          username: 'person',
+          email: 'person@agents.commonly.local',
+          password: 'Password123!',
+        },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'agent_email_reserved',
+      }));
+      expect(await User.countDocuments({ email: 'person@agents.commonly.local' })).toBe(0);
+    });
+
+    it('refuses a name an AgentRegistry row claims (TASK-133 b)', async () => {
+      await AgentRegistry.create({
+        agentName: 'pixel-helper',
+        displayName: 'Pixel Helper',
+        description: 'a pod helper',
+        manifest: { name: 'pixel-helper', version: '1.0.0' },
+      });
+
+      const req = {
+        body: { username: 'Pixel-Helper', email: 'person@example.com', password: 'Password123!' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register(req, res);
+
+      // Case-insensitive, because the User index is (strength-2 collation) and
+      // registration stores the username verbatim.
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'agent_username_reserved',
+      }));
+      expect(await User.countDocuments({ username: 'Pixel-Helper' })).toBe(0);
+    });
+
   });
 
   describe('login', () => {
@@ -367,6 +650,28 @@ describe('Auth Controller Tests', () => {
           error: expect.stringContaining('Invalid credentials'),
         }),
       );
+    });
+
+    it('does not start a password session for an agent row (TASK-133)', async () => {
+      // A bot row is a User and can carry a password hash, so this route used to
+      // mint a 7-day session for it. The fix is the predicate, which is what this
+      // witness pins: a mock that ignores its query would pass either way, and
+      // the refusal it produces is checked at the three verifiers
+      // (middleware/auth, middleware/socketAuth, routes/uploads).
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      bcrypt.compare.mockResolvedValueOnce(true);
+
+      const req = { body: { email: 'commonly-bot@example.com', password: 'Password123!' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.login(req, res);
+
+      expect(User.findOne).toHaveBeenCalledWith({
+        email: 'commonly-bot@example.com',
+        isBot: { $ne: true },
+      });
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: 'User not found' });
     });
 
     it('should not login a non-existent user', async () => {

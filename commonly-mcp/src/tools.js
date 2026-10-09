@@ -337,7 +337,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_create_task',
-      description: 'Create a task in the pod task board. `dep` is a blocking dependency taskId; `parentTask` is hierarchical.',
+      description: 'Create a task in the pod task board. `dep` is a blocking dependency taskId; `parentTask` is hierarchical. `sourceRef` + `title` are an idempotency key: re-sending the same pair returns the existing task instead of creating a second one, and if that task is done it is reopened to pending with `reopened: true` — its assignee becomes whatever `assignee` this call passed, so omitting it leaves the reopened task unassigned. The same `sourceRef` with a different `title` is a different ask and gets its own task.',
       inputSchema: reqWith({
         podId: STRING,
         title: STRING,

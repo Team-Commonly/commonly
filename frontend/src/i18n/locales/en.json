@@ -29,6 +29,32 @@
       "text": "Checking your access…"
     }
   },
+  "settings": {
+    "avatar": {
+      "regenerate": "Regenerate",
+      "uploadPhoto": "Upload photo",
+      "description": "No face and no skin tone until you choose one. Regenerate for another, or upload a photo.",
+      "descriptionAfterChoice": "Regenerate for another, or upload a photo.",
+      "uploadTitle": "Upload photo",
+      "cropPreview": "Avatar crop preview",
+      "loadingImage": "Loading image…",
+      "zoom": "Zoom",
+      "cropInstructions": "Drag to place it. The square is what everyone sees.",
+      "previewSizes": "Avatar size previews",
+      "previewAt": "{{size}} px",
+      "imageTypeRequired": "Choose an image file.",
+      "imageCouldNotLoad": "This image could not be loaded. Choose another image.",
+      "cropCouldNotSave": "This image could not be prepared. Try again.",
+      "cancel": "Cancel",
+      "savePhoto": "Save photo",
+      "savingPhoto": "Saving…",
+      "photoSaved": "Photo saved.",
+      "regenerated": "Avatar changed.",
+      "uploadFailed": "Could not upload your photo. Try again.",
+      "profileSaveFailed": "Could not save your avatar. Try again.",
+      "regenerateFailed": "Could not change your avatar. Try again."
+    }
+  },
   "activity": {
     "title": "Activity",
     "subtitle": "what needs you, then what moved",
@@ -180,7 +206,7 @@
       "password": "Password"
     },
     "verificationBanner": {
-      "message": "Verify your email — we sent a link to {{email}}.",
+      "message": "Verify your email to join the Community pod — link sent to {{email}}.",
       "resend": "Resend",
       "sending": "Sending…",
       "resent": "Verification link requested.",
@@ -223,9 +249,9 @@
       },
       "success": {
         "ready": "Your account is ready. Sign in to continue.",
-        "checkEmailTitle": "Check your email",
+        "checkEmailTitle": "You're in",
         "createdTitle": "Account created",
-        "checkEmailMessage": "We sent a verification link to your email.",
+        "checkEmailMessage": "Verify your email to join the Community pod — link sent to {{email}}.",
         "verifyThenSignIn": "You can <signIn>sign in now</signIn>; a reminder stays visible until you verify.",
         "continue": "Continue to sign in"
       }
@@ -316,7 +342,7 @@
   },
   "firstRun": {
     "eyebrow": "Your first five minutes",
-    "title": "Bring your agent into the room",
+    "title": "Bring your agent into your pod",
     "lede": "Connect Claude Code, Cursor, or Codex, then start a private conversation without leaving your workspace.",
     "skip": "Skip for now",
     "reopen": "Guide",
@@ -412,12 +438,17 @@
     "cancelReply": "Cancel reply",
     "replyingTo": "Replying to <author>{{author}}</author>:",
     "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle>@{{handle}}</handle>.",
+    "noAgentsInPod": {
+      "kicker": "no agent in this pod",
+      "body": "Nobody here answers yet — people will see this when they open the pod.",
+      "action": "Add an agent"
+    },
     "agentRoomLiveness": {
       "neverConnected": "{{agentName}} isn't connected. Messages sent here will wait for this seat to connect.",
       "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
       "unknown": "{{agentName}}'s availability is unknown. A reply may take longer.",
       "waiting": "Waiting for {{agentName}} to reply…",
-      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this room."
+      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation."
     },
     "typing": {
       "one": "{{name}} is thinking…",
@@ -619,20 +650,21 @@
       "titleSuffix": "",
       "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, any runtime, your infra, no per-agent fees.",
       "selfHostInstall": "Self-host install",
-      "builtBy": "Built in the open by",
-      "demoAria": "Demo: Sam and three agents spec, build, and review a signup flow together in a Commonly pod",
-      "demoCaption": "Real work — Sam and three agents spec a signup flow, open the PR, and review it together.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyInstallAria": "Copy install command",
+      "demoAria": "Interactive demo: a sample workspace with four pods, agents working, and a decision card you can rule on",
+      "demoCaption": "This is the product, not a video. Pick an option on the card, or ask an agent something.",
       "terms": {
         "claudeCode": "Claude Code",
         "cursor": "Cursor",
         "codex": "Codex",
-        "openClaw": "OpenClaw",
         "wholeTeam": "whole team"
       }
     },
     "trusted": {
-      "label": "Trusted by users from",
-      "ariaLabel": "Trusted by users from {{affiliations}}"
+      "label": "Trusted by people from",
+      "ariaLabel": "Trusted by people from {{affiliations}}"
     },
     "wedge": {
       "title": "Teammates, not subagents.",
@@ -641,48 +673,48 @@
     "features": {
       "kicker": "In action",
       "title": "A real workspace — agents and people in the same threads.",
-      "pods": {
-        "alt": "A Commonly pod where the team drafts a launch GTM deck together",
-        "kicker": "Pods",
-        "title": "Agents ship real work — in the same thread as your team",
-        "text": "Sam asks for a launch plan. Theo assigns it on the task board, Nova drafts the GTM deck and attaches the real .pptx in-thread, and the team refines it together — humans and agents in one conversation.",
+      "needs": {
+        "alt": "Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward.",
+        "kicker": "Needs you",
+        "title": "Agents ask. You decide in one tap.",
+        "text": "When an agent needs a call, it asks with options instead of a wall of text. Pick one in the app or from Telegram, and the work carries on. Every open question, from every pod, lands in one place.",
         "points": {
-          "board": "Task board built into every pod",
-          "artifacts": "Real artifacts — decks, docs, spreadsheets — attached in-thread",
-          "runtimes": "Multiple agent runtimes working in one room"
+          "inbox": "Every open question in one place",
+          "options": "Options, not essays",
+          "phone": "Answer from your phone"
         }
       },
       "team": {
-        "alt": "Commonly Your Team page — 19 agents across native, OpenClaw, Codex, and Claude Code runtimes",
+        "alt": "Commonly's Your team page: six agents with their roles and pods, two marked as needing you, and a card for bringing your own agent.",
         "kicker": "Your team",
         "title": "Any runtime, one roster",
-        "text": "Native agents, OpenClaw, Codex, and Claude Code side by side. Hire a hosted agent or connect your own — every one gets a name, its own memory, its own skills, and its own workstation. A real seat on the team, not a subagent you spawn and lose.",
+        "text": "Claude Code, Codex and hosted agents side by side. Hire a hosted agent or connect your own — every one gets a name, its own memory, its own skills, and its own workstation. A real seat on the team, not a subagent you spawn and lose.",
         "points": {
           "bring": "Bring your own agent in about two minutes",
           "hosted": "Hosted agents when you want zero setup",
           "talk": "Talk to any of them 1:1"
         }
       },
-      "dm": {
-        "alt": "A 1:1 direct message with an agent in Commonly",
-        "kicker": "Direct messages",
-        "title": "Talk to any agent 1:1",
-        "text": "Every agent has a DM, and it already knows the projects it lives in — no context pasting, no cold starts. Agents DM each other too, when the work calls for it.",
+      "connectors": {
+        "alt": "Commonly's Connectors page: Telegram is linked to the Launch pod and Slack to Support. Telegram is open, showing that Launch and Support reach it while Website and Growth are off. Below, GitHub is granted to Launch, where Wren, Kai and Vera may use it.",
+        "kicker": "Connectors",
+        "title": "Your chat is the front door",
+        "text": "Connect Slack or Telegram to a pod. People ask where they already talk; an agent answers in its own name and brings the hard calls to you. Tools like GitHub are granted to a pod, and every write can ask you first.",
         "points": {
-          "context": "Project context comes for free",
-          "peer": "Agent-to-agent DMs for peer collaboration",
-          "private": "Private 1:1 rooms"
+          "mirror": "Mirror everything, or only when mentioned",
+          "grants": "Grants, not shared passwords",
+          "record": "Every call on the pod’s record"
         }
       },
-      "identity": {
-        "alt": "An agent's full profile — identity, specialties, skills, pods, and memory",
-        "kicker": "Identity & memory",
-        "title": "Its own memory — even across a runtime swap",
-        "text": "Every agent has its own identity, skills, memory, and workstation. Swap the runtime underneath it and it comes back knowing everything it learned — a subagent borrows all of that and vanishes.",
+      "byo": {
+        "alt": "Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: fern will run on Sam's MacBook Pro and join the Launch pod once that computer's daemon starts it.",
+        "kicker": "Bring your own",
+        "title": "Bring the agent you already run",
+        "text": "Register your computer once. The daemon keeps your agents running across logins and reboots, and each one keeps its identity and memory here. Move it to another machine and it comes back knowing everything it learned.",
         "points": {
-          "memory": "Persistent long-term memory, owned by the agent",
-          "skills": "Skills visible on the profile",
-          "import": "Import your local agent’s memory when it joins"
+          "runtimes": "Claude Code, Codex or your own",
+          "keys": "Your keys and your compute",
+          "memory": "Memory survives a runtime swap"
         }
       }
     },
@@ -691,7 +723,7 @@
       "title": "Memory lives with the project, not the tool.",
       "steps": {
         "install": {
-          "title": "Install your agents into a project",
+          "title": "Install your agents into a pod",
           "text": "They join the pod, keep their own memory, and pick up the shared conversation — no more re-explaining."
         },
         "teammate": {
@@ -778,11 +810,7 @@
       },
       "browse": {
         "title": "Browse before you join",
-        "text": "Discover rooms and the agents in them before you commit to the conversation."
-      },
-      "marketplace": {
-        "title": "Install agents & apps",
-        "text": "A marketplace of installable agents, apps, and skills — one install fans out across your pods."
+        "text": "Discover pods and the agents in them before you commit to the conversation."
       },
       "digest": {
         "title": "Daily digest & analytics",
@@ -864,8 +892,8 @@
       "foot": "BYO agents free on every tier · Never per agent · Flat $12 per human · Self-host free forever"
     },
     "finalCta": {
-      "title": "Give every agent its own place on your team.",
-      "sub": "Open the hosted app, or clone the repo and self-host in one command. It's all open."
+      "titleLead": "Your team already has a chat.",
+      "titleTail": "Give it an agent."
     },
     "footer": {
       "product": "Product",
@@ -1256,6 +1284,12 @@
       "connectLocalAgent": "Connect a local agent seat named \"{{name}}\"",
       "unknown": "Run \"{{actionType}}\" with: {{params}}"
     },
+    "toolCall": {
+      "name": "Tool call",
+      "loading": "Loading the exact tool call…",
+      "unavailable": "Can't show what you'd approve — refresh before deciding.",
+      "ownerOnly": "Arguments are visible to the approval owner only."
+    },
     "approve": "Approve",
     "decline": "Decline",
     "deciding": "Deciding…",
@@ -1325,7 +1359,7 @@
       "memory": "Bring its memory (optional)"
     },
     "memory": {
-      "doneLead": "✓ Memory imported —",
+      "doneLead": "Memory imported —",
       "doneRest": "arrives knowing your project. It shows up in the agent's profile under long-term memory.",
       "pasteLead": "Paste your agent's local",
       "pasteOr": "or",
@@ -1351,7 +1385,7 @@
       "body": "The snippet above lets you use Commonly from your editor. It does not make this agent answer @mentions here — nothing is listening yet. For that, run the wrapper on the machine your agent lives on:",
       "note": "Leave it running. It polls Commonly and replies as {{name}}. Without it, {{name}} appears in your team but stays silent when mentioned.",
       "waiting": "Waiting for {{name}} to check in… this flips the moment the command above connects.",
-      "verified": "✓ {{name}} is listening — mentions will wake it.",
+      "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above on the machine where your agent lives, then this page will confirm it.",
       "ctaWarning": "{{name}} isn't listening yet — mentions won't get answers until the wrapper above is running."
     },
@@ -1361,8 +1395,8 @@
       "hostedHint": "Commonly runs it for you. Nothing to install. Beta: {{turns}} turns a day.",
       "byo": "Bring your own runtime",
       "byoHint": "Connect Claude Code, Cursor, or Codex from your machine.",
-      "recommended": "RECOMMENDED",
-      "yours": "YOUR MACHINE",
+      "recommended": "recommended",
+      "yours": "your machine",
       "hostedMeta": "Live in ~10 seconds — no terminal, no keys",
       "byoMeta": "MCP token + snippets for your editor",
       "machine": "On my computer",
@@ -1373,7 +1407,7 @@
       "heading": "Running:",
       "live": "{{name}} is live in {{pod}}. Mention it there and it answers.",
       "starting": "Starting {{name}}…",
-      "running": "✓ {{name}} is listening.",
+      "running": "{{name}} is listening.",
       "slow": "{{name}} hasn't checked in yet. Mention it anyway; it picks up messages when it starts.",
       "meter": "Beta limits: {{turns}} turns a day, one hosted agent per account.",
       "statTurns": "turns / day",
@@ -1381,17 +1415,18 @@
       "latencyHint": "Replies typically land in about ten seconds."
     },
     "preview": {
-      "title": "Your agent",
+      "title": "your agent",
       "inPod": "in {{pod}}",
-      "draft": "Not created yet",
-      "starting": "Starting…",
-      "live": "Listening",
+      "draft": "not created yet",
+      "waiting": "not listening yet",
+      "starting": "starting…",
+      "live": "listening",
       "noteHosted": "This is how it will appear in the pod. The face follows the name.",
-      "noteByo": "Appears in the pod once your runtime connects with the token."
+      "noteByo": "Appears in the pod once your runtime connects with the token.",
+      "noteMachine": "Appears in the pod once the daemon on {{machine}} starts it."
     },
     "persona": {
-      "hiring": "Hiring",
-      "none": "No colleague selected — this is the blank-agent path."
+      "hiring": "Hiring"
     },
     "machine": {
       "online": "online",
@@ -1420,7 +1455,7 @@
     "usTitle": "What we do differently",
     "closeTitle": "The honest version",
     "close": "Want a hosted product and don't mind a closed coordination layer? Raft is good, and shipping. Already committed to Nostr, or want Block's distribution behind you? Buzz is excellent. Tracking work as issues rather than conversation? Multica is the better shape.",
-    "closeUs": "Want agents from different vendors to be first-class members of one room, on infrastructure you can own outright, with no per-agent tax? That's Commonly.",
+    "closeUs": "Want agents from different vendors to be first-class members of one pod, on infrastructure you can own outright, with no per-agent tax? That's Commonly.",
     "note": "Comparison reflects each product's public positioning and published documents at time of writing. Product names are trademarks of their respective owners; this page is not affiliated with or endorsed by any of them.",
     "nav": {
       "primaryLabel": "Primary",
@@ -1841,13 +1876,128 @@
     "pending": "Waiting for the channel",
     "enableHint": "Open a private chat with the Commonly bot",
     "enableHintSend": " and send:",
+    "waitingTelegram": "Send /commonly-enable in your Telegram chat.",
+    "codeExpires": "Code expires in {{minutes}} min",
     "liveRelay": "Relay",
     "liveRelayHint": "chat messages post into the pod and wake mentioned agents; agent escalations reach the channel.",
     "newTitle": "Connect a channel",
+    "choosePod": "Choose a pod",
     "podPicker": "Pod to bridge",
+    "noPodsToConnect": "No pod yet. Create one, then come back to connect a channel.",
+    "createPod": "Create a pod",
     "creating": "Creating…",
     "createTelegram": "New Telegram connector",
-    "footnote": "You get a one-time code to send to the bot. More platforms are on the way."
+    "footnote": "You get a one-time code to send to the bot. More platforms are on the way.",
+    "add": "Add",
+    "noPod": "no pod",
+    "notEnabledKicker": "not enabled",
+    "notYetKicker": "not yet",
+    "kickerAttention": "attention",
+    "kickerMirror": "mirror",
+    "kickerOff": "relay off",
+    "rowAttention": "escalations reach the channel",
+    "rowMirror": "every agent line reaches the channel",
+    "rowRelayOff": "messages stay in the pod",
+    "sinceWhen": "since {{rel}}",
+    "age": {
+      "added": "added {{age}}",
+      "started": "started {{age}}",
+      "since": "since {{age}}",
+      "paused": "paused {{age}}",
+      "slackAnswered": "Slack answered {{age}}"
+    },
+    "activeTag": "active",
+    "alreadyBound": "Your {{connector}} channel is bound to {{pod}}. Other pods reach it through \"Pods that reach this channel\" — switch a pod on there.",
+    "ask": "Ask",
+    "askOperator": "ask your operator",
+    "attentionHint": "Only escalations and the lead agent reach the channel.",
+    "availableLine": "Connect {{label}} to a pod.",
+    "availableSlack": "one click in your workspace",
+    "availableTelegram": "one message",
+    "cancel": "Cancel",
+    "channelDetails": "Channel details",
+    "channelSees": "What the channel sees",
+    "channels": "Your channels",
+    "codeError": "Could not create a new code.",
+    "codeExpired": "The enable code expired.",
+    "connect": "Connect",
+    "connectChannel": "Connect a channel",
+    "connectChannelHint": "Choose a channel and the pod it should join.",
+    "copied": "Copied",
+    "copyCommand": "Copy command",
+    "description": "Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.",
+    "errorLine": "The connection dropped.",
+    "errorReconnect": "reconnect to resume",
+    "gateLead": "Lead agent for {{pod}}",
+    "gateMode": "Mode for {{pod}}",
+    "gateOff": "off",
+    "gateSwitch": "Relay {{pod}}",
+    "gatesTitle": "Pods that reach this channel",
+    "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
+    "hostedMcpReviewAuthorization": "Open {{provider}}'s connected apps",
+    "installInProgress": "Still setting up — try again in a moment.",
+    "installInProgressForPod": "Still setting up for {{pod}} — try again in a moment.",
+    "leadAny": "Any agent leads",
+    "makeActive": "Make active",
+    "manage": "Manage",
+    "mirrorHint": "Every agent message reaches the channel.",
+    "mode": "Relay mode",
+    "modeAttention": "Attention",
+    "modeDefault": "Default",
+    "modeMirror": "Mirror",
+    "newCode": "New code",
+    "nextStep": "Next step",
+    "noPods": "Join a pod first.",
+    "notConnectable": "Not connectable yet.",
+    "notConnected": "not connected",
+    "notEnabled": "Not enabled on this instance.",
+    "notLinkedDetail": "your messages have nowhere to go",
+    "notLinkedLine": "{{title}} · not linked to a pod",
+    "notRelaying": "not relaying",
+    "notYetLine": "Not yet. Tell us which channel you need and we build it next.",
+    "nothingSent": "nothing was sent",
+    "pausedEyebrow": "Paused",
+    "pausedLine": "Paused by an administrator.",
+    "pausedNote": "Only an administrator can resume it. Your relay, mode and pods are kept.",
+    "pausedRefusal": "An administrator paused this connector. Ask your operator.",
+    "pausedShort": "Paused.",
+    "pickPod": "Pick a pod",
+    "pickWhere": "Pick where your messages go",
+    "provider": "Channel provider",
+    "providerNotConfigured": "{{connector}} is not enabled on this instance. Ask your operator.",
+    "recordGone": "The channel record is gone.",
+    "relayOffHint": "Messages stay in the pod.",
+    "remove": "Remove",
+    "removeConfirm": "Really remove — the channel goes quiet",
+    "removeError": "Could not remove the channel.",
+    "removeSlow": "Removal is taking longer than it should.",
+    "removing": "Removing…",
+    "retry": "Retry",
+    "retryOrRemove": "retry, or remove it",
+    "retryRebuilds": "retry rebuilds it",
+    "retryRemove": "Retry remove",
+    "serverLetGo": "the server let go of it",
+    "settingUp": "Setting up…",
+    "setupFailed": "Setup didn’t finish.",
+    "setupSlow": "Setup is taking longer than it should.",
+    "showCode": "Show code",
+    "slackAuthorize": "Authorize in Slack",
+    "slackAuthorizeDetail": "one click in Slack",
+    "slackAuthorizeHint": "Authorize Commonly in your Slack workspace to connect your DM.",
+    "slackAuthorizing": "Opening Slack…",
+    "slackCallbackError": "Slack authorization didn’t complete — try again.",
+    "slackConfirm": "Confirm",
+    "slackConfirmConnection": "Confirm connection",
+    "slackConfirmDetail": "waiting for you to confirm",
+    "slackConfirmHint": "{{workspace}} wants to connect as {{user}}.",
+    "slackConfirmRow": "{{workspace}} says {{user}} connected — is that you?",
+    "slackReject": "This is not me",
+    "title": "Connectors",
+    "viewChannel": "View {{channel}}",
+    "waitingServer": "waiting for the server",
+    "linkedLine": "{{title}} · linked to {{pod}}",
+    "waitingToConnect": "{{label}} is waiting to connect.",
+    "enableCommand": "/commonly-enable {{code}}"
   },
   "artifacts": {
     "title": "Artifacts",
@@ -1882,5 +2032,119 @@
     "empty": "Nothing shared yet. Attach a file in any pod and it lands here.",
     "emptyFiltered": "Nothing matches. Clear a filter or the search.",
     "loadFailed": "Could not load artifacts."
+  },
+  "tools": {
+    "grantedAge": "granted {{age}}",
+    "aPod": "a pod",
+    "aSeat": "an agent",
+    "add": "Add",
+    "addTool": "Add {{tool}}",
+    "adminSetup": "administrator setup",
+    "agents": "agents",
+    "agentsAllowed": "agents allowed",
+    "ask": "Ask",
+    "asksEveryWrite": "every write asks first",
+    "asksFirst": "asks a person first",
+    "asksList": "{{tools}} ask first",
+    "asksNothing": "nothing asks first",
+    "awaiting": "awaiting a person",
+    "budget": "budget",
+    "budgetTotal": "{{calls}} calls",
+    "budgetWindow": "{{calls}} calls per {{window}}",
+    "calls": "calls",
+    "cancel": "Cancel",
+    "changeAccess": "Change access",
+    "connect": "Connect",
+    "connectError": "Could not begin connecting. Try again in a moment.",
+    "connectOwn": "connect your own {{label}} account",
+    "connection": "connection",
+    "counts": "Call counts",
+    "days": "in {{count}} days",
+    "endedExpired": "Expired {{rel}}.",
+    "endedRevoked": "Revoked {{rel}}.",
+    "endedRevokedBy": "Revoked by {{member}} {{rel}}.",
+    "ends": "ends",
+    "endsRel": "Ends {{rel}}.",
+    "expiredLine": "expired {{rel}}",
+    "filter": "Show",
+    "githubAppError": "Could not install the GitHub App.",
+    "githubAppOwnedByOther": "This GitHub App is already installed by another administrator.",
+    "githubAppRequired": "Enter the installation ID, owner, and repository.",
+    "githubAppSetupHint": "Connect the GitHub App once so people can grant GitHub tools to their pods.",
+    "grant": "grant",
+    "grantAct": "Grant",
+    "grantAgain": "Grant again",
+    "grantDetails": "Grant details",
+    "grantError": "Could not grant it.",
+    "grantedByOn": "Granted by {{member}} {{rel}}.",
+    "grantedCount": "{{count}} granted",
+    "grantedOn": "Granted {{rel}}.",
+    "grantedToPod": "granted to <b>{{pod}}</b>",
+    "grantedToPodBy": "granted to <b>{{pod}}</b> by <b>{{member}}</b>",
+    "granting": "Granting…",
+    "installGitHubApp": "Install GitHub App",
+    "installationId": "installation ID",
+    "installingGitHubApp": "Installing…",
+    "keep": "Keep it",
+    "loading": "Loading tools…",
+    "manage": "Manage",
+    "mayUse": "{{agents}} may use it",
+    "mode": "what it may do",
+    "modeRead": "read",
+    "modeWrite": "read and write",
+    "modeWriteConfirm": "read and write, ask first",
+    "moreCount": "{{count}} more",
+    "noConnection": "install the GitHub App first · an admin does this once",
+    "noSeats": "no agent in this pod yet",
+    "noTools": "no tools on the allow-list",
+    "nobody": "no agent",
+    "nobodyMayUse": "nobody may use it",
+    "notEnabled": "not enabled on this instance · ask your operator",
+    "notGranted": "not granted",
+    "nothingMatches": "Nothing matches.",
+    "unknownConnector": "Unknown connector",
+    "unknownWritePolicy": "write policy unavailable",
+    "outcomeFailed": "failed",
+    "outcomeOk": "ok",
+    "outcomeRefused": "refused",
+    "outcomeSuperseded": "answered",
+    "owner": "owner",
+    "readOrWrite": "read, or read and write",
+    "refused": "refused",
+    "repository": "repository",
+    "revoke": "Revoke",
+    "revokeConfirm": "Yes, revoke it",
+    "revokeError": "Could not revoke the grant.",
+    "revokeOld": "Revoke the old grant",
+    "revokedByLine": "revoked by {{member}} {{rel}}",
+    "revokedLine": "revoked {{rel}}",
+    "search": "Search tools",
+    "segAll": "All",
+    "segGranted": "Granted",
+    "segNotYet": "Not yet",
+    "staleAfterChange": "The new grant is live. This old one still is too — its revoke did not go through.",
+    "title": "Tools",
+    "toRoom": "pod",
+    "trail": "trail",
+    "trailEmpty": "No calls yet.",
+    "trailError": "Could not read the trail.",
+    "viewGrant": "View {{tool}} in {{pod}}",
+    "listSeparator": ", ",
+    "sentenceSeparator": " "
+  },
+  "time": {
+    "age": {
+      "justNow": "just now",
+      "inAMoment": "in a moment",
+      "minutesAgo": "{{n}}m ago",
+      "hoursAgo": "{{n}}h ago",
+      "daysAgo": "{{n}}d ago",
+      "minutesFromNow": "{{n}}m from now",
+      "hoursFromNow": "{{n}}h from now",
+      "daysFromNow": "{{n}}d from now",
+      "minutes": "{{n}}m",
+      "hours": "{{n}}h",
+      "days": "{{n}}d"
+    }
   }
 }

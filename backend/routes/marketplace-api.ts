@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const Installable = require('../models/Installable');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
+const { validateMcpComponent } = require('../utils/pluginManifestParser');
 
 const router = express.Router();
 
@@ -27,12 +28,11 @@ const validateNamespace = (installableId: string, username: string) => {
   return null;
 };
 
-// Validation stops at the components array (PR #215/#230): every scalar above
-// is length- or enum-checked, and then `components` is taken from the body and
-// persisted with one length test. Everything nested inside it — including
-// `widgetUrl`, whose immediate sibling `widgetLocation` HAS an enum — reaches
-// Mongo unchecked. Nested validation was not overlooked as a category; it was
-// applied one field over and stopped at the array boundary.
+// Component validation is a persistence boundary (PR #215/#230): every
+// component is checked before it reaches Mongo, and MCP components are passed
+// through the parser's normalizer so publish, update and fork share one row
+// shape. The generic checks below cover component types and widget fields;
+// parser-owned MCP rules cover source, transport, argv and variables.
 //
 // This matters more than "an unused field is sloppy". Nothing renders a widget
 // today, so stored rows are inert — but they are inert only until a renderer
@@ -48,17 +48,25 @@ const COMPONENT_TYPES = [
   'webhook',
   'data-schema',
   'skill',
+  'mcp-server',
 ];
 
-// The four `Schema.Types.Mixed` fields on ComponentSchema. Mixed accepts any
+// The five `Schema.Types.Mixed` fields on ComponentSchema. Mixed accepts any
 // JSON of any size, and at 50 components per manifest that is an unbounded
 // write reachable by anyone who can publish — a larger surface than the URL
 // and independent of it, so a widgetUrl allowlist alone would not touch it.
-const MIXED_COMPONENT_FIELDS = ['widgetConfigSchema', 'schemaFields', 'skillExamples', 'metadata'];
+const MIXED_COMPONENT_FIELDS = [
+  'widgetConfigSchema',
+  'schemaFields',
+  'skillExamples',
+  'variables',
+  'metadata',
+];
 const MAX_MIXED_FIELD_BYTES = 16 * 1024;
 
 const MAX_COMPONENTS = 50;
 const MAX_WIDGET_URL_LENGTH = 2048;
+const MCP_COMPONENT_FIELDS = ['transport', 'source', 'command', 'url', 'variables', 'enabledTools'];
 
 // Scheme allowlist rather than a denylist: `javascript:` and `data:` are the
 // two that turn a stored string into script execution the moment something
@@ -66,53 +74,68 @@ const MAX_WIDGET_URL_LENGTH = 2048;
 // argument. http/https are what a widget host can legitimately be.
 const WIDGET_URL_SCHEMES = ['http:', 'https:'];
 
-const validateComponents = (components: any) => {
-  if (components === undefined || components === null) return null;
-  if (!Array.isArray(components)) return 'components must be an array';
+const normalizeComponents = (components: any) => {
+  if (components === undefined || components === null) return { components, error: null };
+  if (!Array.isArray(components)) return { components, error: 'components must be an array' };
   if (components.length > MAX_COMPONENTS) {
-    return `Maximum ${MAX_COMPONENTS} components per manifest`;
+    return { components, error: `Maximum ${MAX_COMPONENTS} components per manifest` };
   }
 
-  for (let i = 0; i < components.length; i += 1) {
-    const component = components[i];
+  const normalizedComponents = components.slice();
+  for (let i = 0; i < normalizedComponents.length; i += 1) {
+    const component = normalizedComponents[i];
     const at = `components[${i}]`;
 
     if (!component || typeof component !== 'object' || Array.isArray(component)) {
-      return `${at} must be an object`;
+      return { components, error: `${at} must be an object` };
     }
     if (typeof component.name !== 'string' || !component.name.trim()) {
-      return `${at}.name is required`;
+      return { components, error: `${at}.name is required` };
     }
     if (component.name.length > 100) {
-      return `${at}.name must be 100 characters or fewer`;
+      return { components, error: `${at}.name must be 100 characters or fewer` };
     }
     if (!COMPONENT_TYPES.includes(component.type)) {
-      return `${at}.type must be one of: ${COMPONENT_TYPES.join(', ')}`;
+      return { components, error: `${at}.type must be one of: ${COMPONENT_TYPES.join(', ')}` };
     }
     if (component.description !== undefined) {
       if (typeof component.description !== 'string') {
-        return `${at}.description must be a string`;
+        return { components, error: `${at}.description must be a string` };
       }
       if (component.description.length > 500) {
-        return `${at}.description must be 500 characters or fewer`;
+        return { components, error: `${at}.description must be 500 characters or fewer` };
+      }
+    }
+
+    if (component.type === 'mcp-server') {
+      const validation = validateMcpComponent(component, at);
+      if (validation.errors.length) {
+        const firstError = validation.errors[0];
+        return { components, error: `${firstError.field}: ${firstError.message}` };
+      }
+      normalizedComponents[i] = validation.component;
+    } else {
+      const mcpField = MCP_COMPONENT_FIELDS.find((field) => component[field] !== undefined);
+      if (mcpField) {
+        return { components, error: `${at}.${mcpField} is only valid for mcp-server components` };
       }
     }
 
     if (component.widgetUrl !== undefined) {
       if (typeof component.widgetUrl !== 'string') {
-        return `${at}.widgetUrl must be a string`;
+        return { components, error: `${at}.widgetUrl must be a string` };
       }
       if (component.widgetUrl.length > MAX_WIDGET_URL_LENGTH) {
-        return `${at}.widgetUrl must be ${MAX_WIDGET_URL_LENGTH} characters or fewer`;
+        return { components, error: `${at}.widgetUrl must be ${MAX_WIDGET_URL_LENGTH} characters or fewer` };
       }
       let parsed;
       try {
         parsed = new URL(component.widgetUrl);
       } catch {
-        return `${at}.widgetUrl must be an absolute URL`;
+        return { components, error: `${at}.widgetUrl must be an absolute URL` };
       }
       if (!WIDGET_URL_SCHEMES.includes(parsed.protocol)) {
-        return `${at}.widgetUrl must use one of: ${WIDGET_URL_SCHEMES.join(', ')}`;
+        return { components, error: `${at}.widgetUrl must use one of: ${WIDGET_URL_SCHEMES.join(', ')}` };
       }
     }
 
@@ -125,15 +148,15 @@ const validateComponents = (components: any) => {
         // A body that survived JSON.parse cannot be cyclic, so reaching here
         // means something else (a getter, a BigInt) — reject rather than store
         // a value we could not measure.
-        return `${at}.${field} could not be serialized`;
+        return { components, error: `${at}.${field} could not be serialized` };
       }
       if (serialized !== undefined && Buffer.byteLength(serialized, 'utf8') > MAX_MIXED_FIELD_BYTES) {
-        return `${at}.${field} must be ${MAX_MIXED_FIELD_BYTES} bytes or fewer when serialized`;
+        return { components, error: `${at}.${field} must be ${MAX_MIXED_FIELD_BYTES} bytes or fewer when serialized` };
       }
     }
   }
 
-  return null;
+  return { components: normalizedComponents, error: null };
 };
 
 const RUNTIME_MAP: Record<string, string> = {
@@ -239,10 +262,11 @@ router.post('/publish', auth, async (req: any, res: any) => {
     if (!['agent', 'app', 'skill', 'bundle'].includes(kind)) {
       return res.status(400).json({ error: 'kind must be one of: agent, app, skill, bundle' });
     }
-    const componentsError = validateComponents(components);
-    if (componentsError) {
-      return res.status(400).json({ error: componentsError });
+    const componentsValidation = normalizeComponents(components);
+    if (componentsValidation.error) {
+      return res.status(400).json({ error: componentsValidation.error });
     }
+    const normalizedComponents = componentsValidation.components;
 
     const nsError = validateNamespace(installableId.toLowerCase(), username);
     if (nsError) {
@@ -282,7 +306,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
       existing.version = version;
       existing.name = name;
       existing.description = description || existing.description;
-      if (components) existing.components = components;
+      if (components) existing.components = normalizedComponents;
       if (requires) existing.requires = requires;
       if (readme !== undefined) existing.readme = readme;
       if (categories || tags) {
@@ -357,7 +381,7 @@ router.post('/publish', auth, async (req: any, res: any) => {
       source: 'marketplace' as const,
       scope: scope || 'pod',
       requires: requires || [],
-      components: components || [],
+      components: normalizedComponents || [],
       readme,
       marketplace: {
         published: true,
@@ -390,7 +414,9 @@ router.post('/publish', auth, async (req: any, res: any) => {
       console.warn('[marketplace] Installable write failed (AR succeeded):', (installableError as any).message);
       return res.status(201).json({
         success: true,
-        warnings: ['Installable catalog write failed; manifest is installable but not yet browsable. Retry publish to sync.'],
+        warnings: [
+          'Installable catalog write failed; manifest is installable but not yet browsable. Retry publish to sync.',
+        ],
         manifest: {
           installableId: installableDoc.installableId,
           version,
@@ -526,10 +552,10 @@ router.post('/fork', auth, async (req: any, res: any) => {
     // /publish. Any row predating this validation is forkable too. Without
     // this check, fork is the path that launders an unvalidated component into
     // the published catalog. (@sprint-review, 58602.)
-    const sourceComponentsError = validateComponents(source.components);
-    if (sourceComponentsError) {
+    const sourceComponentsValidation = normalizeComponents(source.components);
+    if (sourceComponentsValidation.error) {
       return res.status(400).json({
-        error: `Source manifest cannot be forked: ${sourceComponentsError}`,
+        error: `Source manifest cannot be forked: ${sourceComponentsValidation.error}`,
       });
     }
 
@@ -547,7 +573,7 @@ router.post('/fork', auth, async (req: any, res: any) => {
       source: 'marketplace' as const,
       scope: source.scope,
       requires: source.requires || [],
-      components: source.components || [],
+      components: sourceComponentsValidation.components || [],
       readme: source.readme,
       marketplace: {
         published: true,

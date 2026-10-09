@@ -11,7 +11,7 @@ const Post = require('../models/Post');
 // eslint-disable-next-line global-require
 const Task = require('../models/Task');
 // eslint-disable-next-line global-require
-const isPodMember = require('../utils/isPodMember');
+const { isListedPodMember } = require('../utils/isPodMember');
 
 let PGMessage: unknown = null;
 try {
@@ -125,13 +125,15 @@ class ActivityService {
   ): Promise<Record<string, unknown>> {
     const window = options.window === '7d' ? '7d' : 'today';
     const since = new Date(Date.now() - (window === '7d' ? 7 : 1) * 24 * 60 * 60 * 1000);
-    const pods: PodDoc[] = await Pod.find({
-      $or: [
-        { createdBy: userId },
-        { 'members.userId': userId },
-        { members: userId },
-      ],
-    }).select('_id name type').lean();
+    // TASK-166: the pod list is built from membership only. `createdBy` says who
+    // made the pod, and `leavePod` keeps it after unlisting them, so reading it
+    // as membership handed a departed creator this pod's recap.
+    // TASK-170: `{ 'members.userId': userId }` sat beside the live term as a
+    // second spelling of membership. No pod has a `members.userId` entry (Vera,
+    // 0 of 424, 2026-09-27), so it selected nothing while teaching that a member
+    // is an object carrying a `userId` — the belief behind the `getPodFeed`
+    // defect TASK-166 fixed. Deleted rather than kept as a fallback.
+    const pods: PodDoc[] = await Pod.find({ members: userId }).select('_id name type').lean();
 
     const requestedPodId = typeof options.podId === 'string' ? options.podId : '';
     const scopedPods = requestedPodId
@@ -313,13 +315,9 @@ class ActivityService {
         return { activities: [], hasMore: false, quick: null };
       }
 
-      const pods: PodDoc[] = await Pod.find({
-        $or: [
-          { createdBy: userId },
-          { 'members.userId': userId },
-          { members: userId },
-        ],
-      })
+      // TASK-170: the dead `members.userId` term is gone here too; see
+      // `getRecap` for the census and the reason.
+      const pods: PodDoc[] = await Pod.find({ members: userId })
         .select('_id name type')
         .lean();
 
@@ -409,20 +407,19 @@ class ActivityService {
       : [];
     const limit = Number.isInteger(options.limit) ? Math.min(Math.max(options.limit as number, 1), 50) : 50;
     const offset = Number.isInteger(options.offset) ? Math.max(options.offset as number, 0) : 0;
-    const membership = {
-      $or: [
-        { createdBy: userId },
-        { 'members.userId': userId },
-        { members: userId },
-        { 'members._id': userId },
-      ],
-    };
+    // TASK-170: `members._id` and `members.userId` were the other two spellings
+    // of the same belief (a member is an object with a key) and matched nothing —
+    // no pod carries either shape. The live term is the one below it.
+    const membership = { members: userId };
     const podQuery = requestedPodId ? { _id: requestedPodId, ...membership } : membership;
-    const pods: PodDoc[] = await Pod.find(podQuery).select('_id name createdBy members').lean();
+    const pods: PodDoc[] = await Pod.find(podQuery).select('_id name members').lean();
     if (requestedPodId && pods.length === 0) throw new Error('Access denied');
+    // TASK-170: the post-filter's `member?.userId` arm is the same dead shape as
+    // the query terms above. With the query narrowed, an object-shaped member
+    // can no longer reach this line, so leaving the arm would be a reader that
+    // admits what the selector does not select.
     const allowedPods = pods.filter((pod) => (
-      String(pod.createdBy || '') === String(userId)
-      || (pod.members || []).some((member: any) => String(member?.userId || member?._id || member) === String(userId))
+      (pod.members || []).some((member: any) => String(member?._id || member) === String(userId))
     ));
     if (requestedPodId && allowedPods.length === 0) throw new Error('Access denied');
     const podIds = allowedPods.map((pod) => String(pod._id));
@@ -501,15 +498,16 @@ class ActivityService {
         throw new Error('Pod not found');
       }
 
-      const isMember = String(pod.createdBy) === String(userId)
-        || (pod.members as unknown[])?.some(
-          (m: unknown) => {
-            const member = m as { userId?: unknown };
-            return (String(member.userId) || String(m)) === String(userId);
-          },
-        );
-
-      if (!isMember) {
+      // The shared rule, not a third hand-rolled copy of it. The local form
+      // this replaces read `String(member.userId) || String(m)` — and
+      // `String(undefined)` is the non-empty string 'undefined', so the
+      // fallback to `String(m)` was unreachable and the predicate admitted
+      // nobody whose membership is a plain ObjectId. In production only the
+      // `createdBy` term it sat beside ever matched (0 of 424 pods carry a
+      // `members.userId` entry), so narrowing that term without this fix would
+      // have refused every caller, members included. The control arm below is
+      // what caught it.
+      if (!isListedPodMember(pod, userId)) {
         throw new Error('Access denied');
       }
 
@@ -1281,8 +1279,11 @@ class ActivityService {
 
   /**
    * Legacy Activity approval rows predate ApprovalAction.ownerUserId. Their
-   * read rule is pod membership (with the creator fallback for old rows), so
-   * write authorization must use the identical predicate. Do this at write
+   * read rule is pod membership, so write authorization uses the identical
+   * predicate — `isListedPodMember`. TASK-166 removed the creator fallback on
+   * both sides at once: it stood in for rows created before creators were added
+   * to `members` on save, but a creator who has left is not a member, and
+   * `leavePod` keeps `createdBy` while removing the listing. Do this at write
    * time: a stale or forged client must not turn an Activity id into broad
    * authenticated approval authority.
    */
@@ -1292,9 +1293,9 @@ class ActivityService {
   ): Promise<Record<string, unknown> | null> {
     const rawPodId = activity.podId as { _id?: unknown } | undefined;
     const podId = rawPodId?._id || activity.podId;
-    const pod = await Pod.findById(podId).select('createdBy members').lean();
+    const pod = await Pod.findById(podId).select('members').lean();
     if (!pod) return { success: false, status: 404, error: 'Approval pod not found' };
-    if (!isPodMember(pod, userId)) {
+    if (!isListedPodMember(pod, userId)) {
       return { success: false, status: 403, error: 'Only pod members can decide this' };
     }
     return null;
@@ -1306,10 +1307,13 @@ class ActivityService {
         // Pending approvals belong to every pod member. `members` is an
         // ObjectId[] (not a role-bearing object), so querying
         // `members.userId` or `members.role` silently excludes members.
-        // Keep createdBy for legacy rows created before creators were added
-        // to members on save.
+        //
+        // TASK-166: no `createdBy` term. It used to stand in for legacy rows
+        // created before creators were added to `members` on save, but a
+        // creator who leaves is not a member — and `leavePod` keeps the field.
+        // A pod whose creator is unlisted is now absent from their queue here,
+        // which is the same rule the write gate above applies.
         $or: [
-          { createdBy: userId },
           { members: userId },
         ],
       })

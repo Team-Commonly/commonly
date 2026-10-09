@@ -7,11 +7,114 @@
  */
 
 jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn() } }));
+// The comment namespace's store (TASK-122). Mocked rather than connected: this
+// suite is about the predicate's ANSWERS, and the store's own behaviour is not
+// under test here — including the one answer that matters most, a store that
+// cannot answer at all.
+jest.mock('../../../models/Post', () => ({ exists: jest.fn() }));
 
 const { pool } = require('../../../config/db-pg');
+const Post = require('../../../models/Post');
 const MessageClaimService = require('../../../services/messageClaimService');
 
 const CAS = /INSERT INTO message_claims[\s\S]*ON CONFLICT \(message_id\) DO UPDATE[\s\S]*message_claims\.state = 'declined'[\s\S]*message_claims\.expires_at < NOW\(\)/;
+
+/** Remove one pair of parens, and only when it wraps the whole expression. */
+const stripOuterParens = (group) => {
+  const t = group.trim();
+  if (!t.startsWith('(') || !t.endsWith(')')) return t;
+  let depth = 0;
+  for (let i = 0; i < t.length; i += 1) {
+    if (t[i] === '(') depth += 1;
+    else if (t[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return i === t.length - 1 ? t.slice(1, -1) : t;
+    }
+  }
+  return t;
+};
+
+/**
+ * Evaluates the shipped prune predicate against a row.
+ *
+ * Driven by the SQL TEXT the service actually issued and the values it bound —
+ * not by a copy of the predicate — so an edit to the statement moves the answer
+ * here. That is what keeps the two lapsed-lease witnesses separable under a
+ * single mutation: the "collects an abandoned lease" witness reddens when the
+ * new branch is removed, while the "a young lapsed lease survives" witness
+ * stays green under that same removal (the row still survives) and reddens only
+ * when the retention is dropped.
+ *
+ * It walks the predicate — split at top-level OR, then at top-level AND, then a
+ * truth test — understanding only the atoms this one statement uses: `state IN
+ * (…)`, `state = '…'`, `expires_at < NOW()` and `expires_at < NOW() -
+ * make_interval(secs => $n)`. Nesting and parenthesisation are followed rather
+ * than guessed at, because splitting flatly on `OR` made an unparenthesised
+ * statement look like a behavioural difference when it is display-only. An atom
+ * it cannot read throws instead of answering: a predicate this instrument does
+ * not understand must not be reported as a pass OR as a kill.
+ */
+const pruneCollects = (sql, params, row, now = new Date()) => {
+  const where = sql.match(/DELETE FROM message_claims\s+WHERE\s+([\s\S]+)$/);
+  if (!where) throw new Error(`no prune predicate in: ${sql}`);
+  const expr = where[1].replace(/\s+/g, ' ').trim();
+
+  const atomHolds = (atom) => {
+    const stateList = atom.match(/^state IN \(([^)]*)\)$/);
+    if (stateList) {
+      return stateList[1].split(',').map((s) => s.trim().replace(/'/g, '')).includes(row.state);
+    }
+    const stateEq = atom.match(/^state = '([^']+)'$/);
+    if (stateEq) return row.state === stateEq[1];
+    const lapsed = atom.match(/^expires_at < NOW\(\)(?: - make_interval\(secs => \$(\d+)\))?$/);
+    if (lapsed) {
+      const windowSeconds = lapsed[1] ? Number(params[Number(lapsed[1]) - 1]) : 0;
+      return row.expiresAt < new Date(now.getTime() - windowSeconds * 1000);
+    }
+    throw new Error(`prune evaluator does not understand: ${atom}`);
+  };
+
+  function evalAtom(clause) {
+    const inner = stripOuterParens(clause);
+    if (inner !== clause.trim()) return evalExpr(inner);
+    return atomHolds(clause.trim());
+  }
+  function evalAnd(clause) {
+    return splitTopLevel(clause, 'AND').every((c) => evalAtom(c));
+  }
+  function evalExpr(clause) {
+    return splitTopLevel(clause, 'OR').some((c) => evalAnd(c));
+  }
+
+  return evalExpr(expr);
+};
+
+/** Split on a keyword only where it is not inside parens, so `state IN (…)` stays one atom. */
+const splitTopLevel = (expr, keyword) => {
+  const token = ` ${keyword} `;
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < expr.length; i += 1) {
+    if (expr[i] === '(') depth += 1;
+    else if (expr[i] === ')') depth -= 1;
+    else if (depth === 0 && expr.startsWith(token, i)) {
+      parts.push(expr.slice(start, i));
+      i += token.length - 1;
+      start = i + 1;
+    }
+  }
+  parts.push(expr.slice(start));
+  return parts;
+};
+
+/** The prune the service issued on this call, with the values it bound. */
+const pruneStatement = async () => {
+  pool.query.mockResolvedValue({ rows: [] });
+  await MessageClaimService.claim({ messageId: 'prune-me', podId: 'p1', agentName: 'ux-lead' });
+  const call = pool.query.mock.calls.find(([sql]) => /DELETE FROM message_claims/.test(sql));
+  return { sql: call[0], params: call[1] };
+};
 
 describe('messageClaimService', () => {
   beforeEach(() => {
@@ -36,10 +139,12 @@ describe('messageClaimService', () => {
     expect(pool.query.mock.calls.some(([sql]) => /ADD COLUMN IF NOT EXISTS declined_by/.test(sql))).toBe(true);
   });
 
-  test('prunes expired completed and abandoned-decline handoff history', async () => {
+  test('prunes expired completed, abandoned-decline and refusal history', async () => {
     pool.query.mockImplementation((sql) => {
       if (/DELETE FROM message_claims/.test(sql)) {
-        expect(sql).toContain("state IN ('completed', 'declined')");
+        // `refused` joins the prune list with its own retention clock: a
+        // tombstone is history, and history that never expires is storage.
+        expect(sql).toContain("state IN ('completed', 'declined', 'refused')");
       }
       if (/INSERT INTO message_claims/.test(sql)) {
         return Promise.resolve({ rows: [{ claimed_by: 'ux-lead', instance_id: 'default', expires_at: new Date() }] });
@@ -49,6 +154,67 @@ describe('messageClaimService', () => {
 
     await MessageClaimService.claim({ messageId: 'prune-me', podId: 'p1', agentName: 'ux-lead' });
     expect(pool.query.mock.calls.some(([sql]) => /DELETE FROM message_claims/.test(sql))).toBe(true);
+  });
+
+  test('a lease that lapsed past the retention window is collected — the row no outcome ever reached', async () => {
+    // TASK-121. The terminal branch cannot see this row: its `expires_at` is the
+    // 90s lease that simply ran out rather than a release clock, so before this
+    // branch existed it was permanent storage — the CAS treats an expired claim
+    // as absent, so the seat that abandoned it never revisits the row and it
+    // never becomes terminal.
+    const { sql, params } = await pruneStatement();
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    expect(pruneCollects(sql, params, { state: 'claimed', expiresAt: twoHoursAgo })).toBe(true);
+  });
+
+  test('a lease that lapsed inside the retention window survives, so a delayed re-offer still finds its history', async () => {
+    // The window is the protection, not decoration: the CAS reuses the row in
+    // place and its SET never touches `declined_by`, so collecting at lapse
+    // would hand the next seat a row with the chain's attempted seats wiped.
+    // Five minutes past a 90s lease is inside the three-requeue/ten-minute chain
+    // the retention is sized for — double it by construction.
+    const { sql, params } = await pruneStatement();
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    // The control that keeps this witness from being vacuously green: the same
+    // evaluator, against the same statement, must still collect a terminal row.
+    expect(pruneCollects(sql, params, { state: 'completed', expiresAt: oneMinuteAgo })).toBe(true);
+    expect(pruneCollects(sql, params, { state: 'claimed', expiresAt: fiveMinutesAgo })).toBe(false);
+  });
+
+  test('a live lease is not collected — this witness kills the comparison, not the window', async () => {
+    // Deliberately insensitive to the retention: a future `expires_at` fails
+    // `< NOW() - anything`, so no mutation of the window can redden it. Its kill
+    // set is the comparison direction, which is why it stays a witness rather
+    // than being demoted to a tripwire.
+    const { sql, params } = await pruneStatement();
+    const live = new Date(Date.now() + 90 * 1000);
+    expect(pruneCollects(sql, params, { state: 'claimed', expiresAt: live })).toBe(false);
+  });
+
+  test('a clause appended to the whole prune binds BOTH branches — the outer wrap is the protection, not the per-branch parens', async () => {
+    // Wren's review finding, and a correction of this PR's own claim. Per-branch
+    // parens do NOT scope an appended clause: OR is the top-level operator
+    // whether or not its operands are wrapped, so `(T) OR (C) AND x` parses as
+    // `(T) OR ((C) AND x)`. The wrap around the whole disjunction is what makes
+    // an appended clause bind to both branches — the edit the service comment
+    // anticipates when a pod scope is added.
+    //
+    // The appended clause matches no row (`state = 'never'`), so under the
+    // protection nothing is collected and without it the terminal row still is.
+    // Removing the outer wrap therefore reddens this witness BY NAME, which is
+    // what moves the parens from the tripwire they were to a kill.
+    const { sql, params } = await pruneStatement();
+    const scoped = `${sql} AND state = 'never'`;
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+    expect(pruneCollects(scoped, params, { state: 'completed', expiresAt: oneMinuteAgo })).toBe(false);
+    expect(pruneCollects(scoped, params, { state: 'claimed', expiresAt: twoHoursAgo })).toBe(false);
+    // Control, so that a predicate collecting nothing cannot pass this: both rows
+    // against the same statement WITHOUT the appended clause.
+    expect(pruneCollects(sql, params, { state: 'completed', expiresAt: oneMinuteAgo })).toBe(true);
+    expect(pruneCollects(sql, params, { state: 'claimed', expiresAt: twoHoursAgo })).toBe(true);
   });
 
   test('the CAS also lets the current holder win — renewal is the same call', async () => {
@@ -125,6 +291,263 @@ describe('messageClaimService', () => {
     });
   });
 
+  test('a refusal keeps a named tombstone with its class, status and refuser', async () => {
+    // TASK-099: the whole point of the third outcome is that the kernel can
+    // still tell "answered" from "never ran" after the turn closed. A DELETE
+    // erases that difference, so the refusal must retain the row — carrying the
+    // CLASS (countable), the upstream status where there is one, and the
+    // refusing seat, which is what keeps the re-offer chain finite.
+    pool.query.mockImplementation((sql, params) => {
+      if (/UPDATE message_claims/.test(sql)) {
+        expect(sql).toMatch(/SET state = 'refused'/);
+        expect(sql).toMatch(/refusal_reason = \$5/);
+        expect(sql).toMatch(/refusal_status = \$6/);
+        expect(sql).toMatch(/array_append\(declined_by, \$7\)/);
+        expect(params).toEqual([
+          'm', 'seat-a', 'default', 3600, 'upstream-refused', 429, 'seat-a:default',
+        ]);
+        return Promise.resolve({
+          rows: [{
+            pod_id: 'p1', state: 'refused', refusal_reason: 'upstream-refused',
+            refusal_status: 429, declined_by: ['seat-a:default'],
+          }],
+        });
+      }
+      expect(sql).not.toMatch(/DELETE FROM message_claims/);
+      return Promise.resolve({ rows: [] });
+    });
+
+    const r = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused',
+      reason: 'upstream-refused', status: 429,
+    });
+
+    expect(r).toEqual({
+      released: true,
+      podId: 'p1',
+      state: 'refused',
+      reason: 'upstream-refused',
+      status: 429,
+      declinedBy: ['seat-a:default'],
+    });
+    expect(pool.query.mock.calls.some(([sql]) => /DELETE FROM message_claims/.test(sql))).toBe(false);
+  });
+
+  test('a refused claim is immediately claimable by another seat', async () => {
+    // The kernel half of the corrected ruling: a refusal on a human wake hands
+    // the message on. If the CAS did not admit `refused`, the re-offered seat
+    // would be told the row is held and stand down — the human's message would
+    // disappear silently, which is the exact failure this outcome exists to
+    // prevent.
+    pool.query.mockImplementation((sql) => {
+      if (/INSERT INTO message_claims/.test(sql)) {
+        expect(sql).toMatch(/message_claims\.state = 'refused'/);
+        return Promise.resolve({
+          rows: [{
+            claimed_by: 'seat-b', instance_id: 'default', expires_at: new Date(),
+            state: 'claimed', declined_by: ['seat-a:default'],
+          }],
+        });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    const r = await MessageClaimService.claim({ messageId: 'm', podId: 'p1', agentName: 'seat-b' });
+    expect(r).toMatchObject({ claimed: true, claimedBy: 'seat-b' });
+  });
+
+  test('a re-claim is a new turn: the previous seat\'s refusal class does not outlive it', async () => {
+    // connector-ops 71316, ruled by wren 71322. The PR's own headline path:
+    // A refuses upstream-refused/429 -> the handoff re-offers -> B claims and
+    // declines. The row is B's turn now, so it must not still read
+    // `refusal_reason='upstream-refused'`; that would attribute A's dead route
+    // to B's decision, which is the "answered vs never ran" confusion one
+    // column over. The release branches only run from a live lease, so the CAS
+    // is the single place the class can be reset.
+    //
+    // The fake assigns the columns the statement actually assigns: deleting the
+    // reset from the CAS leaves the class behind and this test fails on the
+    // intermediate assertion, not on a string match.
+    const row = {
+      claimed_by: null,
+      instance_id: 'default',
+      expires_at: new Date(),
+      state: null,
+      declined_by: [],
+      refusal_reason: null,
+      refusal_status: null,
+    };
+    pool.query.mockImplementation((sql, params) => {
+      const claimant = String(params?.[2] || 'seat-a');
+      if (/INSERT INTO message_claims/.test(sql)) {
+        row.claimed_by = claimant;
+        row.state = 'claimed';
+        // Each column is assigned only if the CAS assigns it: a fake that
+        // clears both whenever either appears cannot tell a half-reset from a
+        // full one, which is how a surviving mutation hides.
+        if (/refusal_reason = NULL/.test(sql)) row.refusal_reason = null;
+        if (/refusal_status = NULL/.test(sql)) row.refusal_status = null;
+        return Promise.resolve({ rows: [{ ...row }] });
+      }
+      if (/SET state = 'refused'/.test(sql)) {
+        row.state = 'refused';
+        row.refusal_reason = params[4];
+        row.refusal_status = params[5];
+        row.declined_by = [params[6]];
+        return Promise.resolve({ rows: [{ message_id: 'm', pod_id: 'p1', ...row }] });
+      }
+      if (/SET state = 'declined'/.test(sql)) {
+        row.state = 'declined';
+        row.declined_by = [...row.declined_by, params[3]];
+        return Promise.resolve({ rows: [{ message_id: 'm', pod_id: 'p1', ...row }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    await MessageClaimService.claim({ messageId: 'm', podId: 'p1', agentName: 'seat-a' });
+    await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 'upstream-refused', status: 429,
+    });
+    expect(row.refusal_reason).toBe('upstream-refused');
+    expect(row.refusal_status).toBe(429);
+
+    const reClaim = await MessageClaimService.claim({ messageId: 'm', podId: 'p1', agentName: 'seat-b' });
+    expect(reClaim).toMatchObject({ claimed: true, claimedBy: 'seat-b' });
+    expect(row.refusal_reason).toBeNull();
+    expect(row.refusal_status).toBeNull();
+
+    const declined = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-b', outcome: 'declined',
+    });
+    expect(declined).toMatchObject({ released: true, state: 'declined' });
+    expect(row).toMatchObject({
+      state: 'declined', refusal_reason: null, refusal_status: null,
+      declined_by: ['seat-a:default', 'seat-b:default'],
+    });
+  });
+
+  test('a refusal reason is bounded, and an absent or unusable one stays absent', async () => {
+    // Truncation, not rejection: a reason that is too long must never be able
+    // to fail its own release. A missing reason must not become the string
+    // "undefined" either — absence is the honest record. Same for a status
+    // that is not an HTTP 4xx/5xx integer: the column stays NULL rather than
+    // recording a number a reader would take for a real upstream answer.
+    const calls = [];
+    pool.query.mockImplementation((sql, params) => {
+      if (/UPDATE message_claims/.test(sql)) {
+        calls.push(params);
+        return Promise.resolve({ rows: [{ pod_id: 'p1', state: 'refused', refusal_reason: params[4] }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 'x'.repeat(400),
+    });
+    await MessageClaimService.release({ messageId: 'm', agentName: 'seat-a', outcome: 'refused' });
+    await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 42, status: '429',
+    });
+    await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 'upstream-refused', status: 200,
+    });
+    await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 'upstream-refused', status: 429,
+    });
+
+    expect(calls[0][4]).toHaveLength(256);
+    expect(calls[1][4]).toBeNull();
+    expect(calls[2][4]).toBeNull();
+    expect(calls[3][4]).toBe('upstream-refused');
+    expect(calls[3][5]).toBeNull(); // 200 is not a refusal status
+    expect(calls[4][5]).toBe(429);
+  });
+
+  test('a completion with no handoff history still deletes the claim', async () => {
+    // The paired control for the refusal above: the retention is a property of
+    // a refusal, not of the outcome argument. An ordinary answered message must
+    // not start accumulating tombstones.
+    pool.query.mockImplementation((sql) => {
+      if (/UPDATE message_claims/.test(sql)) {
+        expect(sql).toMatch(/state = 'completed'/);
+        return Promise.resolve({ rows: [] }); // no declined_by → falls through
+      }
+      if (/DELETE FROM message_claims/.test(sql)) {
+        return Promise.resolve({ rows: [{ message_id: 'm', pod_id: 'p1' }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    const r = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'completed',
+    });
+
+    expect(r).toEqual({ released: true, podId: 'p1' });
+    expect(pool.query.mock.calls.some(([sql]) => /DELETE FROM message_claims/.test(sql))).toBe(true);
+  });
+
+  test('a terminal row cannot be re-released: no outcome flips a tombstone', async () => {
+    // Wren's ruling at 02:28Z: `AND state = 'claimed'` on all four write paths
+    // — a terminal state must only be reachable from a live lease. The trigger
+    // is an ack retry that lands a second outcome, and it matters because a
+    // refused row is immediately re-claimable: flipping a `completed` tombstone
+    // to `refused` makes an already-answered human message re-offerable, and
+    // the handoff wakes it at a second seat.
+    //
+    // The fake below is a one-row table that HONOURS the guard the SQL carries,
+    // rather than being told the answer. That is what makes it able to fail:
+    // drop the guard from any branch and the fake reports the write as matched,
+    // the outcome as released, and the tombstone as overwritten.
+    const row = { state: 'claimed', declined_by: ['seat-a:default'] };
+    const guardMissing = [];
+    const applyWrite = (sql) => {
+      const guarded = /state = 'claimed'/.test(sql);
+      if (!guarded) guardMissing.push(sql.match(/(UPDATE|DELETE) FROM message_claims/)[1]);
+      if (row.state !== 'claimed' && guarded) return { rows: [] };
+      if (/SET state = 'declined'/.test(sql)) row.state = 'declined';
+      if (/SET state = 'refused'/.test(sql)) row.state = 'refused';
+      if (/SET state = 'completed'/.test(sql)) row.state = 'completed';
+      if (/DELETE FROM message_claims/.test(sql)) row.state = 'deleted';
+      return { rows: [{ message_id: 'm', pod_id: 'p1', state: row.state, declined_by: row.declined_by }] };
+    };
+    pool.query.mockImplementation((sql) => {
+      if (/UPDATE message_claims/.test(sql) || /DELETE FROM message_claims/.test(sql)) {
+        return Promise.resolve(applyWrite(sql));
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    // A live lease completes and keeps its handoff history as a tombstone.
+    const first = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'completed',
+    });
+    expect(first).toMatchObject({ released: true, state: 'completed' });
+
+    // Every later release from the same seat is now a no-op, whatever it asks
+    // for. `completed -> refused` is the one that would re-offer the message.
+    const flipToRefused = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'refused', reason: 'upstream-refused', status: 429,
+    });
+    expect(flipToRefused).toEqual({ released: false });
+    expect(row.state).toBe('completed');
+
+    const flipToDeclined = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'declined',
+    });
+    expect(flipToDeclined).toEqual({ released: false });
+    expect(row.state).toBe('completed');
+
+    // The legacy no-outcome DELETE is the fourth path, and it must not remove a
+    // tombstone either — that would erase the record instead of flipping it.
+    const legacyDelete = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a',
+    });
+    expect(legacyDelete).toEqual({ released: false });
+    expect(row.state).toBe('completed');
+
+    expect(guardMissing).toEqual([]);
+  });
+
   test('a completed claim remains terminal: a later seat cannot take it', async () => {
     pool.query.mockImplementation((sql) => {
       if (/INSERT INTO message_claims/.test(sql)) return Promise.resolve({ rows: [] });
@@ -152,5 +575,175 @@ describe('messageClaimService', () => {
     });
     const r = await MessageClaimService.holder('m');
     expect(r.claimed).toBe(false);
+  });
+});
+
+/**
+ * messageExists — the claim route's precondition (TASK-118).
+ *
+ * Two of these are about the SHAPE of the answer rather than its value, because
+ * vera's gate (71873) named both traps and neither is a data question:
+ *
+ *  - `messages.id` is SERIAL in the shipped schema but VARCHAR(24) in the unit
+ *    harness (`__tests__/utils/testUtils.js:159`), so a test that runs here can
+ *    pass on a value production rejects. The first test therefore asserts the
+ *    shipped DDL still says SERIAL — that is what makes the numeric guard
+ *    correct, and it reddens if anyone changes the id type — instead of
+ *    pretending the in-memory column is the real one.
+ *  - The guard's whole job is to keep a malformed id away from Postgres, so the
+ *    assertion is that NO query was issued, not that the result was false.
+ *    A false-from-the-database would still be a 500 in production when the
+ *    column is an integer.
+ */
+describe('messageExists', () => {
+  beforeEach(() => {
+    pool.query.mockReset();
+    pool.query.mockResolvedValue({ rows: [] });
+    // A comment that EXISTS is the pre-TASK-122 answer, so it is the default:
+    // the tests below that care about the other direction set their own.
+    Post.exists.mockReset();
+    Post.exists.mockResolvedValue({ _id: 'post-1' });
+  });
+
+  test('the numeric guard rests on a SERIAL id — the shipped schema still says so', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const schema = fs.readFileSync(path.resolve(__dirname, '../../../config/schema.sql'), 'utf8');
+    // Scoped to the messages block, and that scoping is the point: slicing to
+    // the end of the file left a LATER table's `id SERIAL PRIMARY KEY` matching
+    // this regex, so the assertion stayed green when messages.id was mutated to
+    // UUID. Found by the mutation ledger, not by review.
+    const start = schema.indexOf('CREATE TABLE IF NOT EXISTS messages');
+    const messages = schema.slice(start, schema.indexOf('CREATE TABLE', start + 10));
+    expect(messages).toMatch(/id SERIAL PRIMARY KEY/);
+  });
+
+  test('a non-numeric id never reaches the database — the 500 that would become', async () => {
+    await expect(MessageClaimService.messageExists('TASK-110', 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('an empty id or pod is answered without a query too', async () => {
+    await expect(MessageClaimService.messageExists('', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('42', '')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists(undefined, undefined)).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('existence is scoped to the pod — the id alone is not the question', async () => {
+    pool.query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
+    await expect(MessageClaimService.messageExists('52907', 'p1')).resolves.toBe(true);
+    const [sql, params] = pool.query.mock.calls[0];
+    expect(sql).toMatch(/FROM messages WHERE id = \$1 AND pod_id = \$2/);
+    expect(params).toEqual(['52907', 'p1']);
+  });
+
+  test('a numeric id with no row in that pod is false, not an error', async () => {
+    pool.query.mockResolvedValue({ rows: [] });
+    await expect(MessageClaimService.messageExists('52907', 'other-pod')).resolves.toBe(false);
+  });
+
+  // The digits test is not the shape test: SERIAL is int4, so an id above
+  // 2147483647 is `22003 out of range`, which the route's catch turns into a
+  // 500 — the same wrong answer as 'TASK-110', reached by a different error.
+  test('an id past int4 is answered without a query — 22003, not an absent row', async () => {
+    await expect(MessageClaimService.messageExists('2147483648', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('999999999999', 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('the bound is inclusive and a longer input is not an escape', async () => {
+    // 2147483647 is a legitimate id, so the database IS asked — this is what
+    // makes the upper bound load-bearing in both directions.
+    await expect(MessageClaimService.messageExists('2147483647', 'p1')).resolves.toBe(false);
+    expect(pool.query.mock.calls[0][1]).toEqual(['2147483647', 'p1']);
+    // 100 digits are digits, and Number(...) calls it an integer; only the
+    // bound rejects it.
+    pool.query.mockClear();
+    await expect(MessageClaimService.messageExists('9'.repeat(100), 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  // The second namespace, and why it is not a nicety. A post-thread comment
+  // enters the mention and wake path as a Mongo ObjectId (postController.ts:295
+  // enqueues with `_id: comment._id`; the payload builders stringify it into
+  // `messageId`). Refusing that shape does not fail closed: enforcement.js:414
+  // turns the non-2xx into `{failOpen: true}`, so every woken seat proceeds
+  // unguarded and the race stops deduping — measured against this route's own
+  // head before it shipped (connector-ops 71952, vera 71956).
+  test('a post-comment ObjectId is claimable when its comment exists, so the wake race dedupes', async () => {
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
+    // The id is asked of the comment's own store, by the path the comment
+    // actually lives under — `comments._id`, a subdocument of Post.
+    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '507f1f77bcf86cd799439011' });
+    // ...and NOT of Postgres, which cannot see a comment at all.
+    expect(pool.query).not.toHaveBeenCalled();
+    // Pod is still required first — the arm does not bypass the scope check
+    // that the ROUTE enforces (400 without a podId). Nothing is asked of either
+    // store for an id that never gets that far.
+    Post.exists.mockClear();
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', '')).resolves.toBe(false);
+    expect(Post.exists).not.toHaveBeenCalled();
+    // Hex case is spelling, and canonical spelling is lowercase: `String()` on
+    // an ObjectId is lowercase in every driver we send, so an uppercase
+    // spelling is refused rather than accepted as a second claim key for one
+    // comment. Named here because the consequence is a failOpen for that
+    // spelling, which is the failure class this whole arm exists to remove —
+    // acceptable only because no producer emits one.
+    await expect(MessageClaimService.messageExists('507F1F77BCF86CD799439011', 'p1')).resolves.toBe(false);
+  });
+
+  test('a well-formed id with no comment behind it is refused — the phantom lease TASK-122 was filed for', async () => {
+    // '123456789012345678901234' is a legal ObjectId and names nothing; before
+    // TASK-122 this answered TRUE and minted a lease that is un-renewable,
+    // un-completable and permanent (the prune collects terminal states only).
+    Post.exists.mockResolvedValue(null);
+    await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(false);
+    // The store was ASKED: this false is an answer about the comment, not a
+    // shape refusal that never reached it.
+    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '123456789012345678901234' });
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('a store that cannot answer passes the id through — refusing would unguard every woken seat', async () => {
+    // The direction is the design: enforcement.js:414 turns the route's non-2xx
+    // into {failOpen: true}, so a refusal for a real comment wake stops the
+    // race deduping and every woken seat proceeds. An unconfirmed id must
+    // therefore degrade to the pre-TASK-122 behaviour (dedupe holds, a phantom
+    // is possible), not to a refusal.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    Post.exists.mockRejectedValue(new Error('MongoServerSelectionError'));
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
+    expect(Post.exists).toHaveBeenCalledTimes(1);
+    // ...and it SAYS so, on one line, rather than reverting the hardening in
+    // silence. A stored check that quietly stops checking is the failure mode
+    // this whole row is about.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toMatch(/comment existence check failed.*MongoServerSelectionError/);
+    warn.mockRestore();
+  });
+
+  test('the comment namespace is the bare 24-hex shape, and near-misses are refused', async () => {
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd79943901', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd7994390111', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd79943901g', 'p1')).resolves.toBe(false);
+    // Not parsed, so a prefix or padding is a miss rather than a near-hit.
+    await expect(MessageClaimService.messageExists('0x507f1f77bcf86cd799439011', 'p1')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists(' 507f1f77bcf86cd799439011', 'p1')).resolves.toBe(false);
+    expect(pool.query).not.toHaveBeenCalled();
+    // A shape refusal is answered without asking the store either — the cost of
+    // a malformed id is a regex, not a query.
+    expect(Post.exists).not.toHaveBeenCalled();
+  });
+
+  test('an all-digit 24-hex id is passed through — the arm order is what keeps it from being 404\'d', async () => {
+    // 24 hex digits is a legal ObjectId AND far outside int4, which is the one
+    // input where the arm order changes the answer: written digits-first, the
+    // natural shape returns false from the range test and this id is refused,
+    // costing a real comment wake its dedupe (wren 71962 — order matters).
+    await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(true);
+    // Answered by the comment store, never by the range test above it.
+    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '123456789012345678901234' });
+    expect(pool.query).not.toHaveBeenCalled();
   });
 });

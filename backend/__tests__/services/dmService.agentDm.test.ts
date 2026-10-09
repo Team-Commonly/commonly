@@ -16,6 +16,7 @@
 
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MONGO_BINARY_VERSION, MONGOMS_DOWNLOAD_DIR } = require('../utils/mongoBinaryConfig');
 
 jest.mock('../../models/pg/Pod', () => null);
 
@@ -33,7 +34,7 @@ describe('DMService — agent-dm + sharePod', () => {
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create({
-      binary: { version: '7.0.11', skipMD5: true },
+      binary: { version: MONGO_BINARY_VERSION, downloadDir: MONGOMS_DOWNLOAD_DIR, skipMD5: true },
       instance: { dbName: 'dm-service-agent-dm-test' },
     });
     await mongoose.connect(mongoServer.getUri());

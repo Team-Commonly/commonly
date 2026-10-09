@@ -99,6 +99,42 @@ describe('registry presets', () => {
     ]));
   });
 
+  it('uses Slack manifest readiness instead of the legacy bot token check', async () => {
+    const handler = getRouteHandler('/presets', 'get');
+    const req = { userId: 'user-1', user: { id: 'user-1' } };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const readinessKeys = [
+      'SLACK_BOT_TOKEN',
+      'SLACK_CLIENT_ID',
+      'SLACK_CLIENT_SECRET',
+      'SLACK_SIGNING_SECRET',
+      'CONNECTOR_SECRET_KEYS',
+      'CONNECTOR_SECRET_ACTIVE_KEY',
+    ];
+    const previous = Object.fromEntries(readinessKeys.map((key) => [key, process.env[key]]));
+
+    try {
+      readinessKeys.forEach((key) => delete process.env[key]);
+      process.env.SLACK_BOT_TOKEN = 'legacy-bot-token';
+      listOpenClawPlugins.mockResolvedValue({ plugins: [] });
+
+      await handler(req, res);
+      expect(res.json.mock.calls[0][0].capabilities.integrations.slack).toBe(false);
+
+      readinessKeys.slice(1).forEach((key) => {
+        process.env[key] = 'configured';
+      });
+      const configuredRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await handler(req, configuredRes);
+      expect(configuredRes.json.mock.calls[0][0].capabilities.integrations.slack).toBe(true);
+    } finally {
+      readinessKeys.forEach((key) => {
+        if (previous[key] === undefined) delete process.env[key];
+        else process.env[key] = previous[key];
+      });
+    }
+  });
+
   // Coding-delegation migration (#511): OpenClaw dev agents have no exec/shell
   // (the provisioner sets tools.web only), so they DELEGATE all coding to the
   // codex runtime (Cody) via @codex rather than writing it themselves. Lock the

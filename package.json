@@ -17,6 +17,7 @@
     "lint:fix:cli": "cd cli && npm run lint:fix",
     "verify:moltbot-tools": "node scripts/verify-moltbot-tool-contract.js",
     "verify:litellm-patch-runner": "node scripts/verify-litellm-patch-runner.js",
+    "verify:numbered-rules": "node scripts/verify-numbered-rules.js",
     "prepare": "husky"
   },
   "devDependencies": {

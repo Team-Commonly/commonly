@@ -1,0 +1,222 @@
+/**
+ * Tools plan §2 — the builtin GitHub tool Installable is projected from the
+ * broker's own definitions, never hand-written, so the catalogue, the mint and
+ * the broker can never disagree about which tools exist.
+ */
+jest.mock('../../../services/githubAppService', () => ({}));
+jest.mock('../../../models/ToolCall', () => ({ __esModule: true, default: {}, digestArgs: jest.fn(), reserveBudgetLineage: jest.fn() }));
+jest.mock('../../../models/Installable', () => ({ findOne: jest.fn() }));
+
+const Installable = require('../../../models/Installable');
+const { TOOL_DEFINITIONS } = require('../../../services/toolBrokerService');
+const {
+  GRANT_BROKER_ID, buildGithubToolInstallable, projectTools, mcpComponentOf, resolveBrokerFor,
+  builtinToolInstallables, buildHostedMcpToolInstallable, toolInstallableMetas,
+} = require('../../../services/installable/toolInstallables');
+const { LINEAR_ENTRY } = require('../../../integrations/hostedMcp/linear');
+const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
+
+const brokerTools = Object.values(TOOL_DEFINITIONS).filter((d) => d.connectionType === 'github-app').map((d) => d.name);
+
+describe('the builtin GitHub tool Installable', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('the builtin GitHub Installable enables exactly the broker\'s GitHub tools', () => {
+    const installable = buildGithubToolInstallable();
+    const component = mcpComponentOf(installable);
+    expect(installable).toMatchObject({ installableId: 'github', source: 'builtin', kind: 'app', scope: 'pod', status: 'active' });
+    expect(installable.components).toHaveLength(1);
+    expect(component).toMatchObject({ type: 'mcp-server', transport: 'http', name: GRANT_BROKER_ID });
+    expect(component.enabledTools).toEqual(brokerTools);
+    expect(brokerTools.length).toBeGreaterThan(0);
+    // Tiers and irreversibility are projected from the same definitions, so the
+    // page's "what asks first" can never drift from what the broker parks.
+    const projected = projectTools(component);
+    expect(projected.map((t) => t.name)).toEqual(brokerTools);
+    projected.forEach((tool) => {
+      expect(tool.requiredWriteMode).toBe(TOOL_DEFINITIONS[tool.name].requiredWriteMode);
+      expect(tool.irreversible).toBe(Boolean(TOOL_DEFINITIONS[tool.name].irreversible));
+    });
+    expect(JSON.stringify(installable)).not.toMatch(/GITHUB_APP_|PRIVATE_KEY|ghs_/i);
+  });
+
+  test('projectTools honours a narrowed enabledTools and ignores names the broker does not know', () => {
+    const [first] = brokerTools;
+    const projected = projectTools({ type: 'mcp-server', enabledTools: [first, 'github.not_a_tool'] });
+    expect(projected.map((t) => t.name)).toEqual([first]);
+    expect(projectTools(null)).toEqual([]);
+  });
+
+  test('resolveBrokerFor reads the broker from the seeded row and refuses when none is seeded', async () => {
+    Installable.findOne.mockReturnValue({ lean: async () => buildGithubToolInstallable() });
+    // The connection, not its type: a hosted row's broker depends on the row's
+    // entry, so the resolver cannot take the type alone (scope §7).
+    await expect(resolveBrokerFor({ type: 'github-app' })).resolves.toEqual({
+      installableId: 'github', brokerId: GRANT_BROKER_ID, enabledTools: brokerTools,
+    });
+    expect(Installable.findOne).toHaveBeenCalledWith({ installableId: 'github', source: 'builtin', status: 'active' });
+
+    Installable.findOne.mockReturnValue({ lean: async () => null });
+    await expect(resolveBrokerFor({ type: 'github-app' })).rejects.toMatchObject({ code: 'broker_unavailable', statusCode: 503 });
+    await expect(resolveBrokerFor({ type: 'gmail' })).rejects.toMatchObject({ code: 'broker_unavailable' });
+  });
+});
+
+/**
+ * Scope §7: a hosted-mcp connection's broker is its own catalogue ENTRY, not a
+ * per-type Installable row — one entry per vendor, so keying on the type would
+ * let a grant on one vendor's row name another vendor's tool. `HOSTED_MCP_ENTRIES`
+ * is empty in v1, so the mechanism is witnessed against an injected catalogue.
+ */
+const pinned = (over) => ({
+  name: 'list_issues', upstreamName: 'list_issues', description: 'List issues',
+  class: 'read', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true }, ...over,
+});
+
+const ENTRY = {
+  id: 'linear',
+  title: 'Linear',
+  resource: 'https://mcp.linear.app/mcp',
+  issuer: 'https://mcp.linear.app',
+  client: 'cimd',
+  scopes: ['read'],
+  revoke: { page: 'https://linear.app/settings/security', endpoint: 'https://mcp.linear.app/token' },
+  tools: [pinned({}), pinned({ name: 'get_issue', upstreamName: 'get_issue', description: 'Get an issue' })],
+};
+
+const OTHER_ENTRY = {
+  ...ENTRY,
+  id: 'acme',
+  title: 'Acme',
+  resource: 'https://mcp.acme.example/mcp',
+  tools: [pinned({ name: 'list_tickets', upstreamName: 'list_tickets', description: 'List tickets' })],
+};
+
+const hostedRow = (entryId) => ({ type: 'hosted-mcp', config: { entryId } });
+
+describe('resolveBrokerFor on a hosted-mcp connection', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test("the broker is the row's own entry's tools, read from the entry and not from a seeded row", async () => {
+    await expect(resolveBrokerFor(hostedRow('linear'), [ENTRY, OTHER_ENTRY])).resolves.toEqual({
+      installableId: 'linear',
+      brokerId: GRANT_BROKER_ID,
+      enabledTools: ['linear.list_issues', 'linear.get_issue'],
+    });
+    // The entry is the source (§3). A seeded Installable row must not be able to
+    // widen or narrow what a grant on this row may name.
+    expect(Installable.findOne).not.toHaveBeenCalled();
+  });
+
+  test("a row naming another entry gets that entry's tools, so the lookup is per entry and not per type", async () => {
+    await expect(resolveBrokerFor(hostedRow('acme'), [ENTRY, OTHER_ENTRY])).resolves.toMatchObject({
+      installableId: 'acme',
+      enabledTools: ['acme.list_tickets'],
+    });
+    // The inverted control for the arm above: same connection type, one field
+    // different, and the tool list moves with the field.
+    expect(Installable.findOne).not.toHaveBeenCalled();
+  });
+
+  test('an entry the catalogue no longer has is refused broker_unavailable, naming the entry', async () => {
+    await expect(resolveBrokerFor(hostedRow('linear'), [])).rejects.toMatchObject({
+      code: 'broker_unavailable', statusCode: 503,
+    });
+    await expect(resolveBrokerFor(hostedRow('linear'), [])).rejects.toThrow(/linear/);
+    expect(Installable.findOne).not.toHaveBeenCalled();
+  });
+
+  test('a row with no entryId at all is refused, and the refusal says so rather than naming an empty string', async () => {
+    for (const config of [{}, { entryId: '' }, { entryId: '  ' }]) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(resolveBrokerFor({ type: 'hosted-mcp', config }, [ENTRY])).rejects.toThrow(/no hosted-mcp catalogue entry named \(none\)/);
+    }
+    expect(Installable.findOne).not.toHaveBeenCalled();
+  });
+
+  test('a github-app connection still reads the seeded row, so the entry path did not replace it', async () => {
+    Installable.findOne.mockReturnValue({ lean: async () => buildGithubToolInstallable() });
+    await expect(resolveBrokerFor({ type: 'github-app', config: {} }, [ENTRY])).resolves.toEqual({
+      installableId: 'github', brokerId: GRANT_BROKER_ID, enabledTools: brokerTools,
+    });
+    expect(Installable.findOne).toHaveBeenCalledWith({ installableId: 'github', source: 'builtin', status: 'active' });
+  });
+});
+
+/**
+ * Scope §7, catalogue half: an entry becomes a tool Installable, so the row the
+ * Tools page draws and the tool list the mint enables come from ONE source — the
+ * entry — and the catalogue can no longer offer a vendor whose tools the broker
+ * would refuse.
+ */
+describe('one tool Installable per catalogue entry', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test("a hosted entry's Installable enables exactly the entry's tools, namespaced by the entry", () => {
+    const installable = buildHostedMcpToolInstallable(ENTRY);
+    expect(installable).toMatchObject({
+      installableId: 'linear', name: 'Linear', source: 'builtin', kind: 'app', scope: 'pod', status: 'active',
+    });
+    expect(installable.components).toHaveLength(1);
+    expect(installable.components[0]).toMatchObject({ type: 'mcp-server', transport: 'http', name: GRANT_BROKER_ID });
+    expect(installable.components[0].enabledTools).toEqual(['linear.list_issues', 'linear.get_issue']);
+    // The titles are ours, and the sweep the concurrency of two vendors is the
+    // reason this is a list rather than one row: acme's row must carry acme's
+    // tools and not linear's.
+    expect(buildHostedMcpToolInstallable(OTHER_ENTRY).components[0].enabledTools).toEqual(['acme.list_tickets']);
+  });
+
+  test('the seed list carries GitHub and one row per entry, and no entry id is reused', () => {
+    const rows = builtinToolInstallables([ENTRY, OTHER_ENTRY]);
+    expect(rows.map((row) => row.installableId)).toEqual(['github', 'linear', 'acme']);
+    // An entry that is dropped from the catalogue stops being seeded, which is
+    // how a vendor leaves the Tools page.
+    expect(builtinToolInstallables([]).map((row) => row.installableId)).toEqual(['github']);
+  });
+
+  test('the meta map keys a hosted row by its entry, and leaves github-app without one', () => {
+    const metas = toolInstallableMetas([ENTRY]);
+    expect(Object.keys(metas).sort()).toEqual(['github', 'linear']);
+    expect(metas.linear).toMatchObject({ connectionType: 'hosted-mcp', entryId: 'linear' });
+    expect(metas.linear.readiness()).toEqual({ available: true });
+    // The half that makes the catalogue's per-entry connection filter load-bearing:
+    // a github-app row has no entry, so the filter cannot scope it.
+    expect(metas.github.connectionType).toBe('github-app');
+    expect(metas.github.entryId).toBeUndefined();
+  });
+
+  test('a pre-registered entry is not offered until both instance client values are configured', () => {
+    const entry = { ...ENTRY, id: 'google-calendar', client: 'pre-registered' };
+    const noConfig = toolInstallableMetas([entry], {});
+    expect(noConfig['google-calendar'].readiness()).toEqual({ available: false, reason: 'not_configured' });
+
+    const idOnly = toolInstallableMetas([entry], { GOOGLE_CALENDAR_CLIENT_ID: 'google-client' });
+    expect(idOnly['google-calendar'].readiness()).toEqual({ available: false, reason: 'not_configured' });
+
+    const blankValues = toolInstallableMetas([entry], {
+      GOOGLE_CALENDAR_CLIENT_ID: '   ',
+      GOOGLE_CALENDAR_CLIENT_SECRET: '   ',
+    });
+    expect(blankValues['google-calendar'].readiness()).toEqual({ available: false, reason: 'not_configured' });
+
+    const configured = toolInstallableMetas([entry], {
+      GOOGLE_CALENDAR_CLIENT_ID: 'google-client',
+      GOOGLE_CALENDAR_CLIENT_SECRET: 'instance-secret',
+    });
+    expect(configured['google-calendar'].readiness()).toEqual({ available: true });
+  });
+
+  test('the shipped Calendar catalogue projection is unavailable without instance credentials', () => {
+    const metas = toolInstallableMetas(HOSTED_MCP_ENTRIES, {});
+    expect(metas['google-calendar']).toMatchObject({
+      connectionType: 'hosted-mcp',
+      entryId: 'google-calendar',
+    });
+    expect(metas['google-calendar'].readiness()).toEqual({ available: false, reason: 'not_configured' });
+  });
+
+  test('a hosted entry cannot shadow the builtin GitHub Installable meta', () => {
+    expect(() => toolInstallableMetas([{ ...LINEAR_ENTRY, id: 'github' }]))
+      .toThrow(/collides with a builtin tool installable: github/);
+  });
+});

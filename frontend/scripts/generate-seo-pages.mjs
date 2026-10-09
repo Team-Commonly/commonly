@@ -158,10 +158,10 @@ const renderGuideProvenance = (guide) => {
 
 const renderLanding = (landing, useCases, guides) => {
   const featureCards = [
-    landing.features.pods,
+    landing.features.needs,
     landing.features.team,
-    landing.features.dm,
-    landing.features.identity,
+    landing.features.connectors,
+    landing.features.byo,
   ].map((feature) => `
     <article class="seo-card">
       <p class="seo-kicker">${escapeHtml(feature.kicker)}</p>

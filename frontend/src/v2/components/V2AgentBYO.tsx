@@ -35,7 +35,11 @@ const DEFAULT_POD_TYPE = 'chat';
 // 0.1.9 — a machine with an older global install must upgrade, not skip the
 // line because the binary already resolves.
 const CLI_INSTALL_COMMAND = 'npm i -g @commonlyai/cli@latest';
-const CLI_INIT_COMMAND = 'commonly agent init --name <n> --pod <podId>';
+// `--language` is a requiredOption of `agent init` (python is the only value),
+// so the command exits 1 without it. This footnote is the first thing a
+// stranger copies from the page the docs now send them to; it carried the
+// flagless form until 2026-10-09 and one real user hit the exit (#2095).
+const CLI_INIT_COMMAND = 'commonly agent init --language python --name <n> --pod <podId>';
 const MEMORY_FILE_NAME = 'MEMORY.md';
 const AGENT_KIND = 'agent' as const;
 const HOSTED_STATUS_POLL_MS = 4000;
@@ -132,6 +136,10 @@ const V2AgentBYO: React.FC = () => {
   // daemon on the chosen machine adopts, provisions, and starts the agent.
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [machineId, setMachineId] = useState<string>('');
+  // One lookup, two readers (TASK-163): the preview note and the placement
+  // payload must name the SAME machine, so it is derived once here rather
+  // than restated at each call site.
+  const selectedMachineName = machines.find((m) => m.machineId === machineId)?.name || machineId;
   // Model choice for the on-my-computer path. Aliases, not version-pinned
   // ids: the seat runs on the USER's own CLI install, whose model ids move —
   // 'opus'/'sonnet'/'haiku' stay valid across releases. Empty = the
@@ -283,10 +291,14 @@ const V2AgentBYO: React.FC = () => {
   // turns this page from a form into a decision about a teammate.
   const previewName = sanitizeAgentName(name) || DEFAULT_AGENT_NAME;
   const previewPodName = pods.find((p) => p._id === (hosted?.podId || issued?.podId || podId))?.name || '';
-  const previewStatus: 'draft' | 'starting' | 'live' = (() => {
+  const previewStatus: 'draft' | 'waiting' | 'starting' | 'live' = (() => {
     if (hosted) return hostedState === 'running' ? 'live' : 'starting';
     if (placed) return placedState === 'running' ? 'live' : 'starting';
-    return issued && listenState === 'listening' ? 'live' : 'draft';
+    // A token has been issued and the agent has not checked in yet. That is not
+    // 'draft' — the install succeeded, and the page says so beside this rail.
+    // A timeout reads the same way: still waiting, not un-created.
+    if (!issued) return 'draft';
+    return listenState === 'listening' ? 'live' : 'waiting';
   })();
   const previewDisplayName = hosted?.agentName || placed?.agentName || issued?.agentName || previewName;
 
@@ -364,7 +376,7 @@ const V2AgentBYO: React.FC = () => {
       setPlaced({
         agentName: cleanName,
         machineId,
-        machineName: machines.find((m) => m.machineId === machineId)?.name || machineId,
+        machineName: selectedMachineName,
       });
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
@@ -602,11 +614,6 @@ const V2AgentBYO: React.FC = () => {
           </div>
         </div>
       )}
-      {!issued && !hosted && !personaCard && (
-        <div className="v2-byo__persona v2-byo__persona--none" data-testid="byo-persona-none">
-          <span>{t('agentByo.persona.none')}</span>
-        </div>
-      )}
       {!issued && !hosted && !placed && (
         <div className="v2-byo__form">
           {(hosting?.configured || machines.length > 0) && (
@@ -794,7 +801,7 @@ const V2AgentBYO: React.FC = () => {
             })}
           </p>
           <p
-            className={hostedState === 'running' ? 'v2-byo__memory-done' : 'v2-byo__listen-note'}
+            className={hostedState === 'running' ? 'v2-byo__live' : 'v2-byo__listen-note'}
             data-testid={`byo-hosted-${hostedState}`}
           >
             {t(`agentByo.hosted.${hostedState}`, { name: hosted.agentName })}
@@ -839,31 +846,37 @@ const V2AgentBYO: React.FC = () => {
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
               <span>{t('agentByo.snippets.runtimeToken')}</span>
+            </div>
+            <div className="v2-byo__command">
+              <pre className="v2-byo__pre">{issued.token}</pre>
               <button type="button" onClick={() => copy('tok', issued.token)} className="v2-byo__copy">
                 {copied === 'tok' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
               </button>
             </div>
-            <pre className="v2-byo__pre">{issued.token}</pre>
           </div>
 
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
               <span>{t('agentByo.snippets.claudeCode')}</span>
+            </div>
+            <div className="v2-byo__command">
+              <pre className="v2-byo__pre">{claudeSnippet}</pre>
               <button type="button" onClick={() => copy('claude', claudeSnippet)} className="v2-byo__copy">
                 {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
               </button>
             </div>
-            <pre className="v2-byo__pre">{claudeSnippet}</pre>
           </div>
 
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
               <span>{t('agentByo.snippets.cursor')}</span>
+            </div>
+            <div className="v2-byo__command">
+              <pre className="v2-byo__pre">{cursorSnippet}</pre>
               <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">
                 {copied === 'cursor' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
               </button>
             </div>
-            <pre className="v2-byo__pre">{cursorSnippet}</pre>
           </div>
 
           {/*
@@ -877,6 +890,10 @@ const V2AgentBYO: React.FC = () => {
           <div className="v2-byo__snippet v2-byo__snippet--listen">
             <div className="v2-byo__snippet-head">
               <span>{t('agentByo.listen.title')}</span>
+            </div>
+            <p className="v2-byo__listen-body">{t('agentByo.listen.body')}</p>
+            <div className="v2-byo__command">
+              <pre className="v2-byo__pre">{listenSnippet}</pre>
               <button
                 type="button"
                 onClick={() => copy('listen', listenSnippet)}
@@ -885,10 +902,8 @@ const V2AgentBYO: React.FC = () => {
                 {copied === 'listen' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
               </button>
             </div>
-            <p className="v2-byo__listen-body">{t('agentByo.listen.body')}</p>
-            <pre className="v2-byo__pre">{listenSnippet}</pre>
             {listenState === 'listening' ? (
-              <p className="v2-byo__memory-done" data-testid="byo-listen-ok">
+              <p className="v2-byo__live" data-testid="byo-listen-ok">
                 {t('agentByo.listen.verified', { name: issued.agentName })}
               </p>
             ) : (
@@ -992,7 +1007,14 @@ const V2AgentBYO: React.FC = () => {
           </div>
         </div>
         <p className="v2-byo__preview-note">
-          {mode === 'hosted' ? t('agentByo.preview.noteHosted') : t('agentByo.preview.noteByo')}
+          {mode === 'hosted'
+            ? t('agentByo.preview.noteHosted')
+            : mode === 'machine'
+              // "On my computer" issues no runtime token — the daemon on the
+              // chosen machine starts the seat. Saying "token" here described
+              // the wrong path (TASK-163, found drawing README frame 5).
+              ? t('agentByo.preview.noteMachine', { machine: selectedMachineName })
+              : t('agentByo.preview.noteByo')}
         </p>
       </aside>
       </div>

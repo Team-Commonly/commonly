@@ -8,6 +8,8 @@ const auth = require('../../middleware/auth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const adminAuth = require('../../middleware/adminAuth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const Pod = require('../../models/Pod');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AuditLog = require('../../models/AuditLog');
@@ -24,6 +26,7 @@ const adminPodsRateLimit = rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
   skip: () => process.env.NODE_ENV === 'test',
   handler: (_req: any, res: any) => res.status(429).json({ error: 'rate_limited' }),
 });

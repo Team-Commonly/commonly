@@ -3,6 +3,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
 const AgentTemplate = require('../../models/AgentTemplate');
@@ -10,6 +11,14 @@ const Activity = require('../../models/Activity');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
+// The refusal is identified by its declared code, not `instanceof`: this module
+// is `require`d (so the class is untyped and `instanceof` cannot narrow the
+// caught value), and a test that mocks the identity service drops the class
+// entirely — which made the catch itself throw. The default keeps the literal
+// correct even when the export is missing; the service owns the value.
+const { AGENT_USERNAME_CONFLICT_CODE = 'agent_username_conflict' } = require('../../services/agentIdentityService') as {
+  AGENT_USERNAME_CONFLICT_CODE?: string;
+};
 const AgentMessageService = require('../../services/agentMessageService');
 const { deriveAgentState } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
@@ -30,6 +39,7 @@ const {
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
 } = require('./tokens');
+const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 
 // Inlined per-route limiter. This comment used to attribute its clean CodeQL
 // status to `js/missing-rate-limiting` "only seeing express-rate-limit calls
@@ -49,6 +59,7 @@ const installRateLimit = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
   skip: () => process.env.NODE_ENV === 'test',
   handler: (_req: any, res: any) => res.status(429).json({
     message: 'rate limit exceeded: 30 install requests per 60s',
@@ -322,6 +333,25 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     }
 
     const installConfig = normalizeConfigMap(config) || {};
+    // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is the OTHER
+    // backend writer of `config.environment` — the first is the agent-config
+    // PATCH — and it stores the body's config unchecked. Same rule, same
+    // refusal, same code, so a caller can branch on one thing.
+    //
+    // `installConfig` is checked because it is what will be stored
+    // (`AgentInstallation.install` below takes it as `config`);
+    // `normalizeConfigMap` is a passthrough for a plain object. It runs here,
+    // before any of the work between this line and the install call, because a
+    // refusal that arrives after the side effect is a report rather than a
+    // refusal.
+    const environmentErrors = validateEnvironmentMcpEntries(installConfig.environment);
+    if (environmentErrors.length) {
+      return res.status(400).json({
+        error: 'Invalid environment spec',
+        code: 'invalid_environment_spec',
+        fields: environmentErrors,
+      });
+    }
     const runtimeConfig = typeof installConfig.runtime === 'object' && installConfig.runtime
       ? { ...installConfig.runtime }
       : {};
@@ -529,50 +559,9 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       effectiveDisplayName = agent.displayName;
     }
 
-    const installation = await AgentInstallation.install(agentName, podId, {
-      version: version || agent.latestVersion,
-      config: installConfig,
-      scopes: grantedScopes,
-      installedBy: userId,
-      instanceId: normalizedInstanceId,
-      displayName: effectiveDisplayName,
-    });
-
-    // Use upsert by the natural key (podId + agentId) so reinstalling
-    // over a stale row left behind by raw status='uninstalled' updates
-    // doesn't duplicate-key-error out. Identity continuity (ADR-001
-    // §3) wants the AgentInstallation reactivated; the AgentProfile
-    // should be refreshed in place, not re-created.
-    await AgentProfile.findOneAndUpdate(
-      { podId, agentId: buildAgentProfileId(safeAgentName, normalizedInstanceId) },
-      {
-        // setDefaultsOnInsert fires on insert only, so stats /
-        // integrations / modelPreferences keep their existing values
-        // across re-installs — what we want for identity continuity.
-        $set: {
-          agentName: safeAgentName,
-          instanceId: normalizedInstanceId,
-          name: effectiveDisplayName,
-          purpose: agent.description,
-          instructions: agent.manifest.configSchema?.defaultInstructions || '',
-          persona: {
-            tone: 'friendly',
-            specialties: agent.manifest.capabilities?.map((c: any) => c.name) || [],
-          },
-          toolPolicy: {
-            allowed: grantedScopes.filter((s: any) => s.includes(':')).map((s: any) => s.split(':')[0]),
-          },
-          // Force back to active — a previous admin action or partial
-          // uninstall may have left the profile paused/archived.
-          status: 'active',
-        },
-        $setOnInsert: {
-          createdBy: userId,
-        },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
-
+    // Identity before the installation row (TASK-133 b): a refused identity must
+    // not leave an AgentInstallation behind, and that refusal is the one error in
+    // this block that is not best-effort. Probed first, a 409 writes nothing.
     try {
       // Task #62: don't clobber a curated per-instance displayName with the
       // AgentRegistry's default. When installing a NEW pod for an EXISTING
@@ -617,8 +606,63 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       });
       await AgentIdentityService.ensureAgentInPod(agentUser, podId);
     } catch (identityError: unknown) {
+      // A refusal is not a best-effort failure (TASK-133 b, wren 73987/73988):
+      // swallowing it would answer 2xx and leave an AgentInstallation row with
+      // no identity behind it. Every other identity failure stays best-effort.
+      const refusal = identityError as { code?: string; message?: string; username?: string };
+      if (refusal?.code === AGENT_USERNAME_CONFLICT_CODE) {
+        return res.status(409).json({
+          error: refusal.message,
+          code: refusal.code,
+          username: refusal.username,
+        });
+      }
       console.warn('Failed to provision agent user identity:', (identityError as Error).message);
     }
+
+    const installation = await AgentInstallation.install(agentName, podId, {
+      version: version || agent.latestVersion,
+      config: installConfig,
+      scopes: grantedScopes,
+      installedBy: userId,
+      instanceId: normalizedInstanceId,
+      displayName: effectiveDisplayName,
+    });
+
+    // Use upsert by the natural key (podId + agentId) so reinstalling
+    // over a stale row left behind by raw status='uninstalled' updates
+    // doesn't duplicate-key-error out. Identity continuity (ADR-001
+    // §3) wants the AgentInstallation reactivated; the AgentProfile
+    // should be refreshed in place, not re-created.
+    await AgentProfile.findOneAndUpdate(
+      { podId, agentId: buildAgentProfileId(safeAgentName, normalizedInstanceId) },
+      {
+        // setDefaultsOnInsert fires on insert only, so stats /
+        // integrations / modelPreferences keep their existing values
+        // across re-installs — what we want for identity continuity.
+        $set: {
+          agentName: safeAgentName,
+          instanceId: normalizedInstanceId,
+          name: effectiveDisplayName,
+          purpose: agent.description,
+          instructions: agent.manifest.configSchema?.defaultInstructions || '',
+          persona: {
+            tone: 'friendly',
+            specialties: agent.manifest.capabilities?.map((c: any) => c.name) || [],
+          },
+          toolPolicy: {
+            allowed: grantedScopes.filter((s: any) => s.includes(':')).map((s: any) => s.split(':')[0]),
+          },
+          // Force back to active — a previous admin action or partial
+          // uninstall may have left the profile paused/archived.
+          status: 'active',
+        },
+        $setOnInsert: {
+          createdBy: userId,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
 
     // First contact belongs to the durable human↔agent relationship, not the
     // replaceable installation row. Best-effort by design: neither a marker

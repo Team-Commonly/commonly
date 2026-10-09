@@ -5,14 +5,30 @@
 // predicate is enforced HERE from the daemon credential's server-side
 // machineId — never from a caller-supplied value.
 import express from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
+import { GRANT_BROKER_ID, GRANT_BROKER_URL } from '../services/installable/toolInstallables';
+import { GrantBrokerRefusal, grantBrokerRefusal } from '../services/grantBrokerConfinement';
+import {
+  grantBrokerServer,
+  selectLiveGrantsForIdentities,
+} from '../services/grantBrokerProjectionService';
+import {
+  projectSeatEnvironments,
+  seatEnvironmentKey,
+} from '../services/seatEnvironmentProjection';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const {
+  getRuntimeTokenHashesForAgent,
+  revokeRuntimeTokensForAgent,
+} = require('./registry/tokens');
 
 const router = express.Router();
 
@@ -26,7 +42,7 @@ const bindingRateLimit = rateLimit({
     if (authHeader) {
       return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
     res.status(429).json({ msg: 'rate limit exceeded: 120 binding ops per 60s' });
@@ -34,84 +50,91 @@ const bindingRateLimit = rateLimit({
 });
 
 const normalize = (v: unknown): string => String(v ?? '').trim().toLowerCase();
+const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
 
-// The daemon needs the driver-neutral ADR-008 shape, but its bearer must not
-// become a read-all projection of an installation's opaque config. Keep this
-// allow-list aligned with environment.js and discard future/accidental keys at
-// the server boundary. MCP env values are declarations (usually placeholders);
-// provider secrets remain out-of-band per ADR-008. Only exact placeholder
-// values that the local adapters resolve are retained; literal MCP env values
-// must never cross the daemon-token boundary. Command and URL fields remain
-// declarative inputs and are intentionally outside this env-value filter.
-const MCP_PLACEHOLDERS = new Set([
-  '${COMMONLY_AGENT_TOKEN}',
-  '${COMMONLY_API_URL}',
-  '${COMMONLY_INSTANCE_URL}',
-]);
 
-const projectMcpEnv = (raw: unknown, serverName: string): Record<string, string> | null => {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const projected: Record<string, string> = {};
-  for (const [key, value] of Object.entries(raw)) {
-    if (typeof value === 'string' && MCP_PLACEHOLDERS.has(value)) {
-      projected[key] = value;
-    } else if (typeof value === 'string' && value.includes('${COMMONLY_')) {
-      // Adapters resolve placeholders embedded in command/URL-like values,
-      // but env projections deliberately accept only a placeholder by itself.
-      // Warn without logging the value so an operator can repair the spec.
-      console.warn('[agent-binding] dropped MCP env placeholder declaration', {
-        server: serverName,
-        key,
-      });
-    }
-  }
-  return Object.keys(projected).length ? projected : null;
-};
+type AssignedIdentity = { _id?: unknown; botMetadata?: Record<string, unknown> };
+type AssignmentEntry = { podIds: string[]; environment: Record<string, unknown> | null; runtime?: unknown };
 
-const projectEnvironment = (raw: unknown): Record<string, unknown> | null => {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const source = raw as Record<string, any>;
-  const projected: Record<string, any> = {};
-  const pick = (value: unknown, keys: string[]) => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    const picked: Record<string, unknown> = {};
-    for (const key of keys) {
-      if ((value as Record<string, unknown>)[key] !== undefined) {
-        picked[key] = (value as Record<string, unknown>)[key];
+/**
+ * Project live room grants into a daemon assignment. Grants are capabilities,
+ * not installation config: querying them means revoke and expiry take effect on
+ * the next daemon poll without rewriting every AgentInstallation. Which grants
+ * a seat has is not decided here — `selectLiveGrantsForIdentities` owns that
+ * predicate and the hosted run path (TASK-132) asks the same question, so a
+ * seat cannot be handed a capability one path projects and the other withholds.
+ * What stays here is the daemon's own shape: the environment-confined refusal
+ * and the MCP server naming.
+ *
+ * The grant is external reach, so it is only injected into an environment that
+ * can confine it: a seat whose declaration no host would confine gets NO
+ * broker servers and a typed refusal instead (TASK-063 — fail closed rather
+ * than hand a seat a capability it cannot be held to). The refusal is a
+ * top-level field on the assignment row, never inside `environment`, because
+ * that object is spec-validated and handed to the adapter as-is.
+ */
+type IdentityGrantProjection = { servers: Record<string, unknown>[]; refusal: GrantBrokerRefusal | null };
+const grantServersForIdentities = async (
+  identities: AssignedIdentity[],
+  entries: Map<string, AssignmentEntry>,
+): Promise<Map<string, IdentityGrantProjection>> => {
+  const identityIds = identities
+    .map((identity) => String(identity._id || ''))
+    .filter(Boolean);
+  if (!identityIds.length) return new Map();
+
+  // One predicate for both delivery paths (TASK-132): the daemon projects for
+  // every pod the seat is installed in, and a hosted run passes only its own
+  // pod. Neither path decides for itself what "live, audience, target" means.
+  const liveGrants = await selectLiveGrantsForIdentities({
+    identityIds,
+    podIds: Array.from(new Set(Array.from(entries.values()).flatMap((entry) => entry.podIds))),
+  });
+  if (!liveGrants.size) return new Map();
+
+  const output = new Map<string, IdentityGrantProjection>();
+  for (const identityId of identityIds) {
+    const grants = liveGrants.get(identityId) || [];
+    const entry = identities
+      .find((identity) => String(identity._id || '') === identityId);
+    const meta = entry?.botMetadata || {};
+    const key = `${normalize(meta.agentName)}\0${normalize(meta.instanceId) || 'default'}`;
+    const assigned = entries.get(key);
+    if (!assigned) continue;
+    const existingMcp = Array.isArray(assigned.environment?.mcp) ? assigned.environment.mcp : [];
+    const usedNames = new Set(
+      existingMcp
+        // The builtin component is a template only; once a live grant exists,
+        // replace that placeholder entry with the grant-specific URL below.
+        .filter((server: Record<string, unknown>) => !(
+          server?.name === GRANT_BROKER_ID && server?.url === GRANT_BROKER_URL
+        ))
+        .map((server: Record<string, unknown>) => server?.name)
+        .filter((name: unknown): name is string => typeof name === 'string'),
+    );
+    const refusal = grantBrokerRefusal(assigned.environment, assigned.runtime);
+    const servers: Record<string, unknown>[] = [];
+    let refused = false;
+    for (const grant of grants) {
+      const grantId = typeof grant.grantId === 'string' ? grant.grantId : '';
+      if (!grantId) continue;
+      if (refusal) {
+        // The grant is live and applies to this seat; the seat cannot be held
+        // to it, so it is withheld rather than projected unenforced.
+        refused = true;
+        continue;
       }
+
+      let serverName = GRANT_BROKER_ID;
+      if (usedNames.has(serverName)) serverName = `${GRANT_BROKER_ID}-${grantId}`;
+      usedNames.add(serverName);
+      servers.push(grantBrokerServer(grantId, serverName));
     }
-    return Object.keys(picked).length ? picked : null;
-  };
-  for (const key of ['version', 'model', 'effort']) {
-    if (source[key] !== undefined) projected[key] = source[key];
+    if (servers.length || refused) {
+      output.set(identityId, { servers, refusal: refused ? refusal : null });
+    }
   }
-  const workspace = pick(source.workspace, ['path', 'seed']);
-  if (workspace) projected.workspace = workspace;
-  const sandbox = pick(source.sandbox, ['mode', 'trust']);
-  if (sandbox) projected.sandbox = sandbox;
-  const network = pick(source.sandbox?.network, ['policy', 'allow-hosts']);
-  if (network) projected.sandbox = { ...(projected.sandbox || {}), network };
-  const filesystem = pick(source.sandbox?.filesystem, ['read-outside', 'write-outside']);
-  if (filesystem) projected.sandbox = { ...(projected.sandbox || {}), filesystem };
-  const skills = pick(source.skills, ['claude', 'commonly']);
-  if (skills) projected.skills = skills;
-  if (Array.isArray(source.mcp)) {
-    const mcp = source.mcp
-      .filter((server: any) => server && typeof server === 'object' && !Array.isArray(server))
-      .map((server: Record<string, any>) => {
-        const entry: Record<string, unknown> = {};
-        for (const key of ['name', 'transport', 'url', 'command']) {
-          if (server[key] !== undefined) entry[key] = server[key];
-        }
-        const serverName = typeof server.name === 'string' ? server.name : 'unknown';
-        const env = projectMcpEnv(server.env, serverName);
-        if (env) entry.env = env;
-        return entry;
-      })
-      .filter((server: Record<string, unknown>) => Object.keys(server).length);
-    if (mcp.length) projected.mcp = mcp;
-  }
-  return Object.keys(projected).length ? projected : null;
+  return output;
 };
 
 // Ownership predicate — SOLE-INSTALLER (Vera's ruling on #1315). Two clauses,
@@ -142,11 +165,11 @@ const ownsAgent = async (
   const { AgentInstallation } = require('../models/AgentRegistry');
   const mine = await AgentInstallation.findOne({
     agentName, instanceId, installedBy: ownerUserId, status: 'active',
-  }).select('_id').lean();
+  }).collation(RUNTIME_INSTALLATION_COLLATION).select('_id').lean();
   if (!mine) return { owned: false, failure: 'owner_installation_missing' };
   const others = await AgentInstallation.findOne({
     agentName, instanceId, status: 'active', installedBy: { $ne: ownerUserId },
-  }).select('installedBy').lean();
+  }).collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy').lean();
   if (!others) return { owned: true };
   // MongoDB $ne also matches a missing field. Keep that legacy state safely
   // non-adoptable, but report it separately so an owner can repair it.
@@ -263,30 +286,10 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
   try {
     const machine = req.machine!;
     if (!machine.machineId) return res.status(400).json({ message: 'Daemon credential carries no machineId' });
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { AgentInstallation } = require('../models/AgentRegistry');
-    const installs = await AgentInstallation.find({ installedBy: machine.ownerUserId, status: 'active' })
-      .select('agentName instanceId podId config').lean();
-    if (!installs.length) return res.json({ agents: [] });
-
-    const byIdentity = new Map<string, { agentName: string; instanceId: string; podIds: string[]; runtime: unknown; environment: unknown }>();
-    for (const install of installs) {
-      const agentName = normalize(install.agentName);
-      const instanceId = normalize(install.instanceId) || 'default';
-      const key = `${agentName} ${instanceId}`;
-      // AgentInstallation.config is a Mongoose Map; lean() yields a plain
-      // object, but stay defensive about both shapes.
-      const config = install.config instanceof Map
-        ? Object.fromEntries(install.config)
-        : (install.config || {});
-      const entry = byIdentity.get(key) || {
-        agentName, instanceId, podIds: [], runtime: null, environment: null,
-      };
-      if (install.podId) entry.podIds.push(String(install.podId));
-      if (!entry.runtime && config.runtime) entry.runtime = config.runtime;
-      if (!entry.environment && config.environment) entry.environment = projectEnvironment(config.environment);
-      byIdentity.set(key, entry);
-    }
+    // The projection is shared with the grant read (TASK-063): one definition
+    // of what a seat receives, so the read cannot disagree with the daemon.
+    const byIdentity = await projectSeatEnvironments({ installedBy: machine.ownerUserId });
+    if (!byIdentity.size) return res.json({ agents: [] });
 
     const identities = await User.find({
       isBot: true,
@@ -294,22 +297,45 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
         { 'botMetadata.machineId': machine.machineId },
         { 'botMetadata.requestedMachineId': machine.machineId },
       ],
-    }).select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId botMetadata.requestedMachineId').lean();
+    }).select('_id botMetadata.agentName botMetadata.instanceId botMetadata.machineId botMetadata.requestedMachineId').lean() as AssignedIdentity[];
 
-    const agents = identities.flatMap((identity: { botMetadata?: Record<string, unknown> }) => {
+    const grantServers = await grantServersForIdentities(identities, byIdentity);
+
+    const agents = identities.flatMap((identity: AssignedIdentity) => {
       const meta = identity.botMetadata || {};
-      const key = `${normalize(meta.agentName)} ${normalize(meta.instanceId) || 'default'}`;
+      const key = seatEnvironmentKey(meta.agentName, meta.instanceId);
       const entry = byIdentity.get(key);
       // An identity outside the owner's installation set (shared, or another
       // user's) never appears in this daemon's work list.
       if (!entry) return [];
+      const agentId = String(identity._id || '');
+      const grantProjection = grantServers.get(agentId);
+      const brokerServers = grantProjection?.servers || [];
+      const environment = entry.environment
+        ? {
+          ...entry.environment,
+          ...(brokerServers.length
+            ? {
+              mcp: [
+                ...(Array.isArray(entry.environment.mcp) ? entry.environment.mcp : [])
+                  .filter((server: any) => !brokerServers.some((broker) => broker.name === server?.name)),
+                ...brokerServers,
+              ],
+            }
+            : {}),
+        }
+        : (brokerServers.length ? { mcp: brokerServers } : null);
       return [{
         agentName: entry.agentName,
         instanceId: entry.instanceId,
         state: meta.machineId === machine.machineId ? 'bound' : 'requested',
         podIds: entry.podIds,
         runtime: entry.runtime,
-        ...(entry.environment ? { environment: entry.environment } : {}),
+        ...(environment ? { environment } : {}),
+        // Why a live grant is not on this row, for the daemon that would
+        // otherwise have to guess: server-side refusals only (a daemon-side
+        // refusal is a separate reporting channel, TASK-063).
+        ...(grantProjection?.refusal ? { grantBrokerRefusal: grantProjection.refusal } : {}),
       }];
     });
     return res.json({ agents });
@@ -351,9 +377,14 @@ router.post('/runtime-token', bindingRateLimit, daemonAuth('agents:adopt'), asyn
       });
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const AgentCredential = require('../models/AgentCredential');
-    const hasToken = (agentUser.agentRuntimeTokens || []).length > 0;
+    // Runtime auth accepts both the portable User row and legacy installation
+    // copies. Count both stores before deciding whether rotate is required.
+    const runtimeTokenHashes = await getRuntimeTokenHashesForAgent({
+      agentUser,
+      agentName,
+      instanceId,
+    });
+    const hasToken = runtimeTokenHashes.length > 0;
     if (hasToken && req.body?.rotate !== true) {
       return res.status(409).json({
         message: 'Agent already has a runtime token — pass rotate:true to invalidate it and mint one for this machine',
@@ -361,20 +392,11 @@ router.post('/runtime-token', bindingRateLimit, daemonAuth('agents:adopt'), asyn
       });
     }
     if (hasToken) {
-      // Rotation must be total: revoke the ledger rows AND clear both legacy
-      // stores (User + installation copies), or the old bearer keeps working
-      // through the legacy auth fallback.
-      const hashes = (agentUser.agentRuntimeTokens || []).map((t: { tokenHash: string }) => t.tokenHash);
-      await AgentCredential.updateMany(
-        { tokenHash: { $in: hashes }, kind: 'runtime' },
-        { $set: { status: 'revoked', revokedAt: new Date() } },
-      );
-      agentUser.agentRuntimeTokens = [];
-      await agentUser.save();
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { AgentInstallation } = require('../models/AgentRegistry');
-      await AgentInstallation.updateMany({ agentName, instanceId }, { $set: { runtimeTokens: [] } });
+      await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId });
     }
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const AgentCredential = require('../models/AgentCredential');
 
     // req.machine is deliberately a minimal projection (Vera's S1 ruling), so
     // re-derive the issuing daemon credential for parent lineage.

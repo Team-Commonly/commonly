@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { ActGlyph, KindGlyph } from '../icons/glyphs';
 import { AuthContext } from '../../context/AuthContext';
 import { ATTENTION_CHANGED, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 
@@ -31,11 +32,6 @@ const shortPodName = (name: string): string => (
   (name || '').trim().split(/\s*[·—–:|]\s*/)[0].trim() || (name || '').trim()
 ).toLowerCase();
 
-const actorMark = (name: string): string => {
-  const parts = name.trim().split(/[\s·-]+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  return parts.length === 1 ? parts[0].slice(0, 2).toUpperCase() : (parts[0][0] + parts[1][0]).toUpperCase();
-};
 
 interface NeedsYouItem {
   id: string;
@@ -1242,11 +1238,13 @@ const V2ActivityPage: React.FC = () => {
               <div className="v2-activity__queue">
                 {visibleQueue.map((item) => (
                   <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
-                    <span className={`v2-activity__queue-mark${item.actorName ? (isAgentActor(item) ? ' v2-activity__queue-mark--agent' : ' v2-activity__queue-mark--human') : ''}`} aria-hidden="true">
-                      {item.actorName ? actorMark(item.actorName) : item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : item.kind === 'handoff' ? '↗' : '?'}
+                    {/* The kind is a category, so it is a mark (Sam 2026-09-11, direction A); the word stays for
+                        assistive tech. The mark's colour still says who is asking: an agent is cobalt. */}
+                    <span className={`v2-activity__queue-mark${item.actorName ? (isAgentActor(item) ? ' v2-activity__queue-mark--agent' : ' v2-activity__queue-mark--human') : ''}`} role="img" aria-label={t(`activity.needsYou.kinds.${item.kind}`)} title={t(`activity.needsYou.kinds.${item.kind}`)}>
+                      <KindGlyph kind={item.kind} />
                     </span>
                     <div className="v2-activity__queue-copy">
-                      <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)} · {shortPodName(item.podName)}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</div>
+                      <div className="v2-activity__queue-kind">{shortPodName(item.podName)}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</div>
                       <div className="v2-activity__queue-topline">
                         <strong>{item.kind === 'mention' && item.actorName ? item.actorName : item.title}</strong>
                       </div>
@@ -1258,8 +1256,8 @@ const V2ActivityPage: React.FC = () => {
                           <button type="button" onClick={() => actOnApproval(item, 'approve')} disabled={actingApprovalId === item.id}>
                             {actingApprovalId === item.id ? t('activity.approval.working') : t('activity.approval.approve')}
                           </button>
-                          <button type="button" className="v2-activity__queue-action--secondary" onClick={() => actOnApproval(item, 'reject')} disabled={actingApprovalId === item.id}>
-                            {t('activity.approval.deny')}
+                          <button type="button" className="v2-activity__queue-action--secondary v2-activity__queue-action--icon" aria-label={t('activity.approval.deny')} title={t('activity.approval.deny')} onClick={() => actOnApproval(item, 'reject')} disabled={actingApprovalId === item.id}>
+                            <ActGlyph name="deny" />
                           </button>
                         </>
                       )}
@@ -1269,8 +1267,8 @@ const V2ActivityPage: React.FC = () => {
                             <textarea aria-label={t('activity.reply.placeholder')} className="v2-activity__reply-input" rows={2} placeholder={t('activity.reply.placeholder')} value={replyDrafts[item.id] || ''} onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }} disabled={replyingId === item.id} />
                             <button type="button" onClick={() => sendReply(item)} disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}>{replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}</button>
                           </div>}
-                          <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => acknowledgeMention(item)} disabled={acknowledgingAttentionId === item.id}>
-                            {acknowledgingAttentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')}
+                          <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered v2-activity__queue-action--icon" aria-label={acknowledgingAttentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')} title={t('activity.mention.markHandled')} onClick={() => acknowledgeMention(item)} disabled={acknowledgingAttentionId === item.id}>
+                            <ActGlyph name="handled" />
                           </button>
                         </>
                       )}
@@ -1287,8 +1285,8 @@ const V2ActivityPage: React.FC = () => {
                                 {t('activity.decision.ruled', ruledDecisions[item.id])}
                               </span>
                               <div className="v2-activity__decision-footer">
-                                <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
-                                  {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
+                                <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered v2-activity__queue-action--icon" aria-label={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} title={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
+                                  <ActGlyph name="open" />
                                 </button>
                               </div>
                             </>
@@ -1349,8 +1347,8 @@ const V2ActivityPage: React.FC = () => {
                                     </button>
                                   </div>
                                 )}
-                                <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
-                                  {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
+                                <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered v2-activity__queue-action--icon" aria-label={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} title={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
+                                  <ActGlyph name="open" />
                                 </button>
                               </div>
                             </>
@@ -1358,8 +1356,8 @@ const V2ActivityPage: React.FC = () => {
                         </>
                       )}
                       {(item.kind !== 'decision' || (item.options || []).length === 0) && (
-                        <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
-                          {item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')}
+                        <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered v2-activity__queue-action--icon" aria-label={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} title={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
+                          <ActGlyph name="open" />
                         </button>
                       )}
                     </div>

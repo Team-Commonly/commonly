@@ -26,8 +26,11 @@ jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Pod', () => ({ find: jest.fn() }));
 jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { findOne: jest.fn(), find: jest.fn() } }));
+// TASK-124: the discord branch's fetch is asserted to receive the env token.
+jest.mock('../../../services/discordService', () => ({ fetchMessages: jest.fn() }));
 
 const Integration = require('../../../models/Integration');
+const DiscordService = require('../../../services/discordService');
 const router = require('../../../routes/agentsRuntime');
 
 const getRouteHandler = (path, method) => {
@@ -116,6 +119,82 @@ describe('agentsRuntime integration messages route', () => {
           author: '@alice',
         }),
       ],
+    });
+  });
+
+  // TASK-124: this route resolves the token itself, and it used to 400 when the
+  // row carried no copy - so a rotation would have looked like a Discord fault.
+  describe('discord: the token comes from the environment', () => {
+    const ENV_TOKEN = 'env-token-after-rotation';
+    const STORED_TOKEN = 'stored-token-from-before-rotation';
+    const savedEnv = process.env.DISCORD_BOT_TOKEN;
+
+    const discordRow = (config = {}) => ({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'discord-1',
+        type: 'discord',
+        config: {
+          agentAccessEnabled: true,
+          globalAgentAccess: true,
+          channelId: '123456789012345679',
+          ...config,
+        },
+      }),
+    });
+
+    const call = async () => {
+      const handler = getRouteHandler('/pods/:podId/integrations/:integrationId/messages', 'get');
+      const req = {
+        params: { podId: 'pod-1', integrationId: 'discord-1' },
+        query: {},
+        agentInstallation: { podId: 'pod-1', scopes: ['integration:messages:read'] },
+        agentInstallations: [{ podId: 'pod-1', scopes: ['integration:messages:read'] }],
+      };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+      await handler(req, res);
+      return res;
+    };
+
+    afterEach(() => {
+      if (savedEnv === undefined) delete process.env.DISCORD_BOT_TOKEN;
+      else process.env.DISCORD_BOT_TOKEN = savedEnv;
+    });
+
+    it('fetches with the env token even when the row carries a stale copy', async () => {
+      process.env.DISCORD_BOT_TOKEN = ENV_TOKEN;
+      DiscordService.fetchMessages.mockResolvedValue([]);
+      Integration.findOne.mockReturnValue(discordRow({ botToken: STORED_TOKEN }));
+
+      const res = await call();
+
+      expect(DiscordService.fetchMessages).toHaveBeenCalledWith(
+        expect.objectContaining({ botToken: ENV_TOKEN, channelId: '123456789012345679' }),
+      );
+      expect(res.status).not.toHaveBeenCalledWith(400);
+    });
+
+    it('does not 400 a row that predates the copy being retired, when the env supplies the token', async () => {
+      process.env.DISCORD_BOT_TOKEN = ENV_TOKEN;
+      DiscordService.fetchMessages.mockResolvedValue([]);
+      Integration.findOne.mockReturnValue(discordRow());
+
+      const res = await call();
+
+      expect(DiscordService.fetchMessages).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalledWith(400);
+    });
+
+    it('refuses when neither the environment nor the row has a token', async () => {
+      delete process.env.DISCORD_BOT_TOKEN;
+      Integration.findOne.mockReturnValue(discordRow());
+
+      const res = await call();
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(DiscordService.fetchMessages).not.toHaveBeenCalled();
     });
   });
 });

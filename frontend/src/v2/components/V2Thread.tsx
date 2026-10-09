@@ -35,6 +35,10 @@ import {
 } from '../utils/threadAgentIdentity';
 
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
+// Same slot, different fact, so a pod can show both over a session: the hint
+// above needs an agent to name, and this row exists precisely because there is
+// none. Sharing one key would let either suppress the other.
+const NO_AGENTS_HINT_KEY = 'v2.noAgentsHint';
 const JUST_CREATED_POD_KEY = 'v2.justCreated';
 const AGENT_INVITE_TAB: V2InviteTab = 'agent';
 // A sent direct message is durable in the room, but it is not a reply. Give
@@ -240,6 +244,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     messageId: string;
     mentionHandle: string;
   } | null>(null);
+  // A send into a pod with no installed agent: the delivery hint below is
+  // deliberately gated on `agentsInPod > 0`, which is exactly the case this is
+  // for. Nothing was notified because nothing is here — say so, once.
+  const [noAgentsHint, setNoAgentsHint] = useState<{ messageId: string } | null>(null);
   const [awaitingAgentReply, setAwaitingAgentReply] = useState<AwaitingAgentReply | null>(null);
   const deliveryHintShownPodsRef = useRef<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -535,6 +543,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
 
   useEffect(() => {
     setAgentDeliveryHint(null);
+    // The no-agent row belongs to the pod it was earned in: carrying it into
+    // another pod would explain the wrong room.
+    setNoAgentsHint(null);
   }, [pod?._id]);
 
   useEffect(() => {
@@ -1132,8 +1143,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       const agentName = payload.agentName || payload.username;
       if (!agentName) return;
       // An agent typing in this pod falsifies "No agent was notified" — the
-      // hint must not sit above a landing reply (#914).
+      // hint must not sit above a landing reply (#914). It also means an agent
+      // exists, which is the one thing the no-agent row asserts the absence of.
       setAgentDeliveryHint(null);
+      setNoAgentsHint(null);
       const key = keyFor({ agentName, instanceId: payload.instanceId });
       scheduleAutoStop(key);
       setTypingAgents((prev) => {
@@ -1224,6 +1237,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const isAgentDm = pod.type === 'agent-dm';
   const isAgentRoom = pod.type === 'agent-room';
   const isReadOnly = isAgentDm && !isPodMember;
+  // Live counterpart of the server's `agentDelivery.agentsInPod` (active
+  // installations for this pod): the no-agent row must disappear the moment an
+  // agent joins, without waiting for a second send to re-measure.
+  const noAgentsInPodLive = !(agents || []).some((agent) => agent.status === 'active');
 
   // Bot-bot agent-dm — used to choose the "X and Y haven't talked yet" empty
   // state and to phrase the read-only banner appropriately.
@@ -1332,6 +1349,31 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
               // sessionStorage unavailable; the in-memory guard still works.
             }
             setAgentDeliveryHint({ messageId: created.id, mentionHandle });
+          }
+        } else if (
+          delivery
+          && delivery.agentsInPod === 0
+          // DM pods are excluded: both types have an agent by construction, and
+          // their empty states already explain who is missing.
+          && !isAgentDm
+          && !isAgentRoom
+          && onOpenInvite
+        ) {
+          const storageKey = `${NO_AGENTS_HINT_KEY}.${pod._id}`;
+          let alreadyShown = deliveryHintShownPodsRef.current.has(storageKey);
+          try {
+            alreadyShown = alreadyShown || sessionStorage.getItem(storageKey) === '1';
+          } catch {
+            // In-memory guard still prevents repeat rows in this mount.
+          }
+          if (!alreadyShown) {
+            deliveryHintShownPodsRef.current.add(storageKey);
+            try {
+              sessionStorage.setItem(storageKey, '1');
+            } catch {
+              // sessionStorage unavailable; the in-memory guard still works.
+            }
+            setNoAgentsHint({ messageId: created.id });
           }
         }
         setDraft('');
@@ -1583,6 +1625,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 </div>
             ) : undefined}
             agentDeliveryHint={agentDeliveryHint}
+            noAgentsHint={noAgentsInPodLive ? noAgentsHint : null}
+            onAddAgent={onOpenInvite ? () => onOpenInvite(AGENT_INVITE_TAB) : undefined}
             messagesContainerRef={messagesContainerRef}
             messagesEndRef={messagesEndRef}
           />

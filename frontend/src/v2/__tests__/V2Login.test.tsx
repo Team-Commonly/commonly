@@ -67,9 +67,13 @@ describe('V2 routing', () => {
     expect(document.querySelector('.v2-spinner')).not.toBeInTheDocument();
   });
 
-  test('login route renders v2 login form', () => {
+  test('login route renders v2 login form', async () => {
+    // /v2/login is its own chunk now (TASK-145): the form arrives a microtask
+    // after renderAt instead of with the entry. Same contract, awaited rather
+    // than assumed — the assertion is that it renders, not that it was already
+    // in the entry bundle.
     renderAt('/v2/login');
-    expect(screen.getByRole('heading', { name: /^Sign in$/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /^Sign in$/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
   });

@@ -1,38 +1,64 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
-import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
-import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
-import AlternateEmailOutlinedIcon from '@mui/icons-material/AlternateEmailOutlined';
-import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
-import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
-import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
-import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
-import PublicOutlinedIcon from '@mui/icons-material/PublicOutlined';
 import V2LangSwitch from '../components/V2LangSwitch';
+import DemoWorkspace from './DemoWorkspace';
 import '../v2.css';
 import './v2-landing.css';
+import './demo-workspace.css';
 
-import yourTeamImg from '../../assets/landing/your-team.png';
-import realEngineeringImg from '../../assets/landing/real-engineering.png';
-import agentDmImg from '../../assets/landing/agent-dm.png';
-import agentIdentityImg from '../../assets/landing/agent-identity.png';
+// The four feature frames are the README's frames, copied byte for byte: the
+// frontend build context cannot reach docs/, and a copy that drifts from its
+// source fails landingFrames.test.ts.
+import activityImg from '../../assets/landing/activity.png';
+import teamImg from '../../assets/landing/team.png';
+import connectorsImg from '../../assets/landing/connectors.png';
+import byoImg from '../../assets/landing/byo.png';
 
 // Public v2 landing. Positioning: the open-source workspace where your agents
 // and team share one memory — the open alternative to closed, per-seat /
 // per-agent workspaces. Strictly v2 design language (one accent, borders,
 // sentence case, no emoji in chrome); a marketing surface, so the deep-navy
-// hero band and the one allowed shadow on floating screenshot cards are in
-// bounds. Self-wraps in .v2-root so tokens apply wherever it mounts.
+// hero band is in bounds. Screenshot cards are flat like every other card: a
+// 1px border and radius 6, no window bar, no shadow (Landing.dc.html).
+// Self-wraps in .v2-root so tokens apply wherever it mounts.
 
 const REPO = 'https://github.com/Team-Commonly/commonly';
 const DISCORD_INVITE_URL = 'https://discord.gg/NsS3fzsJDw';
 const X_HANDLE = 'https://x.com/sam_commonly';
-const X_LABEL = '@sam_commonly';
-const SELF_HOST_COMMAND = 'git clone github.com/Team-Commonly/commonly && docker compose up';
-const ADR_COUNT = 15;
+// Kept identical to the README's Quick Start block (README.md, "Quick Start —
+// local installation"). The clone needs the scheme and a directory to enter
+// before install.sh runs; the earlier one-liner skipped both, so anyone who
+// pasted it got a bare clone and no started stack (TASK-152).
+const SELF_HOST_COMMAND = 'git clone https://github.com/Team-Commonly/commonly.git && cd commonly && ./install.sh';
+const ADR_COUNT = 30;
+// A count on a marketing page drifts silently: nothing on the page notices a
+// new ADR, and docs/ is outside this image's build context so the page cannot
+// count at build time. The TASK-167 row D test counts docs/adr/ADR-*.md and
+// compares it with the constant above, so the PR that adds an ADR is the one
+// that fails.
+/**
+ * The use-case row's arrow. Decorative — the row is already a link and its
+ * title carries the meaning — so it is aria-hidden and inherits the row's
+ * colour rather than carrying one of its own.
+ */
+const UseCaseArrow = () => (
+  <svg
+    className="v2-landing__usecase-arrow"
+    width={16}
+    height={16}
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="square"
+    aria-hidden="true"
+  >
+    <path d="M3 8h9M8.5 4.5L12 8l-3.5 3.5" />
+  </svg>
+);
 // Issue #708 records the provenance for every affiliation AND the source +
 // license of every logo file (Wikimedia PD-textlogo / official brand assets).
 // Keep this ordered list config-shaped so additions require an explicit,
@@ -51,15 +77,6 @@ const TRUSTED_AFFILIATIONS = [
   { name: 'Microsoft', logo: '/logos/microsoft.svg' },
   { name: 'Ajaib', logo: '/logos/ajaib.svg' },
 ] as const;
-
-const Mark: React.FC<{ size?: number }> = ({ size = 26 }) => (
-  <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-    <path d="M 50 17.7 A 22 22 0 1 0 50 46.3" fill="none" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
-    <circle cx="25" cy="32" r="2.4" fill="currentColor" />
-    <circle cx="32" cy="32" r="2.4" fill="currentColor" />
-    <circle cx="39" cy="32" r="2.4" fill="currentColor" />
-  </svg>
-);
 
 interface Stats {
   activePods?: number;
@@ -120,9 +137,13 @@ const RotatingTerm: React.FC<{ terms: string[] }> = ({ terms }) => {
 
 // Word-level entrance for the two highest-persuasion lines (hero H1, wedge
 // thesis). Each word rises once with a small per-word delay — see the
-// marketing-motion carve-out in frontend/design-system/README.md. Words are
-// aria-hidden with the full sentence on the parent's aria-label so screen
-// readers get one sentence, not fragments; the text stays in the DOM for SEO.
+// marketing-motion carve-out in frontend/design-system/README.md. Every word is
+// aria-hidden so screen readers get one sentence rather than fragments, and the
+// text stays in the DOM for SEO. HOW the sentence is exposed differs by line:
+// a heading takes `aria-label` (the h1 does), a paragraph does not — ARIA
+// prohibits naming `paragraph`, so the wedge line carries its sentence as
+// CONTENT in a clipped span (TASK-216) rather than leaning on an attribute a
+// lenient browser computes and a conforming consumer need not.
 const StaggerWords: React.FC<{ text: string }> = ({ text }) => (
   <>
     {text.split(' ').map((word, i) => (
@@ -143,23 +164,35 @@ const StaggerWords: React.FC<{ text: string }> = ({ text }) => (
 // title + description + highlight checklist on the other. Rows alternate
 // sides via CSS :nth-child. One row per screenshot — each feature gets a
 // real pitch instead of a caption (Sam's call, 2026-07-03).
+// `width` and `height` are the frame's own intrinsic size, and they are required
+// rather than decorative: the frames are lazy, so with no attributes the box is
+// 0 tall until the image arrives, the page grows mid-scroll and a first-click
+// anchor lands short (and, once the frames do load, under the bar). The
+// attributes only give the browser the aspect ratio before load — the CSS keeps
+// `width: 100%; height: auto`, so the rendered size is unchanged. The four
+// values come from each PNG's IHDR and landingFrames.test.ts re-reads it, so a
+// re-shot frame fails CI instead of quietly bringing the shift back.
 const FeatureRow: React.FC<{
   img: string;
   alt: string;
+  width: number;
+  height: number;
   kicker: string;
   title: string;
   text: string;
   points: string[];
-}> = ({ img, alt, kicker, title, text, points }) => (
+}> = ({ img, alt, width, height, kicker, title, text, points }) => (
   <div className="v2-landing__feature-row" data-reveal>
     <div className="v2-landing__feature-media">
       <div className="v2-landing__shot-frame">
-        <div className="v2-landing__shot-bar" aria-hidden="true">
-          <span className="v2-landing__shot-dot" />
-          <span className="v2-landing__shot-dot" />
-          <span className="v2-landing__shot-dot" />
-        </div>
-        <img className="v2-landing__feature-img" src={img} alt={alt} loading="lazy" />
+        <img
+          className="v2-landing__feature-img"
+          src={img}
+          alt={alt}
+          width={width}
+          height={height}
+          loading="lazy"
+        />
       </div>
     </div>
     <div className="v2-landing__feature-copy">
@@ -186,16 +219,57 @@ const V2LandingPage: React.FC = () => {
   // hasn't asked for reduced motion — so no-JS, old browsers, and
   // reduced-motion users always get fully visible content.
   const [motion, setMotion] = useState(false);
-  // Hero demo video. Autoplay is driven imperatively, NOT via the autoPlay
-  // prop: React never renders the `muted` attribute into the DOM
-  // (facebook/react#10389), and iOS Safari refuses autoplay for any video
-  // it doesn't see as muted — so the prop-only version silently showed the
-  // poster on iPhones (2026-07-03 field report). Setting muted via the ref
-  // and calling play() explicitly satisfies the mobile autoplay policy;
-  // the rejection catch keeps the poster for Low Power Mode / data-saver
-  // visitors, which is the correct fallback anyway.
-  const demoVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [installCopied, setInstallCopied] = useState(false);
+  const installCmdRef = useRef<HTMLElement | null>(null);
+  // The bar carries the band's colour while the band is under it. Default ON:
+  // the page opens on the band, so this is the correct first paint and the
+  // observer only ever turns it off. In tests the stubbed observer's
+  // `observe()` never calls back, so they stay in this state — the
+  // past-the-band look is a browser check.
+  const [onBand, setOnBand] = useState(true);
+  const bandRef = useRef<HTMLElement | null>(null);
+  // The bar is 72 tall at 1440 and 64 at ≤680, so a hard-coded 72 inset turned
+  // the bar white 8px early on a phone (ux-lead's #2018 finding 8). Measure it
+  // instead, and re-measure when a resize crosses the breakpoint. This is a
+  // LAYOUT effect on purpose: the observer below is built in the same commit at
+  // the 72 fallback and only re-arms on the next render, so useEffect would
+  // leave a phone one frame at the wrong inset.
+  const barRef = useRef<HTMLElement | null>(null);
+  const [barHeight, setBarHeight] = useState(0);
 
+  // TASK-154. The command is wider than the box at 390 (721px line in a 340px
+  // box), so most of it is off-screen and the visitor cannot read what they are
+  // pasting. The write names the constant itself, so the copied string is the
+  // one `SELF_HOST_COMMAND` names and stays in step with the README.
+  //
+  // The write test does not distinguish that from reading the ref's
+  // `textContent`: measured, swapping to `installCmdRef.current.textContent`
+  // stays green, because the ref is the <code> and the two strings are identical
+  // as written — the `$` is a sibling span outside it, and CSS truncation never
+  // changes textContent. What the suite pins is where the ref POINTS: move it up
+  // to the wrapper that owns the `$` and the clipboard-failure test reds, since
+  // the selection would then carry the prompt. So read the constant, and if this
+  // is ever changed to read the node instead, read one that excludes the prompt
+  // — nothing here will catch that for you. (#1868, sprint-review.)
+  const copyInstallCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(SELF_HOST_COMMAND);
+      setInstallCopied(true);
+      window.setTimeout(() => setInstallCopied(false), 1500);
+    } catch {
+      // No clipboard (non-HTTPS, sandbox, denied permission). Selecting the
+      // command lets the OS copy menu do it — the one outcome that must never
+      // happen is a click that appears to work and does nothing.
+      const node = installCmdRef.current;
+      const selection = typeof window !== 'undefined' ? window.getSelection() : null;
+      if (node && selection) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+  };
   // Primary CTA: signed-in → the shell; signed-out → /v2/register. Since
   // registration opened (2026-07-03: invite codes gate cloud agents, not
   // signup) the label is "Get started", not "Request access" — the old copy
@@ -209,7 +283,6 @@ const V2LandingPage: React.FC = () => {
     t('landing.hero.terms.claudeCode'),
     t('landing.hero.terms.cursor'),
     t('landing.hero.terms.codex'),
-    t('landing.hero.terms.openClaw'),
     t('landing.hero.terms.wholeTeam'),
   ];
 
@@ -248,14 +321,34 @@ const V2LandingPage: React.FC = () => {
     return () => io.disconnect();
   }, [motion, stats]);
 
+  // Bar colour follows the band: the root's top edge is inset by the bar's own
+  // height, so "intersecting" means the band's bottom is still below the bar
+  // and flips exactly when it passes under. threshold 0 — the change is a state
+  // change, not a reveal, so it should happen at the crossing rather than after
+  // a fraction of a 920px band.
+  useLayoutEffect(() => {
+    const measure = () => {
+      const h = barRef.current?.offsetHeight;
+      if (h) setBarHeight(h);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
   useEffect(() => {
-    const v = demoVideoRef.current;
-    if (!v || !motion) return;
-    v.muted = true;
-    v.defaultMuted = true;
-    const p = v.play();
-    if (p && typeof p.catch === 'function') p.catch(() => { /* poster stays */ });
-  }, [motion]);
+    if (typeof IntersectionObserver === 'undefined') return undefined;
+    const band = bandRef.current;
+    if (!band) return undefined;
+    const io = new IntersectionObserver(
+      ([entry]) => setOnBand(entry.isIntersecting),
+      // 72 is the desktop height and the fallback for a bar that has not laid
+      // out yet; a measured height wins wherever it exists.
+      { rootMargin: `-${barHeight || 72}px 0px 0px 0px`, threshold: 0 },
+    );
+    io.observe(band);
+    return () => io.disconnect();
+  }, [barHeight]);
 
   const hasStats = Boolean(stats && (
     stats.activePods
@@ -266,9 +359,8 @@ const V2LandingPage: React.FC = () => {
   return (
     <div className={`v2-root v2-landing${motion ? ' v2-landing--motion' : ''}`}>
       {/* ---- Top nav ---- */}
-      <header className="v2-landing__bar">
+      <header ref={barRef} className={`v2-landing__bar${onBand ? ' v2-landing__bar--band' : ''}`}>
         <div className="v2-landing__brand">
-          <span className="v2-landing__mark"><Mark size={26} /></span>
           <span className="v2-landing__brand-name">{t('common.brandName')}</span>
         </div>
         <nav className="v2-landing__nav" aria-label={t('landing.nav.primary')}>
@@ -290,7 +382,7 @@ const V2LandingPage: React.FC = () => {
 
       <main>
         {/* ---- Hero ---- */}
-        <section className="v2-landing__hero">
+        <section className="v2-landing__hero" ref={bandRef}>
           <div className="v2-landing__hero-inner">
             <div className="v2-landing__eyebrow">{t('landing.hero.eyebrow')}</div>
             {/* The rotating term must sit INSIDE the sentence frame so
@@ -302,56 +394,87 @@ const V2LandingPage: React.FC = () => {
               <br />
               <RotatingTerm terms={rotatingTerms} />
               {t('landing.hero.titleSuffix') && (
-                <span className="v2-landing__title-suffix">{t('landing.hero.titleSuffix')}</span>
+                // TASK-215: the sentence is stated once, on the h1's aria-label,
+                // so this span is decoration like the rotator above it. Without
+                // aria-hidden the tree announced the sentence AND a stray 「对话」.
+                <span className="v2-landing__title-suffix" aria-hidden="true">
+                  {t('landing.hero.titleSuffix')}
+                </span>
               )}
             </h1>
             <p className="v2-landing__lede">{t('landing.hero.lede')}</p>
 
-            <div className="v2-landing__cta-row">
-              <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
-            </div>
-
-            <div className="v2-landing__install" aria-label={t('landing.hero.selfHostInstall')}>
-              <span className="v2-landing__install-prompt">$</span>
-              <code className="v2-landing__install-cmd">{SELF_HOST_COMMAND}</code>
-            </div>
-
-            <div className="v2-landing__hero-by">
-              {t('landing.hero.builtBy')}{' '}
-              <a href={X_HANDLE} target="_blank" rel="noreferrer">{X_LABEL}</a>
-            </div>
-          </div>
-
-          <div className="v2-landing__hero-art">
-            {/* Real product demo in the framed-screenshot chrome. 2x-speed
-                muted loop (3.7MB H.264, /public so it stays out of the JS
-                bundle). Autoplay rides the same `motion` gate as every other
-                animation — reduced-motion / no-JS visitors get the poster. */}
-            <figure className="v2-landing__shot">
-              <div className="v2-landing__shot-frame">
-                <div className="v2-landing__shot-bar" aria-hidden="true">
-                  <span className="v2-landing__shot-dot" />
-                  <span className="v2-landing__shot-dot" />
-                  <span className="v2-landing__shot-dot" />
-                </div>
-                <video
-                  ref={demoVideoRef}
-                  className="v2-landing__shot-img"
-                  src="/media/demo-2x.mp4"
-                  poster="/media/demo-poster.jpg"
-                  muted
-                  loop
-                  playsInline
-                  preload="metadata"
-                  aria-label={t('landing.hero.demoAria')}
-                />
+            <div className="v2-landing__hero-actions">
+              <div className="v2-landing__cta-row">
+                {/* White on cobalt (ux-lead's #2018 finding 2): --primary's
+                    fill is the band's own colour, so the button had no shape. */}
+                <Link className="v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}</Link>
+                {/* Self-host is the second door onto the product, so it sits
+                    beside the first rather than below it: identical height and
+                    radius, outline instead of fill, and it goes to the source
+                    in a new tab like the pricing tier's own Self-host. */}
+                <a
+                  className="v2-landing__btn v2-landing__btn--onaccent-ghost"
+                  href={REPO}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {t('landing.actions.selfHost')}
+                </a>
               </div>
-              <figcaption className="v2-landing__shot-cap">
-                {t('landing.hero.demoCaption')}
-              </figcaption>
-            </figure>
+
+              <div className="v2-landing__install" aria-label={t('landing.hero.selfHostInstall')}>
+                {/* The scroll region is this wrapper, not the box, so the Copy
+                    control beside it is visible at every width and scroll
+                    position (TASK-154). */}
+                <div className="v2-landing__install-scroll">
+                  <span className="v2-landing__install-prompt">$</span>
+                  <code className="v2-landing__install-cmd" ref={installCmdRef}>{SELF_HOST_COMMAND}</code>
+                </div>
+                <button
+                  type="button"
+                  className="v2-landing__install-copy"
+                  onClick={copyInstallCommand}
+                  aria-label={t('landing.hero.copyInstallAria')}
+                >
+                  {installCopied ? t('landing.hero.copied') : t('landing.hero.copy')}
+                </button>
+                <span className="v2-landing__install-status" role="status" aria-live="polite">
+                  {installCopied ? t('landing.hero.copied') : ''}
+                </span>
+              </div>
+            </div>
           </div>
+
+          {/* The caption is the band's LAST child and the frame is the band's
+              SIBLING (ux-lead's #2018 finding 1): the -360 pull-up has to be
+              measured from the band's bottom edge, and a figure/figcaption pair
+              cannot straddle that edge. The frame keeps the label and points at
+              this caption by id instead. */}
+          <p className="v2-landing__demo-cap" id="v2-landing-demo-caption">
+            {t('landing.hero.demoCaption')}
+          </p>
         </section>
+
+        <div className="v2-landing__hero-art">
+          {/* The product, not a video (Sam approved 2026-09-23). The demo is
+              an interactive fake of the workspace built from the real v2
+              components with fixture data and scripted replies — no backend,
+              and it says so inside itself and again in the caption. There is
+              no autoplay gate to reason about any more: nothing plays until
+              the visitor acts, so reduced-motion visitors get the same
+              surface as everyone else. */}
+          <figure className="v2-landing__shot">
+            <div
+              className="v2-landing__shot-frame v2-landing__demo-frame"
+              role="group"
+              aria-label={t('landing.hero.demoAria')}
+              aria-describedby="v2-landing-demo-caption"
+            >
+              <DemoWorkspace />
+            </div>
+          </figure>
+        </div>
 
         {/* Individual affiliations, not organizational endorsements. The
             provenance for every entry — and the source/license of every logo
@@ -395,33 +518,45 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Wedge band ---- */}
         <section className="v2-landing__wedge">
-          <p className="v2-landing__wedge-line" data-reveal aria-label={t('landing.wedge.title')}>
+          <p className="v2-landing__wedge-line" data-reveal>
+            {/* The sentence is CONTENT here, not a label. ARIA prohibits
+                naming role=paragraph: Chromium does compute the name from
+                `aria-label` (measured on live `9ac94e95`, en and zh), but a
+                consumer that follows the spec may drop it, and the staggered
+                words below are all aria-hidden — so a name is this line's only
+                exposure. Out of flow and clipped: see
+                `.v2-landing__wedge-sr`. */}
+            <span className="v2-landing__wedge-sr">{t('landing.wedge.title')}</span>
             <StaggerWords text={t('landing.wedge.title')} />
           </p>
           <p className="v2-landing__wedge-sub" data-reveal>{t('landing.wedge.copy')}</p>
         </section>
 
         {/* ---- In action ---- */}
-        <section className="v2-landing__section" id="features">
+        <section className="v2-landing__section v2-landing__section--features" id="features">
           <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">{t('landing.features.kicker')}</div>
             <h2 className="v2-landing__h2">{t('landing.features.title')}</h2>
           </div>
           <div className="v2-landing__features">
             <FeatureRow
-              img={realEngineeringImg}
-              alt={t('landing.features.pods.alt')}
-              kicker={t('landing.features.pods.kicker')}
-              title={t('landing.features.pods.title')}
-              text={t('landing.features.pods.text')}
+              img={activityImg}
+              width={2880}
+              height={1800}
+              alt={t('landing.features.needs.alt')}
+              kicker={t('landing.features.needs.kicker')}
+              title={t('landing.features.needs.title')}
+              text={t('landing.features.needs.text')}
               points={[
-                t('landing.features.pods.points.board'),
-                t('landing.features.pods.points.artifacts'),
-                t('landing.features.pods.points.runtimes'),
+                t('landing.features.needs.points.inbox'),
+                t('landing.features.needs.points.options'),
+                t('landing.features.needs.points.phone'),
               ]}
             />
             <FeatureRow
-              img={yourTeamImg}
+              img={teamImg}
+              width={2880}
+              height={1800}
               alt={t('landing.features.team.alt')}
               kicker={t('landing.features.team.kicker')}
               title={t('landing.features.team.title')}
@@ -433,53 +568,63 @@ const V2LandingPage: React.FC = () => {
               ]}
             />
             <FeatureRow
-              img={agentDmImg}
-              alt={t('landing.features.dm.alt')}
-              kicker={t('landing.features.dm.kicker')}
-              title={t('landing.features.dm.title')}
-              text={t('landing.features.dm.text')}
+              img={connectorsImg}
+              width={2880}
+              height={1800}
+              alt={t('landing.features.connectors.alt')}
+              kicker={t('landing.features.connectors.kicker')}
+              title={t('landing.features.connectors.title')}
+              text={t('landing.features.connectors.text')}
               points={[
-                t('landing.features.dm.points.context'),
-                t('landing.features.dm.points.peer'),
-                t('landing.features.dm.points.private'),
+                t('landing.features.connectors.points.mirror'),
+                t('landing.features.connectors.points.grants'),
+                t('landing.features.connectors.points.record'),
               ]}
             />
             <FeatureRow
-              img={agentIdentityImg}
-              alt={t('landing.features.identity.alt')}
-              kicker={t('landing.features.identity.kicker')}
-              title={t('landing.features.identity.title')}
-              text={t('landing.features.identity.text')}
+              img={byoImg}
+              width={2880}
+              height={1880}
+              alt={t('landing.features.byo.alt')}
+              kicker={t('landing.features.byo.kicker')}
+              title={t('landing.features.byo.title')}
+              text={t('landing.features.byo.text')}
               points={[
-                t('landing.features.identity.points.memory'),
-                t('landing.features.identity.points.skills'),
-                t('landing.features.identity.points.import'),
+                t('landing.features.byo.points.runtimes'),
+                t('landing.features.byo.points.keys'),
+                t('landing.features.byo.points.memory'),
               ]}
             />
           </div>
         </section>
 
         {/* ---- The fix / how it works ---- */}
-        <section className="v2-landing__section v2-landing__section--tint">
+        <section className="v2-landing__section">
           <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">{t('landing.how.kicker')}</div>
             <h2 className="v2-landing__h2">{t('landing.how.title')}</h2>
           </div>
           <div className="v2-landing__steps" data-reveal data-reveal-stagger>
             <div className="v2-landing__step">
-              <div className="v2-landing__step-num">1</div>
-              <div className="v2-landing__step-title">{t('landing.how.steps.install.title')}</div>
-              <p className="v2-landing__step-text">{t('landing.how.steps.install.text')}</p>
+              <div className="v2-landing__step-num">01</div>
+              <div className="v2-landing__step-copy">
+                <div className="v2-landing__step-title">{t('landing.how.steps.install.title')}</div>
+                <p className="v2-landing__step-text">{t('landing.how.steps.install.text')}</p>
+              </div>
             </div>
             <div className="v2-landing__step">
-              <div className="v2-landing__step-num">2</div>
-              <div className="v2-landing__step-title">{t('landing.how.steps.teammate.title')}</div>
-              <p className="v2-landing__step-text">{t('landing.how.steps.teammate.text')}</p>
+              <div className="v2-landing__step-num">02</div>
+              <div className="v2-landing__step-copy">
+                <div className="v2-landing__step-title">{t('landing.how.steps.teammate.title')}</div>
+                <p className="v2-landing__step-text">{t('landing.how.steps.teammate.text')}</p>
+              </div>
             </div>
             <div className="v2-landing__step">
-              <div className="v2-landing__step-num">3</div>
-              <div className="v2-landing__step-title">{t('landing.how.steps.swap.title')}</div>
-              <p className="v2-landing__step-text">{t('landing.how.steps.swap.text')}</p>
+              <div className="v2-landing__step-num">03</div>
+              <div className="v2-landing__step-copy">
+                <div className="v2-landing__step-title">{t('landing.how.steps.swap.title')}</div>
+                <p className="v2-landing__step-text">{t('landing.how.steps.swap.text')}</p>
+              </div>
             </div>
           </div>
 
@@ -502,8 +647,7 @@ const V2LandingPage: React.FC = () => {
             <div className="v2-landing__adapter">
               <div className="v2-landing__adapter-title">{t('landing.how.adapters.native.title')}</div>
               <p className="v2-landing__adapter-sub">{t('landing.how.adapters.native.text')}</p>
-              <pre className="v2-landing__code">{`commonly agent run my-agent
-# joins pods, replies to @mentions`}</pre>
+              <pre className="v2-landing__code">{`commonly agent run my-agent`}{'\n'}<span className="v2-landing__code-comment">{`# joins pods, replies to @mentions`}</span></pre>
             </div>
           </div>
         </section>
@@ -516,14 +660,14 @@ const V2LandingPage: React.FC = () => {
               <h2 className="v2-landing__h2">{t('landing.openSource.title')}</h2>
               <p className="v2-landing__open-lede">{t('landing.openSource.lede')}</p>
               <div className="v2-landing__cta-row">
-                <a className="v2-landing__btn v2-landing__btn--primary" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.readSource')}</a>
+                <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.readSource')}</a>
               </div>
             </div>
             <ul className="v2-landing__open-list">
-              <li className="v2-landing__open-item"><span className="v2-landing__open-ic"><LockOpenOutlinedIcon fontSize="inherit" /></span><div><strong>{t('landing.openSource.items.source.title')}</strong> {t('landing.openSource.items.source.text')}</div></li>
-              <li className="v2-landing__open-item"><span className="v2-landing__open-ic"><DnsOutlinedIcon fontSize="inherit" /></span><div><strong>{t('landing.openSource.items.data.title')}</strong> {t('landing.openSource.items.data.text')}</div></li>
-              <li className="v2-landing__open-item"><span className="v2-landing__open-ic"><PaymentsOutlinedIcon fontSize="inherit" /></span><div><strong>{t('landing.openSource.items.tax.title')}</strong> {t('landing.openSource.items.tax.text')}</div></li>
-              <li className="v2-landing__open-item"><span className="v2-landing__open-ic"><PublicOutlinedIcon fontSize="inherit" /></span><div><strong>{t('landing.openSource.items.federation.title')}</strong> {t('landing.openSource.items.federation.text')}</div></li>
+              <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.source.title')}</strong> {t('landing.openSource.items.source.text')}</li>
+              <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.data.title')}</strong> {t('landing.openSource.items.data.text')}</li>
+              <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.tax.title')}</strong> {t('landing.openSource.items.tax.text')}</li>
+              <li className="v2-landing__open-item"><strong>{t('landing.openSource.items.federation.title')}</strong> {t('landing.openSource.items.federation.text')}</li>
             </ul>
           </div>
         </section>
@@ -536,22 +680,18 @@ const V2LandingPage: React.FC = () => {
           </div>
           <div className="v2-landing__cards" data-reveal data-reveal-stagger>
             <div className="v2-landing__card">
-              <span className="v2-landing__card-icon"><BadgeOutlinedIcon fontSize="inherit" /></span>
               <div className="v2-landing__card-title">{t('landing.benefits.identity.title')}</div>
               <p className="v2-landing__card-text">{t('landing.benefits.identity.text')}</p>
             </div>
             <div className="v2-landing__card">
-              <span className="v2-landing__card-icon"><LayersOutlinedIcon fontSize="inherit" /></span>
               <div className="v2-landing__card-title">{t('landing.benefits.memory.title')}</div>
               <p className="v2-landing__card-text">{t('landing.benefits.memory.text')}</p>
             </div>
             <div className="v2-landing__card">
-              <span className="v2-landing__card-icon"><AlternateEmailOutlinedIcon fontSize="inherit" /></span>
               <div className="v2-landing__card-title">{t('landing.benefits.mention.title')}</div>
               <p className="v2-landing__card-text">{t('landing.benefits.mention.text')}</p>
             </div>
             <div className="v2-landing__card">
-              <span className="v2-landing__card-icon"><HubOutlinedIcon fontSize="inherit" /></span>
               <div className="v2-landing__card-title">{t('landing.benefits.collaboration.title')}</div>
               <p className="v2-landing__card-text">{t('landing.benefits.collaboration.text')}</p>
             </div>
@@ -559,7 +699,7 @@ const V2LandingPage: React.FC = () => {
         </section>
 
         {/* ---- Use cases ---- */}
-        <section className="v2-landing__section v2-landing__section--tint" id="use-cases">
+        <section className="v2-landing__section" id="use-cases">
           <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">{t('landing.useCases.kicker')}</div>
             <h2 className="v2-landing__h2">{t('landing.useCases.title')}</h2>
@@ -568,26 +708,27 @@ const V2LandingPage: React.FC = () => {
             <Link className="v2-landing__usecase" to="/use-cases/agent-collab/">
               <div className="v2-landing__usecase-title">{t('landing.useCases.coding.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.coding.text')}</p>
+              <UseCaseArrow />
             </Link>
             <Link className="v2-landing__usecase" to="/use-cases/team-chat/">
               <div className="v2-landing__usecase-title">{t('landing.useCases.chat.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.chat.text')}</p>
+              <UseCaseArrow />
             </Link>
             <Link className="v2-landing__usecase" to="/use-cases/research-desk/">
               <div className="v2-landing__usecase-title">{t('landing.useCases.research.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.research.text')}</p>
+              <UseCaseArrow />
             </Link>
             <Link className="v2-landing__usecase" to="/use-cases/pod-browser/">
               <div className="v2-landing__usecase-title">{t('landing.useCases.browse.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.browse.text')}</p>
-            </Link>
-            <Link className="v2-landing__usecase" to="/use-cases/app-marketplace/">
-              <div className="v2-landing__usecase-title">{t('landing.useCases.marketplace.title')}</div>
-              <p className="v2-landing__usecase-text">{t('landing.useCases.marketplace.text')}</p>
+              <UseCaseArrow />
             </Link>
             <Link className="v2-landing__usecase" to="/use-cases/daily-digest/">
               <div className="v2-landing__usecase-title">{t('landing.useCases.digest.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.digest.text')}</p>
+              <UseCaseArrow />
             </Link>
           </div>
         </section>
@@ -601,17 +742,14 @@ const V2LandingPage: React.FC = () => {
           </div>
           <div className="v2-landing__tiles" data-reveal data-reveal-stagger>
             <div className="v2-landing__tile">
-              <div className="v2-landing__tile-num">01</div>
               <div className="v2-landing__tile-title">{t('landing.architecture.shell.title')}</div>
               <p className="v2-landing__tile-text">{t('landing.architecture.shell.text')}</p>
             </div>
             <div className="v2-landing__tile">
-              <div className="v2-landing__tile-num">02</div>
               <div className="v2-landing__tile-title">{t('landing.architecture.kernel.title')}</div>
               <p className="v2-landing__tile-text">{t('landing.architecture.kernel.text')}</p>
             </div>
             <div className="v2-landing__tile">
-              <div className="v2-landing__tile-num">03</div>
               <div className="v2-landing__tile-title">{t('landing.architecture.drivers.title')}</div>
               <p className="v2-landing__tile-text">{t('landing.architecture.drivers.text')}</p>
             </div>
@@ -619,11 +757,13 @@ const V2LandingPage: React.FC = () => {
         </section>
 
         {/* ---- Built by agents (self-proof) ---- */}
-        <section className="v2-landing__proof">
+        <section className="v2-landing__section v2-landing__proof">
           <div className="v2-landing__proof-inner" data-reveal>
-            <div className="v2-landing__kicker v2-landing__kicker--light">{t('landing.proof.kicker')}</div>
-            <h2 className="v2-landing__proof-title">{t('landing.proof.title')}</h2>
-            <p className="v2-landing__proof-sub">{t('landing.proof.sub', { count: ADR_COUNT })}</p>
+            <div className="v2-landing__proof-copy">
+              <div className="v2-landing__kicker">{t('landing.proof.kicker')}</div>
+              <h2 className="v2-landing__h2">{t('landing.proof.title')}</h2>
+              <p className="v2-landing__proof-sub">{t('landing.proof.sub', { count: ADR_COUNT })}</p>
+            </div>
             {hasStats && (
               <div className="v2-landing__proof-stats">
                 <div className="v2-landing__proof-stat"><span className="v2-landing__proof-num">{fmt(stats?.agentCount, locale)}</span><span className="v2-landing__proof-label">{t('landing.proof.stats.agents')}</span></div>
@@ -639,7 +779,7 @@ const V2LandingPage: React.FC = () => {
           <div className="v2-landing__section-head" data-reveal>
             <div className="v2-landing__kicker">{t('landing.pricing.kicker')}</div>
             <h2 className="v2-landing__h2">{t('landing.pricing.title')}</h2>
-            <p className="v2-landing__section-sub">{t('landing.pricing.sub')}</p>
+            <p className="v2-landing__sub">{t('landing.pricing.sub')}</p>
           </div>
 
           <div className="v2-landing__tiers" data-reveal data-reveal-stagger>
@@ -697,7 +837,7 @@ const V2LandingPage: React.FC = () => {
               <strong>{t('landing.pricing.enterprise.name')}</strong>
               <span> {t('landing.pricing.enterprise.text')}</span>
             </div>
-            <Link className="v2-landing__btn v2-landing__btn--ghost v2-landing__btn--sm" to={appHref}>{t('landing.actions.talkToUs')}</Link>
+            <Link className="v2-landing__btn v2-landing__btn--ghost" to={appHref}>{t('landing.actions.talkToUs')}</Link>
           </div>
 
           <p className="v2-landing__price-foot">
@@ -707,19 +847,24 @@ const V2LandingPage: React.FC = () => {
 
         {/* ---- Final CTA ---- */}
         <section className="v2-landing__cta">
-          <h2 className="v2-landing__cta-title" data-reveal>{t('landing.finalCta.title')}</h2>
-          <p className="v2-landing__cta-sub" data-reveal>{t('landing.finalCta.sub')}</p>
+          {/* Two blocks, one sentence: the break is the copy's, not the
+              viewport's, and the space between blocks makes no line box — so
+              the heading's accessible name still reads as one sentence. */}
+          <h2 className="v2-landing__cta-title" data-reveal>
+            <span className="v2-landing__cta-line">{t('landing.finalCta.titleLead')}</span>{' '}
+            <span className="v2-landing__cta-line">{t('landing.finalCta.titleTail')}</span>
+          </h2>
           <div className="v2-landing__cta-row">
-            <Link className="v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}</Link>
-            <a className="v2-landing__btn v2-landing__btn--onaccent-ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
+            <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
+            <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
           </div>
         </section>
       </main>
 
       {/* ---- Footer ---- */}
       <footer className="v2-landing__footer">
+        {/* No glyph mark: the wordmark alone (row E). */}
         <div className="v2-landing__footer-brand">
-          <span className="v2-landing__mark"><Mark size={22} /></span>
           <span className="v2-landing__brand-name">{t('common.brandName')}</span>
         </div>
         <div className="v2-landing__footer-cols">
@@ -746,7 +891,7 @@ const V2LandingPage: React.FC = () => {
             <div className="v2-landing__footer-title">{t('landing.footer.community')}</div>
             <a className="v2-landing__footer-link" href={DISCORD_INVITE_URL} target="_blank" rel="noreferrer">{t('landing.footer.discord')}</a>
             <a className="v2-landing__footer-link" href={`${REPO}/discussions`} target="_blank" rel="noreferrer">{t('landing.footer.discussions')}</a>
-            <a className="v2-landing__footer-link" href="https://x.com/sam_commonly" target="_blank" rel="noreferrer">{t('landing.footer.twitter')}</a>
+            <a className="v2-landing__footer-link" href={X_HANDLE} target="_blank" rel="noreferrer">{t('landing.footer.twitter')}</a>
           </div>
           <div className="v2-landing__footer-col">
             <div className="v2-landing__footer-title">{t('landing.footer.legal')}</div>

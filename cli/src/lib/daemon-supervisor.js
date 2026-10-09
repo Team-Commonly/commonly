@@ -1,6 +1,10 @@
 import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve as pathResolve } from 'node:path';
+import { auditDeclaredMcp, installedStdioEntries } from './declared-mcp-guard.js';
+
+import { seatBaseline } from './default-environment.js';
+import { withholdGrantBroker } from './grant-broker-guard.js';
 
 /**
  * ADR-026 Phase 2, slice 2: the resident supervision loop behind
@@ -146,13 +150,50 @@ export const createDaemonSupervisor = ({
     return Object.keys(fallback).length ? { value: fallback, declared: false } : null;
   };
 
-  // Ensure ~/.commonly/tokens/<name>.json exists so `agent run` can boot.
+  // A declared environment runs on THIS machine as the operator. Refuse any
+  // declared stdio command that is not the shipped commonly MCP server or one
+  // the operator already installed here, and any http server that would be
+  // handed the seat token off the instance's origin. Refusal keeps the current
+  // seat (or skips the mint) and says which server was kept off the machine;
+  // it never adopts a partial environment.
+  const admitDeclared = (row, environment, existing) => {
+    const audit = auditDeclaredMcp(environment, {
+      instanceUrl: existing?.instanceUrl || record.instanceUrl,
+      allowedStdioEntries: installedStdioEntries(existing),
+    });
+    if (audit.ok) return true;
+    log(`[${row.agentName}] refusing the declared environment — it would not stay on this machine's terms:`);
+    for (const refusal of audit.refusals) log(`[${row.agentName}]   ${refusal}`);
+    return false;
+  };
+
   // The mint refuses to clobber an existing token (409 token_exists); the
   // binding to THIS machine is the owner's explicit takeover choice (D3), so
   // that refusal is answered with rotate:true — loudly.
   // Returns 'ready' | 'changed' (record updated — the seat must restart to
   // load it) | false.
   const ensureToken = async (row) => {
+    // One derive for this seat, so the broker refusal cannot be applied at three
+    // of four sites: `seatBaseline` is where an environment becomes the one the
+    // seat RUNS under, and `withholdGrantBroker` asks the same question the
+    // server asks (`can this seat confine a granter's authority?`) for the cases
+    // the server cannot see — a row naming no adapter, a backend older than the
+    // refusal, a record written by hand. Entry-level per wren 69829: the broker
+    // entry is withheld and the seat still starts, because it was never promised
+    // confinement. `record.instanceUrl` is what makes the injected url
+    // identifiable at all — the record holds the UNRESOLVED
+    // `${COMMONLY_API_URL}/api/mcp/grants/<id>` placeholder.
+    const derive = (environment, adapter, options) => withholdGrantBroker(
+      seatBaseline(environment, adapter, options),
+      adapter,
+      {
+        instanceUrl: record.instanceUrl,
+        onRefuse: (refusal, names) => log(
+          `[${row.agentName}] ${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`,
+        ),
+      },
+    );
+
     const existing = loadToken(row.agentName);
     if (existing) {
       // A model changed in the UI reaches the seat here: update the record,
@@ -160,6 +201,7 @@ export const createDaemonSupervisor = ({
       // once at boot). A row with NO declared model leaves the record alone —
       // never strip an operator's hand-set environment.
       const wanted = environmentFor(row);
+      if (wanted?.declared && !admitDeclared(row, wanted.value, existing)) return false;
       const declaredAdapter = row.runtime && typeof row.runtime === 'object'
         && typeof row.runtime.adapter === 'string'
         ? row.runtime.adapter.trim().toLowerCase()
@@ -181,9 +223,22 @@ export const createDaemonSupervisor = ({
         adapterChanged = existing.adapter !== nextAdapter;
       }
       if (wanted) {
-        const nextEnvironment = wanted.declared
+        const merged = wanted.declared
           ? wanted.value
           : { ...(existing.environment || {}), ...wanted.value };
+        // A server-declared environment replaces the local one, so a seat whose
+        // declaration carries no mcp[] would come back tool-less. Re-apply the
+        // shipped default here and below, or the seat silently loses every
+        // commonly_* tool the next time the UI edits its model (TASK-048).
+        //
+        // A DECLARED environment also gets the sandbox default when it names
+        // none: the declaration is not the operator's, and `sandbox.mode`
+        // defaults to 'none' in the adapters, so an omitted block is an
+        // unconfined seat (TASK-052). A local record with no environment at
+        // all is in the same position — nobody has authored anything.
+        const nextEnvironment = derive(merged, nextAdapter, {
+          sandbox: wanted.declared || !existing.environment,
+        });
         const workspacePath = workspacePathFor(nextEnvironment);
         const nextRecord = {
           ...existing,
@@ -200,9 +255,35 @@ export const createDaemonSupervisor = ({
         }
       }
       if (adapterChanged) {
-        saveToken(row.agentName, { ...existing, adapter: nextAdapter });
+        // An adapter that consumes mcp[] must not be started on a record that
+        // declares none, even when only the adapter itself changed.
+        const nextEnvironment = derive(existing.environment, nextAdapter, {
+          sandbox: !existing.environment,
+        });
+        saveToken(row.agentName, {
+          ...existing,
+          adapter: nextAdapter,
+          ...(nextEnvironment ? { environment: nextEnvironment } : {}),
+        });
         log('runtime adapter changed — restarting the seat to load it');
         return 'changed';
+      }
+      if (!wanted) {
+        // A record written by a CLI older than the shipped default carries no
+        // mcp[] — the c4-smoke record was exactly this, and the operator had to
+        // hand-add the entry. Behind a row that declares nothing there is no
+        // other write path: the record is never touched again, so the seat
+        // stays tool-less for as long as it runs. Heal it here, and only when
+        // the environment actually changed — otherwise every tick rewrites the
+        // file and restarts the seat forever.
+        const nextEnvironment = derive(existing.environment, existing.adapter, {
+          sandbox: !existing.environment,
+        });
+        if (!isDeepStrictEqual(existing.environment || null, nextEnvironment || null)) {
+          saveToken(row.agentName, { ...existing, environment: nextEnvironment });
+          log('record predates the commonly MCP baseline — restarting the seat to load it');
+          return 'changed';
+        }
       }
       return 'ready';
     }
@@ -218,6 +299,8 @@ export const createDaemonSupervisor = ({
         return false;
       }
     }
+    const declaredAtMint = environmentFor(row);
+    if (declaredAtMint?.declared && !admitDeclared(row, declaredAtMint.value, null)) return false;
     const body = { agentName: row.agentName, instanceId: row.instanceId };
     let minted;
     try {
@@ -246,6 +329,16 @@ export const createDaemonSupervisor = ({
       return false;
     }
     const environment = environmentFor(row);
+    // A seat installed server-side (no local `agent attach`) arrives with no
+    // mcp[] at all: without the default it spawns a CLI that has no commonly_*
+    // tools and cannot post. See lib/default-environment.js. Nothing here is
+    // operator-authored, so this seat also gets the sandbox default — the
+    // self-serve install's seat used to be born unconfined (TASK-052).
+    const recordEnvironment = derive(
+      environment ? environment.value : null,
+      adapter,
+      { sandbox: true },
+    );
     saveToken(row.agentName, {
       agentName: row.agentName,
       instanceId: row.instanceId,
@@ -253,9 +346,9 @@ export const createDaemonSupervisor = ({
       instanceUrl: record.instanceUrl,
       podId: row.podIds?.[0] || null,
       adapter,
-      ...(environment ? { environment: environment.value } : {}),
-      ...(environment?.value ? (() => {
-        const workspacePath = workspacePathFor(environment.value);
+      ...(recordEnvironment ? { environment: recordEnvironment } : {}),
+      ...(recordEnvironment ? (() => {
+        const workspacePath = workspacePathFor(recordEnvironment);
         return workspacePath ? { workspacePath } : {};
       })() : {}),
     });
@@ -317,12 +410,26 @@ export const createDaemonSupervisor = ({
         seats.set(key, seat);
       }
       seat.desired = true;
-      const localToken = loadToken(row.agentName);
-      seat.adapter = row.runtime?.adapter || localToken?.adapter || seat.adapter || null;
-      seat.model = row.runtime?.model || localToken?.environment?.model || seat.model || null;
-      seat.effort = row.runtime?.effort || localToken?.environment?.effort || seat.effort || null;
       // eslint-disable-next-line no-await-in-loop
       const ready = await ensureToken(row);
+      // Report what the seat actually RUNS, which is the record: `agent run`
+      // reads it once at boot, and ensureToken above may have just rewritten it
+      // (a mint, or a config change). Reading it AFTER ensureToken is the point
+      // — the same tick's write is the record the seat starts from, so the very
+      // first heartbeat is already about the running seat.
+      //
+      // The row's runtime is a COMPATIBILITY OVERLAY for a seat with no record
+      // at all, never an override of a declared environment (see the overlay
+      // comment above ensureToken): leading with it here reported a model the
+      // seat was not running, because the spawn path gives the declared
+      // environment precedence over runtime.model/effort (environmentFor, and
+      // the TASK-065 measurement). ensureToken also REFUSES a change it cannot
+      // apply — a requested adapter this machine does not have — so the record
+      // is the honest answer there too: it names the adapter that kept running.
+      const current = loadToken(row.agentName);
+      seat.adapter = current ? (current.adapter || null) : (row.runtime?.adapter || null);
+      seat.model = current ? (current.environment?.model || null) : (row.runtime?.model || null);
+      seat.effort = current ? (current.environment?.effort || null) : (row.runtime?.effort || null);
       if (ready === 'changed' && seat.child) {
         // desired stays true, so the exit handler respawns with the updated
         // record — the restart path IS the D6 path, no second spawner.

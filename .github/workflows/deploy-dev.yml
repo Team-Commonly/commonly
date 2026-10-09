@@ -90,6 +90,7 @@ jobs:
             --build-arg REACT_APP_SHOWCASE_POD_ID=6a507c9b792f1ed2cbfec648 \
             --build-arg REACT_APP_COMMUNITY_POD_ID=6a5fe677306155f677c26abf \
             --build-arg REACT_APP_COMMUNITY_INVITE_TOKEN=7b91255f18ae3c0ae3721707a6613731 \
+            --build-arg REACT_APP_TELEGRAM_BOT_HANDLE=Commonly240Bot \
             --build-arg "REACT_APP_VERSION=$TAG" \
             --build-arg "REACT_APP_SENTRY_DSN=$REACT_APP_SENTRY_DSN" \
             -t "$REPO:$TAG"
@@ -203,6 +204,7 @@ jobs:
       # it. A deployment scaled to zero passes instantly (0 of 0 updated),
       # which is correct: parked is not stuck.
       - name: Verify rollout of the deployed workloads
+        id: rollout
         run: |
           set -uo pipefail
           FAILED=""
@@ -226,6 +228,50 @@ jobs:
             exit 1
           fi
           echo "All four deployed workloads are live."
+
+      # A pod can be Ready and still unable to serve chat. The backend decides
+      # once at boot whether Postgres is available, and /ready answers 200 in
+      # that degraded state. On 2026-09-25 a transient connect timeout at boot
+      # left /api/pg/messages unmounted on the only replica, chat history 404
+      # for minutes, and this job green. Until readiness itself asserts it
+      # (TASK-168), ask the newest backend pod from the inside. Unauthenticated,
+      # a mounted /api/pg/messages answers 401 and an unmounted one 404.
+      - name: Verify the new backend serves chat
+        # Deliberately not `always()` / `!cancelled()`: if an earlier step failed
+        # (image push, helm upgrade, GKE credentials) the cluster is unreachable
+        # or unchanged, and this step would then report "Chat unavailable on the
+        # new backend" for a reason that has nothing to do with chat. The case
+        # that needs it is the one below — the rollout gate failing on its own.
+        #
+        # 2026-09-27: a stuck rollout (readiness refusing a pod that was in fact
+        # serving 401s) exited 1 inside the rollout step, so this step was
+        # skipped and the operator got "backend did not become ready within 8m"
+        # with no 401-vs-404 discriminator attached. That discriminator is what
+        # separates "readiness is lying about a working pod" from "the pod is
+        # broken", and it was absent exactly when it was needed.
+        if: ${{ success() || steps.rollout.outcome == 'failure' }}
+        run: |
+          set -uo pipefail
+          POD=$(kubectl get pod -n "$NAMESPACE" -l app=backend \
+            -o jsonpath='{range .items[*]}{.status.startTime}{" "}{.metadata.name}{" "}{.metadata.deletionTimestamp}{"\n"}{end}' \
+            | awk 'NF == 2' | sort | tail -1 | awk '{print $2}')
+          if [ -z "$POD" ]; then
+            echo "::error title=Chat check failed::no running backend pod found"
+            exit 1
+          fi
+          echo "Checking $POD"
+          for attempt in 1 2 3 4 5 6; do
+            STATUS=$(kubectl exec -n "$NAMESPACE" "$POD" -c backend -- curl -s http://localhost:5000/api/pg/status || true)
+            ROUTE=$(kubectl exec -n "$NAMESPACE" "$POD" -c backend -- curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/api/pg/messages/000000000000000000000000 || true)
+            echo "attempt $attempt: pg/status=$STATUS pg/messages=$ROUTE"
+            if [[ "$STATUS" == *'"available":true'* ]] && [ "$ROUTE" = "401" ]; then
+              echo "$POD serves chat."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error title=Chat unavailable on the new backend::$POD has pg/status=$STATUS and pg/messages=$ROUTE (401 means mounted, 404 unmounted). Chat history fails until the pod restarts: kubectl rollout restart deploy/backend -n $NAMESPACE"
+          exit 1
 
       # Unhealthy workloads outside the deployed set are surfaced, never
       # failed on. Silence here is how litellm accumulated 561 restarts

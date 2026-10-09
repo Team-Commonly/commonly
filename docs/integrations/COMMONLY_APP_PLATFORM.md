@@ -1,6 +1,11 @@
-# Commonly App Platform (Design Draft)
+# Commonly App Platform — Design Draft
 
 Goal: let third parties register “Commonly Apps” (similar to GitHub Apps) that can receive events via webhooks and call Commonly APIs using scoped credentials. Works alongside the integration SDK so providers can be added with minimal friction.
+
+The app platform has a shipped owner/installation API and marketplace read
+path. The current routes are listed under **API surface**; all other sections
+describe proposed external-developer behavior and are not shipped unless they
+are explicitly marked otherwise.
 
 ## Core concepts
 - **App**: metadata + credentials owned by a developer/team.
@@ -22,20 +27,20 @@ Goal: let third parties register “Commonly Apps” (similar to GitHub Apps) th
 - `AppInstallation` (Mongo): appId, targetType (`pod|user`), targetId, scopes granted, events subscribed, createdBy, createdAt, token (hashed), tokenExpiresAt, status.
 - Reuse `Integration` only for built-in providers; keep apps separate to allow arbitrary external services.
 
-## Event delivery
+## Proposed event delivery
 - Commonly emits events -> enqueue -> sign payload with HMAC using webhook secret -> POST to app webhook.
-- Delivery headers: `X-Commonly-Event`, `X-Commonly-Signature-256`, `X-Commonly-Delivery` (uuid), `User-Agent: Commonly-App-Hook/v1`.
+- Current `appService` delivery uses `X-Commonly-Event` and `X-Commonly-Signature: sha256=...`; installation delivery also sends `X-Commonly-Installation`. It does not set `X-Commonly-Signature-256` or a `Commonly-App-Hook` user agent. The proposed contract should align with those shipped headers.
 - Retry policy: exponential backoff, max attempts, dead-letter.
 
-## Auth for incoming API calls
+## Proposed auth for incoming API calls
 - Install-level token (Bearer) with scopes. Scopes examples:
   - `pods:read`, `pods:write`
   - `messages:read`, `messages:write`
   - `summaries:read`
   - `files:read`
-- Rotate token via `/api/apps/installations/:id/token` (requires app client secret).
+- Proposed rotate-token endpoint (not currently served): `/api/apps/installations/:id/token` (requires app client secret).
 
-## Registration & installation flow
+## Proposed registration & installation flow
 1) **Developer creates app** via Commonly UI/API:
    - set name, description, callback URL(s), webhook URL, choose default scopes/events.
    - system issues `clientId`, `clientSecret`, and `webhookSecret`.
@@ -43,34 +48,43 @@ Goal: let third parties register “Commonly Apps” (similar to GitHub Apps) th
 3) **Consent screen** shows scopes + events; on accept, create `AppInstallation`, generate install token, redirect back with `installation_id` and `code`.
 4) **Token exchange** (optional): app swaps `code` + `clientSecret` for install token.
 
-## API surface (draft)
-- `POST /api/apps` (developer-auth) create app.
-- `GET /api/apps/:id` (owner)
-- `PATCH /api/apps/:id` (owner)
-- `POST /api/apps/:id/rotate-secret`
-- `POST /api/apps/:id/webhook-test`
-- `GET /api/apps/:id/installations`
-- `POST /api/apps/installations` (consent target) create installation
-- `DELETE /api/apps/installations/:id`
+## API surface
 
-## Event types (initial)
+Implemented routes (all owner/install routes require user auth):
+- `GET /api/apps` - list apps owned by the caller.
+- `POST /api/apps` - create an app and return its client/webhook secrets once.
+- `GET /api/apps/:id` - read an owned app.
+- `POST /api/apps/:id/rotate-secret` - rotate the client secret.
+- `POST /api/apps/:id/webhook-test` - generate a signed sample payload.
+- `POST /api/apps/installations` - create an installation for a target.
+- `DELETE /api/apps/installations/:id` - remove an installation.
+- `GET /api/apps/pods/:podId/apps` - list apps installed in a pod.
+- `POST /api/apps/pods/:podId/apps` - install an app in a pod.
+- `DELETE /api/apps/pods/:podId/apps/:installationId` - uninstall a pod app.
+- `GET /api/apps/marketplace` and `GET /api/apps/marketplace/:id` - read marketplace listings.
+
+Not yet served: the proposed `/api/apps/install` consent URL, OAuth-style
+code exchange, and `GET /api/apps/:id/installations`. Do not document those as
+available integrations until their routes land.
+
+## Proposed event types (initial)
 - `message.created`, `message.deleted`
 - `summary.created`
 - `pod.member.joined`, `pod.member.left`
 - `file.uploaded`
 - `integration.status.changed`
 
-## Security
+## Proposed security
 - Mandatory webhook signature verification (HMAC SHA-256 with `webhookSecret`).
 - Validate `redirect_uri` against allowlist.
 - Token hashing at rest.
 - Per-install scope enforcement on every API route.
 
-## SDK alignment
+## Proposed SDK alignment
 - The open-source integration SDK can expose helpers to verify Commonly webhook signatures and manage install tokens.
 - Providers built for Commonly can live outside the main repo and just rely on this contract + webhooks.
 
-## Deliverables to build
+## Proposed deliverables
 - Mongo schemas for App and AppInstallation.
 - Routes + controllers for app CRUD, installation, token exchange, webhook test.
 - Middleware for scope checks and webhook signature validation.

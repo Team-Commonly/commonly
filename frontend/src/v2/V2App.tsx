@@ -1,35 +1,11 @@
 import React from 'react';
 import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import V2Layout from './components/V2Layout';
-import V2Login from './components/V2Login';
 import V2FeaturePage from './components/V2FeaturePage';
-import V2YourTeamPage from './components/V2YourTeamPage';
-import V2InviteRedeem from './components/V2InviteRedeem';
-import V2CommunityRedirect from './components/V2CommunityRedirect';
 import { useAuth } from '../context/AuthContext';
-import V2Register from './components/V2Register';
-import V2OAuthComplete from './components/V2OAuthComplete';
-import V2ForgotPassword from './components/V2ForgotPassword';
-import V2ResetPassword from './components/V2ResetPassword';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
-import V2SettingsPage from './components/V2SettingsPage';
-import V2AgentProfile from './agents/V2AgentProfile';
-import UserProfile from '../components/UserProfile';
-import AgentsHub from '../components/agents/AgentsHub';
-import V2AgentBYO from './components/V2AgentBYO';
-import V2ConnectPage from './components/V2ConnectPage';
-import V2ConnectorsPage from './components/V2ConnectorsPage';
-import V2PodBoard from './components/V2PodBoard';
-import V2ActivityPage from './components/V2ActivityPage';
-import V2ArtifactsPage from './components/V2ArtifactsPage';
-import ChatRoom from '../components/ChatRoom';
-import ApiDevPage from '../components/ApiDevPage';
-import PodContextDevPage from '../components/PodContextDevPage';
-import GlobalIntegrations from '../components/admin/GlobalIntegrations';
-import V2AdminUsers from './components/V2AdminUsers';
-import V2AdminAnalytics from './components/V2AdminAnalytics';
 import V2EmailVerificationBanner from './components/V2EmailVerificationBanner';
 import ProtectedRoute from '../components/ProtectedRoute';
 import '@fontsource-variable/bricolage-grotesque';
@@ -38,6 +14,38 @@ import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import './v2.css';
+
+// TASK-145 — inside the shell, only the surfaces the composer path needs stay
+// in this chunk (V2Layout, the auth gate, the feature frame). Everything else
+// is a route of its own: the chat first screen used to wait for the board, the
+// connectors catalogue, every admin page and the artifacts browser because they
+// were all one module graph with it. The Suspense boundary in V2App covers the
+// whole route table, so a chunk in flight shows the same <V2Boot/> the auth
+// check already shows.
+const V2Login = React.lazy(() => import('./components/V2Login'));
+const V2Register = React.lazy(() => import('./components/V2Register'));
+const V2OAuthComplete = React.lazy(() => import('./components/V2OAuthComplete'));
+const V2ForgotPassword = React.lazy(() => import('./components/V2ForgotPassword'));
+const V2ResetPassword = React.lazy(() => import('./components/V2ResetPassword'));
+const V2YourTeamPage = React.lazy(() => import('./components/V2YourTeamPage'));
+const V2InviteRedeem = React.lazy(() => import('./components/V2InviteRedeem'));
+const V2CommunityRedirect = React.lazy(() => import('./components/V2CommunityRedirect'));
+const V2SettingsPage = React.lazy(() => import('./components/V2SettingsPage'));
+const V2AgentProfile = React.lazy(() => import('./agents/V2AgentProfile'));
+const UserProfile = React.lazy(() => import('../components/UserProfile'));
+const AgentsHub = React.lazy(() => import('../components/agents/AgentsHub'));
+const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
+const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
+const V2ConnectorsPage = React.lazy(() => import('./components/V2ConnectorsPage'));
+const V2PodBoard = React.lazy(() => import('./components/V2PodBoard'));
+const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
+const V2ArtifactsPage = React.lazy(() => import('./components/V2ArtifactsPage'));
+const ChatRoom = React.lazy(() => import('../components/ChatRoom'));
+const ApiDevPage = React.lazy(() => import('../components/ApiDevPage'));
+const PodContextDevPage = React.lazy(() => import('../components/PodContextDevPage'));
+const GlobalIntegrations = React.lazy(() => import('../components/admin/GlobalIntegrations'));
+const V2AdminUsers = React.lazy(() => import('./components/V2AdminUsers'));
+const V2AdminAnalytics = React.lazy(() => import('./components/V2AdminAnalytics'));
 
 class V2ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   constructor(props: { children: React.ReactNode }) {
@@ -186,6 +194,7 @@ const V2App: React.FC = () => {
   return (
     <div className="v2-root">
       <V2ErrorBoundary>
+        <React.Suspense fallback={<V2Boot />}>
         <Routes>
           <Route index element={<V2Home />} />
           <Route path="landing" element={<Navigate to="/" replace />} />
@@ -367,6 +376,7 @@ const V2App: React.FC = () => {
             )}
           />
         </Routes>
+        </React.Suspense>
       </V2ErrorBoundary>
     </div>
   );

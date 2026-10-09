@@ -1,0 +1,1015 @@
+// Tools — the second list on the Connectors page (tools plan §6, option A,
+// Sam 67407). Same container grammar as the channels: dot, 20px glyph,
+// display name, two-line middle, mono when, one action. It renders only what
+// the server counts: a row per RoomGrant the person can see, a not-yet row per
+// tool Installable the catalogue returns (#1670), the aside from the projected
+// grant read, the trail from ToolCall rows the broker wrote. The Add form posts
+// the mint exactly as the server takes it — never a brokerId (Vera 67728).
+//
+// Direction A (Sam 2026-09-11): categories are glyphs — a trail outcome and a
+// grant's mode carry a mark with the word in `title`; the deciding act (Add,
+// Grant, Manage on a row with one act) keeps its word.
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
+import { useV2Api } from '../hooks/useV2Api';
+import { useRelativeNow } from '../hooks/useRelativeNow';
+import { localizeRelativeTime, localizeWindow } from '../utils/localizeRelativeTime';
+import { useAuth } from '../../context/AuthContext';
+import { V2Pod } from '../hooks/useV2Pods';
+import { PlatformGlyph } from '../icons/platforms';
+import { ActGlyph } from '../icons/glyphs';
+
+export type GrantWriteMode = 'read' | 'write' | 'write-with-confirm';
+
+export interface ToolGrant {
+  grantId: string;
+  installationId: string;
+  target: { kind: 'pod' | 'seat'; id: string };
+  tools: string[];
+  writeMode: GrantWriteMode;
+  budget: { calls?: number; windowMs?: number } | null;
+  effectiveAudience: string[];
+  expiresAt: string;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  parentGrantId: string | null;
+  rootGrantId: string | null;
+  createdAt: string;
+  grantedBy: string | null;
+}
+
+/** `superseded` is a DERIVED read-only value the server reports for a parked
+ * request whose approval has since resolved: the call itself is the row beside
+ * it (ok / refused / failed), and this row is only the ask. It is never stored,
+ * so it is never what a write sends. */
+export type ToolOutcome = 'ok' | 'refused' | 'pending_approval' | 'failed' | 'superseded';
+
+export interface ToolCallLine {
+  callId: string;
+  agentUserId: string;
+  tool: string;
+  outcome: ToolOutcome;
+  reason: string | null;
+  approvalId: string | null;
+  argsDigest: string;
+  at: string | null;
+  durationMs: number | null;
+}
+
+export interface ToolTrail {
+  grantId: string;
+  calls: ToolCallLine[];
+  counts: { total: number; ok: number; refused: number; pending_approval: number; failed: number };
+}
+
+/** A tool Installable as GET /api/installables lists it (list: 'tools', #1670). */
+export interface ToolCatalogEntry {
+  installableId: string;
+  list?: 'channels' | 'tools';
+  label: string;
+  description: string;
+  /**
+   * The connection type this row's tools run through, and — on a hosted entry —
+   * the catalogue entry the start route takes. `entryId` is absent on
+   * `github-app`, whose connections are not per entry.
+   */
+  connectionType?: 'github-app' | 'hosted-mcp';
+  entryId?: string;
+  available: boolean;
+  unavailableReason?: string;
+  broker?: { id: string };
+  tools: Array<{ name: string; description?: string; requiredWriteMode: GrantWriteMode; irreversible: boolean }>;
+  connections: Array<{ connectionId: string; owner: string; repo: string }>;
+}
+
+export interface HostedMcpManualRevokeNotice {
+  connectionId: string;
+  entryId: string;
+  provider: string;
+  revokePage: string;
+}
+
+interface PodSeat { userId: string | null; displayName?: string; name: string; internal?: boolean }
+
+interface Props {
+  pods: V2Pod[];
+  manualRevokeNotice?: HostedMcpManualRevokeNotice | null;
+}
+
+interface DraftGrant {
+  installableId: string;
+  podId: string;
+  connectionId: string;
+  writeMode: GrantWriteMode;
+  audience: string[];
+  expiryDays: 7 | 30 | 90;
+  /** Change access: the grant this one replaces (revoked after the mint). */
+  replaces: string | null;
+}
+
+interface GithubAppSetup {
+  installationId: string;
+  owner: string;
+  repo: string;
+}
+
+interface GithubAppIntegrationResponse {
+  integration?: {
+    createdBy?: string | { _id?: string } | null;
+  };
+}
+
+const USED_RECENTLY_MS = 10 * 60 * 1000;
+const MAX_PODS = 20;
+const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
+// The two option sets the aside renders as buttons. They live here, not inline in the
+// JSX, because eslint's i18next/no-literal-string (jsx-only) reads an array literal in
+// a JSX expression as copy — and these are ids, not words (TASK-164).
+const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'write'];
+const SEGMENTS = ['all', 'granted', 'not-yet'] as const;
+
+/** The age as a unit-suffixed number ("23d", "5m", "just now"), from the timestamp and keys. */
+export const shortAge = (date: string | null | undefined, now: number, t: (key: string, options?: Record<string, unknown>) => string): string => {
+  const timestamp = date ? new Date(date).getTime() : NaN;
+  if (!Number.isFinite(timestamp)) return t('time.age.justNow', { defaultValue: 'just now' });
+  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
+  if (minutes < 1) return t('time.age.justNow', { defaultValue: 'just now' });
+  if (minutes < 60) return t('time.age.minutes', { defaultValue: '{{n}}m', n: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('time.age.hours', { defaultValue: '{{n}}h', n: hours });
+  return t('time.age.days', { defaultValue: '{{n}}d', n: Math.floor(hours / 24) });
+};
+
+// Both surfaces used to carry their own copy of this grammar; the locale family
+// lives in one place now (TASK-164). Re-exported so the module's surface is
+// unchanged for anything importing it from here.
+export { localizeRelativeTime, relativeTime } from '../utils/localizeRelativeTime';
+
+const isExpired = (grant: ToolGrant, now = Date.now()): boolean => new Date(grant.expiresAt).getTime() <= now;
+// Callers that decide what a render SHOWS pass that render's `now`; the read
+// path (`load`) leaves the default, because there the question is what is
+// live at the moment of the read.
+const isDead = (grant: ToolGrant, now = Date.now()): boolean => Boolean(grant.revokedAt) || isExpired(grant, now);
+
+// A catalogue entry is an Installable; a grant carries tool names and an
+// `installationId` that names an install, not a catalogue id. The names are the
+// only key both sides share, so an entry is the one whose tools the grant names.
+const entryCovers = (entry: ToolCatalogEntry, grant: ToolGrant): boolean => (
+  (grant.tools || []).some((name) => (entry.tools || []).some((tool) => tool.name === name))
+);
+// A grant that names no tool of this entry grants nothing on it — that is what
+// the enforcement path does (roomGrantService refuses any tool the grant does
+// not list), so the page must not read such an entry as granted.
+const entryIsGranted = (entry: ToolCatalogEntry, grants: ToolGrant[], now: number): boolean => (
+  grants.some((grant) => !isDead(grant, now) && entryCovers(entry, grant))
+);
+
+const G: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{children}</svg>
+);
+/** Outcome marks: a category, so a glyph; the word stays in the log line and the title.
+ *
+ * The `superseded` mark is a shield with a SHORT BAR, not the shield-and-check it
+ * first shipped with (wren, 69819): the resolution it stands for may be an
+ * approval, a decline or an expiry, and the row beside it carries the verdict —
+ * a check read as "approved" next to a sibling that says `refused`. The bar says
+ * settled without saying how. */
+const OutcomeGlyph: React.FC<{ outcome: ToolOutcome }> = ({ outcome }) => {
+  if (outcome === 'ok') return <G><path d="M20 6 9 17l-5-5" /></G>;
+  if (outcome === 'refused') return <G><path d="M18 6 6 18M6 6l12 12" /></G>;
+  if (outcome === 'pending_approval') return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="M12 8v5M12 16h.01" /></G>;
+  if (outcome === 'superseded') return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="M9 12h6" /></G>;
+  return <G><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></G>;
+};
+/** Mode marks: eye for read, pen for write, shield for write that asks first. */
+const ModeGlyph: React.FC<{ mode: GrantWriteMode }> = ({ mode }) => {
+  if (mode === 'read') return <G><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></G>;
+  if (mode === 'write') return <G><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></G>;
+  return <G><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6z" /><path d="m9 12 2 2 4-4" /></G>;
+};
+
+const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) => {
+  const { t } = useTranslation();
+  const api = useV2Api();
+  // Revoke and Change access are the granter's (Vera 67912 / Wren 67913): the route 403s anyone else.
+  const { currentUser } = useAuth();
+  const viewerId = currentUser?._id ? String(currentUser._id) : '';
+  const isGranter = (grant: ToolGrant): boolean => Boolean(viewerId) && grant.grantedBy === viewerId;
+  const [grants, setGrants] = useState<ToolGrant[] | null>(null);
+  const [catalog, setCatalog] = useState<ToolCatalogEntry[]>([]);
+  const [seats, setSeats] = useState<Record<string, PodSeat[]>>({});
+  const [lastUse, setLastUse] = useState<Record<string, string | null>>({});
+  const [trail, setTrail] = useState<ToolTrail | null>(null);
+  const [trailError, setTrailError] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<DraftGrant | null>(null);
+  const [githubAppSetup, setGithubAppSetup] = useState<GithubAppSetup | null>(null);
+  // Change access minted the new grant but the revoke of the old one failed: only the revoke is retried.
+  const [staleAfterChange, setStaleAfterChange] = useState<{ oldGrantId: string; newGrantId: string } | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [segment, setSegment] = useState<'all' | 'granted' | 'not-yet'>('all');
+  // Grants and trail rows carry relative ages; they must advance while the
+  // page sits open and be re-read when the tab comes back (TASK-131).
+  const now = useRelativeNow();
+
+  const isAdmin = currentUser?.role === 'admin';
+
+  const podIds = useMemo(() => pods.slice(0, MAX_PODS).map((pod) => String(pod._id)), [pods]);
+
+  const load = useCallback(async () => {
+    const catalogRes = await api.get<{ installables?: ToolCatalogEntry[] }>('/api/installables').catch(() => null);
+    setCatalog((catalogRes?.installables || []).filter((entry) => entry.list === 'tools'));
+    if (podIds.length === 0) { setGrants([]); return; }
+    const results = await Promise.all(podIds.map(async (podId) => {
+      const [grantsRes, seatsRes] = await Promise.all([
+        api.get<{ grants: ToolGrant[] }>(`/api/pods/${podId}/grants`).catch(() => null),
+        api.get<{ agents?: PodSeat[] }>(`/api/registry/pods/${podId}/agents`).catch(() => null),
+      ]);
+      return { podId, grants: grantsRes?.grants ?? [], seats: (seatsRes?.agents ?? []).filter((seat) => !seat.internal) };
+    }));
+    const seen = new Set<string>();
+    const merged: ToolGrant[] = [];
+    const seatMap: Record<string, PodSeat[]> = {};
+    for (const result of results) {
+      seatMap[result.podId] = result.seats;
+      for (const grant of result.grants) {
+        if (seen.has(grant.grantId)) continue; // a seat grant can surface from two pods
+        seen.add(grant.grantId);
+        merged.push(grant);
+      }
+    }
+    merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    setGrants(merged);
+    setSeats(seatMap);
+    // "used in the last 10 min" reads the newest trail row's `at` (§6).
+    const uses = await Promise.all(merged.filter((grant) => !isDead(grant)).map(async (grant) => {
+      const res = await api.get<ToolTrail>(`/api/grants/${grant.grantId}/calls`, { params: { limit: 1 } }).catch(() => null);
+      return [grant.grantId, res?.calls?.[0]?.at ?? null] as const;
+    }));
+    setLastUse(Object.fromEntries(uses));
+  }, [api, podIds]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const onVisibility = () => { if (document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [load]);
+
+  useEffect(() => {
+    if (!selectedId) { setTrail(null); return undefined; }
+    let cancelled = false;
+    setTrail(null);
+    setTrailError(false);
+    api.get<ToolTrail>(`/api/grants/${selectedId}/calls`)
+      .then((res) => { if (!cancelled) setTrail(res); })
+      .catch(() => { if (!cancelled) setTrailError(true); });
+    return () => { cancelled = true; };
+  }, [api, selectedId]);
+
+  // The entry a grant belongs to is the one whose namespaced tools it carries.
+  // If the catalogue no longer has that entry, keep the row visibly unknown;
+  // assigning it to GitHub would misstate who owns the grant and its policy.
+  const entryFor = (grant: ToolGrant): ToolCatalogEntry | null => (
+    catalog.find((entry) => entryCovers(entry, grant)) || null
+  );
+  const noticeMatchesEntry = (entry: ToolCatalogEntry | null): boolean => Boolean(
+    manualRevokeNotice
+    && entry?.entryId === manualRevokeNotice.entryId
+    && entry.connections.some((connection) => connection.connectionId === manualRevokeNotice.connectionId),
+  );
+  const renderManualRevokeNotice = (entry: ToolCatalogEntry | null) => {
+    if (!manualRevokeNotice || !noticeMatchesEntry(entry)) return null;
+    return (
+      <p className="v2-connector-row__refusal" role="status">
+        {t('connectors.hostedMcpManualRevoke', {
+          defaultValue: 'Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.',
+          provider: manualRevokeNotice.provider,
+        })}{' '}
+        <a href={manualRevokeNotice.revokePage} target="_blank" rel="noopener noreferrer">
+          {t('connectors.hostedMcpReviewAuthorization', {
+            defaultValue: "Open {{provider}}'s connected apps",
+            provider: manualRevokeNotice.provider,
+          })}
+        </a>
+      </p>
+    );
+  };
+  const toolLabel = (grant: ToolGrant): string => entryFor(grant)?.label
+    || t('tools.unknownConnector', { defaultValue: 'Unknown connector' });
+
+  const podName = (podId: string): string => pods.find((pod) => String(pod._id) === podId)?.name || t('tools.aPod', { defaultValue: 'a pod' });
+  const memberName = (userId: string | null): string | null => {
+    if (!userId) return null;
+    for (const pod of pods) {
+      for (const member of pod.members || []) {
+        if (typeof member === 'object' && member && String(member._id) === userId && member.username) return member.username;
+      }
+    }
+    return null;
+  };
+  const seatLabel = (podId: string | null, userId: string): string => {
+    const pool = podId ? (seats[podId] || []) : Object.values(seats).flat();
+    const seat = pool.find((row) => row.userId === userId) || Object.values(seats).flat().find((row) => row.userId === userId);
+    if (seat) return seat.displayName || seat.name;
+    // `seats` is the agent list, and a pod grant's audience is a snapshot of the
+    // room's members — so a human in it resolved to nothing and the row read
+    // "an agent, an agent, <seat>". Name the member instead of asserting an
+    // identity the server never claimed (TASK-050).
+    return memberName(userId) || t('tools.aSeat', { defaultValue: 'an agent' });
+  };
+  const grantPodId = (grant: ToolGrant): string | null => {
+    if (grant.target.kind === 'pod') return grant.target.id;
+    const entry = Object.entries(seats).find(([, rows]) => rows.some((row) => row.userId === grant.target.id));
+    return entry ? entry[0] : null;
+  };
+  // zh joins a list with 、 and en with ', ', so the separator is copy and not a
+  // literal at each join site (TASK-164).
+  const joinList = (items: string[]): string => items.join(t('tools.listSeparator', { defaultValue: ', ' }));
+  const audienceLabels = (grant: ToolGrant): string => {
+    const podId = grantPodId(grant);
+    const labels = grant.effectiveAudience.map((id) => seatLabel(podId, id));
+    if (labels.length === 0) return t('tools.nobody', { defaultValue: 'no agent' });
+    return joinList(labels);
+  };
+  const irreversibleTools = (entry: ToolCatalogEntry | null, tools: string[]): string[] => (entry?.tools || [])
+    .filter((tool) => tool.irreversible && tools.includes(tool.name)).map((tool) => tool.name);
+  const asksFirst = (grant: ToolGrant): string => {
+    if (grant.writeMode === 'read') return t('tools.asksNothing', { defaultValue: 'nothing asks first' });
+    if (grant.writeMode === 'write-with-confirm') return t('tools.asksEveryWrite', { defaultValue: 'every write asks first' });
+    // Under `write` the floor is the tool's own irreversible flag (piece 2b): the list is the catalogue's.
+    const entry = entryFor(grant);
+    if (!entry) return t('tools.unknownWritePolicy', { defaultValue: 'write policy unavailable' });
+    const list = irreversibleTools(entry, grant.tools);
+    return list.length
+      ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: joinList(list) })
+      : t('tools.asksNothing', { defaultValue: 'nothing asks first' });
+  };
+  const outcomeLabel = (outcome: ToolOutcome): string => ({
+    ok: t('tools.outcomeOk', { defaultValue: 'ok' }),
+    refused: t('tools.outcomeRefused', { defaultValue: 'refused' }),
+    pending_approval: t('tools.awaiting', { defaultValue: 'awaiting a person' }),
+    superseded: t('tools.outcomeSuperseded', { defaultValue: 'answered' }),
+    failed: t('tools.outcomeFailed', { defaultValue: 'failed' }),
+  })[outcome] || outcome;
+  const modeLabel = (mode: GrantWriteMode): string => ({
+    read: t('tools.modeRead', { defaultValue: 'read' }),
+    'write-with-confirm': t('tools.modeWriteConfirm', { defaultValue: 'read and write, ask first' }),
+    write: t('tools.modeWrite', { defaultValue: 'read and write' }),
+  })[mode];
+
+  const entryGrantModes = (entry: ToolCatalogEntry): GrantWriteMode[] => {
+    if (entry.connectionType !== 'hosted-mcp') return WRITE_MODES;
+    return entry.tools.some((tool) => tool.requiredWriteMode !== 'read')
+      ? ['read', 'write-with-confirm']
+      : ['read'];
+  };
+
+  const entryModeCopy = (entry: ToolCatalogEntry): string => {
+    const modes = entryGrantModes(entry);
+    return modes.length === 1
+      ? modeLabel(modes[0])
+      : t('tools.readOrWrite', { defaultValue: 'read, or read and write' });
+  };
+
+  const usedRecently = (grant: ToolGrant): boolean => {
+    const at = lastUse[grant.grantId];
+    return Boolean(at) && Date.now() - new Date(at as string).getTime() < USED_RECENTLY_MS;
+  };
+
+  const q = query.trim().toLowerCase();
+  const rows = useMemo(() => (grants || []).filter((grant) => {
+    if (segment === 'not-yet') return false;
+    if (!q) return true;
+    return toolLabel(grant).toLowerCase().includes(q) || grant.tools.some((tool) => tool.toLowerCase().includes(q));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [grants, q, segment, catalog]);
+  // A tool is "not yet" while no live grant on it exists anywhere the person can see.
+  // `now` is a dep: a grant that expires while the page sits open has to move
+  // back under Not yet on the same tick that drops the header count, or the
+  // count and the list disagree until a reload.
+  const notYet = useMemo(() => (segment === 'granted' ? [] : catalog.filter((entry) => (
+    !entryIsGranted(entry, grants || [], now)
+    && (!q || entry.label.toLowerCase().includes(q) || entry.tools.some((tool) => tool.name.toLowerCase().includes(q)))
+  ))), [catalog, grants, now, q, segment]);
+  // Grants, not entries: a person may hold two live grants on one tool.
+  const grantedCount = (grants || []).filter((grant) => !isDead(grant, now)).length;
+  // Entries, from the same predicate the Not yet list filters on, so the header
+  // cannot claim fewer than the list shows. Deliberately not `notYet.length`:
+  // that one honours the search box too, and the header must not move as you type.
+  const moreCount = catalog.filter((entry) => !entryIsGranted(entry, grants || [], now)).length;
+
+  const selected = selectedId ? (grants || []).find((grant) => grant.grantId === selectedId) || null : null;
+
+  const openDraft = (entry: ToolCatalogEntry, from?: ToolGrant) => {
+    const podId = from ? (grantPodId(from) || podIds[0] || '') : (podIds[0] || '');
+    const modes = entryGrantModes(entry);
+    setDraft({
+      installableId: entry.installableId,
+      podId,
+      connectionId: entry.connections[0]?.connectionId || '',
+      writeMode: from && modes.includes(from.writeMode) ? from.writeMode : modes[0] || 'read',
+      audience: from ? from.effectiveAudience : (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id)),
+      expiryDays: 7,
+      replaces: from && !isDead(from) ? from.grantId : null,
+    });
+    setSelectedId(null);
+    setConfirmRevoke(null);
+    setError(null);
+  };
+  const openGithubAppSetup = () => {
+    setGithubAppSetup({ installationId: '', owner: '', repo: '' });
+    setDraft(null);
+    setSelectedId(null);
+    setConfirmRevoke(null);
+    setError(null);
+  };
+  const draftEntry = draft ? catalog.find((entry) => entry.installableId === draft.installableId) || null : null;
+  const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode): string[] => (entry?.tools || [])
+    .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
+
+  const submitDraft = async () => {
+    if (!draft || !draftEntry) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const expiresAt = new Date(Date.now() + draft.expiryDays * 86_400_000).toISOString();
+      // The mint's body, as routes/grants.ts takes it: the server names the broker (Vera 67728)
+      // and takes the installation from the Connection (#1677, Vera 67821) — neither is the caller's.
+      const minted = await api.post<{ grantId?: string }>('/api/grants', {
+        connectionId: draft.connectionId,
+        target: { kind: 'pod', id: draft.podId },
+        tools: draftTools(draftEntry, draft.writeMode),
+        writeMode: draft.writeMode,
+        audience: draft.audience,
+        expiresAt,
+      });
+      // Change access: a change is a new grant and a revoke of the old one, because `tools` is never
+      // widened in place. The mint is kept whatever happens next; a failed revoke is retried alone
+      // (Vera on 0368992e), never by minting a third grant.
+      if (draft.replaces) {
+        const oldGrantId = draft.replaces;
+        const newGrantId = String(minted?.grantId || '');
+        try {
+          await api.post(`/api/grants/${oldGrantId}/revoke`);
+        } catch {
+          setStaleAfterChange({ oldGrantId, newGrantId });
+          setDraft(null);
+          setSelectedId(oldGrantId);
+          await load();
+          return;
+        }
+      }
+      setDraft(null);
+      await load();
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
+      setError(code?.message || code?.error || t('tools.grantError', { defaultValue: 'Could not grant it.' }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Connect a hosted-MCP entry (scope §4): the start route answers with the
+   * vendor's authorize URL and sets the flow's browser nonce as an httpOnly
+   * cookie on the SAME response.
+   *
+   * `withCredentials` is what keeps that cookie: the API is a different origin
+   * from the app, so without it the browser drops the `Set-Cookie` and every
+   * callback refuses `invalid_state` — a person consents at the vendor and comes
+   * back to a row that is still not connected. A backend test sets the cookie
+   * itself and cannot witness this, which is why it is asserted here.
+   */
+  const connectHostedMcp = async (entry: ToolCatalogEntry) => {
+    if (busy || !entry.entryId) return;
+    const authorizationWindow = window.open('', '_blank');
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.post<{ authorizeUrl?: string }>(
+        `/api/integrations/connect/hosted-mcp/${encodeURIComponent(entry.entryId)}/start`,
+        {},
+        { withCredentials: true },
+      );
+      if (!result.authorizeUrl) throw new Error('authorization URL was missing');
+      if (authorizationWindow) {
+        authorizationWindow.opener = null;
+        authorizationWindow.location.assign(result.authorizeUrl);
+      } else {
+        window.location.assign(result.authorizeUrl);
+      }
+    } catch (err) {
+      authorizationWindow?.close();
+      const data = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
+      setError(data?.message || data?.error || t('tools.connectError', { defaultValue: 'Could not begin connecting. Try again in a moment.' }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitGithubAppSetup = async () => {
+    if (!githubAppSetup || !isAdmin) return;
+    const installationId = githubAppSetup.installationId.trim();
+    const owner = githubAppSetup.owner.trim();
+    const repo = githubAppSetup.repo.trim();
+    if (!installationId || !owner || !repo) {
+      setError(t('tools.githubAppRequired', { defaultValue: 'Enter the installation ID, owner, and repository.' }));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await api.post<GithubAppIntegrationResponse>('/api/integrations/github-app', { installationId, owner, repo });
+      const createdBy = response?.integration?.createdBy;
+      const createdById = typeof createdBy === 'string'
+        ? createdBy
+        : createdBy && typeof createdBy === 'object' && createdBy._id
+          ? String(createdBy._id)
+          : '';
+      if (createdById && viewerId && createdById !== viewerId) {
+        setError(t('tools.githubAppOwnedByOther', { defaultValue: 'This GitHub App is already installed by another administrator.' }));
+        return;
+      }
+      setGithubAppSetup(null);
+      await load();
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
+      setError(code?.message || code?.error || t('tools.githubAppError', { defaultValue: 'Could not install the GitHub App.' }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retryStaleRevoke = async () => {
+    if (!staleAfterChange) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`/api/grants/${staleAfterChange.oldGrantId}/revoke`);
+      setStaleAfterChange(null);
+      await load();
+    } catch {
+      setError(t('tools.revokeError', { defaultValue: 'Could not revoke the grant.' }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revoke = async (grant: ToolGrant) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`/api/grants/${grant.grantId}/revoke`);
+      setConfirmRevoke(null);
+      await load();
+    } catch {
+      setError(t('tools.revokeError', { defaultValue: 'Could not revoke the grant.' }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renderRow = (grant: ToolGrant) => {
+    const dead = isDead(grant, now);
+    const podId = grantPodId(grant);
+    const granter = memberName(grant.grantedBy);
+    const isSelected = selectedId === grant.grantId;
+    const entry = entryFor(grant);
+    const label = toolLabel(grant);
+    const noticeGrantId = noticeMatchesEntry(entry)
+      ? (grants || []).find((candidate) => (
+        !isDead(candidate, now) && entryFor(candidate)?.installableId === entry?.installableId
+      ))?.grantId
+      : null;
+    // What the grant was given TO, which is a seat when the target is a seat. It
+    // is not the row's location: the kicker and the accessible name both name the
+    // pod the row lives in, so a seat grant under Ops has a sentence reading
+    // `granted to Reed` in a row announced as `View GitHub in Ops`. Sharing one
+    // label between the two put the seat's name where the location belongs
+    // (TASK-179, ux-lead's gate at 07873c19) — two nouns, so two expressions.
+    const targetLabel = grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id);
+    // Direction A rule 3: `pod · verb age` — the verb from a key, the age from the timestamp.
+    const when = t('tools.grantedAge', { defaultValue: 'granted {{age}}', age: shortAge(grant.createdAt, now, t) });
+    const kicker = `${podId ? podName(podId) : seatLabel(null, grant.target.id)} · ${when}`;
+    const revokedBy = grant.revokedBy ? memberName(grant.revokedBy) : null;
+    const line2 = dead
+      ? (grant.revokedAt
+        ? (revokedBy
+          ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: localizeRelativeTime(grant.revokedAt, t, { now }) })
+          : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: localizeRelativeTime(grant.revokedAt, t, { now }) }))
+        : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: localizeRelativeTime(grant.expiresAt, t, { now }) }))
+      // Direction A rule 1: the write mode is the glyph beside this line; its words ride the 390 kicker.
+      // One interpolated key, not `{{agents}}` + a separate 'may use it': a language
+      // that orders the clause differently needs the whole sentence (TASK-164). The
+      // rendered English is unchanged.
+      // An empty audience is its own sentence, not the interpolated one with an empty
+      // subject: zh writes 「没有智能体可以使用」 with no space, which `{{agents}} 可以使用`
+      // cannot produce (TASK-179).
+      : (grant.effectiveAudience.length === 0
+        ? t('tools.nobodyMayUse', { defaultValue: 'nobody may use it' })
+        : t('tools.mayUse', { defaultValue: '{{agents}} may use it', agents: audienceLabels(grant) }));
+    return (
+      <article key={grant.grantId} className={`v2-connector-row${isSelected ? ' v2-connector-row--selected' : ''}${dead ? ' v2-connector-row--dead' : ''}`}>
+        <button
+          type="button"
+          className="v2-connector-row__selection"
+          aria-pressed={isSelected}
+          aria-label={t('tools.viewGrant', { defaultValue: 'View {{tool}} in {{pod}}', tool: label, pod: podId ? podName(podId) : seatLabel(null, grant.target.id) })}
+          onClick={() => { setSelectedId(isSelected ? null : grant.grantId); setDraft(null); setConfirmRevoke(null); }}
+        >
+          <span className="v2-connector-row__name">
+            <span className={`v2-connector-row__dot ${dead ? 'v2-connector-row__dot--empty' : `v2-connector-row__dot--live${usedRecently(grant) ? ' v2-connector-row__dot--pulse' : ''}`}`} aria-hidden="true" />
+            <span className="v2-connector-row__glyph" aria-hidden="true">
+              {entry && <PlatformGlyph type={entry.installableId} />}
+            </span>
+            <span>{label}</span>
+          </span>
+          <span className="v2-connector-row__details">
+            <span className="v2-connector-row__kicker">
+              {kicker}
+              {!dead && <span className="v2-connector-row__kicker-mode"> · {asksFirst(grant)}</span>}
+            </span>
+            <strong>
+              {/* Direction A: what the tool does is the not-yet row's and the aside's sentence, not the granted row's. */}
+              {/* One key per sentence, both names ordered by the language. The old shape
+                  composed three pieces (`granted to` + pod + `by` + member), so zh could
+                  only read 「授权给 Growth 授权者 sam」 (TASK-179). */}
+              {granter ? (
+                <Trans i18nKey="tools.grantedToPodBy" values={{ pod: targetLabel, member: granter }} components={{ b: <b /> }} />
+              ) : (
+                <Trans i18nKey="tools.grantedToPod" values={{ pod: targetLabel }} components={{ b: <b /> }} />
+              )}
+            </strong>
+            <span className="v2-connector-row__detail">
+              {!dead && <span className="v2-tools__mode" title={modeLabel(grant.writeMode)} role="img" aria-label={modeLabel(grant.writeMode)}><ModeGlyph mode={grant.writeMode} /></span>}
+              {line2}
+            </span>
+          </span>
+        </button>
+        {dead && entry && isGranter(grant) ? (
+          // Grant again is the granter's too (Wren 67920): the mint 403s anyone but the Connection's owner.
+          <button type="button" className="v2-connector-row__action" onClick={() => openDraft(entry, grant)}>
+            {t('tools.grantAgain', { defaultValue: 'Grant again' })}
+          </button>
+        ) : (
+          // Direction A rule 2: Manage is housekeeping beside the row's word, so it is the gear.
+          <button
+            type="button"
+            className="v2-connector-row__action v2-connector-row__action--secondary v2-connector-row__action--icon"
+            title={t('tools.manage', { defaultValue: 'Manage' })}
+            aria-label={t('tools.manage', { defaultValue: 'Manage' })}
+            onClick={() => { setSelectedId(grant.grantId); setDraft(null); setConfirmRevoke(null); }}
+          >
+            <ActGlyph name="manage" />
+          </button>
+        )}
+        {noticeGrantId === grant.grantId && renderManualRevokeNotice(entry)}
+      </article>
+    );
+  };
+
+  const renderNotYet = (entry: ToolCatalogEntry) => {
+    const canAdd = entry.available && entry.connections.length > 0 && podIds.length > 0;
+    const canInstallGithubApp = isAdmin && entry.installableId === 'github' && entry.available && entry.connections.length === 0;
+    // A hosted entry is connected by the person who will grant it (§1: member
+    // mode), so the action belongs on the row and needs no admin.
+    const isHosted = entry.connectionType === 'hosted-mcp' && Boolean(entry.entryId);
+    const canConnectHosted = Boolean(isHosted) && entry.available && entry.connections.length === 0;
+    return (
+      <article key={entry.installableId} className={`v2-connector-row v2-connector-row--not-yet${!entry.available ? ' v2-connector-row--not-enabled' : ''}`}>
+        <span className="v2-connector-row__name">
+          <span className="v2-connector-row__dot v2-connector-row__dot--not-yet" aria-hidden="true" />
+          <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type={entry.installableId} /></span>
+          <span>{entry.label}</span>
+        </span>
+        <span className="v2-connector-row__details">
+          <span className="v2-connector-row__kicker">{t('tools.notGranted', { defaultValue: 'not granted' })}</span>
+          <strong>{entry.description}</strong>
+          <span className="v2-connector-row__detail">
+            {!entry.available
+              ? t('tools.notEnabled', { defaultValue: 'not enabled on this instance · ask your operator' })
+              : entry.connections.length === 0
+                ? (isHosted
+                  ? t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label })
+                  : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' }))
+                : entryModeCopy(entry)}
+          </span>
+        </span>
+        {!entry.available && (
+          <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
+            {t('tools.ask', { defaultValue: 'Ask' })}
+          </a>
+        )}
+        {canConnectHosted && (
+          <button type="button" className="v2-connector-row__action" onClick={() => { void connectHostedMcp(entry); }}>
+            {t('tools.connect', { defaultValue: 'Connect' })}
+          </button>
+        )}
+        {canAdd && (
+          <button type="button" className="v2-connector-row__action" onClick={() => openDraft(entry)}>
+            {t('tools.add', { defaultValue: 'Add' })}
+          </button>
+        )}
+        {canInstallGithubApp && (
+          <button type="button" className="v2-connector-row__action" onClick={openGithubAppSetup}>
+            {t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}
+          </button>
+        )}
+        {renderManualRevokeNotice(entry)}
+      </article>
+    );
+  };
+
+  const renderGithubAppSetup = () => {
+    if (!githubAppSetup) return null;
+    return (
+      <aside className="v2-connectors__aside v2-tools__aside" aria-label={t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}>
+        <section className="v2-connector-aside__card">
+          <p className="v2-connector-aside__eyebrow">{t('tools.adminSetup', { defaultValue: 'administrator setup' })}</p>
+          <h2>{t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}</h2>
+          <p>{t('tools.githubAppSetupHint', { defaultValue: 'Connect the GitHub App once so people can grant GitHub tools to their pods.' })}</p>
+          <div className="v2-tools__form">
+            <label className="v2-tools__field">
+              <span>{t('tools.installationId', { defaultValue: 'installation ID' })}</span>
+              <input
+                className="v2-tools__input"
+                value={githubAppSetup.installationId}
+                onChange={(event) => setGithubAppSetup({ ...githubAppSetup, installationId: event.target.value })}
+                aria-label={t('tools.installationId', { defaultValue: 'installation ID' })}
+              />
+            </label>
+            <label className="v2-tools__field">
+              <span>{t('tools.owner', { defaultValue: 'owner' })}</span>
+              <input
+                className="v2-tools__input"
+                value={githubAppSetup.owner}
+                onChange={(event) => setGithubAppSetup({ ...githubAppSetup, owner: event.target.value })}
+                aria-label={t('tools.owner', { defaultValue: 'owner' })}
+              />
+            </label>
+            <label className="v2-tools__field">
+              <span>{t('tools.repository', { defaultValue: 'repository' })}</span>
+              <input
+                className="v2-tools__input"
+                value={githubAppSetup.repo}
+                onChange={(event) => setGithubAppSetup({ ...githubAppSetup, repo: event.target.value })}
+                aria-label={t('tools.repository', { defaultValue: 'repository' })}
+              />
+            </label>
+          </div>
+          <div className="v2-connector-aside__actions">
+            <button
+              type="button"
+              className="v2-connector-aside__primary"
+              disabled={busy || !githubAppSetup.installationId.trim() || !githubAppSetup.owner.trim() || !githubAppSetup.repo.trim()}
+              onClick={() => { void submitGithubAppSetup(); }}
+            >
+              {busy ? t('tools.installingGitHubApp', { defaultValue: 'Installing…' }) : t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}
+            </button>
+            <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setGithubAppSetup(null)}>
+              {t('tools.cancel', { defaultValue: 'Cancel' })}
+            </button>
+          </div>
+          {error && <p className="v2-connector-aside__note" role="alert">{error}</p>}
+        </section>
+      </aside>
+    );
+  };
+
+  const renderDraft = () => {
+    if (!draft || !draftEntry) return null;
+    const podSeats = seats[draft.podId] || [];
+    const tools = draftTools(draftEntry, draft.writeMode);
+    const irreversible = irreversibleTools(draftEntry, tools);
+    const asks = draft.writeMode === 'read'
+      ? t('tools.asksNothing', { defaultValue: 'nothing asks first' })
+      : draft.writeMode === 'write-with-confirm'
+        ? t('tools.asksEveryWrite', { defaultValue: 'every write asks first' })
+        : (irreversible.length ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: joinList(irreversible) }) : t('tools.asksNothing', { defaultValue: 'nothing asks first' }));
+    return (
+      <aside className="v2-connectors__aside v2-tools__aside" aria-label={draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.addTool', { defaultValue: 'Add {{tool}}', tool: draftEntry.label })}>
+        <section className="v2-connector-aside__card">
+          <p className="v2-connector-aside__eyebrow">{draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.grant', { defaultValue: 'grant' })}</p>
+          <h2>{draftEntry.label} · {podName(draft.podId)}</h2>
+          <p>{draftEntry.description}</p>
+          <div className="v2-tools__form">
+            {!draft.replaces && podIds.length > 1 && (
+              <label className="v2-tools__field">
+                <span>{t('tools.toRoom', { defaultValue: 'pod' })}</span>
+                <select className="v2-connectors__select" value={draft.podId} onChange={(event) => { const podId = event.target.value; setDraft({ ...draft, podId, audience: (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id)) }); }}>
+                  {podIds.map((podId) => <option key={podId} value={podId}>{podName(podId)}</option>)}
+                </select>
+              </label>
+            )}
+            {draftEntry.connections.length > 1 && (
+              <label className="v2-tools__field">
+                <span>{t('tools.connection', { defaultValue: 'connection' })}</span>
+                <select className="v2-connectors__select" value={draft.connectionId} onChange={(event) => setDraft({ ...draft, connectionId: event.target.value })}>
+                  {draftEntry.connections.map((connection) => <option key={connection.connectionId} value={connection.connectionId}>{connection.owner}/{connection.repo}</option>)}
+                </select>
+              </label>
+            )}
+            <div className="v2-tools__field">
+              <span>{t('tools.mode', { defaultValue: 'what it may do' })}</span>
+              <div className="v2-connector-aside__mode" role="group" aria-label={t('tools.mode', { defaultValue: 'what it may do' })}>
+                {entryGrantModes(draftEntry).map((mode) => (
+                  <button key={mode} type="button" aria-pressed={draft.writeMode === mode} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
+                    {modeLabel(mode)}
+                  </button>
+                ))}
+              </div>
+              <span className="v2-tools__hint">{tools.length ? tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</span>
+              <span className="v2-tools__hint">{asks}</span>
+            </div>
+            <fieldset className="v2-tools__field v2-tools__agents">
+              <legend>{t('tools.agents', { defaultValue: 'agents' })}</legend>
+              {podSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this pod yet' })}</span>}
+              {podSeats.map((seat) => seat.userId && (
+                <label key={seat.userId} className="v2-connector-aside__relay">
+                  <input type="checkbox" checked={draft.audience.includes(seat.userId)} onChange={(event) => setDraft({ ...draft, audience: event.target.checked ? [...draft.audience, seat.userId as string] : draft.audience.filter((id) => id !== seat.userId) })} />
+                  {seat.displayName || seat.name}
+                </label>
+              ))}
+            </fieldset>
+            <label className="v2-tools__field">
+              <span>{t('tools.ends', { defaultValue: 'ends' })}</span>
+              <select className="v2-connectors__select" value={draft.expiryDays} onChange={(event) => setDraft({ ...draft, expiryDays: Number(event.target.value) as 7 | 30 | 90 })}>
+                <option value={7}>{t('tools.days', { defaultValue: 'in {{count}} days', count: 7 })}</option>
+                <option value={30}>{t('tools.days', { defaultValue: 'in {{count}} days', count: 30 })}</option>
+                <option value={90}>{t('tools.days', { defaultValue: 'in {{count}} days', count: 90 })}</option>
+              </select>
+            </label>
+          </div>
+          <div className="v2-connector-aside__actions">
+            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || tools.length === 0} onClick={() => { void submitDraft(); }}>
+              {busy ? t('tools.granting', { defaultValue: 'Granting…' }) : t('tools.grantAct', { defaultValue: 'Grant' })}
+            </button>
+            <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setDraft(null)}>
+              {t('tools.cancel', { defaultValue: 'Cancel' })}
+            </button>
+          </div>
+          {error && <p className="v2-connector-aside__note" role="alert">{error}</p>}
+        </section>
+      </aside>
+    );
+  };
+
+  const renderAside = (grant: ToolGrant) => {
+    const dead = isDead(grant, now);
+    const podId = grantPodId(grant);
+    const granter = memberName(grant.grantedBy);
+    const revokedBy = memberName(grant.revokedBy);
+    const entry = entryFor(grant);
+    const counts = trail?.counts;
+    return (
+      <aside className="v2-connectors__aside v2-tools__aside" aria-label={t('tools.grantDetails', { defaultValue: 'Grant details' })}>
+        <section className="v2-connector-aside__card">
+          <p className="v2-connector-aside__eyebrow">{t('tools.grant', { defaultValue: 'grant' })}</p>
+          <h2>{toolLabel(grant)} · {grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id)}</h2>
+          <p>
+            {granter
+              ? t('tools.grantedByOn', { defaultValue: 'Granted by {{member}} {{rel}}.', member: granter, rel: localizeRelativeTime(grant.createdAt, t, { now }) })
+              : t('tools.grantedOn', { defaultValue: 'Granted {{rel}}.', rel: localizeRelativeTime(grant.createdAt, t, { now }) })}
+            {t('tools.sentenceSeparator', { defaultValue: ' ' })}
+            {grant.revokedAt
+              ? (revokedBy
+                ? t('tools.endedRevokedBy', { defaultValue: 'Revoked by {{member}} {{rel}}.', member: revokedBy, rel: localizeRelativeTime(grant.revokedAt, t, { now }) })
+                : t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: localizeRelativeTime(grant.revokedAt, t, { now }) }))
+              : (isExpired(grant, now)
+                ? t('tools.endedExpired', { defaultValue: 'Expired {{rel}}.', rel: localizeRelativeTime(grant.expiresAt, t, { now }) })
+                : t('tools.endsRel', { defaultValue: 'Ends {{rel}}.', rel: localizeRelativeTime(grant.expiresAt, t, { now }) }))}
+          </p>
+          <dl className="v2-tools__facts">
+            <dt>{t('tools.agentsAllowed', { defaultValue: 'agents allowed' })}</dt>
+            <dd>{audienceLabels(grant)}</dd>
+            <dt><span className="v2-tools__mode" aria-hidden="true"><ModeGlyph mode={grant.writeMode} /></span>{modeLabel(grant.writeMode)}</dt>
+            <dd>{grant.tools.length ? grant.tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</dd>
+            <dt>{t('tools.asksFirst', { defaultValue: 'asks a person first' })}</dt>
+            <dd>{asksFirst(grant)}</dd>
+            {grant.budget?.calls !== undefined && (
+              <>
+                <dt>{t('tools.budget', { defaultValue: 'budget' })}</dt>
+                <dd>{grant.budget.windowMs
+                  ? t('tools.budgetWindow', { defaultValue: '{{calls}} calls per {{window}}', calls: grant.budget.calls, window: localizeWindow(grant.budget.windowMs, t) })
+                  : t('tools.budgetTotal', { defaultValue: '{{calls}} calls', calls: grant.budget.calls })}</dd>
+              </>
+            )}
+          </dl>
+          {staleAfterChange?.oldGrantId === grant.grantId && (
+            <div className="v2-connector-aside__actions" role="alert">
+              <p className="v2-connector-aside__note">{t('tools.staleAfterChange', { defaultValue: 'The new grant is live. This old one still is too — its revoke did not go through.' })}</p>
+              <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void retryStaleRevoke(); }}>
+                {t('tools.revokeOld', { defaultValue: 'Revoke the old grant' })}
+              </button>
+            </div>
+          )}
+          {!dead && isGranter(grant) && staleAfterChange?.oldGrantId !== grant.grantId && (confirmRevoke === grant.grantId ? (
+            <div className="v2-connector-aside__actions">
+              <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void revoke(grant); }}>
+                {t('tools.revokeConfirm', { defaultValue: 'Yes, revoke it' })}
+              </button>
+              <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setConfirmRevoke(null)}>
+                {t('tools.keep', { defaultValue: 'Keep it' })}
+              </button>
+            </div>
+          ) : (
+            <div className="v2-connector-aside__actions">
+              {entry && (
+                <button type="button" className="v2-connector-aside__secondary" onClick={() => openDraft(entry, grant)}>
+                  {t('tools.changeAccess', { defaultValue: 'Change access' })}
+                </button>
+              )}
+              {/* Direction A rule 2: Revoke is the non-deciding act beside Change access, so it is the ✕ (the Deny precedent); it still asks to confirm. */}
+              <button
+                type="button"
+                className="v2-connector-aside__secondary v2-connector-aside__icon"
+                title={t('tools.revoke', { defaultValue: 'Revoke' })}
+                aria-label={t('tools.revoke', { defaultValue: 'Revoke' })}
+                onClick={() => setConfirmRevoke(grant.grantId)}
+              >
+                <ActGlyph name="deny" />
+              </button>
+            </div>
+          ))}
+          {error && <p className="v2-connector-aside__note" role="alert">{error}</p>}
+        </section>
+        <section className="v2-connector-aside__card">
+          <p className="v2-connector-aside__eyebrow">{t('tools.trail', { defaultValue: 'trail' })}</p>
+          <div className="v2-tools__counts" aria-label={t('tools.counts', { defaultValue: 'Call counts' })}>
+            <div className="v2-tools__count"><strong>{counts ? counts.total : '—'}</strong><span>{t('tools.calls', { defaultValue: 'calls' })}</span></div>
+            <div className="v2-tools__count"><strong>{counts ? counts.refused : '—'}</strong><span>{t('tools.refused', { defaultValue: 'refused' })}</span></div>
+            <div className="v2-tools__count"><strong>{counts ? counts.pending_approval : '—'}</strong><span>{t('tools.awaiting', { defaultValue: 'awaiting a person' })}</span></div>
+          </div>
+          {trailError && <p className="v2-connector-aside__note">{t('tools.trailError', { defaultValue: 'Could not read the trail.' })}</p>}
+          {trail && trail.calls.length === 0 && <p className="v2-connector-aside__note">{t('tools.trailEmpty', { defaultValue: 'No calls yet.' })}</p>}
+          {trail && trail.calls.length > 0 && (
+            <ol className="v2-tools__trail">
+              {trail.calls.map((line) => (
+                <li key={line.callId} className="v2-tools__trail-line">
+                  <span><span className="v2-tools__outcome" title={outcomeLabel(line.outcome)} aria-hidden="true"><OutcomeGlyph outcome={line.outcome} /></span>{seatLabel(podId, line.agentUserId)} · {line.tool} · {outcomeLabel(line.outcome)}</span>
+                  <span className="v2-tools__trail-when">{localizeRelativeTime(line.at, t, { now })}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      </aside>
+    );
+  };
+
+  if (grants === null) {
+    return <div className="v2-connectors__loading">{t('tools.loading', { defaultValue: 'Loading tools…' })}</div>;
+  }
+  if (grants.length === 0 && catalog.length === 0) return null; // nothing the server has to show
+
+  return (
+    <div className="v2-connectors__content v2-tools">
+      <section className="v2-connectors__main" aria-label={t('tools.title', { defaultValue: 'Tools' })}>
+        <div className="v2-tools__head">
+          <h2 className="v2-tools__title">{t('tools.title', { defaultValue: 'Tools' })}</h2>
+          <span className="v2-tools__count-line">
+            {t('tools.grantedCount', { defaultValue: '{{count}} granted', count: grantedCount })}
+            {moreCount > 0 && ` · ${t('tools.moreCount', { defaultValue: '{{count}} more', count: moreCount })}`}
+          </span>
+          <input
+            type="search"
+            className="v2-tools__search"
+            value={query}
+            placeholder={t('tools.search', { defaultValue: 'Search tools' })}
+            aria-label={t('tools.search', { defaultValue: 'Search tools' })}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <div className="v2-connector-aside__mode v2-tools__segment" role="group" aria-label={t('tools.filter', { defaultValue: 'Show' })}>
+            {SEGMENTS.map((key) => (
+              <button
+                key={key}
+                type="button"
+                className={segment === key ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'}
+                aria-pressed={segment === key}
+                onClick={() => setSegment(key)}
+              >
+                {key === 'all' ? t('tools.segAll', { defaultValue: 'All' }) : key === 'granted' ? t('tools.segGranted', { defaultValue: 'Granted' }) : t('tools.segNotYet', { defaultValue: 'Not yet' })}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="v2-connectors__rows">
+          {rows.map(renderRow)}
+          {notYet.map(renderNotYet)}
+          {rows.length === 0 && notYet.length === 0 && (
+            <p className="v2-tools__empty">{t('tools.nothingMatches', { defaultValue: 'Nothing matches.' })}</p>
+          )}
+        </div>
+      </section>
+      {draft ? renderDraft() : (selected ? renderAside(selected) : renderGithubAppSetup())}
+    </div>
+  );
+};
+
+export default V2ConnectorTools;

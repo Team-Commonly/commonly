@@ -9,8 +9,20 @@ jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn
 jest.mock('../../../services/messageAgentDeliveryService', () => ({ deliverMessageToAgents: jest.fn(async () => ({})) }));
 jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn(async () => ({})) }));
 jest.mock('../../../services/attentionItemService', () => ({ resolve: jest.fn(async () => {}), recordDecision: jest.fn() }));
-jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
-jest.mock('../../../services/slackApi', () => jest.fn());
+// Stub the network, keep the behaviour: the bridge escapes through this module's
+// escapeHtml, so a bare stub leaves it undefined and the send is swallowed.
+jest.mock('../../../services/telegramService', () => ({
+  ...jest.requireActual('../../../services/telegramService'),
+  sendMessage: jest.fn(),
+}));
+// Constructor stubbed (the network), the escape real: the renderer the bridges
+// share calls it, so a bare stub would leave it undefined.
+jest.mock('../../../services/slackApi', () => {
+  const actual = jest.requireActual('../../../services/slackApi');
+  const mock = jest.fn();
+  mock.escapeSlackMrkdwn = actual.escapeSlackMrkdwn;
+  return mock;
+});
 jest.mock('../../../services/connectorSecrets', () => ({ get: jest.fn(async () => 'token') }));
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
 jest.mock('../../../services/threadRootResolver', () => ({ resolveThreadRoot: jest.fn(async () => 600) }));
@@ -163,6 +175,20 @@ describe.each(['telegram', 'slack'])('%s decision reply', (provider) => {
     await receive();
     expect(messages).toHaveLength(0);
     expect(confirmation()).not.toContain('secret');
+  });
+
+  test('refuses a card reply from a pod creator who left, recording nothing', async () => {
+    // TASK-161, from Vera 74671: wren's ruling named this as witness (v) and the
+    // arm did not exist. The arm above departs through `members`; the population
+    // the permissive predicate admitted is the CREATOR who left — present in
+    // `createdBy`, absent from `members`. `assertOpen` is the other half of the
+    // claim: the refusal has to leave the standing ruling and the ledger alone.
+    Pod.findById.mockImplementation(() => chain({ name: 'Launch', members: [], createdBy: ownerId }));
+    await receive();
+    expect(choose).not.toHaveBeenCalled();
+    expect(messages).toHaveLength(0);
+    await assertOpen();
+    expect(confirmation()).toContain("You're no longer in Launch");
   });
 
   test('409-ruled: loser text goes under ask, not winner; standing ruling and ledger stay unchanged', async () => {

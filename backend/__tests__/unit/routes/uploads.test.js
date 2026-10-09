@@ -36,7 +36,11 @@ jest.mock('../../../services/attachmentAccess', () => ({
 const mockAgentRuntimeAuth = jest.fn();
 jest.mock('../../../middleware/agentRuntimeAuth', () => (...args) => mockAgentRuntimeAuth(...args));
 
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+
 const File = require('../../../models/File');
+const User = require('../../../models/User');
+const jwt = require('jsonwebtoken');
 const routes = require('../../../routes/uploads');
 
 describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
@@ -81,6 +85,58 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
     // file is pod-scoped (requires auth) or public (un-scoped — served as here,
     // since the mock returns no record → no podId → public).
     expect(File.findByFileName).toHaveBeenCalledWith('new.png');
+  });
+
+  // TASK-133 (d): the Bearer branch of authorizePodFile verified the signature and
+  // the ACL and never read the row, so a bot user's session read pod-scoped
+  // attachments as if it were the person the row was converted from.
+  describe('a Bearer session is verified against the live row', () => {
+    const sessionRow = (value) => ({ select: () => ({ lean: async () => value }) });
+
+    beforeEach(() => {
+      File.findByFileName.mockResolvedValue({ podId: 'pod-1' });
+      mockStore.get.mockResolvedValue({
+        stream: Readable.from(Buffer.from('bytes')),
+        mime: 'text/plain',
+        size: 5,
+      });
+    });
+
+    it('serves a pod-scoped file to a human session', async () => {
+      jwt.verify.mockReturnValue({ id: 'human-1' });
+      User.findById.mockReturnValue(sessionRow({ banned: false, isBot: false }));
+      mockCanReadAttachment.mockResolvedValue(true);
+
+      await request(app)
+        .get('/api/uploads/secret.txt')
+        .set('Authorization', 'Bearer user-session')
+        .expect(200);
+    });
+
+    it('refuses an agent session even when the ACL would allow the bot user', async () => {
+      jwt.verify.mockReturnValue({ id: 'bot-1' });
+      User.findById.mockReturnValue(sessionRow({ banned: false, isBot: true }));
+      mockCanReadAttachment.mockResolvedValue(true);
+
+      await request(app)
+        .get('/api/uploads/secret.txt')
+        .set('Authorization', 'Bearer user-session')
+        .expect(403);
+
+      // The row read comes first, so a permissive ACL cannot reach past it.
+      expect(mockCanReadAttachment).not.toHaveBeenCalled();
+    });
+
+    it('refuses a banned session', async () => {
+      jwt.verify.mockReturnValue({ id: 'human-2' });
+      User.findById.mockReturnValue(sessionRow({ banned: true, isBot: false }));
+      mockCanReadAttachment.mockResolvedValue(true);
+
+      await request(app)
+        .get('/api/uploads/secret.txt')
+        .set('Authorization', 'Bearer user-session')
+        .expect(403);
+    });
   });
 
   it('falls back to legacy File.data when the driver returns null', async () => {

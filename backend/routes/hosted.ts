@@ -13,16 +13,19 @@
  * bypass here; provisioning someone else's agent is not an ops action.
  */
 import express from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 
 const auth = require('../middleware/auth');
 const { AgentInstallation } = require('../models/AgentRegistry');
-const AgentCredential = require('../models/AgentCredential');
 const User = require('../models/User');
 const AgentIdentityService = require('../services/agentIdentityService');
 const hostedRuntime = require('../services/hostedRuntimeService');
-const { issueRuntimeTokenForAgent } = require('./registry/tokens');
+const {
+  revokeRuntimeTokensForAgent,
+  issueRuntimeTokenForAgent,
+} = require('./registry/tokens');
 
 const router = express.Router();
 
@@ -36,7 +39,7 @@ const hostedRateLimit = rateLimit({
     if (authHeader) {
       return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: express.Response) => {
     res.status(429).json({ message: 'rate limit exceeded: 30 hosted-runtime requests per 60s' });
@@ -188,22 +191,9 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
       return res.status(409).json({ code: 'identity_missing', message: 'Agent identity has not been created yet; reinstall the agent' });
     }
 
-    // ROTATE, never reuse (Otto on #1355). Two pollers on one token is the
-    // case D6 does not cover — both post before either acks, duplicates land
-    // in the pod, nothing errors. A fresh token turns an orphaned poller (a
-    // still-running CLI wrapper, a DO that was never deprovisioned) into a
-    // 401 it dies on, and self-heals the case where the old runtime is gone.
-    const staleHashes = (agentUser.agentRuntimeTokens || [])
-      .map((entry: any) => entry?.tokenHash)
-      .filter(Boolean);
-    if (staleHashes.length) {
-      await AgentCredential.updateMany(
-        { tokenHash: { $in: staleHashes }, status: 'active' },
-        { $set: { status: 'revoked', revokedAt: new Date() } },
-      );
-    }
-    agentUser.agentRuntimeTokens = [];
-    installation.runtimeTokens = [];
+    // ROTATE, never reuse (Otto on #1355). Both runtime-auth paths must lose
+    // the old bearer, including legacy installation-only copies.
+    await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId, installation });
     const token = await issueRuntimeTokenForAgent(
       agentUser,
       'Hosted runtime',

@@ -6,6 +6,7 @@ import {
 import { Types } from 'mongoose';
 
 import type { IConnectorSecret } from '../models/ConnectorSecret';
+import type { ConnectorSecretKindSpec } from './connectorSecretKinds';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const ConnectorSecret = require('../models/ConnectorSecret');
@@ -114,30 +115,38 @@ const asObjectId = (integrationId: string): Types.ObjectId => {
 
 const upsertEncrypted = async (
   integrationId: Types.ObjectId,
-  provider: string,
+  spec: ConnectorSecretKindSpec,
   encrypted: Pick<IConnectorSecret, 'ciphertext' | 'iv' | 'tag' | 'keyId'>,
 ): Promise<IConnectorSecret> => {
+  // The filter carries `kind` as well as `integrationId`, on BOTH the upsert and
+  // the retry. Filtered on `integrationId` alone the second kind does not
+  // collide — it MATCHES the first kind's row and $sets this ciphertext onto it,
+  // so the first ref stays valid and silently starts decrypting to the second
+  // secret (vera 74141). `kind` is read from the caller's spec, and the index in
+  // `models/ConnectorSecret` is on the same pair.
+  const filter = { integrationId, kind: spec.kind };
+  const update = { $set: { provider: spec.provider, ...encrypted } };
   try {
     return await ConnectorSecret.findOneAndUpdate(
-      { integrationId },
-      { $set: { provider, ...encrypted } },
+      filter,
+      update,
       { new: true, upsert: true, setDefaultsOnInsert: true },
     ) as IConnectorSecret;
   } catch (error) {
     // Concurrent OAuth callbacks may race the first upsert. The unique
-    // integration key makes the loser retry as an ordinary update.
+    // (integrationId, kind) key makes the loser retry as an ordinary update.
     if ((error as { code?: number }).code !== 11000) throw error;
-    return ConnectorSecret.findOneAndUpdate(
-      { integrationId },
-      { $set: { provider, ...encrypted } },
-      { new: true },
-    ) as Promise<IConnectorSecret>;
+    return ConnectorSecret.findOneAndUpdate(filter, update, { new: true }) as Promise<IConnectorSecret>;
   }
 };
 
-export const put = async (integrationId: string, provider: string, material: string): Promise<string> => {
+export const put = async (
+  integrationId: string,
+  spec: ConnectorSecretKindSpec,
+  material: string,
+): Promise<string> => {
   if (!material) throw new ConnectorSecretConfigurationError('Connector secret material must not be empty.');
-  const secret = await upsertEncrypted(asObjectId(integrationId), provider, encrypt(material, parseKeyRing()));
+  const secret = await upsertEncrypted(asObjectId(integrationId), spec, encrypt(material, parseKeyRing()));
   return String(secret._id);
 };
 

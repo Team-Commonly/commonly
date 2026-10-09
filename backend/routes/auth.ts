@@ -3,6 +3,7 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const rateLimit = require('express-rate-limit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -132,6 +133,20 @@ const deviceManageLimiter = rateLimit({
   handler: rateLimitHandler('rate limit exceeded: too many device authorization requests'),
 });
 
+// The signed-in session reads and writes the caller's own User: refresh,
+// GET /user, GET and PUT /profile. Authentication itself reads User, so the
+// limiter runs first. Generous, not login-tight: every app load fetches
+// /user more than once, and the key is per IP behind shared NATs.
+const sessionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: rateLimitHandler('rate limit exceeded: too many session requests'),
+});
+
 // Waitlist is a one-shot action per person — 5/hour/IP.
 const waitlistLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -180,6 +195,32 @@ const oauthLimiter = rateLimit({
   handler: rateLimitHandler('rate limit exceeded: 30 OAuth attempts per 15 minutes'),
 });
 
+// TASK-108 (triage doc §6): the two pre-auth reads on the signup path. Neither
+// can carry a token tier — they are reached without one — so the IP tier is the
+// only tier they can have, and both take the new 429 body. The legacy
+// `{message, code}` shape the limiters above emit stays where it was written:
+// those are human browser surfaces, while these two are read by the signup page
+// and by mail clients and scanners, and a client that has to CLASSIFY a refusal
+// needs `status` plus a named reason (see middleware/platformRateLimit.ts for
+// why the name must not be an upstream one).
+//
+// Both budgets are threat models, not fitted numbers (vera 71390: zero hits on
+// either route in a 24h ingress window), so they are stated here as the
+// posture rather than as a measurement.
+const registrationPolicyLimit = platformIpRateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  label: '60 registration-policy reads per 60s per IP',
+});
+const verifyEmailLimit = platformIpRateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  // A mail client prefetches the link and a scanner can walk it; a human
+  // clicking once must never share a budget with either, which 30/min per IP
+  // gives comfortably.
+  label: '30 verify-email link reads per 60s per IP',
+});
+
 const router: ReturnType<typeof express.Router> = express.Router();
 
 router.post('/register', registerLimiter, register);
@@ -187,7 +228,7 @@ router.get('/oauth/providers', getOAuthProviders);
 router.get('/oauth/:provider/start', oauthLimiter, startOAuth);
 router.get('/oauth/:provider/callback', oauthLimiter, oauthCallback);
 router.post('/oauth/exchange', oauthLimiter, exchangeOAuthCode);
-router.get('/registration-policy', getRegistrationPolicy);
+router.get('/registration-policy', registrationPolicyLimit, getRegistrationPolicy);
 router.post('/waitlist', waitlistLimiter, requestWaitlist);
 router.post('/login', loginLimiter, login);
 router.post('/device/start', deviceStartLimiter, async (req: any, res: Res) => {
@@ -270,20 +311,20 @@ router.post('/redeem-invitation', loginLimiter, auth, redeemInvitation);
 router.post('/forgot-password', forgotLimiter, forgotPassword);
 router.post('/resend-verification', resendVerificationLimiter, resendVerification);
 router.post('/reset-password', loginLimiter, resetPassword);
-router.post('/refresh', auth, (req: AuthReq, res: Res) => {
+router.post('/refresh', sessionLimiter, auth, (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   return refresh(req, res);
 });
-router.get('/user', auth, getCurrentUser);
-router.get('/verify-email', verifyEmail);
-router.get('/profile', auth, getProfile);
-router.put('/profile', auth, updateProfile);
+router.get('/user', sessionLimiter, auth, getCurrentUser);
+router.get('/verify-email', verifyEmailLimit, verifyEmail);
+router.get('/profile', sessionLimiter, auth, getProfile);
+router.put('/profile', sessionLimiter, auth, updateProfile);
 
 router.get('/admin/check', auth, adminAuth, (_req: unknown, res: Res) => {
   res.json({ isAdmin: true, message: 'Admin access confirmed' });
 });
 
-router.post('/api-token/generate', auth, async (req: AuthReq, res: Res) => {
+router.post('/api-token/generate', deviceManageLimiter, auth, async (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
@@ -304,7 +345,7 @@ router.post('/api-token/generate', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.delete('/api-token', auth, async (req: AuthReq, res: Res) => {
+router.delete('/api-token', deviceManageLimiter, auth, async (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
@@ -321,15 +362,23 @@ router.delete('/api-token', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/api-token', auth, async (req: AuthReq, res: Res) => {
+router.get('/api-token', deviceManageLimiter, auth, async (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
     const User = require('../models/User');
-    const user = await User.findById(req.user?.id).select('apiToken apiTokenCreatedAt');
+    const user = await User.findById(req.user?.id).select('apiToken apiTokenCreatedAt apiTokenScopes');
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    return res.json({ hasToken: !!user.apiToken, createdAt: user.apiTokenCreatedAt, token: user.apiToken });
+    // This is deliberately a status projection. The raw bearer is returned
+    // only by POST /api-token/generate, when the user explicitly creates or
+    // rotates it; a reload must never turn this endpoint into a secret reader.
+    return res.json({
+      hasToken: !!user.apiToken,
+      createdAt: user.apiTokenCreatedAt || null,
+      scopes: user.apiTokenScopes || [],
+      last4: user.apiToken ? user.apiToken.slice(-4) : null,
+    });
   } catch (error) {
     console.error('Error fetching API token:', error);
     return res.status(500).json({ message: 'Server error' });

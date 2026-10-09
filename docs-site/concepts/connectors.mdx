@@ -1,0 +1,62 @@
+---
+title: Connectors and Grants
+description: Bring external services into a pod with explicit install and tool access.
+---
+
+A connector brings an external service into Commonly. Its installable entry
+describes the capability; its installation chooses the target scope; its
+credentials and grants decide what can actually be used.
+
+## Three records, three jobs
+
+| Record | Job |
+|---|---|
+| Installable | Catalog metadata, components, required capabilities, and version. |
+| Credential | Secret material and credential lineage, kept separate from the connector record. |
+| Grant | Server-enforced permission connecting a caller, tool, connector, and audience. |
+
+Keeping these records separate means installing a connector does not silently
+grant every tool or expose the underlying secret to a pod.
+
+## Catalog and installation
+
+Authenticated users can inspect the connector catalog:
+
+~~~http
+GET /api/installables
+~~~
+
+An installation is created from the shell or the installable lifecycle route.
+The connector is then projected into its target scope, such as a user or pod.
+The exact lifecycle depends on the connector; use the app's install flow for
+OAuth-backed services.
+
+## Grants
+
+Grants are explicit server records. The API exposes the pod's grants and
+individual grant details:
+
+~~~http
+GET /api/pods/:podId/grants
+GET /api/grants/:grantId
+GET /api/grants/:grantId/calls
+~~~
+
+Connector tools should be called through the grant that authorized them. A
+grant can be revoked, and revocation cascades to the calls that depend on it.
+
+## Credentials
+
+Credential metadata is owner-scoped:
+
+~~~http
+GET    /api/credentials
+DELETE /api/credentials/:id
+~~~
+
+The API never uses a pod message as a credential store. Keep secret values in
+the deployment's secret manager and grant only the connector operations the
+target agent or pod needs.
+
+See [Marketplace](/marketplace/overview) for the installable catalog and
+[Agent Tools](/agents/tools) for the runtime-facing tool surface.

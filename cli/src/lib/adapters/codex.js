@@ -39,6 +39,7 @@
 
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
+import { accessSync, constants } from 'fs';
 import {
   chmod,
   lstat,
@@ -56,7 +57,13 @@ import {
   join,
   resolve as pathResolve,
 } from 'path';
+import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { supportedGitHooks } from '../commit-attribution.js';
+import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
+import { prepareMcpSpawn } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
+import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -97,11 +104,16 @@ const buildPrompt = buildMemoryPreamble;
 // Codex-specific constraints:
 //   - stdio/command servers only (no url transport here); url-only entries
 //     are skipped rather than half-wired.
+//   - Only entries that DECLARE stdio (or name no transport) are emitted, even
+//     when they also carry a `command`. `auditDeclaredMcp` classifies by
+//     `transport` and never judges the command of an entry that declared an
+//     http one, so emitting it here executes a command the guard did not
+//     approve — the case Vera measured on 2026-09-18 (Connectors 69774).
 //   - Token-bearing values ride through `env_vars`, never a `-c ...env=...`
 //     argv override. Command lines are visible to other same-user processes
 //     unless the OS sandbox blocks process inspection; keeping bearer tokens
 //     out of argv is an independent defense.
-const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
+const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_TOKEN_FILE', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
 const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
 
 const substitutePlaceholders = (value, ctx) => {
@@ -109,6 +121,10 @@ const substitutePlaceholders = (value, ctx) => {
   if (!value.includes('${COMMONLY_')) return value;
   const subs = {
     COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
+    // The path, not the token: a declared server that can open a file reads the
+    // credential from there, and the PATH is not a secret, so it may ride in the
+    // argv override below (TASK-083).
+    COMMONLY_TOKEN_FILE: ctx.credentialFile || '',
     COMMONLY_API_URL: ctx.instanceUrl || '',
     COMMONLY_INSTANCE_URL: ctx.instanceUrl || '',
   };
@@ -125,8 +141,49 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const flags = [];
   const forwardedEnv = {};
   for (const server of mcpServers || []) {
-    if (!server?.name || !Array.isArray(server.command) || !server.command.length) continue;
-    const [command, ...rest] = server.command.map((a) => substitutePlaceholders(a, ctx));
+    const transport = typeof server?.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
+    if (!server?.name || transport !== 'stdio'
+      || !Array.isArray(server.command) || !server.command.length) continue;
+    // TASK-174: the command that will EXECUTE — the warmed build from the seat's
+    // MCP home when there is one — and the credential channel is decided on that
+    // same command, so the two can never disagree about which release runs. The
+    // rewrite is before `substitutePlaceholders` because it introduces no
+    // placeholder: it is a path this host resolved.
+    const spawnCommand = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl });
+    // A declared credential is rewritten to the file channel before anything is
+    // substituted, so for our server the token is not token-bearing at all: it
+    // lands in `env={...}` as a path and never reaches `env_vars`, which is the
+    // one path by which the value ends up in codex's own environment and from
+    // there in every MCP child it spawns (TASK-083, measured on a live codex
+    // seat before the change).
+    const declaredEnv = deliverSeatCredential({ ...server, command: spawnCommand }, {
+      credentialFile: ctx.credentialFile,
+      label: 'codex',
+    }).env;
+    const [command, ...rest] = spawnCommand.map((a) => substitutePlaceholders(a, ctx));
+    // The doc block above promises bearer tokens never ride in argv, and this is
+    // the place that had to hold it: an env value that carries the token is
+    // diverted to env_vars, but a COMMAND ARGUMENT has no such route — codex
+    // substitutes it literally, and a command line is readable by every
+    // same-user process. So an entry that needs the token in its argv is
+    // refused whole (skipped, with the reason) rather than half-wired: emitting
+    // its other flags would leave a server the guard approved and the seat
+    // cannot use, and emitting this one would publish the secret. Measured
+    // before writing this: substitution did put `cm_agent_*` into
+    // `mcp_servers.<name>.args` on the -c command line (TASK-083).
+    const carriesTokenInArgv = (value) => !!ctx.runtimeToken
+      && typeof value === 'string'
+      && value.includes(ctx.runtimeToken);
+    if (carriesTokenInArgv(command) || rest.some(carriesTokenInArgv)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[codex] MCP server ${server.name} wants the seat credential as a command `
+        + 'argument, where codex substitutes a literal and every same-user process '
+        + 'can read it. Skipping that entry: declare the credential on the entry\'s '
+        + 'env, where it rides as a file path instead of a value.',
+      );
+      continue;
+    }
     flags.push('-c', `mcp_servers.${server.name}.command=${toml(command)}`);
     // The user opted into every server present in the environment spec.
     // Public permission profiles + approval_policy=never otherwise auto-deny
@@ -143,7 +200,7 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
     }
     const envEntries = [];
     const envVars = [];
-    for (const [key, rawValue] of Object.entries(server.env || {})) {
+    for (const [key, rawValue] of Object.entries(declaredEnv)) {
       const value = substitutePlaceholders(rawValue, ctx);
       const carriesRuntimeToken = !!ctx.runtimeToken
         && typeof value === 'string'
@@ -166,6 +223,19 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
     if (envVars.length) {
       flags.push('-c', `mcp_servers.${server.name}.env_vars=[${envVars.map(toml).join(',')}]`);
     }
+  }
+  if (Object.keys(forwardedEnv).length > 0) {
+    // The value is forwarded only for a declaration that needs the token as a
+    // LITERAL somewhere a file path is not a value — command args, or a string
+    // that merely contains it. That is the measured carve-out (TASK-082), and it
+    // is not silent: this is the seat whose environment still carries a secret.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[codex] this declaration needs ${CREDENTIAL_KEY} as a literal (command args, or a `
+      + 'value that contains it), so the token is forwarded to codex for this spawn '
+      + "and every MCP child inherits it. Put the credential on the entry's env to "
+      + 'get the file channel.',
+    );
   }
   return { flags, forwardedEnv };
 };
@@ -228,13 +298,38 @@ const preparePublicCodexHome = async (ctx) => {
   return publicHome;
 };
 
-const publicPermissionProfileFlags = (mode) => {
+const publicPermissionProfileFlags = (
+  mode,
+  commitAttributionEnv = null,
+) => {
   if (!PUBLIC_SANDBOX_MODES.has(mode)) {
     throw new Error(
       `public codex agents require sandbox.mode=workspace or read-only, got ${mode || 'unset'}`,
     );
   }
   const workspaceAccess = mode === 'read-only' ? 'read' : 'write';
+  const commitHooksPath = commitAttributionEnv?.COMMONLY_AGENT_HOOKS_PATH || null;
+  const originalHooksPath = commitAttributionEnv?.COMMONLY_AGENT_ORIGINAL_HOOKS_PATH || null;
+  const originalHookPaths = originalHooksPath
+    ? supportedGitHooks()
+      .map((hookName) => join(originalHooksPath, hookName))
+      .filter((hookPath) => {
+        try {
+          accessSync(hookPath, constants.X_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+    : [];
+  // Preserve caller-supplied git config entries alongside the appended
+  // hooksPath entry. The explicit allowlist below admits only these concrete
+  // variable names, not arbitrary environment variables.
+  const gitConfigEnv = Object.keys(commitAttributionEnv || {})
+    .filter((name) => /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/.test(name));
+  const gitConfigKeySet = Object.entries(commitAttributionEnv || {})
+    .filter(([name]) => /^GIT_CONFIG_KEY_\d+$/.test(name))
+    .map(([name, value]) => `${toml(name)}=${toml(value)}`);
   const filesystem = [
     '":minimal"="read"',
     '"~/.commonly"="deny"',
@@ -245,16 +340,42 @@ const publicPermissionProfileFlags = (mode) => {
     '"~/.config"="deny"',
     '"/private/tmp"="deny"',
     `":workspace_roots"={"."="${workspaceAccess}",".commonly/**"="deny",".codex/**"="deny","*.env"="deny","*/*.env"="deny","*/*/*.env"="deny"}`,
+    ...(commitHooksPath ? [`${toml(commitHooksPath)}="read"`] : []),
+    ...originalHookPaths.map((hookPath) => `${toml(hookPath)}="read"`),
   ].join(',');
+  const shellEnvironment = [
+    'PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_*',
+    ...(commitHooksPath ? [
+      ...gitConfigEnv,
+      'COMMONLY_AGENT_GIT_CONFIG_INDEX',
+      'COMMONLY_AGENT_GIT_CONFIG_BASE_COUNT',
+      'COMMONLY_AGENT_HOOKS_PATH',
+      'COMMONLY_AGENT_ORIGINAL_HOOKS_PATH',
+      'COMMONLY_AGENT_SEAT_NAME',
+      'COMMONLY_AGENT_SEAT_ID',
+      'COMMONLY_AGENT_ADAPTER',
+      'COMMONLY_AGENT_MODEL',
+      'COMMONLY_AGENT_EFFORT',
+    ] : []),
+  ];
   return [
     '-c', `default_permissions=${toml(PUBLIC_PERMISSION_PROFILE)}`,
     '-c', `permissions.${PUBLIC_PERMISSION_PROFILE}.filesystem={${filesystem}}`,
     '-c', `permissions.${PUBLIC_PERMISSION_PROFILE}.network.enabled=false`,
     // The MCP launcher receives explicitly forwarded env_vars separately.
-    // Model-generated shell commands inherit only a small non-secret core.
-    '-c', 'shell_environment_policy.inherit="core"',
+    // `core` drops explicit GIT_CONFIG_* and hook metadata before include_only
+    // can admit them. When attribution is active, inherit all then constrain
+    // model shells to the exact allowlist below; keep Codex's default secret
+    // filters enabled.
+    '-c', `shell_environment_policy.inherit="${commitHooksPath ? 'all' : 'core'}"`,
     '-c', 'shell_environment_policy.ignore_default_excludes=false',
-    '-c', 'shell_environment_policy.include_only=["PATH","HOME","TMPDIR","LANG","LC_*"]',
+    '-c', `shell_environment_policy.include_only=${JSON.stringify(shellEnvironment)}`,
+    // Codex's default name filter treats GIT_CONFIG_KEY_n as sensitive. Set
+    // only those key names after filtering; their corresponding values stay
+    // in the allowlisted environment instead of riding argv.
+    ...(gitConfigKeySet.length
+      ? ['-c', `shell_environment_policy.set={${gitConfigKeySet.join(',')}}`]
+      : []),
   ];
 };
 
@@ -269,6 +390,7 @@ const buildArgs = ({
   publicSandboxMode = null,
   model = null,
   effort = null,
+  commitAttributionEnv = null,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -288,7 +410,10 @@ const buildArgs = ({
     ? [
       '--ignore-user-config',
       '--ignore-rules',
-      ...publicPermissionProfileFlags(publicSandboxMode),
+      ...publicPermissionProfileFlags(
+        publicSandboxMode,
+        commitAttributionEnv,
+      ),
     ]
     : ['--dangerously-bypass-approvals-and-sandbox'];
   const common = [
@@ -352,8 +477,21 @@ const makeEventParser = () => {
   };
 };
 
-const runCodex = ({ args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
-  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
+/**
+ * Provider keys this adapter's route can authenticate with. `env_key` in
+ * `~/.codex/config.toml` names one of them (ADR-014 — the HTTPS layer is
+ * redirected, the CLI's semantics are not), and the adapter cannot know which
+ * one this seat uses, so it snapshots whichever are present. A failure tail that
+ * echoes a key must not reach a pod (TASK-103).
+ */
+const CODEX_PROVIDER_KEY_ENVS = [
+  'LITELLM_API_KEY',
+  'LITELLM_MASTER_KEY',
+  'OPENAI_API_KEY',
+  'CODEX_API_KEY',
+];
+
+const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
   // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
   // `Reading additional input from stdin...` because it sees an open pipe
   // and waits for input that never arrives. Interactive runs are fine because
@@ -382,11 +520,18 @@ const runCodex = ({ args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new 
     if (events.turnFailedMessage) {
       // Surface the model-side failure message verbatim — the run loop posts
       // it as the agent's reply so the user sees what went wrong rather than
-      // a generic "non-zero exit" error.
-      return reject(new Error(`codex turn failed: ${events.turnFailedMessage}`));
+      // a generic "non-zero exit" error. Verbatim is about the WORDING: the
+      // tail still goes through the shared reader (TASK-103), so a message that
+      // echoed a credential this spawn was handed is redacted before it can be
+      // posted into a pod, and a status it names is attached for the circuit
+      // breaker rather than left to a regex.
+      return reject(adapterFailure('codex turn failed', events.turnFailedMessage, {
+        credentials,
+        limit: 2000,
+      }));
     }
     if (code !== 0) {
-      return reject(new Error(`codex exited with code ${code}: ${stderr.trim().slice(0, 500)}`));
+      return reject(adapterFailure('codex', stderr.trim(), { credentials, exitCode: code, limit: 500 }));
     }
     resolve({ threadId: events.threadId });
   });
@@ -433,14 +578,38 @@ export default {
     // so a crash in the middle of the spawn doesn't leak files in $TMPDIR.
     const dir = await mkdtemp(join(tmpdir(), 'commonly-codex-'));
     const outputFile = join(dir, 'last-message.txt');
+    // Written into the per-spawn directory this adapter already creates and
+    // removes: codex reads and writes inside it for --output-last-message, so a
+    // child it spawns can reach a file there, which is the one property this
+    // file has to have. Outside it the path is an unreadable promise.
+    const credential = writeCredentialFile(ctx.runtimeToken, {
+      agentName: ctx.agentName || 'agent',
+      root: dir,
+    });
 
     try {
       const mcp = buildMcpOverrideArgs(ctx.environment?.mcp, {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
+        credentialFile: credential?.path || null,
       });
-      const publicSandboxMode = ctx.environment?.sandbox?.trust === 'public'
-        ? ctx.environment?.sandbox?.mode || 'unset'
+      // A derived record stores `trust: 'public'` and no mode (the block is
+      // platform-independent; see cli/src/lib/default-environment.js). Codex's
+      // mode only selects read vs write access — its permission profiles run on
+      // both macOS and Linux — so the derived default is `workspace`, and an
+      // explicit mode in the record still wins. Before this, a mode-less public
+      // record threw `got unset` and no codex seat spawned at all.
+      if (isLegacySandboxTrust(ctx.environment?.sandbox)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[codex] sandbox.trust=internal is no longer accepted: it reads as '
+          + 'confinement and engaged none. Resolving this seat as trust=public '
+          + '(Wren 69585).',
+        );
+      }
+      const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
+      const publicSandboxMode = sandbox?.trust === 'public'
+        ? sandbox?.mode ?? 'workspace'
         : null;
       const args = buildArgs({
         sessionId: ctx.sessionId || null,
@@ -450,8 +619,21 @@ export default {
         publicSandboxMode,
         model: ctx.environment?.model,
         effort: ctx.environment?.effort,
+        commitAttributionEnv: ctx.commitAttributionEnv,
       });
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
+      // Derived from the process environment, so the bootstrap export has to be
+      // taken back out: the declaration above moved our server onto the file,
+      // and a value left here is a value codex's own children inherit. Kept only
+      // when the substitution genuinely needed it (`forwardedEnv` names that
+      // carve-out, and the warning above it is emitted for the same spawn).
+      withholdRuntimeCredential(childEnv, {
+        credentialFile: credential?.path || null,
+        keepsValue: mcp.forwardedEnv[CREDENTIAL_KEY] !== undefined,
+      });
+      if (publicSandboxMode !== null && ctx.commitAttributionEnv) {
+        Object.assign(childEnv, ctx.commitAttributionEnv);
+      }
       if (publicSandboxMode !== null) {
         childEnv.CODEX_HOME = await preparePublicCodexHome(ctx);
       }
@@ -461,6 +643,12 @@ export default {
         cwd: ctx.cwd,
         env: childEnv,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+        // The values this spawn was handed, for the failure tail's exact-match
+        // check: the seat credential and the provider key the route
+        // authenticates with. Snapshot HERE — `withholdRuntimeCredential` above
+        // already removed the token from the child copy, and after that there is
+        // nothing left to compare a tail against.
+        credentials: spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS),
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
       });
 

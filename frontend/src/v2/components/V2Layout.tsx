@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import V2Thread from './V2Thread';
@@ -71,11 +71,14 @@ const createdAtTime = (createdAt?: string): number => {
 
 const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const { podId: paramPodId } = useParams<{ podId: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const podsState = useV2Pods();
   const { pods, loading } = podsState;
   const attention = useV2PodAttention();
+  const createFromConnectors = location.pathname === '/v2'
+    && new URLSearchParams(location.search).get('newPod') === '1';
 
   // Direction C on the phone: the pods list is a page and a pod is the next
   // page. There is no drawer. `phone` tracks the viewport so `/v2` renders the
@@ -144,11 +147,21 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
     recordPodVisit(paramPodId);
   }, [paramPodId]);
 
-  // Desktop only: resume the last valid pod. A new user without history lands
-  // in their self-created invite-only workspace rather than the auto-joined HQ.
-  // The phone never redirects: `/v2` is the pods list page there.
+  // Resume the last valid pod; a new user without history lands in their
+  // self-created invite-only workspace rather than the auto-joined HQ.
+  //
+  // The phone normally stays on the list — `/v2` IS the pods list page there
+  // (#1578 direction C) — and that stays true for anyone who has opened a pod on
+  // this device. The exception is a device that has never opened one, which is
+  // every first login: the list has nothing to return to, and the workspace
+  // thread with its welcome and composer is the actual first screen. So the same
+  // resolution runs there too, exactly once. The redirect is self-limiting: it
+  // sets LAST_POD_KEY (the paramPodId effect above), so the next `/v2` — the
+  // thread's back arrow — finds the key set and stays on the list, and the
+  // redirect is a `replace`, so browser-back does not bounce through it either.
   useEffect(() => {
-    if (selectionMode !== 'auto' || paramPodId || loading || phone) return;
+    if (selectionMode !== 'auto' || paramPodId || loading || createFromConnectors) return;
+    if (phone && readLastPodId()) return;
     if (pods.length === 0) return;
 
     const lastPodId = readLastPodId();
@@ -162,7 +175,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
     const destination = lastPod || ownWorkspace || pods[0];
 
     navigate(`/v2/pods/${destination._id}`, { replace: true });
-  }, [selectionMode, paramPodId, pods, loading, navigate, currentUser?._id, phone]);
+  }, [selectionMode, paramPodId, pods, loading, navigate, currentUser?._id, phone, createFromConnectors]);
 
   const selectedPodId = paramPodId || null;
   const detail = useV2PodDetail(selectedPodId);

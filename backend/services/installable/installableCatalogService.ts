@@ -5,7 +5,13 @@ const InstallableInstallation = require('../../models/InstallableInstallation');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { toPublicIntegration, withoutConnectCode } = require('../../models/integrationPublicConfig');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { manifests } = require('../../integrations/manifests');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { mcpComponentOf, projectTools, toolInstallableMetas } = require('./toolInstallables');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { HOSTED_MCP_ENTRIES, findHostedMcpEntry } = require('../../integrations/hostedMcp/entries');
 
 type ProviderReadiness = { available: boolean; reason?: 'not_configured' };
 
@@ -25,27 +31,46 @@ const providerReadiness = (installableId: string): ProviderReadiness | null => {
   return typeof manifest?.readiness === 'function' ? manifest.readiness() : null;
 };
 
-// Mongoose's Integration toJSON transform is the normal guard. Keep this
-// explicit mapper for lean catalog reads too, so the API can never serialize a
-// ConnectorSecret reference or a browser-bound OAuth nonce by accident.
+// Declaring `readiness` is a claim about CAPABILITY; having a builtin active
+// Installable row is the claim about OFFERABILITY. They are different questions
+// and only one of them was being asked, which is how a provider could render as
+// connectable and then die on Add with `installable_not_found` (Vera 71152,
+// Wren 71169). `offeredByRoster` is the single decision; the two readers below
+// differ only in cardinality, because the catalog has the rows in hand and the
+// route has one id.
+const offeredByRoster = (installable: unknown): boolean => Boolean(installable);
+
+const providerLabel = (installableId: string): string => {
+  const manifest = (manifests as Record<string, { catalog?: { label?: string } }>)[installableId];
+  return manifest?.catalog?.label || installableId;
+};
+
+// The route's reader: one id, so one query. Exported because the install route
+// refuses on the same predicate the catalog advertises, and a guard that lives
+// only in the UI cannot stop the API being driven into a state the page will not
+// offer.
+const providerOffered = async (installableId: string): Promise<boolean> => {
+  const installable = await Installable.findOne({
+    installableId,
+    source: 'builtin',
+    status: 'active',
+  }).lean();
+  return offeredByRoster(installable);
+};
+
+// Mongoose's Integration toJSON transform is the normal guard. Lean catalog
+// reads bypass it, so they run the same strip explicitly: one key list, so a
+// credential can never be serialized here that toJSON would have dropped.
 const publicIntegration = (integration: unknown): unknown => {
   if (!integration || typeof integration !== 'object') return integration;
   const raw = typeof (integration as { toJSON?: () => unknown }).toJSON === 'function'
     ? (integration as { toJSON: () => unknown }).toJSON()
     : JSON.parse(JSON.stringify(integration));
   if (!raw || typeof raw !== 'object') return raw;
-  const result = raw as { config?: Record<string, unknown> };
-  if (!result.config) return result;
-  delete result.config.botTokenRef;
-  delete result.config.oauthStateNonce;
-  const pending = result.config.pendingBind;
-  if (pending && typeof pending === 'object') delete (pending as Record<string, unknown>).botTokenRef;
-  const adminPause = result.config.adminPause;
-  if (adminPause && typeof adminPause === 'object') {
-    const { reason, at } = adminPause as { reason?: unknown; at?: unknown };
-    result.config.adminPause = { reason, at };
-  }
-  return result;
+  const result = toPublicIntegration(raw as Record<string, unknown>);
+  // A Slack row's connect code is its OAuth state. The catalog has no reader
+  // for it; the Connectors page polls on it from the owner's list.
+  return result?.type === 'slack' ? withoutConnectCode(result) : result;
 };
 
 // The parent has operational fields that are useful to the owner's state
@@ -60,12 +85,88 @@ const publicInstallation = (installation: any): unknown => {
   })) : [];
   return {
     status: installation.status,
-    ...(installation.errorMessage ? { errorMessage: installation.errorMessage } : {}),
+    // The message travels with its provenance. The page prints it only when this
+    // is true, so a raw exception from `markProjectionFailure` reaches the
+    // client and is deliberately not rendered (TASK-131).
+    ...(installation.errorMessage
+      ? {
+        errorMessage: installation.errorMessage,
+        errorMessageUserFacing: installation.errorMessageUserFacing === true,
+      }
+      : {}),
     ...(installation.boundPodId ? { boundPodId: String(installation.boundPodId) } : {}),
     ...(installation.claimedAt ? { claimedAt: installation.claimedAt } : {}),
     ...(installation.updatedAt ? { updatedAt: installation.updatedAt } : {}),
     components,
   };
+};
+
+// A Connection the caller may grant from: the mint requires the connection's
+// owner, so only the caller's own rows are offered. `connectionId` is the key
+// the mint takes; owner/repo are the card's evidence of what the grant acts on.
+const publicConnection = (integration: any) => ({
+  connectionId: String(integration.installationId || integration._id || ''),
+  owner: String(integration.config?.owner || ''),
+  repo: String(integration.config?.repo || ''),
+});
+
+/**
+ * Sam's option A is two lists (tools plan): the Tools page draws these rows,
+ * the Connectors page skips them by `list`. A tool row carries what its Add
+ * form needs — the allow-list projected from the broker's definitions, the
+ * broker it names, and the caller's own Connections — and never a credential.
+ *
+ * A hosted-mcp row also carries the connect descriptor (`connectionType` and
+ * `entryId`), which is what lets the page offer Connect at all: the start route
+ * is per ENTRY (`/api/integrations/connect/hosted-mcp/:entryId/start`, §4), and
+ * the page has no other way to learn an entry id — an Installable id is the
+ * entry id by construction, but reading that as a URL would be a second,
+ * unwitnessed spelling of the same fact.
+ */
+const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
+  const metas = toolInstallableMetas();
+  const rows = (await Installable.find({
+    source: 'builtin',
+    status: 'active',
+    'components.type': 'mcp-server',
+  }).lean() as any[]).filter((row) => mcpComponentOf(row) && metas[row.installableId]);
+  if (!rows.length) return [];
+  const connectionTypes = Array.from(new Set(rows.map((row) => metas[row.installableId].connectionType)));
+  const connections = await Integration.find({
+    type: { $in: connectionTypes },
+    createdBy: userId,
+    status: 'connected',
+    revokedAt: null,
+  }).lean() as any[];
+  return rows.map((row) => {
+    const meta = metas[row.installableId];
+    const component = mcpComponentOf(row);
+    const hostedEntry = meta.connectionType === 'hosted-mcp'
+      ? findHostedMcpEntry(HOSTED_MCP_ENTRIES, meta.entryId || '') || null
+      : undefined;
+    const readiness = meta.readiness();
+    return {
+      installableId: row.installableId,
+      list: 'tools',
+      label: row.name || row.installableId,
+      description: row.description || '',
+      connectionType: meta.connectionType,
+      ...(meta.entryId ? { entryId: meta.entryId } : {}),
+      available: readiness.available,
+      ...(readiness.available ? {} : { unavailableReason: readiness.reason }),
+      broker: { id: String(component?.name || '') },
+      tools: projectTools(component, hostedEntry),
+      connections: connections
+        // Two vendors' rows share one connection type, so an entry-scoped meta
+        // matches its own rows only: without the entryId half, a person
+        // connected to one vendor would be offered as connected to the other.
+        .filter((integration) => integration.type === meta.connectionType
+          && (!meta.entryId || String(integration.config?.entryId || '') === meta.entryId))
+        .map(publicConnection),
+      installation: null,
+      integration: null,
+    };
+  });
 };
 
 const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> => {
@@ -97,26 +198,32 @@ const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> 
     (integrations as any[]).map((integration) => [integration.installationId, integration]),
   );
 
+  const tools = await toolEntriesFor(userId);
   return {
-    installables: installableIds.map((installableId) => {
+    installables: [...installableIds.map((installableId) => {
       const installable = installableById.get(installableId);
       const installation = installationById.get(installableId);
       const readiness = providerReadiness(installableId) || { available: true };
       return {
         installableId,
-        label: installable?.name || installableId,
+        list: 'channels',
+        // The row's name comes from the roster when there is one, and from the
+        // manifest's own catalog block when there is not. Falling back to the
+        // raw id is what put a lowercase `discord` on the page (Wren 71162).
+        label: installable?.name || providerLabel(installableId),
         description: installable?.description || '',
         available: readiness.available,
+        offered: offeredByRoster(installable),
         ...(readiness.reason ? { unavailableReason: readiness.reason } : {}),
         installation: publicInstallation(installation),
         integration: installation
           ? publicIntegration(integrationByInstallationId.get(String(installation._id)) || null)
           : null,
       };
-    }),
+    }), ...tools],
   };
 };
 
-module.exports = { catalogFor, providerReadiness, publicIntegration };
+module.exports = { catalogFor, providerReadiness, providerOffered, publicIntegration };
 
 export {};

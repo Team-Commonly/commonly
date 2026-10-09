@@ -7,9 +7,11 @@ const DecisionRequest = require('../models/DecisionRequest');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const isPodMember = require('../utils/isPodMember');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { isGatedPodTarget, isListedPodMember } = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const telegramSend = require('./telegramService');
+const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const SlackApi = require('./slackApi');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -60,10 +62,11 @@ interface IntegrationDoc {
   };
 }
 
-const escapeSlack = (value: unknown): string => String(value || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;');
+// One implementation, in slackApi.ts beside the call that posts it. The local
+// name stays so the call site below reads as it did; the behaviour is the shared
+// helper's, `??` rather than `||`, so a missing value renders as nothing while a
+// legitimate 0 or false still renders as itself.
+const escapeSlack = SlackApi.escapeSlackMrkdwn;
 
 const memberIdFor = (integration: IntegrationDoc): string | null => {
   const linked = integration.config?.linkedUserId;
@@ -79,12 +82,16 @@ const canSendClosingLine = (
   if (integration.isActive !== true || integration.status === 'error') return false;
   if (integration.config?.liveRelay !== true || integration.config.adminPause) return false;
   if (integration.type !== 'telegram' && integration.type !== 'slack') return false;
-  if (integration.scope === 'user' && integration.config.gates?.[podId]?.enabled !== true) return false;
-  if (integration.scope !== 'user' && String(integration.podId) !== podId) return false;
+  // The gate reading is shared with both bridges and with the routed-reply check
+  // (connectorRelayPolicy.isGatedPodTarget) so the four consumers cannot drift.
+  // Its companion conjunction lives in isRoutedPodTarget; this function keeps the
+  // membership read below where it is, because the mute and chatId checks sit
+  // between the two halves here.
+  if (!isGatedPodTarget(integration, podId)) return false;
   const mutedUntil = integration.config.relayMutedUntil;
   if (mutedUntil && new Date(mutedUntil).getTime() > now.getTime()) return false;
   const linkedUserId = memberIdFor(integration);
-  if (!linkedUserId || !isPodMember(pod, linkedUserId)) return false;
+  if (!linkedUserId || !isListedPodMember(pod, linkedUserId)) return false;
   if (!integration.config.chatId) return false;
   if (integration.type === 'telegram') {
     return integration.config.chatType === 'private' && Boolean(process.env.TELEGRAM_BOT_TOKEN);
@@ -104,7 +111,12 @@ const sendClosingLine = async (
       text,
       { replyToMessageId: card.tgMessageId, plainText: true },
     );
-    if (!sent?.success) throw new Error('Telegram ruling confirmation was not sent');
+    if (!sent?.success) {
+      // Bound chat: the closing line goes to the connector's own chat, so a
+      // permanent failure is the connector's, not an inbound sender's.
+      await deliveryFailures.noteBoundChatDeliveryFailure(integration, integration.config?.chatId, sent);
+      throw new Error('Telegram ruling confirmation was not sent');
+    }
     return;
   }
   const token = await connectorSecrets.get(String(integration.config?.botTokenRef));
@@ -114,7 +126,13 @@ const sendClosingLine = async (
     undefined,
     card.externalMessageId,
   );
-  if (!sent?.ok) throw new Error(`Slack ruling confirmation was not sent: ${String(sent?.error || 'unknown error')}`);
+  if (!sent?.ok) {
+    // Same split as the Telegram half above: bound channel, so a permanent
+    // failure (removed, archived, gone) is this connector's, not an inbound
+    // sender's.
+    await deliveryFailures.noteBoundChatDeliveryFailure(integration, integration.config?.chatId, sent);
+    throw new Error(`Slack ruling confirmation was not sent: ${String(sent?.error || 'unknown error')}`);
+  }
 };
 
 /**

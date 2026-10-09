@@ -32,6 +32,17 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
   return res.status(401).json({ msg: 'unauth' });
 });
 
+// The live-row read that now gates the Bearer branch (TASK-133). `mockAccount`
+// is the row `loadSessionAccount` returns: `{}` a live human, `{ isBot: true }`
+// an agent row, `null` no row at all. The real vocabulary is kept through
+// requireActual so the witnesses below drive the production predicate instead of
+// a copy of it — a mock that returned a decision would pass either way.
+let mockAccount = {};
+jest.mock('../../../services/sessionAccountService', () => ({
+  ...jest.requireActual('../../../services/sessionAccountService'),
+  loadSessionAccount: jest.fn(() => Promise.resolve(mockAccount)),
+}));
+
 const mockCanRead = jest.fn();
 const mockSignToken = jest.fn().mockReturnValue('signed-token');
 const mockVerifyToken = jest.fn();
@@ -126,6 +137,7 @@ describe('GET /api/uploads/:fileName pod-scoped authorization (ADR-002 Phase 1b 
     app.use(express.json());
     app.use('/api/uploads', routes);
     mockFileMeta = null;
+    mockAccount = {}; // a live human row: the Bearer branch is otherwise refused
     mockCanRead.mockReset();
     mockVerifyToken.mockReset();
     mockJwtVerify.mockReset();
@@ -158,6 +170,33 @@ describe('GET /api/uploads/:fileName pod-scoped authorization (ADR-002 Phase 1b 
     mockCanRead.mockResolvedValue(true);
     await request(app).get('/api/uploads/secret.pdf').set('Authorization', 'Bearer jwt').expect(200);
     expect(mockCanRead).toHaveBeenCalledWith('secret.pdf', 'member-1');
+  });
+
+  it('403s an AGENT row on the Bearer branch, and never reaches the ACL (TASK-133)', async () => {
+    mockFileMeta = { podId: 'pod-1' };
+    mockVerifyToken.mockReturnValue(null);
+    mockJwtVerify.mockReturnValue({ id: 'agent-1' });
+    mockAccount = { isBot: true };
+    mockCanRead.mockResolvedValue(true); // the ACL would have allowed this read
+    await request(app)
+      .get('/api/uploads/secret.pdf')
+      .set('Authorization', 'Bearer jwt')
+      .expect(403);
+    // The ACL is not consulted: the refusal is the row, not the file's audience.
+    expect(mockCanRead).not.toHaveBeenCalled();
+  });
+
+  it('403s a Bearer whose account row is gone', async () => {
+    mockFileMeta = { podId: 'pod-1' };
+    mockVerifyToken.mockReturnValue(null);
+    mockJwtVerify.mockReturnValue({ id: 'deleted-user' });
+    mockAccount = null;
+    mockCanRead.mockResolvedValue(true);
+    await request(app)
+      .get('/api/uploads/secret.pdf')
+      .set('Authorization', 'Bearer jwt')
+      .expect(403);
+    expect(mockCanRead).not.toHaveBeenCalled();
   });
 
   it('403s a POD-SCOPED file when the Bearer user cannot read it', async () => {

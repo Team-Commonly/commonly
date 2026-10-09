@@ -46,7 +46,7 @@ describe('V2EmailVerificationBanner', () => {
     const view = renderBanner();
 
     const banner = screen.getByRole('status');
-    expect(banner).toHaveTextContent('Verify your email — we sent a link to person@example.com.');
+    expect(banner).toHaveTextContent('Verify your email to join the Community pod — link sent to person@example.com.');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /^resend$/i }));

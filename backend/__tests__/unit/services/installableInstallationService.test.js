@@ -22,6 +22,7 @@ const {
 const { sweep } = require('../../../services/installable/installableReconciler');
 const { TELEGRAM_CONNECTOR, SLACK_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
 const { put } = require('../../../services/connectorSecrets');
+const { DISCORD_WEBHOOK_URL, SLACK_BOT_TOKEN } = require('../../../services/connectorSecretKinds');
 const telegramService = require('../../../services/telegramService');
 const { relayTelegramMessageToPod } = require('../../../services/telegramBridgeService');
 const {
@@ -213,6 +214,12 @@ describe('installable connector projection', () => {
     const failed = await InstallableInstallation.findOne({ installableId: 'telegram' });
     const inactive = await Integration.findOne({ installationId: String(failed._id) });
     expect(failed.status).toBe('error');
+    // `markProjectionFailure` stores the projector's own exception text verbatim
+    // — stack-adjacent detail like `connect ECONNREFUSED <addr>:443` — so it is
+    // the writer that must say `false`. The catalog row renders this field only
+    // when the flag is true, and the row belongs to the installer, not to us
+    // (TASK-131, vera 73848).
+    expect(failed.errorMessageUserFacing).toBe(false);
     expect(inactive.isActive).toBe(false);
     expect(inactive.config.connectCode).toBeUndefined();
 
@@ -416,6 +423,55 @@ describe('installable connector projection', () => {
     expect(replacementAfterSecondUninstall.isActive).toBe(false);
   });
 
+  it('revokes the connection\'s grants when the installation is uninstalled (TASK-145)', async () => {
+    const { userId, podId } = ids();
+    const RoomGrant = require('../../../models/RoomGrant');
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const grant = await RoomGrant.create({
+      grantId: new mongoose.Types.ObjectId().toString(),
+      connectionId: String(installed.integration._id),
+      installationId: String(installed.installation._id),
+      target: { kind: 'pod', id: podId },
+      tools: ['telegram.send_message'],
+      writeMode: 'read',
+      audience: [userId],
+      expiresAt: new Date(Date.now() + 3_600_000),
+      brokerId: 'telegram',
+    });
+
+    await uninstall({ installableId: 'telegram', installedBy: userId });
+
+    const row = await RoomGrant.findOne({ grantId: grant.grantId }).lean();
+    expect(row.revokedAt).toBeInstanceOf(Date);
+    expect(row.revokedBy).toBe(userId);
+  });
+
+  it('revokes the grants on the retired-manifest tombstone path too (TASK-145)', async () => {
+    const { userId, podId } = ids();
+    const RoomGrant = require('../../../models/RoomGrant');
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const grant = await RoomGrant.create({
+      grantId: new mongoose.Types.ObjectId().toString(),
+      connectionId: String(installed.integration._id),
+      installationId: String(installed.installation._id),
+      target: { kind: 'pod', id: podId },
+      tools: ['telegram.send_message'],
+      writeMode: 'read',
+      audience: [userId],
+      expiresAt: new Date(Date.now() + 3_600_000),
+      brokerId: 'telegram',
+    });
+    // A retired manifest leaves `installable` null, which is the branch that
+    // tombstones the connection instead of unprojecting it.
+    await Installable.deleteMany({ installableId: 'telegram' });
+
+    await uninstall({ installableId: 'telegram', installedBy: userId });
+
+    const row = await RoomGrant.findOne({ grantId: grant.grantId }).lean();
+    expect(row.revokedAt).toBeInstanceOf(Date);
+    expect(row.revokedBy).toBe(userId);
+  });
+
   it('refuses install and uninstall while an administrator has paused the parent without writing either row', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
@@ -474,7 +530,7 @@ describe('installable connector projection', () => {
   it('revokes Slack’s envelope secret when the installation is uninstalled', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'slack', installedBy: userId, podId });
-    const ref = await put(String(installed.integration._id), 'slack', 'xoxb-secret');
+    const ref = await put(String(installed.integration._id), SLACK_BOT_TOKEN, 'xoxb-secret');
     await Integration.updateOne(
       { _id: installed.integration._id },
       { $set: { 'config.botTokenRef': ref } },
@@ -595,8 +651,20 @@ describe('installable connector projection', () => {
 
     const reconciled = await sweep(new Date());
     expect(reconciled.errored).toBe(2);
-    expect((await InstallableInstallation.findById(installing._id)).status).toBe('error');
-    expect((await InstallableInstallation.findById(activating._id)).status).toBe('error');
+    const expiring = await InstallableInstallation.findById(installing._id);
+    const expired = await InstallableInstallation.findById(activating._id);
+    expect(expiring.status).toBe('error');
+    expect(expired.status).toBe('error');
+    // Both reasons are our own constants, written for the person reading the
+    // Connectors page, so the writer states that beside the message. Without it
+    // the catalog row falls back to the generic sentence and the operator loses
+    // the only sentence that says what to do (TASK-131).
+    expect(expiring.errorMessageUserFacing).toBe(true);
+    expect(expired.errorMessageUserFacing).toBe(true);
+    // The copy itself is pinned here: these two strings are the whole set of
+    // reasons the catalogue will ever print verbatim, so a writer that changes
+    // one has to change this line too (wren 73914, vera 73915).
+    expect(expiring.errorMessage).toBe('Setup was interrupted before it finished. Try again.');
   });
 
   it('makes a missing active projection a retriable parent error', async () => {
@@ -608,7 +676,10 @@ describe('installable connector projection', () => {
     const parent = await InstallableInstallation.findById(installed.installation._id);
     expect(reconciled.staleComponents).toBe(1);
     expect(parent.status).toBe('error');
-    expect(parent.errorMessage).toBe('projection missing');
+    expect(parent.errorMessage).toBe("This connector's channel is gone. Retry to rebuild it.");
+    // The reconciler's own constant: a message written for a person, so it
+    // carries the flag the page requires before rendering (TASK-131).
+    expect(parent.errorMessageUserFacing).toBe(true);
     expect(parent.components.every((component) => component.status === 'stale')).toBe(true);
 
     const retried = await install({ installableId: 'telegram', installedBy: userId, podId });
@@ -619,7 +690,11 @@ describe('installable connector projection', () => {
 
   it('reconciles pause projections and prunes gates when the owner leaves a pod', async () => {
     const { userId, podId } = ids();
-    await Pod.create({ _id: podId, name: 'Current pod', type: 'team', createdBy: userId, members: [] });
+    // The owner is LISTED: this arm is about the stale pod's gate, and a pod
+    // created-but-unlisted is a different cell with its own arm below (TASK-161).
+    await Pod.create({
+      _id: podId, name: 'Current pod', type: 'team', createdBy: 'someone-else', members: [userId],
+    });
     const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
     const stalePodId = new mongoose.Types.ObjectId().toString();
     const pausedAt = new Date();
@@ -649,6 +724,49 @@ describe('installable connector projection', () => {
     const resumedSweep = await sweep(new Date());
     expect(resumedSweep.clearedPauseProjections).toBe(1);
     expect((await Integration.findById(installed.integration._id)).config.adminPause).toBeUndefined();
+  });
+
+  it('prunes a NON-ACTIVE gate for a pod the owner created and then left', async () => {
+    // TASK-161, from Vera's 74663. The connecting gate is not the active pod:
+    // only `sweepOrphanedGates` prunes a secondary gate, so this cell cannot be
+    // satisfied by the active-pod sweep — which is why the first draft of this
+    // arm survived the reconciler being reverted. A pod the owner CREATED and
+    // left still names them in `createdBy`, which the permissive predicate read
+    // as membership, leaving the ON switch the Connectors page shows for a pod
+    // whose relay now refuses every message.
+    //
+    // Two halves make this site strict, and the mutation that witnesses it has to
+    // restore BOTH: the predicate, and the `.select('members')` beside it. Put the
+    // permissive predicate back on its own and it reads `pod.createdBy` off a
+    // query that no longer selects it, so the clause is inert and this arm stays
+    // green — measured, which is why the ledger's M6 is a two-edit mutation.
+    const { userId, podId } = ids();
+    await Pod.create({
+      _id: podId, name: 'Active pod', type: 'team', createdBy: new mongoose.Types.ObjectId(), members: [userId],
+    });
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      { $set: { 'config.chatId': 'chat-1', 'config.chatType': 'private' } },
+    );
+    const leftPodId = new mongoose.Types.ObjectId().toString();
+    await Pod.create({
+      _id: leftPodId, name: 'Created then left', type: 'team', createdBy: userId, members: [userId],
+    });
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      { $set: { [`config.gates.${leftPodId}`]: { enabled: true, since: new Date() } } },
+    );
+    await Pod.updateOne({ _id: leftPodId }, { $pull: { members: userId } });
+    expect(String((await Pod.findById(leftPodId).lean()).createdBy)).toBe(String(userId));
+
+    const reconciled = await sweep(new Date());
+    const projection = await Integration.findById(installed.integration._id).lean();
+
+    expect(reconciled.prunedGates).toBe(1);
+    expect(projection.config.gates?.[leftPodId]).toBeUndefined();
+    // The active pod's own gate stays: its owner is still listed there.
+    expect(projection.config.gates?.[podId]).toBeDefined();
   });
 
   it('clears the active pod with its orphaned gate and tells the linked chat why', async () => {
@@ -694,7 +812,7 @@ describe('installable connector projection', () => {
   it('expires a pending Slack bind, revokes its encrypted token, and leaves a retryable active card', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'slack', installedBy: userId, podId });
-    const ref = await put(String(installed.integration._id), 'slack', 'xoxb-secret');
+    const ref = await put(String(installed.integration._id), SLACK_BOT_TOKEN, 'xoxb-secret');
     await Integration.updateOne(
       { _id: installed.integration._id },
       {
@@ -720,7 +838,7 @@ describe('installable connector projection', () => {
   });
 
   it('does not sweep a freshly written orphaned secret before a callback can commit its bind', async () => {
-    const ref = await put(new mongoose.Types.ObjectId().toString(), 'slack', 'xoxb-secret');
+    const ref = await put(new mongoose.Types.ObjectId().toString(), SLACK_BOT_TOKEN, 'xoxb-secret');
     const now = new Date();
 
     const fresh = await sweep(now);
@@ -739,7 +857,7 @@ describe('installable connector projection', () => {
   it('keeps a Slack projection visible but error-gated when its secret key disappears from the ring', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'slack', installedBy: userId, podId });
-    const ref = await put(String(installed.integration._id), 'slack', 'xoxb-secret');
+    const ref = await put(String(installed.integration._id), SLACK_BOT_TOKEN, 'xoxb-secret');
     await Integration.updateOne(
       { _id: installed.integration._id },
       {
@@ -758,11 +876,97 @@ describe('installable connector projection', () => {
     const integration = await Integration.findById(installed.integration._id);
     const parent = await InstallableInstallation.findById(installed.installation._id);
 
-    expect(reconciled.unavailableSlackSecretKeys).toBe(1);
+    expect(reconciled.unavailableConnectorSecretKeys).toBe(1);
     expect(integration.isActive).toBe(true);
     expect(integration.status).toBe('error');
     expect(integration.errorMessage).toMatch(/secret key/i);
     expect(parent.components.every((component) => component.status === 'active')).toBe(true);
+  });
+
+  const seedDiscordConnectorWithSecret = async () => {
+    const integration = await Integration.create({
+      podId: new mongoose.Types.ObjectId(),
+      type: 'discord',
+      status: 'connected',
+      isActive: true,
+      createdBy: new mongoose.Types.ObjectId(),
+      config: { serverId: 'srv', channelId: 'chan' },
+    });
+    const ref = await put(
+      String(integration._id),
+      DISCORD_WEBHOOK_URL,
+      'https://discord.com/api/webhooks/1/token',
+    );
+    await Integration.updateOne(
+      { _id: integration._id },
+      { $set: { 'config.webhookUrlRef': ref } },
+    );
+    return { integrationId: integration._id, ref };
+  };
+
+  const backdateSecret = async (ref) => {
+    const now = new Date();
+    await ConnectorSecret.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(ref) },
+      { $set: { createdAt: new Date(now.getTime() - (10 * 60_000) - 1) } },
+    );
+    return now;
+  };
+
+  it('keeps a Discord webhook secret past the grace window while its row still points at it', async () => {
+    // Blocker 1 (vera 74130): the keep-condition was a literal `botTokenRef`
+    // pair, so this secret matched neither path, the sweep revoked it ten
+    // minutes after the write, and the connector's webhook stopped resolving.
+    const { ref } = await seedDiscordConnectorWithSecret();
+    const now = await backdateSecret(ref);
+
+    const swept = await sweep(now);
+
+    expect(swept.orphanedSecrets).toBe(0);
+    expect(await ConnectorSecret.findById(ref)).not.toBeNull();
+  });
+
+  it('names the Discord webhook, not a Slack key, when a Discord secret is unreadable', async () => {
+    // Blocker 2 (vera 74131): the reason string is written through
+    // `userFacingError` and rendered verbatim on the Connectors page, so a
+    // Slack-named sentence reached Discord owners.
+    const { integrationId, ref } = await seedDiscordConnectorWithSecret();
+    process.env.CONNECTOR_SECRET_KEYS = `k2:${Buffer.alloc(32, 2).toString('base64')}`;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k2';
+
+    const reconciled = await sweep(new Date());
+    const integration = await Integration.findById(integrationId);
+
+    expect(reconciled.unavailableConnectorSecretKeys).toBe(1);
+    expect(await ConnectorSecret.findById(ref)).not.toBeNull();
+    expect(integration.status).toBe('error');
+    expect(integration.errorMessage).toBe('Discord connector webhook is unavailable');
+    expect(integration.errorMessageUserFacing).toBe(true);
+  });
+
+  it('keeps a secret whose kind it cannot place instead of deleting the ref it never looked for', async () => {
+    // Fail-closed on an unrecognized kind: this build does not know where that
+    // ref lives, and "the sweep found no reference" is not evidence that none
+    // exists — the reasoning that produced blocker 1 in the first place.
+    const integration = await Integration.create({
+      podId: new mongoose.Types.ObjectId(),
+      type: 'discord',
+      status: 'connected',
+      isActive: true,
+      createdBy: new mongoose.Types.ObjectId(),
+      config: { serverId: 'srv', channelId: 'chan' },
+    });
+    const ref = await put(
+      String(integration._id),
+      { kind: 'future-credential', provider: 'future' },
+      'material',
+    );
+    const now = await backdateSecret(ref);
+
+    const swept = await sweep(now);
+
+    expect(swept.orphanedSecrets).toBe(0);
+    expect(await ConnectorSecret.findById(ref)).not.toBeNull();
   });
 
   it('completes a stale activating row with its already-active, same-generation projection', async () => {
@@ -785,5 +989,47 @@ describe('installable connector projection', () => {
     expect(reconciled.completed).toBe(1);
     expect(completed.status).toBe('active');
     expect(unchanged.config.connectCode).toBe(originalCode);
+  });
+
+  it('does not mistake a hosted-MCP row for the integration an installation owns', async () => {
+    // TASK-172 §10 step 6b: the reconciler looks an active installation's own
+    // integration up by `installationId` (`:94`), and a hosted-MCP row carries
+    // none — the connect route writes type/scope/status/createdBy/config and
+    // nothing else. So the row cannot stand in for a connector the installation
+    // is missing. That matters because the branch it would take is `continue`:
+    // an installation whose channel record vanished would stay `active` with a
+    // dead relay, and the sweep would never report it.
+    const { userId, podId } = ids();
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const installationId = String(installed.installation._id);
+    await Integration.deleteMany({ _id: installed.integration._id });
+    const hosted = await Integration.create({
+      type: 'hosted-mcp',
+      scope: 'user',
+      status: 'connected',
+      createdBy: userId,
+      config: { entryId: 'notion', intake: 'oauth', credentialRef: 'secret-access-1' },
+    });
+
+    const reconciled = await sweep(new Date());
+
+    // The installation IS reported: the lookup did not accept the hosted row.
+    const after = await InstallableInstallation.findById(installationId);
+    expect(reconciled.staleComponents).toBeGreaterThanOrEqual(1);
+    expect(after.status).toBe('error');
+    expect(after.errorMessageUserFacing).toBe(true);
+    expect(after.components.every((component) => component.status === 'stale')).toBe(true);
+    // …and the hosted row is untouched, read raw: not marked, not deactivated,
+    // still holding the material a later removal needs.
+    const raw = await Integration.collection.findOne({ _id: hosted._id });
+    expect(raw.status).toBe('connected');
+    expect(raw.config.entryId).toBe('notion');
+    expect(raw.config.credentialRef).toBe('secret-access-1');
+    // Neither of the two things this sweep can write reaches it: the pause
+    // restamp (`config.adminPause`) and the stale-projection clear are both
+    // keyed on `installationId`. A raw config is not deep-equal here — the
+    // record carries schema defaults — so the absence is asserted by key.
+    expect('adminPause' in raw.config).toBe(false);
+    expect('providerRevokedAt' in raw.config).toBe(false);
   });
 });

@@ -1,7 +1,8 @@
 // ESM imports keep CodeQL's missing-rate-limiting dataflow connected to the
 // DB-backed polling route below (same established pattern as messages.ts).
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 import { createHash } from 'crypto';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -34,7 +35,7 @@ const agentConnectionReadLimit = rateLimit({
     if (authHeader) {
       return `agent-connection:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
     }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: any) => res.status(429).json({
     msg: 'rate limit exceeded: 60 agent connection reads per 60s',
@@ -44,12 +45,18 @@ const agentConnectionReadLimit = rateLimit({
 // Profile writes change the label that every chat message renders. Keep a
 // coarse ingress cap ahead of auth (the CodeQL-recognized shape) before doing
 // JWT work; the per-user cap below is the durable write protection.
+//
+// Keyed by the Cloudflare-recorded address, like the other internet-facing
+// limiters: this cap is mounted ahead of auth, so it is the one a header-free
+// redirect reaches, and reading `req.ip` here would put every external caller in
+// one bucket (`server.ts:94-101`). TASK-125; pinned by name in
+// rateLimitDefaultKey.test.js.
 const profileWriteIngressLimit = rateLimit({
   windowMs: 15 * 60_000,
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: { ip?: string }) => req.ip ? ipKeyGenerator(req.ip) : 'anon',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
   handler: (_req: unknown, res: any) => res.status(429).json({
     msg: 'rate limit exceeded: too many profile writes from this address',
   }),
@@ -69,7 +76,7 @@ const profileWriteUserLimit = rateLimit({
   }) => {
     const userId = req.userId || req.user?.id || req.user?._id;
     if (userId) return `profile-write:${String(userId)}`;
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+    return cloudflareIpRateLimitKeyGenerator(req as never);
   },
   handler: (_req: unknown, res: any) => res.status(429).json({
     msg: 'rate limit exceeded: 30 profile writes per 15 minutes',

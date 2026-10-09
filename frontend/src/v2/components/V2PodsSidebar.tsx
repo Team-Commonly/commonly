@@ -2,7 +2,7 @@ import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import { UseV2PodsResult, V2Pod, V2PodMember, useV2Pods } from '../hooks/useV2Pods';
 import { useV2Pinned } from '../hooks/useV2Pinned';
@@ -191,12 +191,13 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   selectedPodId, podsState, attentionCountByPod = {}, variant = 'column',
 }) => {
   const { t } = useTranslation();
+  const location = useLocation();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { pinned, toggle: togglePin } = useV2Pinned();
   const ownPodsState = useV2Pods();
   const {
-    pods, loading, error, createPod,
+    pods, loading, error, createPod, refresh: refreshPods,
   } = podsState || ownPodsState;
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState('');
@@ -210,16 +211,43 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const [newPodGoal, setNewPodGoal] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const createReturnToConnectors = location.pathname === '/v2'
+    && new URLSearchParams(location.search).get('newPod') === '1';
+
+  useEffect(() => {
+    if (createReturnToConnectors) setShowCreate(true);
+  }, [createReturnToConnectors]);
 
   // The visit log is written by the layout when a pod opens; re-read it here so
-  // Recent reorders without a reload. Times refresh once a minute.
+  // Recent reorders without a reload.
   useEffect(() => {
     setVisits(readPodVisits());
   }, [selectedPodId]);
+
+  // Every row's time is a DATUM from the last /api/pods; the minute tick only
+  // recomputes the label, so a tab left open keeps ageing a frozen timestamp and
+  // reads further from the truth the longer it stays open (TASK-184). So the tick
+  // also re-reads the datum, and so does becoming visible — the moment a row is
+  // actually read. Silent, so a poll never blinks the list into its spinner; and
+  // foreground-only, so a background tab costs nothing.
+  const refreshPodsRef = useRef(refreshPods);
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60 * 1000);
-    return () => window.clearInterval(timer);
+    refreshPodsRef.current = refreshPods;
+  }, [refreshPods]);
+  const tick = useCallback(() => {
+    setNow(Date.now());
+    if (document.visibilityState === 'visible') void refreshPodsRef.current?.({ silent: true });
   }, []);
+  useEffect(() => {
+    const timer = window.setInterval(tick, 60 * 1000);
+    // visibilitychange fires in both directions; `tick` decides what to do.
+    const onVisibility = () => tick();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [tick]);
 
   // ⌘K / Ctrl+K focuses the search box from anywhere in the shell.
   useEffect(() => {
@@ -299,7 +327,8 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
       setNewPodName('');
       setNewPodGoal('');
       setShowCreate(false);
-      selectPod(pod._id);
+      if (createReturnToConnectors) navigate('/v2/connectors', { replace: true });
+      else selectPod(pod._id);
     } finally {
       setCreating(false);
     }
@@ -331,6 +360,8 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
             name={peer.username || pod.name}
             src={peer.profilePicture || undefined}
             size="sm"
+            kind={peer.isBot ? 'agent' : 'human'}
+            seed={peer._id}
           />
         ) : (
           <span className="v2-pods__row-mark" aria-hidden="true">{podInitials(pod.name)}</span>

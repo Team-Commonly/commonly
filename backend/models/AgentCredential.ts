@@ -31,6 +31,10 @@ export interface IAgentCredential extends Document {
   createdAt: Date;
   lastUsedAt?: Date | null;
   expiresAt?: Date | null;
+  // TASK-094: the absolute ceiling for a renewable credential (a per-spawn
+  // child), measured from the mint. Renewal may move `expiresAt` but never past
+  // this, so a supervisor that never stops renewing still dies at 24h.
+  maxExpiresAt?: Date | null;
   revokedAt?: Date | null;
 }
 
@@ -47,6 +51,7 @@ const AgentCredentialSchema = new Schema<IAgentCredential>(
     status: { type: String, enum: ['active', 'revoked'], default: 'active' },
     lastUsedAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null },
+    maxExpiresAt: { type: Date, default: null },
     revokedAt: { type: Date, default: null },
   },
   { timestamps: true, collection: 'agentcredentials' },

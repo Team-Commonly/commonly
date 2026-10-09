@@ -1,29 +1,66 @@
-import React, { useEffect } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { createTheme } from '@mui/material/styles';
-// Auth and OAuth entry stubs remain so hard-loaded external links (and their
-// query strings) still resolve. The canonical public landing, comparison, and
-// use-case routes stay outside the v2 shell so their static HTML is also the
-// route users see after JavaScript loads.
-import Login from './components/Login';
-import Register from './components/Register';
-import RegistrationInviteRequired from './components/RegistrationInviteRequired';
-import GuidePage from './components/landing/GuidePage';
-import GuidesIndexPage from './components/landing/GuidesIndexPage';
-import UseCasePage from './components/landing/UseCasePage';
-import VerifyEmail from './components/VerifyEmail';
-import DiscordCallback from './components/DiscordCallback';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { LayoutProvider } from './context/LayoutContext';
-import V2App from './v2/V2App';
-import V2LandingPage from './v2/landing/V2LandingPage';
 import { setupFocusManagement } from './utils/focusUtils';
 import { checkAndRefresh } from './utils/refreshUtils';
+// TASK-145 — the entry keeps the stylesheet and the font faces that the first
+// paint uses, because every route's UI is now a lazy chunk and must not be the
+// thing that delivers them. Without these static imports the @font-face rules
+// would move into the app shell's async CSS, and the public landing would paint
+// in fallback fonts until the shell loaded (it never does on the landing).
+import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/ibm-plex-mono/500.css';
+import './v2/v2.css';
 import './App.css';
-import V2CliAuthorize from './v2/components/V2CliAuthorize';
+
+// TASK-145 — route-level split. One 4.18 MB (1.16 MB gzip) entry chunk used to
+// be the whole product for every visitor: the landing carried the authenticated
+// shell, and the shell carried the marketing pages and every admin surface.
+// Each route family is now its own chunk, fetched when its route renders and
+// covered by the single Suspense boundary in App() below. Canonical public
+// landing, comparison and use-case routes stay reachable by URL exactly as
+// before — only the moment their code arrives changed.
+const Login = React.lazy(() => import('./components/Login'));
+const Register = React.lazy(() => import('./components/Register'));
+const RegistrationInviteRequired = React.lazy(() => import('./components/RegistrationInviteRequired'));
+const GuidePage = React.lazy(() => import('./components/landing/GuidePage'));
+const GuidesIndexPage = React.lazy(() => import('./components/landing/GuidesIndexPage'));
+const UseCasePage = React.lazy(() => import('./components/landing/UseCasePage'));
+const VerifyEmail = React.lazy(() => import('./components/VerifyEmail'));
+const DiscordCallback = React.lazy(() => import('./components/DiscordCallback'));
+const V2App = React.lazy(() => import('./v2/V2App'));
+const V2LandingPage = React.lazy(() => import('./v2/landing/V2LandingPage'));
+const V2CliAuthorize = React.lazy(() => import('./v2/components/V2CliAuthorize'));
+
+// Covers the moment a route's chunk is in flight. It deliberately depends on no
+// route chunk and paints NOTHING of its own: the pre-mount canvas belongs to
+// the bare body (App.css `body { background-color: #f8f8fb }`, the light
+// default Sam's 2026-08-24 ruling established), so the frame only has to not
+// cover it.
+//
+// It must NOT use `var(--v2-page-bg, …)`: that token is declared on `.v2-root`
+// (v2.css:22, `#eef0f4`) and this frame mounts in `.App`, before any `.v2-root`
+// exists — so the fallback always wins. ux-lead's #1861 gate measured exactly
+// that on a 1.6 Mbps phone: entry CSS painted light at 3.0 s, this frame then
+// painted its navy fallback for three seconds (4.4 s → 7.35 s), and the viewport
+// went light again — the dark flash App.css:25 records as ruled out on 08-24,
+// and invisible unthrottled (<150 ms). The app shell shows its own <V2Boot/>
+// mark once the shell's code has arrived.
+const RouteBoot: React.FC = () => (
+  <div
+    role="status"
+    aria-label="Loading Commonly"
+    style={{ minHeight: '100vh' }}
+  />
+);
 
 class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   constructor(props: { children: React.ReactNode }) {
@@ -203,7 +240,11 @@ const getV2EquivalentPath = (pathname: string, search: string): string | null =>
 const PublicHome: React.FC = () => {
   const { isAuthenticated, loading } = useAuth();
 
-  if (loading || !isAuthenticated) return <V2LandingPage />;
+  // Order matters (TASK-145): rendering the landing while the auth check is in
+  // flight made a signed-in cold load fetch the marketing chunk it was about to
+  // navigate away from. The boot canvas covers that check instead.
+  if (loading) return <RouteBoot />;
+  if (!isAuthenticated) return <V2LandingPage />;
   return <Navigate to="/v2" replace />;
 };
 
@@ -266,6 +307,7 @@ function App(): React.ReactElement {
                 <BrowserRouter>
                   <NavigationHandler />
                   <div className="App">
+                    <Suspense fallback={<RouteBoot />}>
                     <Routes>
                     <Route path="/settings/devices" element={<Navigate to="/v2/settings" replace />} />
                     <Route path="/v2/*" element={<V2App />} />
@@ -286,6 +328,7 @@ function App(): React.ReactElement {
                     <Route path="/discord/success" element={<DiscordCallback type="success" />} />
                     <Route path="/discord/error" element={<DiscordCallback type="error" />} />
                     </Routes>
+                    </Suspense>
                   </div>
                 </BrowserRouter>
               </LayoutProvider>
