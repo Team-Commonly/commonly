@@ -1,0 +1,517 @@
+{
+  "measuredAt": "2026-10-09T11:44:46.145Z",
+  "server": "https://mcp.atlassian.com/v2/mcp",
+  "serverVersion": null,
+  "requestedScope": "read:me read:account offline_access read:jira:agent-interface search:jira:agent-interface read:confluence:agent-interface search:confluence:agent-interface",
+  "tokenShape": {
+    "keys": [
+      "access_token",
+      "expires_in",
+      "issuer",
+      "refresh_token",
+      "scope",
+      "token_type"
+    ],
+    "tokenType": "Bearer",
+    "grantedScope": "offline_access read:account read:confluence:agent-interface read:jira:agent-interface read:me search:confluence:agent-interface search:jira:agent-interface",
+    "expiresIn": 28800,
+    "hasRefreshToken": true
+  },
+  "count": 10,
+  "tools": [
+    {
+      "name": "getAccessibleAtlassianResources",
+      "title": "Get accessible Atlassian resources",
+      "annotations": {
+        "title": "Get accessible Atlassian resources",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": null,
+      "description": "Returns the cloudId(s) available to the current user"
+    },
+    {
+      "name": "atlassianUserInfo",
+      "title": "Get Atlassian user info",
+      "annotations": {
+        "title": "Get Atlassian user info",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": null,
+      "description": "Returns the accountId of the current user"
+    },
+    {
+      "name": "getConfluenceContent",
+      "title": "Get Confluence content",
+      "annotations": {
+        "title": "Get Confluence content",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you \u2014 call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "content_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when content_url is omitted. Numeric Confluence content ID, or a\nConfluence tiny link key (the encoded part\nfrom /wiki/x/ URLs, e.g. 4_sXAQ). Recognized Confluence content URLs are also\naccepted and converted to the content ID, but prefer content_url for URLs.\nOne of content_id or content_url is required.\n"
+          },
+          "content_url": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when content_id is omitted. Full URL of the Confluence content.\nSupported: pages/live docs\n(/pages/{id}), blog URLs (/blog/{id}), whiteboards\n(/whiteboard/{id}), databases (/database/{id}), folders (/folder/{id}),\nand TinyUrl (/wiki/x/{key}). Prefer this for URLs copied from Confluence.\nOne of content_id or content_url is required.\n"
+          },
+          "detail": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "ai_summary",
+              "outline",
+              "full"
+            ],
+            "description": "Response shape for document-style reads. summary = title + excerpt + counts\n(default, cheap). ai_summary = the generated AI summary when available, otherwise\nnull; it does not fall back to the standard excerpt. outline = heading tree (cheap,\nfor navigation). full = body in the requested format (use when intending to edit).\nNon-document content such as whiteboards, databases, folders, and embeds does not support detail;\ncontent_format is a separate representation selector for\nformats such as whiteboard svg/png, database csv, or embed url.\n"
+          },
+          "content_format": {
+            "type": "string",
+            "enum": [
+              "html",
+              "markdown",
+              "url",
+              "svg",
+              "png",
+              "csv"
+            ],
+            "description": "Body format. Doc types: html (default) or markdown. Document HTML can contain\nsupported macro wrappers instead of content displayed in Confluence web. When\nvisible macro content is required, use resolveConfluenceContentMacros with the\nreturned numeric content ID and all=true; use discover if its full contract is\nneeded. Whiteboards support only svg and png: use svg to inspect content or\nprepare edits, or png for a screenshot. Never use html or markdown for a\nwhiteboard. PNG is read-only and returns a short-lived presigned URL in\nbody.value, not the image content. Databases: csv.\nURL-backed content such as embeds: url.\n"
+          },
+          "draft": {
+            "type": "boolean",
+            "description": "If true, read the draft version instead of current. Only supported for\npages and blog posts.\n"
+          }
+        },
+        "required": [
+          "cloudId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": null,
+      "description": "REQUIRED: Supply at least one content locator: content_id or content_url.\nRead any Confluence content (page, blog, live doc, comment, whiteboard, embed, database, folder).\n"
+    },
+    {
+      "name": "searchConfluence",
+      "title": "Search Confluence content",
+      "annotations": {
+        "title": "Search Confluence content",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you \u2014 call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "cql": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "CQL query string (max 4096 chars). Examples:\n`type = page AND space = \"DEV\"`,\n`title ~ \"onboarding\" AND lastmodified > \"2025-01-01\"`,\n`creator = currentUser() AND type IN (page, blogpost) ORDER BY lastmodified DESC`.\n"
+          },
+          "cqlcontext": {
+            "type": "string",
+            "description": "JSON-encoded execution context, e.g. {\"spaceKey\":\"DEV\"}. Restricts the search to the supplied scope."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated list of content properties to expand on each result.\nCommon values: `space`, `version`, `body.view`, `metadata.labels`,\n`ancestors`. Use sparingly to avoid large responses.\n"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Max number of results to return per page (1-100). Defaults to 25."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque pagination cursor returned by a previous call. Omit to start from the first page."
+          }
+        },
+        "required": [
+          "cloudId",
+          "cql"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": null,
+      "description": "Search Confluence content with CQL"
+    },
+    {
+      "name": "getJiraIssue",
+      "title": "Get Jira issue",
+      "annotations": {
+        "title": "Get Jira issue",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you \u2014 call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue key (PROJ-123), numeric ID, or a Jira issue URL"
+          },
+          "fields": {
+            "type": "array",
+            "items": {},
+            "description": "Custom Jira field IDs to fetch (e.g. [\"customfield_10010\", \"customfield_10020\"]). Overrides the view's fetch strategy. For custom fields in normal use, prefer view: \"evidence\", which fetches and maps them automatically. Use [\"*all\"] to fetch every field (expensive \u2014 prefer view: \"full\" instead).\n"
+          },
+          "includeEditableFields": {
+            "type": "boolean",
+            "description": "When true, also return compact metadata for fields the authenticated user can edit on this issue, including type, allowed values, and operations. Omit unless preparing an edit: this makes an extra Jira REST call.\n"
+          },
+          "fieldsByKeys": {
+            "type": "boolean",
+            "description": "When true, each entry in `fields` is interpreted as a Jira field key (e.g. \"summary\", \"description\") instead of a field id. Matches the Jira REST `fieldsByKeys` query parameter. Ignored when `fields` is omitted (default field list uses ids).\n"
+          },
+          "expand": {
+            "type": "string",
+            "description": "Additional Jira expand tokens (comma-separated), e.g. \"renderedFields,changelog\". Merged with any expand the server adds for custom-field mapping (e.g. \"names\"); duplicate tokens removed. Note \"changelog\" here returns only the newest page, sorted newest-first, and it accepts startAt/maxResults then ignores them \u2014 so it cannot be paged and reports a longer history as complete. Use listJiraIssueChangelogs to read all of it (oldest-first); do not mix their orderings.\n"
+          },
+          "properties": {
+            "type": "array",
+            "items": {},
+            "description": "Issue entity property keys to return (Jira `properties` query param, repeated per key). Omit unless you rely on app-specific issue properties.\n"
+          },
+          "failFast": {
+            "type": "boolean",
+            "description": "When true, forwards Jira's `failFast` query flag for this GET. Omit for Jira default behavior.\n"
+          },
+          "responseContentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "html"
+            ],
+            "description": "Format for rich-text bodies \u2014 description and environment, plus any comment bodies the view returns. Defaults to markdown. Set html to receive HTML, which is lossless, so you can pass it straight back to editJiraIssue/addOrEditJiraIssueComment with contentFormat: html. Bodies holding anything markdown cannot represent \u2014 inline media, panels, expands, layouts, statuses, @mentions, dates, emoji \u2014 are returned as HTML automatically, because markdown would drop those nodes or turn them into literal text on write-back. An explicit markdown request is overridden for those bodies, with a warning saying so; appliedContentFormat in the response reports the format you actually got.\n"
+          },
+          "actionSource": {
+            "type": "string",
+            "enum": [
+              "jira_mcp_card",
+              "model_tool_call"
+            ],
+            "description": "Optional invocation attribution. Jira MCP cards set jira_mcp_card; omit for model/tool-loop calls."
+          },
+          "view": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "evidence",
+              "full"
+            ],
+            "description": "Output view preset. Default: \"compact\". Options: \"compact\", \"evidence\", \"full\". compact = minimal fields for scanning; evidence = decision-relevant detail; full = complete response."
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": null,
+      "description": "Get a Jira or JSM issue by key or ID. Use for one known issue; use searchJiraIssuesUsingJql to find or list many issues. Reports how many comments an issue has, not the comments themselves \u2014 for those use listJiraIssueComments. View \"evidence\" also returns the issue's links to other issues."
+    },
+    {
+      "name": "searchJiraIssuesUsingJql",
+      "title": "Search Jira issues using JQL",
+      "annotations": {
+        "title": "Search Jira issues using JQL",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you \u2014 call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "jql": {
+            "type": "string",
+            "description": "JQL query string e.g. \"project = PROJ AND status = 'In Progress'\". If the tool returns a repairHint, follow it and retry.\n"
+          },
+          "searchResultMode": {
+            "type": "string",
+            "enum": [
+              "issues",
+              "count",
+              "all"
+            ],
+            "description": "Default \"issues\". Never count for normal search or if nextPageToken used. If total for same query is known, reuse it. Use \"count\" only when no trusted count exists and either the user asks or a downstream step needs it. Use \"all\" only if both count and issues required.\n"
+          },
+          "maxResults": {
+            "type": "number",
+            "description": "Maximum results to return (default 50, max 100)"
+          },
+          "fields": {
+            "type": "array",
+            "items": {},
+            "description": "Fields per issue (e.g. [\"summary\", \"status\", \"customfield_10010\"]). customfield_* IDs are site-specific \u2014 discover the correct id for story points etc. on this Cloud site. Honoured exactly when supplied. Values map to issues[].fields.customFields (human labels), not raw customfield_* keys. The default \"compact\" view omits custom fields; use view: \"evidence\" for velocity/sprint JQL (fetches and maps all custom fields) or pass explicit customfield_* IDs.\n"
+          },
+          "nextPageToken": {
+            "type": "string",
+            "description": "Pagination token from a previous response to fetch the next page"
+          },
+          "responseContentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "html"
+            ],
+            "description": "Format for rich-text bodies (description, environment, comments) when the view returns them. Defaults to markdown; html is lossless for a later editJiraIssue. Issues holding anything markdown cannot represent (media, panels, expands, statuses, @mentions) are returned as HTML automatically, decided per issue. An explicit markdown request is overridden for those bodies, with a warning saying so; appliedContentFormat in the response reports the format you actually got.\n"
+          },
+          "actionSource": {
+            "type": "string",
+            "enum": [
+              "jira_mcp_card",
+              "model_tool_call"
+            ],
+            "description": "Optional invocation attribution. Jira MCP cards set jira_mcp_card; omit for model/tool-loop calls."
+          },
+          "view": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "evidence",
+              "full"
+            ],
+            "description": "Output view preset. Default: \"compact\". Options: \"compact\", \"evidence\", \"full\". compact = minimal fields for scanning; evidence = decision-relevant detail; full = complete response."
+          }
+        },
+        "required": [
+          "cloudId",
+          "jql"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": null,
+      "description": "Search for Jira issues using JQL, with an optional approximate count. Use view: \"evidence\" to fetch and map custom fields. Page with nextPageToken until isLast is true. For one known issue, use getJiraIssue. JQL only returns issues; inferring anything else from issue rows is silently incomplete. Use the purpose-built operation for sprints, boards, board config, field history, worklogs, releases, accountIds, issue types, projects and statuses."
+    },
+    {
+      "name": "discover",
+      "title": "Discover Atlassian Operations",
+      "annotations": {
+        "title": "Discover Atlassian Operations",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What you want to do, as a verb plus the object and, if you know it, the product: \"transition a jira issue\", \"list confluence spaces\", \"get pull request comments\". Naming the product scopes the searchAsk for one thing per call; for a goal spanning two products, call discover once per product. If nothing fits, re-query using the product's own noun (issue, page, space, repository, sprint) rather than a synonym."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": null,
+      "description": "Find Atlassian operations that are not already in your tool list. Searches ~316 operations across Jira, Confluence, Compass, Bitbucket, Focus, Goals, Projects, Loom, Talent, Teams, Capacity-planning, Assets. Returns up to 5 matches with the exact name and inputs needed to call the matching execute-family tool (executeRead, executeWrite, or executeDestructive), then a briefer name-and-summary list of further matches \u2014 re-query with narrower terms to get one of those in full. Read all 5 before choosing. Only use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name \u2014 when unsure, call discover first."
+    },
+    {
+      "name": "executeRead",
+      "title": "Execute Read-Only Atlassian Operation",
+      "annotations": {
+        "title": "Execute Read-Only Atlassian Operation",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you \u2014 call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Operation name to run. Only use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name \u2014 when unsure, call discover first."
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Flat input object \u2014 pass all parameters here. The server routes each to path, query, or body automatically."
+          },
+          "responseFields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "maxItems": 50,
+            "description": "Dot-notation fields to return, e.g. [\"key\",\"fields.summary\"]. Filters response."
+          },
+          "view": {
+            "type": "string",
+            "description": "Named output view preset (e.g. \"compact\", \"evidence\", \"full\"). Only applies when the operation declares views. Overridden by responseFields if both are supplied."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": null,
+      "description": "Run a read-only Atlassian operation by name across all Atlassian products.\nOnly use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name \u2014 when unsure, call discover first.\nIf the user provides a Jira/Confluence URL, pass it directly as cloudId \u2014 no need to call getAccessibleAtlassianResources.\nPass all inputs as a flat object \u2014 the server routes each to the right location (path, query, or body) automatically.\nUse responseFields for field filtering, e.g. [\"key\",\"fields.summary\",\"fields.status.name\"].\nUse view to select a named output preset (e.g. \"compact\", \"evidence\", \"full\") when the operation supports views."
+    },
+    {
+      "name": "executeWrite",
+      "title": "Execute Write Atlassian Operation",
+      "annotations": {
+        "title": "Execute Write Atlassian Operation",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you \u2014 call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Operation name to run. Only use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name \u2014 when unsure, call discover first."
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Flat input object \u2014 pass all parameters here. The server routes each to path, query, or body automatically."
+          },
+          "responseFields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "maxItems": 50,
+            "description": "Dot-notation fields to return, e.g. [\"key\",\"fields.summary\"]. Filters response."
+          },
+          "view": {
+            "type": "string",
+            "description": "Named output view preset (e.g. \"compact\", \"evidence\", \"full\"). Only applies when the operation declares views. Overridden by responseFields if both are supplied."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": null,
+      "description": "Run a write Atlassian operation by name (creates or updates data, non-destructive) across all Atlassian products.\nOnly use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name \u2014 when unsure, call discover first.\nIf the user provides a Jira/Confluence URL, pass it directly as cloudId \u2014 no need to call getAccessibleAtlassianResources.\nPass all inputs as a flat object \u2014 the server routes each to the right location (path, query, or body) automatically.\nUse responseFields for field filtering, e.g. [\"key\",\"fields.summary\",\"fields.status.name\"].\nUse view to select a named output preset (e.g. \"compact\", \"evidence\", \"full\") when the operation supports views."
+    },
+    {
+      "name": "executeDestructive",
+      "title": "Execute Destructive Atlassian Operation",
+      "annotations": {
+        "title": "Execute Destructive Atlassian Operation",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you \u2014 call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Operation name to run. Only use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name \u2014 when unsure, call discover first."
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Flat input object \u2014 pass all parameters here. The server routes each to path, query, or body automatically."
+          },
+          "responseFields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "maxItems": 50,
+            "description": "Dot-notation fields to return, e.g. [\"key\",\"fields.summary\"]. Filters response."
+          },
+          "view": {
+            "type": "string",
+            "description": "Named output view preset (e.g. \"compact\", \"evidence\", \"full\"). Only applies when the operation declares views. Overridden by responseFields if both are supplied."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": null,
+      "description": "Run a destructive Atlassian operation by name (deletes or irreversibly changes data) across all Atlassian products.\nOnly use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name \u2014 when unsure, call discover first.\nIf the user provides a Jira/Confluence URL, pass it directly as cloudId \u2014 no need to call getAccessibleAtlassianResources.\nPass all inputs as a flat object \u2014 the server routes each to the right location (path, query, or body) automatically.\nUse responseFields for field filtering, e.g. [\"key\",\"fields.summary\",\"fields.status.name\"].\nUse view to select a named output preset (e.g. \"compact\", \"evidence\", \"full\") when the operation supports views."
+    }
+  ]
+}

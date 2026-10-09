@@ -17,6 +17,7 @@ const {
 } = require('../../../integrations/hostedMcp/entries');
 const GOOGLE_CALENDAR_CAPTURE = require('../../fixtures/hostedMcp/google-calendar-tools-list-2026-10-01.json');
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
+const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -343,10 +344,10 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
 });
 
 describe('the shipped catalogue cannot land half-wired', () => {
-  test('ships Linear first and Google Calendar second, and lookup names the requested entry', () => {
+  test('ships Linear, Google Calendar, then Atlassian, and lookup names the requested entry', () => {
     // The catalogue is the one place that says what an instance offers before
     // any member has connected anything. Its ordering follows the build plan.
-    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar']);
+    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar', 'atlassian']);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(catalogue, 'linear').title).toBe('Linear');
@@ -432,6 +433,45 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.readOnlyHint).toBe(source.annotations.readOnlyHint);
       expect(tool.annotations?.destructiveHint).toBe(source.annotations.destructiveHint);
     });
+  });
+
+  test('the Atlassian pin is the six named reads of its measured list, under snake_case names', () => {
+    // Capture taken by connector-ops on 2026-10-09 with read and search scopes
+    // only. Wren 76760: pin a read only if it is named, product-scoped and
+    // carries no credential or foreign payload. So the by-name dispatcher
+    // (executeRead) and its catalogue (discover) stay out even though both are
+    // annotated read-only, and the two writers stay out by class.
+    const capture = ATLASSIAN_CAPTURE;
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'atlassian');
+    expect(entry.client).toBe('cimd');
+    expect(capture.server).toBe(entry.resource);
+    expect(capture.requestedScope.split(' ').sort()).toEqual([...entry.scopes].sort());
+    expect(entry.scopes.some((scope) => scope.startsWith('write:'))).toBe(false);
+    expect(entry.revoke.endpoint).toBe('https://auth.atlassian.com/oauth/revoke');
+
+    const pinnedUpstream = [
+      'getAccessibleAtlassianResources', 'atlassianUserInfo', 'getConfluenceContent',
+      'searchConfluence', 'getJiraIssue', 'searchJiraIssuesUsingJql',
+    ];
+    expect(entry.tools.map((tool) => tool.upstreamName)).toEqual(pinnedUpstream);
+    expect(capture.tools.map((tool) => tool.name).filter((name) => !pinnedUpstream.includes(name)).sort())
+      .toEqual(['discover', 'executeDestructive', 'executeRead', 'executeWrite']);
+
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      // The namespace cannot carry camelCase, so the agent-facing name differs
+      // from the vendor's; calls and drift use upstreamName.
+      expect(tool.name).toMatch(/^[a-z0-9_]+$/);
+      expect(tool.name).not.toBe(tool.upstreamName);
+      expect(tool.class).toBe('read');
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(tool.annotations?.readOnlyHint).toBe(true);
+      expect(found.annotations.readOnlyHint).toBe(true);
+      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
+    }
+    expect(capture.tools).toHaveLength(10);
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
