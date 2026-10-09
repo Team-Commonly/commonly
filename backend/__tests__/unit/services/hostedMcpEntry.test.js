@@ -18,6 +18,7 @@ const {
 const GOOGLE_CALENDAR_CAPTURE = require('../../fixtures/hostedMcp/google-calendar-tools-list-2026-10-01.json');
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
+const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -344,10 +345,10 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
 });
 
 describe('the shipped catalogue cannot land half-wired', () => {
-  test('ships Linear, Google Calendar, then Atlassian, and lookup names the requested entry', () => {
+  test('ships Linear, Google Calendar, Atlassian, then Airtable, and lookup names the requested entry', () => {
     // The catalogue is the one place that says what an instance offers before
     // any member has connected anything. Its ordering follows the build plan.
-    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar', 'atlassian']);
+    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar', 'atlassian', 'airtable']);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(catalogue, 'linear').title).toBe('Linear');
@@ -472,6 +473,42 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
     expect(capture.tools).toHaveLength(10);
+  });
+
+  test('the Airtable pin is every measured read minus three credential- or payload-bearing ones', () => {
+    // Capture taken by connector-ops on 2026-10-09 with the four :read scopes
+    // only. Wren 76761: list_secrets and list_external_accounts are
+    // credential-adjacent reconnaissance and fetch_automation_input_data carries
+    // externally injected payloads, so all three stay out although annotated
+    // read-only. Every writer stays out by class.
+    const capture = AIRTABLE_CAPTURE;
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'airtable');
+    expect(entry.client).toBe('cimd');
+    expect(capture.server).toBe(entry.resource);
+    expect(capture.requestedScope.split(' ').sort()).toEqual([...entry.scopes].sort());
+    expect(entry.scopes.every((scope) => scope.endsWith(':read'))).toBe(true);
+    expect(entry.revoke.endpoint).toBeUndefined();
+
+    const excluded = ['fetch_automation_input_data', 'list_external_accounts', 'list_secrets'];
+    const measuredReads = capture.tools.filter((tool) => tool.annotations.readOnlyHint === true);
+    expect(entry.tools.map((tool) => tool.name)).toEqual(
+      measuredReads.filter((tool) => !excluded.includes(tool.name)).map((tool) => tool.name),
+    );
+    expect(entry.tools).toHaveLength(22);
+    for (const name of excluded) expect(entry.tools.some((tool) => tool.name === name)).toBe(false);
+    expect(entry.tools.some((tool) => tool.name === 'delete_records_for_table')).toBe(false);
+
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      expect(tool.name).toBe(tool.upstreamName);
+      expect(tool.class).toBe('read');
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(tool.annotations?.readOnlyHint).toBe(true);
+      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
+    }
+    expect(capture.tools).toHaveLength(46);
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
