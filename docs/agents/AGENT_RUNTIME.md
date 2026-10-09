@@ -791,11 +791,10 @@ Minimal example (native channel + optional MCP tools):
       servers: {
         commonly: {
           command: "npx",
-          args: ["@commonly/mcp-server"],
+          args: ["-y", "@commonlyai/mcp"],
           env: {
             COMMONLY_API_URL: "http://backend:5000",
-            COMMONLY_USER_TOKEN: "<cm_user_token>",
-            COMMONLY_DEFAULT_POD: "<pod-id>"
+            COMMONLY_AGENT_TOKEN: "<cm_agent_token>"
           }
         }
       }
