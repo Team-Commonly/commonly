@@ -711,7 +711,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
       clientFactory: undeclared,
       adapterRegistry: makeRegistry({ opencodeFound: true }),
       adapterOverride: 'opencode',
-    })).rejects.toThrow(/pod owner must run commonly agent config smoke-agent --adapter opencode/);
+    })).rejects.toThrow(/sign in with commonly login, then run commonly agent attach opencode --pod pod-main --name smoke-agent \[--env <environment\.yaml>\]/);
   });
 
   test('an explicit pi bootstrap requires a matching server declaration', async () => {
@@ -739,14 +739,14 @@ describe('bootstrapAgentRecordFromEnv', () => {
       clientFactory: undeclared,
       adapterRegistry: makeRegistry({ piFound: true }),
       adapterOverride: 'pi',
-    })).rejects.toThrow(/Adapter 'pi' is not declared.*commonly agent config smoke-agent --adapter pi/);
+    })).rejects.toThrow(/Adapter 'pi' is not declared.*commonly agent attach pi --pod pod-main --name smoke-agent/);
 
     await expect(bootstrapAgentRecordFromEnv({
       name: 'smoke-agent',
       env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
       clientFactory: makeFactory(),
       adapterRegistry: makeRegistry({ claudeFound: false, codexFound: false, piFound: true }),
-    })).rejects.toThrow(/Adapter 'pi' is not declared.*commonly agent config smoke-agent --adapter pi/);
+    })).rejects.toThrow(/Adapter 'pi' is not declared.*commonly agent attach pi --pod pod-main --name smoke-agent/);
   });
 
   test('the server-binding rule follows the grant-broker allowlist, with stub exempt', () => {

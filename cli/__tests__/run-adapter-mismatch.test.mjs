@@ -141,7 +141,7 @@ describe('agent run --adapter against an existing token file', () => {
     expect(get).toHaveBeenCalledWith('/api/agents/runtime/installations');
     const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(stderr).toContain("Adapter 'opencode' is not declared for this Commonly installation");
-    expect(stderr).toContain('commonly agent config byo-test --adapter opencode');
+    expect(stderr).toContain('commonly login, then run commonly agent attach opencode --pod pod-1 --name byo-test [--env <environment.yaml>]');
   });
 
   test('a failed installations read reports the read failure separately from a binding refusal', async () => {
@@ -179,7 +179,7 @@ describe('agent run --adapter against an existing token file', () => {
     expect(get).toHaveBeenCalledWith('/api/agents/runtime/installations');
     const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(stderr).toContain("Adapter 'pi' is not declared for this Commonly installation");
-    expect(stderr).toContain('commonly agent config byo-test --adapter pi');
+    expect(stderr).toContain('commonly agent attach pi --pod pod-1 --name byo-test [--env <environment.yaml>]');
   });
 
   test('the env-token first run refuses pi before saving its token or spawning', async () => {
@@ -212,7 +212,7 @@ describe('agent run --adapter against an existing token file', () => {
       expect(fs.existsSync(tokenPath)).toBe(false);
       const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
       expect(stderr).toContain("Adapter 'pi' is not declared for this Commonly installation");
-      expect(stderr).toContain('commonly agent config byo-test --adapter pi');
+      expect(stderr).toContain('commonly agent attach pi --pod pod-1 --name byo-test [--env <environment.yaml>]');
     } finally {
       if (oldToken === undefined) delete process.env.COMMONLY_AGENT_TOKEN;
       else process.env.COMMONLY_AGENT_TOKEN = oldToken;

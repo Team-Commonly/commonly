@@ -172,8 +172,9 @@ export const serverAdapterBindingRefusal = ({
   if (runtimeAdapterForInstallation({ installations, podId, instanceId }) === adapter) return null;
   return [
     `Adapter '${adapter}' is not declared for this Commonly installation.`,
-    `A pod owner must run commonly agent config ${agentName} --adapter ${adapter}`
-      + ` before this seat can use adapter '${adapter}'.`,
+    `A pod owner must sign in with commonly login, then run commonly agent attach ${adapter}`
+      + ` --pod ${podId || '<pod-id>'} --name ${agentName || '<agent-name>'}`
+      + ` [--env <environment.yaml>] before this seat can use adapter '${adapter}'.`,
   ].join(' ');
 };
 
