@@ -928,6 +928,13 @@ const safeReason = (error: unknown): string => {
   return 'broker_error';
 };
 
+const executionErrorOutcome = (error: unknown): 'refused' | 'failed' | 'pending_approval' => {
+  if (!(error instanceof RoomGrantError)) return 'failed';
+  if (error.code === 'approval_required') return 'pending_approval';
+  if (error.code === 'provider_error' || error.code === 'provider_unreachable') return 'failed';
+  return 'refused';
+};
+
 /**
  * Whose credential a refused call would have spent (scope §8, TASK-181).
  *
@@ -1200,9 +1207,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     // Audit refusals and failures with the token-derived identity. If the
     // audit store itself is unavailable, surface that failure rather than
     // claiming a call happened without a durable trail.
-    const outcome = error instanceof RoomGrantError
-      ? (error.code === 'approval_required' ? 'pending_approval' : 'refused')
-      : 'failed';
+    const outcome = executionErrorOutcome(error);
     const alreadyRecorded = error instanceof RoomGrantError && Boolean(error.details?.recorded);
     const callId = alreadyRecorded
       ? String(error.details?.callId || '')
@@ -1278,7 +1283,7 @@ export const executeApprovedToolCall = async (
     await recordCall(
       { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
       grant,
-      error instanceof RoomGrantError ? 'refused' : 'failed',
+      executionErrorOutcome(error),
       startedAt,
       reason,
       {

@@ -273,6 +273,25 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ok' }));
   });
 
+  it('records a provider HTTP failure as failed with its transport reason', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    global.fetch = jest.fn(async () => new Response('', { status: 503 }));
+
+    await expect(callTool({
+      grantId: 'grant-hosted',
+      agentUserId: 'agent-a',
+      tool: 'linear.list_issues',
+      args: {},
+      hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'provider_error' });
+
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failed',
+      reason: 'provider_error',
+    }));
+    expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused' }));
+  });
+
   it('records a vendor tool error after owner approval as failed with its approval id', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
       tools: ['linear.create_issue'],
@@ -303,6 +322,31 @@ describe('a hosted-MCP grant through the broker', () => {
       approvalId: 'approval-vendor-error',
     }));
     expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ok' }));
+  });
+
+  it('records an unreachable vendor after owner approval as failed with its transport reason', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
+      tools: ['linear.create_issue'],
+      writeMode: 'write-with-confirm',
+    }));
+    const args = { title: 'approved issue' };
+    global.fetch = jest.fn(async () => { throw new Error('ECONNREFUSED'); });
+
+    await expect(executeApprovedToolCall({
+      grantId: 'grant-hosted',
+      agentUserId: 'agent-a',
+      tool: 'linear.create_issue',
+      args,
+      expectedArgsDigest: digestArgs(args),
+      approvalId: 'approval-transport-error',
+    })).rejects.toMatchObject({ code: 'provider_unreachable' });
+
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failed',
+      reason: 'provider_unreachable',
+      approvalId: 'approval-transport-error',
+    }));
+    expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused' }));
   });
 
   it('refuses when the row names another entry, and never reaches the vendor', async () => {
