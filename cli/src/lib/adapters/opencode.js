@@ -719,19 +719,21 @@ const spawnBinaryPath = (env) => {
 };
 
 const parseOpenCodeVersion = (output) => {
-  const match = String(output || '').match(
-    /(?:^|[^0-9A-Za-z])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?![0-9A-Za-z.+-])/,
+  const match = String(output || '').trim().match(
+    /^(?:opencode\s+)?v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/i,
   );
   return match?.[1] || null;
 };
 
 const readOpenCodeVersion = (binary, env) => {
   try {
+    const probeEnv = { ...env };
+    for (const key of DISABLED_ENV) probeEnv[key] = '1';
     const result = spawnSync(binary, ['--version'], {
-      encoding: 'utf8', env, timeout: VERSION_CHECK_TIMEOUT_MS,
+      encoding: 'utf8', env: probeEnv, timeout: VERSION_CHECK_TIMEOUT_MS,
     });
     if (result.error || result.status !== 0) return null;
-    return parseOpenCodeVersion(`${result.stdout || ''}\n${result.stderr || ''}`);
+    return parseOpenCodeVersion(result.stdout);
   } catch {
     return null;
   }

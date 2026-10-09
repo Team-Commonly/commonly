@@ -774,6 +774,10 @@ describe('opencode adapter — spawn()', () => {
             encoding: 'utf8', timeout: 5000, env: expect.any(Object),
           }),
         );
+        const versionProbe = spawnSyncMock.mock.calls.find(([, args]) => args[0] === '--version');
+        expect(versionProbe[2].env).toMatchObject(
+          Object.fromEntries(DISABLED_ENV.map((key) => [key, '1'])),
+        );
         expect(warning).not.toHaveBeenCalled();
       } finally {
         warning.mockRestore();
@@ -821,6 +825,14 @@ describe('opencode adapter — spawn()', () => {
     {
       description: 'unavailable',
       result: { status: 1, stdout: '', stderr: 'version command failed' },
+      message: /installed OpenCode version is unknown.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+    },
+    {
+      description: 'update announcement containing multiple versions',
+      result: {
+        status: 0,
+        stdout: 'A new release is available: 1.18.35 -> 1.19.0\n',
+      },
       message: /installed OpenCode version is unknown.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
   ])('a public seat refuses an $description version before creating state or spawning', async ({
