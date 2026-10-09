@@ -36,6 +36,9 @@ const {
   BOOTSTRAP_ADAPTER_DETECT_ORDER,
   runtimeAdapterForInstallation,
   adapterRequiresServerBinding,
+  serverAdapterBindingRefusal,
+  checkAttachedAdapterBinding,
+  printAttachRunGuidance,
   resolveAttachSandbox,
 } = await import('../src/commands/agent.js');
 const { ADAPTERS_WITH_GRANT_BROKER } = await import('../src/lib/default-environment.js');
@@ -714,6 +717,19 @@ describe('bootstrapAgentRecordFromEnv', () => {
     })).rejects.toThrow(/sign in with commonly login, then run commonly agent attach opencode --pod pod-main --name smoke-agent \[--env <environment\.yaml>\]/);
   });
 
+  test('an older server without runtimeAdapter projection says to upgrade instead of re-attaching', async () => {
+    const refusal = serverAdapterBindingRefusal({
+      adapterName: 'opencode',
+      agentName: 'smoke-agent',
+      installations: identityResponse.installations,
+      podId: 'pod-main',
+      instanceId: 'default',
+    });
+    expect(refusal).toMatch(/server predates runtime adapter bindings/i);
+    expect(refusal).toMatch(/upgrade the server/i);
+    expect(refusal).not.toMatch(/agent attach/);
+  });
+
   test('an explicit pi bootstrap requires a matching server declaration', async () => {
     const declared = makeFactory({
       agentName: 'smoke-agent',
@@ -732,7 +748,10 @@ describe('bootstrapAgentRecordFromEnv', () => {
     });
     expect(record.adapter).toBe('pi');
 
-    const undeclared = makeFactory();
+    const undeclared = makeFactory({
+      ...identityResponse,
+      installations: identityResponse.installations.map((row) => ({ ...row, runtimeAdapter: null })),
+    });
     await expect(bootstrapAgentRecordFromEnv({
       name: 'smoke-agent',
       env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
@@ -744,9 +763,63 @@ describe('bootstrapAgentRecordFromEnv', () => {
     await expect(bootstrapAgentRecordFromEnv({
       name: 'smoke-agent',
       env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
-      clientFactory: makeFactory(),
+      clientFactory: makeFactory({
+        ...identityResponse,
+        installations: identityResponse.installations.map((row) => ({ ...row, runtimeAdapter: null })),
+      }),
       adapterRegistry: makeRegistry({ claudeFound: false, codexFound: false, piFound: true }),
     })).rejects.toThrow(/Adapter 'pi' is not declared.*commonly agent attach pi --pod pod-main --name smoke-agent/);
+  });
+
+  test('attach checks the installed binding and withholds the Run with hint when the server is old', async () => {
+    const get = jest.fn(async () => ({ installations: identityResponse.installations }));
+    const clientFactory = jest.fn(() => ({ get }));
+    const binding = await checkAttachedAdapterBinding({
+      adapterName: 'opencode',
+      agentName: 'smoke-agent',
+      podId: 'pod-main',
+      instanceId: 'default',
+      instanceUrl: 'https://api.example.test',
+      runtimeToken: 'cm_agent_abc123',
+      clientFactory,
+    });
+    const log = jest.fn();
+    const warn = jest.fn();
+    printAttachRunGuidance({ agentName: 'smoke-agent', binding, log, warn });
+
+    expect(clientFactory).toHaveBeenCalledWith({
+      instance: 'https://api.example.test', token: 'cm_agent_abc123',
+    });
+    expect(get).toHaveBeenCalledWith('/api/agents/runtime/installations');
+    expect(binding.canRun).toBe(false);
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('Run with:'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('predates runtime adapter bindings'));
+  });
+
+  test('attach prints Run with only after the server confirms the selected adapter', async () => {
+    const clientFactory = jest.fn(() => ({
+      get: jest.fn(async () => ({
+        installations: [{
+          podId: 'pod-main', instanceId: 'writer', type: 'installation', runtimeAdapter: ' OpenCode ',
+        }],
+      })),
+    }));
+    const binding = await checkAttachedAdapterBinding({
+      adapterName: 'opencode',
+      agentName: 'smoke-agent',
+      podId: 'pod-main',
+      instanceId: 'writer',
+      instanceUrl: 'https://api.example.test',
+      runtimeToken: 'cm_agent_abc123',
+      clientFactory,
+    });
+    const log = jest.fn();
+    const warn = jest.fn();
+    printAttachRunGuidance({ agentName: 'smoke-agent', binding, log, warn });
+
+    expect(binding.canRun).toBe(true);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('Run with:    commonly agent run smoke-agent'));
+    expect(warn).not.toHaveBeenCalled();
   });
 
   test('the server-binding rule follows the grant-broker allowlist, with stub exempt', () => {

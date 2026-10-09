@@ -159,6 +159,12 @@ export const adapterRequiresServerBinding = (adapterName) => {
   return Boolean(adapter) && adapter !== 'stub' && !ADAPTERS_WITH_GRANT_BROKER.has(adapter);
 };
 
+const serverProjectsRuntimeAdapter = (installations) => (
+  Array.isArray(installations)
+  && installations.some((row) => row?.type === 'installation'
+    && Object.prototype.hasOwnProperty.call(row, 'runtimeAdapter'))
+);
+
 /** Return the refusal message unless this installation declares the same adapter. */
 export const serverAdapterBindingRefusal = ({
   adapterName,
@@ -166,16 +172,67 @@ export const serverAdapterBindingRefusal = ({
   installations,
   podId,
   instanceId,
+  includeAttachGuidance = true,
 } = {}) => {
   const adapter = String(adapterName || '').trim().toLowerCase();
   if (!adapterRequiresServerBinding(adapter)) return null;
+  if (!serverProjectsRuntimeAdapter(installations)) {
+    return `This Commonly server predates runtime adapter bindings; upgrade the server before running adapter '${adapter}'.`;
+  }
   if (runtimeAdapterForInstallation({ installations, podId, instanceId }) === adapter) return null;
-  return [
-    `Adapter '${adapter}' is not declared for this Commonly installation.`,
-    `A pod owner must sign in with commonly login, then run commonly agent attach ${adapter}`
-      + ` --pod ${podId || '<pod-id>'} --name ${agentName || '<agent-name>'}`
-      + ` [--env <environment.yaml>] before this seat can use adapter '${adapter}'.`,
-  ].join(' ');
+  const refusal = `Adapter '${adapter}' is not declared for this Commonly installation.`;
+  if (!includeAttachGuidance) return refusal;
+  return `${refusal} A pod owner must sign in with commonly login, then run commonly agent attach ${adapter}`
+    + ` --pod ${podId || '<pod-id>'} --name ${agentName || '<agent-name>'}`
+    + ` [--env <environment.yaml>] before this seat can use adapter '${adapter}'.`;
+};
+
+/** Verify a newly attached adapter before telling the operator how to run it. */
+export const checkAttachedAdapterBinding = async ({
+  adapterName,
+  agentName,
+  podId,
+  instanceId,
+  instanceUrl,
+  runtimeToken,
+  clientFactory = createClient,
+} = {}) => {
+  if (!adapterRequiresServerBinding(adapterName)) return { canRun: true };
+
+  let identity;
+  try {
+    identity = await clientFactory({ instance: instanceUrl, token: runtimeToken })
+      .get('/api/agents/runtime/installations');
+  } catch (error) {
+    return {
+      canRun: false,
+      warning: `Could not verify the server adapter binding after attach: ${error.message}. `
+        + 'The installation was saved, but do not expect agent run to work until verification succeeds.',
+    };
+  }
+
+  const refusal = serverAdapterBindingRefusal({
+    adapterName,
+    agentName,
+    installations: identity?.installations,
+    podId,
+    instanceId,
+    includeAttachGuidance: false,
+  });
+  return refusal ? { canRun: false, warning: refusal } : { canRun: true };
+};
+
+export const printAttachRunGuidance = ({
+  agentName,
+  binding,
+  log = console.log,
+  warn = console.warn,
+} = {}) => {
+  if (binding?.canRun) {
+    log(`\n  Run with:    commonly agent run ${agentName}`);
+  } else {
+    warn(`\n  WARNING: ${binding?.warning || 'The server did not confirm this adapter binding.'}`);
+  }
 };
 
 // ── `agent run --adapter` against an existing token file (#2098) ────────────
@@ -2722,7 +2779,15 @@ Docs:
         // The mention handle is the instanceId (what the UI dropdown inserts),
         // not the registry agentName — say it here so users know how to ping it.
         const handle = instanceId && instanceId !== 'default' ? instanceId : installation.agentName;
-        console.log(`\n  Run with:    commonly agent run ${opts.name}`);
+        const binding = await checkAttachedAdapterBinding({
+          adapterName: wrappedCli,
+          agentName: opts.name,
+          podId: opts.pod,
+          instanceId,
+          instanceUrl,
+          runtimeToken,
+        });
+        printAttachRunGuidance({ agentName: opts.name, binding });
         console.log(`  Mention as:  @${handle}`);
       } catch (err) {
         console.error(`Attach failed: ${err.message}`);
