@@ -7,7 +7,8 @@
 const {
   LEGACY_SANDBOX_TRUST,
   GRANT_BROKER_REFUSAL_CODE,
-  CONFINEMENTLESS_ADAPTERS,
+  CONFINING_ADAPTERS,
+  ADAPTER_NAMES,
   PUBLIC_HOST_MODES,
   effectiveSandboxTrust,
   normalizeAdapter,
@@ -31,7 +32,13 @@ describe('grant broker confinement predicate', () => {
   // layers' rule, so pin their membership: widening either one silently starts
   // refusing seats a host would have confined.
   it('pins the host-independent sets to what the adapters implement', () => {
-    expect([...CONFINEMENTLESS_ADAPTERS]).toEqual(['pi']);
+    // 2026-10-09: the denylist became an allowlist of adapters that prove they confine,
+    // keyed to the modes each enforces. pi is refused because it is absent, not listed.
+    expect([...CONFINING_ADAPTERS.keys()].sort()).toEqual(['claude', 'codex']);
+    expect([...CONFINING_ADAPTERS.get('claude')].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
+    expect([...CONFINING_ADAPTERS.get('codex')].sort()).toEqual(['read-only', 'workspace']);
+    expect(CONFINING_ADAPTERS.has('pi')).toBe(false);
+    expect([...ADAPTER_NAMES].sort()).toEqual(['claude', 'codex', 'pi', 'stub']);
     expect([...PUBLIC_HOST_MODES].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
   });
 

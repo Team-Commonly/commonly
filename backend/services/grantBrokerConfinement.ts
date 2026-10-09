@@ -121,9 +121,10 @@ export const declaredAdapter = (runtime: unknown): string | null => {
  * Linux path). A declared mode outside this set confines nowhere, so the
  * server can refuse it without resolving the host.
  */
-export const PUBLIC_HOST_MODES: ReadonlySet<string> = new Set(
-  [...CONFINING_ADAPTERS.values()].flatMap((modes) => [...modes]),
-);
+export const PUBLIC_HOST_MODES: ReadonlySet<string> = new Set(['workspace', 'read-only', 'bwrap']);
+// A literal on purpose, not derived from CONFINING_ADAPTERS: the undeclared
+// path is daemon-decided (claude or codex), and deriving the union would let a
+// future adapter's novel mode silently widen it. The sibling suite pins it.
 
 /** One typed code, two emitters (server projection + daemon derive). */
 export const GRANT_BROKER_REFUSAL_CODE = 'grant_broker_unconfined';
