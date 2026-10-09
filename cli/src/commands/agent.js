@@ -1594,7 +1594,35 @@ export const performRun = ({
         uploadName: `${agentName}-reply-${event._id}.md`,
         log: (line) => log(`[${event.type}] ${line}`),
       });
-      if (delivery.refused) {
+      if (delivery.skipped) {
+        // The server answered 200 and created nothing: a duplicate inside its
+        // dedupe window, a silent body, a heartbeat it keeps. Nothing reached
+        // the pod, so this is not a delivery and must not read as one in the
+        // log — "posted 151 bytes as 1 message" over a skip is how a silent
+        // seat looked like a talking one (hq-support, 2026-10-09 08:10Z). Ack
+        // it like a refusal: re-posting the same text inside the window would
+        // only be skipped again.
+        deliveryRefusal = delivery;
+        const windowMinutes = delivery.duplicate?.dedupeWindowMinutes;
+        const detail = [
+          windowMinutes ? `${windowMinutes} min window` : null,
+          delivery.duplicate?.id ? `duplicate of ${delivery.duplicate.id}` : null,
+          delivery.attemptedMessages > 1
+            ? `after ${delivery.messages}/${delivery.attemptedMessages} messages`
+            : null,
+        ].filter(Boolean).join(', ');
+        log(`[${event.type}] server skipped the post: ${delivery.reason}${detail ? ` (${detail})` : ''} — nothing reached the pod`);
+        onError?.(Object.assign(
+          new Error(`${event.type} server skipped the post: ${delivery.reason}`),
+          {
+            code: 'agent_delivery_skipped',
+            reason: delivery.reason,
+            eventId: event._id,
+            postedMessages: delivery.messages,
+            attemptedMessages: delivery.attemptedMessages,
+          },
+        ));
+      } else if (delivery.refused) {
         // A run-cap refusal is a successful HTTP request but not a delivery.
         // Ack it so the kernel does not replay the same text (the server
         // guidance expressly says not to retry unchanged), while preserving
@@ -1640,6 +1668,8 @@ export const performRun = ({
     if (deliveryRefusal) {
       return {
         outcome: 'no_action',
+        // Kernel class, from REFUSAL_REASONS: a skip is the server declining to
+        // deliver, same class as a refusal; the specific reason rides below.
         refused: { reason: 'delivery-refused' },
         reason: deliveryRefusal.reason,
         details: {
