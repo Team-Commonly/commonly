@@ -327,7 +327,6 @@ const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
     throw new Error('OpenCode provider.baseURL must be an http(s) URL without embedded credentials or query data');
   }
   const basePath = upstream.pathname.replace(/\/+$/, '') || '/';
-  const basePathPrefix = basePath === '/' ? '/' : `${basePath}/`;
   const upstreamKey = await readProviderKey(keyFile);
   const proxyToken = randomBytes(32).toString('base64url');
   await writeFile(tokenFile, proxyToken, { encoding: 'utf8', mode: 0o600 });
@@ -355,20 +354,35 @@ const startProviderProxy = async ({ provider, keyFile, tokenFile }) => {
         outgoing.writeHead(400).end();
         return;
       }
-      target = new URL(requestPath, upstream);
+      // OpenCode owns this local request path, so never use it as an outbound
+      // URL. The OpenAI-compatible chat provider needs only these fixed routes;
+      // parse the incoming URL against a loopback sentinel, then select a
+      // constant endpoint after matching the configured base path exactly.
+      // This keeps an OpenCode request from turning the proxy into an arbitrary
+      // path/URL fetcher (including paths on a local provider host).
+      const requested = new URL(requestPath, 'http://127.0.0.1');
+      if (requested.origin !== 'http://127.0.0.1' || requested.search || requested.hash) {
+        incoming.resume();
+        outgoing.writeHead(403).end();
+        return;
+      }
+      const configuredPath = basePath === '/' ? '' : basePath;
+      let endpoint;
+      if (incoming.method === 'POST'
+        && requested.pathname === `${configuredPath}/chat/completions`) {
+        endpoint = 'chat/completions';
+      } else if (incoming.method === 'GET'
+        && requested.pathname === `${configuredPath}/models`) {
+        endpoint = 'models';
+      } else {
+        incoming.resume();
+        outgoing.writeHead(403).end();
+        return;
+      }
+      target = new URL(`${configuredPath}/${endpoint}`, upstream.origin);
     } catch {
       incoming.resume();
       outgoing.writeHead(400).end();
-      return;
-    }
-    if (target.origin !== upstream.origin) {
-      incoming.resume();
-      outgoing.writeHead(403).end();
-      return;
-    }
-    if (target.pathname !== basePath && !target.pathname.startsWith(basePathPrefix)) {
-      incoming.resume();
-      outgoing.writeHead(403).end();
       return;
     }
 

@@ -251,11 +251,33 @@ describe('opencode external provider config', () => {
         expect(denied.status).toBe(401);
         expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/chat/completions' });
 
+        const models = await fetch(`${proxy.baseURL}/models`, {
+          headers: { authorization: `Bearer ${proxyToken}` },
+        });
+        expect(models.status).toBe(200);
+        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/models' });
+
+        const unsupported = await fetch(`${proxy.baseURL}/admin`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${proxyToken}` },
+          body: '{}',
+        });
+        expect(unsupported.status).toBe(403);
+        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/models' });
+
+        const query = await fetch(`${proxy.baseURL}/chat/completions?url=http://127.0.0.1/admin`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${proxyToken}` },
+          body: '{}',
+        });
+        expect(query.status).toBe(403);
+        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/models' });
+
         const outsideBasePath = await fetch(`${proxy.baseURL.replace(/\/v1$/, '')}/admin`, {
           headers: { authorization: `Bearer ${proxyToken}` },
         });
         expect(outsideBasePath.status).toBe(403);
-        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/chat/completions' });
+        expect(observed).toEqual({ authorization: 'Bearer upstream-secret', url: '/v1/models' });
       } finally {
         await proxy.close();
         await new Promise((resolve) => upstream.close(resolve));
