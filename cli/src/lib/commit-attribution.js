@@ -109,7 +109,17 @@ GIT_CONFIG_COUNT=$base_count
 export GIT_CONFIG_COUNT
 unset "GIT_CONFIG_KEY_$config_index" "GIT_CONFIG_VALUE_$config_index"
 
-original_hooks=\${COMMONLY_AGENT_ORIGINAL_HOOKS_PATH:-}
+# Read only this repository's setting so global and process-level workspace
+# hooks paths cannot redirect commits in another repository.
+if original_hooks=$(git config --local --path --get core.hooksPath 2>/dev/null); then
+  :
+else
+  git_common_dir=$(GIT_CONFIG_COUNT=0 git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || git_common_dir=
+  original_hooks=
+  if [ -n "$git_common_dir" ]; then
+    original_hooks="$git_common_dir/hooks"
+  fi
+fi
 if [ -n "$original_hooks" ] && [ "$original_hooks" != "$COMMONLY_AGENT_HOOKS_PATH" ]; then
   original_hook="$original_hooks/$hook_name"
   if [ -x "$original_hook" ]; then
@@ -167,6 +177,8 @@ export const prepareCommitAttribution = ({
     COMMONLY_AGENT_GIT_CONFIG_INDEX: String(configIndex),
     COMMONLY_AGENT_GIT_CONFIG_BASE_COUNT: String(configIndex),
     COMMONLY_AGENT_HOOKS_PATH: hooksDirectory,
+    // The sandbox adapters allow the workspace's existing hook files. The
+    // proxy itself resolves core.hooksPath from the repository at hook time.
     ...(originalHooksPath ? { COMMONLY_AGENT_ORIGINAL_HOOKS_PATH: originalHooksPath } : {}),
     COMMONLY_AGENT_SEAT_NAME: cleanSingleLine(displayName || agentName, 'agent'),
     COMMONLY_AGENT_SEAT_ID: seatAddressId(agentName, instanceId),

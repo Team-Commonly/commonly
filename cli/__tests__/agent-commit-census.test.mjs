@@ -1,4 +1,7 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import {
+  execFileSync as execFileSyncWithEnv,
+  spawnSync as spawnSyncWithEnv,
+} from 'node:child_process';
 import {
   mkdtempSync,
   rmSync,
@@ -9,6 +12,17 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const censusScript = fileURLToPath(new URL('../../scripts/agent-commit-census', import.meta.url));
+const fixtureEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => (
+  !name.startsWith('GIT_CONFIG_') && !name.startsWith('COMMONLY_AGENT_')
+)));
+const execFileSync = (command, args, options = {}) => execFileSyncWithEnv(command, args, {
+  env: fixtureEnv,
+  ...options,
+});
+const spawnSync = (command, args, options = {}) => spawnSyncWithEnv(command, args, {
+  env: fixtureEnv,
+  ...options,
+});
 
 describe('agent-commit-census', () => {
   test('counts parsed and body-carried Commonly co-authors and reads model lines', () => {
