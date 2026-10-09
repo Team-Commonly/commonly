@@ -27,7 +27,7 @@ Overrides, for measuring an adapter PR before it ships (the provider variant bel
 
 | variable | effect | when |
 |---|---|---|
-| `CLEAN_BOX_ADAPTER_PKG=opencode-ai@1.18.35` | installs that adapter build into the box's own npm prefix, ahead of the host's copy on PATH | the PR pins the adapter version it was tested against |
+| `CLEAN_BOX_ADAPTER_PKG=opencode-ai@1.18.35` | installs that adapter build into the box's own npm prefix, ahead of the host's copy on PATH | keep it aligned with the adapter's `TESTED_OPENCODE_VERSION`; bump that constant only after a passing real Seatbelt smoke on the new version |
 | `CLEAN_BOX_CLI_PKG=/tmp/commonlyai-cli-0.1.91.tgz` | installs that tarball instead of the README's `@commonlyai/cli@latest` (pack it from a worktree at the PR's head: `cd cli && npm pack --pack-destination /tmp`) | the CLI under test is an unpublished branch |
 
 The run output names an unpublished CLI as such, so a PR body cannot quote it as the shipped line. Without either variable the run is the stranger's exact path.
