@@ -6,7 +6,7 @@ const mockInstallation = {
   podId: 'pod-1',
   instanceId: 'writer',
   status: 'active',
-  config: { runtime: { runtimeType: 'opencode', adapter: 'opencode', model: 'openai/gpt-5.4' } },
+  config: { runtime: { runtimeType: 'webhook', adapter: 'opencode', model: 'openai/gpt-5.4' } },
 };
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, _res, next) => {
@@ -79,9 +79,21 @@ describe('GET /installations runtime adapter projection', () => {
     expect(response.body.installations[0]).not.toHaveProperty('config');
   });
 
-  test('legacy installations without an explicit adapter project null', async () => {
+  test.each(['pi', 'codex'])('adapter-shaped legacy runtimeType %s projects the resolved binding', async (runtimeType) => {
     const config = mockInstallation.config;
-    mockInstallation.config = { runtime: { runtimeType: 'opencode' } };
+    mockInstallation.config = { runtime: { runtimeType, host: 'byo' } };
+    try {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.status).toBe(200);
+      expect(response.body.installations[0].runtimeAdapter).toBe(runtimeType);
+    } finally {
+      mockInstallation.config = config;
+    }
+  });
+
+  test('known runtime kinds do not masquerade as a local adapter binding', async () => {
+    const config = mockInstallation.config;
+    mockInstallation.config = { runtime: { runtimeType: 'webhook', host: 'byo' } };
     try {
       const response = await request(app).get('/api/agents/runtime/installations');
       expect(response.status).toBe(200);

@@ -146,6 +146,7 @@ describe('grant broker confinement predicate', () => {
     // alone admitted exactly the seat this rule exists to refuse.
     ['a pi seat tagged only by runtimeType (the hand-attached shape)', undefined, { runtimeType: 'pi', host: 'byo' }, 'adapter_cannot_confine'],
     ['a pi runtimeType in another case', undefined, { runtimeType: 'PI' }, 'adapter_cannot_confine'],
+    ['a codex seat tagged only by runtimeType remains broker-confined', { sandbox: { mode: 'workspace', trust: 'public' } }, { runtimeType: 'codex', host: 'byo' }, null],
     ['a declared adapter wins over a pi runtimeType, as it does in the daemon', undefined, { adapter: 'claude', runtimeType: 'pi', host: 'byo' }, null],
     ['a claude-code runtimeType', undefined, { runtimeType: 'claude-code', host: 'byo' }, null],
     ['a webhook connect-page seat', undefined, { runtimeType: 'webhook', host: 'byo' }, null],
