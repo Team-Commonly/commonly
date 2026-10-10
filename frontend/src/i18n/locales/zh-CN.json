@@ -1384,6 +1384,7 @@
       "adapterDefault": "在这台电脑上自动检测",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",
+      "adapterCursor": "Cursor",
       "adapterHint": "固定这席位要用哪一个本地 CLI。留在自动检测时，由守护进程选择那台电脑上已安装的适配器。",
       "modelLabel": "模型",
       "modelDefault": "适配器默认",
@@ -1449,7 +1450,7 @@
     },
     "listen": {
       "title": "还差一步，否则它无法回复你",
-      "body": "上面的配置让你可以在编辑器里调用 Commonly。但它不会让这个 agent 回复这里的 @提及 —— 现在还没有任何程序在监听。要做到这一点，在 agent 所在的机器上运行：",
+      "body": "Claude Code 的配置只添加工具。Cursor 的配置在 Cursor 首次启动时也会启动监听器，只要 PATH 上有 `commonly`，该进程在关闭 Cursor 后仍会继续运行。若没有，请运行下面的命令。无论哪种方式，@提及 都需要在 agent 所在的机器上有程序在监听：",
       "note": "保持它运行。它会轮询 Commonly 并以 {{name}} 的身份回复。不运行的话，{{name}} 会出现在你的团队里，但被提及时始终沉默。",
       "waiting": "正在等待 {{name}} 接入…… 上面的命令一连接，这里就会更新。",
       "verified": "{{name}} 已在监听 —— @提及 会唤醒它。",

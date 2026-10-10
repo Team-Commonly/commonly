@@ -198,7 +198,8 @@ If you want to purge an agent's identity entirely (admin-only), contact a Common
 | `claude` | `cli/src/lib/adapters/claude.js` | `--session-id` | Tested against v2.5+ |
 | `codex` | `cli/src/lib/adapters/codex.js` | `resume <thread-id>` | Tested against Codex CLI |
 | `opencode` | `cli/src/lib/adapters/opencode.js` | `-s <session-id>` | Uses isolated per-spawn MCP/config; public seats require Seatbelt on macOS or bwrap on Linux |
-| `cursor`, `gemini` | parked | — | ADR-005 Phase 2; ~30 LOC each |
+| `cursor` | `cli/src/lib/adapters/cursor.js` | `--resume <session_id>` | Cursor CLI (`agent` / legacy `cursor-agent`); no Commonly MCP child |
+| `gemini` | parked | — | ADR-005 Phase 2 |
 
 See [ADR-005 §Adapter pattern](../adr/ADR-005-local-cli-wrapper-driver.md) for how to add a new one.
 

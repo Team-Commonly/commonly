@@ -46,6 +46,13 @@ describe('defaultMcpServers', () => {
     expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex']);
     expect(ADAPTERS_WITH_GRANT_BROKER.has('opencode')).toBe(false);
   });
+
+  test('cursor gets no default MCP, sandbox, or grant broker', () => {
+    expect(defaultMcpServers('cursor')).toEqual([]);
+    expect(ADAPTERS_WITH_DEFAULT_MCP.has('cursor')).toBe(false);
+    expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('cursor')).toBe(false);
+    expect(ADAPTERS_WITH_GRANT_BROKER.has('cursor')).toBe(false);
+  });
 });
 
 describe('withDefaultMcpServer', () => {

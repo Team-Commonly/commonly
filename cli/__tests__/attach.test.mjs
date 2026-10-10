@@ -677,7 +677,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
   });
 
   test('OpenCode is not selected by automatic bootstrap detection', async () => {
-    expect(BOOTSTRAP_ADAPTER_DETECT_ORDER).toEqual(['claude', 'codex', 'pi']);
+    expect(BOOTSTRAP_ADAPTER_DETECT_ORDER).toEqual(['claude', 'codex', 'cursor', 'pi']);
     await expect(bootstrapAgentRecordFromEnv({
       name: 'smoke-agent',
       env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },

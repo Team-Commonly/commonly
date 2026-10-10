@@ -40,6 +40,7 @@ describe('agentIdentityService cloud-runtime taxonomy', () => {
     it.each([
       ['webhook'],
       ['claude-code'],
+      ['cursor'],
     ])('%s is BYO', (runtimeType) => {
       expect(isCloudRuntime({ runtimeType })).toBe(false);
     });

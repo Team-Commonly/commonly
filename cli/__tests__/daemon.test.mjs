@@ -216,7 +216,7 @@ describe('resolveAdapterForRuntime', () => {
       },
     };
     await expect(resolveAdapterForRuntime({}, registry)).resolves.toBeNull();
-    expect(calls).toEqual(['claude', 'codex']);
+    expect(calls).toEqual(['claude', 'codex', 'cursor']);
 
     calls.length = 0;
     await expect(resolveAdapterForRuntime({ adapter: 'opencode' }, registry)).resolves.toBe('opencode');

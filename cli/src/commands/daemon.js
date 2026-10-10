@@ -139,7 +139,7 @@ export const unregisterDaemonMachine = async ({ client, record, remove = removeD
 // preference is honored when that CLI is installed; otherwise probe only the
 // established fallbacks. OpenCode must be named explicitly in runtime.adapter.
 export const resolveAdapterForRuntime = async (runtime, registry = { getAdapter }) => {
-  const candidates = [runtime?.adapter, 'claude', 'codex'].filter(Boolean);
+  const candidates = [runtime?.adapter, 'claude', 'codex', 'cursor'].filter(Boolean);
   for (const name of candidates) {
     const adapter = registry.getAdapter(name);
     // eslint-disable-next-line no-await-in-loop

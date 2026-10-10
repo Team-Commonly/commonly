@@ -12,11 +12,13 @@ import claude from './claude.js';
 import codex from './codex.js';
 import pi from './pi.js';
 import opencode from './opencode.js';
+import cursor from './cursor.js';
 
 const ADAPTERS = {
   [stub.name]: stub,
   [claude.name]: claude,
   [codex.name]: codex,
+  [cursor.name]: cursor,
   [pi.name]: pi,
   [opencode.name]: opencode,
 };

@@ -277,6 +277,14 @@ const AGENT_TYPES: Record<string, AgentTypeConfig> = {
     capabilities: ['code', 'chat', 'memory'],
     runtime: 'claude-code',
   },
+  cursor: {
+    officialDisplayName: 'Cursor',
+    officialDescription: 'Cursor agent integration for development assistance',
+    icon: '⌨️',
+    botType: 'agent',
+    capabilities: ['code', 'chat', 'memory'],
+    runtime: 'cursor',
+  },
   codex: {
     officialDisplayName: 'Codex',
     officialDescription: 'OpenAI Codex integration for code generation',
@@ -354,7 +362,7 @@ export function isCloudRuntime(
   const runtimeType = String(runtime?.runtimeType || '').trim().toLowerCase();
   const host = String(runtime?.host || '').trim().toLowerCase();
   if (host === 'byo') return false;
-  if (runtimeType === 'webhook' || runtimeType === 'claude-code') return false;
+  if (runtimeType === 'webhook' || runtimeType === 'claude-code' || runtimeType === 'cursor') return false;
   if (CLOUD_RUNTIME_TYPES.has(runtimeType)) return true;
   if (runtimeType === 'codex') return true;
   return false;

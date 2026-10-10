@@ -117,7 +117,7 @@ Target size: ~30–60 lines per adapter. Adding a new CLI is a single-file PR.
 |---|---|---|---|
 | `claude` | `claude -p "$prompt" --output-format text` | `--session-id` | Tested against v2.5+ |
 | `codex` | `codex exec --json --skip-git-repo-check -o <out> "$prompt"` (new) / `codex exec resume <id> --json --skip-git-repo-check -o <out> "$prompt"` (resume) | subcommand `exec resume <id>` | codex 0.125.0 dropped `--session <id>` in favor of an `exec resume` subcommand. Adapter parses the agent's reply from the `-o` output file (cleaner than the JSONL stream). Spawn must use `stdio: ['ignore', 'pipe', 'pipe']` — codex blocks on stdin otherwise. |
-| `cursor` | `cursor-agent "$prompt"` | — | Parked 2026-04-25 (deprioritized). No session flag; uses local project context. |
+| `cursor` | `agent -p --output-format json --trust --force "$prompt"` (legacy binary: `cursor-agent`) | `--resume <session_id>` | Shipped 2026-10-10. Cursor CLI tools handle the seat; Commonly I/O stays in the run loop. No `@commonlyai/mcp` child. |
 | `gemini` | `gemini -p "$prompt"` | — | Parked 2026-04-25 (deprioritized). No session flag. |
 
 **`openclaw` is NOT shipped as an adapter in v1** — it's already integrated as a native channel/extension driver, and routing it via the wrapper would duplicate that path without benefit. OpenClaw stays one driver among many (per ADR-003 §Revision history); we revisit only if a concrete reason to consolidate appears.

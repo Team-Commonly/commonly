@@ -67,7 +67,7 @@ const MACHINE_STATUS_MAX_TICKS = 30;
 // make it ONE paste, after which "On my computer" appears here.
 const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install';
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
-type MachineAdapter = '' | 'claude' | 'codex';
+type MachineAdapter = '' | 'claude' | 'codex' | 'cursor';
 type ModelOption = { value: string; labelKey: string };
 const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
@@ -711,6 +711,7 @@ const V2AgentBYO: React.FC = () => {
                 <option value="">{t('agentByo.form.adapterDefault')}</option>
                 <option value="claude">{t('agentByo.form.adapterClaude')}</option>
                 <option value="codex">{t('agentByo.form.adapterCodex')}</option>
+                <option value="cursor">{t('agentByo.form.adapterCursor')}</option>
               </select>
               <span className="v2-byo__hint">{t('agentByo.form.adapterHint')}</span>
             </label>

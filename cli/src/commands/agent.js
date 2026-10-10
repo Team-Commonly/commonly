@@ -137,7 +137,7 @@ export const deleteAgentToken = (name) => {
 // falls back to the attach hint).
 // OpenCode is opt-in: unlike the established wrappers it must not be selected
 // just because its binary happens to be installed on the operator's machine.
-export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
+export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'cursor', 'pi'];
 
 /** Return the adapter binding resolved for this exact installation by the server. */
 export const runtimeAdapterForInstallation = ({ installations, podId, instanceId } = {}) => {
