@@ -147,6 +147,27 @@ describe('both locales carry the action phrasings', () => {
 });
 
 describe('tool-call approval details stay owner-scoped', () => {
+  test('an aged parked call cannot be decided before the expiry sweep updates its card', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'tool-expired', status: 'flagged',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', toolCall: { tool: 'github.create_issue' },
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    expect(screen.getByText(en.approvalCard.toolCall.expiredPending)).toBeInTheDocument();
+    expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
+    expect(screen.getByText(en.approvalCard.decline)).toBeDisabled();
+  });
+
+  test('a resolved tool call renders its broker ending and code instead of generic success', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'tool-failed', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', toolCall: { tool: 'github.merge_pull_request' },
+      toolCallEnding: 'refused', toolCallCode: 'merge_head_mismatch',
+    });
+    expect(screen.getByText(/tool call refused \(merge_head_mismatch\)/i)).toBeInTheDocument();
+    expect(screen.queryByText(en.approvalCard.approved)).not.toBeInTheDocument();
+  });
+
   test('the owner fetches canonical args and must see them before approving', async () => {
     mockGet.mockResolvedValue({
       approvals: [{

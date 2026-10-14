@@ -92,7 +92,9 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   const status = payload.status || 'flagged';
   const isOwner = !!currentUser?._id && String(currentUser._id) === String(payload.ownerUserId || '');
   const isToolCall = payload.actionType === 'tool_call';
-  const needsToolCall = isOwner && status === 'flagged' && isToolCall;
+  const aged = status === 'flagged' && !!payload.expiresAt
+    && new Date(payload.expiresAt).getTime() < Date.now();
+  const needsToolCall = isOwner && status === 'flagged' && isToolCall && !aged;
   const [pendingToolCall, setPendingToolCall] = useState<ToolCallEnvelope | null>(null);
   const [toolCallLoading, setToolCallLoading] = useState(false);
   const [toolCallError, setToolCallError] = useState(false);
@@ -138,12 +140,8 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
 
     return () => { cancelled = true; };
   }, [api.get, message.id, message.pod_id, needsToolCall, payload.approvalId]);
-  // ADR-017:201 — expiry is advisory AGE, not refusal. A flagged card past
-  // expiresAt stays decidable; it renders an age warning beside live buttons
-  // rather than dead ones. Only an explicitly-transitioned 'expired' status
-  // renders the terminal face.
-  const aged = status === 'flagged' && !!payload.expiresAt
-    && new Date(payload.expiresAt).getTime() < Date.now();
+  // ADR-017:201 keeps legacy proposals decidable when aged. A parked tool
+  // call expires closed; the next decision or sweep persists its terminal face.
   const execution = payload.executionResult as
     | {
       podId?: string;
@@ -212,7 +210,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
             <div className="v2-approval__action" data-testid="approval-action">
               {payload.toolCall?.tool || t('approvalCard.toolCall.name')}
             </div>
-            {needsToolCall ? (
+            {isToolCall && aged ? null : needsToolCall ? (
               <div className="v2-approval__state" data-testid="approval-tool-call-state">
                 {toolCallLoading
                   ? t('approvalCard.toolCall.loading')
@@ -244,7 +242,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
           <>
             {aged && (
               <div className="v2-approval__state v2-approval__state--expired">
-                {t('approvalCard.aged')}
+                {isToolCall ? t('approvalCard.toolCall.expiredPending') : t('approvalCard.aged')}
               </div>
             )}
             {isOwner ? (
@@ -252,7 +250,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                 <button
                   type="button"
                   className="v2-approval__btn v2-approval__btn--approve"
-                  disabled={deciding || !toolCallReady}
+                  disabled={deciding || !toolCallReady || (isToolCall && aged)}
                   onClick={() => decide('approved')}
                 >
                   {deciding ? t('approvalCard.deciding') : t('approvalCard.approve')}
@@ -260,7 +258,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                 <button
                   type="button"
                   className="v2-approval__btn v2-approval__btn--decline"
-                  disabled={deciding}
+                  disabled={deciding || (isToolCall && aged)}
                   onClick={() => decide('declined')}
                 >
                   {t('approvalCard.decline')}
@@ -273,8 +271,14 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
         )}
 
         {status === 'resolved' && payload.decision === 'approved' && (
-          <div className={`v2-approval__state ${payload.executionError || agentJoinFailed ? 'v2-approval__state--attention' : 'v2-approval__state--approved'}`}>
-            {payload.executionError
+          <div className={`v2-approval__state ${payload.executionError || agentJoinFailed || (isToolCall && payload.toolCallEnding !== 'ran') ? 'v2-approval__state--attention' : 'v2-approval__state--approved'}`}>
+            {isToolCall
+              ? payload.toolCallEnding === 'ran'
+                ? t('approvalCard.toolCall.ran')
+                : payload.toolCallEnding === 'failed'
+                  ? t('approvalCard.toolCall.failed', { code: payload.toolCallCode || 'broker_error' })
+                  : t('approvalCard.toolCall.refused', { code: payload.toolCallCode || 'broker_error' })
+              : payload.executionError
               ? t('approvalCard.approvedButFailed', { error: payload.executionError })
               : agentJoinFailed
                 ? t('approvalCard.approvedAgentJoinFailed', { agent: payload.agentName || 'agent' })

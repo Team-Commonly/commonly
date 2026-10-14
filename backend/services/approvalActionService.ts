@@ -12,7 +12,9 @@
  * resolved row is the AuthorizedAction audit record.
  */
 import { randomUUID } from 'crypto';
-import ApprovalAction, { IApprovalAction, ApprovalActionType, ApprovalToolCall } from '../models/ApprovalAction';
+import ApprovalAction, {
+  IApprovalAction, ApprovalActionType, ApprovalToolCall, ApprovalToolCallEnding,
+} from '../models/ApprovalAction';
 import Pod from '../models/Pod';
 import User from '../models/User';
 
@@ -63,6 +65,9 @@ export interface CardPayload {
   expiresAt: string;
   executionResult?: unknown;
   executionError?: string;
+  toolCallEnding?: ApprovalToolCallEnding;
+  toolCallCode?: string;
+  toolCallTrailId?: string;
 }
 
 export const buildCardPayload = (row: IApprovalAction): CardPayload => ({
@@ -82,8 +87,16 @@ export const buildCardPayload = (row: IApprovalAction): CardPayload => ({
   agentName: row.agentName,
   instanceId: row.instanceId || 'default',
   expiresAt: row.expiresAt?.toISOString?.() || new Date(row.expiresAt).toISOString(),
-  ...(row.executionResult !== undefined ? { executionResult: row.executionResult } : {}),
-  ...(row.executionError ? { executionError: row.executionError } : {}),
+  ...(row.actionType === 'tool_call'
+    ? {
+      ...(row.toolCallEnding ? { toolCallEnding: row.toolCallEnding } : {}),
+      ...(row.toolCallCode ? { toolCallCode: row.toolCallCode } : {}),
+      ...(row.toolCallTrailId ? { toolCallTrailId: row.toolCallTrailId } : {}),
+    }
+    : {
+      ...(row.executionResult !== undefined ? { executionResult: row.executionResult } : {}),
+      ...(row.executionError ? { executionError: row.executionError } : {}),
+    }),
 });
 
 /** Add the parked call's exact arguments only for its accountable owner. */
@@ -111,6 +124,8 @@ interface ProposeOptions {
   ownerUserId?: string;
   agentUserId?: string;
   toolCall?: ApprovalToolCall;
+  /** Broker-supplied upper bound; a parked card never outlives its grant. */
+  approvalExpiresAt?: Date;
 }
 
 interface ProposeResult {
@@ -282,7 +297,7 @@ export const proposeActionForRuntime = async (input: {
 export const proposeAction = async (options: ProposeOptions): Promise<ProposeResult> => {
   const {
     podId, agentName, instanceId, displayName, actionType, params, summary, installationConfig,
-    ownerUserId: requestedOwnerUserId, agentUserId, toolCall,
+    ownerUserId: requestedOwnerUserId, agentUserId, toolCall, approvalExpiresAt,
   } = options;
 
   if (!KNOWN_ACTION_TYPES.has(actionType as ApprovalActionType)) {
@@ -355,6 +370,9 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     actionType,
     params: actionType === 'tool_call' ? {} : (params || {}),
     ...(actionType === 'tool_call' && toolCall ? { toolCall } : {}),
+    ...(actionType === 'tool_call' && approvalExpiresAt
+      ? { expiresAt: new Date(Math.min(Date.now() + 24 * 60 * 60 * 1000, approvalExpiresAt.getTime())) }
+      : {}),
     summary: trimmedSummary.slice(0, 500),
   });
 
@@ -471,14 +489,15 @@ const recordToolCallDecision = async (
   outcome: 'refused' | 'failed',
   reason: string,
   toolCallOverride?: ApprovalToolCall,
-): Promise<void> => {
+): Promise<string | undefined> => {
   const toolCall = toolCallOverride || row.toolCall;
-  if (!toolCall) return;
+  if (!toolCall) return undefined;
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const ToolCall = require('../models/ToolCall');
   const { digestArgs } = ToolCall;
+  const callId = `tool_call_${randomUUID()}`;
   await ToolCall.create({
-    callId: `tool_call_${randomUUID()}`,
+    callId,
     grantId: toolCall.grantId,
     podId: String(row.podId),
     agentUserId: row.agentUserId || '',
@@ -489,6 +508,7 @@ const recordToolCallDecision = async (
     reason,
     approvalId: String(row._id),
   });
+  return callId;
 };
 
 /**
@@ -571,6 +591,77 @@ const enqueueApprovalResolvedEvent = async (
   }
 };
 
+/** Parked calls report only broker facts, never vendor result or error prose. */
+const enqueueToolCallResolvedEvent = async (
+  row: IApprovalAction,
+  approver?: { userId: string; username: string },
+  receipt?: Record<string, number>,
+): Promise<void> => {
+  if (!row.agentName || !row.toolCallEnding) return;
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentEventService = require('./agentEventService');
+    const tool = String(row.toolCall?.tool || 'the parked tool');
+    const content = [
+      '[Parked tool call resolved]',
+      `${tool}: ${row.toolCallEnding}${row.toolCallCode ? ` (${row.toolCallCode})` : ''}.`,
+      ...(approver ? [`Decided by ${approver.username}.`] : []),
+      ...(receipt ? [`Receipt: ${JSON.stringify(receipt)}`] : []),
+    ].join('\n');
+    await AgentEventService.enqueue({
+      agentName: String(row.agentName),
+      instanceId: String(row.instanceId || 'default'),
+      podId: String(row.podId),
+      type: 'approval.resolved',
+      payload: {
+        approvalId: String(row._id),
+        actionType: 'tool_call',
+        decision: row.decision,
+        ending: row.toolCallEnding,
+        code: row.toolCallCode,
+        callId: row.toolCallTrailId,
+        ...(approver ? { approvedBy: approver } : {}),
+        ...(receipt ? { receipt } : {}),
+        resolvedAt: (row.resolvedAt ? new Date(row.resolvedAt) : new Date()).toISOString(),
+        podId: String(row.podId),
+        content,
+      },
+    });
+  } catch (err) {
+    console.warn('[approval] tool-call wake failed:', (err as Error).message);
+  }
+};
+
+const postToolCallRoomReceipt = async (row: IApprovalAction, approverName: string): Promise<void> => {
+  if (!row.toolCallEnding || !row.toolCall) return;
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentMessageService = require('./agentMessageService');
+    const content = `${approverName} approved ${row.agentName}'s ${row.toolCall.tool} · ${row.toolCallEnding}`;
+    const metadata = { source: 'approval-tool-call', approvalId: String(row._id) };
+    if (typeof AgentMessageService._postToTarget === 'function' && row.agentUserId) {
+      const agentUser = await User.findById(row.agentUserId);
+      if (!agentUser) throw new Error('approved agent identity not found');
+      await AgentMessageService._postToTarget({
+        agentName: row.agentName,
+        instanceId: row.instanceId || 'default',
+        podId: String(row.podId),
+        messageType: 'system', content, metadata, agentUser,
+        skipDeliveryUpdate: true, skipSummaryPersistence: true,
+      });
+    } else {
+      await AgentMessageService.postMessage({
+        agentName: row.agentName,
+        instanceId: row.instanceId || 'default',
+        podId: String(row.podId),
+        messageType: 'system', content, metadata, skipSummaryPersistence: true,
+      });
+    }
+  } catch (error) {
+    console.warn('[approval] tool-call receipt failed:', (error as Error).message);
+  }
+};
+
 export const resolveApproval = async (options: ResolveOptions): Promise<ResolveResult> => {
   const { approvalId, callerUserId, decision } = options;
 
@@ -618,7 +709,13 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   if (parkedCall && row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
     const expired = await ApprovalAction.findOneAndUpdate(
       { _id: row._id, status: 'flagged' },
-      { $set: { status: 'expired', resolvedAt: new Date() }, $unset: { 'toolCall.canonicalArgs': 1 } },
+      {
+        $set: {
+          status: 'expired', resolvedAt: new Date(),
+          toolCallEnding: 'expired', toolCallCode: 'approval_expired',
+        },
+        $unset: { 'toolCall.canonicalArgs': 1 },
+      },
       { new: true },
     );
     if (!expired) {
@@ -630,8 +727,12 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     // eslint-disable-next-line global-require
     const { resolve: resolveExpiredAttention } = require('./attentionItemService');
     await resolveExpiredAttention('approval_action', expired._id);
-    await recordToolCallDecision(expired, 'refused', 'approval_expired', parkedCall);
+    expired.toolCallEnding = 'expired';
+    expired.toolCallCode = 'approval_expired';
+    expired.toolCallTrailId = await recordToolCallDecision(expired, 'refused', 'approval_expired', parkedCall);
+    await expired.save();
     await updateCardEverywhere(expired);
+    await enqueueToolCallResolvedEvent(expired);
     return { status: 409, body: { error: 'expired', approval: buildCardPayload(expired) } };
   }
 
@@ -654,6 +755,8 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
         decision,
         resolvedBy: callerUserId,
         resolvedAt: new Date(),
+        ...(parkedCall && decision === 'declined'
+          ? { toolCallEnding: 'declined', toolCallCode: 'approval_declined' } : {}),
         ...(decidedAfterExpiry ? { decidedAfterExpiry: true } : {}),
       },
       ...(parkedCall ? { $unset: { 'toolCall.canonicalArgs': 1 } } : {}),
@@ -673,6 +776,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   const { resolve: resolveAttention } = require('./attentionItemService');
   await resolveAttention('approval_action', transitioned._id);
 
+  let toolReceipt: Record<string, number> | undefined;
   if (decision === 'approved') {
     try {
       // Keep a private in-memory copy captured before the terminal write. The
@@ -682,53 +786,42 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
         ? await executeApprovedToolCall(parkedCall, String(row._id), String(row.agentUserId || ''))
         : await executeAction(transitioned);
       transitioned.executedAt = new Date();
-      transitioned.executionResult = result;
       if (parkedCall) {
-        // Room-visible receipt deliberately contains no canonical arguments.
-        // The owner already saw the exact payload in the private pending read.
-        try {
-          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-          const AgentMessageService = require('./agentMessageService');
-          const approverName = caller.displayName?.trim() || caller.username?.trim() || callerUserId;
-          const receipt = `${approverName} approved ${transitioned.agentName}'s ${parkedCall.tool} · done`;
-          const metadata = { source: 'approval-tool-call', approvalId: String(transitioned._id) };
-          if (typeof AgentMessageService._postToTarget === 'function' && transitioned.agentUserId) {
-            const agentUser = await User.findById(transitioned.agentUserId);
-            if (!agentUser) throw new Error('approved agent identity not found');
-            await AgentMessageService._postToTarget({
-              agentName: transitioned.agentName,
-              instanceId: transitioned.instanceId || 'default',
-              podId: String(transitioned.podId),
-              messageType: 'system',
-              content: receipt,
-              metadata,
-              agentUser,
-              skipDeliveryUpdate: true,
-              skipSummaryPersistence: true,
-            });
-          } else {
-            await AgentMessageService.postMessage({
-              agentName: transitioned.agentName,
-              instanceId: transitioned.instanceId || 'default',
-              podId: String(transitioned.podId),
-              messageType: 'system',
-              content: receipt,
-              metadata,
-              skipSummaryPersistence: true,
-            });
-          }
-        } catch (error) {
-          console.warn('[approval] tool-call receipt failed:', (error as Error).message);
-        }
+        const call = result as Awaited<ReturnType<typeof executeApprovedToolCall>>;
+        transitioned.toolCallEnding = call.outcome === 'ok' ? 'ran' : 'failed';
+        transitioned.toolCallCode = call.outcome === 'failed' ? 'upstream_tool_error' : undefined;
+        transitioned.toolCallTrailId = call.callId;
+        toolReceipt = call.receipt;
+      } else {
+        transitioned.executionResult = result;
       }
     } catch (err) {
-      // Honest failure face: resolved + approved + executionError. Never
-      // roll back the decision — the user DID approve; the execution failed.
-      transitioned.executionError = (err as Error).message?.slice(0, 500) || 'execution failed';
+      // The decision stands. A broker failure carries its trailed code and id;
+      // neither the vendor's error prose nor the arguments enter the card.
+      if (parkedCall) {
+        const failure = err as { code?: string; details?: { callId?: string; outcome?: string; recorded?: boolean } };
+        const brokerRecord = failure.details?.recorded === true;
+        transitioned.toolCallEnding = brokerRecord && failure.details?.outcome === 'refused' ? 'refused' : 'failed';
+        transitioned.toolCallCode = brokerRecord && /^[a-z][a-z0-9_]{0,63}$/.test(failure.code || '')
+          ? failure.code : 'broker_error';
+        transitioned.toolCallTrailId = brokerRecord ? failure.details?.callId : undefined;
+        if (!transitioned.toolCallTrailId) {
+          transitioned.toolCallTrailId = await recordToolCallDecision(transitioned, 'failed', 'broker_error', parkedCall);
+        }
+      } else {
+        transitioned.executionError = (err as Error).message?.slice(0, 500) || 'execution failed';
+      }
     }
     await transitioned.save();
+    if (parkedCall) {
+      await postToolCallRoomReceipt(transitioned,
+        caller.displayName?.trim() || caller.username?.trim() || callerUserId);
+    }
   } else if (parkedCall) {
-    await recordToolCallDecision(transitioned, 'refused', 'approval_declined', parkedCall);
+    transitioned.toolCallEnding = 'declined';
+    transitioned.toolCallCode = 'approval_declined';
+    transitioned.toolCallTrailId = await recordToolCallDecision(transitioned, 'refused', 'approval_declined', parkedCall);
+    await transitioned.save();
   }
 
   await updateCardEverywhere(transitioned);
@@ -738,6 +831,12 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       username: caller.displayName?.trim() || caller.username?.trim() || 'The workspace owner',
     });
   }
+  if (parkedCall) {
+    await enqueueToolCallResolvedEvent(transitioned, {
+      userId: String(callerUserId),
+      username: caller.displayName?.trim() || caller.username?.trim() || 'The workspace owner',
+    }, toolReceipt);
+  }
   return { status: 200, body: { ok: true, approval: buildCardPayload(transitioned) } };
 };
 
@@ -745,7 +844,7 @@ const executeApprovedToolCall = async (
   toolCall: ApprovalToolCall,
   approvalId: string,
   agentUserId: string,
-): Promise<unknown> => {
+): Promise<{ result: unknown; callId: string; outcome: 'ok' | 'failed'; receipt?: Record<string, number> }> => {
   if (!toolCall.canonicalArgs) throw new Error('approval arguments unavailable');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const broker = require('./toolBrokerService');
@@ -756,7 +855,7 @@ const executeApprovedToolCall = async (
     args: Record<string, unknown>;
     expectedArgsDigest: string;
     approvalId: string;
-  }) => Promise<{ result: unknown }>);
+  }) => Promise<{ result: unknown; callId: string; outcome: 'ok' | 'failed'; receipt?: Record<string, number> }>);
   const response = await execute({
     grantId: toolCall.grantId,
     agentUserId,
@@ -765,7 +864,7 @@ const executeApprovedToolCall = async (
     expectedArgsDigest: toolCall.argsDigest,
     approvalId,
   });
-  return response.result;
+  return response;
 };
 
 /** First-sweep hook for abandoned broker approvals. */
@@ -780,7 +879,13 @@ export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<n
     // eslint-disable-next-line no-await-in-loop
     const result = await ApprovalAction.findOneAndUpdate(
       { _id: row._id, status: 'flagged' },
-      { $set: { status: 'expired', resolvedAt: now }, $unset: { 'toolCall.canonicalArgs': 1 } },
+      {
+        $set: {
+          status: 'expired', resolvedAt: now,
+          toolCallEnding: 'expired', toolCallCode: 'approval_expired',
+        },
+        $unset: { 'toolCall.canonicalArgs': 1 },
+      },
       { new: true },
     );
     if (result) {
@@ -789,7 +894,12 @@ export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<n
       // eslint-disable-next-line global-require
       const { resolve: resolveExpiredAttention } = require('./attentionItemService');
       await resolveExpiredAttention('approval_action', row._id);
+      result.toolCallEnding = 'expired';
+      result.toolCallCode = 'approval_expired';
+      result.toolCallTrailId = await recordToolCallDecision(result, 'refused', 'approval_expired', row.toolCall);
+      await result.save();
       await updateCardEverywhere(result);
+      await enqueueToolCallResolvedEvent(result);
     }
   }
   return expired;
