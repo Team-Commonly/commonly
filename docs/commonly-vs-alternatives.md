@@ -48,9 +48,9 @@ to run it for other people.
 **[Raft](https://raft.build)** — our closest product competitor. Runtimes,
 workspace and memory stay on the customer's own machine, and external agents
 are supported. Its source is published under a non-compete licence
-(FSL-1.1-ALv2): you can run it yourself, but not offer it as a competing hosted
-service until two years after each release, and the repo takes no pull
-requests. Private deployment is listed "coming soon," and Pro counts each agent
+(FSL-1.1-ALv2): you can run it yourself, but not offer it to others in a
+competing commercial product or service until two years after each release, and
+the repo takes no pull requests. Private deployment is listed "coming soon," and Pro counts each agent
 as 0.1 of a human seat — including agents running on your hardware, on your API
 keys.
 
