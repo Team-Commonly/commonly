@@ -209,7 +209,25 @@ In member mode, whatever an agent writes appears at the vendor as the member. [l
 - **(c) The owner sees what they approve.** `V2ApprovalCard.tsx` fetches the pending call's canonical args for the owner only (`:99`, "Approval buttons must not allow an owner to approve blind") and renders them (`:203`).
 - **(d) What runs is what was approved.** `executeApprovedToolCall` refuses `args_digest_mismatch` (409) when the args no longer match the approved digest (`toolBrokerService.ts:842–843`).
 
-Under these four, the member has read and approved each written call, one at a time. Reads carry no words of the agent's, so they need none of the four. v1's Linear entry has no write tool, and its credential has no `write` scope. A write tool added later also needs re-consent with `write`, and `grantedScope` is how the page tells which rows need it. That alone does not meet §3's bar: the same token would serve every read in the entry, and a read never parks. So the first entry with a write tool also needs a mechanism that keeps a credential able to write away from every call that has not parked. That mechanism is a gate item, specified with that tool, not here.
+Under these four, the member has read and approved each written call, one at a time. Reads carry no words of the agent's, so they need none of the four. v1's Linear entry has no write tool, and its credential has no `write` scope. A write tool added later also needs re-consent with `write`, and `grantedScope` is how the page tells which rows need it. That alone does not meet §3's bar: the same token would serve every read in the entry, and a read never parks. So the first entry with a write tool also needs a mechanism that keeps a credential able to write away from every call that has not parked. That mechanism is a gate item, specified with that tool, not here. So is a parked call that outlives a re-pin of its tool: approval binds the arguments and the tool's name, not the pin, so a call parked before a deploy that re-pins its tool would run under the new pin.
+
+**A parked call is still a call, so the seat that made it learns how it ended** (TASK-208). When a call parks, the seat's `tools/call` answers `pending_approval` with the card's `approvalId` (`routes/mcpGrants.ts:116–121`), and that turn ends. Today nothing reaches the seat after that. #2161 wakes the proposer of an approved `commonly_propose_action` card and leaves a parked call out on purpose, because what a call returns is the broker's to say.
+
+- **Approval runs the parked call once, as approved.** The winning resolver executes the copy of the envelope it took before the stored args were scrubbed (`approvalActionService.ts:521`, `:596`), through `executeApprovedToolCall` (`toolBrokerService.ts:1282`). That path checks the digest, the grant, the audience, the connection, drift and the budget immediately before the provider, and never parks again (§6).
+- **Each ending reaches the seat once, as `approval.resolved`**, the type #2161 adds, with `actionType: 'tool_call'` and the `approvalId` the seat got at the park. A parked call ends in one of five ways:
+  - approved, and it ran: `ok`;
+  - approved, and it failed at the vendor: `failed`, with §9's reason;
+  - approved, and refused before the provider: `refused`, with the code, such as `grant_expired` or `budget_exhausted`;
+  - declined;
+  - expired undecided.
+
+  Only the transition that moves the card out of `flagged` enqueues the event, so a second click, or a sweep racing a decision, delivers nothing more. A failed enqueue is logged and never undoes the decision, as in #2161. The CLI branch TASK-207 adds returns `payload.content` for every `approval.resolved`, so a tool call needs no branch of its own, provided that branch does not filter on `actionType`.
+- **A decline and an expiry are delivered too.** This differs on purpose from #2161's rule for a proposal, where a no wakes nothing. A declined proposal leaves nothing outstanding. A parked call has left the seat telling someone it is waiting, and for a seat grant the card sits in the owner's room with the agent (`toolBrokerService.ts:871–885`), where the person who asked may never look. A seat that proposes again parks again, so a repeat always waits on the owner.
+- **The event says how the call ended, never what the vendor said.** The server composes `payload.content` from our own text, the pin's tool name, the approver's name, the ending and its code. It never carries the vendor's result or error text, the arguments, or a credential. Both runtimes give `payload.content` to the model as the turn's prompt (#2161, "Runtime coverage"), so vendor text placed there would reach a seat as an instruction rather than as a tool result. §3 lets no live vendor text into what a seat is told about a tool, and this applies that rule to the cue. #2161's cue quotes an executor's error message (`describeApprovedOutcome`). For a proposal that message is ours, but for a hosted call it can be the vendor's (`hostedMcpToolDefinitions.ts:323`), so a tool call's cue names the code instead.
+- **A seat that needs what the call produced reads it back** with a read tool, where it arrives as a tool result, confined, trailed and budgeted like any read. The one exception is a receipt that the write tool's definition declares: named fields of the result, each with a shape that cannot carry prose, such as an integer or a fixed identifier pattern. Each value is checked on its way into the cue, and one that fails is dropped. A tool that declares no receipt delivers the ending alone. GitHub's write tools may declare their issue or pull request number in the build, and a hosted write tool declares its receipt in the PR that adds it, with the gate item above.
+- **The card and the room carry the ending, not the result.** The card keeps a parked call's arguments to the owner (`approvalActionService.ts:73`), but two fields on `main` can still put the vendor's words on it. `executionResult` holds the vendor's result (`:599`, copied to the card at `:83`), and a write's result can repeat the arguments it was given. `executionError` holds the error's message (`:641`). For a `tool_call`, the row keeps the ending, its code and the ending's trail `callId` instead. The record still links to its execution, through the trail, as it already links to the arguments only through their digest (ADR-020 D2). The room receipt says `done` for every call that returns (`:607`), including one the vendor marked `isError` (`toolBrokerService.ts:1059`), so it names the ending as well.
+- **The grant is checked when the call runs, not when it parked.** Approval is consent to one call under the grant as it stands at execution, and it never extends or revives a grant. A grant expired or revoked since the park (`roomGrantService.ts:430–431`), a seat that has left the audience, an owner banned since (§7), a pin that has drifted (§3) or a spent budget each refuses the call with its own code, and the seat learns that code. A parked call's card expires closed after 24 hours (`models/ApprovalAction.ts:78`, `approvalActionService.ts:532`), where a proposal's stays decidable. The build caps that deadline at the grant's `expiresAt`, so a card never outlives the grant it would run under, as a grant is capped at its Connection's (§9).
+- **Budget is spent when the call runs, never when it parks.** The park returns before the reservation (`toolBrokerService.ts:1145–1233`, then `:1236`). Execution reserves one call against the grant's lineage after every check above and just before the provider (`:1317`), so a declined or expired call spends nothing, and neither does one refused at execution. Reads spend from the same budget while a write waits, so an approved write can find it spent. It is then refused `budget_exhausted`, because approval does not lift the granter's bound. A call that fails at the vendor has spent its reservation, as an unattended call does.
 
 ## 6. Which surface may offer a hosted write tool
 
@@ -308,6 +326,14 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 
 `refused` is for answers about authority, whether ours or the vendor's; `failed` is for a call that could not complete (`ToolCallOutcome`, `models/ToolCall.ts:21`). Each row reaches the person as a named state, never as a silent empty result.
 
+**A parked call ends once, and its ending is trailed** (TASK-208). The park writes `pending_approval`, `approval_required` (`toolBrokerService.ts:1217`), and the ending writes one more row under the same `approvalId`:
+
+- approved: the execution's own row, `ok` or `failed` as for any call, or `refused` with the code when a check stops it before the provider (`:1332`);
+- declined: `refused`, `approval_declined` (`approvalActionService.ts:645`);
+- expired: `refused`, `approval_expired`. The decide path writes it (`:547`). The usual path is the scheduler's five-minute sweep, `sweepExpiredToolCallApprovals` (`approvalActionService.ts:680`, scheduled at `schedulerService.ts:491`), which writes no row, so a call it expires ends with nothing in the trail after `pending_approval`. The build writes the same row there.
+
+The seat learns each ending through §5's event, and the owner sees it on the card.
+
 **Removal** is §10.5 unchanged in order:
 
 1. Grants: `revokeConnectionGrants`, which matches a grant by the row's `_id`, the id every hosted grant is stored under.
@@ -373,6 +399,16 @@ Each step can be tested without the vendor, except the live measurements in step
    - The log line (§3): `a fresh assessment that withholds a pin logs one line naming the entry, the row and the tool`, and `a second listing within the TTL logs nothing`
    - Confinement (§3), in the compatible rule's PR or an earlier one: `a hosted call naming an argument its pin does not declare is refused invalid_tool_args before tools/call`, made through the broker, with no park and no budget spent. Its control sends a declared argument through unchanged, and its mutation deletes the check.
    - With the compatible rule: `a read pin that changed compatibly upstream is listed and callable through the broker under the pin's schema`, and its fresh assessment logs one line
+   - The parked call's ending (§5, §9), on its own row after #2161. GitHub's write tools exercise it today, so it does not wait on the hosted steps.
+     - `an approved parked call delivers one approval.resolved to its seat naming the ending, with no result, argument, vendor error text or credential`
+     - `a declined parked call delivers one event, and so does an expired one, whether the decide path or the sweep expired it`
+     - `a second approval, or a sweep racing a decision, delivers no second event`
+     - `an approved call whose grant has expired, or whose budget is spent, is refused with that code, delivers it, and spends nothing`
+     - `a tool_call card and its row carry the ending and its code, never the vendor's result or error text`
+     - `the room receipt names a failed ending`
+     - `a parked call the sweep expires writes refused, approval_expired`
+     - `a receipt value that fails its declared shape is dropped, and the ending still arrives`
+     - `a parked call's card expires no later than its grant`
 5. **The trail column.**
    - `every tool call records whose credential ran`
    - `the trail names the credential owner after the Connection is removed`
