@@ -325,6 +325,20 @@ describe('a hosted-MCP grant through the broker', () => {
     },
   );
 
+  it.each(['reconnect_required', 'connection_mismatch'])(
+    'trails a permanent %s credential failure as refused', async (code) => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      mockCredentialFor.mockRejectedValue(new HostedMcpCredentialError(code));
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+      })).rejects.toMatchObject({ code });
+      expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'refused', reason: code,
+      }));
+      expect(global.fetch).not.toHaveBeenCalled();
+    },
+  );
+
   it('uses the call’s unreachable and rejected-credential reasons for a failed list', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
     global.fetch = jest.fn(async () => { throw new Error('ECONNRESET'); });

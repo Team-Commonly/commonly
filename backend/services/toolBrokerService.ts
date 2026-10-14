@@ -960,6 +960,9 @@ const safeReason = (error: unknown): string => {
 };
 
 export const executionErrorOutcome = (error: unknown): 'refused' | 'failed' | 'pending_approval' => {
+  if (error instanceof HostedMcpCredentialError) {
+    return error.code === 'reconnect_required' || error.code === 'connection_mismatch' ? 'refused' : 'failed';
+  }
   if (!(error instanceof RoomGrantError)) return 'failed';
   if (error.code === 'approval_required') return 'pending_approval';
   if (error.code === 'provider_error' || error.code === 'provider_unreachable') return 'failed';

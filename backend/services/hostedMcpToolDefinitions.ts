@@ -265,7 +265,8 @@ const callHostedTool = async (
     const code = (error as { code?: string })?.code;
     if (code === 'reconnect_required' || code === 'connection_mismatch') {
       // A client-id drift is an authority refusal, not a failed vendor call.
-      // RoomGrantError makes the broker trail it as `refused` before any fetch.
+      // Direct callers reach this read; the broker catches the same credential
+      // error earlier in its preflight and classifies it as refused there.
       throw new RoomGrantError(code, (error as Error).message, 403);
     }
     throw error;
