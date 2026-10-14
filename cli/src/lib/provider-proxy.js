@@ -12,7 +12,6 @@ const isPathWithin = (parent, candidate) => {
     && !fromParent.startsWith(`..${sep}`)
     && !isAbsolute(fromParent));
 };
-
 /** Validate the key path without reading the key. The proxy reads it at spawn. */
 export const resolveProviderKeyFile = async (provider, workspacePath, adapterLabel = 'OpenCode') => {
   if (!provider) return null;

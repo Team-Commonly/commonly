@@ -51,11 +51,16 @@ const resolvedBinary = (env) => {
 const withProbeEnv = async (source, run) => {
   const home = await mkdtemp(join(tmpdir(), 'commonly-qwen-version-'));
   try {
+    const settingsPath = join(home, 'settings.json');
+    await writeFile(settingsPath, JSON.stringify({
+      privacy: { usageStatisticsEnabled: false },
+    }), { mode: 0o600 });
     const env = Object.fromEntries(Object.entries(source)
       .filter(([name]) => PUBLIC_SAFE_ENV.test(name)));
     env.HOME = home;
     env.QWEN_HOME = home;
     env.QWEN_RUNTIME_DIR = home;
+    env.QWEN_CODE_SYSTEM_SETTINGS_PATH = settingsPath;
     env.QWEN_USAGE_STATISTICS_ENABLED = 'false';
     for (const name of PROXY_ENV) env[name] = '';
     return run(env);
