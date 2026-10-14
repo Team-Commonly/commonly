@@ -1,6 +1,6 @@
 /** Qwen Code 0.25.1 wrapper. Public turns have fresh HOME, config and keys. */
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { isAbsolute, join } from 'path';
 import { buildMemoryPreamble } from '../memory-bridge.js';
@@ -245,8 +245,9 @@ export default {
     }
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-qwen-'));
     await chmod(tempDir, 0o700);
-    const home = join(tempDir, 'home');
-    await mkdir(home, { mode: 0o700 });
+    // Keep child-writable state separate from adapter-owned config and keys.
+    const home = await mkdtemp(join(tmpdir(), 'commonly-qwen-home-'));
+    await chmod(home, 0o700);
     const settingsPath = join(tempDir, 'settings.json');
     const mcpPath = join(tempDir, 'mcp.json');
     let proxy;
@@ -296,11 +297,11 @@ export default {
             filesystem: {
               ...(sandbox?.filesystem || {}),
               'write-outside': [
-                ...(sandbox?.filesystem?.['write-outside'] || []), tempDir,
+                ...(sandbox?.filesystem?.['write-outside'] || []), home,
               ],
             },
           },
-        }, { workspacePath: ctx.cwd, homePath: home, readOnlyPaths: [binary, process.execPath] });
+        }, { workspacePath: ctx.cwd, homePath: home, readOnlyPaths: [tempDir, binary, process.execPath] });
       } else if (isPublic) {
         if ((ctx._platform || process.platform) !== 'darwin') {
           throw new Error(`public Qwen sandbox.mode=${mode} requires Seatbelt on macOS or bwrap on Linux`);
@@ -309,7 +310,7 @@ export default {
           workspacePath: ctx.cwd,
           workspaceAccess: mode === 'read-only' ? 'read' : 'write',
           executablePath: binary,
-          statePath: tempDir,
+          statePath: home,
           mcpConfigDir: tempDir,
           loopbackNetworkPorts: [proxy.port],
           readOnlyPaths: [],
@@ -326,7 +327,7 @@ export default {
       return { text: result.text, newSessionId: null };
     } finally {
       try { await proxy?.close(); } catch { /* best effort */ }
-      await rm(tempDir, { recursive: true, force: true });
+      await Promise.all([tempDir, home].map((path) => rm(path, { recursive: true, force: true })));
     }
   },
 };

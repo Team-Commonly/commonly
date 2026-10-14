@@ -1,9 +1,10 @@
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
-import { readFileSync } from 'fs';
+import { readFileSync, realpathSync } from 'fs';
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({
@@ -65,8 +66,17 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     await writeFile(join(ctx.cwd, '.qwen', '.env'), 'HTTPS_PROXY=https://shadow.example\n');
     await writeFile(join(ctx.cwd, '.qwen', 'settings.json'), '{"mcpServers":{"shadow":{}}}');
     const calls = [];
+    const profiles = [];
     const result = await qwen.spawn('hello', {
       ...ctx,
+      _wrapArgvWithSeatbelt: (argv, options) => {
+        profiles.push({
+          options,
+          configDir: realpathSync(options.mcpConfigDir),
+          profile: buildSeatbeltProfile(options),
+        });
+        return argv;
+      },
       _spawnImpl: (cmd, args, options) => {
         const mcpPath = args[args.indexOf('--mcp-config') + 1];
         calls.push({
@@ -83,7 +93,13 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     expect(args).toEqual(expect.arrayContaining(['--bare', '--safe-mode', '--auth-type', 'openai', '-o', 'stream-json']));
     expect(args[args.indexOf('--exclude-tools') + 1].split(',')).toContain('agent');
     expect(options.env.HOME).toBe(options.env.QWEN_HOME);
-    expect(options.env.HOME).toContain('commonly-qwen-');
+    expect(options.env.HOME).toContain('commonly-qwen-home-');
+    expect(profiles[0].options.statePath).toBe(options.env.HOME);
+    expect(profiles[0].options.mcpConfigDir).not.toBe(profiles[0].options.statePath);
+    expect(options.env.HOME.startsWith(`${profiles[0].options.mcpConfigDir}/`)).toBe(false);
+    const readOnlyConfigDir = profiles[0].configDir;
+    expect(profiles[0].profile).toContain(`(allow file-read* file-test-existence (subpath "${readOnlyConfigDir}"))`);
+    expect(profiles[0].profile).not.toContain(`file-write* (subpath "${readOnlyConfigDir}")`);
     const versionProbe = spawnSyncMock.mock.calls.find(([, argv]) => argv[0] === '--version');
     expect(versionProbe[2].env.HOME).toContain('commonly-qwen-version-');
     expect(versionProbe[2].env.QWEN_HOME).toBe(versionProbe[2].env.HOME);
@@ -145,10 +161,14 @@ test('the bwrap launch binds the fresh HOME instead of the workspace', async () 
       _spawnImpl: () => fakeChild(),
     });
     expect(wraps).toHaveLength(1);
-    expect(wraps[0].options.homePath).toContain('commonly-qwen-');
+    expect(wraps[0].options.homePath).toContain('commonly-qwen-home-');
     expect(wraps[0].options.homePath).not.toBe(ctx.cwd);
     expect(wraps[0].environment.sandbox.filesystem['write-outside'])
-      .toContain(wraps[0].options.homePath.replace(/\/home$/, ''));
+      .toContain(wraps[0].options.homePath);
+    const configDir = wraps[0].argv[wraps[0].argv.indexOf('--mcp-config') + 1].replace(/\/mcp\.json$/, '');
+    expect(wraps[0].environment.sandbox.filesystem['write-outside']).not.toContain(configDir);
+    expect(wraps[0].options.readOnlyPaths).toContain(configDir);
+    expect(wraps[0].options.homePath.startsWith(`${configDir}/`)).toBe(false);
   });
 });
 
