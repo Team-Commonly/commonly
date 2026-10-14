@@ -19,6 +19,7 @@ const {
   hostedMcpCallbackUrl,
   hostedMcpClientConfigKeys,
   hostedMcpNonceCookiePath,
+  isHostedMcpClientConfigured,
   readCookie,
   resolvedClientId,
   resolvedHostedMcpClient,
@@ -145,6 +146,11 @@ describe('hosted-mcp intake: which client id we present', () => {
       thrown = error;
     }
     expect(thrown.code).toBe('client_registration_required');
+  });
+
+  it('offers a DCR entry without instance credentials so its first start can register', () => {
+    expect(isHostedMcpClientConfigured(entry({ client: 'dcr' }), {})).toBe(true);
+    expect(isHostedMcpClientConfigured(entry({ client: 'pre-registered' }), {})).toBe(false);
   });
 });
 

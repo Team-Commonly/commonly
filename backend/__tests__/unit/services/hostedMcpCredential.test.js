@@ -197,6 +197,34 @@ const refusal = async (promise) => {
 };
 
 describe('the fast path', () => {
+  test('a retired DCR client still serves and refreshes its own row', async () => {
+    const dcrEntry = { ...ENTRY, client: 'dcr' };
+    const row = stale({ clientId: 'retired-client' });
+    const h = harness({ row, entryFor: () => dcrEntry });
+    h.deps.dcrClientForRow = jest.fn(async () => ({ clientId: 'retired-client' }));
+    h.deps.clientIdFor = jest.fn(() => 'new-current-client');
+
+    await credentialFor(row, h.deps);
+
+    expect(h.deps.dcrClientForRow).toHaveBeenCalledWith(dcrEntry, 'retired-client');
+    expect(h.refreshAtVendor).toHaveBeenCalledWith(expect.objectContaining({
+      entry: dcrEntry, clientId: 'retired-client', refreshToken: 'old-refresh',
+    }));
+    expect(h.deps.clientIdFor).not.toHaveBeenCalled();
+  });
+
+  test('a refused or unknown DCR client requires reconnect before serving any token', async () => {
+    const dcrEntry = { ...ENTRY, client: 'dcr' };
+    const row = live({ clientId: 'refused-client' });
+    const h = harness({ row, entryFor: () => dcrEntry });
+    h.deps.dcrClientForRow = jest.fn(async () => null);
+    h.deps.secrets.get = jest.fn(h.deps.secrets.get);
+    const error = await refusal(credentialFor(row, h.deps));
+    expect(error.code).toBe('reconnect_required');
+    expect(h.deps.markClientMismatch).toHaveBeenCalled();
+    expect(h.deps.secrets.get).not.toHaveBeenCalled();
+    expect(h.refreshAtVendor).not.toHaveBeenCalled();
+  });
   test('a live credential is served from the store without entering the fence', async () => {
     const h = harness({ row: live() });
     const got = await credentialFor(live(), h.deps);
@@ -661,6 +689,34 @@ describe('the refresh call carries the shared deadline', () => {
     authorization_endpoint: 'https://mcp.linear.app/authorize',
     token_endpoint: 'https://mcp.linear.app/token',
   };
+
+  test('invalid_client retires the DCR registration and tells the row to reconnect', async () => {
+    const registry = require('../../../services/hostedMcpDcrRegistry');
+    const refuse = jest.spyOn(registry, 'refuseDcrClient').mockResolvedValue();
+    const dcrEntry = { ...ENTRY, client: 'dcr' };
+    global.fetch = jest.fn(async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () => (String(url).includes('/.well-known/')
+        ? METADATA
+        : { error: 'invalid_client' }),
+      ...(!String(url).includes('/.well-known/') ? { ok: false, status: 401 } : {}),
+    }));
+    try {
+      const row = stale({ clientId: 'old-dcr-client' });
+      const h = harness({ row, entryFor: () => dcrEntry });
+      h.deps.dcrClientForRow = jest.fn(async () => ({ clientId: 'old-dcr-client' }));
+      delete h.deps.refreshAtVendor;
+      const error = await refusal(credentialFor(row, h.deps));
+      expect(error.code).toBe('reconnect_required');
+      expect(refuse).toHaveBeenCalledWith(dcrEntry, 'old-dcr-client');
+      expect(h.markError).toHaveBeenCalledWith(
+        ROW_ID, 4, 'OAuth client was refused by the provider; reconnect to continue',
+      );
+    } finally {
+      refuse.mockRestore();
+    }
+  });
 
   test('the shipped refresh path reaches the vendor through upstreamFetch, deadline included', async () => {
     // Everything EXCEPT `refreshAtVendor` is injected, so the shipped one runs

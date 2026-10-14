@@ -58,6 +58,7 @@ import {
 import * as connectorSecrets from './connectorSecrets';
 import { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } from './connectorSecretKinds';
 import { upstreamFetch } from './upstreamFetch';
+import { dcrClientForRow, refuseDcrClient } from './hostedMcpDcrRegistry';
 
 /** Refresh this long before the vendor's expiry: a token that expires in flight is a failed call. */
 export const EXPIRY_SKEW_MS = 60 * 1000;
@@ -132,6 +133,7 @@ interface CredentialDeps {
   entryFor: (row: HostedMcpRow) => HostedMcpEntry;
   clientIdFor: (entry: HostedMcpEntry) => string;
   clientSecretFor: (entry: HostedMcpEntry) => string | undefined;
+  dcrClientForRow: typeof dcrClientForRow;
   /** Conditional on the client-id snapshot, so a concurrent reconnect wins. */
   markClientMismatch: (id: unknown, recordedClientId: string | undefined, message: string) => Promise<void>;
   refreshAtVendor: (input: {
@@ -238,6 +240,7 @@ const defaultDeps = (): CredentialDeps => ({
   },
   clientIdFor: (entry) => resolvedClientId(entry),
   clientSecretFor: (entry) => resolvedClientSecret(entry),
+  dcrClientForRow,
   markClientMismatch: async (id, recordedClientId, message) => {
     const clientIdFilter = recordedClientId
       ? { 'config.clientId': recordedClientId }
@@ -265,6 +268,13 @@ const defaultDeps = (): CredentialDeps => ({
     const body = await response.json().catch(() => ({} as Record<string, unknown>)) as Record<string, unknown>;
     if (!response.ok) {
       const code = String(body.error || '');
+      if (code === 'invalid_client' && entry.client === 'dcr') {
+        await refuseDcrClient(entry, clientId);
+        throw new HostedMcpCredentialError(
+          'reconnect_required',
+          'OAuth client was refused by the provider; reconnect to continue',
+        );
+      }
       // `invalid_grant` is the vendor saying the refresh token itself is done:
       // revoked from the vendor's side, or run out its own lifetime. Everything
       // else — a 500, a 429, a body we cannot read — is the vendor having a bad
@@ -360,8 +370,19 @@ export const credentialFor = async (
   let clientId: string;
   let clientSecret: string | undefined;
   try {
-    clientId = deps.clientIdFor(entry);
-    clientSecret = deps.clientSecretFor(entry);
+    if (entry.client === 'dcr') {
+      const recorded = await deps.dcrClientForRow(entry, recordedClientId);
+      if (!recorded) {
+        const message = 'OAuth client is no longer accepted; reconnect to continue';
+        await deps.markClientMismatch(id, recordedClientId, message);
+        throw new HostedMcpCredentialError('reconnect_required', message);
+      }
+      clientId = recorded.clientId;
+      clientSecret = recorded.clientSecret;
+    } else {
+      clientId = deps.clientIdFor(entry);
+      clientSecret = deps.clientSecretFor(entry);
+    }
   } catch (error) {
     if ((error as { code?: string })?.code === 'client_not_configured') {
       // An instance secret/config rollout must not permanently mark every
@@ -431,7 +452,7 @@ export const credentialFor = async (
     const failure = error instanceof HostedMcpCredentialError
       ? error
       : new HostedMcpCredentialError('refresh_unreachable', String((error as Error)?.message || error), true);
-    if (failure.code === 'connection_error') {
+    if (failure.code === 'connection_error' || failure.code === 'reconnect_required') {
       // Only the generation holder may say a Connection is over, and it says so
       // only on the vendor's own refusal.
       await deps.row.markError(id, nextGeneration, failure.message);

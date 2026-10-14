@@ -215,6 +215,9 @@ export const isHostedMcpClientConfigured = (
   entry: HostedMcpEntry,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean => {
+  // DCR has no instance credential to preconfigure. Vendor support is checked
+  // against discovered metadata on the first start, before any pending row.
+  if (entry.client === 'dcr') return true;
   try {
     resolvedHostedMcpClient(entry, env);
     return true;
@@ -235,6 +238,7 @@ export interface HostedMcpAuthorizationServer {
   authorization_endpoint: string;
   token_endpoint: string;
   revocation_endpoint?: string;
+  registration_endpoint?: string;
   token_endpoint_auth_methods_supported?: string[];
   revocation_endpoint_auth_methods_supported?: string[];
 }
