@@ -110,7 +110,6 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     const readOnlyConfigDir = profiles[0].configDir;
     expect(profiles[0].profile).toContain(`(allow file-read* file-test-existence (subpath "${readOnlyConfigDir}"))`);
     expect(profiles[0].profile).toContain(`(allow file-read* file-test-existence (subpath "${realpathSync(join(root, 'qwen-package'))}"))`);
-    expect(profiles[0].profile).toContain(`(allow file-read* file-test-existence (literal "${ctx._binaryPath}"))`);
     expect(profiles[0].profile).not.toContain(`file-write* (subpath "${realpathSync(join(root, 'qwen-package'))}")`);
     expect(profiles[0].profile).not.toContain(`file-write* (subpath "${readOnlyConfigDir}")`);
     const versionProbe = spawnSyncMock.mock.calls.find(([, argv]) => argv[0] === '--version');
@@ -134,6 +133,25 @@ test('public version drift refuses before launching a provider proxy or child', 
     await expect(qwen.spawn('hello', { ...ctx, _spawnImpl: spawn }))
       .rejects.toThrow(/Public Qwen seats refuse version 0.26.0/);
     expect(spawn).not.toHaveBeenCalled();
+  });
+});
+
+test('a plain-file executable does not grant its whole bin directory', async () => {
+  await withSeat(async (ctx) => {
+    await rm(ctx._binaryPath);
+    await writeFile(ctx._binaryPath, '#!/usr/bin/env node\n', { mode: 0o755 });
+    let profileOptions;
+    await qwen.spawn('hello', {
+      ...ctx,
+      _wrapArgvWithSeatbelt: (argv, options) => {
+        profileOptions = options;
+        return argv;
+      },
+      _spawnImpl: () => fakeChild(),
+    });
+    expect(profileOptions.readOnlyDirectories).toEqual([]);
+    expect(buildSeatbeltProfile(profileOptions))
+      .not.toContain(`(allow file-read* file-test-existence (subpath "${realpathSync(join(ctx._binaryPath, '..'))}"))`);
   });
 });
 

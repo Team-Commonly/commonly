@@ -26,7 +26,9 @@ realSeatbeltTest('an npm symlink launches Qwen package chunks under real Seatbel
     await writeFile(join(packageDir, 'cli.cjs'), [
       `#!${process.execPath}`,
       'if (process.argv.includes("--version")) process.stdout.write("0.25.1\\n");',
-      'else process.stdout.write(JSON.stringify(require("./chunks/probe.cjs")) + "\\n");',
+      `else { const fs = require('fs'); if (!fs.lstatSync(${JSON.stringify(binary)}).isSymbolicLink()) throw new Error('npm link missing');`,
+      `if (fs.readlinkSync(${JSON.stringify(binary)}) !== ${JSON.stringify(join(packageDir, 'cli.cjs'))}) throw new Error('npm link target changed');`,
+      'process.stdout.write(JSON.stringify(require("./chunks/probe.cjs")) + "\\n"); }',
       '',
     ].join('\n'), { mode: 0o755 });
     await symlink(join(packageDir, 'cli.cjs'), binary);

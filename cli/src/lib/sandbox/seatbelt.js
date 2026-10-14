@@ -377,10 +377,6 @@ export const buildSeatbeltProfile = ({
     `(allow file-read* file-test-existence file-map-executable ${literal(executable)})`,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(executable)}"))`,
   ].join('\n')).join('\n');
-  const executableSymlinkRules = executablePath !== resolvedExecutable ? [
-    `(allow file-read* file-test-existence ${literal(executablePath)})`,
-    `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(executablePath)}"))`,
-  ].join('\n') : '';
   const mcpRule = resolvedMcpConfig
     ? `(allow file-read* file-test-existence ${subpath(resolvedMcpConfig)})`
     : '';
@@ -412,7 +408,6 @@ export const buildSeatbeltProfile = ({
   return [
     PLATFORM_BASELINE.trim(),
     executableRules,
-    executableSymlinkRules,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedWorkspace)}"))`,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedState)}"))`,
     workspaceRule,

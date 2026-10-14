@@ -1,6 +1,6 @@
 /** Qwen Code 0.25.1 wrapper. Public turns have fresh HOME, config and keys. */
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { realpathSync } from 'fs';
+import { lstatSync, realpathSync } from 'fs';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { dirname, isAbsolute, join } from 'path';
@@ -251,7 +251,8 @@ export default {
     }
     // npm launches through a symlink into the package. Qwen loads chunks next
     // to that entry file, so public sandboxes need that exact read-only tree.
-    const packageDir = isPublic ? dirname(realpathSync(binary)) : null;
+    const packageDir = isPublic && lstatSync(binary).isSymbolicLink()
+      ? dirname(realpathSync(binary)) : null;
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-qwen-'));
     await chmod(tempDir, 0o700);
     // Keep child-writable state separate from adapter-owned config and keys.
@@ -310,7 +311,7 @@ export default {
               ],
             },
           },
-        }, { workspacePath: ctx.cwd, homePath: home, readOnlyPaths: [tempDir, binary, packageDir, process.execPath] });
+        }, { workspacePath: ctx.cwd, homePath: home, readOnlyPaths: [tempDir, binary, packageDir, process.execPath].filter(Boolean) });
       } else if (isPublic) {
         if ((ctx._platform || process.platform) !== 'darwin') {
           throw new Error(`public Qwen sandbox.mode=${mode} requires Seatbelt on macOS or bwrap on Linux`);
@@ -322,7 +323,7 @@ export default {
           statePath: home,
           mcpConfigDir: tempDir,
           loopbackNetworkPorts: [proxy.port],
-          readOnlyDirectories: [packageDir],
+          readOnlyDirectories: packageDir ? [packageDir] : [],
         });
       }
       const requestedTimeout = Number(ctx.timeoutMs);
