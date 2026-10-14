@@ -146,10 +146,13 @@ export const assertHostedMcpEntries = (
       // This is a token-delivery boundary: the bearer minted for `audience`
       // reaches `resource` only when the endpoint is within that resource's
       // origin and path, with the path ending on a segment boundary.
-      const audiencePath = audience.pathname.replace(/\/+$/, '');
-      if (audience.origin !== endpoint.origin
-        || (audiencePath !== '' && endpoint.pathname !== audiencePath
-          && !endpoint.pathname.startsWith(`${audiencePath}/`))) {
+      const audiencePath = audience.pathname;
+      const coversPath = audiencePath === '/'
+        || endpoint.pathname === audiencePath
+        || endpoint.pathname.startsWith(
+          audiencePath.endsWith('/') ? audiencePath : `${audiencePath}/`,
+        );
+      if (audience.origin !== endpoint.origin || !coversPath) {
         throw new Error(`hosted-mcp entry audience does not cover its endpoint: ${entry.id}`);
       }
     }

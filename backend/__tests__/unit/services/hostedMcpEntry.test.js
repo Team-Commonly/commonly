@@ -586,6 +586,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(() => assertHostedMcpEntries([linear({ audience: 'https://mcp.linear.app:8443' })])).toThrow(/does not cover/);
     expect(() => assertHostedMcpEntries([linear({ audience: 'https://mcp.linear.app/other' })])).toThrow(/does not cover/);
     expect(() => assertHostedMcpEntries([linear({ audience: 'https://mcp.linear.app/m' })])).toThrow(/does not cover/);
+    expect(() => assertHostedMcpEntries([linear({ audience: 'https://mcp.linear.app/mcp/' })])).toThrow(/does not cover/);
   });
 
   test('a revoke target is a page plus an optional https endpoint, and every URL it names is checked', () => {
