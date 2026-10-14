@@ -11,7 +11,10 @@
  * scheduler see it.
  */
 
-const { buildInstallationConfig, buildRegistryManifest } = require('../../../scripts/seed-native-agents');
+const {
+  buildInstallationConfig, buildRegistryManifest, MANIFEST_CONFIG_KEYS, INSTALL_TIME_ONLY_CONFIG_KEYS,
+} = require('../../../scripts/seed-native-agents');
+const { FIRST_PARTY_APPS } = require('../../../config/native-agents/apps');
 
 const baseApp = {
   agentName: 'test-app',
@@ -114,5 +117,38 @@ describe('buildRegistryManifest', () => {
     const manifest = buildRegistryManifest(baseApp);
     expect(manifest.name).toBe('test-app');
     expect(manifest.description).toBe('x');
+  });
+});
+
+describe('every projected key has an owner (refresh-native-agent-configs drift guard)', () => {
+  const owned = new Set([...MANIFEST_CONFIG_KEYS, ...INSTALL_TIME_ONLY_CONFIG_KEYS]);
+  // Every optional manifest field set, so a new emitted key cannot hide behind an unset one.
+  const maximal = {
+    ...baseApp,
+    triggers: ['mention', 'heartbeat'],
+    heartbeatIntervalMinutes: 60,
+    maxTurns: 5,
+    maxTokens: 1000,
+    maxWallClockMs: 60000,
+    wakeOnMessage: true,
+    dailyRunCap: 50,
+    recentMessages: 8,
+  };
+
+  test('a key the projection emits is on exactly one list', () => {
+    const unowned = Object.keys(buildInstallationConfig(maximal)).filter((key) => !owned.has(key));
+    expect(unowned).toEqual([]);
+    expect(MANIFEST_CONFIG_KEYS.filter((key) => INSTALL_TIME_ONLY_CONFIG_KEYS.includes(key))).toEqual([]);
+  });
+
+  test('every first-party app projects only owned keys', () => {
+    FIRST_PARTY_APPS.forEach((app) => {
+      const unowned = Object.keys(buildInstallationConfig(app)).filter((key) => !owned.has(key));
+      expect({ app: app.agentName, unowned }).toEqual({ app: app.agentName, unowned: [] });
+    });
+  });
+
+  test('wake policy is install-time only', () => {
+    expect(INSTALL_TIME_ONLY_CONFIG_KEYS).toEqual(expect.arrayContaining(['heartbeat', 'wakeOnMessage']));
   });
 });

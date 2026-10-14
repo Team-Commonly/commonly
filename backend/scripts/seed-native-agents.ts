@@ -89,6 +89,28 @@ export function buildInstallationConfig(
   return configObj;
 }
 
+/**
+ * Who owns each key buildInstallationConfig emits, once the install exists.
+ *
+ * MANIFEST keys belong to the manifest on every projection of it: a refresh
+ * (refresh-native-agent-configs) rewrites them on existing installs and removes
+ * any the manifest no longer declares, which is how "updates propagate"
+ * (ADR-001).
+ *
+ * INSTALL-TIME-ONLY keys are wake policy. The manifest seeds them at install;
+ * after that the install owns them, because operators turn wakes off per
+ * install (the 2026-10-01 hardening wave did so for 25), and a refresh that
+ * re-projected them would silently undo that. Every key on neither list
+ * (autoJoinSource, per-install settings) is the install's as well.
+ *
+ * A drift test fails if buildInstallationConfig emits a key on neither list.
+ */
+export const MANIFEST_CONFIG_KEYS: readonly string[] = [
+  'runtime', 'systemPrompt', 'model', 'tools', 'triggers',
+  'maxTurns', 'maxTokens', 'maxWallClockMs', 'dailyRunCap', 'recentMessages',
+];
+export const INSTALL_TIME_ONLY_CONFIG_KEYS: readonly string[] = ['heartbeat', 'wakeOnMessage'];
+
 export async function seedNativeAgents(): Promise<void> {
   try {
     console.log(
@@ -439,4 +461,10 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
 // CJS compat so `require('./scripts/seed-native-agents').seedNativeAgents(...)`
 // works the same as the rest of the backend.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { seedNativeAgents, buildInstallationConfig, buildRegistryManifest };
+module.exports = {
+  seedNativeAgents,
+  buildInstallationConfig,
+  buildRegistryManifest,
+  MANIFEST_CONFIG_KEYS,
+  INSTALL_TIME_ONLY_CONFIG_KEYS,
+};
