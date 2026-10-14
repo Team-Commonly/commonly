@@ -18,6 +18,8 @@ import User from '../models/User';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation } = require('../models/AgentRegistry');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { reservedAgentNameRefusal } = require('./agentNameReservation');
 
 const CARD_KIND = 'approval-card';
 
@@ -332,6 +334,10 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
 
   if (actionType === 'connect_local_agent') {
     const requestedName = String((params || {}).name || '').trim().toLowerCase();
+    // Refused at proposal time so the proposing agent can pick another name
+    // before a person is asked to approve one that cannot work.
+    const reserved = await reservedAgentNameRefusal(requestedName);
+    if (reserved) return { ok: false, error: reserved.error };
     if (await findForeignLocalAgentOwner(requestedName, ownerUserId)) {
       return {
         ok: false,
@@ -818,6 +824,9 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
   const params = (row.params || {}) as { name?: string };
   const agentName = String(params.name || '').trim().toLowerCase();
   if (!LOCAL_AGENT_NAME_RE.test(agentName)) throw new Error('invalid agent name');
+  // Re-checked at execution: a name can become reserved between propose and approve.
+  const reserved = await reservedAgentNameRefusal(agentName);
+  if (reserved) throw new Error(reserved.error);
 
   // Re-check the #609 guard at execution time — another user may have
   // claimed the name between propose and approve.

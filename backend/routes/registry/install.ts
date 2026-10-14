@@ -23,6 +23,7 @@ const AgentMessageService = require('../../services/agentMessageService');
 const { deriveAgentState } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
+const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
 const {
   getUserId,
@@ -209,6 +210,18 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       return res.status(410).json({
         error: 'This manifest has been unpublished by its author.',
       });
+    }
+
+    // A self-serve install (Bring your own runtime, Run it here, On my computer)
+    // creates a new identity under a name the person chose. A built-in or
+    // published name would bind that agent's shared identity instead.
+    const selfServeRuntimeType = String(
+      (config && config.runtime && (config.runtime as any).runtimeType) || '',
+    ).toLowerCase();
+    const SELF_SERVE_RUNTIME_TYPES = ['webhook', 'wrapper', HostedRuntime.HOSTED_RUNTIME_TYPE];
+    if (SELF_SERVE_RUNTIME_TYPES.includes(selfServeRuntimeType) && !isAdminInstaller) {
+      const reserved = await reservedAgentNameRefusal(agentName);
+      if (reserved) return res.status(409).json(reserved);
     }
 
     // ADR-006 §Self-serve install: when a pod member installs a webhook-typed

@@ -56,6 +56,8 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
+// Name reservation has its own suite (agentNameReservation); these arms use free names.
+jest.mock('../../../services/agentNameReservation', () => ({ reservedAgentNameRefusal: jest.fn().mockResolvedValue(null) }));
 const mockRecordActionApproval = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../../services/attentionItemService', () => ({
   recordActionApproval: (...args) => mockRecordActionApproval(...args),
@@ -246,5 +248,26 @@ describe('proposeAction — decider derivation', () => {
       .map(([query]) => query)
       .find((query) => query && query.installedBy);
     expect(foreignCheck.installedBy).toEqual({ $ne: HUMAN_INSTALLER });
+  });
+
+  test('a built-in agent name is refused at proposal time, before anyone is asked to approve it', async () => {
+    const { reservedAgentNameRefusal } = require('../../../services/agentNameReservation');
+    reservedAgentNameRefusal.mockResolvedValueOnce({
+      code: 'agent_name_reserved',
+      error: '"claude-code" is the name of a built-in agent. Choose a name of your own for this agent, such as "your-name-claude".',
+    });
+    podLookup(BOT_USER);
+    installLookup({ installedBy: HUMAN_INSTALLER, foreignOwner: null });
+
+    const result = await propose({
+      actionType: 'connect_local_agent',
+      params: { name: 'claude-code' },
+      summary: 'Connect your Claude Code agent',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/built-in agent/);
+    expect(reservedAgentNameRefusal).toHaveBeenCalledWith('claude-code');
+    expect(mockApprovalCreate).not.toHaveBeenCalled();
   });
 });
