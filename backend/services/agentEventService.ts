@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import Task from '../models/Task';
+import { postToPublicAddress } from './outboundUrlGuard';
 
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
@@ -240,11 +241,10 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     : undefined;
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
-
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
+    // The URL is whatever the installer registered, so delivery goes through
+    // the open-destination guard: public addresses only, connection pinned to
+    // the address that was checked, redirects re-checked, 10s deadline.
+    const res = await postToPublicAddress(webhookUrl, {
       headers: {
         'Content-Type': 'application/json',
         'X-Commonly-Event': event.type || '',
@@ -252,9 +252,7 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
         ...(signature ? { 'X-Commonly-Signature': signature } : {}),
       },
       body: payload,
-      signal: controller.signal,
     });
-    clearTimeout(timeout);
 
     if (!res.ok) {
       console.warn(`[webhook] ${event.agentName} ${webhookUrl} → HTTP ${res.status}`);
@@ -262,7 +260,7 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     }
 
     let response: Record<string, unknown> = {};
-    try { response = await res.json() as Record<string, unknown>; } catch (_) { /* no body is fine */ }
+    try { response = JSON.parse(res.text) as Record<string, unknown>; } catch (_) { /* no body is fine */ }
 
     const { outcome = 'acknowledged', content } = response as { outcome?: string; content?: string };
 

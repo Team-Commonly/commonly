@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import axios from 'axios';
 import App from '../models/App';
+import { postToPublicAddress } from './outboundUrlGuard';
 import AppInstallation from '../models/AppInstallation';
 
 // eslint-disable-next-line global-require
@@ -60,51 +60,6 @@ interface ValidatedToken {
 }
 
 class AppService {
-  static async deliverWebhook(app: InstanceType<typeof App>, event: string, payload: unknown, webhookSecret: string): Promise<WebhookResult> {
-    const appDoc = app as unknown as Record<string, unknown>;
-    if (appDoc.status !== 'active' || !appDoc.webhookUrl) {
-      return { success: false, reason: 'App inactive or no webhook URL' };
-    }
-
-    const body = JSON.stringify({
-      event,
-      timestamp: new Date().toISOString(),
-      payload,
-    });
-
-    const signature = crypto.createHmac('sha256', webhookSecret).update(body).digest('hex');
-
-    try {
-      const response = await axios.post(String(appDoc.webhookUrl), body, {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Commonly-Signature': `sha256=${signature}`,
-          'X-Commonly-Event': event,
-          'X-Commonly-Delivery': crypto.randomUUID(),
-        },
-        timeout: 10000,
-      });
-
-      const stats = appDoc.stats as unknown as Record<string, unknown>;
-      (stats.webhooksDelivered as number) += 1;
-      stats.lastActivity = new Date();
-      await app.save();
-
-      return {
-        success: true,
-        statusCode: response.status,
-      };
-    } catch (error) {
-      const err = error as Error & { response?: { status?: number } };
-      console.error(`Webhook delivery failed for app ${String(appDoc.name)}:`, err.message);
-      return {
-        success: false,
-        reason: err.message,
-        statusCode: err.response?.status,
-      };
-    }
-  }
-
   static async dispatchEvent(event: string, targetType: string, targetId: unknown, payload: unknown): Promise<Array<Record<string, unknown>>> {
     try {
       const installations = await AppInstallation.find({
@@ -170,16 +125,20 @@ class AppService {
       .digest('hex');
 
     try {
-      const response = await axios.post(String(app.webhookUrl), body, {
+      // The URL is whatever the app's author registered, so delivery goes
+      // through the open-destination guard: public addresses only, connection
+      // pinned to the address that was checked, redirects re-checked.
+      const response = await postToPublicAddress(String(app.webhookUrl), {
         headers: {
           'Content-Type': 'application/json',
           'X-Commonly-Signature': `sha256=${signature}`,
           'X-Commonly-Event': event,
-          'X-Commonly-Installation': (installation as unknown as Record<string, unknown>)._id?.toString(),
+          'X-Commonly-Installation': String((installation as unknown as Record<string, unknown>)._id),
         },
-        timeout: 10000,
+        body,
       });
 
+      if (!response.ok) return { success: false, reason: `HTTP ${response.status}`, statusCode: response.status };
       return { success: true, statusCode: response.status };
     } catch (error) {
       return { success: false, reason: (error as Error).message };

@@ -17,7 +17,7 @@ shape. Sources at the bottom.
 | `req.body.x` (HTTP string)                     | Mongoose `_id` filter                    | [ObjectId.isValid + cast](#objectidisvalid--cast-the-canonical-objectid-sanitizer) |
 | Regex capture from message content             | Mongoose filter scalar OR `$in`          | [Avoid putting it in the query at all](#dont-put-user-tainted-strings-in-mongoose-filters-period) |
 | `req.params.id` already validated by middleware| Mongoose `_id` filter                    | [Still cast](#objectidisvalid--cast-the-canonical-objectid-sanitizer) — CodeQL won't trust the middleware |
-| A URL from a request, or one a user stored     | Server-side `fetch` / axios              | [Confine it to named hosts](#outbound-fetch-of-a-url-from-a-request) |
+| A URL from a request, or one a user stored     | Server-side `fetch` / axios              | [Named hosts, or public addresses only](#outbound-fetch-of-a-url-from-a-request) |
 
 ---
 
@@ -38,10 +38,20 @@ that `isOutboundUrlRefused` recognises; map that to a 400 with fixed text, and
 keep the refused host in the log.
 
 First caller: skill import (`skillsCatalogService.ts`, hosts `github.com`,
-`raw.githubusercontent.com`, `api.github.com`). The guard is an allowlist only.
-A feature whose destinations cannot be listed in advance needs an address-range
-check that resolves DNS and pins the connection to the checked address. This
-module does not provide one.
+`raw.githubusercontent.com`, `api.github.com`).
+
+When the destinations cannot be listed in advance (a webhook endpoint its owner
+registered), use `postToPublicAddress` from the same module. It allows http(s)
+only, resolves the host itself, and refuses unless every address the host
+resolves to is public. It then connects to the address it checked (a pinned
+`lookup`), so a second DNS answer cannot swap it, and resolves and checks every
+redirect hop again. `classifyAddress` holds the ranges, IPv4-mapped forms
+included. `OUTBOUND_WEBHOOK_ALLOW_PRIVATE_ADDRESSES=true` admits loopback and
+private ranges for a local or self-hosted setup; link-local and the metadata
+host stay refused either way. Callers: agent push webhooks
+(`agentEventService.ts`) and App webhooks (`appService.ts`). Prefer the
+allowlist mode whenever the hosts can be named, because it never depends on
+DNS.
 
 ---
 

@@ -61,13 +61,22 @@ jest.mock('../../../services/agentProvisionerService', () => ({
   resolveOpenClawAccountId: jest.fn(() => 'acct'),
 }));
 jest.mock('../../../services/nativeRuntimeService', () => ({ runAgent: jest.fn() }));
+// Webhook delivery goes through the open-destination guard. The mock runs the
+// real guard unless a test overrides it, so a refusal arm exercises the real one.
+jest.mock('../../../services/outboundUrlGuard', () => {
+  const actual = jest.requireActual('../../../services/outboundUrlGuard');
+  return { ...actual, postToPublicAddress: jest.fn(actual.postToPublicAddress) };
+});
 
+const http = require('http');
+const https = require('https');
 const AgentEvent = require('../../../models/AgentEvent');
 const AgentMemory = require('../../../models/AgentMemory');
 const Task = require('../../../models/Task');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentEventService = require('../../../services/agentEventService');
 const { runAgent } = require('../../../services/nativeRuntimeService');
+const { postToPublicAddress } = require('../../../services/outboundUrlGuard');
 
 // Let fire-and-forget promise chains (webhook delivery, native settle) run.
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -369,10 +378,38 @@ describe('driver paths reach a terminal state', () => {
         config: { runtime: { webhookUrl: 'https://example.test/hook' } },
       }]),
     });
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ outcome: 'no_action' }),
+    postToPublicAddress.mockResolvedValueOnce({ ok: true, status: 200, text: JSON.stringify({ outcome: 'no_action' }) });
+
+    await AgentEventService.enqueue({
+      agentName: 'hookbot', instanceId: 'default', podId: 'p1', type: 'chat.mention', payload: {},
+    });
+    await flush();
+
+    expect(postToPublicAddress).toHaveBeenCalledTimes(1);
+    expect(postToPublicAddress.mock.calls[0][0]).toBe('https://example.test/hook');
+    const [, update] = lastCall(AgentEvent.findByIdAndUpdate);
+    // 'delivered' here is what fed a handled event back into the requeue
+    // population and re-POSTed it ~10-20 min later, indefinitely.
+    expect(update.status).toBe('acked');
+    expect(update['delivery.outcome']).toBe('no_action');
+  });
+
+  test('a webhook URL the guard refuses gets no request, and the event is not acked', async () => {
+    // The real guard runs here (no override): the address is link-local.
+    // Fail instead of connecting, so even a broken guard cannot open a socket here.
+    const noNetwork = () => { throw new Error('no network in refusal tests'); };
+    const httpSpy = jest.spyOn(http, 'request').mockImplementation(noNetwork);
+    const httpsSpy = jest.spyOn(https, 'request').mockImplementation(noNetwork);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    AgentEvent.create.mockResolvedValue({
+      _id: 'evt-r', agentName: 'hookbot', instanceId: 'default', podId: 'p1',
+      type: 'chat.mention', payload: {}, status: 'pending', attempts: 0,
+    });
+    AgentInstallation.find.mockReturnValue({
+      lean: () => Promise.resolve([{
+        agentName: 'hookbot',
+        config: { runtime: { webhookUrl: 'http://169.254.169.254/latest/meta-data/' } },
+      }]),
     });
 
     await AgentEventService.enqueue({
@@ -380,12 +417,11 @@ describe('driver paths reach a terminal state', () => {
     });
     await flush();
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    const [, update] = lastCall(AgentEvent.findByIdAndUpdate);
-    // 'delivered' here is what fed a handled event back into the requeue
-    // population and re-POSTed it ~10-20 min later, indefinitely.
-    expect(update.status).toBe('acked');
-    expect(update['delivery.outcome']).toBe('no_action');
+    expect(postToPublicAddress).toHaveBeenCalledTimes(1);
+    expect(httpSpy).not.toHaveBeenCalled();
+    expect(httpsSpy).not.toHaveBeenCalled();
+    expect(AgentEvent.findByIdAndUpdate.mock.calls.some(([, u]) => u && u.status === 'acked')).toBe(false);
+    expect(warn.mock.calls.some((args) => String(args[1] || '').includes('outbound URL refused'))).toBe(true);
   });
 
   describe('native runtime', () => {
