@@ -20,7 +20,7 @@ import { LINEAR_ENTRY } from './linear';
 export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [LINEAR_ENTRY, GOOGLE_CALENDAR_ENTRY, ATLASSIAN_ENTRY, AIRTABLE_ENTRY];
 
 /**
- * Six entry-local defects that would otherwise be silent, checked at module
+ * Seven entry-local defects that would otherwise be silent, checked at module
  * load. The collision with builtin tool Installable ids is checked by
  * `toolInstallables.ts` at the load site that owns both maps.
  *
@@ -50,6 +50,9 @@ export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [LINEAR_ENTRY, GOOGLE_CALEND
  *   `ok` while the vendor says `readOnlyHint: false`, and a read grant stands
  *   against an explicit upstream denial. Requiring the claim keeps that
  *   direction live for every read pin in the catalogue.
+ * - A separate OAuth audience must cover the tools/call endpoint on the same
+ *   origin and a path-segment boundary. Otherwise we present a bearer token to
+ *   an endpoint outside the resource for which the vendor minted it.
  * - `revoke` has to name its KIND and be an absolute https URL. The kind is
  *   what decides whether removal calls the vendor: a `page` is for a person to
  *   visit, and a page that answered our POST with 200 would read as a revoke
@@ -125,6 +128,30 @@ export const assertHostedMcpEntries = (
   for (const entry of entries) {
     if (!/^[a-z0-9-]+$/.test(entry.id)) {
       throw new Error(`hosted-mcp entry id is not a usable tool namespace: ${entry.id}`);
+    }
+    if (entry.audience !== undefined) {
+      let audience: URL;
+      let endpoint: URL;
+      try {
+        if (typeof entry.audience !== 'string') throw new Error('invalid audience');
+        audience = new URL(entry.audience);
+        endpoint = new URL(entry.resource);
+      } catch {
+        throw new Error(`hosted-mcp entry audience is not an absolute https URL: ${entry.id}`);
+      }
+      if (audience.protocol !== 'https:' || endpoint.protocol !== 'https:'
+        || audience.username || audience.password || audience.search || audience.hash) {
+        throw new Error(`hosted-mcp entry audience is not an absolute https resource URL: ${entry.id}`);
+      }
+      // This is a token-delivery boundary: the bearer minted for `audience`
+      // reaches `resource` only when the endpoint is within that resource's
+      // origin and path, with the path ending on a segment boundary.
+      const audiencePath = audience.pathname.replace(/\/+$/, '');
+      if (audience.origin !== endpoint.origin
+        || (audiencePath !== '' && endpoint.pathname !== audiencePath
+          && !endpoint.pathname.startsWith(`${audiencePath}/`))) {
+        throw new Error(`hosted-mcp entry audience does not cover its endpoint: ${entry.id}`);
+      }
     }
     if (reservedIds.has(entry.id)) {
       throw new Error(`hosted-mcp entry id collides with a builtin tool installable: ${entry.id}`);

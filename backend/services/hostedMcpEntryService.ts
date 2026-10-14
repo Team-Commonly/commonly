@@ -69,8 +69,10 @@ export interface HostedMcpEntry {
    * person's screen and a seat's prompt with no review.
    */
   description?: string;
-  /** The MCP server URL, which is also the RFC 8707 `resource`. */
+  /** The MCP tools/call endpoint; also the RFC 8707 resource unless `audience` is set. */
   resource: string;
+  /** The PRM resource identifier when it differs from the tools/call endpoint. */
+  audience?: string;
   /** The authorization server the protected-resource metadata names. */
   issuer: string;
   client: 'pre-registered' | 'cimd' | 'dcr';

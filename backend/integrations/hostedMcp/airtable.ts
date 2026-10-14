@@ -51,6 +51,9 @@ export const AIRTABLE_ENTRY: HostedMcpEntry = {
   title: 'Airtable',
   description: 'Bases, tables and records in your Airtable workspace.',
   resource: 'https://mcp.airtable.com/mcp',
+  // Airtable's root PRM metadata named this resource on 2026-10-14. The
+  // consenting tools/list capture used /mcp as the endpoint on 2026-10-09.
+  audience: 'https://mcp.airtable.com',
   issuer: 'https://airtable.com/oauth2/v1',
   // The authorization server advertises `client_id_metadata_document_supported:
   // true` and S256, so nothing is registered and no secret is stored.

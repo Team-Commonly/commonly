@@ -24,6 +24,7 @@ const {
   resolvedHostedMcpClient,
 } = require('../../../services/hostedMcpIntakeService');
 const { GOOGLE_CALENDAR_ENTRY } = require('../../../integrations/hostedMcp/googleCalendar');
+const { AIRTABLE_ENTRY } = require('../../../integrations/hostedMcp/airtable');
 
 const API = 'https://api.example.test';
 const RESOURCE = 'https://mcp.linear.app/mcp';
@@ -359,6 +360,19 @@ describe('hosted-mcp intake: RFC 8707\'s resource, on every request', () => {
     expect(url.searchParams.get('resource')).toBe('https://mcp.other.test/mcp');
     expect(exchange.body.get('resource')).toBe('https://mcp.other.test/mcp');
     expect(refresh.body.get('resource')).toBe('https://mcp.other.test/mcp');
+  });
+
+  it('uses a separate audience at authorization, exchange and refresh', () => {
+    const url = new URL(buildAuthorizeUrl(AIRTABLE_ENTRY, AS_METADATA.authorization_endpoint, {
+      clientId: 'cid', redirectUri: 'https://api.example.test/cb', state: 's', codeChallenge: 'c',
+    }));
+    const exchange = buildTokenExchangeRequest(AIRTABLE_ENTRY, {}, { clientId: 'cid' }, {
+      redirectUri: 'https://api.example.test/cb', code: 'c', codeVerifier: 'v',
+    });
+    const refresh = buildRefreshRequest(AIRTABLE_ENTRY, {}, { clientId: 'cid' }, { refreshToken: 'r' });
+    expect(url.searchParams.get('resource')).toBe('https://mcp.airtable.com');
+    expect(exchange.body.get('resource')).toBe('https://mcp.airtable.com');
+    expect(refresh.body.get('resource')).toBe('https://mcp.airtable.com');
   });
 });
 

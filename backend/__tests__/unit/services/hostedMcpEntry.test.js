@@ -373,8 +373,8 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entry.tools.every((tool) => tool.name === tool.upstreamName)).toBe(true);
     expect(new Set(entry.tools.map((tool) => `${entry.id}.${tool.name}`)).size).toBe(36);
     expect(hostedMcpRevokeTarget(entry)).toEqual({ page: 'https://linear.app/settings/security' });
-    // The three identity fields the intake reads: `resource` is the RFC 8707
-    // value every authorization and token request carries, `issuer` is what the
+    // With no separate audience, `resource` is the RFC 8707 value every
+    // authorization and token request carries; `issuer` is what the
     // callback checks a returned `iss` against (RFC 9207), and `client: 'cimd'`
     // is what keeps a client secret out of the instance entirely.
     expect(entry.resource).toBe('https://mcp.linear.app/mcp');
@@ -485,6 +485,10 @@ describe('the shipped catalogue cannot land half-wired', () => {
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'airtable');
     expect(entry.client).toBe('cimd');
     expect(capture.server).toBe(entry.resource);
+    // Root PRM metadata fetched 2026-10-14 names the bare origin, while the
+    // consenting 2026-10-09 tools/list capture used /mcp as its endpoint.
+    expect(entry.audience).toBe('https://mcp.airtable.com');
+    expect(entry.resource).toBe('https://mcp.airtable.com/mcp');
     expect(capture.requestedScope.split(' ').sort()).toEqual([...entry.scopes].sort());
     expect(entry.scopes.every((scope) => scope.endsWith(':read'))).toBe(true);
     expect(entry.revoke.endpoint).toBeUndefined();
@@ -571,6 +575,17 @@ describe('the shipped catalogue cannot land half-wired', () => {
       ...calendar,
       authorizationParams: { include_granted_scopes: 'true' },
     }])).toThrow(/authorization parameter outside the closed set: google-calendar\.include_granted_scopes/);
+  });
+
+  test('an audience must be an https parent of its endpoint on the same origin', () => {
+    expect(() => assertHostedMcpEntries([linear({ audience: 'https://mcp.linear.app' })])).not.toThrow();
+    expect(() => assertHostedMcpEntries([linear({ audience: 'https://mcp.linear.app/mcp' })])).not.toThrow();
+    expect(() => assertHostedMcpEntries([linear({ audience: '' })])).toThrow(/audience/);
+    expect(() => assertHostedMcpEntries([linear({ audience: 'http://mcp.linear.app' })])).toThrow(/https/);
+    expect(() => assertHostedMcpEntries([linear({ audience: 'https://other.test' })])).toThrow(/does not cover/);
+    expect(() => assertHostedMcpEntries([linear({ audience: 'https://mcp.linear.app:8443' })])).toThrow(/does not cover/);
+    expect(() => assertHostedMcpEntries([linear({ audience: 'https://mcp.linear.app/other' })])).toThrow(/does not cover/);
+    expect(() => assertHostedMcpEntries([linear({ audience: 'https://mcp.linear.app/m' })])).toThrow(/does not cover/);
   });
 
   test('a revoke target is a page plus an optional https endpoint, and every URL it names is checked', () => {

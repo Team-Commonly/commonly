@@ -14,6 +14,7 @@ const {
   hostedToolDefinitions,
   findHostedToolDefinition,
 } = require('../../../services/hostedMcpToolDefinitions');
+const { AIRTABLE_ENTRY } = require('../../../integrations/hostedMcp/airtable');
 
 const ENTRY = {
   id: 'linear',
@@ -133,6 +134,17 @@ describe('hosted-MCP tool definitions', () => {
       params: { name: 'list_issues', arguments: { limit: 5 } },
     });
     expect(result).toEqual({ content: [{ type: 'text', text: 'ok' }] });
+  });
+
+  it('posts Airtable tools/call to /mcp while OAuth names the origin', async () => {
+    const deps = makeDeps();
+    expect(AIRTABLE_ENTRY.audience).toBe('https://mcp.airtable.com');
+    await definitionFor('airtable.ping', deps, [AIRTABLE_ENTRY]).call({}, {
+      ...CONNECTION, entryId: 'airtable',
+    });
+    expect(deps.fetcher).toHaveBeenCalledWith(
+      'https://mcp.airtable.com/mcp', expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('a row minted under another client is refused reconnect_required before any call', async () => {
