@@ -6,7 +6,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import opencode, {
   readOpenCodeVersion,
-  TESTED_OPENCODE_VERSION,
+  TESTED_OPENCODE_VERSIONS,
 } from '../src/lib/adapters/opencode.js';
 import { buildSeatbeltProfile, wrapArgvWithSeatbelt } from '../src/lib/sandbox/seatbelt.js';
 
@@ -16,9 +16,9 @@ const realSeatbeltTest = process.platform === 'darwin' && smokeBinary ? test : t
 const assertSmokeTestedVersion = () => {
   const binary = realpathSync(smokeBinary);
   const version = readOpenCodeVersion(binary, process.env);
-  if (version !== TESTED_OPENCODE_VERSION) {
+  if (!TESTED_OPENCODE_VERSIONS.includes(version)) {
     throw new Error(
-      `Seatbelt smoke requires OpenCode ${TESTED_OPENCODE_VERSION}; configured binary reports ${version || 'unknown'}`,
+      `Seatbelt smoke requires OpenCode ${TESTED_OPENCODE_VERSIONS.join(', ')}; configured binary reports ${version || 'unknown'}`,
     );
   }
 };

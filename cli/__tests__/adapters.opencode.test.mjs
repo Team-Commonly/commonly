@@ -33,13 +33,13 @@ const {
   resolveProviderKeyFile,
   startProviderProxy,
   ALLOW_UNTESTED_OPENCODE_VERSION_ENV,
-  TESTED_OPENCODE_VERSION,
+  TESTED_OPENCODE_VERSIONS,
 } = await import('../src/lib/adapters/opencode.js');
 
 beforeEach(() => {
   spawnSyncMock.mockReset();
   spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
-    ? { status: 0, stdout: `OpenCode ${TESTED_OPENCODE_VERSION}\n` }
+    ? { status: 0, stdout: `OpenCode ${TESTED_OPENCODE_VERSIONS[0]}\n` }
     : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
 });
 
@@ -743,6 +743,10 @@ describe('opencode external provider config', () => {
 });
 
 describe('opencode adapter — spawn()', () => {
+  test('records both smoke-tested OpenCode versions', () => {
+    expect(TESTED_OPENCODE_VERSIONS).toEqual(['1.18.35', '1.19.0']);
+  });
+
   test('a seat with no public sandbox declaration runs as trusted', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
@@ -785,13 +789,51 @@ describe('opencode adapter — spawn()', () => {
     });
   });
 
+  test.each(['1.18.35', '1.19.0'])('a public seat accepts smoke-tested OpenCode %s', async (version) => {
+    await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, undefined, async () => {
+      await withTemp(async (root) => {
+        const workspace = join(root, 'workspace');
+        const keyFile = join(root, 'provider-key');
+        await mkdir(workspace, { recursive: true });
+        await writeFile(keyFile, 'version-gate-test-key');
+        await chmod(keyFile, 0o600);
+        spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
+          ? { status: 0, stdout: `OpenCode ${version}\n` }
+          : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
+        const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const spawn = makeSpawnImpl();
+        try {
+          await opencode.spawn('public turn', {
+            cwd: workspace,
+            env: { PATH: process.env.PATH },
+            environment: {
+              model: 'test-model',
+              provider: { id: 'test-provider', baseURL: 'https://llm.example.test/v1', keyFile },
+              sandbox: { trust: 'public', mode: 'workspace' },
+              mcp: [],
+            },
+            agentName: 'public-version-gate-seat',
+            _binaryPath: '/usr/local/bin/opencode',
+            _platform: 'darwin',
+            _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', '-p', '(deny default)', ...argv],
+            _spawnImpl: spawn.impl,
+          });
+          expect(spawn.calls).toHaveLength(1);
+          expect(warning).not.toHaveBeenCalled();
+        } finally {
+          warning.mockRestore();
+        }
+      });
+    });
+  });
+
   test('a trusted seat warns on a newer version and still spawns', async () => {
     await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, '1', async () => {
       await withTemp(async (root) => {
         const workspace = join(root, 'workspace');
         await mkdir(workspace, { recursive: true });
         spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
-          ? { status: 0, stdout: 'OpenCode 1.19.0\n' }
+          ? { status: 0, stdout: 'OpenCode 1.20.0\n' }
           : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
         const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
         const spawn = makeSpawnImpl({ onCall: (_cmd, _args, options) => {
@@ -807,7 +849,7 @@ describe('opencode adapter — spawn()', () => {
           });
           expect(spawn.calls).toHaveLength(1);
           expect(warning).toHaveBeenCalledWith(
-            '[opencode] installed OpenCode 1.19.0 is newer than smoke-tested 1.18.35; trusted seat continues',
+            '[opencode] installed OpenCode 1.20.0 is newer than smoke-tested versions 1.18.35, 1.19.0; trusted seat continues',
           );
         } finally {
           warning.mockRestore();
@@ -820,12 +862,17 @@ describe('opencode adapter — spawn()', () => {
     {
       description: 'older',
       result: { status: 0, stdout: 'OpenCode 1.18.0\n' },
-      message: /installed OpenCode 1\.18\.0 is older than smoke-tested 1\.18\.35.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode 1\.18\.0 is older than smoke-tested versions 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+    },
+    {
+      description: 'newer',
+      result: { status: 0, stdout: 'OpenCode 1.20.0\n' },
+      message: /installed OpenCode 1\.20\.0 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'unavailable',
       result: { status: 1, stdout: '', stderr: 'version command failed' },
-      message: /installed OpenCode version is unknown.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode version is unknown; smoke-tested versions: 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'update announcement containing multiple versions',
@@ -833,7 +880,7 @@ describe('opencode adapter — spawn()', () => {
         status: 0,
         stdout: 'A new release is available: 1.18.35 -> 1.19.0\n',
       },
-      message: /installed OpenCode version is unknown.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      message: /installed OpenCode version is unknown; smoke-tested versions: 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
   ])('a public seat refuses an $description version before creating state or spawning', async ({
     result,
@@ -883,7 +930,7 @@ describe('opencode adapter — spawn()', () => {
         await writeFile(keyFile, 'version-gate-test-key');
         await chmod(keyFile, 0o600);
         spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
-          ? { status: 0, stdout: 'OpenCode 1.19.0\n' }
+          ? { status: 0, stdout: 'OpenCode 1.20.0\n' }
           : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
         const spawn = makeSpawnImpl();
         await expect(opencode.spawn('public turn', {
@@ -901,7 +948,7 @@ describe('opencode adapter — spawn()', () => {
           _binaryPath: '/usr/local/bin/opencode',
           _platform: 'darwin',
           _spawnImpl: spawn.impl,
-        })).rejects.toThrow(/refuse to run.*1\.19\.0.*1\.18\.35.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/);
+        })).rejects.toThrow(/refuse to run.*1\.20\.0.*1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/);
         expect(spawn.calls).toHaveLength(0);
         expect(validateEnvironmentSpec({
           version: 1, [ALLOW_UNTESTED_OPENCODE_VERSION_ENV]: '1',
@@ -925,7 +972,7 @@ describe('opencode adapter — spawn()', () => {
         await writeFile(keyFile, 'version-gate-test-key');
         await chmod(keyFile, 0o600);
         spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
-          ? { status: 0, stdout: 'OpenCode 1.19.0\n' }
+          ? { status: 0, stdout: 'OpenCode 1.20.0\n' }
           : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
         const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
         const spawn = makeSpawnImpl({ onCall: (_cmd, _args, options) => {
@@ -952,11 +999,11 @@ describe('opencode adapter — spawn()', () => {
             await opencode.spawn('public turn', spawnOptions);
             expect(spawn.calls).toHaveLength(1);
             expect(warning).toHaveBeenCalledWith(
-              '[opencode] installed OpenCode 1.19.0 is newer than smoke-tested 1.18.35; continuing because the host process set COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1',
+              '[opencode] installed OpenCode 1.20.0 is newer than smoke-tested versions 1.18.35, 1.19.0; continuing because the host process set COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1',
             );
           } else {
             await expect(opencode.spawn('public turn', spawnOptions)).rejects.toThrow(
-              /refuse to run.*1\.19\.0.*1\.18\.35.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+              /refuse to run.*1\.20\.0.*1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
             );
             expect(spawn.calls).toHaveLength(0);
             expect(warning).not.toHaveBeenCalled();

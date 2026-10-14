@@ -1,7 +1,7 @@
 /**
  * OpenCode adapter — wraps `opencode run --format json` as a Commonly seat.
  *
- * Smoke-tested version is recorded in TESTED_OPENCODE_VERSION below.
+ * Smoke-tested versions are recorded in TESTED_OPENCODE_VERSIONS below.
  * OpenCode stores sessions under XDG_DATA_HOME. Trusted seats use the
  * operator's data home directly; public seats get per-identity state without
  * operator auth.json and a child environment limited to safe launch/locale
@@ -58,7 +58,7 @@ import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
 // Bump only with a passing real sandbox-exec smoke against the new version.
-const TESTED_OPENCODE_VERSION = '1.18.35';
+const TESTED_OPENCODE_VERSIONS = Object.freeze(['1.18.35', '1.19.0']);
 const ALLOW_UNTESTED_OPENCODE_VERSION_ENV = 'COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION';
 const VERSION_CHECK_TIMEOUT_MS = 5000;
 const OPENCODE_CONFIG_GITIGNORE = [
@@ -751,12 +751,17 @@ const compareOpenCodeVersions = (left, right) => {
 };
 
 const describeOpenCodeVersionMismatch = (installedVersion) => {
-  if (!installedVersion) return 'installed OpenCode version is unknown';
-  const relation = compareOpenCodeVersions(installedVersion, TESTED_OPENCODE_VERSION);
-  if (relation === 0) {
-    return `installed OpenCode ${installedVersion} differs from smoke-tested ${TESTED_OPENCODE_VERSION}`;
+  const tested = TESTED_OPENCODE_VERSIONS.join(', ');
+  if (!installedVersion) return `installed OpenCode version is unknown; smoke-tested versions: ${tested}`;
+  const oldest = TESTED_OPENCODE_VERSIONS[0];
+  const newest = TESTED_OPENCODE_VERSIONS[TESTED_OPENCODE_VERSIONS.length - 1];
+  if (compareOpenCodeVersions(installedVersion, newest) > 0) {
+    return `installed OpenCode ${installedVersion} is newer than smoke-tested versions ${tested}`;
   }
-  return `installed OpenCode ${installedVersion} is ${relation > 0 ? 'newer' : 'older'} than smoke-tested ${TESTED_OPENCODE_VERSION}`;
+  if (compareOpenCodeVersions(installedVersion, oldest) < 0) {
+    return `installed OpenCode ${installedVersion} is older than smoke-tested versions ${tested}`;
+  }
+  return `installed OpenCode ${installedVersion} differs from smoke-tested versions ${tested}`;
 };
 
 export default {
@@ -814,7 +819,7 @@ export default {
       : childSourceEnv;
     const binary = ctx._binaryPath || spawnBinaryPath(runtimeEnv);
     const installedVersion = readOpenCodeVersion(binary, runtimeEnv);
-    if (installedVersion !== TESTED_OPENCODE_VERSION) {
+    if (!TESTED_OPENCODE_VERSIONS.includes(installedVersion)) {
       const mismatch = describeOpenCodeVersionMismatch(installedVersion);
       const allowOverride = process.env[ALLOW_UNTESTED_OPENCODE_VERSION_ENV] === '1';
       if (isPublic && !allowOverride) {
@@ -993,7 +998,7 @@ export default {
 export {
   ALLOW_UNTESTED_OPENCODE_VERSION_ENV,
   DISABLED_ENV,
-  TESTED_OPENCODE_VERSION,
+  TESTED_OPENCODE_VERSIONS,
   buildArgs,
   buildMcpConfig,
   buildProviderConfig,
