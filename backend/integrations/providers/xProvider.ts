@@ -8,7 +8,6 @@ interface XConfig {
   refreshToken?: string;
   userId?: string;
   username?: string;
-  apiBase?: string;
   maxResults?: number;
   followUsernames?: unknown[];
   followUserIds?: unknown[];
@@ -247,7 +246,8 @@ function normalizeXTweet(tweet: unknown, user: Partial<XUser> = {}): NormalizedX
 
 function createXProvider(integration: { _id: unknown; config?: XConfig; [key: string]: unknown }): XProvider {
   const config = (integration?.config || {}) as XConfig;
-  const apiBase = config.apiBase || process.env.X_API_BASE_URL || DEFAULT_API_BASE;
+  // Instance configuration only, never the row (`apiBase` is server-owned).
+  const apiBase = process.env.X_API_BASE_URL || DEFAULT_API_BASE;
   const sanitizedUsername = config.username ? config.username.replace(/^@/, '') : '';
   const followUsernames = Array.isArray(config.followUsernames)
     ? config.followUsernames.map((item) => String(item || '').trim().replace(/^@/, '')).filter(Boolean)

@@ -7,7 +7,6 @@ interface InstagramConfig {
   accessToken?: string;
   igUserId?: string;
   username?: string;
-  apiBase?: string;
   maxResults?: number;
   [key: string]: unknown;
 }
@@ -124,7 +123,8 @@ function normalizeInstagramMedia(item: unknown, config: InstagramConfig): Normal
 
 function createInstagramProvider(integration: { _id: unknown; config?: InstagramConfig; [key: string]: unknown }): InstagramProvider {
   const config = (integration?.config || {}) as InstagramConfig;
-  const apiBase = config.apiBase || process.env.INSTAGRAM_GRAPH_API_BASE || DEFAULT_API_BASE;
+  // Instance configuration only, never the row (`apiBase` is server-owned).
+  const apiBase = process.env.INSTAGRAM_GRAPH_API_BASE || DEFAULT_API_BASE;
 
   return {
     async validateConfig() {

@@ -49,6 +49,11 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   // all and answers an inactive row like an unknown id, so the strip and the
   // env-only read are the whole boundary.
   'signingSecret', 'appToken', 'secretToken',
+  // The X and Instagram API base is the INSTANCE's, for the same reason: the
+  // providers read `X_API_BASE_URL` / `INSTAGRAM_GRAPH_API_BASE` (or the
+  // official default) and never the row. A row copy would decide where the
+  // connector sends its access token and whose responses it stores.
+  'apiBase',
   // The Discord channel webhook URL is a bearer credential of its own — the URL
   // embeds the webhook's token, so posting to it posts AS that channel — and the
   // server derives it from the Discord API on both writers (`routes/integrations`

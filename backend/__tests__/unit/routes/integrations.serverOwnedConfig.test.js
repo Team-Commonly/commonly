@@ -134,6 +134,21 @@ describe('PATCH /api/integrations/:id — server-owned config keys are not writa
     expect(Object.values(update)).not.toContain('attacker-secret');
   });
 
+  it('does not write a supplied apiBase, while writing the field beside it', async () => {
+    // The X/Instagram API base is the instance's (the providers read the
+    // environment only); a row copy would decide where the connector sends its
+    // access token. Same acceptance control as the arms above.
+    const res = await request(app)
+      .patch(`/api/integrations/${integrationId}`)
+      .send({ config: { apiBase: 'https://row-supplied.example.test', liveRelay: false } });
+
+    expect(res.status).toBe(200);
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update['config.liveRelay']).toBe(false);
+    expect(Object.keys(update)).not.toContain('config.apiBase');
+    expect(Object.values(update)).not.toContain('https://row-supplied.example.test');
+  });
+
   it('refuses a supplied linkedUserId outright — the other mechanism', async () => {
     const res = await request(app)
       .patch(`/api/integrations/${integrationId}`)
