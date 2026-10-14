@@ -485,6 +485,86 @@ const recordToolCallDecision = async (
   });
 };
 
+/**
+ * What happened, in one line the proposing agent can act on. States facts the
+ * executor produced; what to say about them is the agent's own knowledge.
+ */
+const describeApprovedOutcome = (row: IApprovalAction): string => {
+  if (row.executionError) {
+    const error = String(row.executionError).slice(0, 300);
+    return `But the action failed: ${error}. Tell them plainly and suggest what to try next.`;
+  }
+  const result = (row.executionResult || {}) as Record<string, unknown>;
+  if (row.actionType === 'connect_local_agent') {
+    const seat = String(result.agentName || (row.params as { name?: string } | undefined)?.name || '');
+    const path = String(result.connectPath || '');
+    const which = result.alreadyInstalled ? 'The seat' : 'The new seat';
+    return `${which} "${seat}" exists, and the card now links to its connect page${path ? ` (${path})` : ''}. `
+      + 'That page issues its token and shows the commands that connect their agent to it.';
+  }
+  if (row.actionType === 'create_pod') {
+    const joinNote = result.agentJoinError
+      ? ` You could not be added to it: ${String(result.agentJoinError).slice(0, 200)}.`
+      : '';
+    return `The pod "${String(result.podName || '')}" now exists (${String(result.podId || '')}).${joinNote}`;
+  }
+  return 'The action ran.';
+};
+
+/**
+ * Tell the agent that proposed an action that a human approved it (#2160).
+ * Without this the proposer never learns the human did what it asked, so the
+ * next step never arrives: Scout proposed a seat, the user approved it, and
+ * the room went quiet (fresh-signup acceptance run, 2026-10-14).
+ *
+ * Same shape as `decision.ruled`: a typed turn for the requester, enqueued
+ * directly rather than through the ambient wake policy, because the human
+ * acted on the agent's own request. `payload.content` carries the cue, which
+ * the native runtime uses verbatim. The CLI wrapper does not know this type
+ * yet and acks it as a no-op, so wrapper seats spend nothing until it learns it.
+ *
+ * Approve only: a decline needs no follow-up, and a turn spent on one invites a
+ * re-ask. Parked tool calls are excluded: what their results tell the agent
+ * belongs to the broker's contract, not this cue. Never fatal: the decision is
+ * already durable, and a lost wake must not turn a 200 into a 500.
+ */
+const enqueueApprovalResolvedEvent = async (
+  row: IApprovalAction,
+  approvedBy: { userId: string; username: string },
+): Promise<void> => {
+  if (!row.agentName) return;
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentEventService = require('./agentEventService');
+    const summary = String(row.summary || row.actionType).trim().slice(0, 200);
+    const content = [
+      '[Your proposal was approved]',
+      `${approvedBy.username} approved your proposal: ${summary}`,
+      describeApprovedOutcome(row),
+      '',
+      'Reply to them with the one next step, in a sentence or two. Do not repeat the card. '
+        + 'Return NO_REPLY only if nothing is left for them to do.',
+    ].join('\n');
+    await AgentEventService.enqueue({
+      agentName: String(row.agentName),
+      instanceId: String(row.instanceId || 'default'),
+      podId: String(row.podId),
+      type: 'approval.resolved',
+      payload: {
+        approvalId: String(row._id),
+        actionType: row.actionType,
+        decision: 'approved',
+        approvedBy,
+        resolvedAt: (row.resolvedAt ? new Date(row.resolvedAt) : new Date()).toISOString(),
+        podId: String(row.podId),
+        content,
+      },
+    });
+  } catch (err) {
+    console.warn('[approval] proposer wake failed:', (err as Error).message);
+  }
+};
+
 export const resolveApproval = async (options: ResolveOptions): Promise<ResolveResult> => {
   const { approvalId, callerUserId, decision } = options;
 
@@ -646,6 +726,12 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   }
 
   await updateCardEverywhere(transitioned);
+  if (decision === 'approved' && !parkedCall) {
+    await enqueueApprovalResolvedEvent(transitioned, {
+      userId: String(callerUserId),
+      username: caller.displayName?.trim() || caller.username?.trim() || 'The workspace owner',
+    });
+  }
   return { status: 200, body: { ok: true, approval: buildCardPayload(transitioned) } };
 };
 

@@ -27,6 +27,8 @@ jest.mock('../../../services/toolBrokerService', () => ({
   executeApprovedToolCall: jest.fn(),
 }));
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
+const mockEnqueue = jest.fn().mockResolvedValue({});
+jest.mock('../../../services/agentEventService', () => ({ enqueue: (...args) => mockEnqueue(...args) }));
 jest.mock('../../../models/Message', () => ({ updateOne: jest.fn().mockResolvedValue({}) }));
 
 const service = require('../../../services/approvalActionService');
@@ -104,6 +106,8 @@ test('executes on approved with the stored args and writes the second trail row'
     expectedArgsDigest: toolCall.argsDigest, approvalId: pending._id,
   }));
   expect(resolved.executionResult).toEqual({ id: 9 });
+  // #2160: a parked tool call is the broker's to report; the proposer wake is for proposals only.
+  expect(mockEnqueue).not.toHaveBeenCalled();
 });
 
 test('uses the approver display name in the execution receipt', async () => {
