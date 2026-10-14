@@ -168,7 +168,8 @@ const findForeignLocalAgentOwner = async (
 const nameSlug = (value: unknown): string => String(value || '')
   .toLowerCase()
   .replace(/[^a-z0-9]+/g, '-')
-  .replace(/^-+|-+$/g, '')
+  // The line above collapses every run to one '-', so trimming one is enough.
+  .replace(/^-|-$/g, '')
   .slice(0, 20);
 
 /**
@@ -180,15 +181,22 @@ const nameSlug = (value: unknown): string => String(value || '')
  */
 const suggestLocalAgentName = async (requestedName: string, ownerUserId: unknown): Promise<string | null> => {
   const owner = await User.findById(ownerUserId) as { username?: string } | null;
-  const who = nameSlug(owner?.username);
-  if (!who) return null;
+  if (!owner) return null;
+  // A username with no ASCII letters or digits (e.g. '中文') slugs to nothing;
+  // fall back to the account id so a refusal always carries a working name.
+  const who = nameSlug(owner.username) || `user-${String(ownerUserId).slice(-6).toLowerCase()}`;
   const what = nameSlug(requestedName.replace(/^(my|your-name|your)-/, '').replace(/-code$/, '')) || 'agent';
+  // Cap the base before the suffix, so "-2"…"-5" survive the 40-character limit.
+  const base = `${who}-${what}`.slice(0, 37).replace(/-$/, '');
   for (let i = 0; i < 5; i += 1) {
-    const candidate = `${who}-${what}${i ? `-${i + 1}` : ''}`.slice(0, 40).replace(/-+$/, '');
-    // eslint-disable-next-line no-await-in-loop
-    if (LOCAL_AGENT_NAME_RE.test(candidate) && !(await reservedAgentNameRefusal(candidate))
+    const candidate = `${base}${i ? `-${i + 1}` : ''}`;
+    // "Free" means nobody holds it, the owner included: an existing seat of
+    // theirs would make the new card reuse that identity instead of a new one.
+    if (LOCAL_AGENT_NAME_RE.test(candidate)
       // eslint-disable-next-line no-await-in-loop
-      && !(await findForeignLocalAgentOwner(candidate, ownerUserId))) {
+      && !(await reservedAgentNameRefusal(candidate))
+      // eslint-disable-next-line no-await-in-loop
+      && !(await AgentInstallation.findOne({ agentName: candidate, instanceId: 'default' }))) {
       return candidate;
     }
   }

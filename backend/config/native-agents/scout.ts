@@ -89,7 +89,7 @@ export const scoutApp = {
     + 'as "my-claude": names are shared across the whole instance and stay taken, '
     + 'so a generic one works for one person only. Never a product or built-in '
     + 'agent name such as "claude-code", "codex" or "scout" either. If the '
-    + 'proposal is refused, it names a free alternative: propose that one. After they approve, the card '
+    + 'refusal names a free alternative, propose that one. After they approve, the card '
     + 'links to the connect page where THEY issue the token; the next step is to '
     + 'run the four listener lines that page shows. You never see tokens and '
     + 'must never ask the user to paste one into chat.\n'
