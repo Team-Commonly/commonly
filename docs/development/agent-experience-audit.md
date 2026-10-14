@@ -4159,15 +4159,15 @@ Treating an empty list as legacy tells an operator to upgrade a server that may 
 
 ## 80. A scope named `read` did not mean the credential couldn't write (2026-10-13, connector-ops)
 
-*Origin: the 2026-10-13 hosted-MCP catalogue sweep (`docs/plans/hosted-mcp-catalogue-sweep-2026-10-13.md`). Of 61 apps, a first pass classified 13 as fits, mostly because their metadata advertised a read scope separate from write. An independent second pass, told to refute each fit and conditional, overturned 6 of the 13, and the three fits from the 2026-10-09 order (Canva, Miro, ClickUp) all fell on the same re-check: 9 of 16 first-pass fits overall. It also pushed five of 15 first-pass conditionals to no or unreachable.*
+*Origin: the 2026-10-13 hosted-MCP catalogue sweep (`docs/plans/hosted-mcp-catalogue-sweep-2026-10-13.md`). Of 61 apps, a first pass classified 13 as fits, mostly because their metadata advertised a read scope separate from write. An independent second pass, told to refute each fit and conditional, overturned 6 of the 13, and the three fits from the 2026-10-09 order (Canva, Miro, ClickUp) all fell on the same re-check: 9 of 16 first-pass fits overall. It also pushed four of 15 first-pass conditionals to no or unreachable.*
 
 The catalogue bar is a credential that can't write. The scope list in `oauth-protected-resource` metadata is the cheapest thing to measure, so a `:read` scope next to a `:write` scope read as proof of the bar. It isn't, for several measured reasons, across the fits and conditionals the second pass re-checked:
 - Neon (fit → no): the MCP-layer `read` scope only filters the tool list; the bearer is an upstream token requested with write scopes.
-- PostHog (fit → conditional): `project:read` reaches a gateway calling third-party tools able to change data, and some read-scoped routes write product intents.
+- PostHog (fit → conditional): its own test has a `project:read` token calling a connected third-party server's `create_issue`.
 - Typeform (fit → no): its own docs require granting every scope to connect at all.
 - Cloudflare (fit → conditional): the requested scope only preselects a consent page where the user can choose full access.
-- Cal.com (conditional → no): the hosted server ignores the requested scope and asks for a fixed set that includes writes.
-- Zendesk (conditional → unreachable): the "dynamic" registration endpoint hands every caller one hard-coded public client id.
+- Cal.com (conditional → no): in a public copy of its MCP server source, authorization ignores the requested scope and asks for a server-wide default that includes writes.
+- Zendesk (conditional → unreachable): in the second pass's probe, the undocumented "dynamic" registration endpoint gave every caller the same client id.
 - Lucid (conditional → no): read-only is a separate *resource*, not a scope.
 
 Gates that never appear in metadata decided several more, including the client allowlists or review behind Canva, Figma, Dropbox, Square and Vercel, and the admin enablement behind monday.com and Miro Enterprise.
