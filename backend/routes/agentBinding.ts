@@ -19,6 +19,7 @@ import {
   projectSeatEnvironments,
   seatEnvironmentKey,
 } from '../services/seatEnvironmentProjection';
+import { ownsRuntimeIdentity, OwnershipFailure } from '../services/runtimeIdentityOwnership';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -50,7 +51,6 @@ const bindingRateLimit = rateLimit({
 });
 
 const normalize = (v: unknown): string => String(v ?? '').trim().toLowerCase();
-const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
 
 
 type AssignedIdentity = { _id?: unknown; botMetadata?: Record<string, unknown> };
@@ -137,44 +137,14 @@ const grantServersForIdentities = async (
   return output;
 };
 
-// Ownership predicate — SOLE-INSTALLER (Vera's ruling on #1315). Two clauses,
-// both must hold: an active installation of (agentName, instanceId)
-// installedBy the owner exists, AND no active installation of that identity
-// exists installedBy anyone else. The negative clause is what stops a shared
-// identity (two humans each installed it) from being bound to one person's
-// machine; once #609 gives per-owner identities it becomes redundant rather
-// than wrong, so it stays.
-type OwnershipFailure = 'owner_installation_missing' | 'another_installer' | 'unknown_installer';
-
-type OwnershipCheck =
-  | { owned: true }
-  | { owned: false; failure: OwnershipFailure };
+// Ownership predicate — SOLE-INSTALLER (Vera's ruling on #1315). Shared with
+// the token routes since 2026-10-14; see services/runtimeIdentityOwnership.ts.
+const ownsAgent = ownsRuntimeIdentity;
 
 const ownershipFailureMessage: Record<OwnershipFailure, string> = {
   owner_installation_missing: 'No active installation for this daemon credential owner',
   another_installer: 'Another user has an active installation of this agent identity',
   unknown_installer: 'An active legacy installation has no recorded installer',
-};
-
-const ownsAgent = async (
-  ownerUserId: unknown,
-  agentName: string,
-  instanceId: string,
-): Promise<OwnershipCheck> => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { AgentInstallation } = require('../models/AgentRegistry');
-  const mine = await AgentInstallation.findOne({
-    agentName, instanceId, installedBy: ownerUserId, status: 'active',
-  }).collation(RUNTIME_INSTALLATION_COLLATION).select('_id').lean();
-  if (!mine) return { owned: false, failure: 'owner_installation_missing' };
-  const others = await AgentInstallation.findOne({
-    agentName, instanceId, status: 'active', installedBy: { $ne: ownerUserId },
-  }).collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy').lean();
-  if (!others) return { owned: true };
-  // MongoDB $ne also matches a missing field. Keep that legacy state safely
-  // non-adoptable, but report it separately so an owner can repair it.
-  if (!others.installedBy) return { owned: false, failure: 'unknown_installer' };
-  return { owned: false, failure: 'another_installer' };
 };
 
 router.post('/adopt', bindingRateLimit, daemonAuth('agents:adopt'), async (req: DaemonAuthedRequest, res: express.Response) => {

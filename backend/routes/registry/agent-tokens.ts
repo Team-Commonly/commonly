@@ -38,10 +38,13 @@ const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const {
   getUserId,
+  isGlobalAdminUser,
   resolveInstallation,
   resolveRuntimeInstanceId,
   serializeRuntimeTokens,
 } = require('./helpers');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { ownsRuntimeIdentity, runtimeCredentialRefusal } = require('../../services/runtimeIdentityOwnership');
 const {
   normalizeScopes,
   revokeRuntimeTokensForAgent,
@@ -50,6 +53,19 @@ const {
 } = require('./tokens');
 
 const agentTokensRouter = express.Router();
+
+/**
+ * Pod membership is not enough to mint, force-rotate or revoke a runtime token.
+ * The token acts as the agent in every pod where that identity is installed, so
+ * these routes apply the same sole-installer rule as the daemon routes. Admins
+ * are exempt, because operators renew shared fleet seats.
+ */
+const credentialRefusal = async (userId: unknown, agentName: string, instanceId: string) => {
+  if (await isGlobalAdminUser(userId)) return null;
+  const check = await ownsRuntimeIdentity(userId, String(agentName).toLowerCase(), instanceId);
+  if (check.owned) return null;
+  return { code: check.failure, error: runtimeCredentialRefusal[check.failure] };
+};
 
 /**
  * GET /api/registry/pods/:podId/agents/:name/runtime-tokens
@@ -147,6 +163,9 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
+    const refusal = await credentialRefusal(userId, installation.agentName || name, normalizedInstanceId);
+    if (refusal) return res.status(403).json(refusal);
+
     const resolvedType = AgentIdentityService.resolveAgentType(name);
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(resolvedType, {
       instanceId: normalizedInstanceId,
@@ -214,6 +233,9 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', to
     if (!installation || installation.status !== 'active') {
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
+
+    const refusal = await credentialRefusal(userId, installation.agentName || name, instanceId);
+    if (refusal) return res.status(403).json(refusal);
 
     const resolvedType = AgentIdentityService.resolveAgentType(name);
     const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
