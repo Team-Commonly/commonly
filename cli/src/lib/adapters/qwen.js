@@ -27,6 +27,7 @@ const PROXY_ENV = [
 const EXCLUDED_TOOLS = [
   'run_shell_command', 'exec', 'edit', 'notebook_edit', 'write_file',
   'agent', 'create_sub_session', 'task_create', 'team_create',
+  'workflow', 'advisor',
   'web_fetch', 'web_search',
 ];
 // Qwen can read its own config directory. That directory also contains the
