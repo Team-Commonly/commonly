@@ -13,10 +13,11 @@ const DEFAULT_SOURCE = 'awesome';
 // the other two are ClawHub page URLs rather than SKILL.md files. Importing one
 // of those with pasted content still works: a non-GitHub `sourceUrl` is stored as
 // metadata and never fetched (`parseGitHubSource` returns null for it).
-const SKILL_SOURCE_HOSTS: ReadonlySet<string> = new Set([
-  'github.com',
-  'raw.githubusercontent.com',
-  'api.github.com',
+// Each host maps to the constant origin its requests are rebuilt on.
+const SKILL_SOURCE_ORIGINS: ReadonlyMap<string, string> = new Map([
+  ['github.com', 'https://github.com/'],
+  ['raw.githubusercontent.com', 'https://raw.githubusercontent.com/'],
+  ['api.github.com', 'https://api.github.com/'],
 ]);
 // The largest SKILL.md in this repo is ~66 KB; ClawHub bundles cap a file at 100 KB.
 const SKILL_FILE_MAX_BYTES = 512 * 1024;
@@ -220,7 +221,7 @@ const shouldIncludeFile = (pathName: string): boolean => {
 
 const fetchJson = async (url: string): Promise<unknown> => {
   const response = await fetchTextFromAllowedHost(url, {
-    allowedHosts: SKILL_SOURCE_HOSTS,
+    allowedOrigins: SKILL_SOURCE_ORIGINS,
     maxBytes: GITHUB_LISTING_MAX_BYTES,
     headers: {
       'User-Agent': 'commonly-app',
@@ -268,7 +269,7 @@ export const fetchSkillDirectoryFiles = async (sourceUrl: string, options: Fetch
       // ends the walk (as the `totalBytes > maxBytes` break below always did)
       // without first being read into memory whole.
       const resp = await fetchTextFromAllowedHost(String(item.download_url), {
-        allowedHosts: SKILL_SOURCE_HOSTS,
+        allowedOrigins: SKILL_SOURCE_ORIGINS,
         maxBytes: maxBytes - totalBytes,
       });
       if (!resp.ok) continue;
@@ -398,7 +399,7 @@ export const fetchSkillContentFromSource = async (sourceUrl: string): Promise<Fe
   if (!sourceUrl) return { content: '', resolvedUrl: sourceUrl };
   const resolvedUrl = toRawGitHubUrl(sourceUrl);
   const response = await fetchTextFromAllowedHost(resolvedUrl, {
-    allowedHosts: SKILL_SOURCE_HOSTS,
+    allowedOrigins: SKILL_SOURCE_ORIGINS,
     maxBytes: SKILL_FILE_MAX_BYTES,
   });
   if (!response.ok) {

@@ -26,11 +26,16 @@ shape. Sources at the bottom.
 A fetch made by the backend can reach anything the backend's network can,
 in-cluster services included. When the URL arrives from a request, go through
 `fetchTextFromAllowedHost` in `backend/services/outboundUrlGuard.ts`, and pass
-it the exact set of hosts the feature needs. It allows only https on the default
-port, with no credentials in the URL. It follows redirects itself and checks
-every hop against the same set, at most 5. It applies one deadline and a body
-cap. A refused URL throws an error that `isOutboundUrlRefused` recognises; map
-that to a 400 with fixed text, and keep the refused host in the log.
+it a map from each host the feature needs to that host's constant origin
+(`'github.com' → 'https://github.com/'`). Each request is rebuilt on the
+mapped origin, so only the path and query come from the parsed URL. That
+rebuild is also what CodeQL's `js/request-forgery` query recognises. A host
+check followed by a fetch of the parsed URL is still reported (#2186). The
+guard allows only https on the default port, with no credentials in the URL.
+It follows redirects itself and rebuilds and checks every hop the same way, at
+most 5. It applies one deadline and a body cap. A refused URL throws an error
+that `isOutboundUrlRefused` recognises; map that to a 400 with fixed text, and
+keep the refused host in the log.
 
 First caller: skill import (`skillsCatalogService.ts`, hosts `github.com`,
 `raw.githubusercontent.com`, `api.github.com`). The guard is an allowlist only.

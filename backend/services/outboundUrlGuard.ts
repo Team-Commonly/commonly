@@ -7,7 +7,10 @@
  * of public hosts that the CALLER names:
  *
  *   - https only, on the default port, with no credentials in the URL;
- *   - the host must be an exact member of the caller's set;
+ *   - the host must be an exact key of the caller's origin map, and the request
+ *     is then rebuilt on that key's constant origin: only the path and query
+ *     come from the parsed URL, so the scheme and host that reach the socket
+ *     are a value the caller wrote, never one parsed from input;
  *   - redirects are followed here, by hand, never by `fetch` itself, and every
  *     hop is held to the same check before it is requested (at most
  *     `MAX_REDIRECTS` of them);
@@ -52,7 +55,14 @@ export const isOutboundUrlRefused = (error: unknown): boolean => (
   && (error as { code?: unknown }).code === OUTBOUND_URL_REFUSED
 );
 
-const toAllowedUrl = (raw: string, allowedHosts: ReadonlySet<string>, base?: URL): URL => {
+interface AllowedRequest {
+  /** The parsed URL: what a relative redirect `Location` resolves against. */
+  url: URL;
+  /** What is actually requested: the caller's constant origin plus the parsed path and query. */
+  target: string;
+}
+
+const toAllowedRequest = (raw: string, allowedOrigins: ReadonlyMap<string, string>, base?: URL): AllowedRequest => {
   let url: URL;
   try {
     url = new URL(raw, base);
@@ -62,8 +72,10 @@ const toAllowedUrl = (raw: string, allowedHosts: ReadonlySet<string>, base?: URL
   if (url.protocol !== 'https:') throw new OutboundUrlRefusedError(`scheme ${url.protocol} is not https`);
   if (url.username || url.password) throw new OutboundUrlRefusedError('credentials in URL');
   if (url.port) throw new OutboundUrlRefusedError(`non-default port ${url.port}`);
-  if (!allowedHosts.has(url.hostname)) throw new OutboundUrlRefusedError(`host ${url.hostname} is not allowed`);
-  return url;
+  const origin = allowedOrigins.get(url.hostname);
+  if (origin === undefined) throw new OutboundUrlRefusedError(`host ${url.hostname} is not allowed`);
+  // `pathname` always starts with '/', and every origin ends with one.
+  return { url, target: `${origin}${url.pathname.slice(1)}${url.search}` };
 };
 
 const readTextCapped = async (response: Response, maxBytes: number): Promise<string> => {
@@ -85,7 +97,11 @@ const readTextCapped = async (response: Response, maxBytes: number): Promise<str
 };
 
 interface AllowedHostFetchOptions {
-  allowedHosts: ReadonlySet<string>;
+  /**
+   * Each allowed hostname mapped to the constant origin its requests are sent
+   * to, written with a trailing slash: `'github.com' → 'https://github.com/'`.
+   */
+  allowedOrigins: ReadonlyMap<string, string>;
   maxBytes: number;
   headers?: Record<string, string>;
 }
@@ -98,20 +114,20 @@ interface AllowedHostFetchResult {
 }
 
 /**
- * GET `rawUrl` as text, provided it and every redirect it produces stay on
- * `allowedHosts`. Throws a refusal (see `isOutboundUrlRefused`) before any
- * request is made to a URL outside the set; throws a plain error when the body
- * exceeds `maxBytes` or the deadline passes. A non-2xx final response is
- * returned, not thrown, so each caller keeps its own handling of it.
+ * GET `rawUrl` as text, provided it and every redirect it produces stay on the
+ * hosts in `allowedOrigins`. Throws a refusal (see `isOutboundUrlRefused`)
+ * before any request is made to a URL outside the set; throws a plain error
+ * when the body exceeds `maxBytes` or the deadline passes. A non-2xx final
+ * response is returned, not thrown, so each caller keeps its own handling of it.
  */
 export const fetchTextFromAllowedHost = async (
   rawUrl: string,
-  { allowedHosts, maxBytes, headers }: AllowedHostFetchOptions,
+  { allowedOrigins, maxBytes, headers }: AllowedHostFetchOptions,
 ): Promise<AllowedHostFetchResult> => {
   const signal = AbortSignal.timeout(OUTBOUND_TIMEOUT_MS);
-  let url = toAllowedUrl(rawUrl, allowedHosts);
+  let request = toAllowedRequest(rawUrl, allowedOrigins);
   for (let redirects = 0; ; redirects += 1) {
-    const response = await fetch(url.href, { headers, redirect: 'manual', signal });
+    const response = await fetch(request.target, { headers, redirect: 'manual', signal });
     const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
     if (location === null) {
       if (!response.ok) {
@@ -122,6 +138,6 @@ export const fetchTextFromAllowedHost = async (
     }
     await response.body?.cancel();
     if (redirects >= MAX_REDIRECTS) throw new OutboundUrlRefusedError(`more than ${MAX_REDIRECTS} redirects`);
-    url = toAllowedUrl(location, allowedHosts, url);
+    request = toAllowedRequest(location, allowedOrigins, request.url);
   }
 };

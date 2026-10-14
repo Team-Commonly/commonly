@@ -6,8 +6,11 @@ const {
   isOutboundUrlRefused,
 } = require('../../../services/outboundUrlGuard');
 
-const ALLOWED = new Set(['github.com', 'raw.githubusercontent.com']);
-const OPTIONS = { allowedHosts: ALLOWED, maxBytes: 1024 };
+const ALLOWED = new Map([
+  ['github.com', 'https://github.com/'],
+  ['raw.githubusercontent.com', 'https://raw.githubusercontent.com/'],
+]);
+const OPTIONS = { allowedOrigins: ALLOWED, maxBytes: 1024 };
 
 const redirectTo = (location, status = 302) => new Response(null, { status, headers: { location } });
 
@@ -39,6 +42,27 @@ describe('outbound URL guard', () => {
     expect(init.headers).toEqual({ 'User-Agent': 'commonly-app' });
     expect(init.signal).toBeInstanceOf(AbortSignal);
     expect(init.signal.aborted).toBe(false);
+  });
+
+  test('requests the caller\'s constant origin for the host, carrying only the path and query', async () => {
+    // The origin here deliberately differs from the parsed host, so the request
+    // URL can only have come from the map: a guard that sent the parsed URL
+    // would request github.com. The fragment is dropped (it is never sent).
+    fetchSpy
+      .mockResolvedValueOnce(redirectTo('/o/r/next?page=2'))
+      .mockResolvedValueOnce(new Response('# mapped'));
+
+    const result = await fetchTextFromAllowedHost('https://github.com/o/r/start?ref=main#readme', {
+      allowedOrigins: new Map([['github.com', 'https://mapped-origin.test/']]),
+      maxBytes: 1024,
+    });
+
+    expect(result.text).toBe('# mapped');
+    expect(fetchSpy.mock.calls.map(([url]) => url)).toEqual([
+      'https://mapped-origin.test/o/r/start?ref=main',
+      // The redirect hop is rebuilt the same way, resolved against the parsed URL.
+      'https://mapped-origin.test/o/r/next?page=2',
+    ]);
   });
 
   // [url, the reason the refusal must give]. The reason is asserted so that each
