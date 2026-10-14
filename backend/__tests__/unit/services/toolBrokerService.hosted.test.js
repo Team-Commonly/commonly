@@ -134,7 +134,7 @@ const ENTRY = {
       description: 'List issues',
       class: 'read',
       annotations: { readOnlyHint: true },
-      inputSchema: { type: 'object' },
+      inputSchema: { type: 'object', properties: { limit: { type: 'number' } } },
     },
     {
       name: 'create_issue',
@@ -142,7 +142,7 @@ const ENTRY = {
       description: 'Create an issue',
       class: 'write',
       irreversible: true,
-      inputSchema: { type: 'object' },
+      inputSchema: { type: 'object', properties: { title: { type: 'string' } } },
     },
   ],
 };
@@ -239,6 +239,35 @@ beforeEach(() => {
 });
 
 describe('a hosted-MCP grant through the broker', () => {
+  it('refuses an undeclared top-level argument before vendor call or budget, recording only its digest', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant({ budget: { calls: 3 } }));
+    const args = { limit: 3, unexpected: 'private value' };
+
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'invalid_tool_args' });
+    expect(toolCalls()).toHaveLength(0);
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(refusedRow()).toEqual(expect.objectContaining({
+      outcome: 'refused', reason: 'invalid_tool_args', argsDigest: digestArgs(args),
+    }));
+    expect(JSON.stringify(refusedRow())).not.toContain('private value');
+  });
+
+  it('refuses an undeclared hosted write before parking an approval', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
+      tools: ['linear.create_issue'], writeMode: 'write-with-confirm',
+    }));
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.create_issue',
+      args: { title: 'x', unexpected: 'private value' },
+    })).rejects.toMatchObject({ code: 'invalid_tool_args' });
+    expect(mockProposeAction).not.toHaveBeenCalled();
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(toolCalls()).toHaveLength(0);
+    expect(refusedRow().reason).toBe('invalid_tool_args');
+  });
+
   it('refuses a changed upstream schema at call time and removes the pin from tools/list', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant({ budget: { calls: 3 } }));
     upstreamTools[0] = {

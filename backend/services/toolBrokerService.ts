@@ -1123,6 +1123,15 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     // Validate the shape before reserving a budget slot; malformed requests
     // are refusals, not spendable calls.
     const parsedArgs = objectArgs(input.args);
+    if (definition.connectionType === 'hosted-mcp') {
+      // The pinned schema is the authority for top-level argument names. A
+      // vendor may accept new parameters before the catalogue is reviewed;
+      // do not let a seat send those parameters through an older pin.
+      const properties = definition.inputSchema.properties;
+      const allowed = properties && typeof properties === 'object' && !Array.isArray(properties)
+        ? Object.keys(properties) : [];
+      assertNoUnknown(parsedArgs, allowed);
+    }
 
     const irreversible = typeof definition.irreversible === 'function'
       ? definition.irreversible(parsedArgs)
