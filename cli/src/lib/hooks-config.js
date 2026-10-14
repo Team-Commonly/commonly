@@ -215,7 +215,16 @@ export const forwardHookEvent = async ({
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     if (preTool && body.permissionDecision === 'deny') {
-      stdout(JSON.stringify({ permissionDecision: 'deny', ...(body.reason ? { reason: body.reason } : {}) }));
+      // Claude Code reads a PreToolUse decision only from `hookSpecificOutput`. The top-level
+      // `{permissionDecision}` this printed before was ignored and the tool ran (measured on
+      // Claude Code 2.1.296, 2026-10-14, issue #2145).
+      stdout(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          ...(body.reason ? { permissionDecisionReason: body.reason } : {}),
+        },
+      }));
     }
     return body;
   } catch (error) {
