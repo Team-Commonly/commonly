@@ -17,6 +17,31 @@ shape. Sources at the bottom.
 | `req.body.x` (HTTP string)                     | Mongoose `_id` filter                    | [ObjectId.isValid + cast](#objectidisvalid--cast-the-canonical-objectid-sanitizer) |
 | Regex capture from message content             | Mongoose filter scalar OR `$in`          | [Avoid putting it in the query at all](#dont-put-user-tainted-strings-in-mongoose-filters-period) |
 | `req.params.id` already validated by middleware| Mongoose `_id` filter                    | [Still cast](#objectidisvalid--cast-the-canonical-objectid-sanitizer) — CodeQL won't trust the middleware |
+| A URL from a request, or one a user stored     | Server-side `fetch` / axios              | [Confine it to named hosts](#outbound-fetch-of-a-url-from-a-request) |
+
+---
+
+## Outbound fetch of a URL from a request
+
+A fetch made by the backend can reach anything the backend's network can,
+in-cluster services included. When the URL arrives from a request, go through
+`fetchTextFromAllowedHost` in `backend/services/outboundUrlGuard.ts`, and pass
+it a map from each host the feature needs to that host's constant origin
+(`'github.com' → 'https://github.com/'`). Each request is rebuilt on the
+mapped origin, so only the path and query come from the parsed URL. That
+rebuild is also what CodeQL's `js/request-forgery` query recognises. A host
+check followed by a fetch of the parsed URL is still reported (#2186). The
+guard allows only https on the default port, with no credentials in the URL.
+It follows redirects itself and rebuilds and checks every hop the same way, at
+most 5. It applies one deadline and a body cap. A refused URL throws an error
+that `isOutboundUrlRefused` recognises; map that to a 400 with fixed text, and
+keep the refused host in the log.
+
+First caller: skill import (`skillsCatalogService.ts`, hosts `github.com`,
+`raw.githubusercontent.com`, `api.github.com`). The guard is an allowlist only.
+A feature whose destinations cannot be listed in advance needs an address-range
+check that resolves DNS and pins the connection to the checked address. This
+module does not provide one.
 
 ---
 
