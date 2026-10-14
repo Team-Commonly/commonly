@@ -8,6 +8,8 @@
 
 **Amended 2026-10-09 (the next catalogue batch):** connector-ops measured seven vendors' public metadata (76914), and Wren ruled on them (76915–76917). Canva, Miro and ClickUp follow Airtable, then Todoist and Calendly, measured at capture (§10, step 8). Granola and Attio offer only an `mcp` scope, so neither gets an entry until it offers one that cannot write; a server with no write tool today does not meet §3's bar. A vendor that issues no refresh token needs `expires_in` in its token response, or its row goes to `error` on its first call (§4). Miro, not Calendly, is now the first entry with DCR and no CIMD, so its PR brings DCR's storage. Todoist's capture shows which scope it grants, since the callback refuses `data:read_write` on a `data:read` request (§10, step 8). A refused grant at an entry with only a revoke page stays at the vendor until the person removes it (§4). §4 now cites `credentialFor`, which has landed. The code this amendment cites is read at `main` `7d5d7928`.
 
+**Amended 2026-10-14 (TASK-196):** an entry may name an `audience`, the RFC 8707 resource its vendor's protected-resource metadata declares, apart from `resource`, the URL `tools/call` goes to (§3). Every authorization and token request carries the audience when the entry names one (§4). The entry load refuses an audience that does not cover the endpoint (§3, §10). Airtable's metadata names its bare origin, so its entry sets that as its audience and keeps `/mcp` as its endpoint (Wren, on the TASK-196 row). The code this amendment cites is read at `main` `38199b9a`.
+
 **In short, a hosted MCP server is a second tool source for the grants plan's §10, not a new connector.** It adds one new `Integration.type`, `hosted-mcp`, a per-person Connection (§10.1). Its tools come from a catalogue entry this repo pins, not from the hand-written map in `toolBrokerService.ts`. A member connects their own account through the vendor's authorization server. The broker holds the credential, a room grant scopes it, the vendor runs the tools, and the trail records who acted. Grants work as they do today: tiers, attenuation, budget, expiry, the confirmation floor, approval and the trail. What is new is who wrote the tool list, and most of this note is about that.
 
 In this note, `§10.x` means that section of [tools-catalogue-room-grants.md](tools-catalogue-room-grants.md), "the grants plan", and "the entry" means one catalogue entry (§3).
@@ -64,7 +66,8 @@ The two references are two new kinds in `connectorSecretKinds.ts` (`:65`), both 
 Entries live in this repo, one module per vendor, and change only by PR. An entry holds:
 
 - `id`, `title`;
-- `resource`: the MCP server URL, which is also the RFC 8707 resource;
+- `resource`: the MCP server URL, which `tools/call` is sent to;
+- `audience`, optional: the RFC 8707 resource, when the vendor's protected-resource metadata names one other than `resource` (below). Without it, `resource` is also the RFC 8707 resource;
 - `issuer`: the authorization server its protected-resource metadata names, checked at intake;
 - `client`: `pre-registered`, `cimd` or `dcr` (§4). A `pre-registered` entry names only the kind: its client's id and secret are instance config, never entry data (§4);
 - `scopes`: requested at authorization;
@@ -72,6 +75,10 @@ Entries live in this repo, one module per vendor, and change only by PR. An entr
 - `tools`: each with the name and description an agent sees, the upstream name, a class (`read` or `write`), `irreversible`, a pinned `inputSchema`, and the upstream annotations as seen when the tool was pinned.
 
 Entry ids are checked at load against both the hosted catalogue and the builtin tool Installable ids. They are map keys in the catalogue projection; reusing `github` would replace the GitHub App's metadata and readiness gate. `assertHostedMcpEntries` accepts the reserved-id set from `toolInstallables.ts`, which owns both maps and avoids an import cycle. The named tests prove both the collision refusal and the empty-set control.
+
+**An entry's `audience` is the resource its vendor declares.** The protected-resource metadata at Linear, Atlassian and Google Calendar names each entry's `resource` exactly, at the document built from it (fetched 2026-10-14), so those entries name no `audience`. Airtable's names its bare origin. Its root document, `/.well-known/oauth-protected-resource`, names `https://mcp.airtable.com`. Its `/mcp` document names the same origin, and RFC 9728 tells a client not to use a document whose `resource` differs from the identifier its URL was built from (§3.3). So the origin is the only resource Airtable declares (both fetched 2026-10-14). #2117's capture was granted a token when the request named the origin, and when it named no resource; a request naming `/mcp` has not been measured. Airtable's entry therefore sets `audience` to the origin and keeps `/mcp` as `resource` (Wren, on the TASK-196 row). The entry writes the audience as the metadata does, with no trailing slash, and the intake sends that string unchanged. The sweep of 2026-10-13 found the same split at Otter, Evernote and Front (TASK-196), so it is a field, not an exception for one vendor. Like the rest of the entry, the audience changes only by PR; intake never fetches the metadata.
+
+**The entry load refuses an `audience` that does not cover the URL its token is presented to.** It must be an https URL with the same origin as `resource`, and its path must prefix `resource`'s on a segment boundary: `/` and `/mcp` cover `/mcp`; `/m` and `/other` do not. The port is part of the origin, so a port-only difference is refused. The check runs whenever the key is present, not only when its value is truthy, so an empty `audience` is refused rather than sent (Vera 77023). This rule is what keeps the host a token is minted for the host `tools/call` sends it to. Loosening it to a shared domain or a suffix match would change where a bearer token can go, not just how an entry is written (Vera 77023, 77025).
 
 **`revoke` names its kind because the URL cannot.** Both are https URLs, and only the `endpoint` key decides whether removal calls the vendor (§9). A page that answered that call with 200 would read as a revoke that never happened. A 200 proves no more at a real endpoint, which answers 200 "if the token has been revoked successfully or if the client submitted an invalid token" (RFC 7009 §2.2). Every entry names a page, an entry with an endpoint included, because a removal that cannot revoke at the vendor hands the person that page (§9). So the entry load refuses an entry with no page, a key other than those two, or a URL that is not https, and step 7 (§10) shows the revoke took by something other than its status.
 
@@ -111,7 +118,7 @@ Upstream tools that are not in the entry are never offered and never callable, a
 
 ## 4. Credentials and intake
 
-**The order is a pre-registered client where the vendor requires one, then a Client ID Metadata Document (CIMD), then Dynamic Client Registration only as a fallback.** The MCP authorization spec (2026-07-28) says DCR "is deprecated and retained for backwards compatibility with authorization servers that do not support Client ID Metadata Documents". Every authorization request and token request carries RFC 8707 `resource`, set to the entry's `resource`. The spec says it "MUST be included in both authorization requests and token requests" and "MUST identify the MCP server".
+**The order is a pre-registered client where the vendor requires one, then a Client ID Metadata Document (CIMD), then Dynamic Client Registration only as a fallback.** The MCP authorization spec (2026-07-28) says DCR "is deprecated and retained for backwards compatibility with authorization servers that do not support Client ID Metadata Documents". Every authorization request and token request carries RFC 8707 `resource`, set to the entry's `audience` when it names one and to its `resource` otherwise (§3): authorization, code exchange and refresh (`hostedMcpIntakeService.ts:349`, `:448`, `:467`). The spec says it "MUST be included in both authorization requests and token requests" and "MUST identify the MCP server".
 
 **Linear uses CIMD.** Its authorization server metadata (fetched 2026-09-27 from `https://mcp.linear.app/.well-known/oauth-authorization-server`) advertises:
 
@@ -291,12 +298,13 @@ Each step can be tested without the vendor, except the live measurements in step
    - `a pinned tool whose schema changed upstream is refused tool_drift`
    - `a read pin carrying no readOnlyHint is refused`, with #2014's other entry-time refusals (§3)
    - the annotation arms (§3): a `destructiveHint: false` gone silent is `tool_drift`; a pin that recorded `readOnlyHint: true` whose tool now also says `destructiveHint: true` is `tool_drift`; a pin that recorded both claims, against that same tool, is refused naming the `destructiveHint: false` it lost; a `destructiveHint: true` newly spelled on a `write` pin that recorded neither claim is `ok`
+   - `an entry whose audience is empty, not https, of another origin, or a path that does not prefix the resource's on a segment boundary is refused at load`, with a port-only difference and a same-origin sibling path among its arms (§3)
 3. **Intake.** The CIMD document, start and callback.
    - `the callback refuses a state it did not issue, a used state and an expired state`
    - `the callback refuses a valid state from a browser that did not start the flow, and the flow stays pending`, with no cookie, with another flow's cookie, and on a row that stores no nonce
    - `a throttled callback lands on the page with rate_limited`, as every other outcome does
    - `the callback refuses an iss that is not the entry's issuer`
-   - `every authorization and token request carries the entry's resource`
+   - `every authorization and token request carries the entry's audience, or its resource when it names none, and tools/call still goes to the resource`
    - `a reconnect as a different provider account revokes every grant on the row`
    - The old account's withdrawal (§2), in its own PR after Linear, which gates no entry. The same PR corrects the comment on the callback's drop (§4).
      - `a reconnect as a different provider account withdraws the old account's token at the vendor, not the new one`, which goes red when the read moves below the first `connectorSecrets.put` (Vera 76175)
