@@ -11,6 +11,7 @@
  */
 const {
   HOSTED_MCP_CALL_TIMEOUT_MS,
+  createHostedMcpRuntimeDriftCache,
   hostedToolDefinitions,
   findHostedToolDefinition,
 } = require('../../../services/hostedMcpToolDefinitions');
@@ -68,6 +69,11 @@ const makeDeps = (overrides = {}) => ({
   })),
   credentialFor: jest.fn(async () => ({ token: 'access-token-1' })),
   newCallId: () => 'call-1',
+  driftCache: {
+    assess: jest.fn(async (_row, entry) => ({
+      state: 'assessed', entryId: entry.id, tools: entry.tools.map((tool) => ({ name: tool.name, verdict: 'ok' })),
+    })),
+  },
   ...overrides,
 });
 
@@ -83,6 +89,54 @@ const expectRefusal = async (promise, code) => {
 };
 
 describe('hosted-MCP tool definitions', () => {
+  it('refuses a drifted pin inside callHostedTool before tools/call', async () => {
+    const deps = makeDeps({
+      fetcher: jest.fn(async () => jsonResponse({
+        jsonrpc: '2.0', id: 'list-1', result: { tools: [{
+          name: 'list_issues',
+          inputSchema: { type: 'object', properties: { extra: { type: 'string' } } },
+        }] },
+      })),
+    });
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'tool_drift');
+    expect(deps.fetcher).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(deps.fetcher.mock.calls[0][1].body).method).toBe('tools/list');
+  });
+
+  it('reads every tools/list page before deciding a pinned tool is missing', async () => {
+    const deps = makeDeps();
+    deps.fetcher = jest.fn(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      if (body.method === 'tools/call') return jsonResponse(okReply);
+      if (!body.params.cursor) return jsonResponse({
+        jsonrpc: '2.0', id: 'list-1', result: { tools: [], nextCursor: 'page-2' },
+      });
+      return jsonResponse({
+        jsonrpc: '2.0', id: 'list-2', result: { tools: [{
+          name: 'list_issues', inputSchema: ENTRY.tools[0].inputSchema,
+        }] },
+      });
+    });
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual(okReply.result);
+    const methods = deps.fetcher.mock.calls.map(([, init]) => JSON.parse(init.body).method);
+    expect(methods).toEqual(['tools/list', 'tools/list', 'tools/call']);
+    expect(JSON.parse(deps.fetcher.mock.calls[1][1].body).params.cursor).toBe('page-2');
+  });
+
+  it('classifies malformed tools/list JSON as a vendor error before tools/call', async () => {
+    const deps = makeDeps({
+      fetcher: jest.fn(async () => new Response('{', {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })),
+    });
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
+    expect(deps.fetcher).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(deps.fetcher.mock.calls[0][1].body).method).toBe('tools/list');
+  });
+
   it('offers nothing when the catalogue is empty, and one definition per pinned tool otherwise', () => {
     expect(hostedToolDefinitions([], makeDeps())).toHaveLength(0);
     const definitions = hostedToolDefinitions([ENTRY], makeDeps());

@@ -329,6 +329,23 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
     expect(fetches).toBe(2);
   });
 
+  test('an expired clean assessment is not used after a tools/list failure', async () => {
+    let clock = 1000;
+    let fetches = 0;
+    const drift = cache(async () => {
+      fetches += 1;
+      if (fetches > 1) throw new Error('vendor unavailable');
+      return upstreamOk();
+    }, { now: () => clock });
+
+    expect((await drift.assess(row, linear())).state).toBe('assessed');
+    clock += 5 * 60 * 1000;
+    const failed = await drift.assess(row, linear());
+    expect(failed).toMatchObject({ state: 'provider_unavailable' });
+    expect(failed.tools).toBeUndefined();
+    expect(fetches).toBe(2);
+  });
+
   test('forgetting a row drops only that row', async () => {
     const seen = [];
     const drift = cache(async (r) => {
@@ -341,6 +358,24 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
     await drift.assess(row, linear());
     await drift.assess({ connectionId: 'row-b' }, linear());
     expect(seen).toEqual(['row-a', 'row-b', 'row-a']);
+  });
+
+  test('a tools/list started before reconnect cannot refill the forgotten assessment', async () => {
+    let finishOldList;
+    let fetches = 0;
+    const drift = cache(async () => {
+      fetches += 1;
+      if (fetches === 1) return new Promise((resolve) => { finishOldList = resolve; });
+      return upstreamOk();
+    });
+    const oldAssessment = drift.assess(row, linear());
+    drift.forget(row);
+    finishOldList(upstreamOk());
+    await expect(oldAssessment).resolves.toMatchObject({ state: 'provider_unavailable' });
+    await expect(drift.assess(row, linear())).resolves.toMatchObject({
+      state: 'assessed', cached: false,
+    });
+    expect(fetches).toBe(2);
   });
 });
 
