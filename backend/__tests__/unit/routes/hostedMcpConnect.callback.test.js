@@ -44,6 +44,11 @@ jest.mock('../../../models/Integration', () => ({
   findOne: jest.fn(),
   findOneAndUpdate: jest.fn(),
 }));
+jest.mock('../../../services/hostedMcpDcrRegistry', () => ({
+  ensureDcrClient: jest.fn(),
+  dcrClientForRow: jest.fn(),
+  refuseDcrClient: jest.fn(),
+}));
 
 jest.mock('../../../services/connectorSecrets', () => ({
   put: jest.fn(),
@@ -64,6 +69,7 @@ const connectorSecrets = require('../../../services/connectorSecrets');
 const { revokeConnectionGrants } = require('../../../services/roomGrantService');
 const { undeclaredPaths } = require('../../utils/schemaPathGuard');
 const intake = require('../../../services/hostedMcpIntakeService');
+const dcr = require('../../../services/hostedMcpDcrRegistry');
 
 const { HOSTED_MCP_ENTRIES: SHIPPED_ENTRIES } = jest.requireActual('../../../integrations/hostedMcp/entries');
 const LINEAR_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
@@ -127,6 +133,7 @@ const okTokenResponse = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  FIXTURE_ENTRY.client = 'cimd';
   delete FIXTURE_ENTRY.revoke.endpoint;
   connectorSecrets.get.mockReset();
   connectorSecrets.put.mockReset();
@@ -175,6 +182,39 @@ const outcome = (res) => {
 const scopeSet = (scope) => new Set(String(scope).split(/[\s,]+/).filter(Boolean));
 
 describe('hosted-mcp connect: callback', () => {
+  it('exchanges with the client snapshotted at start even after registration rotation', async () => {
+    FIXTURE_ENTRY.client = 'dcr';
+    setStoredRow({ pendingAuth: {
+      state: 'st-1', codeVerifier: 'verifier-1',
+      expiresAt: new Date(Date.now() + 60000), browserNonce: 'browser-1',
+      clientId: 'retired-public-client',
+    } });
+    dcr.dcrClientForRow.mockResolvedValue({ clientId: 'retired-public-client' });
+    const res = await callback();
+    expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'connected', code: null });
+    expect(dcr.dcrClientForRow).toHaveBeenCalledWith(FIXTURE_ENTRY, 'retired-public-client');
+    expect(new URLSearchParams(global.fetch.mock.calls[0][1].body).get('client_id'))
+      .toBe('retired-public-client');
+    expect(Integration.findOneAndUpdate.mock.calls[1][1].$set['config.clientId'])
+      .toBe('retired-public-client');
+  });
+
+  it('refuses an invalid DCR client and retires only that registration', async () => {
+    FIXTURE_ENTRY.client = 'dcr';
+    setStoredRow({ pendingAuth: {
+      state: 'st-1', codeVerifier: 'verifier-1',
+      expiresAt: new Date(Date.now() + 60000), browserNonce: 'browser-1',
+      clientId: 'refused-public-client',
+    } });
+    dcr.dcrClientForRow.mockResolvedValue({ clientId: 'refused-public-client' });
+    global.fetch.mockResolvedValue({
+      ok: false, status: 401, json: async () => ({ error: 'invalid_client' }),
+    });
+    const res = await callback();
+    expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'client_auth_refused' });
+    expect(dcr.refuseDcrClient).toHaveBeenCalledWith(FIXTURE_ENTRY, 'refused-public-client');
+    expect(connectorSecrets.put).not.toHaveBeenCalled();
+  });
   it('the captured Linear, Atlassian and Airtable grants match their requested scope sets', () => {
     const captures = [
       [LINEAR_SCOPE_CAPTURE, 'scope'],

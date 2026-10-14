@@ -43,6 +43,11 @@ jest.mock('../../../middleware/integrationRateLimit', () => ({
 }));
 
 jest.mock('../../../models/Integration', () => ({ findOneAndUpdate: jest.fn() }));
+jest.mock('../../../services/hostedMcpDcrRegistry', () => ({
+  ensureDcrClient: jest.fn(),
+  dcrClientForRow: jest.fn(),
+  refuseDcrClient: jest.fn(),
+}));
 
 const request = require('supertest');
 const express = require('express');
@@ -51,6 +56,7 @@ const connectRoutes = require('../../../routes/hostedMcpConnect');
 const Integration = require('../../../models/Integration');
 const { undeclaredPaths } = require('../../utils/schemaPathGuard');
 const intake = require('../../../services/hostedMcpIntakeService');
+const dcr = require('../../../services/hostedMcpDcrRegistry');
 
 const app = express();
 app.use('/connect/hosted-mcp', connectRoutes);
@@ -71,6 +77,7 @@ beforeEach(() => {
   mockAuthedUser = { id: 'user-1' };
   intake.discoverAuthorizationServer.mockResolvedValue(AS_METADATA);
   Integration.findOneAndUpdate.mockResolvedValue({ _id: 'integration-1' });
+  FIXTURE_ENTRY.client = 'cimd';
 });
 
 describe('hosted-mcp connect: the client metadata document', () => {
@@ -122,6 +129,19 @@ describe('hosted-mcp connect: the client metadata document', () => {
 });
 
 describe('hosted-mcp connect: start', () => {
+  it('uses and snapshots the one registered DCR client for authorization', async () => {
+    FIXTURE_ENTRY.client = 'dcr';
+    dcr.ensureDcrClient.mockResolvedValue({ clientId: 'registered-public-client' });
+    const res = await start();
+    expect(res.status).toBe(200);
+    expect(dcr.ensureDcrClient).toHaveBeenCalledWith(
+      FIXTURE_ENTRY, AS_METADATA,
+      'https://api.commonly.me/api/integrations/connect/hosted-mcp/linear/callback',
+    );
+    expect(new URL(res.body.authorizeUrl).searchParams.get('client_id')).toBe('registered-public-client');
+    expect(Integration.findOneAndUpdate.mock.calls[0][1].$set['config.pendingAuth'].clientId)
+      .toBe('registered-public-client');
+  });
   it('sends the member to the vendor with the entry\'s own resource and a fresh state', async () => {
     const res = await start();
     expect(res.status).toBe(200);

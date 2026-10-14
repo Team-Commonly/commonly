@@ -85,6 +85,47 @@ const remove = (row, deps, revokeGrants) => removeConnection({
 });
 
 describe('removeConnection (a hosted-MCP row)', () => {
+  it('revokes a retired DCR row with its recorded client rather than the current registration', async () => {
+    const dcrEntry = { ...ENTRY, client: 'dcr' };
+    const { deps, revokeGrants } = recorder({ entryFor: () => dcrEntry });
+    deps.dcrClientForRow = jest.fn(async () => ({ clientId: 'retired-client' }));
+    deps.clientIdFor = jest.fn(() => 'new-current-client');
+    const row = hostedRow({ config: {
+      entryId: 'linear', clientId: 'retired-client',
+      credentialRef: 'access-ref', refreshTokenRef: 'refresh-ref',
+    } });
+    const result = await remove(row, deps, revokeGrants);
+    expect(result.removed).toBe(true);
+    expect(deps.dcrClientForRow).toHaveBeenCalledWith(dcrEntry, 'retired-client');
+    expect(deps.revokeAtVendor).toHaveBeenCalledWith(expect.objectContaining({ clientId: 'retired-client' }));
+    expect(deps.clientIdFor).not.toHaveBeenCalled();
+  });
+
+  it('removes a refused DCR row locally and returns the vendor page without sending its token', async () => {
+    const dcrEntry = { ...ENTRY, client: 'dcr' };
+    const { deps, revokeGrants } = recorder({ entryFor: () => dcrEntry });
+    deps.dcrClientForRow = jest.fn(async () => null);
+    const result = await remove(hostedRow(), deps, revokeGrants);
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(deps.secrets.get).not.toHaveBeenCalled();
+    expect(deps.revokeAtVendor).not.toHaveBeenCalled();
+    expect(deps.remove).toHaveBeenCalled();
+  });
+
+  it('finishes locally when the vendor rejects a DCR revocation as invalid_client', async () => {
+    const dcrEntry = { ...ENTRY, client: 'dcr' };
+    const { deps, revokeGrants } = recorder({ entryFor: () => dcrEntry });
+    deps.dcrClientForRow = jest.fn(async () => ({ clientId: 'refused-client' }));
+    deps.revokeAtVendor = jest.fn(async () => { throw codedError('invalid_client'); });
+    const result = await remove(hostedRow({ config: {
+      entryId: 'linear', clientId: 'refused-client',
+      credentialRef: 'access-ref', refreshTokenRef: 'refresh-ref',
+    } }), deps, revokeGrants);
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(deps.markProviderRevoked).not.toHaveBeenCalled();
+    expect(deps.secrets.revoke).toHaveBeenCalledWith('refresh-ref');
+    expect(deps.remove).toHaveBeenCalled();
+  });
   it('runs grants, row, provider, mark, material, delete in that order', async () => {
     const { calls, deps, revokeGrants } = recorder();
     const result = await remove(hostedRow(), deps, revokeGrants);
@@ -482,6 +523,25 @@ describe('a row whose entry is gone', () => {
 });
 
 describe('revokeTokenAtVendor (RFC 7009)', () => {
+  it('marks only the refused DCR client when the vendor returns invalid_client', async () => {
+    const registry = require('../../../services/hostedMcpDcrRegistry');
+    const refuse = jest.spyOn(registry, 'refuseDcrClient').mockResolvedValue();
+    const dcrEntry = { ...ENTRY, client: 'dcr' };
+    const fetchImpl = jest.fn(async () => ({
+      ok: false, status: 401, json: async () => ({ error: 'invalid_client' }),
+    }));
+    try {
+      await expect(revokeTokenAtVendor({
+        entry: dcrEntry, clientId: 'retired-client', token: 'held-token',
+        tokenTypeHint: 'refresh_token',
+      }, fetchImpl)).rejects.toMatchObject({ code: 'invalid_client' });
+      expect(refuse).toHaveBeenCalledWith(dcrEntry, 'retired-client');
+      expect(new URLSearchParams(fetchImpl.mock.calls[0][1].body).get('client_id'))
+        .toBe('retired-client');
+    } finally {
+      refuse.mockRestore();
+    }
+  });
   const call = (response) => {
     const fetchImpl = jest.fn(async () => response);
     return {

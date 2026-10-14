@@ -58,6 +58,7 @@ import {
 } from './hostedMcpIntakeService';
 import * as connectorSecrets from './connectorSecrets';
 import { upstreamFetch } from './upstreamFetch';
+import { dcrClientForRow, refuseDcrClient } from './hostedMcpDcrRegistry';
 
 export const HOSTED_MCP_TYPE = 'hosted-mcp';
 
@@ -102,6 +103,7 @@ export interface RemovalDeps {
   entryFor: (connection: RemovableConnection) => HostedMcpEntry | null;
   clientIdFor: (entry: HostedMcpEntry) => string;
   clientSecretFor: (entry: HostedMcpEntry) => string | undefined;
+  dcrClientForRow: typeof dcrClientForRow;
   /** Step 3. Resolves when the authorization is gone; throws when it may still be live. */
   revokeAtVendor: (input: {
     entry: HostedMcpEntry;
@@ -194,6 +196,15 @@ export const revokeTokenAtVendor = async (input: {
     body: request.body,
   }, fetchImpl);
   if (response.ok) return;
+  if (input.entry.client === 'dcr') {
+    const refusal = await response.json().catch(() => null) as { error?: unknown } | null;
+    if (refusal?.error === 'invalid_client') {
+      await refuseDcrClient(input.entry, input.clientId);
+      const error = new Error('provider refused the registered client');
+      Object.assign(error, { code: 'invalid_client' });
+      throw error;
+    }
+  }
   throw new Error(`provider revoke refused: HTTP ${response.status}`);
 };
 
@@ -217,6 +228,7 @@ export const defaultDeps = (): RemovalDeps => ({
   ) || null,
   clientIdFor: (entry) => resolvedClientId(entry),
   clientSecretFor: (entry) => resolvedClientSecret(entry),
+  dcrClientForRow,
   revokeAtVendor: (input) => revokeTokenAtVendor(input),
   secrets: connectorSecrets,
   remove: async (id) => {
@@ -305,12 +317,19 @@ export const removeConnection = async (options: {
     let clientSecret: string | undefined;
     let clientMatches = true;
     try {
-      clientId = deps.clientIdFor(entry);
-      // During the first rollout legacy rows have no snapshot. The backfill
-      // runs after the new callback is live, so those rows still use the
-      // current Linear client until the snapshot is populated.
-      clientMatches = !recordedClientId || clientId === recordedClientId;
-      if (clientMatches) clientSecret = deps.clientSecretFor(entry);
+      if (entry.client === 'dcr') {
+        const recorded = await deps.dcrClientForRow(entry, recordedClientId);
+        clientMatches = Boolean(recorded);
+        clientId = recorded?.clientId;
+        clientSecret = recorded?.clientSecret;
+      } else {
+        clientId = deps.clientIdFor(entry);
+        // During the first rollout legacy rows have no snapshot. The backfill
+        // runs after the new callback is live, so those rows still use the
+        // current Linear client until the snapshot is populated.
+        clientMatches = !recordedClientId || clientId === recordedClientId;
+        if (clientMatches) clientSecret = deps.clientSecretFor(entry);
+      }
     } catch (error) {
       if ((error as { code?: string })?.code === 'client_not_configured') {
         clientMatches = false;
@@ -369,20 +388,27 @@ export const removeConnection = async (options: {
             tokenTypeHint,
           });
         } catch (error) {
-          // Steps 4 and 5 do not run. The row stays `disconnected` with both
-          // references intact, and a retry still holds the token to send.
-          return {
-            removed: false,
-            code: 'provider_revoke_failed',
-            message: (error as { message?: string })?.message || 'provider revoke failed',
-            grantsRevoked,
-            revokeAt: revokePage,
-          };
+          if (entry.client === 'dcr' && (error as { code?: string })?.code === 'invalid_client') {
+            // No usable client remains with which to revoke this token. The
+            // registration is refused, so retries cannot change that result.
+            // Finish locally and hand the person the vendor's revocation page.
+            clientMatches = false;
+          } else {
+            // Steps 4 and 5 do not run. The row stays `disconnected` with both
+            // references intact, and a retry still holds the token to send.
+            return {
+              removed: false,
+              code: 'provider_revoke_failed',
+              message: (error as { message?: string })?.message || 'provider revoke failed',
+              grantsRevoked,
+              revokeAt: revokePage,
+            };
+          }
         }
 
         // The provider revoke took. Record it BEFORE any material goes, so a
         // crash here leaves a row the retry finishes by skipping the vendor.
-        await deps.markProviderRevoked(id, deps.now());
+        if (clientMatches) await deps.markProviderRevoked(id, deps.now());
       }
     }
   }

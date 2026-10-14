@@ -182,7 +182,7 @@ export interface IIntegration extends Document {
     refreshGeneration?: number;
     refreshingUntil?: Date;
     credentialHint?: string;
-    pendingAuth?: { state?: string; codeVerifier?: string; expiresAt?: Date };
+    pendingAuth?: { state?: string; codeVerifier?: string; expiresAt?: Date; clientId?: string };
   };
   ingestTokens: IIngestToken[];
   lastSync?: Date | null;
@@ -366,7 +366,7 @@ const IntegrationSchema = new Schema<IIntegration>(
         },
       },
       intake: String, // 'oauth' is the only intake for this type
-      clientId: String, // id that minted this pair; comparison snapshot, never used for calls (§2)
+      clientId: String, // id that minted this pair; DCR rows resolve this against held registrations
       providerSubject: String, // the authorization server's stable id for the account
       grantedScope: String, // the token response's `scope`: what the person consented to
       expiresAt: Date, // the access token's expiry, when the AS states one
@@ -403,6 +403,7 @@ const IntegrationSchema = new Schema<IIntegration>(
         state: String,
         codeVerifier: String,
         expiresAt: Date,
+        clientId: String, // client that minted this code, including across registration rotation
         // The browser-bound half of the flow (§10.7): `state` proves the flow
         // exists, this proves the browser finishing it is the one that started
         // it. Declared here because this subdocument is STRICT — an undeclared

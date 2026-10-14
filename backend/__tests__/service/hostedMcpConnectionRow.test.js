@@ -62,6 +62,7 @@ const RECORD_KEYS = {
   'config.revokePage': 'https://linear.app/settings/security',
   'config.pendingAuth.state': 'state-1',
   'config.pendingAuth.codeVerifier': 'verifier-1',
+  'config.pendingAuth.clientId': 'registered-public-client',
   'config.pendingAuth.expiresAt': new Date('2026-09-27T14:30:00.000Z'),
 };
 

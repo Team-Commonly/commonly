@@ -23,6 +23,7 @@ const auth = require('../middleware/auth');
 import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { upstreamFetch } from '../services/upstreamFetch';
+import { dcrClientForRow, ensureDcrClient, refuseDcrClient } from '../services/hostedMcpDcrRegistry';
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
@@ -245,12 +246,14 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
     return res.status(404).json({ error: 'unknown_entry' });
   }
 
-  let client: { clientId: string; clientSecret?: string };
-  try {
-    client = resolvedHostedMcpClient(entry);
-  } catch (error) {
-    const code = (error as { code?: string }).code;
-    return res.status(vendorFailureStatus(code)).json({ error: code });
+  let client: { clientId: string; clientSecret?: string } | null = null;
+  if (entry.client !== 'dcr') {
+    try {
+      client = resolvedHostedMcpClient(entry);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      return res.status(vendorFailureStatus(code)).json({ error: code || 'client_not_configured' });
+    }
   }
 
   let authorizationServer: HostedMcpAuthorizationServer;
@@ -260,6 +263,16 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
     const code = (error as { code?: string }).code;
     return res.status(vendorFailureStatus(code)).json({ error: code });
   }
+
+  try {
+    if (entry.client === 'dcr') {
+      client = await ensureDcrClient(entry, authorizationServer, hostedMcpCallbackUrl(entry.id));
+    }
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    return res.status(vendorFailureStatus(code)).json({ error: code || 'client_registration_refused' });
+  }
+  if (!client) return res.status(503).json({ error: 'client_not_configured' });
 
   const { verifier, challenge } = createPkcePair();
   const state = createStateNonce();
@@ -278,7 +291,7 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
     {
       $set: {
         'config.intake': 'oauth',
-        'config.pendingAuth': { state, codeVerifier: verifier, expiresAt, browserNonce },
+        'config.pendingAuth': { state, codeVerifier: verifier, expiresAt, browserNonce, clientId: client.clientId },
       },
       $setOnInsert: {
         type: 'hosted-mcp',
@@ -406,7 +419,13 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
 
   let client: { clientId: string; clientSecret?: string };
   try {
-    client = resolvedHostedMcpClient(entry);
+    if (entry.client === 'dcr') {
+      const recorded = await dcrClientForRow(entry, consumed.config?.pendingAuth?.clientId);
+      if (!recorded) return callbackRedirect(res, 'error', 'client_auth_refused');
+      client = recorded;
+    } else {
+      client = resolvedHostedMcpClient(entry);
+    }
   } catch (error) {
     return callbackRedirect(res, 'error', (error as { code?: string }).code || 'client_not_configured');
   }
@@ -430,6 +449,7 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
     if (!response.ok) {
       const refusal = await response.json().catch(() => null) as { error?: unknown } | null;
       if (refusal?.error === 'invalid_client') {
+        await refuseDcrClient(entry, client.clientId);
         return callbackRedirect(res, 'error', 'client_auth_refused');
       }
       return callbackRedirect(res, 'error', 'exchange_refused');
@@ -498,7 +518,10 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
   } else if (hasPreviousCredential && subjectChanged) {
     const revokeTarget = hostedMcpRevokeTarget(entry);
     const recordedClientId = consumed.config?.clientId;
-    const clientMatches = !recordedClientId || recordedClientId === client.clientId;
+    const previousClient = entry.client === 'dcr'
+      ? await dcrClientForRow(entry, recordedClientId)
+      : (!recordedClientId || recordedClientId === client.clientId ? client : null);
+    const clientMatches = Boolean(previousClient);
     const previousTokenRef = consumed.config?.refreshTokenRef || consumed.config?.credentialRef;
     let withdrawn = false;
 
@@ -517,8 +540,8 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
         try {
           await revokeTokenAtVendor({
             entry,
-            clientId: client.clientId,
-            ...(client.clientSecret ? { clientSecret: client.clientSecret } : {}),
+            clientId: previousClient!.clientId,
+            ...(previousClient!.clientSecret ? { clientSecret: previousClient!.clientSecret } : {}),
             token: previousToken,
             tokenTypeHint: consumed.config?.refreshTokenRef ? 'refresh_token' : 'access_token',
           });
