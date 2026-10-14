@@ -853,6 +853,20 @@ describe('hosted-mcp connect: callback', () => {
     expect(Integration.findOne).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['access_denied', 'consent_denied'],
+    ['temporarily_unavailable', 'vendor_error'],
+  ])('maps vendor error %s to fixed code %s without spending the pending flow', async (vendorError, expectedCode) => {
+    const query = `state=st-1&error=${vendorError}&error_description=${encodeURIComponent('<img src=x onerror=alert(1)>')}`;
+    const res = await callback(query);
+    expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: expectedCode });
+    expect(res.headers.location).not.toContain('error_description');
+    expect(res.headers.location).not.toContain('img');
+    expect(Integration.findOne).not.toHaveBeenCalled();
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it('reports a refused exchange as a vendor outcome, not as a connected row', async () => {
     global.fetch.mockResolvedValue({ ok: false, status: 400, json: async () => ({}) });
     const res = await callback();
@@ -861,6 +875,16 @@ describe('hosted-mcp connect: callback', () => {
     // The commit never ran: a row still carrying the old credential must not be
     // relabelled from a failed exchange.
     expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('names invalid_client separately from a provider outage', async () => {
+    global.fetch.mockResolvedValue({
+      ok: false, status: 401, json: async () => ({ error: 'invalid_client', error_description: 'vendor text' }),
+    });
+    const res = await callback();
+    expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'client_auth_refused' });
+    expect(res.headers.location).not.toContain('vendor text');
+    expect(connectorSecrets.put).not.toHaveBeenCalled();
   });
 
   it('reports an exchange that returned no token as incomplete, not as connected', async () => {

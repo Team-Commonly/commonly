@@ -13,6 +13,7 @@ import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
 import V2ConnectorTools, { type HostedMcpManualRevokeNotice } from './V2ConnectorTools';
+import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 
 interface ConnectorGate {
@@ -385,11 +386,13 @@ const V2ConnectorsPage: React.FC = () => {
   // Consume the callback result after displaying a fixed notice.
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
-    if (query.get('hostedMcp') !== 'error' || query.get('code') !== 'unrequested_scope') return;
-    setHostedMcpCallbackError(t('connectors.hostedMcpUnrequestedScope'));
+    if (query.get('hostedMcp') !== 'error') return;
+    setHostedMcpCallbackError(hostedMcpErrorNotice(t, query.get('code')));
     query.delete('hostedMcp');
     query.delete('code');
     query.delete('extraScope');
+    query.delete('error');
+    query.delete('error_description');
     const remaining = query.toString();
     window.history.replaceState(
       window.history.state,

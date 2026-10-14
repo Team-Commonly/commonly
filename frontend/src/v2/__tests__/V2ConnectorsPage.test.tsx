@@ -687,15 +687,37 @@ describe('V2ConnectorsPage', () => {
     expect(screen.queryByText('unrequested_scope')).toBeNull();
   });
 
-  it('does not treat a different hosted-MCP callback code as an unrequested-scope refusal', () => {
-    window.history.replaceState({}, '', '/v2/connectors?hostedMcp=error&code=exchange_refused');
+  it.each([
+    ['unknown_entry', 'hostedMcpUnknownEntry'],
+    ['invalid_state', 'hostedMcpInvalidState'],
+    ['state_expired', 'hostedMcpInvalidState'],
+    ['state_consumed', 'hostedMcpInvalidState'],
+    ['browser_mismatch', 'hostedMcpInvalidState'],
+    ['issuer_mismatch', 'hostedMcpInvalidState'],
+    ['consent_denied', 'hostedMcpConsentDenied'],
+    ['vendor_error', 'hostedMcpVendorError'],
+    ['rate_limited', 'hostedMcpRateLimited'],
+    ['issuer_unreachable', 'hostedMcpIssuerUnavailable'],
+    ['issuer_metadata_incomplete', 'hostedMcpIssuerUnavailable'],
+    ['client_not_configured', 'hostedMcpClientSetup'],
+    ['client_registration_required', 'hostedMcpClientSetup'],
+    ['client_auth_unsupported', 'hostedMcpClientSetup'],
+    ['client_auth_refused', 'hostedMcpClientSetup'],
+    ['authorization_parameter_conflict', 'hostedMcpClientSetup'],
+    ['exchange_refused', 'hostedMcpExchangeRefused'],
+    ['exchange_unreachable', 'hostedMcpExchangeUnreachable'],
+    ['exchange_incomplete', 'hostedMcpExchangeIncomplete'],
+    ['exchange_invalid_scope', 'hostedMcpExchangeIncomplete'],
+    ['unrequested_scope', 'hostedMcpUnrequestedScope'],
+    ['authentication_required', 'hostedMcpAuthenticationRequired'],
+  ])('shows a fixed notice for hosted-MCP code %s and consumes the query', async (code, noticeKey) => {
+    window.history.replaceState({}, '', `/v2/connectors?hostedMcp=error&code=${code}&error_description=spoofed`);
     mockGets([]);
     renderPage();
 
-    expect(screen.queryByText(
-      "The provider granted access Commonly didn’t ask for, so the connection wasn’t saved.",
-    )).toBeNull();
-    expect(window.location.search).toBe('?hostedMcp=error&code=exchange_refused');
+    expect(await screen.findByRole('alert')).toHaveTextContent(en.connectors[noticeKey]);
+    expect(window.location.search).toBe('');
+    expect(screen.queryByText(/spoofed/)).toBeNull();
   });
 
   it('reloads connectors after a successful Slack callback and clears its query', async () => {

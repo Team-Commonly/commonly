@@ -679,3 +679,23 @@ test('step 7: the page\'s call to start a hosted connect is credentialed', async
     open.mockRestore();
   }
 });
+
+test('a hosted connect start error uses fixed copy instead of response text', async () => {
+  mockApi([{ ...linearEntry, connections: [] }]);
+  axios.post.mockRejectedValue({
+    response: { data: { error: 'client_not_configured', message: 'spoofed vendor text' } },
+  });
+  const opened = { opener: null, location: { assign: jest.fn() }, close: jest.fn() };
+  const open = jest.spyOn(window, 'open').mockReturnValue(opened as never);
+  try {
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This connector’s sign-in setup needs attention. Ask an administrator to check it.',
+    );
+    expect(screen.queryByText(/spoofed vendor text/)).toBeNull();
+    expect(opened.close).toHaveBeenCalled();
+  } finally {
+    open.mockRestore();
+  }
+});
