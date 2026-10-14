@@ -59,6 +59,8 @@ import * as connectorSecrets from './connectorSecrets';
 import { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } from './connectorSecretKinds';
 import { upstreamFetch } from './upstreamFetch';
 import { dcrClientForRow, refuseDcrClient } from './hostedMcpDcrRegistry';
+import { HostedMcpCredentialError } from './hostedMcpCredentialError';
+export { HostedMcpCredentialError, type HostedMcpCredentialErrorCode } from './hostedMcpCredentialError';
 
 /** Refresh this long before the vendor's expiry: a token that expires in flight is a failed call. */
 export const EXPIRY_SKEW_MS = 60 * 1000;
@@ -78,28 +80,6 @@ const WINNER_POLL_MS = 100;
  * the ONLY thing bounding that case, since the winner never returns to clear it.
  */
 export const REFRESH_LEASE_MS = 30 * 1000;
-
-export type HostedMcpCredentialErrorCode =
-  | 'connection_mismatch'
-  | 'reconnect_required'
-  | 'credential_missing'
-  | 'refresh_unreachable'
-  | 'connection_error'
-  | 'credential_refreshing';
-
-export class HostedMcpCredentialError extends Error {
-  readonly code: HostedMcpCredentialErrorCode;
-
-  /** Retryable means "the next call will work"; the broker must not spend this call's failure on the row. */
-  readonly retryable: boolean;
-
-  constructor(code: HostedMcpCredentialErrorCode, message: string, retryable = false) {
-    super(message);
-    this.name = 'HostedMcpCredentialError';
-    this.code = code;
-    this.retryable = retryable;
-  }
-}
 
 export interface HostedMcpCredential {
   token: string;

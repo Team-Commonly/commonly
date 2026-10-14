@@ -105,7 +105,7 @@ export interface HostedMcpUpstreamTool {
  * it belongs to the intake slice, which is the first slice that has a row whose
  * credential it can decrypt.
  */
-export type HostedMcpToolProjection = Omit<HostedToolDefinition, 'call'>;
+export type HostedMcpToolProjection = Omit<HostedToolDefinition, 'call' | 'assess'>;
 
 export type HostedMcpToolVerdict = 'ok' | 'tool_unavailable' | 'tool_drift';
 
@@ -252,15 +252,15 @@ export const HOSTED_MCP_DRIFT_TTL_MS = 5 * 60 * 1000;
 export interface HostedMcpDriftRow {
   /**
    * The Integration row's `_id`; on a hosted grant this is also installationId.
-   * It is the whole key: a row belongs to exactly one entry (the partial unique
-   * index holds that), so two entries cannot present the same credential.
+   * A row belongs to exactly one entry, so its id is also the cache key for
+   * the (row, entry) pair. Another member cannot reuse its assessment.
    */
   connectionId: string;
 }
 
 export type HostedMcpDriftOutcome =
   | { state: 'assessed'; entryId: string; at: number; cached: boolean; tools: HostedMcpToolAssessment[] }
-  | { state: 'provider_unavailable'; entryId: string; detail: string };
+  | { state: 'provider_unavailable'; entryId: string; detail: string; reason?: string; cause?: unknown };
 
 export interface HostedMcpDriftCacheOptions {
   /**
@@ -283,20 +283,24 @@ export interface HostedMcpDriftCache {
  * the entry: two members of one workspace present different credentials, so a
  * list fetched for one proves nothing about the other.
  *
- * A vendor outage is NOT cached. §9 maps it to `provider_unavailable` and
- * leaves the row alone, so a failed fetch must stay a failed fetch rather than
- * becoming a five-minute window in which every tool reads as unchanged.
+ * A vendor outage is NOT cached. The cache names it `provider_unavailable`;
+ * the caller maps the original transport reason into §9's call trail. A failed
+ * fetch must not become a window in which every tool reads as unchanged.
  */
 export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): HostedMcpDriftCache => {
   const ttlMs = options.ttlMs === undefined ? HOSTED_MCP_DRIFT_TTL_MS : options.ttlMs;
   const now = options.now || Date.now;
   const entries = new Map<string, { at: number; tools: HostedMcpToolAssessment[] }>();
+  const pending = new Map<string, Set<symbol>>();
 
   const keyFor = (row: HostedMcpDriftRow) => row.connectionId;
 
   return {
     forget: (row) => {
-      entries.delete(keyFor(row));
+      const key = keyFor(row);
+      entries.delete(key);
+      // Also invalidate a tools/list already in flight under the old grant.
+      pending.delete(key);
     },
     assess: async (row, entry) => {
       const key = keyFor(row);
@@ -305,12 +309,38 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
       if (cached && at - cached.at < ttlMs) {
         return { state: 'assessed', entryId: entry.id, at: cached.at, cached: true, tools: cached.tools };
       }
+      const request = Symbol('hosted-mcp-tools-list');
+      const requests = pending.get(key) || new Set<symbol>();
+      requests.add(request);
+      pending.set(key, requests);
+      const finish = () => {
+        if (pending.get(key) !== requests) return false;
+        requests.delete(request);
+        if (requests.size === 0) pending.delete(key);
+        return true;
+      };
       let upstream: HostedMcpUpstreamTool[];
       try {
         upstream = await options.listUpstreamTools(row);
       } catch (error) {
+        finish();
+        // A row whose credential requires reconnect is an authority refusal,
+        // not a vendor outage. Preserve it for the broker's refusal trail.
+        const code = (error as { code?: unknown })?.code;
+        if (code === 'reconnect_required' || code === 'connection_mismatch') throw error;
         const detail = error instanceof Error ? error.message : String(error);
-        return { state: 'provider_unavailable', entryId: entry.id, detail };
+        return {
+          state: 'provider_unavailable', entryId: entry.id, detail,
+          ...(typeof code === 'string' ? { reason: code } : {}),
+          cause: error,
+        };
+      }
+      if (!finish()) {
+        return {
+          state: 'provider_unavailable', entryId: entry.id,
+          detail: 'connection changed during tools/list; retry the call',
+          reason: 'provider_error',
+        };
       }
       const tools = assessEntryTools(entry, upstream);
       entries.set(key, { at, tools });

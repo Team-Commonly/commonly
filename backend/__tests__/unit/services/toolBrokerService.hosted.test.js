@@ -103,6 +103,8 @@ const {
   hostedBrokerToolsForRun, GRANT_BROKER_TOOL_NAME_PATTERN, sanitizeGrantBrokerToolName,
 } = projectionService;
 // eslint-disable-next-line import/no-unresolved, import/extensions
+const { HostedMcpCredentialError } = require('../../../services/hostedMcpCredentialError');
+// eslint-disable-next-line import/no-unresolved, import/extensions
 const hostedEntries = require('../../../integrations/hostedMcp/entries');
 
 const { HOSTED_MCP_ENTRIES } = hostedEntries;
@@ -131,6 +133,7 @@ const ENTRY = {
       upstreamName: 'list_issues',
       description: 'List issues',
       class: 'read',
+      annotations: { readOnlyHint: true },
       inputSchema: { type: 'object' },
     },
     {
@@ -173,6 +176,22 @@ const hostedRow = (overrides = {}) => ({
 });
 
 const okReply = { jsonrpc: '2.0', id: 'call-1', result: { content: [{ type: 'text', text: 'done' }] } };
+let upstreamTools;
+const listReply = () => ({
+  jsonrpc: '2.0', id: 'list-1',
+  result: { tools: upstreamTools },
+});
+const vendorFetch = (answer = async () => new Response(JSON.stringify(okReply), {
+  status: 200, headers: { 'content-type': 'application/json' },
+})) => jest.fn(async (url, init) => {
+  if (JSON.parse(init.body).method === 'tools/list') {
+    return new Response(JSON.stringify(listReply()), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  }
+  return answer(url, init);
+});
+const toolCalls = () => global.fetch.mock.calls.filter(([, init]) => JSON.parse(init.body).method === 'tools/call');
 
 // The shipped catalogue, kept so this suite can put it back: the fixtures below
 // pin their own entry, and since step 7 the real Linear entry is a member of
@@ -194,6 +213,12 @@ afterAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  upstreamTools = ENTRY.tools.map((tool) => ({
+    name: tool.upstreamName, inputSchema: tool.inputSchema, annotations: tool.annotations,
+  }));
+  // The production cache is process-scoped; each fixture starts with a new
+  // row assessment rather than inheriting another test's vendor answer.
+  require('../../../services/hostedMcpToolDefinitions').forgetHostedMcpDrift(ROW_ID);
   mockReserveBudgetLineage.mockResolvedValue(true);
   mockToolCall.create.mockResolvedValue(undefined);
   const row = hostedRow();
@@ -210,13 +235,170 @@ beforeEach(() => {
   });
   mockCredentialFor.mockResolvedValue({ token: 'tok-1' });
   mockDmService.getOrCreateAgentRoom.mockResolvedValue({ _id: 'room-1' });
-  global.fetch = jest.fn(async () => new Response(JSON.stringify(okReply), {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
-  }));
+  global.fetch = vendorFetch();
 });
 
 describe('a hosted-MCP grant through the broker', () => {
+  it('refuses a changed upstream schema at call time and removes the pin from tools/list', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant({ budget: { calls: 3 } }));
+    upstreamTools[0] = {
+      ...upstreamTools[0],
+      inputSchema: { type: 'object', properties: { extra: { type: 'string' } } },
+    };
+
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'tool_drift' });
+    expect(toolCalls()).toHaveLength(0);
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'refused', reason: 'tool_drift', credentialOwnerId: OWNER,
+    }));
+    await expect(listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' }))
+      .resolves.toEqual([]);
+  });
+
+  it('refuses a read pin when the vendor withdraws readOnlyHint', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    upstreamTools[0] = { ...upstreamTools[0], annotations: {} };
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'tool_drift' });
+    expect(toolCalls()).toHaveLength(0);
+  });
+
+  it('fails a vendor 503 at tools/list as provider_error but still offers pinned tools', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    global.fetch = jest.fn(async () => new Response('', { status: 503 }));
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'provider_error' });
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failed', reason: 'provider_error',
+    }));
+    expect(toolCalls()).toHaveLength(0);
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'provider_error' });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    await expect(listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' }))
+      .resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: 'linear.list_issues' })]));
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    'connection_mismatch',
+    'reconnect_required',
+    'credential_missing',
+    'refresh_unreachable',
+    'connection_error',
+    'credential_refreshing',
+  ])('still offers pinned tools when credential lookup reports %s', async (code) => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    mockCredentialFor.mockRejectedValue(new HostedMcpCredentialError(code, code));
+    await expect(listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' }))
+      .resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: 'linear.list_issues' })]));
+    expect(mockCredentialFor).toHaveBeenCalledTimes(1);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(['refresh_unreachable', 'credential_refreshing'])(
+    'keeps %s as a failed call with its original credential reason', async (code) => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      mockCredentialFor.mockRejectedValue(new HostedMcpCredentialError(code, code));
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+      })).rejects.toMatchObject({ code });
+      expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'failed', reason: code,
+      }));
+      expect(global.fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['reconnect_required', 'connection_mismatch'])(
+    'trails a permanent %s credential failure as refused', async (code) => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      mockCredentialFor.mockRejectedValue(new HostedMcpCredentialError(code, code));
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+      })).rejects.toMatchObject({ code });
+      expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'refused', reason: code,
+      }));
+      expect(global.fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses the call’s unreachable and rejected-credential reasons for a failed list', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    global.fetch = jest.fn(async () => { throw new Error('ECONNRESET'); });
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'provider_unreachable' });
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failed', reason: 'provider_unreachable',
+    }));
+    expect(toolCalls()).toHaveLength(0);
+
+    global.fetch = jest.fn(async () => new Response('', { status: 401 }));
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'credential_rejected' });
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'refused', reason: 'credential_rejected',
+    }));
+    expect(toolCalls()).toHaveLength(0);
+  });
+
+  it('keeps reconnect_required when the row credential fails before tools/list', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    mockCredentialFor.mockRejectedValue(Object.assign(new Error('reconnect this row'), {
+      code: 'reconnect_required',
+    }));
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'reconnect_required' });
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'refused', reason: 'reconnect_required',
+    }));
+  });
+
+  it('assesses two rows on one entry with each row’s own credential and cache key', async () => {
+    const otherId = 'b2b2c3d4e5f60718293a4b5c';
+    mockRoomGrant.findOne.mockImplementation(async ({ grantId }) => hostedGrant({
+      grantId,
+      connectionId: grantId === 'grant-b' ? otherId : ROW_ID,
+    }));
+    mockIntegration.findById.mockImplementation((id) => ({
+      lean: async () => hostedRow({ _id: id }),
+    }));
+    mockCredentialFor.mockImplementation(async (row) => ({
+      token: row._id === otherId ? 'tok-b' : 'tok-a',
+    }));
+    global.fetch = jest.fn(async (_url, init) => {
+      const method = JSON.parse(init.body).method;
+      const tools = init.headers.Authorization === 'Bearer tok-b'
+        ? [{ ...upstreamTools[0], inputSchema: { type: 'object', properties: { extra: { type: 'string' } } } }, upstreamTools[1]]
+        : upstreamTools;
+      return new Response(JSON.stringify(method === 'tools/list'
+        ? { jsonrpc: '2.0', id: 'list', result: { tools } }
+        : okReply), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+
+    await expect(callTool({
+      grantId: 'grant-a', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).resolves.toBeTruthy();
+    await expect(callTool({
+      grantId: 'grant-b', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'tool_drift' });
+    const lists = global.fetch.mock.calls.filter(([, init]) => JSON.parse(init.body).method === 'tools/list');
+    expect(lists).toHaveLength(2);
+    expect(lists.map(([, init]) => init.headers.Authorization)).toEqual(['Bearer tok-a', 'Bearer tok-b']);
+    require('../../../services/hostedMcpToolDefinitions').forgetHostedMcpDrift(otherId);
+  });
+
   it('finds the hosted tool by name and runs it at the vendor', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
     const result = await callTool({
@@ -227,8 +409,8 @@ describe('a hosted-MCP grant through the broker', () => {
       hostedTurn: true,
     });
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    const [url, init] = global.fetch.mock.calls[0];
+    expect(toolCalls()).toHaveLength(1);
+    const [url, init] = toolCalls()[0];
     expect(url).toBe('https://mcp.linear.app/mcp');
     expect(init.headers.Authorization).toBe('Bearer tok-1');
     expect(JSON.parse(init.body)).toMatchObject({
@@ -253,7 +435,7 @@ describe('a hosted-MCP grant through the broker', () => {
       isError: true,
       content: [{ type: 'text', text: 'Google Calendar access is not enabled for this project.' }],
     };
-    global.fetch = jest.fn(async () => new Response(JSON.stringify({
+    global.fetch = vendorFetch(async () => new Response(JSON.stringify({
       jsonrpc: '2.0', id: 'call-error', result: vendorError,
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
@@ -275,7 +457,7 @@ describe('a hosted-MCP grant through the broker', () => {
 
   it('records a provider HTTP failure as failed with its transport reason', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
-    global.fetch = jest.fn(async () => new Response('', { status: 503 }));
+    global.fetch = vendorFetch(async () => new Response('', { status: 503 }));
 
     await expect(callTool({
       grantId: 'grant-hosted',
@@ -302,7 +484,7 @@ describe('a hosted-MCP grant through the broker', () => {
       isError: true,
       content: [{ type: 'text', text: 'The vendor rejected this operation.' }],
     };
-    global.fetch = jest.fn(async () => new Response(JSON.stringify({
+    global.fetch = vendorFetch(async () => new Response(JSON.stringify({
       jsonrpc: '2.0', id: 'call-error', result: vendorError,
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
@@ -330,7 +512,7 @@ describe('a hosted-MCP grant through the broker', () => {
       writeMode: 'write-with-confirm',
     }));
     const args = { title: 'approved issue' };
-    global.fetch = jest.fn(async () => { throw new Error('ECONNREFUSED'); });
+    global.fetch = vendorFetch(async () => { throw new Error('ECONNREFUSED'); });
 
     await expect(executeApprovedToolCall({
       grantId: 'grant-hosted',
@@ -413,7 +595,7 @@ describe('a hosted-MCP grant through the broker', () => {
 
   it('reports a vendor 401 as the credential being gone, after the call was made', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
-    global.fetch = jest.fn(async () => new Response('', { status: 401 }));
+    global.fetch = vendorFetch(async () => new Response('', { status: 401 }));
 
     await expect(callTool({
       grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
@@ -421,8 +603,8 @@ describe('a hosted-MCP grant through the broker', () => {
       code: 'credential_rejected',
       message: expect.stringContaining('reconnect'),
     });
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(mockCredentialFor).toHaveBeenCalledTimes(1);
+    expect(toolCalls()).toHaveLength(1);
+    expect(mockCredentialFor).toHaveBeenCalledTimes(2);
   });
 
   it('parks a hosted write with the row owner, which is what opens the approval room', async () => {
@@ -446,8 +628,8 @@ describe('a hosted-MCP grant through the broker', () => {
       expect.objectContaining({ agentName: 'openclaw' }),
     );
     expect(mockProposeAction).toHaveBeenCalledTimes(1);
-    // A parked write is not a call: nothing was sent to the vendor.
-    expect(global.fetch).not.toHaveBeenCalled();
+    // A parked write is assessed by tools/list but never sends tools/call.
+    expect(toolCalls()).toHaveLength(0);
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'pending_approval' }));
     // The parked envelope carries the owner, so the record the DECISION writes
     // still names it after the row is deleted.
@@ -490,7 +672,7 @@ describe('a hosted-MCP grant through the broker', () => {
     }));
     expect(mockDmService.getOrCreateAgentRoom).not.toHaveBeenCalled();
     expect(mockProposeAction).not.toHaveBeenCalled();
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(toolCalls()).toHaveLength(0);
   });
 
   it('offers the hosted tool to the grant that names it, in both listing surfaces', async () => {
@@ -601,7 +783,7 @@ describe('a hosted-MCP grant through the broker', () => {
       await expect(callTool({
         grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
       })).resolves.toBeTruthy();
-      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(toolCalls()).toHaveLength(1);
     });
 
     it('reads the row it resolved, so a different owner is judged on every call', async () => {
