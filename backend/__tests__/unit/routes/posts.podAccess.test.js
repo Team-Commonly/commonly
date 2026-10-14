@@ -1,12 +1,18 @@
 const request = require('supertest');
 const express = require('express');
 
-// Pod access on the post routes that take a post id or search across posts:
-// search, followed threads, follow/unfollow and comments. Reads (search,
-// followed threads, follow) use DMService.canViewPod on the post's own pod, the
-// gate GET /api/posts/:id and GET /api/posts?podId= already use. Writing a
-// comment uses the pod write gate (membership). Global posts (no pod) stay
-// open to any signed-in user.
+// Pod access on the post routes, keyed on the post's own pod.
+//
+// - Listing surfaces (the feed and search with no podId, followed threads)
+//   show global posts plus the caller's own pods, via
+//   DMService.listPodIdsForListing. Admins get NO bypass there.
+// - Reads of one named pod or one post (feed/search with podId, follow) use
+//   DMService.canViewPod, admin bypass included, as GET /api/posts/:id does.
+// - Writes into a pod (comment, like/unlike) use the pod write gate
+//   (membership).
+// - Unfollow is never refused for pod access: you may always drop your own
+//   follow.
+// - Global posts (no pod) are open to any signed-in user throughout.
 //
 // Real routes, controller, models and access services on memory Mongo; only
 // the JWT check and the agent-mention fan-out are stubbed.
@@ -44,9 +50,11 @@ describe('post routes check the post\'s pod', () => {
   let podPost;
   let globalPost;
   let outsiderPodPost;
+  let adminPodPost;
 
   const as = (user) => ({ 'x-test-user': String(user._id) });
   const ids = (body) => body.map((p) => String(p._id)).sort();
+  const idsOf = (...posts) => posts.map((p) => String(p._id)).sort();
 
   beforeAll(async () => {
     await setupMongoDb();
@@ -78,21 +86,66 @@ describe('post routes check the post\'s pod', () => {
     pod = await mkPod('Private', member);
     memberOtherPod = await mkPod('Member other', member);
     outsiderPod = await mkPod('Outsider own', outsider);
+    const adminPod = await mkPod('Admin own', admin);
 
     podPost = await mkPost(member, 'needle in the private pod', pod._id);
     globalPost = await mkPost(member, 'needle in the global feed', null);
     outsiderPodPost = await mkPost(outsider, 'needle in the outsider pod', outsiderPod._id);
+    adminPodPost = await mkPost(admin, 'needle in the admin pod', adminPod._id);
+  });
+
+  describe('GET /api/posts (the feed)', () => {
+    it('shows a member their pod\'s posts alongside global posts', async () => {
+      const res = await request(app).get('/api/posts').set(as(member)).expect(200);
+      expect(ids(res.body.posts)).toEqual(idsOf(podPost, globalPost));
+      expect(res.body.total).toBe(2);
+    });
+
+    it('leaves out pods a non-member is not in, keeping global posts and their own pods', async () => {
+      const res = await request(app).get('/api/posts').set(as(outsider)).expect(200);
+      expect(ids(res.body.posts)).toEqual(idsOf(globalPost, outsiderPodPost));
+      expect(res.body.total).toBe(2);
+    });
+
+    it('scopes the hot sort the same way', async () => {
+      const res = await request(app).get('/api/posts?sort=hot').set(as(outsider)).expect(200);
+      expect(ids(res.body.posts)).toEqual(idsOf(globalPost, outsiderPodPost));
+    });
+
+    it('returns a named pod\'s posts on the hot sort too', async () => {
+      const res = await request(app).get(`/api/posts?sort=hot&podId=${pod._id}`).set(as(member)).expect(200);
+      expect(ids(res.body.posts)).toEqual(idsOf(podPost));
+    });
+
+    it('gives an admin no bypass: their own pods and global posts only', async () => {
+      const res = await request(app).get('/api/posts').set(as(admin)).expect(200);
+      expect(ids(res.body.posts)).toEqual(idsOf(globalPost, adminPodPost));
+    });
+
+    it('still lets an admin read a pod they name, through canViewPod', async () => {
+      const res = await request(app).get(`/api/posts?podId=${pod._id}`).set(as(admin)).expect(200);
+      expect(ids(res.body.posts)).toEqual(idsOf(podPost));
+    });
+
+    it('refuses a non-member who names the pod, with 403', async () => {
+      await request(app).get(`/api/posts?podId=${pod._id}`).set(as(outsider)).expect(403);
+    });
+
+    it('keeps podId=global to global posts only', async () => {
+      const res = await request(app).get('/api/posts?podId=global').set(as(outsider)).expect(200);
+      expect(ids(res.body.posts)).toEqual(idsOf(globalPost));
+    });
   });
 
   describe('GET /api/posts/search', () => {
     it('returns a member the pod post alongside global posts', async () => {
       const res = await request(app).get('/api/posts/search?query=needle').set(as(member)).expect(200);
-      expect(ids(res.body)).toEqual([String(podPost._id), String(globalPost._id)].sort());
+      expect(ids(res.body)).toEqual(idsOf(podPost, globalPost));
     });
 
-    it('leaves out a private pod a non-member is not in, keeping global posts and their own pods', async () => {
+    it('leaves out pods a non-member is not in, keeping global posts and their own pods', async () => {
       const res = await request(app).get('/api/posts/search?query=needle').set(as(outsider)).expect(200);
-      expect(ids(res.body)).toEqual([String(globalPost._id), String(outsiderPodPost._id)].sort());
+      expect(ids(res.body)).toEqual(idsOf(globalPost, outsiderPodPost));
     });
 
     it('also filters a match that is only in a comment', async () => {
@@ -103,6 +156,11 @@ describe('post routes check the post\'s pod', () => {
       expect(res.body).toEqual([]);
     });
 
+    it('gives an admin no bypass: their own pods and global posts only', async () => {
+      const res = await request(app).get('/api/posts/search?query=needle').set(as(admin)).expect(200);
+      expect(ids(res.body)).toEqual(idsOf(globalPost, adminPodPost));
+    });
+
     it('refuses a non-member who names the pod, with 403', async () => {
       const res = await request(app).get(`/api/posts/search?query=needle&podId=${pod._id}`)
         .set(as(outsider)).expect(403);
@@ -110,8 +168,15 @@ describe('post routes check the post\'s pod', () => {
     });
 
     it('lets a member search inside the pod', async () => {
-      const res = await request(app).get(`/api/posts/search?query=needle&podId=${pod._id}`).set(as(member)).expect(200);
-      expect(ids(res.body)).toEqual([String(podPost._id)]);
+      const res = await request(app).get(`/api/posts/search?query=needle&podId=${pod._id}`)
+        .set(as(member)).expect(200);
+      expect(ids(res.body)).toEqual(idsOf(podPost));
+    });
+
+    it('still lets an admin search a pod they name, through canViewPod', async () => {
+      const res = await request(app).get(`/api/posts/search?query=needle&podId=${pod._id}`)
+        .set(as(admin)).expect(200);
+      expect(ids(res.body)).toEqual(idsOf(podPost));
     });
 
     it('answers 404 for a pod that does not exist', async () => {
@@ -120,31 +185,32 @@ describe('post routes check the post\'s pod', () => {
 
     it('keeps podId=global to global posts only', async () => {
       const res = await request(app).get('/api/posts/search?query=needle&podId=global').set(as(outsider)).expect(200);
-      expect(ids(res.body)).toEqual([String(globalPost._id)]);
-    });
-
-    it('gives a global admin every pod, as canViewPod does', async () => {
-      const res = await request(app).get('/api/posts/search?query=needle').set(as(admin)).expect(200);
-      expect(ids(res.body)).toEqual([String(podPost._id), String(globalPost._id), String(outsiderPodPost._id)].sort());
+      expect(ids(res.body)).toEqual(idsOf(globalPost));
     });
   });
 
   describe('GET /api/posts/following/threads', () => {
-    it('lists a member\'s followed pod thread', async () => {
-      await User.updateOne({ _id: member._id }, {
-        followedThreads: [{ postId: podPost._id }, { postId: globalPost._id }],
-      });
-      const res = await request(app).get('/api/posts/following/threads').set(as(member)).expect(200);
-      expect(ids(res.body.threads)).toEqual([String(podPost._id), String(globalPost._id)].sort());
+    const follow = (user, ...posts) => User.updateOne({ _id: user._id }, {
+      followedThreads: posts.map((p) => ({ postId: p._id })),
     });
 
-    it('drops a followed thread whose pod the caller can no longer view, and keeps global ones', async () => {
+    it('lists a member\'s followed pod thread', async () => {
+      await follow(member, podPost, globalPost);
+      const res = await request(app).get('/api/posts/following/threads').set(as(member)).expect(200);
+      expect(ids(res.body.threads)).toEqual(idsOf(podPost, globalPost));
+    });
+
+    it('drops a followed thread whose pod the caller is no longer in, and keeps global ones', async () => {
       // As if followed while a member, before leaving the pod.
-      await User.updateOne({ _id: outsider._id }, {
-        followedThreads: [{ postId: podPost._id }, { postId: globalPost._id }],
-      });
+      await follow(outsider, podPost, globalPost);
       const res = await request(app).get('/api/posts/following/threads').set(as(outsider)).expect(200);
-      expect(ids(res.body.threads)).toEqual([String(globalPost._id)]);
+      expect(ids(res.body.threads)).toEqual(idsOf(globalPost));
+    });
+
+    it('gives an admin no bypass: a followed thread outside their pods drops out', async () => {
+      await follow(admin, podPost, globalPost, adminPodPost);
+      const res = await request(app).get('/api/posts/following/threads').set(as(admin)).expect(200);
+      expect(ids(res.body.threads)).toEqual(idsOf(globalPost, adminPodPost));
     });
   });
 
@@ -179,16 +245,50 @@ describe('post routes check the post\'s pod', () => {
       expect(stored.followedThreads).toEqual([]);
     });
 
-    it('refuses a non-member with 403 and leaves their list untouched', async () => {
-      await User.updateOne({ _id: outsider._id }, { followedThreads: [{ postId: podPost._id }] });
-      const res = await request(app).delete(`/api/posts/${podPost._id}/follow`).set(as(outsider)).expect(403);
-      expect(res.body).toEqual({ error: 'Not authorized to view this post' });
+    it('lets a user who is no longer in the pod remove their own follow', async () => {
+      await User.updateOne({ _id: outsider._id }, {
+        followedThreads: [{ postId: podPost._id }, { postId: globalPost._id }],
+      });
+      await request(app).delete(`/api/posts/${podPost._id}/follow`).set(as(outsider)).expect(200);
       const stored = await User.findById(outsider._id).select('followedThreads').lean();
-      expect(stored.followedThreads.map((t) => String(t.postId))).toEqual([String(podPost._id)]);
+      expect(stored.followedThreads.map((t) => String(t.postId))).toEqual([String(globalPost._id)]);
     });
 
     it('lets anyone signed in unfollow a global post', async () => {
       await request(app).delete(`/api/posts/${globalPost._id}/follow`).set(as(outsider)).expect(200);
+    });
+  });
+
+  describe('POST /api/posts/:id/like', () => {
+    const likesOf = async (post) => {
+      const stored = await Post.findById(post._id).select('likes likedBy').lean();
+      return { likes: stored.likes, likedBy: stored.likedBy.map(String) };
+    };
+
+    it('lets a member like and unlike a pod post', async () => {
+      const liked = await request(app).post(`/api/posts/${podPost._id}/like`).set(as(member)).expect(200);
+      expect(liked.body).toEqual({ likes: 1, liked: true });
+      expect(await likesOf(podPost)).toEqual({ likes: 1, likedBy: [String(member._id)] });
+      const unliked = await request(app).post(`/api/posts/${podPost._id}/like`).set(as(member)).expect(200);
+      expect(unliked.body).toEqual({ likes: 0, liked: false });
+    });
+
+    it('refuses a non-member\'s like with 403 and leaves the count alone', async () => {
+      const res = await request(app).post(`/api/posts/${podPost._id}/like`).set(as(outsider)).expect(403);
+      expect(res.body).toEqual({ error: 'You are not a member of this pod' });
+      expect(await likesOf(podPost)).toEqual({ likes: 0, likedBy: [] });
+    });
+
+    it('refuses a non-member\'s unlike with 403 and leaves their old like in place', async () => {
+      // As if liked while a member, before leaving the pod.
+      await Post.updateOne({ _id: podPost._id }, { likes: 1, likedBy: [outsider._id] });
+      await request(app).post(`/api/posts/${podPost._id}/like`).set(as(outsider)).expect(403);
+      expect(await likesOf(podPost)).toEqual({ likes: 1, likedBy: [String(outsider._id)] });
+    });
+
+    it('lets anyone signed in like a global post', async () => {
+      const res = await request(app).post(`/api/posts/${globalPost._id}/like`).set(as(outsider)).expect(200);
+      expect(res.body).toEqual({ likes: 1, liked: true });
     });
   });
 

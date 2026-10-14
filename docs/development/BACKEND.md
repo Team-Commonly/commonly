@@ -89,7 +89,13 @@ backend/
 | GET    | /api/posts/following/threads | List followed thread posts | -                                 | `{threads: Post[]}`             |
 | GET    | /api/posts/search      | Search posts                | Query: `{query?, tags?, podId?, category?}` | Array of posts           |
 
-Pod access on these routes follows the post's own pod. Reads (`GET /api/posts?podId=`, `GET /api/posts/:id`, search, followed threads, follow and unfollow) use `DMService.canViewPod`; search with no `podId` returns global posts plus the pods `DMService.listViewablePodIds` admits. Commenting on a pod post needs pod membership (`callerHasPodWriteAccess`), and the comment's mention and activity are filed under the post's pod. Global posts (no pod) are open to any signed-in user.
+Pod access on these routes follows the post's own pod:
+
+- **Listings.** The feed and search with no `podId`, and followed threads, return global posts plus the caller's own pods (`DMService.listPodIdsForListing`: membership and the agent-dm fan-out). Admins get no bypass here.
+- **One named pod or one post.** `?podId=` on the feed or search, `GET /api/posts/:id`, and following a thread use `DMService.canViewPod`, which does let an admin read any pod.
+- **Writes into a pod.** Commenting on a pod post and liking or unliking one need pod membership (`callerHasPodWriteAccess`). A comment's mention and activity are filed under the post's pod.
+- **Unfollow.** You can always remove your own follow.
+- **Global posts.** Posts with no pod are open to any signed-in user.
 
 External social feeds (X/Instagram) are stored as `Post` records with `source.type = "external"` and `source.provider` set to the platform. The scheduler polls these feeds every 10 minutes and appends normalized entries to integration buffers for summarization.
 

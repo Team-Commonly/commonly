@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const User = require('../models/User');
@@ -6,14 +7,14 @@ const AgentMentionService = require('../services/agentMentionService');
 const DMService = require('../services/dmService');
 const { callerHasPodWriteAccess } = require('../services/podWriteAccessService');
 
-// Following a pod post takes the same read access as viewing it
-// (`getPostById`): `canViewPod` on the post's own pod. A post whose pod is gone
-// is refused, since `canViewPod` admits nobody to a missing pod. Global posts
-// (no pod) stay open to any signed-in user.
-const canViewPostPod = async (userId: unknown, post: any): Promise<boolean> => {
-  if (!post.podId) return true;
-  const pod = await Pod.findById(post.podId).select('_id members type').lean();
-  return DMService.canViewPod(userId, pod);
+// The podId filter for listing surfaces (the feed with no podId, search with no
+// podId, followed threads): global posts plus `DMService.listPodIdsForListing`,
+// which is membership and the §3.7 fan-out with no admin bypass. ObjectIds, not
+// strings, because the hot feed runs this filter through an aggregate `$match`,
+// which Mongoose does not cast.
+const listingPodFilter = async (userId: unknown) => {
+  const podIds: string[] = await DMService.listPodIdsForListing(userId);
+  return { $in: [null, ...podIds.map((id) => new mongoose.Types.ObjectId(id))] };
 };
 
 exports.createPost = async (req: any, res: any) => {
@@ -117,10 +118,8 @@ exports.searchPosts = async (req: any, res: any) => {
       }
       searchQuery.podId = podId;
     } else {
-      // No pod named: global posts plus the pods the caller can view, as one
-      // query filter rather than a check per result.
-      const scope = await DMService.listViewablePodIds(userId);
-      if (!scope.allPods) searchQuery.podId = { $in: [null, ...scope.podIds] };
+      // No pod named: a listing, so global posts plus the caller's own pods.
+      searchQuery.podId = await listingPodFilter(userId);
     }
 
     if (category) {
@@ -151,26 +150,28 @@ exports.getPosts = async (req: any, res: any) => {
     const skip = (pageNum - 1) * limitNum;
 
     const filter: any = {};
-    if (podId) {
-      if (podId === 'global' || podId === 'none') {
-        filter.podId = null;
-      } else {
-        // Pod-scoped post listing must respect pod visibility. The
-        // global feed (`podId=global`/`none`) stays anonymous-readable;
-        // pod-scoped queries require auth and pass through
-        // `canViewPod` (members + admins + agent-dm §3.7 fan-out).
-        const userId = req.userId || req.user?.id;
-        if (!userId) {
-          return res.status(401).json({ error: 'Authentication required to view pod posts' });
-        }
-        const pod = await Pod.findById(podId).select('_id members type').lean();
-        if (!pod) return res.status(404).json({ error: 'Pod not found' });
-        const canView = await DMService.canViewPod(userId, pod);
-        if (!canView) {
-          return res.status(403).json({ error: 'Not authorized to view posts in this pod' });
-        }
-        filter.podId = podId;
+    const userId = req.userId || req.user?.id;
+    if (podId === 'global' || podId === 'none') {
+      filter.podId = null;
+    } else if (podId) {
+      // A named pod passes through `canViewPod` (members + admins + agent-dm
+      // §3.7 fan-out).
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required to view pod posts' });
       }
+      const pod = await Pod.findById(podId).select('_id members type').lean();
+      if (!pod) return res.status(404).json({ error: 'Pod not found' });
+      const canView = await DMService.canViewPod(userId, pod);
+      if (!canView) {
+        return res.status(403).json({ error: 'Not authorized to view posts in this pod' });
+      }
+      // The pod's ObjectId, not the query string: the hot sort's aggregate
+      // `$match` is not cast by Mongoose, so a string matched no posts.
+      filter.podId = pod._id;
+    } else {
+      // No pod named: the main feed, a listing, so global posts plus the
+      // caller's own pods. No admin bypass here.
+      filter.podId = await listingPodFilter(userId);
     }
     if (category) {
       filter.category = category;
@@ -389,6 +390,12 @@ exports.likePost = async (req: any, res: any) => {
       return res.status(404).json({ error: 'Post not found' });
     }
 
+    // Liking or unliking a pod post is a write into that pod, so it takes the
+    // pod's write gate (membership), as comments do. Global posts stay open.
+    if (post.podId && !(await callerHasPodWriteAccess(String(post.podId), String(userId), req))) {
+      return res.status(403).json({ error: 'You are not a member of this pod' });
+    }
+
     // Check if user has already liked this post
     const userLikedIndex = post.likedBy ? post.likedBy.indexOf(userId) : -1;
 
@@ -475,8 +482,14 @@ exports.followThread = async (req: any, res: any) => {
   try {
     const post = await Post.findById(req.params.id).select('_id content podId');
     if (!post) return res.status(404).json({ error: 'Post not found' });
-    if (!(await canViewPostPod(req.userId, post))) {
-      return res.status(403).json({ error: 'Not authorized to view this post' });
+    // Following a pod post takes the same read access as viewing it
+    // (`getPostById`): `canViewPod` on the post's own pod, which admits nobody
+    // to a pod that no longer exists. Global posts stay open.
+    if (post.podId) {
+      const pod = await Pod.findById(post.podId).select('_id members type').lean();
+      if (!(await DMService.canViewPod(req.userId, pod))) {
+        return res.status(403).json({ error: 'Not authorized to view this post' });
+      }
     }
 
     const user = await User.findById(req.userId).select('_id username followedThreads');
@@ -532,11 +545,10 @@ exports.followThread = async (req: any, res: any) => {
 
 exports.unfollowThread = async (req: any, res: any) => {
   try {
-    const post = await Post.findById(req.params.id).select('_id podId');
+    // No pod check: removing your own follow never needs access to the pod, so
+    // a user who has since lost access can still drop the subscription.
+    const post = await Post.findById(req.params.id).select('_id');
     if (!post) return res.status(404).json({ error: 'Post not found' });
-    if (!(await canViewPostPod(req.userId, post))) {
-      return res.status(403).json({ error: 'Not authorized to view this post' });
-    }
 
     const user = await User.findById(req.userId).select('_id followedThreads');
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -586,14 +598,10 @@ exports.getFollowedThreads = async (req: any, res: any) => {
       followedThreads.map((thread: any) => [String(thread.postId), thread.followedAt || null]),
     );
 
-    // A thread followed while its pod was viewable drops out once it is not.
-    // Filtered on the stored podId, so for a non-admin a post whose pod has
-    // been deleted drops out too.
-    const filter: any = { _id: { $in: postIds } };
-    const scope = await DMService.listViewablePodIds(req.userId);
-    if (!scope.allPods) filter.podId = { $in: [null, ...scope.podIds] };
-
-    const posts = await Post.find(filter)
+    // A listing, so global posts plus the caller's own pods: a thread followed
+    // while the caller was in its pod drops out once they are not. Filtered on
+    // the stored podId, so a post whose pod has been deleted drops out too.
+    const posts = await Post.find({ _id: { $in: postIds }, podId: await listingPodFilter(req.userId) })
       .populate('userId', 'username profilePicture isBot botMetadata')
       .populate('comments.userId', 'username profilePicture isBot botMetadata')
       .populate('podId', 'name type')

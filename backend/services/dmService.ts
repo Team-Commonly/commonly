@@ -514,31 +514,24 @@ class DMService {
   }
 
   /**
-   * The set form of `canViewPod`, for surfaces that filter many pod-scoped
-   * rows at once (post search, followed threads), where checking each row
-   * would cost a query per row. It admits exactly the pods `canViewPod`
-   * admits, and the two are kept in agreement by a test over one fixture
-   * (`__tests__/services/dmService.agentDm.test.ts`). Change one, change both.
+   * The pods a listing surface (the post feed, post search, followed threads)
+   * shows a user: what `canViewPod` admits, minus its admin bypass. That is
+   * every pod the user is a member of, plus every `agent-dm` pod with a member
+   * in one of those pods (the §3.7 fan-out).
    *
-   *   - `{ allPods: true }` for a global admin, mirroring `canViewPod`'s
-   *     admin read rule.
-   *   - otherwise `{ allPods: false, podIds }`: every pod the user is a member
-   *     of, plus every `agent-dm` pod that has a member in one of those pods
-   *     (the §3.7 fan-out).
+   * No admin bypass on purpose. Listing surfaces filter to the caller's own
+   * pods for admins too (CLAUDE.md, "Pod-scoped reads are membership-gated").
+   * An admin reaches any other pod by id or by an explicit `podId`, and those
+   * paths go through `canViewPod`, bypass included.
    *
-   * Callers push `podIds` into their query as `podId: { $in: [null, ...podIds] }`
-   * when global (pod-less) rows should stay visible too.
+   * Set-shaped so a listing can push it into one query instead of checking
+   * each row. `__tests__/services/dmService.agentDm.test.ts` holds it equal to
+   * `canViewPod` for non-admins and pins the admin difference. Change one,
+   * check the other.
    */
-  static async listViewablePodIds(
-    userId: unknown,
-  ): Promise<{ allPods: boolean; podIds: string[] }> {
-    if (!userId) return { allPods: false, podIds: [] };
+  static async listPodIdsForListing(userId: unknown): Promise<string[]> {
+    if (!userId) return [];
     const uid = String(userId);
-    try {
-      const u = await User.findById(uid).select('role').lean() as { role?: string } | null;
-      if (u?.role === 'admin') return { allPods: true, podIds: [] };
-    } catch { /* same as canViewPod: a failed role lookup falls through to membership */ }
-
     const memberPods = await Pod.find({ members: uid }).select('_id members').lean() as Array<{
       _id: unknown; members?: unknown[];
     }>;
@@ -558,7 +551,7 @@ class DMService {
       }).select('_id').lean() as Array<{ _id: unknown }>;
       fanOut.forEach((p) => podIds.push(String(p._id)));
     }
-    return { allPods: false, podIds };
+    return podIds;
   }
 
   /**

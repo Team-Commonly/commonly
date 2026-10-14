@@ -124,8 +124,8 @@ const ApiDevPage = () => {
                     id: "posts-get-all",
                     method: "GET",
                     path: "/api/posts",
-                    description: "Get all posts",
-                    requiresAuth: false,
+                    description: "Get global posts and posts in your pods",
+                    requiresAuth: true,
                     exampleInput: null,
                     exampleOutput: [
                         {
@@ -170,7 +170,7 @@ const ApiDevPage = () => {
                     method: "GET",
                     path: "/api/posts/:id",
                     description: "Get a specific post by ID",
-                    requiresAuth: false,
+                    requiresAuth: true,
                     exampleInput: null,
                     pathParams: { id: "60d5ecb74b24a1234567890b" },
                     exampleOutput: {
@@ -191,8 +191,8 @@ const ApiDevPage = () => {
                     id: "posts-search",
                     method: "GET",
                     path: "/api/posts/search",
-                    description: "Search posts by content or tags",
-                    requiresAuth: false,
+                    description: "Search global posts and posts in your pods by content or tags",
+                    requiresAuth: true,
                     exampleInput: null,
                     queryParams: { query: "sample", tags: "test,sample" },
                     exampleOutput: [

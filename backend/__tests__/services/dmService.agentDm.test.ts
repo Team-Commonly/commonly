@@ -291,9 +291,11 @@ describe('DMService — agent-dm + sharePod', () => {
     });
   });
 
-  // The set form feeds post search and followed threads. It must admit exactly
-  // what canViewPod admits; this world exercises each canViewPod branch.
-  describe('listViewablePodIds (set form of canViewPod)', () => {
+  // The listing set feeds the post feed, post search and followed threads. It
+  // must admit exactly what canViewPod admits EXCEPT canViewPod's admin bypass,
+  // which listing surfaces do not get. This world exercises each canViewPod
+  // branch.
+  describe('listPodIdsForListing (canViewPod minus the admin bypass)', () => {
     let pods;
     let carol;
     let dave;
@@ -328,29 +330,32 @@ describe('DMService — agent-dm + sharePod', () => {
       return ids.sort();
     };
 
-    it('matches canViewPod for members, fan-out readers and outsiders', async () => {
+    const listed = async (user) => [...await DMService.listPodIdsForListing(user._id)].sort();
+
+    it('matches canViewPod for non-admin members, fan-out readers and outsiders', async () => {
       for (const user of [alice, bob, carol, aria, codex, dave]) {
         // eslint-disable-next-line no-await-in-loop
-        const scope = await DMService.listViewablePodIds(user._id);
-        expect(scope.allPods).toBe(false);
-        // eslint-disable-next-line no-await-in-loop
-        expect([...scope.podIds].sort()).toEqual(await viaCanViewPod(user));
+        expect(await listed(user)).toEqual(await viaCanViewPod(user));
       }
     });
 
     it('includes a fan-out agent-dm and leaves out an agent-room and a far agent-dm', async () => {
-      const scope = await DMService.listViewablePodIds(alice._id);
-      expect([...scope.podIds].sort()).toEqual([String(pods.team._id), String(pods.dm._id)].sort());
+      expect(await listed(alice)).toEqual([String(pods.team._id), String(pods.dm._id)].sort());
     });
 
     it('returns nothing for a user in no pod', async () => {
-      expect(await DMService.listViewablePodIds(carol._id)).toEqual({ allPods: false, podIds: [] });
+      expect(await DMService.listPodIdsForListing(carol._id)).toEqual([]);
     });
 
-    it('returns allPods for a global admin, as canViewPod admits an admin to any pod', async () => {
-      await User.updateOne({ _id: carol._id }, { role: 'admin' });
-      expect(await DMService.canViewPod(carol._id, pods.bobOnly)).toBe(true);
-      expect((await DMService.listViewablePodIds(carol._id)).allPods).toBe(true);
+    it('gives an admin only their own pods, where canViewPod admits them everywhere', async () => {
+      const asMember = await viaCanViewPod(bob);
+      await User.updateOne({ _id: bob._id }, { role: 'admin' });
+      // canViewPod's admin bypass is real and still in force for direct reads...
+      expect(await viaCanViewPod(bob)).toEqual(Object.values(pods).map((p) => String(p._id)).sort());
+      expect(await DMService.canViewPod(bob._id, pods.team)).toBe(true);
+      // ...and the listing set leaves it out: same pods as before the promotion.
+      expect(await listed(bob)).toEqual(asMember);
+      expect(await listed(bob)).not.toContain(String(pods.team._id));
     });
   });
 
