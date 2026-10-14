@@ -51,6 +51,7 @@ import {
   ADAPTERS_WITH_GRANT_BROKER,
   ADAPTERS_WITH_DEFAULT_SANDBOX,
   defaultMcpServers,
+  withDefaultMcpServer,
 } from '../lib/default-environment.js';
 import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import {
@@ -742,7 +743,9 @@ export const performAttach = async ({
   let environment = null;
   let workspace = null;
   if (envPath) {
-    environment = await parseEnvironmentFile(envPath);
+    // An explicit spec augments the seat; it does not remove the Commonly
+    // kernel server. The daemon applies this same baseline before every spawn.
+    environment = withDefaultMcpServer(await parseEnvironmentFile(envPath), adapterName);
     if (environment?.provider !== undefined && !adapter.supportsProvider) {
       throw new Error('environment.provider requires a provider-capable adapter');
     }
@@ -801,12 +804,12 @@ export const performAttach = async ({
     // No --env provided. Apply a sensible default if the adapter supports MCP
     // so a fresh `commonly agent attach claude` gives the agent commonly_*
     // kernel tools out of the box (parity with cloud-codex, which boots with
-    // @commonlyai/mcp pre-wired in ~/.codex/config.toml). Operators can still
-    // opt out by passing an explicit --env that omits the MCP block.
+    // @commonlyai/mcp pre-wired in ~/.codex/config.toml). An explicit --env
+    // keeps its declarations and receives the same kernel MCP baseline above.
     // See #440 for the gap that motivated this default.
     environment = buildDefaultEnvironment(adapterName);
     if (environment) {
-      log(`environment: applied default with @commonlyai/mcp wired (pass --env to override)`);
+      log('environment: applied default with @commonlyai/mcp wired');
     }
   }
 
