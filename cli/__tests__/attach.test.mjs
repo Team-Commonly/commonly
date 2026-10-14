@@ -80,7 +80,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     // The support check moved into the derivation must not become a no-op.
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'pi',
-    })).toThrow(/implemented only for public Claude, Codex, or OpenCode adapters/);
+    })).toThrow(/requires public trust and an adapter with sandbox enforcement/);
   });
 
   test('an explicit mode is taken as declared, and a public one is guarded', () => {
@@ -207,7 +207,7 @@ describe('updateAgentConfiguration', () => {
           id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile: '/tmp/provider-key',
         },
       })),
-    })).rejects.toThrow(/supported only by the opencode adapter/);
+    })).rejects.toThrow(/requires a provider-capable adapter/);
     expect(client.patch).not.toHaveBeenCalled();
   });
 
@@ -422,6 +422,7 @@ describe('performAttach', () => {
         adapterRegistry: {
           getAdapter: () => ({
             name: 'opencode',
+            supportsProvider: true,
             detect: async () => ({ path: '/usr/local/bin/opencode', version: '1.18.35' }),
             validateEnvironment: async () => {},
           }),
@@ -458,7 +459,7 @@ describe('performAttach', () => {
           getAdapter: () => ({ name: 'stub', detect: async () => ({ version: '1.0' }) }),
           listAdapterNames: () => ['stub'],
         },
-      })).rejects.toThrow(/supported only by the opencode adapter/);
+      })).rejects.toThrow(/requires a provider-capable adapter/);
       expect(client.post).not.toHaveBeenCalled();
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

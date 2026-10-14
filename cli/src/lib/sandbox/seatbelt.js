@@ -20,7 +20,7 @@
  */
 
 import { spawnSync } from 'child_process';
-import { realpathSync } from 'fs';
+import { lstatSync, realpathSync } from 'fs';
 import { homedir } from 'os';
 import { isAbsolute, join } from 'path';
 
@@ -302,6 +302,14 @@ const realpathOrSelf = (path) => {
   }
 };
 
+const isSymlink = (path) => {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
+
 export const detectSeatbelt = () => {
   if (process.platform !== 'darwin') {
     return { available: false, error: DARWIN_MESSAGE };
@@ -332,6 +340,7 @@ export const buildSeatbeltProfile = ({
   mcpConfigDir = null,
   executablePaths = [],
   readOnlyPaths = [],
+  readOnlyDirectories = [],
   loopbackNetworkPorts = [],
   allowClaudeRuntimeAccess = false,
 }) => {
@@ -344,6 +353,7 @@ export const buildSeatbeltProfile = ({
   }
   if (mcpConfigDir) assertAbsolutePath(mcpConfigDir, 'mcpConfigDir');
   for (const path of readOnlyPaths) assertAbsolutePath(path, 'readOnlyPaths entry');
+  for (const path of readOnlyDirectories) assertAbsolutePath(path, 'readOnlyDirectories entry');
   for (const port of loopbackNetworkPorts) {
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error('Seatbelt loopbackNetworkPorts entries must be valid TCP ports');
@@ -358,6 +368,7 @@ export const buildSeatbeltProfile = ({
   const resolvedState = realpathOrSelf(statePath);
   const resolvedMcpConfig = mcpConfigDir ? realpathOrSelf(mcpConfigDir) : null;
   const resolvedReadOnlyPaths = [...new Set(readOnlyPaths.map(realpathOrSelf))];
+  const resolvedReadOnlyDirectories = [...new Set(readOnlyDirectories.map(realpathOrSelf))];
   const executables = [...new Set(
     [resolvedExecutable, process.execPath, ...executablePaths]
       .filter(Boolean)
@@ -374,12 +385,19 @@ export const buildSeatbeltProfile = ({
     `(allow file-read* file-test-existence file-map-executable ${literal(executable)})`,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(executable)}"))`,
   ].join('\n')).join('\n');
+  const executableSymlinkRules = isSymlink(executablePath) ? [
+    `(allow file-read* file-test-existence ${literal(executablePath)})`,
+    `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(executablePath)}"))`,
+  ].join('\n') : '';
   const mcpRule = resolvedMcpConfig
     ? `(allow file-read* file-test-existence ${subpath(resolvedMcpConfig)})`
     : '';
   const readOnlyRules = resolvedReadOnlyPaths.map((path) => (
     `(allow file-read* file-test-existence ${literal(path)})`
-  )).join('\n');
+  )).concat(resolvedReadOnlyDirectories.map((path) => [
+    `(allow file-read* file-test-existence ${subpath(path)})`,
+    `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(path)}"))`,
+  ].join('\n'))).join('\n');
   const loopbackNetworkRules = [...new Set(loopbackNetworkPorts)].map((port) => (
     `(allow network-outbound (remote tcp "localhost:${port}"))`
   )).join('\n');
@@ -402,6 +420,7 @@ export const buildSeatbeltProfile = ({
   return [
     PLATFORM_BASELINE.trim(),
     executableRules,
+    executableSymlinkRules,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedWorkspace)}"))`,
     `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(resolvedState)}"))`,
     workspaceRule,

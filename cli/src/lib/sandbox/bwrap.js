@@ -130,7 +130,7 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
 
   flags.push('--bind', opts.workspacePath, opts.workspacePath);
   flags.push('--chdir', opts.workspacePath);
-  flags.push('--setenv', 'HOME', opts.workspacePath);
+  flags.push('--setenv', 'HOME', opts.homePath || opts.workspacePath);
 
   return ['bwrap', ...flags, '--', ...innerArgv];
 };

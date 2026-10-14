@@ -37,6 +37,15 @@ describe('detectBwrap', () => {
 });
 
 describe('wrapArgvWithBwrap', () => {
+  itLinux('uses an adapter-owned per-spawn HOME when supplied', () => {
+    const argv = wrapArgvWithBwrap(['qwen', '-p', 'hi'], {}, {
+      workspacePath: '/tmp/ws', homePath: '/tmp/commonly-qwen/home',
+    });
+    const homeIndex = argv.indexOf('HOME');
+    expect(argv[homeIndex - 1]).toBe('--setenv');
+    expect(argv[homeIndex + 1]).toBe('/tmp/commonly-qwen/home');
+  });
+
   itMac('throws the documented macOS message on darwin', () => {
     expect(() => wrapArgvWithBwrap(['claude', '-p', 'hi'], {}, {
       workspacePath: '/tmp/ws',

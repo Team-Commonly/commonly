@@ -7,6 +7,7 @@ import {
 } from './declared-mcp-guard.js';
 
 import { seatBaseline } from './default-environment.js';
+import { getAdapter } from './adapters/index.js';
 import { withholdGrantBroker } from './grant-broker-guard.js';
 
 /**
@@ -233,8 +234,8 @@ export const createDaemonSupervisor = ({
         nextAdapter = declaredAdapter;
         adapterChanged = existing.adapter !== nextAdapter;
       }
-      if (existing.environment?.provider && nextAdapter !== 'opencode') {
-        log(`[${row.agentName}] host-local provider requires the opencode adapter — keeping the current seat`);
+      if (existing.environment?.provider && !getAdapter(nextAdapter)?.supportsProvider) {
+        log(`[${row.agentName}] host-local provider requires a provider-capable adapter — keeping the current seat`);
         return false;
       }
       if (wanted) {
@@ -347,7 +348,7 @@ export const createDaemonSupervisor = ({
     }
     if (!adapter) adapter = await resolveAdapter(row.runtime || null);
     if (!adapter) {
-      log(`[${row.agentName}] no usable CLI adapter on this machine — install claude, codex, or opencode, or attach manually`);
+      log(`[${row.agentName}] no usable CLI adapter on this machine — install claude, codex, opencode, or qwen, or attach manually`);
       return false;
     }
     const environment = environmentFor(row);
