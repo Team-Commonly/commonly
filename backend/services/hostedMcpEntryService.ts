@@ -4,9 +4,9 @@
  *
  * A catalogue entry is the only source for everything an agent sees and
  * everything a grant is checked against. The vendor's `tools/list` may take a
- * tool away or change what it accepts; it may not add, rename or reword one,
- * and it may not supply the text a seat reads. Entries live in this repo and
- * change only by PR.
+ * tool away or change what it accepts; it cannot add a tool or parameter to
+ * what a seat sees, and it cannot supply the text a seat reads. Entries live
+ * in this repo and change only by PR.
  *
  * What this module owns, and what it deliberately does not:
  * - It projects an entry's pins into the entry-owned half of a
@@ -24,8 +24,9 @@
  *   a schedule rather than on every `tools/list` or `tools/call`.
  *
  * Drift is a named refusal, never a silent change: a pinned tool that is gone
- * upstream is `tool_unavailable`, and one whose schema or annotations moved is
- * `tool_drift` until a PR re-pins it.
+ * upstream is `tool_unavailable`, and one whose schema or annotations moved
+ * incompatibly is `tool_drift` until a PR re-pins it. A compatible read-schema
+ * change keeps the pin and emits a fresh-assessment signal.
  */
 import type { HostedToolDefinition } from './toolBrokerService';
 import type { RoomGrantWriteMode } from '../models/RoomGrant';
@@ -115,7 +116,7 @@ export interface HostedMcpToolAssessment {
   /** The name an agent would see, so a trail row names the tool it refused. */
   namespacedName: string;
   verdict: HostedMcpToolVerdict;
-  /** Present on a refusal: which comparison failed, and how. */
+  /** Present on a refusal or a compatible read change: our pin-derived reason. */
   detail?: string;
 }
 
@@ -148,6 +149,79 @@ export const canonicalJson = (value: unknown): string => {
     return `{${body}}`;
   }
   return JSON.stringify(value) ?? 'undefined';
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const SCHEMA_MAP_KEYWORDS = new Set(['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas']);
+const SCHEMA_ARRAY_KEYWORDS = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems']);
+const SCHEMA_KEYWORDS = new Set([
+  'additionalProperties', 'additionalItems', 'unevaluatedProperties', 'unevaluatedItems',
+  'contains', 'propertyNames', 'not', 'if', 'then', 'else', 'contentSchema',
+]);
+
+/**
+ * `description` is ignorable only at a JSON Schema position. Values of
+ * `default`, `const`, `enum`, and unknown keywords are data or unrecognised
+ * shapes, so their nested keys are left intact for the exact comparison.
+ */
+const stripSchemaDescriptions = (schema: unknown): unknown => {
+  if (!isRecord(schema)) return schema;
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'description') continue;
+    if (SCHEMA_MAP_KEYWORDS.has(key) && isRecord(value)) {
+      result[key] = Object.fromEntries(Object.entries(value)
+        .map(([name, child]) => [name, stripSchemaDescriptions(child)]));
+    } else if (key === 'dependencies' && isRecord(value)) {
+      // Draft-07 dependencies may hold either a subschema or an array of
+      // property names. The latter is data and must stay byte-for-byte equal.
+      result[key] = Object.fromEntries(Object.entries(value).map(([name, child]) => [
+        name, isRecord(child) || typeof child === 'boolean' ? stripSchemaDescriptions(child) : child,
+      ]));
+    } else if (SCHEMA_ARRAY_KEYWORDS.has(key) && Array.isArray(value)) {
+      result[key] = value.map(stripSchemaDescriptions);
+    } else if (key === 'items') {
+      result[key] = Array.isArray(value)
+        ? value.map(stripSchemaDescriptions) : stripSchemaDescriptions(value);
+    } else if (SCHEMA_KEYWORDS.has(key)) {
+      result[key] = stripSchemaDescriptions(value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+};
+
+/** A read pin accepts only new, optional top-level properties after descriptions are stripped. */
+const readSchemaChange = (
+  pin: Record<string, unknown>,
+  live: Record<string, unknown> | undefined,
+): 'unchanged' | 'compatible' | 'drift' => {
+  if (canonicalJson(live ?? null) === canonicalJson(pin)) return 'unchanged';
+  const pinned = stripSchemaDescriptions(pin);
+  const current = stripSchemaDescriptions(live ?? null);
+  if (canonicalJson(current) === canonicalJson(pinned)) return 'compatible';
+  if (!isRecord(pinned) || !isRecord(current)) return 'drift';
+  const pinnedProperties = pinned.properties;
+  const currentProperties = current.properties;
+  if ((pinnedProperties !== undefined && !isRecord(pinnedProperties))
+    || !isRecord(currentProperties)) return 'drift';
+  const previous = isRecord(pinnedProperties) ? pinnedProperties : {};
+  const added = Object.keys(currentProperties)
+    .filter((name) => !Object.prototype.hasOwnProperty.call(previous, name));
+  if (added.length === 0 || (current.required !== undefined && !Array.isArray(current.required))
+    || added.some((name) => (current.required as unknown[] | undefined)?.includes(name))) return 'drift';
+  const retained = { ...currentProperties };
+  for (const name of added) delete retained[name];
+  const withoutAdditions = { ...current };
+  if (pinnedProperties === undefined && Object.keys(retained).length === 0) {
+    delete withoutAdditions.properties;
+  } else {
+    withoutAdditions.properties = retained;
+  }
+  return canonicalJson(withoutAdditions) === canonicalJson(pinned) ? 'compatible' : 'drift';
 };
 
 /**
@@ -220,7 +294,10 @@ export const assessEntryTools = (
         detail: `upstream no longer lists ${tool.upstreamName}`,
       };
     }
-    if (canonicalJson(live.inputSchema ?? null) !== canonicalJson(tool.inputSchema)) {
+    const schemaChange = tool.class === 'read'
+      ? readSchemaChange(tool.inputSchema, live.inputSchema)
+      : (canonicalJson(live.inputSchema ?? null) === canonicalJson(tool.inputSchema) ? 'unchanged' : 'drift');
+    if (schemaChange === 'drift') {
       return {
         name: tool.name,
         namespacedName,
@@ -237,7 +314,14 @@ export const assessEntryTools = (
         detail: moved,
       };
     }
-    return { name: tool.name, namespacedName, verdict: 'ok' as const };
+    return {
+      name: tool.name,
+      namespacedName,
+      verdict: 'ok' as const,
+      ...(schemaChange === 'compatible'
+        ? { detail: `upstream inputSchema for ${tool.upstreamName} changed compatibly; using the pin` }
+        : {}),
+    };
   });
 };
 
