@@ -230,8 +230,27 @@ describe('opencode MCP config', () => {
     expect(permission['commonly_*']).toBe('allow');
     expect(permission['room_grants_*']).toBe('allow');
     expect(permission.edit['*']).toBe('allow');
+    expect(permission.edit['**/.npmrc']).toBe('deny');
+    expect(permission.edit['**/.yarnrc*']).toBe('deny');
+    expect(permission.read['**/.npmrc']).toBeUndefined();
     expect(publicPermissions('bwrap', []).edit['*']).toBe('allow');
     expect(publicPermissions('read-only', [])).toMatchObject({ edit: { '*': 'deny' } });
+  });
+
+  test('a public cold MCP is omitted from OpenCode config', async () => {
+    await withTemp(async (root) => {
+      const home = join(root, 'mcp-home');
+      await mkdir(home);
+      await writeFile(join(home, '.warm.lock'), 'warming\n');
+      const unavailableMcp = [];
+      await withProcessEnv('COMMONLY_MCP_HOME', home, async () => {
+        const config = buildMcpConfig([{
+          name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'],
+        }], { publicSeat: true, unavailableMcp });
+        expect(config).toEqual({});
+        expect(unavailableMcp).toEqual(['commonly']);
+      });
+    });
   });
 });
 

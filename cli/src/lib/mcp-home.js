@@ -52,6 +52,7 @@ import { MCP_PACKAGE, exactVersion, parseVersion } from './mcp-server-version.js
 
 /** The env override, so tests (and an operator) can point the home elsewhere. */
 export const MCP_HOME_ENV = 'COMMONLY_MCP_HOME';
+export const PUBLIC_MCP_UNAVAILABLE_NOTICE = 'Commonly runtime notice: An MCP server was not started this turn because no host-prepared executable was ready. Do not claim to have used its tools.';
 
 export const WARM_LOCK_NAME = '.warm.lock';
 export const REGISTRY_CACHE_NAME = '.registry.json';
@@ -532,11 +533,14 @@ const lockPresent = (home, { exists = defaultExists } = {}) => exists(lockPathFo
  *
  * Sync and network-free by construction — the registry check, the install and
  * the probe all live in the child. A lock already held means another spawn is
- * warming, so this spawn just runs the current version.
+ * warming, so this spawn just runs the current version. Public seats receive
+ * null if that version is unavailable and the fallback is a package runner;
+ * adapters omit that MCP declaration and tell the seat.
  */
 export const prepareMcpSpawn = (command, {
   home,
   apiUrl = null,
+  publicSeat = false,
   spawnImpl,
   childPath,
   now = Date.now(),
@@ -566,10 +570,15 @@ export const prepareMcpSpawn = (command, {
     const due = !lockPresent(resolvedHome, { exists })
       && warmLooksWanted(resolvedHome, plan.version, { now, readFile });
     if (due) kickWarm({ home: resolvedHome, apiUrl, spawnImpl, childPath });
+    if (publicSeat && resolved[0] === 'npx') {
+      warn('commonly: an MCP server is unavailable for this public turn; no host-prepared executable was ready');
+      return null;
+    }
     return resolved;
   } catch {
-    // A rewrite that throws must not cost the seat its tools: the declaration
-    // is what the guard approved, and it still runs.
+    // Trusted seats retain the declared fallback. A public seat must not
+    // execute a package runner from the workspace even on this failure path.
+    if (publicSeat && command?.[0] === 'npx') return null;
     return command;
   }
 };

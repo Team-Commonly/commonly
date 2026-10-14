@@ -503,6 +503,41 @@ describe('claude adapter — ctx.environment', () => {
     }
   });
 
+  test('a public cold MCP is absent from Claude config and the prompt says so', async () => {
+    const originalPlatform = process.platform;
+    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-mcp-home-'));
+    fs.writeFileSync(path.join(home, '.warm.lock'), 'warming\n');
+    const prior = process.env.COMMONLY_MCP_HOME;
+    const { impl, calls } = makeSpawnImpl();
+    try {
+      process.env.COMMONLY_MCP_HOME = home;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      spawnSync.mockImplementation((cmd) => (cmd === 'which'
+        ? { status: 0, stdout: '/usr/bin/true\n' } : { status: 0, stdout: '' }));
+      await claude.spawn('hi', {
+        agentName: 'public-test', cwd,
+        env: { PATH: process.env.PATH, USER: 'safe-user', LOGNAME: 'safe-user' },
+        environment: {
+          sandbox: { mode: 'workspace', trust: 'public' },
+          mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
+        },
+        _publicClaudeState: publicState,
+        _spawnImpl: impl,
+      });
+      expect(calls[0].config.mcpServers.commonly).toBeUndefined();
+      expect(calls[0].args[calls[0].args.lastIndexOf('-p') + 1])
+        .toContain('An MCP server was not started');
+    } finally {
+      if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = prior;
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+      spawnSync.mockReset();
+      fs.rmSync(publicState, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test('public trust with sandbox.mode=none refuses to spawn', async () => {
     const { impl, calls } = makeSpawnImpl();
     await expect(claude.spawn('hi', {

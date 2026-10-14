@@ -350,6 +350,36 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].opts.env.CODEX_HOME).toBe(publicHome);
   });
 
+  test('a public cold MCP is absent from Codex overrides and the prompt says so', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'commonly-codex-mcp-home-'));
+    const publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-public-home-'));
+    await writeFile(join(home, '.warm.lock'), 'warming\n');
+    const prior = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = home;
+    try {
+      const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+      await codex.spawn('hi', {
+        cwd: '/tmp/public-workspace',
+        environment: {
+          sandbox: { trust: 'public', mode: 'workspace' },
+          mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
+        },
+        _publicCodexHome: publicHome,
+        _spawnImpl: impl,
+      });
+      const args = calls[0].args;
+      expect(args.filter((arg) => arg.startsWith('mcp_servers.'))).toEqual([]);
+      expect(args.at(-1)).toContain('An MCP server was not started');
+      expect(args.join(' ')).toContain('**/.npmrc');
+      expect(args.join(' ')).toContain('**/.yarnrc*');
+    } finally {
+      if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = prior;
+      await rm(home, { recursive: true, force: true });
+      await rm(publicHome, { recursive: true, force: true });
+    }
+  });
+
   // `auditDeclaredMcp` classifies an entry by `transport` and never judges the
   // command of one that declared an http transport, so emitting it here ran a
   // command the guard had not approved, with the seat's token substituted

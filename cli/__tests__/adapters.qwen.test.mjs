@@ -240,3 +240,35 @@ test('an explicit MCP server reaches --mcp-config alongside --safe-mode', async 
     expect(observed.config.mcpServers.probe).toMatchObject({ command: '/usr/bin/true' });
   });
 });
+
+test('a public cold MCP is omitted from Qwen config and the turn is told', async () => {
+  await withSeat(async (ctx, root) => {
+    const home = join(root, 'mcp-home');
+    await mkdir(home);
+    await writeFile(join(home, '.warm.lock'), 'warming\n');
+    const prior = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = home;
+    try {
+      let observed;
+      await qwen.spawn('hello', {
+        ...ctx,
+        environment: {
+          ...ctx.environment,
+          mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
+        },
+        _spawnImpl: (_cmd, args) => {
+          observed = {
+            args,
+            config: JSON.parse(readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8')),
+          };
+          return fakeChild();
+        },
+      });
+      expect(observed.config.mcpServers.commonly).toBeUndefined();
+      expect(observed.args[observed.args.indexOf('-p') + 1]).toContain('An MCP server was not started');
+    } finally {
+      if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = prior;
+    }
+  });
+});

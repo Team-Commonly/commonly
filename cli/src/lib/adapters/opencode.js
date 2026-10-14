@@ -39,7 +39,7 @@ import {
 } from 'path';
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn } from '../mcp-home.js';
+import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import {
   isLegacySandboxTrust,
@@ -82,6 +82,7 @@ const PUBLIC_READ_DENIES = [
   '**/.env.*',
   '**/*.env.*',
 ];
+const PUBLIC_EDIT_DENIES = [...PUBLIC_READ_DENIES, '**/.npmrc', '**/.yarnrc*'];
 const PUBLIC_SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
 
 const statOrNull = async (path) => {
@@ -119,7 +120,13 @@ const buildMcpConfig = (servers, ctx = {}) => {
 
     if (transport === 'stdio') {
       if (!Array.isArray(server.command) || server.command.length === 0) continue;
-      const command = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl });
+      const command = prepareMcpSpawn(server.command, {
+        apiUrl: ctx.instanceUrl, publicSeat: ctx.publicSeat,
+      });
+      if (!command) {
+        ctx.unavailableMcp?.push(server.name);
+        continue;
+      }
       if (runtimeToken && command.some((part) => typeof part === 'string' && part.includes(runtimeToken))) {
         // A bearer token in argv is readable by same-user processes.
         // eslint-disable-next-line no-console
@@ -207,8 +214,8 @@ const publicPermissions = (mode, mcpNames) => {
   const edit = { '*': mode === 'read-only' ? 'deny' : 'allow' };
   for (const pattern of PUBLIC_READ_DENIES) {
     read[pattern] = 'deny';
-    edit[pattern] = 'deny';
   }
+  for (const pattern of PUBLIC_EDIT_DENIES) edit[pattern] = 'deny';
   return {
     '*': 'deny',
     read,
@@ -666,10 +673,13 @@ export default {
         ...(stateHome ? [mkdir(stateHome, { recursive: true, mode: 0o700 })] : []),
         ...(cacheHome ? [mkdir(cacheHome, { recursive: true, mode: 0o700 })] : []),
       ]);
+      const unavailableMcp = [];
       const mcp = buildMcpConfig(ctx.environment?.mcp, {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
         credentialFile: credential?.path || null,
+        publicSeat: isPublic,
+        unavailableMcp,
       });
       const config = {
         permission: isPublic
@@ -703,7 +713,8 @@ export default {
         credentialFile: credential?.path || null,
       });
       const args = buildArgs({
-        prompt: fullPrompt,
+        prompt: unavailableMcp.length
+          ? `${fullPrompt}\n\n${PUBLIC_MCP_UNAVAILABLE_NOTICE}` : fullPrompt,
         sessionId: ctx.sessionId,
         cwd: ctx.cwd,
         model: qualifiedProviderModel(provider, ctx.environment?.model),

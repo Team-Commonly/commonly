@@ -6,7 +6,7 @@ import { tmpdir } from 'os';
 import { basename, dirname, isAbsolute, join } from 'path';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { deliverSeatCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn } from '../mcp-home.js';
+import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE } from '../mcp-home.js';
 import { writeCredentialFile } from '../credential-file.js';
 import { normalizeSandboxTrust, validateEnvironmentSpec } from '../environment.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
@@ -88,7 +88,13 @@ export const buildQwenMcpConfig = (servers, ctx) => {
     const transport = server.transport || 'stdio';
     if (transport === 'stdio') {
       if (!Array.isArray(server.command) || !server.command.length) continue;
-      const command = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl });
+      const command = prepareMcpSpawn(server.command, {
+        apiUrl: ctx.instanceUrl, publicSeat: ctx.publicSeat,
+      });
+      if (!command) {
+        ctx.unavailableMcp?.push(server.name);
+        continue;
+      }
       const delivery = deliverSeatCredential({ ...server, command }, {
         credentialFile: ctx.credentialFile,
         label: 'qwen',
@@ -271,10 +277,13 @@ export default {
         provider, keyFile, tokenFile: join(tempDir, 'provider-proxy-token'), adapterLabel: 'Qwen',
       });
       const proxyWithBearer = { ...proxy, bearer: (await readFile(proxy.tokenFile, 'utf8')).trim() };
+      const unavailableMcp = [];
       const mcp = buildQwenMcpConfig(ctx.environment?.mcp, {
         credentialFile: credential?.path || '',
         instanceUrl: ctx.instanceUrl || '',
         runtimeToken: ctx.runtimeToken || '',
+        publicSeat: isPublic,
+        unavailableMcp,
       });
       await Promise.all([
         writeFile(settingsPath, JSON.stringify({
@@ -294,7 +303,8 @@ export default {
         '--mcp-config', mcpPath, '--exclude-tools', [
           ...EXCLUDED_TOOLS, ...(isPublic ? PUBLIC_READ_TOOLS : []),
         ].join(','),
-        '-o', 'stream-json', '-p', fullPrompt,
+        '-o', 'stream-json', '-p', unavailableMcp.length
+          ? `${fullPrompt}\n\n${PUBLIC_MCP_UNAVAILABLE_NOTICE}` : fullPrompt,
       ];
       let cmd = executable;
       let spawnArgs = args;
