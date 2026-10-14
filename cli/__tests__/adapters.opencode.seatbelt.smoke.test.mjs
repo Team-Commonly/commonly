@@ -21,6 +21,7 @@ const assertSmokeTestedVersion = () => {
       `Seatbelt smoke requires OpenCode ${TESTED_OPENCODE_VERSIONS.join(', ')}; configured binary reports ${version || 'unknown'}`,
     );
   }
+  process.stdout.write(`Seatbelt smoke exercising OpenCode ${version}\n`);
 };
 
 const listen = (server) => new Promise((resolve, reject) => {

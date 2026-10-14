@@ -865,6 +865,11 @@ describe('opencode adapter — spawn()', () => {
       message: /installed OpenCode 1\.18\.0 is older than smoke-tested versions 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
+      description: 'between smoke-tested versions',
+      result: { status: 0, stdout: 'OpenCode 1.18.40\n' },
+      message: /installed OpenCode 1\.18\.40 differs from smoke-tested versions 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+    },
+    {
       description: 'newer',
       result: { status: 0, stdout: 'OpenCode 1.20.0\n' },
       message: /installed OpenCode 1\.20\.0 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
