@@ -271,9 +271,13 @@ const V2AgentBYO: React.FC = () => {
           // stomped an explicit mode choice — caught live 2026-09-06: pick
           // "On my computer", pick a pod, and the submit button turns back
           // into "Run it here".
+          // A ?name= deep link comes from Scout's connect_local_agent card: the user
+          // asked to connect THEIR OWN agent (e.g. Claude Code), so "Run it here" —
+          // a Commonly-hosted agent — is the wrong preselection (Growth's walk,
+          // 2026-10-14: one click gave a hosted agent named after their Claude Code).
           if (availability.configured && !modeDefaulted.current) {
             modeDefaulted.current = true;
-            setMode('hosted');
+            if (!prefill.name) setMode('hosted');
           }
         }
       } catch {
@@ -917,37 +921,13 @@ const V2AgentBYO: React.FC = () => {
             </div>
           </div>
 
-          <div className="v2-byo__snippet">
-            <div className="v2-byo__snippet-head">
-              <span>{t('agentByo.snippets.claudeCode')}</span>
-            </div>
-            <div className="v2-byo__command">
-              <pre className="v2-byo__pre">{claudeSnippet}</pre>
-              <button type="button" onClick={() => copy('claude', claudeSnippet)} className="v2-byo__copy">
-                {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
-              </button>
-            </div>
-          </div>
-
-          <div className="v2-byo__snippet">
-            <div className="v2-byo__snippet-head">
-              <span>{t('agentByo.snippets.cursor')}</span>
-            </div>
-            <div className="v2-byo__command">
-              <pre className="v2-byo__pre">{cursorSnippet}</pre>
-              <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">
-                {copied === 'cursor' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
-              </button>
-            </div>
-          </div>
-
           {/*
-            The MCP snippets above make the agent able to CALL Commonly from the
-            user's editor. They do not make it answer @mentions here — nothing
-            polls. Users finished this flow, saw the agent in Your Team,
-            mentioned it, and got silence; 4 of 6 mentions in 10 days went
-            unanswered for exactly this reason (#887). The consequence belongs
-            at the point of the promise, not in a footnote.
+            The listener comes FIRST, right under the token: it is the step that
+            makes the agent answer @mentions here. The MCP snippets below only let
+            the user CALL Commonly from their editor. Users finished this flow, saw
+            the agent in Your Team, mentioned it, and got silence; 4 of 6 mentions
+            in 10 days went unanswered (#887), and the listener still sat below the
+            editor snippets until 2026-10-14 (Growth's walk from Scout's card).
           */}
           <div className="v2-byo__snippet v2-byo__snippet--listen">
             <div className="v2-byo__snippet-head">
@@ -979,6 +959,31 @@ const V2AgentBYO: React.FC = () => {
               {t('agentByo.listen.note', { name: issued.agentName })}
             </p>
           </div>
+
+          <div className="v2-byo__snippet">
+            <div className="v2-byo__snippet-head">
+              <span>{t('agentByo.snippets.claudeCode')}</span>
+            </div>
+            <div className="v2-byo__command">
+              <pre className="v2-byo__pre">{claudeSnippet}</pre>
+              <button type="button" onClick={() => copy('claude', claudeSnippet)} className="v2-byo__copy">
+                {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+              </button>
+            </div>
+          </div>
+
+          <div className="v2-byo__snippet">
+            <div className="v2-byo__snippet-head">
+              <span>{t('agentByo.snippets.cursor')}</span>
+            </div>
+            <div className="v2-byo__command">
+              <pre className="v2-byo__pre">{cursorSnippet}</pre>
+              <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">
+                {copied === 'cursor' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+              </button>
+            </div>
+          </div>
+
 
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
