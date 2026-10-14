@@ -216,3 +216,25 @@ test('MCP token takes the file path, while credential-bearing HTTP config refuse
     headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
   }], ctx)).toThrow(/requires a credential transport/);
 });
+
+test('an explicit MCP server reaches --mcp-config alongside --safe-mode', async () => {
+  await withSeat(async (ctx) => {
+    let observed;
+    await qwen.spawn('hello', {
+      ...ctx,
+      environment: {
+        ...ctx.environment,
+        mcp: [{ name: 'probe', transport: 'stdio', command: ['/usr/bin/true'] }],
+      },
+      _spawnImpl: (_cmd, args) => {
+        observed = {
+          args,
+          config: JSON.parse(readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8')),
+        };
+        return fakeChild();
+      },
+    });
+    expect(observed.args).toContain('--safe-mode');
+    expect(observed.config.mcpServers.probe).toMatchObject({ command: '/usr/bin/true' });
+  });
+});
