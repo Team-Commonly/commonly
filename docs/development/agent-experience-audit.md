@@ -4135,7 +4135,7 @@ Two surfaces taught the false model. First, `AgentMessageService.postMessage` an
 
 *Witness: room 6ac89da9… as the smoke account at 08:12Z: messages 76645 (probe), 76646 (answer), 76650 (second probe), nothing after. hq-support log 08:09:55–08:10:01Z: spawn, mint, revoke, "posted 151 bytes". Backend log 08:10:01.411Z: the `skipped … duplicate_recent` line. The fix's test fails exactly the two 1:1 cases when the exemption is removed and passes the shared-pod case either way.*
 
-## 76. `attach` cannot promise `run` until the server confirms the adapter (2026-10-09, connector-ops / vera)
+## 78. `attach` cannot promise `run` until the server confirms the adapter (2026-10-09, connector-ops / vera)
 
 *Origin: Wave's clean-box attached OpenCode to an instance without the `runtimeAdapter` projection, then followed the printed `Run with:` instruction. The next command refused the same installation because the server could not confirm its adapter.*
 
@@ -4147,12 +4147,31 @@ There are two states to name separately. If no installation row has a `runtimeAd
 
 **Lesson:** a successful write proves only that the write route accepted its request. When the next step has a stronger read-side precondition, verify that precondition before presenting the next command as ready.
 
-## 77. An empty installations response does not prove the server is old (2026-10-09, vera)
+## 79. An empty installations response does not prove the server is old (2026-10-09, vera)
 
-*Correction to entry 76: the server-binding check has a third state. `installations: []`, a missing `installations` field, or a response with no installation rows means the adapter binding cannot be determined; it does not establish that the server predates the projection.*
+*Correction to entry 78: the server-binding check has a third state. `installations: []`, a missing `installations` field, or a response with no installation rows means the adapter binding cannot be determined; it does not establish that the server predates the projection.*
 
 Treating an empty list as legacy tells an operator to upgrade a server that may be current, and can obscure the real issue: the selected installation was not returned. The same ambiguity affects both attach's post-write check and `agent run`'s binding refusal.
 
 **Repair:** report the binding as unverifiable when the response is missing, empty, or contains no installation rows. Use the legacy-server upgrade message only when installation rows exist and none carries the `runtimeAdapter` field. Tests cover empty, missing, and non-installation-only responses, as well as the old-server and matching-binding controls.
 
 **Lesson:** absence of evidence can justify a refusal, but it does not identify the cause. Preserve “cannot determine” as a distinct state when an API response is incomplete.
+
+## 80. A scope named `read` did not mean the credential couldn't write (2026-10-13, connector-ops)
+
+*Origin: the 2026-10-13 hosted-MCP catalogue sweep (`docs/plans/hosted-mcp-catalogue-sweep-2026-10-13.md`). A first pass classified 14 vendors as fits because their metadata advertised a read scope separate from write. An independent second pass, told to refute each fit, overturned 7 of them, and the 2026-10-09 next batch (Canva, Miro, ClickUp) lost all three on the same re-check.*
+
+The catalogue bar is a credential that can't write. The scope list in `oauth-protected-resource` metadata is the cheapest thing to measure, so a `:read` scope next to a `:write` scope read as proof of the bar. It isn't, for several measured reasons:
+- Neon: the MCP-layer `read` scope sat over an upstream token that could still write.
+- PostHog: `:read` scopes reach a tool proxy that runs third-party tools able to change data, plus routes that write product intents.
+- Typeform: its own docs require granting every scope to connect at all.
+- Cal.com: the scope is fixed at registration.
+- Zendesk: the "dynamic" registration endpoint hands every caller one hard-coded public client id.
+- Lucid: read-only is a separate *resource*, not a scope.
+
+Gates that never appear in metadata decided several more, including the client allowlists or review behind Canva, Figma, Dropbox, Square and Vercel, and the admin enablement behind monday.com and Miro Enterprise.
+
+**Repair:** a catalogue verdict now requires a second, independent pass that tries to refute it. That pass answers from vendor docs or measurement what the read token actually *reaches*: tools with side effects, proxies to third parties, token forwarding, plan or allowlist gates. The first pass's metadata is the starting point, not the verdict.
+
+**Lesson:** a scope's name is the vendor's label for a permission set, and the permission set is what the bar is about. Measure what the credential can reach, and refute your own first reading before a capture or an account is spent on it.
+
