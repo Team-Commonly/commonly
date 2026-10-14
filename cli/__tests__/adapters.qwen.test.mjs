@@ -92,7 +92,9 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     expect(cmd).toBe('/usr/local/bin/qwen');
     expect(args).toEqual(expect.arrayContaining(['--bare', '--safe-mode', '--auth-type', 'openai', '-o', 'stream-json']));
     expect(args[args.indexOf('--exclude-tools') + 1].split(','))
-      .toEqual(expect.arrayContaining(['agent', 'workflow', 'advisor']));
+      .toEqual(expect.arrayContaining([
+        'agent', 'workflow', 'advisor', 'replace', 'task', 'search_file_content',
+      ]));
     expect(options.env.HOME).toBe(options.env.QWEN_HOME);
     expect(options.env.HOME).toContain('commonly-qwen-home-');
     expect(profiles[0].options.statePath).toBe(options.env.HOME);

@@ -28,6 +28,8 @@ const EXCLUDED_TOOLS = [
   'run_shell_command', 'exec', 'edit', 'notebook_edit', 'write_file',
   'agent', 'create_sub_session', 'task_create', 'team_create',
   'workflow', 'advisor',
+  // Legacy aliases. Deny both names even if Qwen changes when it canonicalizes.
+  'replace', 'task', 'search_file_content',
   'web_fetch', 'web_search',
 ];
 // Qwen can read its own config directory. That directory also contains the
