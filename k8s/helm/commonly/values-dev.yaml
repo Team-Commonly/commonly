@@ -359,6 +359,11 @@ slack:
 
 # Both commonly-dev-google-calendar-client-* secrets exist with a version
 # (created 2026-10-09 in the cluster project's Secret Manager).
+# Off until an enrolled call succeeds (Wren, 2026-10-14). OAuth works, but every
+# tool call fails Google's Workspace MCP Developer Preview gate, which is
+# per Cloud project. Offering the tile meant a stranger could connect and then
+# hit an error on the first call. Turning this back on is the switch once the
+# project is enrolled and a list_calendars call succeeds.
 hostedMcp:
   googleCalendar:
-    enabled: true
+    enabled: false
