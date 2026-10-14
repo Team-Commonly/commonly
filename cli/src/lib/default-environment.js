@@ -17,6 +17,7 @@
  *            it had no commonly_* tool of its own)
  *   pi     — stdio servers from the environment spec (adapters/pi.js)
  *   opencode — per-spawn config file with local/remote MCP entries (adapters/opencode.js)
+ *   qwen — per-spawn --mcp-config with file-backed stdio credentials (adapters/qwen.js)
  * `stub` has no consumption path and must keep being handed `environment: null`.
  *
  * The placeholders are substituted at spawn time by the adapter, so the
@@ -25,7 +26,7 @@
 
 import { normalizeSandboxTrust } from './environment.js';
 
-export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'opencode']);
+export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'opencode', 'qwen']);
 
 /**
  * The adapters that can ENFORCE the default sandbox — a strict subset of the
@@ -42,7 +43,7 @@ export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'open
  * here and hoped for. A derived pi seat used to be exactly this shape and would
  * have failed every spawn with `public-trust seats are not supported`.
  */
-export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'opencode']);
+export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'opencode', 'qwen']);
 
 // The server has not yet admitted OpenCode to its grant-broker confinement
 // allowlist. Keep runtime sandbox support separate from the narrower set of
@@ -70,7 +71,7 @@ export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex']);
  * moves a host fact into the database and breaks the day the seat is re-homed.
  * An explicit mode in a record still wins over the derived one.
  *
- * Confinement holds for claude, codex, and opencode, and only they are handed
+ * Confinement holds for claude, codex, opencode, and qwen, and only they are handed
  * this block (ADAPTERS_WITH_DEFAULT_SANDBOX). Grant-broker eligibility is
  * narrower until the server admits OpenCode after its confinement proof.
  * A pi seat must never be handed this block: it fails closed on a declared

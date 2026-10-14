@@ -49,6 +49,7 @@ import {
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
+  ADAPTERS_WITH_DEFAULT_SANDBOX,
   defaultMcpServers,
 } from '../lib/default-environment.js';
 import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
@@ -621,8 +622,8 @@ export const updateAgentConfiguration = async ({
     environment = { ...environmentRuntime };
   }
   if (environment?.provider !== undefined
-    && String(runtime.adapter || record.adapter || '').trim().toLowerCase() !== 'opencode') {
-    throw new Error('environment.provider is supported only by the opencode adapter');
+    && !adapterRegistry.getAdapter(String(runtime.adapter || record.adapter || '').trim().toLowerCase())?.supportsProvider) {
+    throw new Error('environment.provider requires a provider-capable adapter');
   }
   if (environment) config.environment = environmentForServer(environment);
   if (!Object.keys(config).length) {
@@ -700,10 +701,9 @@ export const resolveAttachSandbox = ({
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
   if ((mode === 'workspace' || mode === 'read-only')
-    && (trust !== 'public' || !['codex', 'claude', 'opencode'].includes(adapterName))) {
+    && (trust !== 'public' || !ADAPTERS_WITH_DEFAULT_SANDBOX.has(adapterName))) {
     throw new Error(
-      `sandbox.mode=${mode} is currently implemented only for public `
-      + 'Claude, Codex, or OpenCode adapters',
+      `sandbox.mode=${mode} requires public trust and an adapter with sandbox enforcement`,
     );
   }
   return { mode, trust };
@@ -743,8 +743,8 @@ export const performAttach = async ({
   let workspace = null;
   if (envPath) {
     environment = await parseEnvironmentFile(envPath);
-    if (environment?.provider !== undefined && adapterName !== 'opencode') {
-      throw new Error('environment.provider is supported only by the opencode adapter');
+    if (environment?.provider !== undefined && !adapter.supportsProvider) {
+      throw new Error('environment.provider requires a provider-capable adapter');
     }
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
     if (typeof adapter.validateEnvironment === 'function') {
@@ -784,7 +784,8 @@ export const performAttach = async ({
             + `${seatbelt.error}. On Linux use sandbox.mode=bwrap.`,
           );
         }
-        const adapterLabel = adapterName === 'opencode' ? 'OpenCode' : 'Claude';
+        const adapterLabel = ({ opencode: 'OpenCode', qwen: 'Qwen', claude: 'Claude' })[adapterName]
+          || adapterName;
         log(
           `sandbox: public ${sandboxMode} via macOS Seatbelt `
           + `(deny-by-default host filesystem; ${adapterLabel}/MCP network retained)`,
@@ -793,7 +794,7 @@ export const performAttach = async ({
     } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {
       throw new Error(
         `sandbox.mode=${sandboxMode} is not yet implemented in the local-CLI driver. `
-        + `Supported locally: none, bwrap, and public Codex/Claude/OpenCode workspace/read-only.`,
+        + `Supported locally: none, bwrap, and public Codex/Claude/OpenCode/Qwen workspace/read-only.`,
       );
     }
   } else {
@@ -1106,8 +1107,8 @@ export const performRun = ({
   revokeOrphansImpl = revokeOrphanedSpawnCredentials,
   sleepImpl = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 }) => {
-  if (environment?.provider !== undefined && adapter?.name !== 'opencode') {
-    throw new Error('environment.provider is supported only by the opencode adapter');
+  if (environment?.provider !== undefined && !adapter?.supportsProvider) {
+    throw new Error('environment.provider requires a provider-capable adapter');
   }
   const client = createClient({ instance: instanceUrl, token });
 
@@ -2711,7 +2712,7 @@ Docs:
   // ── attach (ADR-005, ADR-008) ─────────────────────────────────────────────
   agent
     .command('attach <adapter>')
-    .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|opencode|…)')
+    .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|opencode|qwen|…)')
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .requiredOption('--name <name>', 'Agent name (e.g. my-claude)')
     .option('--display <name>', 'Display name shown in the pod')
@@ -2893,7 +2894,7 @@ Docs:
     .command('run <name>')
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
-    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex|pi|opencode); an existing token file bound to a different adapter stops the run')
+    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex|pi|opencode|qwen); an existing token file bound to a different adapter stops the run')
     .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)

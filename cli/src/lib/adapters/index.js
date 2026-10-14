@@ -12,6 +12,7 @@ import claude from './claude.js';
 import codex from './codex.js';
 import pi from './pi.js';
 import opencode from './opencode.js';
+import qwen from './qwen.js';
 
 const ADAPTERS = {
   [stub.name]: stub,
@@ -19,6 +20,7 @@ const ADAPTERS = {
   [codex.name]: codex,
   [pi.name]: pi,
   [opencode.name]: opencode,
+  [qwen.name]: qwen,
 };
 
 export const listAdapterNames = () => Object.keys(ADAPTERS);

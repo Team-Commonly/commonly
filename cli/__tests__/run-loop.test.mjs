@@ -115,7 +115,7 @@ describe('performRun', () => {
       token: 'cm_agent_test',
       adapter: { name: 'stub' },
       environment: { model: 'gpt-5.4', provider: {} },
-    })).toThrow(/supported only by the opencode adapter/);
+    })).toThrow(/requires a provider-capable adapter/);
     expect(createClient).not.toHaveBeenCalled();
   });
 

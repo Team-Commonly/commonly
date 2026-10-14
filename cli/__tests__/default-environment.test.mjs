@@ -34,11 +34,11 @@ describe('defaultMcpServers', () => {
   });
 
   test('ADAPTERS_WITH_DEFAULT_MCP matches the adapters this test names', () => {
-    expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['claude', 'codex', 'opencode', 'pi']);
+    expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['claude', 'codex', 'opencode', 'pi', 'qwen']);
   });
 
   test('ADAPTERS_WITH_DEFAULT_SANDBOX is the enforcing subset, pi excluded', () => {
-    expect([...ADAPTERS_WITH_DEFAULT_SANDBOX].sort()).toEqual(['claude', 'codex', 'opencode']);
+    expect([...ADAPTERS_WITH_DEFAULT_SANDBOX].sort()).toEqual(['claude', 'codex', 'opencode', 'qwen']);
     expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('pi')).toBe(false);
   });
 
