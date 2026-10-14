@@ -59,6 +59,17 @@ const issueToken = async () => {
 };
 
 describe('BYO listener snippet', () => {
+  test('the listener comes right after the token, before the editor (MCP) snippets', async () => {
+    await issueToken();
+    const pres = Array.from(document.querySelectorAll('.v2-byo__pre')).map((el) => el.textContent || '');
+    const listener = pres.findIndex((txt) => /commonly agent run /.test(txt));
+    const claudeMcp = pres.findIndex((txt) => /claude mcp add commonly/.test(txt));
+    expect(listener).toBeGreaterThan(-1);
+    expect(claudeMcp).toBeGreaterThan(-1);
+    expect(listener).toBe(1); // 0 is the runtime token itself
+    expect(listener).toBeLessThan(claudeMcp);
+  });
+
   test('every line executes: the CLI install is a command, not a comment, and the run line is last', async () => {
     await issueToken();
     // Several <pre class="v2-byo__pre"> render on the issued screen (the token,

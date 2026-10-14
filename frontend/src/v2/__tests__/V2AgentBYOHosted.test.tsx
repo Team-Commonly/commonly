@@ -84,6 +84,26 @@ describe('V2AgentBYO — Run it here', () => {
     expect(screen.getByText(/sam-agent is live in Workspace/i)).toBeInTheDocument();
   });
 
+  test('a connect-card deep link (?name=) keeps "Bring your own runtime" selected even when hosting is available', async () => {
+    mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
+    // Scout's connect_local_agent card lands here with the seat it proposed: the
+    // user asked to connect their OWN agent, so hosted must not be preselected.
+    window.history.pushState({}, '', '/v2/agents/byo?pod=p1&name=growth-claude');
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={['/v2/agents/byo?pod=p1&name=growth-claude']}>
+          <V2AgentBYO />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    // let the availability effect settle, then assert it did not stomp the mode
+    await waitFor(() => expect(axios.get.mock.calls.some(([url]) => url === '/api/hosted/availability')).toBe(true));
+    await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'false');
+    window.history.pushState({}, '', '/');
+  });
+
   test('a persona hire sends the persona\'s card sentence as the seat description (#1649)', async () => {
     mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
     axios.post.mockResolvedValue({ data: { ok: true } });
