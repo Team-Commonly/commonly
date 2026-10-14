@@ -17,7 +17,8 @@
  * per-owner identities it becomes redundant rather than wrong, so it stays.
  *
  * Moved here from routes/agentBinding.ts on 2026-10-14, so the daemon routes
- * and the token routes share one rule.
+ * and the token routes share one rule. Setting a push webhook URL (install and
+ * agent-config routes) applies it too, admins exempt.
  */
 
 export type OwnershipFailure = 'owner_installation_missing' | 'another_installer' | 'unknown_installer';
@@ -27,6 +28,24 @@ export type OwnershipCheck =
   | { owned: false; failure: OwnershipFailure };
 
 const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
+
+/** The negative clause: does an active installation by anyone else exist? */
+const otherInstallerFailure = async (
+  ownerUserId: unknown,
+  agentName: string,
+  instanceId: string,
+): Promise<OwnershipFailure | null> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentInstallation } = require('../models/AgentRegistry');
+  const others = await AgentInstallation.findOne({
+    agentName, instanceId, status: 'active', installedBy: { $ne: ownerUserId },
+  }).collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy').lean();
+  if (!others) return null;
+  // MongoDB $ne also matches a missing field. Keep that legacy state safely
+  // non-adoptable, but report it separately so an owner can repair it.
+  if (!others.installedBy) return 'unknown_installer';
+  return 'another_installer';
+};
 
 export const ownsRuntimeIdentity = async (
   ownerUserId: unknown,
@@ -39,14 +58,23 @@ export const ownsRuntimeIdentity = async (
     agentName, instanceId, installedBy: ownerUserId, status: 'active',
   }).collation(RUNTIME_INSTALLATION_COLLATION).select('_id').lean();
   if (!mine) return { owned: false, failure: 'owner_installation_missing' };
-  const others = await AgentInstallation.findOne({
-    agentName, instanceId, status: 'active', installedBy: { $ne: ownerUserId },
-  }).collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy').lean();
-  if (!others) return { owned: true };
-  // MongoDB $ne also matches a missing field. Keep that legacy state safely
-  // non-adoptable, but report it separately so an owner can repair it.
-  if (!others.installedBy) return { owned: false, failure: 'unknown_installer' };
-  return { owned: false, failure: 'another_installer' };
+  const failure = await otherInstallerFailure(ownerUserId, agentName, instanceId);
+  return failure ? { owned: false, failure } : { owned: true };
+};
+
+/**
+ * The same rule at install time, when the owner's installation is about to be
+ * created and so cannot exist yet: only the negative clause is checked.
+ * Holding it means the install leaves the owner as the identity's sole
+ * installer, which is what `ownsRuntimeIdentity` asks afterwards.
+ */
+export const willSolelyInstallRuntimeIdentity = async (
+  ownerUserId: unknown,
+  agentName: string,
+  instanceId: string,
+): Promise<OwnershipCheck> => {
+  const failure = await otherInstallerFailure(ownerUserId, agentName, instanceId);
+  return failure ? { owned: false, failure } : { owned: true };
 };
 
 /** User-facing refusal for the token routes. */
@@ -55,4 +83,17 @@ export const runtimeCredentialRefusal: Record<OwnershipFailure, string> = {
   another_installer: 'This agent is also installed by another user, so no single user can hold its runtime tokens.',
   unknown_installer:
     'An installation of this agent has no recorded installer; an admin must repair it before tokens can be issued.',
+};
+
+/**
+ * User-facing refusal for setting a push webhook (`config.runtime.webhookUrl`).
+ * The webhook is a credential in the same sense as a token: what it returns
+ * with `outcome: 'posted'` is posted AS the agent identity.
+ */
+export const webhookUrlRefusal: Record<OwnershipFailure, string> = {
+  owner_installation_missing: 'Only the user who installed this agent can set its webhook URL.',
+  another_installer: 'This agent is also installed by another user, so no single user can set its webhook URL. '
+    + 'Install it under a different name to use your own webhook.',
+  unknown_installer:
+    'An installation of this agent has no recorded installer; an admin must repair it before a webhook URL can be set.',
 };

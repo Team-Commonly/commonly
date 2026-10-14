@@ -41,6 +41,7 @@ const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
+const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
 
 // Inlined per-route limiter. This comment used to attribute its clean CodeQL
 // status to `js/missing-rate-limiting` "only seeing express-rate-limit calls
@@ -364,6 +365,18 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         code: 'invalid_environment_spec',
         fields: environmentErrors,
       });
+    }
+    // A push webhook's replies are posted as the agent identity, so supplying
+    // one takes the sole-installer rule the runtime-token routes apply
+    // (services/runtimeIdentityOwnership), admins exempt. This install creates
+    // the caller's installation, so the rule here is that no one else holds an
+    // active one. Checked before any write below.
+    const requestedWebhookUrl = (installConfig.runtime as { webhookUrl?: unknown } | undefined)?.webhookUrl;
+    if (requestedWebhookUrl && !isAdminInstaller) {
+      const ownership = await willSolelyInstallRuntimeIdentity(userId, safeAgentName, normalizedInstanceId);
+      if (!ownership.owned) {
+        return res.status(403).json({ code: ownership.failure, error: webhookUrlRefusal[ownership.failure] });
+      }
     }
     const runtimeConfig = typeof installConfig.runtime === 'object' && installConfig.runtime
       ? { ...installConfig.runtime }

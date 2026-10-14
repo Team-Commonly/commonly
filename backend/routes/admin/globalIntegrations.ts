@@ -266,7 +266,6 @@ const upsertXIntegration = async ({
     category: 'Social',
     maxResults: 5,
     exclude: 'retweets,replies',
-    apiBase: X_API_BASE,
     agentAccessEnabled: true,
     globalAgentAccess: true,
   };
@@ -651,7 +650,6 @@ router.post('/instagram', adminWriteLimiter, auth, adminAuth, async (req: any, r
         username,
         igUserId,
         category: 'Social',
-        apiBase: process.env.INSTAGRAM_GRAPH_API_BASE || 'https://graph.facebook.com/v19.0',
         agentAccessEnabled: true,
         globalAgentAccess: true,
       };
@@ -670,7 +668,6 @@ router.post('/instagram', adminWriteLimiter, auth, adminAuth, async (req: any, r
           username,
           igUserId,
           category: 'Social',
-          apiBase: process.env.INSTAGRAM_GRAPH_API_BASE || 'https://graph.facebook.com/v19.0',
           agentAccessEnabled: true,
           globalAgentAccess: true,
         },

@@ -102,7 +102,6 @@ async function setupGlobalSocialFeeds() {
             category: 'Social',
             maxResults: 50,
             exclude: 'retweets,replies',
-            apiBase: process.env.X_API_BASE_URL || 'https://api.x.com/2'
           },
           createdBy: adminUser._id
         });
@@ -142,7 +141,6 @@ async function setupGlobalSocialFeeds() {
             igUserId: process.env.INSTAGRAM_GLOBAL_IG_USER_ID,
             username: process.env.INSTAGRAM_GLOBAL_USERNAME || 'commonly.app',
             category: 'Social',
-            apiBase: process.env.INSTAGRAM_GRAPH_API_BASE || 'https://graph.facebook.com/v19.0'
           },
           createdBy: adminUser._id
         });

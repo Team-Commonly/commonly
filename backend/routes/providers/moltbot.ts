@@ -8,13 +8,28 @@ const express = require('express');
 
 const router = express.Router();
 const auth = require('../../middleware/auth');
+const adminAuth = require('../../middleware/adminAuth');
+const { platformIpRateLimit } = require('../../middleware/platformRateLimit');
 const { getMoltbotProvider, ProviderManifest } = require('../../providers/moltbot');
+
+// Every route here acts through the instance's single moltbot provider: the
+// first `/connect` fixes its gateway and the API token it calls Commonly with,
+// and the routes below act with that token. Operating it is an instance
+// administrator's job, so the whole router is admin-only. The limiter runs
+// first because adminAuth reads the caller's User row on every request; the
+// budget matches the admin global-integrations writes.
+const moltbotProviderLimit = platformIpRateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  label: '60 moltbot provider calls per 15 minutes per IP',
+});
+router.use(moltbotProviderLimit, auth, adminAuth);
 
 /**
  * GET /api/providers/moltbot
  * Get moltbot provider info and connection status
  */
-router.get('/', auth, async (req: any, res: any) => {
+router.get('/', async (req: any, res: any) => {
   try {
     const provider = getMoltbotProvider();
     const connected = provider?.connection?.connected || false;
@@ -34,7 +49,7 @@ router.get('/', auth, async (req: any, res: any) => {
  * POST /api/providers/moltbot/connect
  * Connect to moltbot Gateway
  */
-router.post('/connect', auth, async (req: any, res: any) => {
+router.post('/connect', async (req: any, res: any) => {
   try {
     const { gatewayUrl, apiToken, defaultPodId } = req.body;
 
@@ -63,7 +78,7 @@ router.post('/connect', auth, async (req: any, res: any) => {
  * POST /api/providers/moltbot/disconnect
  * Disconnect from moltbot Gateway
  */
-router.post('/disconnect', auth, async (req: any, res: any) => {
+router.post('/disconnect', async (req: any, res: any) => {
   try {
     const provider = getMoltbotProvider();
     if (provider) {
@@ -84,7 +99,7 @@ router.post('/disconnect', auth, async (req: any, res: any) => {
  * POST /api/providers/moltbot/push
  * Push an event to moltbot
  */
-router.post('/push', auth, async (req: any, res: any) => {
+router.post('/push', async (req: any, res: any) => {
   try {
     const { eventType, payload } = req.body;
 
@@ -110,7 +125,7 @@ router.post('/push', auth, async (req: any, res: any) => {
  * GET /api/providers/moltbot/context/:podId
  * Get context for moltbot from a pod
  */
-router.get('/context/:podId', auth, async (req: any, res: any) => {
+router.get('/context/:podId', async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const { task } = req.query;
@@ -132,7 +147,7 @@ router.get('/context/:podId', auth, async (req: any, res: any) => {
  * POST /api/providers/moltbot/search/:podId
  * Search pod memory for moltbot
  */
-router.post('/search/:podId', auth, async (req: any, res: any) => {
+router.post('/search/:podId', async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const { query, limit, types } = req.body;
@@ -158,7 +173,7 @@ router.post('/search/:podId', auth, async (req: any, res: any) => {
  * POST /api/providers/moltbot/write/:podId
  * Write to pod memory from moltbot
  */
-router.post('/write/:podId', auth, async (req: any, res: any) => {
+router.post('/write/:podId', async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const { target, content, tags } = req.body;

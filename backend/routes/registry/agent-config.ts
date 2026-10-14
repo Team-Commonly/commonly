@@ -25,6 +25,7 @@ const {
   normalizeContextPolicy,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
+const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
 
 const agentConfigRouter = express.Router();
 
@@ -144,6 +145,20 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
           code: 'invalid_environment_spec',
           fields: environmentErrors,
         });
+      }
+    }
+
+    // Being this row's installer is not enough to point its push webhook
+    // somewhere new. The webhook's replies are posted as the agent identity, so
+    // setting or changing `config.runtime.webhookUrl` takes the sole-installer
+    // rule the runtime-token routes apply (services/runtimeIdentityOwnership),
+    // admins exempt. Clearing it, or resending the stored value, does not.
+    const requestedWebhookUrl = config?.runtime?.webhookUrl;
+    const storedWebhookUrl = normalizeConfigMap(installation.config)?.runtime?.webhookUrl;
+    if (requestedWebhookUrl && requestedWebhookUrl !== storedWebhookUrl && !isInstanceAdmin) {
+      const ownership = await ownsRuntimeIdentity(userId, name.toLowerCase(), normalizedInstanceId);
+      if (!ownership.owned) {
+        return res.status(403).json({ code: ownership.failure, error: webhookUrlRefusal[ownership.failure] });
       }
     }
 
