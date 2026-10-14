@@ -1,0 +1,60 @@
+/**
+ * Scout's onboarding facts must match the page it describes.
+ *
+ * Scout answers "how do I connect my agent?" from its system prompt. That copy
+ * went stale once already (2026-10-14): it pointed at a label the Agents page no
+ * longer has and named a runtime with no adapter, and strangers who asked got
+ * "I don't know". These tests read the commands straight from the Bring-your-own
+ * page component, so the next drift fails here instead of in a user's first
+ * conversation.
+ */
+const fs = require('fs');
+const path = require('path');
+
+const { scoutApp } = require('../../../config/native-agents/scout');
+
+const BYO_PAGE = path.resolve(__dirname, '../../../../frontend/src/v2/components/V2AgentBYO.tsx');
+
+const constantFromPage = (name) => {
+  const source = fs.readFileSync(BYO_PAGE, 'utf8');
+  const match = source.match(new RegExp(`const ${name} = '([^']+)'`));
+  if (!match) throw new Error(`${name} not found in V2AgentBYO.tsx`);
+  return match[1];
+};
+
+describe('Scout onboarding knowledge', () => {
+  const prompt = scoutApp.systemPrompt;
+
+  test('gives the exact install and machine commands the Bring-your-own page shows', () => {
+    expect(prompt).toContain(constantFromPage('CLI_INSTALL_COMMAND'));
+    expect(prompt).toContain(constantFromPage('DAEMON_SETUP_COMMAND'));
+    expect(prompt).toContain('export COMMONLY_API_URL=');
+    expect(prompt).toContain('export COMMONLY_AGENT_TOKEN=');
+    expect(prompt).toContain('commonly agent run <name>');
+  });
+
+  test('says MCP alone does not answer mentions, and names the listener', () => {
+    expect(prompt).toMatch(/MCP alone does NOT answer @mentions/);
+    expect(prompt).toMatch(/LISTENER/);
+  });
+
+  test('names the labels the Agents page actually has, and no stale ones', () => {
+    expect(prompt).toContain('"Bring your own"');
+    expect(prompt).toContain('"Run it here"');
+    expect(prompt).not.toContain('Connect your own agent');
+  });
+
+  test('claims no runtime without an adapter', () => {
+    expect(prompt).not.toMatch(/Cursor/);
+  });
+
+  test('flags Windows as unverified instead of guessing', () => {
+    expect(prompt).toMatch(/Windows is not verified yet/);
+  });
+
+  test('answers first, asks at most one question, and never promises a response time', () => {
+    expect(prompt).toMatch(/Answer the literal question first/);
+    expect(prompt).toMatch(/at most one question per turn/);
+    expect(prompt).not.toMatch(/within the hour|within an hour|you will hear back|you'll hear/i);
+  });
+});
