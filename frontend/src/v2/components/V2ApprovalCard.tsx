@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
+import { notifyAttentionChanged } from '../hooks/useV2PodAttention';
 import type { V2Message } from '../hooks/useV2PodDetail';
 
 interface V2ApprovalCardProps {
@@ -177,7 +178,10 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
     setError(null);
     try {
       await api.post(`/api/approvals/${encodeURIComponent(payload.approvalId)}/resolve`, { decision });
-      // State lands via messageCardUpdated; nothing to set here.
+      // The card's own state lands via messageCardUpdated. The attention counts
+      // (nav rail, pod inspector) refresh only on this event or window focus; a
+      // resolved approval kept reading "1 waiting on you" until then (2026-10-14).
+      notifyAttentionChanged();
     } catch (err) {
       const status409 = (err as { response?: { status?: number } })?.response?.status;
       setError(status409 === 410 ? t('approvalCard.errors.expired') : t('approvalCard.errors.failed'));
