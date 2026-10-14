@@ -107,7 +107,7 @@ export const acquireWarmLock = (home, {
 };
 
 /** Default `npm` runner. Resolves `{ ok, stdout }`; never rejects. */
-export const runCommand = (bin, args, { timeout = REGISTRY_TIMEOUT_MS } = {}) => new Promise((resolve) => {
+export const runCommand = (bin, args, { timeout = REGISTRY_TIMEOUT_MS, cwd } = {}) => new Promise((resolve) => {
   let settled = false;
   let child;
   const done = (result) => {
@@ -116,7 +116,7 @@ export const runCommand = (bin, args, { timeout = REGISTRY_TIMEOUT_MS } = {}) =>
     resolve(result);
   };
   try {
-    child = spawnChild(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
+    child = spawnChild(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env, cwd });
   } catch (error) {
     done({ ok: false, stdout: '', stderr: String(error && error.message) });
     return;
@@ -153,7 +153,9 @@ export const resolveRegistryLatest = async (home, {
       }
     } catch { /* unreadable cache is just a miss */ }
   }
-  const result = await exec('npm', ['view', MCP_PACKAGE, 'version', '--json'], { timeout: REGISTRY_TIMEOUT_MS });
+  const result = await exec('npm', ['view', MCP_PACKAGE, 'version', '--json'], {
+    timeout: REGISTRY_TIMEOUT_MS, cwd: home,
+  });
   const raw = result && result.ok ? String(result.stdout || '').trim() : '';
   let version = null;
   if (raw) {
@@ -199,6 +201,7 @@ export const probeBin = (binPath, {
   spawnImpl = spawnChild,
   timeoutMs = PROBE_TIMEOUT_MS,
   apiUrl = process.env.COMMONLY_WARM_API_URL || PROBE_API_URL_PLACEHOLDER,
+  cwd,
 } = {}) => new Promise((resolve) => {
   let settled = false;
   let child;
@@ -213,6 +216,7 @@ export const probeBin = (binPath, {
   try {
     child = spawnImpl(process.execPath, [binPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      cwd,
       env: {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
@@ -343,7 +347,7 @@ export const warmMcpHome = async (home, {
     mkdir(temp);
     const install = await exec('npm', [
       'install', '--prefix', temp, `${MCP_PACKAGE}@${target}`, '--no-save', '--no-audit', '--no-fund',
-    ], { timeout: 5 * 60 * 1000 });
+    ], { timeout: 5 * 60 * 1000, cwd: home });
     if (!install || !install.ok) {
       remove(temp);
       return WARM_RESULTS.INSTALL_FAILED;
@@ -353,7 +357,9 @@ export const warmMcpHome = async (home, {
       remove(temp);
       return WARM_RESULTS.INSTALL_FAILED;
     }
-    const started = await (spawnProbe || probe)(bin, { apiUrl: process.env.COMMONLY_WARM_API_URL });
+    const started = await (spawnProbe || probe)(bin, {
+      apiUrl: process.env.COMMONLY_WARM_API_URL, cwd: home,
+    });
     if (!started) {
       remove(temp);
       return WARM_RESULTS.PROBE_FAILED;

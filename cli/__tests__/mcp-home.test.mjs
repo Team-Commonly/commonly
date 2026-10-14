@@ -22,10 +22,10 @@ import {
   KEEP_VERSION_DIRS, PRUNE_GRACE_MS, REGISTRY_TTL_MS, STALE_LOCK_MS, WARM_RESULTS,
   claimInUse, inUseMarkerPath, isPidAlive, isUsableWarmHome, kickWarm, lockPathFor,
   liveInUsePids, mcpHomeDir, newestInstalledVersion, packageDirFor, pinShippedSpec, planMcpSpawn,
-  prepareMcpSpawn, readBinPath, readCurrentVersion, readRegistryCache, versionDirFor, warmLooksWanted,
+  prepareMcpSpawn, readBinPath, readCurrentVersion, readRegistryCache, selectedMcpVersionDir, versionDirFor, warmLooksWanted,
 } from '../src/lib/mcp-home.js';
 import { exactVersion } from '../src/lib/mcp-server-version.js';
-import { acquireWarmLock, pruneVersionDirs, resolveRegistryLatest, warmMcpHome } from '../src/lib/mcp-warm-child.mjs';
+import { acquireWarmLock, pruneVersionDirs, resolveRegistryLatest, runCommand, warmMcpHome } from '../src/lib/mcp-warm-child.mjs';
 
 const SHIPPED_COMMAND = ['npx', '-y', '@commonlyai/mcp@latest'];
 
@@ -359,6 +359,51 @@ describe('prepareMcpSpawn — the warm is kicked when it is due, and only then',
     expect(calls[0].args).toEqual(['/tmp/warm-child.mjs', home]);
   });
 
+  test('a public cold seat omits npx while the host warm starts', () => {
+    const home = makeHome();
+    const workspace = makeHome();
+    writeFileSync(join(workspace, '.npmrc'), 'registry=http://127.0.0.1:12345/\n');
+    const { calls, spawnImpl } = warmSpy();
+    const warn = jest.fn();
+    const priorCwd = process.cwd();
+    try {
+      process.chdir(workspace);
+      expect(prepareMcpSpawn(SHIPPED_COMMAND, {
+        home, publicSeat: true, spawnImpl, warn, childPath: '/tmp/warm-child.mjs',
+      })).toBeNull();
+      expect(calls).toHaveLength(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('unavailable for this public turn'));
+      // A pinned declaration is also a package runner; it must not bypass the
+      // public-seat rule simply because the shared home planner leaves it alone.
+      expect(prepareMcpSpawn(['npx', '-y', '@commonlyai/mcp@0.3.13'], {
+        home, publicSeat: true, spawnImpl, warn,
+      })).toBeNull();
+    } finally {
+      process.chdir(priorCwd);
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  test('a public warm seat still executes the selected bin', () => {
+    const home = makeHome();
+    const bin = installVersion(home, '0.3.13');
+    pointAt(home, '0.3.13');
+
+    expect(prepareMcpSpawn(SHIPPED_COMMAND, {
+      home, publicSeat: true, spawnImpl: () => ({ unref: () => {} }),
+    })).toEqual(['node', bin]);
+    expect(selectedMcpVersionDir(['node', bin], home)).toBe(versionDirFor(home, '0.3.13'));
+    expect(selectedMcpVersionDir(['node', join(home, 'current')], home)).toBeNull();
+  });
+
+  test('a failed home read cannot return a cold package runner to a public seat', () => {
+    const home = makeHome();
+    const readFile = () => { throw new Error('unreadable home'); };
+    expect(prepareMcpSpawn(SHIPPED_COMMAND, { home, publicSeat: true, readFile })).toBeNull();
+    expect(prepareMcpSpawn(SHIPPED_COMMAND, { home, publicSeat: false, readFile }))
+      .toEqual(SHIPPED_COMMAND);
+  });
+
   test('a warm already running (lock present) is not started twice', () => {
     const home = makeHome();
     mkdirSync(home, { recursive: true });
@@ -501,6 +546,27 @@ describe('acquireWarmLock — single flight, and a dead warm is not a wedge', ()
 });
 
 describe('resolveRegistryLatest — the only networked read, cached', () => {
+  test('npm run from the host warm home does not read workspace project config', async () => {
+    const workspace = makeHome();
+    const home = makeHome();
+    const planted = 'http://127.0.0.1:12345/';
+    writeFileSync(join(workspace, '.npmrc'), `registry=${planted}\n`);
+    const priorCwd = process.cwd();
+    try {
+      process.chdir(workspace);
+      const inherited = await runCommand('npm', ['config', 'get', 'registry']);
+      const isolated = await runCommand('npm', ['config', 'get', 'registry'], { cwd: home });
+      expect(inherited.ok).toBe(true);
+      expect(inherited.stdout.trim()).toBe(planted);
+      expect(isolated.ok).toBe(true);
+      expect(isolated.stdout.trim()).not.toBe(planted);
+    } finally {
+      process.chdir(priorCwd);
+      rmSync(workspace, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test('a fresh cache is used without running npm', async () => {
     const home = makeHome();
     writeFileSync(join(home, '.registry.json'), JSON.stringify({ version: '0.3.13', checkedAt: Date.now() }));
@@ -574,6 +640,8 @@ describe('warmMcpHome — install, probe, then move the pointer', () => {
     expect(result).toBe(WARM_RESULTS.ADVANCED);
     expect(readCurrentVersion(home)).toBe('0.3.14');
     const installArgs = exec.mock.calls.find(([, args]) => args[0] === 'install')[1];
+    expect(exec.mock.calls.filter(([, args]) => ['view', 'install'].includes(args[0]))
+      .map(([, , options]) => options.cwd)).toEqual([home, home]);
     expect(installArgs).toContain('@commonlyai/mcp@0.3.14');
     expect(installArgs.join(' ')).not.toContain('@latest');
     // Probed INSIDE the temp dir, before the rename: that ordering is what
@@ -581,6 +649,7 @@ describe('warmMcpHome — install, probe, then move the pointer', () => {
     // protocol at least once".
     expect(probe.mock.calls[0][0]).toContain('.tmp-0.3.14-');
     expect(probe.mock.calls[0][0]).toContain(join('node_modules', '@commonlyai', 'mcp', 'src', 'index.js'));
+    expect(probe.mock.calls[0][1].cwd).toBe(home);
     // The temp dir is gone; only version dirs remain.
     expect(readdirSync(home).filter((n) => n.startsWith('.tmp-'))).toEqual([]);
     // And the lock is released, so the next spawn's warm can run.

@@ -75,7 +75,7 @@ import {
 import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn } from '../mcp-home.js';
+import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE, selectedMcpVersionDir } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
@@ -412,8 +412,14 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
     // credential channel below is decided on that same command, so the two can
     // never disagree about which release is running.
     const spawnCommand = server.command
-      ? prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl })
+      ? prepareMcpSpawn(server.command, {
+        apiUrl: ctx.instanceUrl, publicSeat: ctx.publicSeat,
+      })
       : null;
+    if (server.command && !spawnCommand) {
+      ctx.unavailableMcp?.push(server.name);
+      continue;
+    }
     const executed = spawnCommand ? { ...server, command: spawnCommand } : server;
     const entry = { type: server.transport || 'stdio' };
     if (server.url) entry.url = server.url;
@@ -439,6 +445,8 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
     }
     if (headerHelper) entry.headersHelper = headerHelper.command;
     mcpServersMap[server.name] = entry;
+    const versionDir = ctx.publicSeat && selectedMcpVersionDir(spawnCommand);
+    if (versionDir) ctx.mcpReadDirectories?.push(versionDir);
   }
   return { mcpServers: mcpServersMap };
 };
@@ -462,10 +470,14 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
     const dynamicHeaderHelpers = credential?.path
       ? await createTokenHeaderHelpers(mcpServers, dir)
       : new Map();
+    const unavailableMcp = [];
+    const mcpReadDirectories = [];
     const config = buildMcpConfig(mcpServers, {
       ...ctx,
       credentialFile: credential?.path || null,
       dynamicHeaderHelpers,
+      unavailableMcp,
+      mcpReadDirectories,
     });
     await writeFile(
       file,
@@ -489,7 +501,7 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
         + `inherits it. Put the credential on the entry's env to get the file channel.`,
       );
     }
-    return { dir, file, credential, expansionEnv };
+    return { dir, file, credential, expansionEnv, unavailableMcp, mcpReadDirectories };
   } catch (err) {
     try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     throw err;
@@ -636,6 +648,7 @@ const prepareArgv = async (innerArgv, ctx) => {
       mcpConfigDir: ctx.mcpConfigDir,
       executablePaths: [...mcpExecutables, ...commitHookExecutables, ...originalHookExecutables],
       allowClaudeRuntimeAccess: true,
+      readOnlyDirectories: ctx.mcpReadDirectories || [],
     });
     return {
       cmd: wrapped[0],
@@ -664,7 +677,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     const claudeBin = resolveClaudePath(claudeEnv);
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
-      readOnlyPaths: [ctx.mcpConfigDir, commitHooksPath, originalHooksPath].filter(Boolean),
+      readOnlyPaths: [ctx.mcpConfigDir, commitHooksPath, originalHooksPath, ...(ctx.mcpReadDirectories || [])].filter(Boolean),
     });
     return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv };
   }
@@ -785,7 +798,11 @@ export default {
           runtimeToken: ctx.runtimeToken,
           instanceUrl: ctx.instanceUrl,
           agentName: ctx.agentName,
+          publicSeat: publicNativeSandbox,
         });
+      }
+      if (mcpConfig?.unavailableMcp.length) {
+        baseArgs[1] = `${fullPrompt}\n\n${PUBLIC_MCP_UNAVAILABLE_NOTICE}`;
       }
       const claudeEnv = buildClaudeEnv(
         ctx.env,
@@ -800,6 +817,7 @@ export default {
         ...ctx,
         mcpConfigPath: mcpConfig?.file || null,
         mcpConfigDir: mcpConfig?.dir || null,
+        mcpReadDirectories: mcpConfig?.mcpReadDirectories || [],
         publicClaudeState,
         claudeEnv,
       };
@@ -829,11 +847,14 @@ export default {
         // as fresh too: otherwise a session-recovery path is the one fresh
         // session that misses the durable-state cue.
         const freshPrompt = buildPrompt(prompt, ctx.memoryLongTerm, { freshSession: true });
-        const retryBase = ['-p', freshPrompt, '--output-format', 'text', '--session-id', freshId, ...modelArgs];
+        const retryBase = ['-p', mcpConfig?.unavailableMcp.length
+          ? `${freshPrompt}\n\n${PUBLIC_MCP_UNAVAILABLE_NOTICE}` : freshPrompt,
+        '--output-format', 'text', '--session-id', freshId, ...modelArgs];
         const retryCtx = {
           ...ctx,
           mcpConfigPath: mcpConfig?.file || null,
           mcpConfigDir: mcpConfig?.dir || null,
+          mcpReadDirectories: mcpConfig?.mcpReadDirectories || [],
           publicClaudeState,
           claudeEnv: buildClaudeEnv(
             ctx.env,

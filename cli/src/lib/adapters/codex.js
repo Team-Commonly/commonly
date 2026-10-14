@@ -60,7 +60,7 @@ import {
 import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn } from '../mcp-home.js';
+import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE, selectedMcpVersionDir } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -140,6 +140,8 @@ const toml = (s) => JSON.stringify(String(s));
 const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const flags = [];
   const forwardedEnv = {};
+  const unavailableMcp = [];
+  const mcpReadDirectories = [];
   for (const server of mcpServers || []) {
     const transport = typeof server?.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
     if (!server?.name || transport !== 'stdio'
@@ -149,7 +151,13 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
     // same command, so the two can never disagree about which release runs. The
     // rewrite is before `substitutePlaceholders` because it introduces no
     // placeholder: it is a path this host resolved.
-    const spawnCommand = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl });
+    const spawnCommand = prepareMcpSpawn(server.command, {
+      apiUrl: ctx.instanceUrl, publicSeat: ctx.publicSeat,
+    });
+    if (!spawnCommand) {
+      unavailableMcp.push(server.name);
+      continue;
+    }
     // A declared credential is rewritten to the file channel before anything is
     // substituted, so for our server the token is not token-bearing at all: it
     // lands in `env={...}` as a path and never reaches `env_vars`, which is the
@@ -185,6 +193,8 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       continue;
     }
     flags.push('-c', `mcp_servers.${server.name}.command=${toml(command)}`);
+    const versionDir = ctx.publicSeat && selectedMcpVersionDir(spawnCommand);
+    if (versionDir) mcpReadDirectories.push(versionDir);
     // The user opted into every server present in the environment spec.
     // Public permission profiles + approval_policy=never otherwise auto-deny
     // side-effecting MCP calls, silently removing the agent's Commonly tools.
@@ -237,7 +247,7 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       + 'get the file channel.',
     );
   }
-  return { flags, forwardedEnv };
+  return { flags, forwardedEnv, unavailableMcp, mcpReadDirectories };
 };
 
 const PUBLIC_PERMISSION_PROFILE = 'commonly_public';
@@ -301,6 +311,7 @@ const preparePublicCodexHome = async (ctx) => {
 const publicPermissionProfileFlags = (
   mode,
   commitAttributionEnv = null,
+  mcpReadDirectories = [],
 ) => {
   if (!PUBLIC_SANDBOX_MODES.has(mode)) {
     throw new Error(
@@ -339,9 +350,10 @@ const publicPermissionProfileFlags = (
     '"~/.aws"="deny"',
     '"~/.config"="deny"',
     '"/private/tmp"="deny"',
-    `":workspace_roots"={"."="${workspaceAccess}",".commonly/**"="deny",".codex/**"="deny","*.env"="deny","*/*.env"="deny","*/*/*.env"="deny"}`,
+    `":workspace_roots"={"."="${workspaceAccess}",".commonly/**"="deny",".codex/**"="deny","*.env"="deny","*/*.env"="deny","*/*/*.env"="deny","**/.npmrc"="deny","**/.yarnrc*"="deny"}`,
     ...(commitHooksPath ? [`${toml(commitHooksPath)}="read"`] : []),
     ...originalHookPaths.map((hookPath) => `${toml(hookPath)}="read"`),
+    ...mcpReadDirectories.map((path) => `${toml(path)}="read"`),
   ].join(',');
   const shellEnvironment = [
     'PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_*',
@@ -391,6 +403,7 @@ const buildArgs = ({
   model = null,
   effort = null,
   commitAttributionEnv = null,
+  mcpReadDirectories = [],
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -413,6 +426,7 @@ const buildArgs = ({
       ...publicPermissionProfileFlags(
         publicSandboxMode,
         commitAttributionEnv,
+        mcpReadDirectories,
       ),
     ]
     : ['--dangerously-bypass-approvals-and-sandbox'];
@@ -588,10 +602,12 @@ export default {
     });
 
     try {
+      const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
       const mcp = buildMcpOverrideArgs(ctx.environment?.mcp, {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
         credentialFile: credential?.path || null,
+        publicSeat: sandbox?.trust === 'public',
       });
       // A derived record stores `trust: 'public'` and no mode (the block is
       // platform-independent; see cli/src/lib/default-environment.js). Codex's
@@ -607,15 +623,16 @@ export default {
           + '(Wren 69585).',
         );
       }
-      const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
       const publicSandboxMode = sandbox?.trust === 'public'
         ? sandbox?.mode ?? 'workspace'
         : null;
       const args = buildArgs({
         sessionId: ctx.sessionId || null,
-        prompt: fullPrompt,
+        prompt: mcp.unavailableMcp.length
+          ? `${fullPrompt}\n\n${PUBLIC_MCP_UNAVAILABLE_NOTICE}` : fullPrompt,
         outputFile,
         mcpFlags: mcp.flags,
+        mcpReadDirectories: mcp.mcpReadDirectories,
         publicSandboxMode,
         model: ctx.environment?.model,
         effort: ctx.environment?.effort,
