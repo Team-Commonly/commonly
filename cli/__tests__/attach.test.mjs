@@ -41,7 +41,7 @@ const {
   printAttachRunGuidance,
   resolveAttachSandbox,
 } = await import('../src/commands/agent.js');
-const { ADAPTERS_WITH_GRANT_BROKER } = await import('../src/lib/default-environment.js');
+const { ADAPTERS_WITH_GRANT_BROKER, seatBaseline } = await import('../src/lib/default-environment.js');
 
 describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)', () => {
   test('a legacy internal trust resolves a confining mode here, on both hosts', () => {
@@ -326,6 +326,42 @@ const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {
 describe('performAttach', () => {
   beforeEach(() => {
     fs.rmSync(path.join(tokensTmpDir, '.commonly'), { recursive: true, force: true });
+  });
+
+  test('attach --env gives provider-backed Qwen the same Commonly MCP baseline as the daemon', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-qwen-attach-'));
+    try {
+      const keyFile = path.join(root, 'provider-key');
+      const envPath = path.join(root, 'environment.json');
+      fs.writeFileSync(keyFile, 'provider-key', { mode: 0o600 });
+      fs.writeFileSync(envPath, JSON.stringify({
+        version: 1,
+        workspace: { path: path.join(root, 'workspace') },
+        model: 'gpt-5.4',
+        provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
+        mcp: [{ name: 'other', transport: 'http', url: 'https://other.example.test/mcp' }],
+      }));
+      const client = makeClient({ runtimeToken: 'cm_agent_qwen' });
+      const result = await performAttach({
+        client, adapterName: 'qwen', agentName: 'qwen-seat', podId: 'pod-qwen', envPath,
+        adapterRegistry: {
+          getAdapter: () => ({
+            name: 'qwen', supportsProvider: true,
+            detect: async () => ({ path: '/usr/local/bin/qwen', version: '0.25.1' }),
+            validateEnvironment: async () => {},
+          }),
+          listAdapterNames: () => ['qwen'],
+        },
+      });
+      const installed = client.post.mock.calls.find(([route]) => route === '/api/registry/install')[1];
+      expect(result.environment.mcp.map(({ name }) => name)).toEqual(['other', 'commonly']);
+      expect(result.environment.mcp[1].env.COMMONLY_AGENT_TOKEN).toBe('${COMMONLY_AGENT_TOKEN}');
+      expect(installed.config.environment.mcp).toEqual(result.environment.mcp);
+      expect(installed.config.environment).not.toHaveProperty('provider');
+      expect(result.environment.mcp).toEqual(seatBaseline({ mcp: result.environment.mcp.slice(0, 1) }, 'qwen').mcp);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('detects the adapter, publishes, installs, and returns a runtime token', async () => {
