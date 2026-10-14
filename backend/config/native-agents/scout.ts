@@ -136,6 +136,9 @@ export const scoutApp = {
   iconUrl: '',
   categories: ['onboarding', 'utility'],
   maxTurns: 6,
+  // A first conversation is a sequence of follow-ups ("which CLI?", "on Windows?");
+  // each turn must arrive with the question it answers.
+  recentMessages: 8,
   maxTokens: 12000,
   perUser: true,
   // The cost decision D4 called out: bounded by construction. 60 guide runs

@@ -297,39 +297,8 @@ async function dispatchTool(
     switch (name) {
       case 'commonly_read_context': {
         const limit = Math.min(Number(args.messageCount) || 20, 50);
-        const Message = require('../models/pg/Message');
-        // PG Message.findByPodId returns an array of formatted messages. If
-        // PG is unreachable we fall back to MongoDB via models/Message so the
-        // tool still returns something usable instead of exploding the loop.
-        let rows: Array<Record<string, unknown>> = [];
-        try {
-          rows = (await Message.findByPodId(String(ctx.podId), limit)) as Array<Record<string, unknown>>;
-        } catch (pgError) {
-          console.warn(
-            '[native-runtime] commonly_read_context PG fetch failed, falling back to Mongo:',
-            (pgError as Error).message,
-          );
-          const MongoMessage = require('../models/Message');
-          const docs = await MongoMessage.find({ podId: ctx.podId })
-            .sort({ createdAt: -1 })
-            .limit(limit)
-            .populate('userId', 'username')
-            .lean();
-          rows = (docs as Array<Record<string, unknown>>).reverse();
-        }
-
-        const messages = rows.map((row) => {
-          const user = (row.userId as Record<string, unknown> | undefined) || {};
-          const author =
-            (user.username as string)
-            || (row.username as string)
-            || 'unknown';
-          return {
-            author,
-            content: String(row.content || ''),
-            createdAt: row.createdAt || row.created_at || null,
-          };
-        });
+        const recent = await fetchRecentPodMessages(String(ctx.podId), limit);
+        const messages = recent.map(({ author, content, createdAt }) => ({ author, content, createdAt }));
         return { content: { messages } };
       }
 
@@ -695,6 +664,71 @@ export const resolveSeatUserId = async (
   }
 };
 
+/**
+ * The pod's most recent messages, oldest first. PG first, Mongo fallback — the
+ * single read behind both `commonly_read_context` and the inline recent-messages
+ * block, so the two can never disagree about what the room said.
+ */
+export async function fetchRecentPodMessages(
+  podId: string,
+  limit: number,
+): Promise<Array<{ id: string; author: string; content: string; createdAt: unknown }>> {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const Message = require('../models/pg/Message');
+  let rows: Array<Record<string, unknown>> = [];
+  try {
+    rows = (await Message.findByPodId(String(podId), limit)) as Array<Record<string, unknown>>;
+  } catch (pgError) {
+    console.warn(
+      '[native-runtime] recent pod messages: PG fetch failed, falling back to Mongo:',
+      (pgError as Error).message,
+    );
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const MongoMessage = require('../models/Message');
+    const docs = await MongoMessage.find({ podId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate('userId', 'username')
+      .lean();
+    rows = (docs as Array<Record<string, unknown>>).reverse();
+  }
+  return rows.map((row) => {
+    const user = (row.userId as Record<string, unknown> | undefined) || {};
+    return {
+      id: String(row.id || row._id || ''),
+      author: (user.username as string) || (row.username as string) || 'unknown',
+      content: String(row.content || ''),
+      createdAt: row.createdAt || row.created_at || null,
+    };
+  });
+}
+
+// Inline recent messages (manifest `recentMessages`). Native turns are stateless —
+// the model gets [system, user] — and the prompt's "call commonly_read_context"
+// is advice the model skips on follow-ups, so an answer to "which CLI?" arrived
+// with no memory of the question (Scout, 2026-10-14). An inline block beats an
+// optional tool. Opt-in per manifest, bounded, and fail-open.
+export const RECENT_MESSAGES_MAX = 20;
+export const RECENT_MESSAGE_CHARS = 600;
+
+export function formatRecentMessagesBlock(
+  messages: Array<{ id: string; author: string; content: string }>,
+  answeringMessageId: string,
+  count: number,
+): string {
+  const prior = messages
+    .filter((m) => !answeringMessageId || m.id !== answeringMessageId)
+    .slice(-count);
+  if (!prior.length) return '';
+  const lines = prior.map((m) => {
+    const text = m.content.replace(/\s+/g, ' ').trim();
+    const clipped = text.length > RECENT_MESSAGE_CHARS ? `${text.slice(0, RECENT_MESSAGE_CHARS)}…` : text;
+    return `- ${m.author}: ${clipped}`;
+  });
+  return 'Recent messages in this pod, oldest first (context only; the message you '
+    + `are answering follows):\n${lines.join('\n')}`;
+}
+
 export async function runAgent(
   installation: any,
   trigger: NativeRunTrigger,
@@ -942,8 +976,24 @@ export async function runAgent(
   }
 
   const systemPrompt = buildSystemPrompt(installation, cfg);
-  const userMessage = buildUserMessage(trigger, podName);
+  let userMessage = buildUserMessage(trigger, podName);
   const model = String(cfg.model || DEFAULT_MODEL);
+
+  const recentCount = Math.min(Math.max(Number(cfg.recentMessages) || 0, 0), RECENT_MESSAGES_MAX);
+  if (recentCount > 0) {
+    try {
+      const triggerPayload = (trigger.payload && typeof trigger.payload === 'object'
+        ? trigger.payload as Record<string, unknown> : {}) as Record<string, unknown>;
+      const recent = await fetchRecentPodMessages(String(installation.podId), recentCount + 1);
+      const block = formatRecentMessagesBlock(recent, String(triggerPayload.messageId || ''), recentCount);
+      if (block) userMessage = `${block}\n\n${userMessage}`;
+    } catch (error) {
+      console.warn(
+        '[native-runtime] recent pod messages unavailable; turn continues without them:',
+        (error as Error).message,
+      );
+    }
+  }
 
   const messages: any[] = [
     { role: 'system', content: systemPrompt },

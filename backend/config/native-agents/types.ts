@@ -79,4 +79,8 @@ export interface NativeAgentDefinition {
   dailyRunCap?: number;
   // ADR-018 D8: opt the installation into wake-on-message at install time.
   wakeOnMessage?: boolean;
+  // Inline the pod's last N messages (oldest first, the answered one excluded)
+  // into every turn, so follow-ups arrive with their question. Absent = none;
+  // the runtime caps N at RECENT_MESSAGES_MAX.
+  recentMessages?: number;
 }

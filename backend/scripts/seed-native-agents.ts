@@ -85,6 +85,7 @@ export function buildInstallationConfig(
   // opt-in projects onto the flag the producer actually reads (ADR-018 D8).
   if (app.wakeOnMessage === true) configObj.wakeOnMessage = { enabled: true };
   if (typeof app.dailyRunCap === 'number') configObj.dailyRunCap = app.dailyRunCap;
+  if (typeof app.recentMessages === 'number' && app.recentMessages > 0) configObj.recentMessages = app.recentMessages;
   return configObj;
 }
 
