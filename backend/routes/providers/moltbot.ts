@@ -9,13 +9,21 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');
+const { platformIpRateLimit } = require('../../middleware/platformRateLimit');
 const { getMoltbotProvider, ProviderManifest } = require('../../providers/moltbot');
 
 // Every route here acts through the instance's single moltbot provider: the
 // first `/connect` fixes its gateway and the API token it calls Commonly with,
 // and the routes below act with that token. Operating it is an instance
-// administrator's job, so the whole router is admin-only.
-router.use(auth, adminAuth);
+// administrator's job, so the whole router is admin-only. The limiter runs
+// first because adminAuth reads the caller's User row on every request; the
+// budget matches the admin global-integrations writes.
+const moltbotProviderLimit = platformIpRateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  label: '60 moltbot provider calls per 15 minutes per IP',
+});
+router.use(moltbotProviderLimit, auth, adminAuth);
 
 /**
  * GET /api/providers/moltbot
