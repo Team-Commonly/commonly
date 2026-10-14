@@ -29,8 +29,10 @@ spec:
           restartPolicy: OnFailure
           initContainers:
           - name: postgresql-dump
-            image: "{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}"
-            imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+            # pg_dump refuses a server newer than itself, so this image tracks the
+            # server's major version, not the in-cluster postgresql image.
+            image: "{{ .Values.backup.postgresql.image.repository }}:{{ .Values.backup.postgresql.image.tag }}"
+            imagePullPolicy: IfNotPresent
             command:
             - /bin/bash
             - -c
@@ -38,15 +40,25 @@ spec:
               set -euo pipefail
               BACKUP_FILE="/backup/backup.sql.gz"
               echo "Starting PostgreSQL backup to $BACKUP_FILE"
-              pg_dump -h "$PG_HOST" -U "$PG_USER" -d "$PG_DATABASE" | gzip > "$BACKUP_FILE"
+              pg_dump -h "$PG_HOST" -p "$PGPORT" -U "$PG_USER" -d "$PG_DATABASE" | gzip > "$BACKUP_FILE"
               echo "PostgreSQL dump completed"
+            # The same connection the backend uses (backend-deployment.yaml): an
+            # external Postgres when backend.env.pgHost is set, else the in-cluster one.
             env:
             - name: PG_HOST
-              value: postgres.{{ include "commonly.namespace" . }}.svc.cluster.local
+              value: {{ .Values.backend.env.pgHost | default (printf "postgres.%s.svc.cluster.local" (include "commonly.namespace" .)) | quote }}
+            - name: PGPORT
+              value: {{ .Values.backend.env.pgPort | default "5432" | quote }}
             - name: PG_USER
-              value: {{ .Values.postgresql.username }}
+              value: {{ .Values.backend.env.pgUser | default .Values.postgresql.username | quote }}
             - name: PG_DATABASE
-              value: {{ .Values.postgresql.database }}
+              value: {{ .Values.backend.env.pgDatabase | default .Values.postgresql.database | quote }}
+            {{- if eq (toString (.Values.backend.env.pgSslEnabled | default "true")) "true" }}
+            - name: PGSSLMODE
+              value: verify-full
+            - name: PGSSLROOTCERT
+              value: /certs/ca.pem
+            {{- end }}
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
@@ -55,6 +67,11 @@ spec:
             volumeMounts:
             - name: backup-data
               mountPath: /backup
+            {{- if eq (toString (.Values.backend.env.pgSslEnabled | default "true")) "true" }}
+            - name: postgres-ca-cert
+              mountPath: /certs
+              readOnly: true
+            {{- end }}
             resources:
               requests:
                 memory: "256Mi"
@@ -91,7 +108,7 @@ spec:
 
               BACKUP_FILE="/backup/backup.sql.gz"
               TIMESTAMP="$(date -u +%Y%m%d-%H%M%S)"
-              GCS_BASE="gs://{{ .Values.backup.postgresql.gcs.bucket }}/{{ .Values.backup.postgresql.gcs.path }}"
+              GCS_BASE="gs://{{ tpl .Values.backup.postgresql.gcs.bucket . }}/{{ .Values.backup.postgresql.gcs.path }}"
               DAILY_PREFIX="${GCS_BASE}/daily"
               DAILY_OBJECT="${DAILY_PREFIX}/backup-${TIMESTAMP}.sql.gz"
 
@@ -129,4 +146,9 @@ spec:
           volumes:
           - name: backup-data
             emptyDir: {}
+          {{- if eq (toString (.Values.backend.env.pgSslEnabled | default "true")) "true" }}
+          - name: postgres-ca-cert
+            secret:
+              secretName: postgres-ca-cert
+          {{- end }}
 {{- end }}

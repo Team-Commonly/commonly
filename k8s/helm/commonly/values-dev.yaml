@@ -339,19 +339,31 @@ litellm:
       effect: "NoSchedule"
 
 backup:
-  # ADR-015: database dumps must stay on the on-demand pool; spot
-  # preemption can terminate a backup mid-dump and leave no usable artifact.
+  # Nightly dumps of Atlas (Mongo) and Aiven (Postgres) to GCS, enabled
+  # 2026-10-14. Runbook: docs/runbooks/db-backup-restore.md. The bucket, the
+  # GSA and its Workload Identity binding exist in GCP; names are templated
+  # over the private project id so none is committed.
+  gcpServiceAccount: "commonly-backup@{{ .Values.externalSecrets.secretStore.projectId }}.iam.gserviceaccount.com"
+  # spot-pool, not dev-pool: it is the only pool running the GKE metadata
+  # server, so the only one where the uploader can act as the GSA. ADR-015
+  # kept dumps off spot for fear of preemption mid-dump; at ~400 MB (Mongo)
+  # and ~170 MB (Postgres) a dump takes minutes, the Job retries once, and a
+  # failed run pages through the "a Job or CronJob failed" alert.
   nodeSelector:
-    pool: dev
+    workload-tier: spot
   tolerations:
-    - key: "pool"
+    - key: "workload-tier"
       operator: "Equal"
-      value: "dev"
+      value: "spot"
       effect: "NoSchedule"
   mongodb:
-    enabled: false  # Operator-private flag; enable only after bucket + WI setup.
+    enabled: true
+    gcs:
+      bucket: "{{ .Values.externalSecrets.secretStore.projectId }}-db-backups"
   postgresql:
-    enabled: false  # Operator-private flag; enable only after bucket + WI setup.
+    enabled: true
+    gcs:
+      bucket: "{{ .Values.externalSecrets.secretStore.projectId }}-db-backups"
 
 slack:
   oauth:

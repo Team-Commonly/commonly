@@ -85,7 +85,7 @@ spec:
 
               BACKUP_FILE="/backup/backup.archive.gz"
               TIMESTAMP="$(date -u +%Y%m%d-%H%M%S)"
-              GCS_BASE="gs://{{ .Values.backup.mongodb.gcs.bucket }}/{{ .Values.backup.mongodb.gcs.path }}"
+              GCS_BASE="gs://{{ tpl .Values.backup.mongodb.gcs.bucket . }}/{{ .Values.backup.mongodb.gcs.path }}"
               DAILY_PREFIX="${GCS_BASE}/daily"
               DAILY_OBJECT="${DAILY_PREFIX}/backup-${TIMESTAMP}.archive.gz"
 
