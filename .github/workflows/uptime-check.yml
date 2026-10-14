@@ -7,7 +7,15 @@
 #
 # Probe window: 3 attempts, 50s apart (~100s+ span) — sized to outlast the
 # ~90s backend Recreate window during Deploy Dev (#654) so routine deploys
-# don't page. GitHub cron is best-effort; expect a few minutes of jitter.
+# don't page.
+#
+# This is the BACKSTOP, not the pager. The schedule below asks for every 15
+# minutes; GitHub actually started it every 2.6–9.7 hours, median 4.9 (30
+# consecutive scheduled runs, 2026-10-07 → 10-14), so it can miss an outage
+# of several hours. Cloud
+# Monitoring uptime checks probe every 60 s and email within minutes:
+# docs/runbooks/alerting.md. This one stays because it is free, independent of
+# GCP, and leaves an outage history in the issue timeline.
 name: Uptime Check
 
 on:

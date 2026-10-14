@@ -1,0 +1,20 @@
+[
+  {
+    "name": "ingress_5xx",
+    "description": "ingress-nginx access-log lines whose response status is 5xx. Anchored on the status after the request line; an unanchored \" 5xx \" also matches the request-length field.",
+    "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"ingress-nginx\" AND resource.labels.container_name=\"controller\" AND textPayload=~\"HTTP/[0-9.]+\\\" 5[0-9][0-9] \"",
+    "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
+  },
+  {
+    "name": "eso_reconcile_errors",
+    "description": "External Secrets Operator reconcile failures (the controller's own error log line).",
+    "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"external-secrets\" AND jsonPayload.msg=\"Reconciler error\"",
+    "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
+  },
+  {
+    "name": "job_warning_events",
+    "description": "Kubernetes Warning events on Jobs and CronJobs in commonly-dev (BackoffLimitExceeded, DeadlineExceeded, FailedCreate). The managed kube-state-metrics package exports no Job or CronJob series, so a failed backup is visible only here.",
+    "filter": "logName:\"logs/events\" AND resource.type=\"k8s_cluster\" AND jsonPayload.involvedObject.namespace=\"commonly-dev\" AND jsonPayload.involvedObject.kind=(\"Job\" OR \"CronJob\") AND jsonPayload.type=\"Warning\"",
+    "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
+  }
+]

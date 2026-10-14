@@ -1,0 +1,124 @@
+# Alerting
+
+Cloud Monitoring pages the operator by email when commonly-dev is down or
+degrading. Before 2026-10-14 nothing did. Sentry reports exceptions from a
+*running* app, and the GitHub `Uptime Check` cron was the only outage signal.
+That cron is scheduled every 15 minutes, but GitHub actually started it every
+2.6–9.7 hours, median 4.9 (30 consecutive runs, 10-07 → 10-14), so a
+multi-hour outage could pass unseen.
+
+## What is configured
+
+The config lives in [`k8s/monitoring/`](../../k8s/monitoring/) and carries no
+project identifier:
+
+| File | Holds |
+|---|---|
+| `uptime-checks.json` | `commonly.me` and `api.commonly.me/api/health`, every 60 s from 3 US regions |
+| `log-metrics.json` | log-based counters: ingress 5xx, ESO reconcile errors, Job/CronJob Warning events |
+| `alert-policies.json` | 10 policies, 10 conditions, each linking a section below |
+
+Apply or re-apply (idempotent; matches on name, never duplicates):
+
+```bash
+python3 scripts/monitoring/apply-alerting.py --project "$GCP_PROJECT" --email "$ALERT_EMAIL" --dry-run
+python3 scripts/monitoring/apply-alerting.py --project "$GCP_PROJECT" --email "$ALERT_EMAIL"
+```
+
+CI runs `apply-alerting.py --check`. It validates the JSON offline: every
+policy links a heading in this file, every metric and uptime reference
+resolves, and no identifier is committed.
+
+Cost: alerting bills per condition (about $0.10/month each at the pricing in
+force on 2026-10-14, so about $1/month), and the policy editor shows the
+estimate. The 6 uptime checkers run about 260k times a month.
+
+The data behind the policies, and why each is the source it is:
+
+- The managed kube-state-metrics package (`gke-managed-cim`) exports
+  Deployment and Pod series but **no Job or CronJob series**. A failed
+  backup is therefore caught from Kubernetes Warning events, which the GKE
+  event exporter writes to Cloud Logging.
+- LiteLLM writes every line to stderr, so 495 of 500 of its log lines carry
+  severity `ERROR`. Severity says nothing there; LiteLLM is covered by the
+  deployment and restart policies instead.
+- The ingress 5xx filter is anchored on the status after the request line
+  (`HTTP/[0-9.]+" 5[0-9][0-9] `). An unanchored `" 5xx "` also matches the
+  request-length field: it counted 378 in one day, where the anchored filter finds 11 in the whole week.
+
+## Responding
+
+Every section starts the same way: `kubectl get pods -n commonly-dev` and
+`kubectl get events -n commonly-dev --sort-by=.lastTimestamp | tail -20`.
+
+### Site down
+
+The uptime check failed from 2+ of 3 regions for 2 minutes. Separate the
+layers before touching anything: `curl -sI https://commonly.me` from your
+machine. A Cloudflare error page (`server: cloudflare`, 52x) means the tunnel
+or the origin is down: check the `cloudflared` and `ingress-nginx` pods in
+`ingress-nginx`. A plain 5xx from the app means the backend or frontend pod
+is down. If a deploy just ran, `helm history commonly-dev -n commonly-dev`
+gives the rollback target.
+
+### Deployment unavailable
+
+A core deployment has had 0 available replicas for 5 minutes. Run
+`kubectl describe deploy/<name> -n commonly-dev`, then describe its newest pod. Most
+often it is Pending (see [Pod pending](#pod-pending)) or crash-looping (see
+[Crash loop](#crash-loop)).
+
+### Crash loop
+
+Run `kubectl logs -n commonly-dev <pod> --previous`. `CreateContainerConfigError`
+is almost always a missing Secret key: the `api-keys` ExternalSecret dropped a
+key, or a new key was referenced before it existed in Secret Manager.
+`ImagePullBackOff` after a deploy means the tag was never pushed.
+
+### Pod pending
+
+Run `kubectl describe pod`; the Events say which predicate failed. On this
+cluster, look for these three causes:
+
+- The spot node was reclaimed and the pool is waiting for capacity.
+- A node pool lost its `pool=dev` label on node replacement. GKE restores
+  labels and taints only from the pool's own config.
+- The node is out of memory requests. dev-pool autoscales 1–3.
+
+dev-pool runs the cluster's system pods (kube-dns, metrics-server, ESO), so
+do not put a NoSchedule taint on it.
+
+### Restarts
+
+More than 3 restarts in 30 minutes that recovered each time. Look in
+`kubectl describe pod` for `OOMKilled` (raise the limit or find the leak) and
+for liveness-probe failures.
+
+### Node memory
+
+Non-evictable memory has been above 85% of allocatable for 10 minutes.
+`kubectl top pods -A --sort-by=memory` names the consumer. LiteLLM is the
+largest tenant on dev-pool (about 1.1 GiB on 2026-10-14).
+
+### Ingress 5xx
+
+10+ server errors in 10 minutes, against a measured baseline of at most 3. Run
+`kubectl logs -n ingress-nginx deploy/nginx-ingress-ingress-nginx-controller | grep -E 'HTTP/[0-9.]+" 5[0-9]{2} '`
+to see which upstream and path. Backend 504s on
+`/api/agents/runtime/events` are long-polls; a burst of them means the
+backend is wedged rather than slow.
+
+### Secret sync
+
+ESO failed to reconcile more than 3 times in an hour. Existing Secrets keep
+serving; only rotations stop arriving. Run
+`kubectl get externalsecret -n commonly-dev` and `kubectl logs -n external-secrets deploy/external-secrets | tail`.
+`unable to fetch identitybindingtoken` (seen 10-05 and 10-08, both transient)
+is the GKE identity endpoint; it clears on its own. A permission error means
+Secret Manager IAM changed.
+
+### Job failed
+
+A Job or CronJob emitted a Warning event. The nightly database backups are
+the Jobs that matter here: see [db-backup-restore.md](db-backup-restore.md). Read the
+failure with `kubectl logs -n commonly-dev job/<name> --all-containers`.

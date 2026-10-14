@@ -1,0 +1,239 @@
+[
+  {
+    "displayName": "commonly-dev: commonly.me is down",
+    "severity": "CRITICAL",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "The frontend failed its uptime check from two or more regions for 2 minutes. Runbook: docs/runbooks/alerting.md#site-down"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "uptime check failing from 2+ regions",
+        "conditionThreshold": {
+          "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND metric.labels.check_id=\"{{uptime:commonly-me}}\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "60s",
+              "perSeriesAligner": "ALIGN_NEXT_OLDER",
+              "crossSeriesReducer": "REDUCE_COUNT_FALSE",
+              "groupByFields": ["resource.label.host"]
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 1,
+          "duration": "120s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
+  },
+  {
+    "displayName": "commonly-dev: api.commonly.me health is failing",
+    "severity": "CRITICAL",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "GET /api/health failed from two or more regions for 2 minutes. Runbook: docs/runbooks/alerting.md#site-down"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "uptime check failing from 2+ regions",
+        "conditionThreshold": {
+          "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND metric.labels.check_id=\"{{uptime:api-health}}\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "60s",
+              "perSeriesAligner": "ALIGN_NEXT_OLDER",
+              "crossSeriesReducer": "REDUCE_COUNT_FALSE",
+              "groupByFields": ["resource.label.host"]
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 1,
+          "duration": "120s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
+  },
+  {
+    "displayName": "commonly-dev: a deployment has no available replicas",
+    "severity": "CRITICAL",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "A core deployment (backend, frontend, litellm, redis, commonly-bot) has had 0 available replicas for 5 minutes. Runbook: docs/runbooks/alerting.md#deployment-unavailable"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "replicas_available < 1 for 5m",
+        "conditionPrometheusQueryLanguage": {
+          "query": "kube_deployment_status_replicas_available{namespace=\"commonly-dev\",deployment=~\"backend|frontend|litellm|redis|commonly-bot\"} < 1",
+          "duration": "300s",
+          "evaluationInterval": "60s"
+        }
+      }
+    ]
+  },
+  {
+    "displayName": "commonly-dev: container crash-looping or failing to start",
+    "severity": "CRITICAL",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "A container in commonly-dev has been waiting in CrashLoopBackOff, an image-pull error or a config error for 5 minutes. Runbook: docs/runbooks/alerting.md#crash-loop"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "waiting reason is a failure for 5m",
+        "conditionPrometheusQueryLanguage": {
+          "query": "max by (pod, container, reason) (kube_pod_container_status_waiting_reason{namespace=\"commonly-dev\",reason=~\"CrashLoopBackOff|ImagePullBackOff|ErrImagePull|CreateContainerConfigError|CreateContainerError|InvalidImageName\"}) > 0",
+          "duration": "300s",
+          "evaluationInterval": "60s"
+        }
+      }
+    ]
+  },
+  {
+    "displayName": "commonly-dev: pod pending for 10 minutes",
+    "severity": "WARNING",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "A pod in commonly-dev has been Pending for 10 minutes: usually no node fits it (spot reclaimed, pool lost a label, or memory full). Runbook: docs/runbooks/alerting.md#pod-pending"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "phase=Pending for 10m",
+        "conditionPrometheusQueryLanguage": {
+          "query": "sum by (pod) (kube_pod_status_phase{namespace=\"commonly-dev\",phase=\"Pending\"}) > 0",
+          "duration": "600s",
+          "evaluationInterval": "60s"
+        }
+      }
+    ]
+  },
+  {
+    "displayName": "commonly-dev: container restarting repeatedly",
+    "severity": "WARNING",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "A container in commonly-dev restarted more than 3 times in 30 minutes (OOM kills and probe failures that recover between restarts show up here, not as a crash loop). Runbook: docs/runbooks/alerting.md#restarts"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "more than 3 restarts in 30m",
+        "conditionPrometheusQueryLanguage": {
+          "query": "increase(kubernetes_io:container_restart_count{monitored_resource=\"k8s_container\",namespace_name=\"commonly-dev\"}[30m]) > 3",
+          "duration": "60s",
+          "evaluationInterval": "60s"
+        }
+      }
+    ]
+  },
+  {
+    "displayName": "commonly-dev: node memory above 85%",
+    "severity": "WARNING",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "A node's non-evictable memory has been above 85% of allocatable for 10 minutes. Next stop is OOM kills or evictions. Runbook: docs/runbooks/alerting.md#node-memory"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "non-evictable memory > 85% for 10m",
+        "conditionPrometheusQueryLanguage": {
+          "query": "kubernetes_io:node_memory_allocatable_utilization{monitored_resource=\"k8s_node\",memory_type=\"non-evictable\"} > 0.85",
+          "duration": "600s",
+          "evaluationInterval": "60s"
+        }
+      }
+    ]
+  },
+  {
+    "displayName": "commonly-dev: burst of 5xx at the ingress",
+    "severity": "WARNING",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "10 or more 5xx responses in 10 minutes at ingress-nginx. Baseline measured 2026-10-14: 11 in 7 days, never more than 3 in a 10-minute window. Runbook: docs/runbooks/alerting.md#ingress-5xx"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "5xx count > 9 per 10m",
+        "conditionThreshold": {
+          "filter": "metric.type=\"logging.googleapis.com/user/ingress_5xx\" AND resource.type=\"k8s_container\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "600s",
+              "perSeriesAligner": "ALIGN_SUM",
+              "crossSeriesReducer": "REDUCE_SUM"
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 9,
+          "duration": "0s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
+  },
+  {
+    "displayName": "commonly-dev: secret sync failing",
+    "severity": "WARNING",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "External Secrets Operator logged more than 3 reconcile errors in an hour. Existing Secrets keep working; a rotated key will not arrive. Baseline measured 2026-10-14: 5 errors in 14 days. Runbook: docs/runbooks/alerting.md#secret-sync"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "reconcile errors > 3 per hour",
+        "conditionThreshold": {
+          "filter": "metric.type=\"logging.googleapis.com/user/eso_reconcile_errors\" AND resource.type=\"k8s_container\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "3600s",
+              "perSeriesAligner": "ALIGN_SUM",
+              "crossSeriesReducer": "REDUCE_SUM"
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 3,
+          "duration": "0s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
+  },
+  {
+    "displayName": "commonly-dev: a Job or CronJob failed",
+    "severity": "WARNING",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "A Job or CronJob in commonly-dev emitted a Warning event (BackoffLimitExceeded, DeadlineExceeded, FailedCreate). The nightly database backups are the Jobs that matter. Runbook: docs/runbooks/alerting.md#job-failed"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "any Job/CronJob Warning event",
+        "conditionThreshold": {
+          "filter": "metric.type=\"logging.googleapis.com/user/job_warning_events\" AND resource.type=\"k8s_cluster\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "300s",
+              "perSeriesAligner": "ALIGN_SUM",
+              "crossSeriesReducer": "REDUCE_SUM"
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 0,
+          "duration": "0s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
+  }
+]
