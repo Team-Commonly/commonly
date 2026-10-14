@@ -14,6 +14,8 @@
 
 **Amended 2026-10-14 (compatible drift on read pins):** #2140 put the drift check into production, and its first result was Linear dark. Five of the 36 pins taken on 2026-10-01 had drifted by 2026-10-14, each only by added optional properties, an added sentence of description, or both. The four of them a grant named were left out of its listing with no log line and no trail row (connector-ops 77128). Wren ruled (77134–77135). A `read` pin whose upstream schema differs only in those two ways stays offered under its own schema. Any other difference withholds it, and a `write` pin keeps exact equality (§3). That rule waits on another: the broker refuses an argument the pin does not declare, since today it forwards arguments unchanged (§3, §9). A withheld pin is logged once per assessment (§3). Linear's five are re-pinned in #2143, which checks each new property against the egress rule (§3). The code this amendment cites is read at `main` `b3714875`.
 
+**Amended 2026-10-14 (#2168 part 2, TASK-212):** the CTO ruled on #2168 that a grant from a source outsiders can write is refused while any agent in its pod can cause an outward effect without a person, unless every such effect is approval-gated or the connection's owner overrides for that source and those tools. §12 is the design note the ruling asks for before any code: what counts as outward, which sources count, where the check runs, and the override. Its finding is that every agent that calls the runtime API can open a DM, and no DM parks, so until the kernel parks its own outward calls, every such grant needs an override (§12(a)). **Gate:** CTO. The code this amendment cites is read at `main` `8a3a93ac`.
+
 **In short, a hosted MCP server is a second tool source for the grants plan's §10, not a new connector.** It adds one new `Integration.type`, `hosted-mcp`, a per-person Connection (§10.1). Its tools come from a catalogue entry this repo pins, not from the hand-written map in `toolBrokerService.ts`. A member connects their own account through the vendor's authorization server. The broker holds the credential, a room grant scopes it, the vendor runs the tools, and the trail records who acted. Grants work as they do today: tiers, attenuation, budget, expiry, the confirmation floor, approval and the trail. What is new is who wrote the tool list, and most of this note is about that.
 
 In this note, `§10.x` means that section of [tools-catalogue-room-grants.md](tools-catalogue-room-grants.md), "the grants plan", and "the entry" means one catalogue entry (§3).
@@ -501,3 +503,86 @@ The TASK-172 ruling's part 3 wording on `:180` is replaced by §6.
 - CIMD end to end at Linear, the MCP AS's token lifetimes and rotation, and whether it issues an ID token for `openid`: measured at build (§4).
 - Whether Linear's read tools carry `readOnlyHint: true`. The test account's first `tools/list` answers it, and that list can be taken before step 7. If they arrive unannotated, §3 leaves Linear with no entry. The one case worth reopening is Linear's own: v1 requests only `read`, whose token "can’t reach write APIs" (§4), a fence Linear enforces where the hint only reports. It is decided on the measured list, not assumed now.
 - §10.6's three questions stay Sam's. This is the first per-person Connection type, so the first of them — the granter leaves the room — has a live case the day a member grants their Linear to a room and then leaves it. Until Sam rules, a hosted grant behaves as every grant does today: it survives to its expiry, which it always has.
+
+## 12. Outsider-writable sources and outward effects (#2168 part 2)
+
+The CTO ruled on #2168 on 2026-10-14. A grant from a source that outsiders can write is refused while any agent in its pod can cause an outward effect without a person. It is allowed with no override when every such effect is approval-gated: a parked call that waits for a person's Approve, on a card that shows the canonical arguments. Anything else needs the owner's override for that source and those tools, recorded and shown on the Tools page, and revoking either side ends it. Part 1's untrusted marker applies either way, and vendor blocks stay byte-identical. This section is the design note the ruling asks for before any code, and the build is its own row. The code it cites is read at `main` `8a3a93ac`.
+
+**The reach.** A grant's reach is the set of pods its results can be posted into without leaving the people the grant was made for. For a pod grant it is the target pod. For a seat grant it is every pod the seat is a member of or installed in, because the seat carries the grant into each of them. An attenuated child keeps its parent's target (`attenuateGrant` is passed none, grants.ts:426), so it has its parent's reach.
+
+The check counts every agent that is a member of, or installed in, a pod of the reach, not only the grant's audience. The audience reads the outsider's text and posts what it read, and every agent in the pod reads that post.
+
+**(a) What counts as an outward effect.** An agent holds an outward effect when it can do any of the following without a person's Approve. For a grant, the check produces a list of `(agent, effect, where)` entries, and the default refuses when that list is not empty.
+
+1. **A DM.** `POST /api/agents/runtime/agent-dm` (agentsRuntime.ts:1049) is `commonly_dm_agent` in the MCP server and `commonly_open_dm` in the openclaw extension. It is always outward: an agent-dm pod can be read by every human who shares any pod with either agent (ADR-001 §3.7), not just by the reach. The route refuses only a target that shares no pod with the caller (:1186), so every agent that calls the runtime API holds it. The native runtime's tools do not include it.
+2. **Joining or creating a pod.** `POST /pods` (:3038) is `commonly_create_pod`, which creates a pod or joins a joinable one of the same name. `POST /pods/:podId/self-install` (:3259) is `commonly_self_install_into_pod`. Both are always outward, because each can add a pod outside the reach to the places the agent can post.
+3. **Writing into a pod outside the reach.** This covers every kernel write that lands in a pod:
+   - messages: `POST /pods/:podId/messages` (:2056) serves `commonly_post_message`, and `commonly_attach_file` posts through it too;
+   - thread comments (`commonly_post_thread_comment`) and reactions (`commonly_react_to_message`);
+   - the task board (`commonly_create_task`, `commonly_claim_task`, `commonly_complete_task`, `commonly_update_task`);
+   - decision cards (`commonly_request_decision`) and asks (`commonly_ask_agent`, `commonly_respond_to_ask`);
+   - the native runtime's `commonly_post_message` and `commonly_create_task` (nativeRuntimeService.ts:174, :189).
+
+   The test is whether the agent is a member of, or installed in, a pod outside the reach. One write has no pod: a thread comment on a post with no `podId` skips the pod check (agentsRuntime.ts:2283) and can be read across the instance. So every agent holding `commonly_post_thread_comment` holds an outward effect.
+4. **Writing into a pod of the reach that does not keep it.** A pod in the reach still counts as outside in three cases. It is `publicRead` (Pod.ts:175), which is served without sign-in (server.ts:295). Any signed-in user can join it (`isDirectlyJoinable`, podListing.ts:93). Or it has a Telegram or Slack bridge: a bridge in mirror mode relays every agent post, and otherwise decides from the post's own text (`shouldEscalate`, connectorRelayPolicy.ts:33–36), so the agent that writes a post decides whether it leaves. In such a pod, every write in item 3 counts.
+5. **A broker write that runs unattended.** A broker call parks when its definition is irreversible, or when its grant is `write-with-confirm` and the tool is not a read (toolBrokerService.ts:1136–1144). The mint refuses `write` only for hosted grants (grants.ts:336), so a GitHub grant can be minted `write`. Under such a grant, `github.close_issue` runs with no person, because it is the one GitHub write without `irreversible` (toolBrokerService.ts:364). `create_issue`, `comment_on_issue` and `merge_pull_request` declare it (:214, :337, :401). So an agent in the audience of a `write` GitHub grant holds an outward effect. A hosted grant does not: every hosted pin is `read`, and a write under `write-with-confirm` parks.
+6. **Tools on the seat itself.** The server cannot list a seat's local tools, so it counts them by runtime and fails closed:
+   - A seat the daemon runs (runtime kind `wrapper` or `local-cli`, or a runtime that names its adapter) holds none when the server can see that it is confined: it declares a `sandbox` block, and `grantBrokerRefusal` returns null for it (grantBrokerConfinement.ts:200). That function also returns null when no block is declared, leaving the seat to the daemon. This check cannot do that, because it needs to see the confinement. On claude, a public trust also denies Bash, Write, Edit and the web tools (adapters/claude.js:111–119), so only items 1–5 remain. A daemon-run seat with no sandbox block, or one the function refuses, holds local outward effects: a shell, the network, and any credentials on its host.
+   - A `native` agent holds only the kernel tools its config declares (nativeRuntimeService.ts:128, :265), so items 1–4 cover it.
+   - Every other runtime kind counts as holding, because the server has nothing to read: moltbot (openclaw's own tools run in the gateway, and dev agents carry a GitHub token), webhook, claude-code, hosted, internal and managed-agents.
+
+The ruling's five names map onto these items:
+
+- a merge is `github.merge_pull_request`, which always parks, or a seat-local `gh` (item 6);
+- posting outside the pod is items 3 and 4;
+- a DM is item 1;
+- no kernel or broker tool sends email today, so email is item 6;
+- a write to an external system is item 5, item 6, or a bridge (item 4).
+
+**As ruled, the default refuses every grant today.** Every agent that calls the runtime API holds item 1, so every pod with such an agent fails rule 1, and rule 2 has no case because no DM parks. Vera's census on the TASK-212 row reached the same result from the tool side. Until the kernel parks its own outward calls, every grant from an outsider-writable source needs an override.
+
+To give rule 2 a case, the kernel would park items 1–3 for agents in the reach of such a grant, as a card with the canonical arguments. The propose-action route (agentsRuntime.ts:2159) already turns `create_pod` and broker `tool_call`s into such cards (approvalActionService.ts:29). That is a kernel build with its own row, and its cost is real: an agent in such a reach would wait for a person on every DM and every post outside it. Even after it lands, three cases stay on the override path:
+
+- item 4 keeps a public, joinable or bridged pod there;
+- item 5 keeps a `write` GitHub grant there, and minting it `write-with-confirm` instead removes it;
+- item 6 keeps any unconfined seat there.
+
+**(b) Which sources count as outsider-writable.** A source is outsider-writable when someone outside the reach can write text its tools return. Each catalogue entry declares this and defaults to yes. An entry that says no must carry its reason, and the gate rules on it. Today every source is outsider-writable: the entries in `HOSTED_MCP_ENTRIES` (entries.ts:20), plus GitHub.
+
+| Source | Who outside the reach writes what it returns |
+|---|---|
+| `linear` | Named in the ruling. Issues and comments come from anyone with access to the workspace. |
+| `atlassian` | Jira is named in the ruling. Confluence pages and comments come from anyone with access to the site. |
+| `airtable` | Named in the ruling: a shared form writes records with no Airtable account. |
+| `google-calendar` | An invitation from outside can put an event on the calendar, with its own title and description. Whether it does depends on an account setting the grant cannot read. |
+| GitHub (`github-app`) | Named in the ruling. Issues, comments and pull requests come from anyone with a GitHub account on a public repository, and from every collaborator on a private one. |
+
+Inbound email has no entry today. An entry that reads mail is outsider-writable by definition.
+
+**(c) Where the check runs.** One function computes (a)'s list for a grant from current state. It runs at the mint and at call time, and not at attenuation.
+
+- **At the mint** (`POST /api/grants`, grants.ts:298), after the existing checks and before the row is written. When the source is outsider-writable and the list is not empty, the mint refuses with `outward_effect_unaccepted` and returns the list, so the dialog can show who holds what. The same request, carrying an override (§12(d)) that names exactly that list, mints the grant.
+- **At call time**, in `callTool` (toolBrokerService.ts:1092) and `executeApprovedToolCall` (:1282), next to the `assertGrantUsable` re-check both already run. These are the only two paths to a broker call (Vera, the TASK-212 row). The list is recomputed, and the call is refused with the same code when the list is not empty and no live override names it exactly. This is where change after the mint lands: an agent installed into the reach, a seat grant's seat installed into a new pod, a pod made public or bridged, a GitHub grant minted `write`. Reads are checked as well as writes, because a read is what brings outsider text into the reach. A call that waited for Approve is checked again, because the list can change while it waits.
+- **Not at attenuation.** A child has its parent's reach, so its calls meet the call-time check.
+
+A refused call writes its trail row like any refusal. It does not revoke the grant, which runs again once the list is empty or an override names it. Grants minted before the build are not exempt: their first call after it ships is refused until the owner records an override. That includes our own Linear grants.
+
+**(d) The override.**
+
+- **Who:** the connection's owner, the only person the mint accepts (grants.ts:306). They record it at the mint, or later from the Tools page for a grant whose calls are refused.
+- **What it records**, on the root grant: who, when, the source (the connection and its entry id, or `github-app`), and the pairs it accepts. The pairs are exactly the list (c) computed at that moment, each `(agent, effect, where)`. The request must name the list the server computes, and any difference is refused. So an override cannot be blanket, and it cannot accept an effect before the effect exists.
+- **Where it shows:** beside the grant on the Tools page, with its pairs, who and when.
+- **When it covers:** a call runs only while the current list equals the accepted pairs.
+- **How it ends.** An override that has ended never comes back.
+  - Source side: revoking the grant (grants.ts:457–458) or removing its connection (`revokeConnectionGrants`, roomGrantService.ts:462) ends it with the grant.
+  - Tool side: the first call that finds the list changed ends it, and that call is refused. The list has changed when a pair is gone (an agent uninstalled, a bridge removed, a `write` grant revoked) or a new one is present. A pair that comes back later, even the same one, needs a new override.
+  - The owner can also withdraw it from the Tools page.
+
+An override never touches part 1: the marker wraps every result either way.
+
+**Still open:**
+
+- **Kernel parking for items 1–3**, recommended as the next row. Without it, rule 2 has no case.
+- **Discord** was not measured. Until it is, a pod with a Discord integration counts as bridged (item 4).
+- **Agent memory** is not counted. Its reader is the agent, and item 3 already counts the agent's other pods. Whether an owner's view of a seat's memory is a way out is unmeasured.
+- **The disclosure line** for the grant dialog and the privacy page is a separate copy task (the ruling's point 5).
