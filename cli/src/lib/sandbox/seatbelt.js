@@ -148,6 +148,10 @@ const PLATFORM_BASELINE = String.raw`
   (subpath "/opt/homebrew/Cellar"))
 (allow file-read* file-test-existence
   (subpath "/opt/homebrew/etc/openssl@3"))
+; openssl@3/cert.pem resolves to this Homebrew CA bundle. Seatbelt checks the
+; target path, so the openssl@3 directory grant alone does not admit TLS roots.
+(allow file-read* file-test-existence
+  (literal "/opt/homebrew/etc/ca-certificates/cert.pem"))
 (allow file-read* (subpath "/opt/homebrew/lib"))
 (allow file-read* file-test-existence file-map-executable
   (subpath "/opt/homebrew/opt"))
