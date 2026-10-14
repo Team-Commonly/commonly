@@ -16,6 +16,8 @@ jest.mock('../../../models/AgentRegistry', () => ({
     find: jest.fn(),
   },
 }));
+// Nothing is pending here; the pending-heartbeat skip has its own suite.
+jest.mock('../../../models/AgentEvent', () => ({ exists: jest.fn().mockResolvedValue(null), aggregate: jest.fn().mockResolvedValue([]) }));
 
 const AgentEventService = require('../../../services/agentEventService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');

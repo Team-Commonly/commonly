@@ -99,6 +99,8 @@ interface DispatchHeartbeatsResult {
   scanned: number;
   enqueued: number;
   skippedByInterval: number;
+  /** Seats skipped because their previous heartbeat is still undelivered. */
+  skippedPending?: number;
 }
 
 interface ScheduledDispatchHeartbeatsResult extends DispatchHeartbeatsResult {
@@ -1239,6 +1241,19 @@ class SchedulerService {
           ? (globalHeartbeatPodMap.get(`${agentName}:${instanceId}`) || podId)
           : podId;
 
+        // A seat with no listener never drains its queue, so each interval
+        // used to add another heartbeat: one dead seat had 168 queued and
+        // still read as activity (2026-10-14). One undelivered heartbeat says
+        // everything the next would; skip until the seat picks it up.
+        const alreadyPending = await AgentEvent.exists({
+          agentName: String(agentName || '').toLowerCase(),
+          instanceId,
+          podId: heartbeatPodId,
+          type: 'heartbeat',
+          status: 'pending',
+        });
+        if (alreadyPending) return { enqueued: 0, skippedByInterval: 0, skippedPending: 1 };
+
         const activityHint = await SchedulerService.buildHeartbeatActivityHint({ podId: heartbeatPodId, now });
 
         await AgentEventService.enqueue({
@@ -1277,11 +1292,16 @@ class SchedulerService {
       (sum, value) => sum + ((value as { skippedByInterval?: number })?.skippedByInterval || 0),
       0,
     );
+    const skippedPending = enqueueResults.reduce(
+      (sum, value) => sum + ((value as { skippedPending?: number })?.skippedPending || 0),
+      0,
+    );
 
     return {
       scanned: toProcess.length,
       enqueued,
       skippedByInterval,
+      skippedPending,
     };
   }
 }
