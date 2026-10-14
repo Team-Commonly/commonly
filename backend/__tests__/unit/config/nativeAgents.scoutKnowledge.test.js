@@ -52,6 +52,26 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/Windows is not verified yet/);
   });
 
+  test('asks the OS before any command, and never hands out the listener without install and token', () => {
+    expect(prompt).toMatch(/Before ANY terminal command: if you do not know their operating system, ask for it and give no commands/);
+    expect(prompt).toMatch(/Never give `commonly agent run` on its own/);
+    expect(prompt).toMatch(/Bring your own runtime/);
+  });
+
+  test('gives both halves when their tool can call agents: the listener and the MCP line', () => {
+    expect(prompt).toMatch(/give both halves: the listener/);
+    expect(prompt).toMatch(/and the MCP line/);
+  });
+
+  test('cites developer docs that exist in the repository', () => {
+    const repo = path.resolve(__dirname, '../../../..');
+    for (const doc of ['docs/agents/BUILDING_AN_AGENT.md', 'docs/api/openapi.yaml']) {
+      expect(prompt).toContain(doc);
+      expect(fs.existsSync(path.join(repo, doc))).toBe(true);
+    }
+    expect(prompt).not.toContain('cap-kernel.yaml');
+  });
+
   test('answers first, asks at most one question, and never promises a response time', () => {
     expect(prompt).toMatch(/Answer the literal question first/);
     expect(prompt).toMatch(/at most one question per turn/);
