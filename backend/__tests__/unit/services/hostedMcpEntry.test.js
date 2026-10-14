@@ -285,6 +285,43 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
   const cache = (listUpstreamTools, over) =>
     createHostedMcpDriftCache(Object.assign({ listUpstreamTools }, over));
 
+  test('a fresh withheld assessment logs once, using only pinned names and our detail', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const drift = cache(async () => upstreamOk().filter((tool) => tool.name !== 'get_issue'));
+      await drift.assess(row, linear());
+      await drift.assess(row, linear());
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      const [line] = warn.mock.calls[0];
+      const signal = JSON.parse(line);
+      expect(signal).toEqual({
+        event: 'hosted_mcp_tool_assessment',
+        entryId: 'linear',
+        connectionId: 'row-a',
+        tools: [{
+          name: 'read_issue',
+          namespacedName: 'linear.read_issue',
+          verdict: 'tool_unavailable',
+          detail: 'upstream no longer lists get_issue',
+        }],
+      });
+      expect(line).not.toContain(VENDOR_TEXT);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a clean assessment logs nothing', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await cache(async () => upstreamOk()).assess(row, linear());
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test('the upstream list is taken once per row per TTL', async () => {
     let fetches = 0;
     let clock = 1000;
