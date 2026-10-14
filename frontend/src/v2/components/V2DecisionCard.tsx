@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { notifyAttentionChanged } from '../hooks/useV2PodAttention';
 
 export interface V2DecisionOption {
   label: string;
@@ -77,6 +78,7 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
       };
       setRuling(next);
       onRuled?.(decision.id, next);
+      notifyAttentionChanged();
     } catch (caught) {
       const response = (caught as {
         response?: { status?: number; data?: { decision?: { ruling?: V2DecisionRuling } } };
@@ -91,6 +93,7 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
         };
         setRuling(next);
         onRuled?.(decision.id, next);
+        notifyAttentionChanged();
       } else {
         setError(t('activity.decision.actionFailed'));
       }
