@@ -28,6 +28,8 @@ jest.mock('../../../config/socket', () => ({
 jest.mock('../../../services/threadRootResolver', () => ({
   resolveThreadRoot: jest.fn(),
 }));
+jest.mock('../../../services/onboardingMarks', () => ({ markPodOpened: jest.fn() }));
+const { markPodOpened } = require('../../../services/onboardingMarks');
 
 const socketConfig = require('../../../config/socket');
 const { resolveThreadRoot } = require('../../../services/threadRootResolver');
@@ -78,6 +80,28 @@ describe('messageController', () => {
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await messageController.getMessages(req, res);
       expect(res.json).toHaveBeenCalledWith(mockMessages);
+    });
+
+    it('marks a first look at the pod only on the first page, after access is granted', async () => {
+      const pod = { members: ['u1'], createdBy: 'u1' };
+      Pod.findById.mockResolvedValue(pod);
+      PGMessage.findByPodId.mockResolvedValue([]);
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.getMessages({ params: { podId: 'p1' }, query: {}, user: { id: 'u1' } }, res);
+      expect(markPodOpened).toHaveBeenCalledWith('u1', pod);
+
+      markPodOpened.mockClear();
+      await messageController.getMessages({ params: { podId: 'p1' }, query: { before: '2026-10-14T00:00:00Z' }, user: { id: 'u1' } }, res);
+      expect(markPodOpened).not.toHaveBeenCalled();
+    });
+
+    it('does not mark anything for someone who cannot view the pod', async () => {
+      Pod.findById.mockResolvedValue({ members: ['other-user'], createdBy: 'other-user' });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.getMessages({ params: { podId: 'p1' }, query: {}, user: { id: 'u1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(markPodOpened).not.toHaveBeenCalled();
     });
   });
 
