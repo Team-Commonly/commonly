@@ -1,8 +1,9 @@
 /** Qwen Code 0.25.1 wrapper. Public turns have fresh HOME, config and keys. */
 import { spawn as childSpawn, spawnSync } from 'child_process';
+import { realpathSync } from 'fs';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
-import { isAbsolute, join } from 'path';
+import { dirname, isAbsolute, join } from 'path';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { deliverSeatCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn } from '../mcp-home.js';
@@ -29,12 +30,14 @@ const EXCLUDED_TOOLS = [
   'agent', 'create_sub_session', 'task_create', 'team_create',
   'workflow', 'advisor',
   // Legacy aliases. Deny both names even if Qwen changes when it canonicalizes.
-  'replace', 'task', 'search_file_content',
+  'replace', 'task',
   'web_fetch', 'web_search',
 ];
 // Qwen can read its own config directory. That directory also contains the
 // per-spawn MCP credential file, so public turns cannot expose OS read tools.
-const PUBLIC_READ_TOOLS = ['read_file', 'grep_search', 'glob', 'list_directory', 'lsp'];
+const PUBLIC_READ_TOOLS = [
+  'read_file', 'grep_search', 'search_file_content', 'glob', 'list_directory', 'lsp',
+];
 
 const parseVersion = (output) => {
   const match = String(output || '').trim().match(/^(?:qwen(?:\s+code|-code)?\s+)?v?(\d+\.\d+\.\d+)$/i);
@@ -246,6 +249,9 @@ export default {
       // eslint-disable-next-line no-console
       console.warn(`[qwen] installed ${version || 'unknown'} differs from smoke-tested ${versions}; ${isPublic ? 'host override accepted' : 'trusted seat continues'}`);
     }
+    // npm launches through a symlink into the package. Qwen loads chunks next
+    // to that entry file, so public sandboxes need that exact read-only tree.
+    const packageDir = isPublic ? dirname(realpathSync(binary)) : null;
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-qwen-'));
     await chmod(tempDir, 0o700);
     // Keep child-writable state separate from adapter-owned config and keys.
@@ -304,7 +310,7 @@ export default {
               ],
             },
           },
-        }, { workspacePath: ctx.cwd, homePath: home, readOnlyPaths: [tempDir, binary, process.execPath] });
+        }, { workspacePath: ctx.cwd, homePath: home, readOnlyPaths: [tempDir, binary, packageDir, process.execPath] });
       } else if (isPublic) {
         if ((ctx._platform || process.platform) !== 'darwin') {
           throw new Error(`public Qwen sandbox.mode=${mode} requires Seatbelt on macOS or bwrap on Linux`);
@@ -316,7 +322,7 @@ export default {
           statePath: home,
           mcpConfigDir: tempDir,
           loopbackNetworkPorts: [proxy.port],
-          readOnlyPaths: [],
+          readOnlyDirectories: [packageDir],
         });
       }
       const requestedTimeout = Number(ctx.timeoutMs);

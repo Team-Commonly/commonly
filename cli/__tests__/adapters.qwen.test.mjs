@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
 import { readFileSync, realpathSync } from 'fs';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
@@ -41,12 +41,19 @@ const withSeat = async (fn) => {
   const root = await mkdtemp(join(tmpdir(), 'qwen-test-'));
   const cwd = join(root, 'workspace');
   const keyFile = join(root, 'provider-key');
+  const packageDir = join(root, 'qwen-package');
+  const binDir = join(root, 'npm', 'bin');
+  const binary = join(binDir, 'qwen');
   await mkdir(cwd);
+  await mkdir(packageDir);
+  await mkdir(binDir, { recursive: true });
+  await writeFile(join(packageDir, 'cli.js'), '#!/usr/bin/env node\n');
+  await symlink(join(packageDir, 'cli.js'), binary);
   await writeFile(keyFile, 'upstream-secret', { mode: 0o600 });
   await chmod(keyFile, 0o600);
   const ctx = {
     cwd, agentName: 'qwen-test', runtimeToken: 'cm_agent_test_token',
-    instanceUrl: 'https://api.commonly.me', _binaryPath: '/usr/local/bin/qwen',
+    instanceUrl: 'https://api.commonly.me', _binaryPath: binary,
     _platform: 'darwin', _wrapArgvWithSeatbelt: (argv) => argv,
     env: { PATH: '/usr/bin', HTTPS_PROXY: 'https://shadow.example', OPENAI_BASE_URL: 'https://shadow.example' },
     environment: {
@@ -60,7 +67,7 @@ const withSeat = async (fn) => {
 };
 
 test('public launch isolates HOME and config, strips shadows, and never serializes the provider key', async () => {
-  await withSeat(async (ctx) => {
+  await withSeat(async (ctx, root) => {
     await writeFile(join(ctx.cwd, '.env'), 'OPENAI_BASE_URL=https://shadow.example\n');
     await mkdir(join(ctx.cwd, '.qwen'));
     await writeFile(join(ctx.cwd, '.qwen', '.env'), 'HTTPS_PROXY=https://shadow.example\n');
@@ -89,7 +96,7 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     });
     expect(result.text).toBe('Qwen reply');
     const [{ cmd, args, options, mcp, settings }] = calls;
-    expect(cmd).toBe('/usr/local/bin/qwen');
+    expect(cmd).toBe(ctx._binaryPath);
     expect(args).toEqual(expect.arrayContaining(['--bare', '--safe-mode', '--auth-type', 'openai', '-o', 'stream-json']));
     expect(args[args.indexOf('--exclude-tools') + 1].split(','))
       .toEqual(expect.arrayContaining([
@@ -102,6 +109,9 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     expect(options.env.HOME.startsWith(`${profiles[0].options.mcpConfigDir}/`)).toBe(false);
     const readOnlyConfigDir = profiles[0].configDir;
     expect(profiles[0].profile).toContain(`(allow file-read* file-test-existence (subpath "${readOnlyConfigDir}"))`);
+    expect(profiles[0].profile).toContain(`(allow file-read* file-test-existence (subpath "${realpathSync(join(root, 'qwen-package'))}"))`);
+    expect(profiles[0].profile).toContain(`(allow file-read* file-test-existence (literal "${ctx._binaryPath}"))`);
+    expect(profiles[0].profile).not.toContain(`file-write* (subpath "${realpathSync(join(root, 'qwen-package'))}")`);
     expect(profiles[0].profile).not.toContain(`file-write* (subpath "${readOnlyConfigDir}")`);
     const versionProbe = spawnSyncMock.mock.calls.find(([, argv]) => argv[0] === '--version');
     expect(versionProbe[2].env.HOME).toContain('commonly-qwen-version-');
