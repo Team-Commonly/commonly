@@ -4159,19 +4159,19 @@ Treating an empty list as legacy tells an operator to upgrade a server that may 
 
 ## 80. A scope named `read` did not mean the credential couldn't write (2026-10-13, connector-ops)
 
-*Origin: the 2026-10-13 hosted-MCP catalogue sweep (`docs/plans/hosted-mcp-catalogue-sweep-2026-10-13.md`). A first pass classified 14 vendors as fits because their metadata advertised a read scope separate from write. An independent second pass, told to refute each fit, overturned 7 of them, and the 2026-10-09 next batch (Canva, Miro, ClickUp) lost all three on the same re-check.*
+*Origin: the 2026-10-13 hosted-MCP catalogue sweep (`docs/plans/hosted-mcp-catalogue-sweep-2026-10-13.md`). Of 61 apps, a first pass classified 13 as fits, mostly because their metadata advertised a read scope separate from write. An independent second pass, told to refute each fit and conditional, overturned 6 of the 13, and the three fits from the 2026-10-09 order (Canva, Miro, ClickUp) all fell on the same re-check: 9 of 16 first-pass fits overall. It also pushed five of 15 first-pass conditionals to no or unreachable.*
 
-The catalogue bar is a credential that can't write. The scope list in `oauth-protected-resource` metadata is the cheapest thing to measure, so a `:read` scope next to a `:write` scope read as proof of the bar. It isn't, for several measured reasons:
-- Neon: the MCP-layer `read` scope sat over an upstream token that could still write.
-- PostHog: `:read` scopes reach a tool proxy that runs third-party tools able to change data, plus routes that write product intents.
-- Typeform: its own docs require granting every scope to connect at all.
-- Cal.com: the scope is fixed at registration.
-- Zendesk: the "dynamic" registration endpoint hands every caller one hard-coded public client id.
-- Lucid: read-only is a separate *resource*, not a scope.
+The catalogue bar is a credential that can't write. The scope list in `oauth-protected-resource` metadata is the cheapest thing to measure, so a `:read` scope next to a `:write` scope read as proof of the bar. It isn't, for several measured reasons, across the fits and conditionals the second pass re-checked:
+- Neon (fit → no): the MCP-layer `read` scope only filters the tool list; the bearer is an upstream token requested with write scopes.
+- PostHog (fit → conditional): `project:read` reaches a gateway calling third-party tools able to change data, and some read-scoped routes write product intents.
+- Typeform (fit → no): its own docs require granting every scope to connect at all.
+- Cloudflare (fit → conditional): the requested scope only preselects a consent page where the user can choose full access.
+- Cal.com (conditional → no): the hosted server ignores the requested scope and asks for a fixed set that includes writes.
+- Zendesk (conditional → unreachable): the "dynamic" registration endpoint hands every caller one hard-coded public client id.
+- Lucid (conditional → no): read-only is a separate *resource*, not a scope.
 
 Gates that never appear in metadata decided several more, including the client allowlists or review behind Canva, Figma, Dropbox, Square and Vercel, and the admin enablement behind monday.com and Miro Enterprise.
 
 **Repair:** a catalogue verdict now requires a second, independent pass that tries to refute it. That pass answers from vendor docs or measurement what the read token actually *reaches*: tools with side effects, proxies to third parties, token forwarding, plan or allowlist gates. The first pass's metadata is the starting point, not the verdict.
 
 **Lesson:** a scope's name is the vendor's label for a permission set, and the permission set is what the bar is about. Measure what the credential can reach, and refute your own first reading before a capture or an account is spent on it.
-
