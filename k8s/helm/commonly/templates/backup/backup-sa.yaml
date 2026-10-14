@@ -10,6 +10,6 @@ metadata:
     component: backup
   {{- with .Values.backup.gcpServiceAccount }}
   annotations:
-    iam.gke.io/gcp-service-account: {{ . | quote }}
+    iam.gke.io/gcp-service-account: {{ tpl . $ | quote }}
   {{- end }}
 {{- end }}

@@ -500,6 +500,11 @@ backup:
   postgresql:
     enabled: false
     schedule: "0 2 * * *"
+    # pg_dump must be at least the server's major version (it refuses a newer
+    # server). Track the Postgres you back up, not postgresql.image above.
+    image:
+      repository: postgres
+      tag: "16"
     gcs:
       bucket: ""
       path: postgresql

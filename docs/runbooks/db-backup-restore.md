@@ -5,6 +5,13 @@ Helm-managed CronJobs. The jobs are disabled by default. Enabling them before
 the bucket, IAM role, and Workload Identity binding exist will only produce
 failed Jobs, so complete the operator setup in order.
 
+**commonly-dev has run them since 2026-10-14.** Both dump the external
+databases the backend uses: MongoDB Atlas and Aiven PostgreSQL. The first
+objects were a 142.5 MiB Mongo archive and a 9.4 MiB Postgres dump. Both were
+restored in the isolated drill below, which reproduced every source count.
+A failed run pages through the `commonly-dev: a Job or CronJob failed` alert
+([alerting.md](alerting.md#job-failed)).
+
 The jobs reuse the existing `database-credentials` Secret managed by External
 Secrets Operator. They do not introduce another Kubernetes Secret.
 
@@ -31,7 +38,7 @@ name must be globally unique.
 ```bash
 export GCP_PROJECT="<gcp-project>"
 export BACKUP_BUCKET="<globally-unique-backup-bucket>"
-export GSA_NAME="commonly-backup-sa"
+export GSA_NAME="commonly-backup"
 export GSA_EMAIL="${GSA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com"
 export K8S_NAMESPACE="commonly-dev"
 ```
@@ -74,51 +81,56 @@ continuing. No service-account key file is needed or expected.
 
 ## Configure and enable in order
 
-Keep real bucket and service-account values in the operator-only
-`.dev/values-private.yaml` file:
+The bucket and service-account names identify the GCP project, so they must
+not be committed. There are two ways to supply them.
+
+**commonly-dev** enables both jobs in the committed `values-dev.yaml` and
+writes the names as templates over the project id. That id already comes from
+the private overlay as `externalSecrets.secretStore.projectId`. The chart
+renders these fields through `tpl`:
 
 ```yaml
 backup:
-  gcpServiceAccount: commonly-backup-sa@<gcp-project>.iam.gserviceaccount.com
+  gcpServiceAccount: "commonly-backup@{{ .Values.externalSecrets.secretStore.projectId }}.iam.gserviceaccount.com"
   mongodb:
+    enabled: true
     gcs:
-      bucket: <globally-unique-backup-bucket>
-  postgresql:
-    gcs:
-      bucket: <globally-unique-backup-bucket>
+      bucket: "{{ .Values.externalSecrets.secretStore.projectId }}-db-backups"
 ```
 
-Before enabling either job, verify the rendered resources with temporary
-command-line overrides:
+**Any other install** can set literal values in its own private overlay
+instead.
+
+Before enabling, verify the render with your private overlay:
 
 ```bash
 helm template commonly-dev k8s/helm/commonly \
   -f k8s/helm/commonly/values.yaml \
   -f k8s/helm/commonly/values-dev.yaml \
   -f .dev/values-private.yaml \
-  --set backup.mongodb.enabled=true \
-  --set backup.postgresql.enabled=true \
   --show-only templates/backup/backup-sa.yaml \
   --show-only templates/backup/mongodb-backup-cronjob.yaml \
   --show-only templates/backup/postgres-backup-cronjob.yaml
 ```
 
-Only after the bucket, storage role, Workload Identity binding, and render are
-verified, add the enablement flags to `.dev/values-private.yaml`:
+What the Postgres job dumps: it connects with the backend's own settings
+(`backend.env.pgHost`, `pgPort`, `pgUser`, `pgDatabase`). When `pgSslEnabled`
+is true it uses `PGSSLMODE=verify-full` against the `postgres-ca-cert`
+Secret, the same CA the backend trusts. Its image is
+`backup.postgresql.image`, **not** `postgresql.image`. `pg_dump` refuses a
+server newer than itself. The in-cluster image is 15 and Aiven runs 16, so
+bump `backup.postgresql.image.tag` when Aiven's major version moves. A
+mismatch fails the job loudly; it does not write a bad dump.
 
-```yaml
-backup:
-  mongodb:
-    enabled: true
-  postgresql:
-    enabled: true
-```
+Where the jobs run: **spot-pool**, because it is the only node pool whose
+nodes run the GKE metadata server (`workloadMetadataConfig: GKE_METADATA`).
+On dev-pool and default-pool, `gsutil` would see the node's own identity, not
+`backup-sa`'s. Spot was avoided earlier for fear of preemption mid-dump. At
+these sizes a dump takes about a minute, the Job retries once
+(`backoffLimit: 1`), and a failure pages. Moving the jobs back to an
+on-demand pool needs that pool switched to `GKE_METADATA` first.
 
-Deploy through the normal `Deploy Dev` workflow. Both committed values files
-keep backup enablement `false`; the operator-private overlay is the only place
-that flips the flags.
-
-Verify the CronJobs and their on-demand scheduling constraints:
+Verify after a deploy:
 
 ```bash
 kubectl get cronjob mongodb-backup postgres-backup -n "${K8S_NAMESPACE}"
@@ -126,14 +138,7 @@ kubectl get serviceaccount backup-sa -n "${K8S_NAMESPACE}" \
   -o jsonpath='{.metadata.annotations.iam\.gke\.io/gcp-service-account}{"\n"}'
 kubectl get cronjob mongodb-backup -n "${K8S_NAMESPACE}" \
   -o jsonpath='{.spec.jobTemplate.spec.template.spec.nodeSelector}{"\n"}'
-kubectl get cronjob mongodb-backup -n "${K8S_NAMESPACE}" \
-  -o jsonpath='{.spec.jobTemplate.spec.template.spec.tolerations}{"\n"}'
 ```
-
-The dev jobs must select `pool: dev` and tolerate only
-`pool=dev:NoSchedule`. They must not tolerate the spot pool: ADR-015 permits
-spot preemption with 30 seconds' notice, which can terminate a dump before a
-usable artifact exists.
 
 ## Manual backup drill
 
@@ -171,18 +176,55 @@ Always restore into isolated databases first. The MongoDB command uses
 database. Do not point either command at the live databases until the chosen
 backup has passed the isolated restore and verification steps.
 
-Download the selected objects:
+### External databases (Atlas, Aiven): restore inside a throwaway pod
+
+commonly-dev's databases are external, so there is no in-cluster server to
+restore into. Do not restore a copy into the production Atlas or Aiven
+cluster: a second copy can push a small tier past its storage cap. The
+2026-10-14 drill instead ran each restore in a pod that starts its own empty
+server. The pod used `serviceAccountName: backup-sa` and the spot-pool
+selector and toleration, so it could read the bucket. An init container ran
+`gsutil cp` to fetch the object into an `emptyDir`. The main container then
+ran:
 
 ```bash
-gsutil cp \
-  "gs://${BACKUP_BUCKET}/mongodb/daily/backup-<timestamp>.archive.gz" \
-  /tmp/mongodb-backup.archive.gz
-gsutil cp \
-  "gs://${BACKUP_BUCKET}/postgresql/daily/backup-<timestamp>.sql.gz" \
-  /tmp/postgresql-backup.sql.gz
+# MongoDB, in a mongo:latest container
+mongod --fork --logpath /tmp/mongod.log --dbpath /data/db --bind_ip 127.0.0.1
+mongorestore --uri=mongodb://127.0.0.1:27017 --archive=/work/backup.archive.gz --gzip
+mongosh --quiet mongodb://127.0.0.1:27017/commonly \
+  --eval 'db.getCollectionNames().length; db.users.countDocuments()'
+
+# PostgreSQL, in a postgres:16 container (POSTGRES_PASSWORD set)
+docker-entrypoint.sh postgres &
+until pg_isready -h 127.0.0.1 -U postgres -q; do sleep 1; done
+psql -h 127.0.0.1 -U postgres -c 'CREATE ROLE avnadmin'   # the dump's object owner
+createdb -h 127.0.0.1 -U postgres restore
+gunzip -c /work/backup.sql.gz | psql -h 127.0.0.1 -U postgres -d restore -v ON_ERROR_STOP=1 -q
 ```
 
-### MongoDB
+Compare the counts with the source, then delete the pod; its `emptyDir`
+goes with it. The 2026-10-14 results:
+
+| | Source | Restored |
+|---|---|---|
+| Mongo collections | 58 | 58 |
+| users, pods, posts, installations, tasks | 820, 450, 715, 560, 1328 | identical |
+| Postgres tables | 142 | 142 |
+| messages | 25,948 at count time | 25,946 at dump time; 2 were posted in between |
+
+To recover production from a verified backup:
+
+- **MongoDB:** run `mongorestore` against the Atlas cluster's URI, using the
+  same `--nsInclude/--nsFrom/--nsTo` safety mapping as below.
+- **PostgreSQL:** load the dump into an empty database on the Aiven service,
+  then point `backend.env.pgDatabase` at it.
+
+Aiven's and Atlas's own snapshots are separate, plan-dependent, and visible
+only in their consoles.
+
+### In-cluster databases
+
+#### MongoDB
 
 Start a temporary client pod from the same MongoDB image configured in Helm,
 copy the archive into it, and point the restore URI at an isolated database:
@@ -242,7 +284,7 @@ unset MONGO_RESTORE_URI MONGO_RESTORE_DB MONGO_SOURCE_DB MONGO_IMAGE
 kubectl delete pod mongodb-restore -n "${K8S_NAMESPACE}"
 ```
 
-### PostgreSQL
+#### PostgreSQL
 
 Start a temporary PostgreSQL client pod, copy the SQL archive, and load it into
 an empty isolated database:
