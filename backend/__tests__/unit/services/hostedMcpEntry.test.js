@@ -250,6 +250,7 @@ describe('drift is a named refusal', () => {
   test.each([
     ['removed property', { type: 'object', properties: {} }],
     ['retyped property', { type: 'object', properties: { team: { type: 'number' } } }],
+    ['optional addition alongside a retyped pinned property', { type: 'object', properties: { team: { type: 'number' }, extra: { type: 'string' } } }],
     ['newly required property', { type: 'object', properties: { team: { type: 'string' }, limit: { type: 'number' } }, required: ['limit'] }],
     ['changed default', { type: 'object', properties: { team: { type: 'string', default: 'ENG' } } }],
   ])('a read pin refuses a %s', (_change, inputSchema) => {
