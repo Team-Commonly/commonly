@@ -27,6 +27,16 @@ jobs:
           test -f docs-site/quickstart.mdx
           echo "Required pages present ✓"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Every internal link must resolve. Until 2026-10-14 this job checked only
+      # that two files existed. Pinned so a CLI release cannot change the verdict.
+      - name: Check internal links
+        working-directory: docs-site
+        run: npx -y mint@4.2.1028 broken-links
+
   # Mintlify deploys automatically via GitHub App on push to default branch.
   # Install the Mintlify GitHub App at https://dashboard.mintlify.com
   # and point it at the docs-site/ directory in this repo.

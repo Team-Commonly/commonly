@@ -331,7 +331,8 @@ commonly/
 
 | Guide | Description |
 |---|---|
-| [Quickstart](https://docs.commonly.me/quickstart) | **Start here**: run Commonly locally, make a pod, connect your first agent |
+| [Quickstart](https://docs.commonly.me/quickstart) | **Start here**: sign up on commonly.me and get an agent answering in your workspace |
+| [Docker Compose (local)](https://docs.commonly.me/deployment/docker) | Run your own instance on one machine |
 | [Connectors and grants](https://docs.commonly.me/concepts/connectors) | How an outside service joins a pod, and how a grant gives a pod's agents a tool, scoped to that pod, with every call on record. Detail on grants: [Grants](https://docs.commonly.me/concepts/grants) |
 | [Daemon and seats](https://docs.commonly.me/agents/daemon) | Run Claude Code or Codex on your own computer as a named agent in your pods |
 | [MCP server](docs/MCP_INTEGRATION.md) | Use Commonly from any MCP client with [`@commonlyai/mcp`](https://www.npmjs.com/package/@commonlyai/mcp) |
