@@ -291,6 +291,69 @@ describe('DMService — agent-dm + sharePod', () => {
     });
   });
 
+  // The set form feeds post search and followed threads. It must admit exactly
+  // what canViewPod admits; this world exercises each canViewPod branch.
+  describe('listViewablePodIds (set form of canViewPod)', () => {
+    let pods;
+    let carol;
+    let dave;
+
+    beforeEach(async () => {
+      carol = await User.create({ username: 'carol', email: 'carol@example.com', password: 'placeholder' });
+      dave = await User.create({
+        username: 'dave-default',
+        email: 'dave@agent.local',
+        password: 'placeholder',
+        isBot: true,
+        botMetadata: { agentName: 'dave', instanceId: 'default' },
+      });
+      const mkPod = (name, type, members) => Pod.create({
+        name, type, createdBy: members[0]._id, members: members.map((m) => m._id),
+      });
+      pods = {
+        team: await mkPod('Team', 'team', [alice, aria]),
+        dm: await mkPod('aria ↔ codex', 'agent-dm', [aria, codex]),
+        farDm: await mkPod('codex ↔ dave', 'agent-dm', [codex, dave]),
+        room: await mkPod('aria', 'agent-room', [aria, bob]),
+        bobOnly: await mkPod('Bob', 'chat', [bob]),
+      };
+    });
+
+    const viaCanViewPod = async (user) => {
+      const ids = [];
+      for (const pod of Object.values(pods)) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await DMService.canViewPod(user._id, pod)) ids.push(String(pod._id));
+      }
+      return ids.sort();
+    };
+
+    it('matches canViewPod for members, fan-out readers and outsiders', async () => {
+      for (const user of [alice, bob, carol, aria, codex, dave]) {
+        // eslint-disable-next-line no-await-in-loop
+        const scope = await DMService.listViewablePodIds(user._id);
+        expect(scope.allPods).toBe(false);
+        // eslint-disable-next-line no-await-in-loop
+        expect([...scope.podIds].sort()).toEqual(await viaCanViewPod(user));
+      }
+    });
+
+    it('includes a fan-out agent-dm and leaves out an agent-room and a far agent-dm', async () => {
+      const scope = await DMService.listViewablePodIds(alice._id);
+      expect([...scope.podIds].sort()).toEqual([String(pods.team._id), String(pods.dm._id)].sort());
+    });
+
+    it('returns nothing for a user in no pod', async () => {
+      expect(await DMService.listViewablePodIds(carol._id)).toEqual({ allPods: false, podIds: [] });
+    });
+
+    it('returns allPods for a global admin, as canViewPod admits an admin to any pod', async () => {
+      await User.updateOne({ _id: carol._id }, { role: 'admin' });
+      expect(await DMService.canViewPod(carol._id, pods.bobOnly)).toBe(true);
+      expect((await DMService.listViewablePodIds(carol._id)).allPods).toBe(true);
+    });
+  });
+
   describe('AgentInstallation.upsert idempotency', () => {
     let pod;
     beforeEach(async () => {

@@ -83,11 +83,13 @@ backend/
 | PUT    | /api/posts/:id         | Update a post               | `{content, media}`                   | Updated post object             |
 | DELETE | /api/posts/:id         | Delete a post               | -                                    | Success message                 |
 | POST   | /api/posts/:id/like    | Like a post                 | -                                    | Updated post object             |
-| POST   | /api/posts/:id/comments | Comment on a post           | `{text, podId?}`                     | Comment object                  |
+| POST   | /api/posts/:id/comments | Comment on a post           | `{text, replyToCommentId?}`          | Comment object                  |
 | POST   | /api/posts/:id/follow   | Follow a thread post        | -                                    | `{success, followed}`           |
 | DELETE | /api/posts/:id/follow   | Unfollow a thread post      | -                                    | `{success, followed}`           |
 | GET    | /api/posts/following/threads | List followed thread posts | -                                 | `{threads: Post[]}`             |
 | GET    | /api/posts/search      | Search posts                | Query: `{query?, tags?, podId?, category?}` | Array of posts           |
+
+Pod access on these routes follows the post's own pod. Reads (`GET /api/posts?podId=`, `GET /api/posts/:id`, search, followed threads, follow and unfollow) use `DMService.canViewPod`; search with no `podId` returns global posts plus the pods `DMService.listViewablePodIds` admits. Commenting on a pod post needs pod membership (`callerHasPodWriteAccess`), and the comment's mention and activity are filed under the post's pod. Global posts (no pod) are open to any signed-in user.
 
 External social feeds (X/Instagram) are stored as `Post` records with `source.type = "external"` and `source.provider` set to the platform. The scheduler polls these feeds every 10 minutes and appends normalized entries to integration buffers for summarization.
 

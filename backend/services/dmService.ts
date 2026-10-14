@@ -514,6 +514,54 @@ class DMService {
   }
 
   /**
+   * The set form of `canViewPod`, for surfaces that filter many pod-scoped
+   * rows at once (post search, followed threads), where checking each row
+   * would cost a query per row. It admits exactly the pods `canViewPod`
+   * admits, and the two are kept in agreement by a test over one fixture
+   * (`__tests__/services/dmService.agentDm.test.ts`). Change one, change both.
+   *
+   *   - `{ allPods: true }` for a global admin, mirroring `canViewPod`'s
+   *     admin read rule.
+   *   - otherwise `{ allPods: false, podIds }`: every pod the user is a member
+   *     of, plus every `agent-dm` pod that has a member in one of those pods
+   *     (the §3.7 fan-out).
+   *
+   * Callers push `podIds` into their query as `podId: { $in: [null, ...podIds] }`
+   * when global (pod-less) rows should stay visible too.
+   */
+  static async listViewablePodIds(
+    userId: unknown,
+  ): Promise<{ allPods: boolean; podIds: string[] }> {
+    if (!userId) return { allPods: false, podIds: [] };
+    const uid = String(userId);
+    try {
+      const u = await User.findById(uid).select('role').lean() as { role?: string } | null;
+      if (u?.role === 'admin') return { allPods: true, podIds: [] };
+    } catch { /* same as canViewPod: a failed role lookup falls through to membership */ }
+
+    const memberPods = await Pod.find({ members: uid }).select('_id members').lean() as Array<{
+      _id: unknown; members?: unknown[];
+    }>;
+    const podIds = memberPods.map((p) => String(p._id));
+    const coMemberIds = new Set<string>();
+    memberPods.forEach((p) => {
+      (p.members || []).forEach((m) => {
+        const id = String(m);
+        if (id && id !== uid) coMemberIds.add(id);
+      });
+    });
+    if (coMemberIds.size > 0) {
+      const fanOut = await Pod.find({
+        type: 'agent-dm',
+        _id: { $nin: podIds },
+        members: { $in: [...coMemberIds] },
+      }).select('_id').lean() as Array<{ _id: unknown }>;
+      fanOut.forEach((p) => podIds.push(String(p._id)));
+    }
+    return { allPods: false, podIds };
+  }
+
+  /**
    * Find or create a 2-member `agent-dm` pod. Generalization of
    * `getOrCreateAgentRoom` — both members can be agents (the bot ↔ bot
    * case), agent ↔ human (parallel to legacy agent-room), or even

@@ -4,6 +4,17 @@ const User = require('../models/User');
 const Activity = require('../models/Activity');
 const AgentMentionService = require('../services/agentMentionService');
 const DMService = require('../services/dmService');
+const { callerHasPodWriteAccess } = require('../services/podWriteAccessService');
+
+// Following a pod post takes the same read access as viewing it
+// (`getPostById`): `canViewPod` on the post's own pod. A post whose pod is gone
+// is refused, since `canViewPod` admits nobody to a missing pod. Global posts
+// (no pod) stay open to any signed-in user.
+const canViewPostPod = async (userId: unknown, post: any): Promise<boolean> => {
+  if (!post.podId) return true;
+  const pod = await Pod.findById(post.podId).select('_id members type').lean();
+  return DMService.canViewPod(userId, pod);
+};
 
 exports.createPost = async (req: any, res: any) => {
   const {
@@ -93,12 +104,23 @@ exports.searchPosts = async (req: any, res: any) => {
       searchQuery.tags = { $in: tagArray };
     }
 
-    if (podId) {
-      if (podId === 'global' || podId === 'none') {
-        searchQuery.podId = null;
-      } else {
-        searchQuery.podId = podId;
+    const userId = req.userId || req.user?.id;
+    if (podId === 'global' || podId === 'none') {
+      searchQuery.podId = null;
+    } else if (podId) {
+      // Searching one pod takes the same gate as listing it (`getPosts`).
+      const pod = await Pod.findById(podId).select('_id members type').lean();
+      if (!pod) return res.status(404).json({ error: 'Pod not found' });
+      const canView = await DMService.canViewPod(userId, pod);
+      if (!canView) {
+        return res.status(403).json({ error: 'Not authorized to view posts in this pod' });
       }
+      searchQuery.podId = podId;
+    } else {
+      // No pod named: global posts plus the pods the caller can view, as one
+      // query filter rather than a check per result.
+      const scope = await DMService.listViewablePodIds(userId);
+      if (!scope.allPods) searchQuery.podId = { $in: [null, ...scope.podIds] };
     }
 
     if (category) {
@@ -235,7 +257,7 @@ exports.getPostById = async (req: any, res: any) => {
 // Add a comment to a post
 exports.addComment = async (req: any, res: any) => {
   try {
-    const { text, podId: requestPodId, replyToCommentId } = req.body;
+    const { text, replyToCommentId } = req.body;
 
     if (!text) {
       return res.status(400).json({ error: 'Comment text is required' });
@@ -244,6 +266,12 @@ exports.addComment = async (req: any, res: any) => {
     const post = await Post.findById(req.params.id);
     if (!post) {
       return res.status(404).json({ error: 'Post not found' });
+    }
+
+    // A comment on a pod post is a write into that pod, so it takes the pod's
+    // write gate (membership). Global posts stay open to any signed-in user.
+    if (post.podId && !(await callerHasPodWriteAccess(String(post.podId), String(req.userId), req))) {
+      return res.status(403).json({ error: 'You are not a member of this pod' });
     }
 
     const commentingUser = await User.findById(req.userId).select('_id username').lean();
@@ -270,17 +298,12 @@ exports.addComment = async (req: any, res: any) => {
     // Return only the newly added comment with populated user information
     const newComment = updatedPost.comments[updatedPost.comments.length - 1];
 
-    // Enqueue agent mentions if applicable (thread context)
+    // Enqueue agent mentions if applicable (thread context). The pod comes from
+    // the post, never from the request body: a pod post was write-checked
+    // above, and a global post falls back to a pod the commenter belongs to.
     try {
       const resolveMentionPod = async () => {
-        const candidate = requestPodId || post.podId;
-        if (candidate) {
-          const pod = await Pod.findById(candidate).select('_id members').lean();
-          const isMember = pod?.members?.some(
-            (memberId: any) => memberId.toString() === req.userId.toString(),
-          );
-          return isMember ? pod._id : null;
-        }
+        if (post.podId) return post.podId;
         const fallback = await Pod.findOne({ members: req.userId }).select('_id').lean();
         return fallback?._id || null;
       };
@@ -318,7 +341,6 @@ exports.addComment = async (req: any, res: any) => {
     }
 
     try {
-      const displayPodId = requestPodId || post.podId || null;
       await Activity.create({
         type: 'pod_event',
         actor: {
@@ -329,7 +351,7 @@ exports.addComment = async (req: any, res: any) => {
         },
         action: 'thread_comment',
         content: `New reply on thread: ${(post.content || '').slice(0, 120)}`,
-        podId: displayPodId || undefined,
+        podId: post.podId || undefined,
         sourceType: 'event',
         sourceId: post._id.toString(),
         visibility: 'pod',
@@ -451,8 +473,11 @@ exports.deleteComment = async (req: any, res: any) => {
 
 exports.followThread = async (req: any, res: any) => {
   try {
-    const post = await Post.findById(req.params.id).select('_id content');
+    const post = await Post.findById(req.params.id).select('_id content podId');
     if (!post) return res.status(404).json({ error: 'Post not found' });
+    if (!(await canViewPostPod(req.userId, post))) {
+      return res.status(403).json({ error: 'Not authorized to view this post' });
+    }
 
     const user = await User.findById(req.userId).select('_id username followedThreads');
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -507,8 +532,11 @@ exports.followThread = async (req: any, res: any) => {
 
 exports.unfollowThread = async (req: any, res: any) => {
   try {
-    const post = await Post.findById(req.params.id).select('_id');
+    const post = await Post.findById(req.params.id).select('_id podId');
     if (!post) return res.status(404).json({ error: 'Post not found' });
+    if (!(await canViewPostPod(req.userId, post))) {
+      return res.status(403).json({ error: 'Not authorized to view this post' });
+    }
 
     const user = await User.findById(req.userId).select('_id followedThreads');
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -558,7 +586,14 @@ exports.getFollowedThreads = async (req: any, res: any) => {
       followedThreads.map((thread: any) => [String(thread.postId), thread.followedAt || null]),
     );
 
-    const posts = await Post.find({ _id: { $in: postIds } })
+    // A thread followed while its pod was viewable drops out once it is not.
+    // Filtered on the stored podId, so for a non-admin a post whose pod has
+    // been deleted drops out too.
+    const filter: any = { _id: { $in: postIds } };
+    const scope = await DMService.listViewablePodIds(req.userId);
+    if (!scope.allPods) filter.podId = { $in: [null, ...scope.podIds] };
+
+    const posts = await Post.find(filter)
       .populate('userId', 'username profilePicture isBot botMetadata')
       .populate('comments.userId', 'username profilePicture isBot botMetadata')
       .populate('podId', 'name type')
