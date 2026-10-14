@@ -31,7 +31,7 @@ import {
   type HostedMcpPinnedTool,
   type HostedMcpUpstreamTool,
 } from './hostedMcpEntryService';
-import type { HostedMcpRow } from './hostedMcpCredentialService';
+import { HostedMcpCredentialError, type HostedMcpRow } from './hostedMcpCredentialService';
 import type { ToolConnection, ToolDefinition } from './toolBrokerService';
 
 /**
@@ -211,6 +211,7 @@ export const assertHostedToolUnchanged = async (
   try {
     outcome = await cache.assess({ connectionId: connection.connectionId }, entry);
   } catch (error) {
+    if (error instanceof HostedMcpCredentialError) throw error;
     const code = (error as { code?: unknown })?.code;
     if (code === 'reconnect_required' || code === 'connection_mismatch') {
       throw new RoomGrantError(code, messageOf(error), 403);
@@ -218,6 +219,9 @@ export const assertHostedToolUnchanged = async (
     throw error;
   }
   if (outcome.state === 'provider_unavailable') {
+    // Keep the credential service's code, retryability and broker trail
+    // unchanged when tools/list fails before a vendor request can be made.
+    if (outcome.cause instanceof HostedMcpCredentialError) throw outcome.cause;
     const reason = outcome.reason || 'provider_error';
     throw new RoomGrantError(reason, 'hosted-MCP tools/list could not be verified', reason === 'credential_rejected' ? 403 : 502);
   }

@@ -13,6 +13,7 @@ import { GRANT_BROKER_REFUSAL_CODE } from './grantBrokerConfinement';
 import { SessionAccountRefusal, loadSessionAccount, sessionRefusal } from './sessionAccountService';
 import { judgeSeatConfinement } from './seatGrantConfinement';
 import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
+import { HostedMcpCredentialError } from './hostedMcpCredentialService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');
@@ -804,10 +805,11 @@ export const listToolsForGrant = async (input: {
         // provider failure. Do not retry once per pin during one listing.
         if (error instanceof RoomGrantError
           && (error.code === 'tool_drift' || error.code === 'tool_unavailable')) continue;
-        if (error instanceof RoomGrantError
-          && (error.code === 'provider_error'
-            || error.code === 'provider_unreachable'
-            || error.code === 'credential_rejected')) {
+        if (error instanceof HostedMcpCredentialError
+          || (error instanceof RoomGrantError
+            && (error.code === 'provider_error'
+              || error.code === 'provider_unreachable'
+              || error.code === 'credential_rejected'))) {
           hostedListFailed = true;
         } else {
           throw error;

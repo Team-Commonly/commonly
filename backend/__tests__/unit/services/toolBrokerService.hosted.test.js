@@ -30,10 +30,19 @@ jest.mock('../../../models/ToolCall', () => ({
   digestArgs: (args) => require('crypto').createHash('sha256').update(JSON.stringify(args || {})).digest('hex'),
   reserveBudgetLineage: mockReserveBudgetLineage,
 }));
-jest.mock('../../../services/hostedMcpCredentialService', () => ({
-  __esModule: true,
-  credentialFor: (...args) => mockCredentialFor(...args),
-}));
+jest.mock('../../../services/hostedMcpCredentialService', () => {
+  class MockHostedMcpCredentialError extends Error {
+    constructor(code) {
+      super(code);
+      this.code = code;
+    }
+  }
+  return {
+    __esModule: true,
+    credentialFor: (...args) => mockCredentialFor(...args),
+    HostedMcpCredentialError: MockHostedMcpCredentialError,
+  };
+});
 jest.mock('../../../services/githubAppService', () => ({}));
 jest.mock('../../../services/seatGrantConfinement', () => ({
   judgeSeatConfinement: jest.fn(async () => ({ refusal: null, scope: 'unbound' })),
@@ -102,6 +111,8 @@ const projectionService = require('../../../services/grantBrokerProjectionServic
 const {
   hostedBrokerToolsForRun, GRANT_BROKER_TOOL_NAME_PATTERN, sanitizeGrantBrokerToolName,
 } = projectionService;
+// eslint-disable-next-line import/no-unresolved, import/extensions
+const { HostedMcpCredentialError } = require('../../../services/hostedMcpCredentialService');
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const hostedEntries = require('../../../integrations/hostedMcp/entries');
 
@@ -283,6 +294,36 @@ describe('a hosted-MCP grant through the broker', () => {
       .resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: 'linear.list_issues' })]));
     expect(global.fetch).toHaveBeenCalledTimes(3);
   });
+
+  it.each([
+    'connection_mismatch',
+    'reconnect_required',
+    'credential_missing',
+    'refresh_unreachable',
+    'connection_error',
+    'credential_refreshing',
+  ])('still offers pinned tools when credential lookup reports %s', async (code) => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    mockCredentialFor.mockRejectedValue(new HostedMcpCredentialError(code));
+    await expect(listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' }))
+      .resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: 'linear.list_issues' })]));
+    expect(mockCredentialFor).toHaveBeenCalledTimes(1);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(['refresh_unreachable', 'credential_refreshing'])(
+    'keeps %s as a failed call with its original credential reason', async (code) => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      mockCredentialFor.mockRejectedValue(new HostedMcpCredentialError(code));
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+      })).rejects.toMatchObject({ code });
+      expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'failed', reason: code,
+      }));
+      expect(global.fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it('uses the call’s unreachable and rejected-credential reasons for a failed list', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());

@@ -260,7 +260,7 @@ export interface HostedMcpDriftRow {
 
 export type HostedMcpDriftOutcome =
   | { state: 'assessed'; entryId: string; at: number; cached: boolean; tools: HostedMcpToolAssessment[] }
-  | { state: 'provider_unavailable'; entryId: string; detail: string; reason?: string };
+  | { state: 'provider_unavailable'; entryId: string; detail: string; reason?: string; cause?: unknown };
 
 export interface HostedMcpDriftCacheOptions {
   /**
@@ -332,6 +332,7 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
         return {
           state: 'provider_unavailable', entryId: entry.id, detail,
           ...(typeof code === 'string' ? { reason: code } : {}),
+          cause: error,
         };
       }
       if (!finish()) {
