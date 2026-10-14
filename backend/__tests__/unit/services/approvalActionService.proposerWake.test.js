@@ -47,6 +47,8 @@ jest.mock('../../../services/agentIdentityService', () => ({
   syncUserToPostgreSQL: jest.fn(),
 }));
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
+// Name reservation has its own suite (agentNameReservation); these arms use free names.
+jest.mock('../../../services/agentNameReservation', () => ({ reservedAgentNameRefusal: jest.fn().mockResolvedValue(null) }));
 jest.mock('../../../services/attentionItemService', () => ({
   recordActionApproval: jest.fn().mockResolvedValue(undefined),
   resolve: jest.fn().mockResolvedValue(undefined),

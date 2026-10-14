@@ -53,6 +53,8 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
+// Name reservation has its own suite (agentNameReservation); these arms use free names.
+jest.mock('../../../services/agentNameReservation', () => ({ reservedAgentNameRefusal: jest.fn().mockResolvedValue(null) }));
 // #2160: approving wakes the proposer; that path has its own suite (approvalActionService.proposerWake).
 jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn().mockResolvedValue({}) }));
 const mockResolveAttention = jest.fn().mockResolvedValue(undefined);
@@ -319,6 +321,21 @@ describe('approved connect_local_agent execution — the seat, never the token',
     expect(res.status).toBe(200);
     expect(resolved.executionResult).toEqual(expect.objectContaining({ alreadyInstalled: true }));
     expect(resolved.executionError).toBeUndefined();
+    expect(mockInstallUpsert).not.toHaveBeenCalled();
+  });
+
+  test('a name that became reserved between propose and approve fails honestly and creates nothing', async () => {
+    const { reservedAgentNameRefusal } = require('../../../services/agentNameReservation');
+    reservedAgentNameRefusal.mockResolvedValueOnce({ code: 'agent_name_reserved', error: '"sams-claude" is the name of a built-in agent.' });
+    mockApprovalFindById.mockResolvedValue(seatRow());
+    const resolved = seatRow({ status: 'resolved', decision: 'approved' });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+
+    const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+
+    expect(res.status).toBe(200);
+    expect(resolved.executionError).toMatch(/built-in agent/);
+    expect(mockRegistryCreate).not.toHaveBeenCalled();
     expect(mockInstallUpsert).not.toHaveBeenCalled();
   });
 
