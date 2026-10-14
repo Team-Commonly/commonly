@@ -16,7 +16,10 @@ const {
   hostedMcpRevokeTarget,
 } = require('../../../integrations/hostedMcp/entries');
 const GOOGLE_CALENDAR_CAPTURE = require('../../fixtures/hostedMcp/google-calendar-tools-list-2026-10-01.json');
-const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
+// The first Linear capture (2026-10-01) is the one the entry was built from; the
+// second (2026-10-14) is the one it is pinned to now, after five schemas drifted.
+const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
+const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 
@@ -551,9 +554,9 @@ describe('the shipped catalogue cannot land half-wired', () => {
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
-    // The capture `connector-ops` took on 2026-10-01 is committed beside this
-    // suite, so the pin's schemas are compared with the measurement rather than
-    // with themselves. Drift is checked against the LIVE list at call time; this
+    // The latest capture `connector-ops` took (2026-10-14) is committed beside
+    // this suite, so the pin's schemas are compared with the measurement rather
+    // than with themselves. Drift is checked against the LIVE list at call time; this
     // is the other end, catching a hand-edit of the entry that would otherwise
     // only surface as every tool refusing `tool_drift` in production.
     const capture = LINEAR_CAPTURE;
@@ -575,11 +578,34 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
     // One annotation set across the whole list, which is what the header claims
-    // and what makes a single `READ_ANNOTATIONS` honest.
-    expect(new Set(capture.tools.map((tool) => JSON.stringify(tool.annotations))).size).toBe(1);
+    // and what makes a single `READ_ANNOTATIONS` honest. Compared canonically:
+    // the 10-14 list serialises one tool's identical set in a different key order.
+    expect(new Set(capture.tools.map((tool) => canonicalJson(tool.annotations))).size).toBe(1);
     expect(capture.tools).toHaveLength(38);
     expect(entry.tools.find((tool) => tool.name === 'get_diff').description).toContain('not fetch targets');
     expect(entry.tools.find((tool) => tool.name === 'get_diff_threads').description).toContain('not fetch targets');
+  });
+
+  test('the 10-01 pins against the 10-14 capture drift on exactly the five re-pinned tools', () => {
+    // Real vendor data on both sides: the schemas the entry shipped with, assessed
+    // against the list Linear served thirteen days later. Every change was an
+    // optional property or description text, and the exact comparison still
+    // withholds all five, which is why they were re-pinned rather than offered.
+    const [entry] = HOSTED_MCP_ENTRIES;
+    const first = new Map(LINEAR_FIRST_CAPTURE.tools.map((tool) => [tool.name, tool]));
+    const asFirstPinned = {
+      ...entry,
+      tools: entry.tools.map((tool) => ({ ...tool, inputSchema: first.get(tool.name).inputSchema })),
+    };
+    const drifted = assessEntryTools(asFirstPinned, LINEAR_CAPTURE.tools)
+      .filter((assessment) => assessment.verdict !== 'ok');
+    expect(drifted.map((assessment) => assessment.name).sort())
+      .toEqual(['get_issue', 'list_documents', 'list_issues', 'list_projects', 'list_teams']);
+    expect(new Set(drifted.map((assessment) => assessment.verdict))).toEqual(new Set(['tool_drift']));
+    // Control: the shipped pins against the same capture are clean, so the five
+    // above are about the first pins and not about the capture.
+    expect(assessEntryTools(entry, LINEAR_CAPTURE.tools).every((assessment) => assessment.verdict === 'ok'))
+      .toBe(true);
   });
 
   test('a colliding entry id or tool name is refused', () => {

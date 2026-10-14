@@ -63,6 +63,39 @@ describe('hooks config writer', () => {
     expect(exitCode).toBeUndefined();
   });
 
+  test('a PreToolUse deny is printed in the shape Claude Code reads (#2145)', async () => {
+    const stdout = [];
+    await forwardHookEvent({
+      endpoint: 'https://example.invalid/hook',
+      token: 'cm_agent_test',
+      input: JSON.stringify({ hook_event_name: 'PreToolUse', eventId: 'e2' }),
+      fetchImpl: async () => ({ ok: true, json: async () => ({ permissionDecision: 'deny', reason: 'path is under kai\'s active claim' }) }),
+      stdout: (value) => stdout.push(value),
+    });
+    expect(stdout).toHaveLength(1);
+    expect(JSON.parse(stdout[0])).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'path is under kai\'s active claim',
+      },
+    });
+  });
+
+  test('an allow, or a deny on any other event, prints nothing', async () => {
+    const stdout = [];
+    const call = (event, decision) => forwardHookEvent({
+      endpoint: 'https://example.invalid/hook',
+      token: 'cm_agent_test',
+      input: JSON.stringify({ hook_event_name: event, eventId: `${event}-${decision}` }),
+      fetchImpl: async () => ({ ok: true, json: async () => ({ permissionDecision: decision }) }),
+      stdout: (value) => stdout.push(value),
+    });
+    await call('PreToolUse', 'allow');
+    await call('PostToolUse', 'deny');
+    expect(stdout).toHaveLength(0);
+  });
+
   test('sends only tool name, args digest, and resolved paths', () => {
     const payload = sanitizeHookPayload({
       hook_event_name: 'PreToolUse',

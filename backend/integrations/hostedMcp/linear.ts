@@ -10,6 +10,15 @@
  * list — a schema that is "close enough" would refuse every call as
  * `tool_drift` rather than approve args under what upstream accepts.
  *
+ * Re-pinned 2026-10-14 from a second capture (same row, same scope, 38 tools,
+ * same names and annotations) after the live drift check withheld five tools:
+ * `list_teams` gained `parentTeam` and `ancestorTeam`, `list_issues` and
+ * `list_projects` gained `includeSubTeams`, `get_issue` gained `fields`, and the
+ * `fields` description on the three list tools gained one sentence. Each new
+ * property names a team or a result field, or is a boolean — none is a
+ * provider-side fetch target, so §3's egress exclusion is unchanged. Only those
+ * five schemas moved; every other pin already equalled the second capture.
+ *
  * Read tools only, and the credential itself carries only `read`: Linear's docs
  * say a `read` token "can't reach write APIs", so §5's attribution rule has
  * nothing to guard in v1 — the fence is the vendor's, and the entry's class
@@ -316,7 +325,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
           type: 'boolean',
         },
         fields: {
-          description: 'Fields to include in each result. `id` is always included. Omit or pass an empty array for the default response.',
+          description: 'Fields to include in each result. Explicitly requested fields with no value return null. `id` is always included. Omit or pass an empty array for the default response.',
           type: 'array',
           items: {
             type: 'string',
@@ -351,6 +360,60 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         id: {
           type: 'string',
           description: 'Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues',
+        },
+        fields: {
+          description: 'Fields to include in each result. Explicitly requested fields with no value return null. `id` is always included. Omit or pass an empty array for the default response.',
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: [
+              'id',
+              'uuid',
+              'title',
+              'description',
+              'projectMilestone',
+              'priority',
+              'estimate',
+              'url',
+              'gitBranchName',
+              'createdAt',
+              'updatedAt',
+              'archivedAt',
+              'completedAt',
+              'startedAt',
+              'canceledAt',
+              'startedTriageAt',
+              'triagedAt',
+              'dueDate',
+              'slaStartedAt',
+              'slaMediumRiskAt',
+              'slaHighRiskAt',
+              'slaBreachesAt',
+              'slaType',
+              'status',
+              'statusType',
+              'labels',
+              'triageIntel',
+              'createdBy',
+              'createdById',
+              'assignee',
+              'assigneeId',
+              'delegate',
+              'delegateId',
+              'project',
+              'projectId',
+              'parentId',
+              'team',
+              'teamId',
+              'cycleId',
+              'attachments',
+              'documents',
+              'stateHistory',
+              'relations',
+              'customerNeeds',
+              'releases',
+            ],
+          },
         },
         includeRelations: {
           default: false,
@@ -408,6 +471,11 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
           description: 'Team name or ID',
           type: 'string',
         },
+        includeSubTeams: {
+          default: false,
+          description: 'Include results from the selected team and all descendants when team is set. Team ID filters already include descendants; this also expands name and key filters',
+          type: 'boolean',
+        },
         state: {
           description: 'State type, name, or ID',
           type: 'string',
@@ -449,7 +517,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
           type: 'string',
         },
         fields: {
-          description: 'Fields to include in each result. `id` is always included. Omit or pass an empty array for the default response.',
+          description: 'Fields to include in each result. Explicitly requested fields with no value return null. `id` is always included. Omit or pass an empty array for the default response.',
           type: 'array',
           items: {
             type: 'string',
@@ -646,6 +714,11 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
           description: 'Team name or ID',
           type: 'string',
         },
+        includeSubTeams: {
+          default: false,
+          description: 'Include results from the selected team and all descendants when team is set. Team ID filters already include descendants; this also expands name and key filters',
+          type: 'boolean',
+        },
         member: {
           description: 'User ID, name, email, or "me"',
           type: 'string',
@@ -678,7 +751,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
           type: 'boolean',
         },
         fields: {
-          description: 'Fields to include in each result. `id` is always included. Omit or pass an empty array for the default response.',
+          description: 'Fields to include in each result. Explicitly requested fields with no value return null. `id` is always included. Omit or pass an empty array for the default response.',
           type: 'array',
           items: {
             type: 'string',
@@ -1136,6 +1209,14 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         },
         query: {
           description: 'Search query',
+          type: 'string',
+        },
+        parentTeam: {
+          description: 'Only direct sub-teams of this team (name, key, or ID)',
+          type: 'string',
+        },
+        ancestorTeam: {
+          description: 'All descendant teams of this team, at any depth, excluding itself (name, key, or ID)',
           type: 'string',
         },
         includeArchived: {
