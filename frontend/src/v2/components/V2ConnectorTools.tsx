@@ -19,6 +19,7 @@ import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph } from '../icons/glyphs';
+import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
 
 export type GrantWriteMode = 'read' | 'write' | 'write-with-confirm';
 
@@ -507,7 +508,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     } catch (err) {
       authorizationWindow?.close();
       const data = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
-      setError(data?.message || data?.error || t('tools.connectError', { defaultValue: 'Could not begin connecting. Try again in a moment.' }));
+      setError(hostedMcpErrorNotice(t, data?.error));
     } finally {
       setBusy(false);
     }
@@ -999,6 +1000,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             ))}
           </div>
         </div>
+        {error && !draft && !selected && !githubAppSetup && (
+          <p className="v2-connector-aside__note" role="alert">{error}</p>
+        )}
         <div className="v2-connectors__rows">
           {rows.map(renderRow)}
           {notYet.map(renderNotYet)}

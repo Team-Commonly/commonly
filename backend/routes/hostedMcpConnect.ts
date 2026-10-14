@@ -337,6 +337,12 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
   }
   const state = typeof req.query.state === 'string' ? req.query.state : '';
   const code = typeof req.query.code === 'string' ? req.query.code : '';
+  const vendorError = typeof req.query.error === 'string' ? req.query.error : '';
+  if (vendorError) {
+    // The provider denied authorization before issuing a code. Leave the
+    // pending flow intact so the member can retry; never forward vendor text.
+    return callbackRedirect(res, 'error', vendorError === 'access_denied' ? 'consent_denied' : 'vendor_error');
+  }
   if (!state || !code) {
     return callbackRedirect(res, 'error', 'invalid_state');
   }
@@ -422,6 +428,10 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
       body: tokenRequest.body,
     });
     if (!response.ok) {
+      const refusal = await response.json().catch(() => null) as { error?: unknown } | null;
+      if (refusal?.error === 'invalid_client') {
+        return callbackRedirect(res, 'error', 'client_auth_refused');
+      }
       return callbackRedirect(res, 'error', 'exchange_refused');
     }
     tokens = (await response.json()) as TokenResponse;
