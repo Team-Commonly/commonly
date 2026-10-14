@@ -53,6 +53,8 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
+// #2160: approving wakes the proposer; that path has its own suite (approvalActionService.proposerWake).
+jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn().mockResolvedValue({}) }));
 const mockResolveAttention = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../../services/attentionItemService', () => ({
   recordActionApproval: jest.fn().mockResolvedValue(undefined),

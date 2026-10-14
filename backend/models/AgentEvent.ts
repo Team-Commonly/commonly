@@ -59,6 +59,24 @@ export interface IDecisionRuledEventPayload {
   podId: string;
 }
 
+/**
+ * Event type: 'approval.resolved'
+ *
+ * Delivered to the agent that proposed an action (commonly_propose_action)
+ * once the workspace owner APPROVES it (#2160). Declines and parked tool calls
+ * send nothing. `content` is the server-composed cue: who approved, and what
+ * the executor produced or why it failed.
+ */
+export interface IApprovalResolvedEventPayload {
+  approvalId: string;
+  actionType: string;
+  decision: 'approved';
+  approvedBy: { userId: string; username: string };
+  resolvedAt: string;
+  podId: string;
+  content: string;
+}
+
 export interface IAgentEventDelivery {
   outcome?: DeliveryOutcome;
   reason?: string;
