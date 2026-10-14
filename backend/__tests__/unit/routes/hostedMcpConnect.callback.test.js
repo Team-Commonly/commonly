@@ -60,6 +60,10 @@ jest.mock('../../../services/roomGrantService', () => ({
   revokeConnectionGrants: jest.fn(),
 }));
 
+jest.mock('../../../services/hostedMcpToolDefinitions', () => ({
+  forgetHostedMcpDrift: jest.fn(),
+}));
+
 const express = require('express');
 const request = require('supertest');
 
@@ -67,6 +71,7 @@ const connectRoutes = require('../../../routes/hostedMcpConnect');
 const Integration = require('../../../models/Integration');
 const connectorSecrets = require('../../../services/connectorSecrets');
 const { revokeConnectionGrants } = require('../../../services/roomGrantService');
+const { forgetHostedMcpDrift } = require('../../../services/hostedMcpToolDefinitions');
 const { undeclaredPaths } = require('../../utils/schemaPathGuard');
 const intake = require('../../../services/hostedMcpIntakeService');
 const dcr = require('../../../services/hostedMcpDcrRegistry');
@@ -182,6 +187,20 @@ const outcome = (res) => {
 const scopeSet = (scope) => new Set(String(scope).split(/[\s,]+/).filter(Boolean));
 
 describe('hosted-mcp connect: callback', () => {
+  it('forgets the old grant’s tools/list assessment around credential replacement', async () => {
+    connectorSecrets.put.mockReset();
+    connectorSecrets.put.mockImplementationOnce(async () => {
+      expect(forgetHostedMcpDrift).toHaveBeenCalledTimes(1);
+      return 'ref-access';
+    }).mockResolvedValueOnce('ref-refresh');
+    const res = await callback();
+    expect(outcome(res).hostedMcp).toBe('connected');
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+    expect(forgetHostedMcpDrift).toHaveBeenCalledTimes(2);
+    expect(forgetHostedMcpDrift).toHaveBeenNthCalledWith(1, 'row-1');
+    expect(forgetHostedMcpDrift).toHaveBeenNthCalledWith(2, 'row-1');
+  });
+
   it('exchanges with the client snapshotted at start even after registration rotation', async () => {
     FIXTURE_ENTRY.client = 'dcr';
     setStoredRow({ pendingAuth: {

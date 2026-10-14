@@ -291,12 +291,16 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
   const ttlMs = options.ttlMs === undefined ? HOSTED_MCP_DRIFT_TTL_MS : options.ttlMs;
   const now = options.now || Date.now;
   const entries = new Map<string, { at: number; tools: HostedMcpToolAssessment[] }>();
+  const pending = new Map<string, Set<symbol>>();
 
   const keyFor = (row: HostedMcpDriftRow) => row.connectionId;
 
   return {
     forget: (row) => {
-      entries.delete(keyFor(row));
+      const key = keyFor(row);
+      entries.delete(key);
+      // Also invalidate a tools/list already in flight under the old grant.
+      pending.delete(key);
     },
     assess: async (row, entry) => {
       const key = keyFor(row);
@@ -305,10 +309,21 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
       if (cached && at - cached.at < ttlMs) {
         return { state: 'assessed', entryId: entry.id, at: cached.at, cached: true, tools: cached.tools };
       }
+      const request = Symbol('hosted-mcp-tools-list');
+      const requests = pending.get(key) || new Set<symbol>();
+      requests.add(request);
+      pending.set(key, requests);
+      const finish = () => {
+        if (pending.get(key) !== requests) return false;
+        requests.delete(request);
+        if (requests.size === 0) pending.delete(key);
+        return true;
+      };
       let upstream: HostedMcpUpstreamTool[];
       try {
         upstream = await options.listUpstreamTools(row);
       } catch (error) {
+        finish();
         // A row whose credential requires reconnect is an authority refusal,
         // not a vendor outage. Preserve it for the broker's refusal trail.
         const code = (error as { code?: unknown })?.code;
@@ -317,6 +332,13 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
         return {
           state: 'provider_unavailable', entryId: entry.id, detail,
           ...(typeof code === 'string' ? { reason: code } : {}),
+        };
+      }
+      if (!finish()) {
+        return {
+          state: 'provider_unavailable', entryId: entry.id,
+          detail: 'connection changed during tools/list; retry the call',
+          reason: 'provider_error',
         };
       }
       const tools = assessEntryTools(entry, upstream);

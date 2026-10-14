@@ -24,6 +24,7 @@ import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { upstreamFetch } from '../services/upstreamFetch';
 import { dcrClientForRow, ensureDcrClient, refuseDcrClient } from '../services/hostedMcpDcrRegistry';
+import { forgetHostedMcpDrift } from '../services/hostedMcpToolDefinitions';
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
@@ -556,6 +557,9 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
     if (!withdrawn) manualRevokeAt = revokeTarget?.page;
   }
 
+  // Secret storage may replace the token behind the same ref before the row
+  // update. Clear the old-grant assessment before that replacement begins.
+  forgetHostedMcpDrift(String(consumed._id));
   const credentialRef = await connectorSecrets.put(String(consumed._id), HOSTED_MCP_ACCESS_TOKEN, tokens.access_token);
   let refreshTokenRef = consumed.config?.refreshTokenRef || undefined;
   if (tokens.refresh_token) {
@@ -606,6 +610,10 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
     },
     { new: true },
   );
+
+  // Also discard any assessment started during the exchange, before the row
+  // update made the new grant visible.
+  forgetHostedMcpDrift(String(consumed._id));
 
   return callbackRedirect(res, 'connected', undefined, manualRevokeAt ? {
     manualRevoke: {

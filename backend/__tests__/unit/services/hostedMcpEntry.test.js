@@ -359,6 +359,24 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
     await drift.assess({ connectionId: 'row-b' }, linear());
     expect(seen).toEqual(['row-a', 'row-b', 'row-a']);
   });
+
+  test('a tools/list started before reconnect cannot refill the forgotten assessment', async () => {
+    let finishOldList;
+    let fetches = 0;
+    const drift = cache(async () => {
+      fetches += 1;
+      if (fetches === 1) return new Promise((resolve) => { finishOldList = resolve; });
+      return upstreamOk();
+    });
+    const oldAssessment = drift.assess(row, linear());
+    drift.forget(row);
+    finishOldList(upstreamOk());
+    await expect(oldAssessment).resolves.toMatchObject({ state: 'provider_unavailable' });
+    await expect(drift.assess(row, linear())).resolves.toMatchObject({
+      state: 'assessed', cached: false,
+    });
+    expect(fetches).toBe(2);
+  });
 });
 
 describe('the shipped catalogue cannot land half-wired', () => {
