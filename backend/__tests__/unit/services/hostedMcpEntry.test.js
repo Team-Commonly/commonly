@@ -302,6 +302,25 @@ describe('drift is a named refusal', () => {
     expect(verdictOf(assessEntryTools(unknownEntry, upstream), 'list_issues')).toBe('tool_drift');
   });
 
+  test('schema keyword names used as property names do not change the walk position', () => {
+    const schema = {
+      type: 'object', description: 'pinned annotation', properties: {
+        properties: { type: 'object', properties: { id: { type: 'string' } } },
+        description: { type: 'string' },
+      },
+    };
+    const entry = linear({ tools: [pinned({ inputSchema: schema })] });
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = { ...schema, description: VENDOR_TEXT };
+    expect(verdictOf(assessEntryTools(entry, upstream), 'list_issues')).toBe('ok');
+
+    upstream[0].inputSchema = {
+      ...schema, description: VENDOR_TEXT,
+      properties: { ...schema.properties, description: { type: 'number' } },
+    };
+    expect(verdictOf(assessEntryTools(entry, upstream), 'list_issues')).toBe('tool_drift');
+  });
+
   test('write pins keep exact schema equality, and a compatible read change cannot excuse a withdrawn annotation', () => {
     const upstream = upstreamOk();
     upstream[0].inputSchema = {
