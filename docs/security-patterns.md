@@ -34,9 +34,9 @@ that to a 400 with fixed text, and keep the refused host in the log.
 
 First caller: skill import (`skillsCatalogService.ts`, hosts `github.com`,
 `raw.githubusercontent.com`, `api.github.com`). The guard is an allowlist only.
-A feature whose destinations cannot be listed in advance (a user's own webhook
-endpoint, for instance) needs an address-range check that resolves DNS and pins
-the connection. That guard does not exist yet.
+A feature whose destinations cannot be listed in advance needs an address-range
+check that resolves DNS and pins the connection to the checked address. This
+module does not provide one.
 
 ---
 
