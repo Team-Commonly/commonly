@@ -25,6 +25,8 @@ jest.mock('../../../models/AgentRegistry', () => ({
 // is not what this file is testing, and unmocked it blocks on a real Mongo.
 jest.mock('../../../models/Post', () => ({ aggregate: jest.fn().mockResolvedValue([]) }));
 jest.mock('../../../models/Message', () => ({ aggregate: jest.fn().mockResolvedValue([]) }));
+// Nothing is pending here; the pending-heartbeat skip has its own suite.
+jest.mock('../../../models/AgentEvent', () => ({ exists: jest.fn().mockResolvedValue(null), aggregate: jest.fn().mockResolvedValue([]) }));
 
 const AgentEventService = require('../../../services/agentEventService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
