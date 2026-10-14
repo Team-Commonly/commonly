@@ -250,6 +250,58 @@ describe('proposeAction — decider derivation', () => {
     expect(foreignCheck.installedBy).toEqual({ $ne: HUMAN_INSTALLER });
   });
 
+  describe('a refused name comes back with a free one built from the owner (2026-10-14)', () => {
+    // Seat names are instance-wide and stay held after uninstall, so a generic
+    // proposal such as "my-claude" works once per instance. The refusal hands
+    // the proposing agent a concrete name that will work.
+    const held = (names) => {
+      mockInstallFindOne.mockImplementation((query) => {
+        if (query && query.installedBy) {
+          return Promise.resolve(names.includes(query.agentName) ? { installedBy: 'someone-else' } : null);
+        }
+        return Promise.resolve({ installedBy: HUMAN_INSTALLER });
+      });
+    };
+
+    beforeEach(() => {
+      podLookup(HUMAN_POD_CREATOR);
+      userLookup({ ...HUMANS, [HUMAN_INSTALLER]: { _id: HUMAN_INSTALLER, isBot: false, username: 'Sam Lee' } });
+    });
+
+    test('a name another user holds is refused with a free, username-based suggestion', async () => {
+      held(['my-claude']);
+      const result = await propose({ actionType: 'connect_local_agent', params: { name: 'my-claude' }, summary: 'Connect' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('"my-claude" is already in use by another user');
+      expect(result.error).toContain('such as "sam-lee-claude", which is free');
+      expect(mockApprovalCreate).not.toHaveBeenCalled();
+    });
+
+    test('the suggestion skips a candidate someone else already holds', async () => {
+      held(['my-claude', 'sam-lee-claude']);
+      const result = await propose({ actionType: 'connect_local_agent', params: { name: 'my-claude' }, summary: 'Connect' });
+      expect(result.error).toContain('"sam-lee-claude-2"');
+    });
+
+    test('a built-in name is refused with the same kind of suggestion', async () => {
+      held([]);
+      const { reservedAgentNameRefusal } = require('../../../services/agentNameReservation');
+      reservedAgentNameRefusal.mockResolvedValueOnce({ code: 'agent_name_reserved', error: 'reserved' });
+      const result = await propose({ actionType: 'connect_local_agent', params: { name: 'claude-code' }, summary: 'Connect' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('"claude-code" belongs to a built-in agent');
+      expect(result.error).toContain('such as "sam-lee-claude", which is free');
+    });
+
+    test('with no username to build from, the refusal still stands, without a suggestion', async () => {
+      held(['my-claude']);
+      userLookup(HUMANS);
+      const result = await propose({ actionType: 'connect_local_agent', params: { name: 'my-claude' }, summary: 'Connect' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/pick a different name$/);
+    });
+  });
+
   test('a built-in agent name is refused at proposal time, before anyone is asked to approve it', async () => {
     const { reservedAgentNameRefusal } = require('../../../services/agentNameReservation');
     reservedAgentNameRefusal.mockResolvedValueOnce({
