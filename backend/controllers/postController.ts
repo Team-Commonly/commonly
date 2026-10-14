@@ -27,7 +27,11 @@ exports.createPost = async (req: any, res: any) => {
     source,
   } = req.body;
   try {
-    const resolvedPodId = podId || null;
+    // Validate and cast before the id reaches a query (docs/security-patterns.md).
+    if (podId && !mongoose.Types.ObjectId.isValid(String(podId))) {
+      return res.status(400).json({ error: 'Invalid podId' });
+    }
+    const resolvedPodId = podId ? new mongoose.Types.ObjectId(String(podId)) : null;
     if (resolvedPodId) {
       const pod = await Pod.findById(resolvedPodId).select('_id members').lean();
       const isMember = pod?.members?.some(
@@ -101,7 +105,9 @@ exports.searchPosts = async (req: any, res: any) => {
     }
 
     if (tags) {
-      const tagArray = (tags as string).split(',').map((tag: any) => tag.trim());
+      // Strings by construction, so an array or object in the query string
+      // can't reach the filter as anything but text.
+      const tagArray = String(tags).split(',').map((tag: string) => tag.trim());
       searchQuery.tags = { $in: tagArray };
     }
 
@@ -109,21 +115,26 @@ exports.searchPosts = async (req: any, res: any) => {
     if (podId === 'global' || podId === 'none') {
       searchQuery.podId = null;
     } else if (podId) {
+      // Validate and cast before the id reaches a query (docs/security-patterns.md).
+      if (!mongoose.Types.ObjectId.isValid(String(podId))) {
+        return res.status(400).json({ error: 'Invalid podId' });
+      }
+      const safePodId = new mongoose.Types.ObjectId(String(podId));
       // Searching one pod takes the same gate as listing it (`getPosts`).
-      const pod = await Pod.findById(podId).select('_id members type').lean();
+      const pod = await Pod.findById(safePodId).select('_id members type').lean();
       if (!pod) return res.status(404).json({ error: 'Pod not found' });
       const canView = await DMService.canViewPod(userId, pod);
       if (!canView) {
         return res.status(403).json({ error: 'Not authorized to view posts in this pod' });
       }
-      searchQuery.podId = podId;
+      searchQuery.podId = safePodId;
     } else {
       // No pod named: a listing, so global posts plus the caller's own pods.
       searchQuery.podId = await listingPodFilter(userId);
     }
 
     if (category) {
-      searchQuery.category = category;
+      searchQuery.category = String(category);
     }
 
     const posts = await Post.find(searchQuery)
@@ -159,22 +170,27 @@ exports.getPosts = async (req: any, res: any) => {
       if (!userId) {
         return res.status(401).json({ error: 'Authentication required to view pod posts' });
       }
-      const pod = await Pod.findById(podId).select('_id members type').lean();
+      // Validate and cast before the id reaches a query (docs/security-patterns.md).
+      if (!mongoose.Types.ObjectId.isValid(String(podId))) {
+        return res.status(400).json({ error: 'Invalid podId' });
+      }
+      const safePodId = new mongoose.Types.ObjectId(String(podId));
+      const pod = await Pod.findById(safePodId).select('_id members type').lean();
       if (!pod) return res.status(404).json({ error: 'Pod not found' });
       const canView = await DMService.canViewPod(userId, pod);
       if (!canView) {
         return res.status(403).json({ error: 'Not authorized to view posts in this pod' });
       }
-      // The pod's ObjectId, not the query string: the hot sort's aggregate
-      // `$match` is not cast by Mongoose, so a string matched no posts.
-      filter.podId = pod._id;
+      // An ObjectId, not the query string: the hot sort's aggregate `$match`
+      // is not cast by Mongoose, so a string matched no posts.
+      filter.podId = safePodId;
     } else {
       // No pod named: the main feed, a listing, so global posts plus the
       // caller's own pods. No admin bypass here.
       filter.podId = await listingPodFilter(userId);
     }
     if (category) {
-      filter.category = category;
+      filter.category = String(category);
     }
 
     const populate = (q: any) => q

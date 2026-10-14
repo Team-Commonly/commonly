@@ -135,6 +135,25 @@ describe('post routes check the post\'s pod', () => {
       const res = await request(app).get('/api/posts?podId=global').set(as(outsider)).expect(200);
       expect(ids(res.body.posts)).toEqual(idsOf(globalPost));
     });
+
+    it('keeps podId=none to global posts only', async () => {
+      const res = await request(app).get('/api/posts?podId=none').set(as(member)).expect(200);
+      expect(ids(res.body.posts)).toEqual(idsOf(globalPost));
+    });
+
+    it('answers 400 for a malformed podId', async () => {
+      const res = await request(app).get('/api/posts?podId=not-an-id').set(as(member)).expect(400);
+      expect(res.body).toEqual({ error: 'Invalid podId' });
+    });
+
+    it('answers 400 for a podId sent as an object', async () => {
+      await request(app).get('/api/posts?podId[$ne]=x').set(as(member)).expect(400);
+    });
+
+    it('treats a category sent as an object as text, not an operator', async () => {
+      const res = await request(app).get('/api/posts?category[$ne]=x').set(as(member)).expect(200);
+      expect(res.body.posts).toEqual([]);
+    });
   });
 
   describe('GET /api/posts/search', () => {
@@ -186,6 +205,46 @@ describe('post routes check the post\'s pod', () => {
     it('keeps podId=global to global posts only', async () => {
       const res = await request(app).get('/api/posts/search?query=needle&podId=global').set(as(outsider)).expect(200);
       expect(ids(res.body)).toEqual(idsOf(globalPost));
+    });
+
+    it('answers 400 for a malformed podId', async () => {
+      const res = await request(app).get('/api/posts/search?query=needle&podId=not-an-id')
+        .set(as(member)).expect(400);
+      expect(res.body).toEqual({ error: 'Invalid podId' });
+    });
+
+    it('answers 400 for a podId sent as an object', async () => {
+      await request(app).get('/api/posts/search?query=needle&podId[$ne]=x').set(as(member)).expect(400);
+    });
+
+    it('treats a category or tags sent as objects as text, not operators', async () => {
+      const byCategory = await request(app).get('/api/posts/search?query=needle&category[$ne]=x')
+        .set(as(member)).expect(200);
+      expect(byCategory.body).toEqual([]);
+      const byTags = await request(app).get('/api/posts/search?query=needle&tags[$ne]=x')
+        .set(as(member)).expect(200);
+      expect(byTags.body).toEqual([]);
+    });
+  });
+
+  describe('POST /api/posts', () => {
+    it('answers 400 for a malformed podId and creates nothing', async () => {
+      const res = await request(app)
+        .post('/api/posts')
+        .set(as(member))
+        .send({ content: 'hi', podId: 'not-an-id' })
+        .expect(400);
+      expect(res.body).toEqual({ error: 'Invalid podId' });
+      expect(await Post.countDocuments({ content: 'hi' })).toBe(0);
+    });
+
+    it('still creates a post in a pod the caller belongs to', async () => {
+      const res = await request(app)
+        .post('/api/posts')
+        .set(as(member))
+        .send({ content: 'hi', podId: String(pod._id) })
+        .expect(201);
+      expect(String(res.body.podId)).toBe(String(pod._id));
     });
   });
 

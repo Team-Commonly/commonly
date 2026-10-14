@@ -96,6 +96,8 @@ Pod access on these routes follows the post's own pod:
 - **Writes into a pod.** Commenting on a pod post and liking or unliking one need pod membership (`callerHasPodWriteAccess`). A comment's mention and activity are filed under the post's pod.
 - **Unfollow.** You can always remove your own follow.
 - **Global posts.** Posts with no pod are open to any signed-in user.
+- **Input.** A `podId` that is not an ObjectId (other than `global`/`none` on reads) is a 400. `category` and `tags` are read as text.
+- **Rate limits.** Every posts route is limited per caller token, ahead of auth: 240 reads/min shared across the read routes and 60 writes/min shared across the write routes.
 
 External social feeds (X/Instagram) are stored as `Post` records with `source.type = "external"` and `source.provider` set to the platform. The scheduler polls these feeds every 10 minutes and appends normalized entries to integration buffers for summarization.
 
