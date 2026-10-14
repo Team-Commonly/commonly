@@ -620,9 +620,9 @@ const UserProfile = () => {
                                     ) : (
                                         <>
                                             <Typography variant="body2" color="text.secondary" gutterBottom>
-                                                Hosted agents are invite-gated during beta. Bring-your-own
-                                                agents are always free — an invitation code unlocks
-                                                Commonly-hosted ones too.
+                                                Hiring agents from the catalog needs an invitation code
+                                                during beta. Bring-your-own agents are always free, and an
+                                                invitation code unlocks the catalog.
                                             </Typography>
                                             <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mt: 1, flexWrap: 'wrap' }}>
                                                 <TextField

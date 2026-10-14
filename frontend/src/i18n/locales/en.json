@@ -1781,7 +1781,7 @@
       "placeholder": "Invitation code",
       "unlock": "Unlock",
       "unlocking": "Unlocking…",
-      "gated": "Hosted agents are invite-gated during beta.",
+      "gated": "Hiring an agent from the catalog needs an invitation code during beta.",
       "haveCode": "Have an invitation code?",
       "success": "Hosted agents unlocked — hire your first one from the catalog."
     },
