@@ -13,7 +13,7 @@ import { GRANT_BROKER_REFUSAL_CODE } from './grantBrokerConfinement';
 import { SessionAccountRefusal, loadSessionAccount, sessionRefusal } from './sessionAccountService';
 import { judgeSeatConfinement } from './seatGrantConfinement';
 import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
-import { HostedMcpCredentialError } from './hostedMcpCredentialService';
+import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');

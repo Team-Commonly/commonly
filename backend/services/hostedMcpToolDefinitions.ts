@@ -31,7 +31,8 @@ import {
   type HostedMcpPinnedTool,
   type HostedMcpUpstreamTool,
 } from './hostedMcpEntryService';
-import { HostedMcpCredentialError, type HostedMcpRow } from './hostedMcpCredentialService';
+import { HostedMcpCredentialError } from './hostedMcpCredentialError';
+import type { HostedMcpRow } from './hostedMcpCredentialService';
 import type { ToolConnection, ToolDefinition } from './toolBrokerService';
 
 /**
