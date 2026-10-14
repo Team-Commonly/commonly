@@ -37,6 +37,13 @@ Backend endpoints:
 - `PATCH /api/skills/gateway-credentials` (admin, per gateway)
 - `GET /api/gateways` (admin gateway registry)
 
+When the backend fetches a `sourceUrl` (for `requirements`, or for `import`
+without `content`), the URL must be https on `github.com` or
+`raw.githubusercontent.com`. Directory listings come from `api.github.com`.
+Any other URL, or a redirect that leaves those hosts, returns 400. A
+non-GitHub `sourceUrl` sent alongside pasted `content` is stored as metadata and
+never fetched. See `backend/services/outboundUrlGuard.ts`.
+
 ## Gateway Credentials (Shared)
 
 Skill credentials apply to a **gateway**, not an agent. The Skills page exposes a

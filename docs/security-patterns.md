@@ -17,6 +17,26 @@ shape. Sources at the bottom.
 | `req.body.x` (HTTP string)                     | Mongoose `_id` filter                    | [ObjectId.isValid + cast](#objectidisvalid--cast-the-canonical-objectid-sanitizer) |
 | Regex capture from message content             | Mongoose filter scalar OR `$in`          | [Avoid putting it in the query at all](#dont-put-user-tainted-strings-in-mongoose-filters-period) |
 | `req.params.id` already validated by middleware| Mongoose `_id` filter                    | [Still cast](#objectidisvalid--cast-the-canonical-objectid-sanitizer) — CodeQL won't trust the middleware |
+| A URL from a request, or one a user stored     | Server-side `fetch` / axios              | [Confine it to named hosts](#outbound-fetch-of-a-url-from-a-request) |
+
+---
+
+## Outbound fetch of a URL from a request
+
+A fetch made by the backend can reach anything the backend's network can,
+in-cluster services included. When the URL arrives from a request, go through
+`fetchTextFromAllowedHost` in `backend/services/outboundUrlGuard.ts`, and pass
+it the exact set of hosts the feature needs. It allows only https on the default
+port, with no credentials in the URL. It follows redirects itself and checks
+every hop against the same set, at most 5. It applies one deadline and a body
+cap. A refused URL throws an error that `isOutboundUrlRefused` recognises; map
+that to a 400 with fixed text, and keep the refused host in the log.
+
+First caller: skill import (`skillsCatalogService.ts`, hosts `github.com`,
+`raw.githubusercontent.com`, `api.github.com`). The guard is an allowlist only.
+A feature whose destinations cannot be listed in advance (a user's own webhook
+endpoint, for instance) needs an address-range check that resolves DNS and pins
+the connection. That guard does not exist yet.
 
 ---
 

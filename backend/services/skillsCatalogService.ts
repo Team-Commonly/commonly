@@ -1,7 +1,26 @@
 import fs from 'fs';
 import path from 'path';
 
+import { fetchTextFromAllowedHost } from './outboundUrlGuard';
+
 const DEFAULT_SOURCE = 'awesome';
+
+// Every host the skill-source fetches below may reach: GitHub's web host, its
+// raw-content host (where `toRawGitHubUrl` points and where the contents API's
+// `download_url`s live) and its REST host (the directory walk). A source URL
+// supplied by a caller, and every redirect it produces, must stay on these.
+// Measured 2026-10-14: 1,657 of the catalog's 1,659 `sourceUrl`s are github.com;
+// the other two are ClawHub page URLs rather than SKILL.md files. Importing one
+// of those with pasted content still works: a non-GitHub `sourceUrl` is stored as
+// metadata and never fetched (`parseGitHubSource` returns null for it).
+const SKILL_SOURCE_HOSTS: ReadonlySet<string> = new Set([
+  'github.com',
+  'raw.githubusercontent.com',
+  'api.github.com',
+]);
+// The largest SKILL.md in this repo is ~66 KB; ClawHub bundles cap a file at 100 KB.
+const SKILL_FILE_MAX_BYTES = 512 * 1024;
+const GITHUB_LISTING_MAX_BYTES = 1024 * 1024;
 
 interface SkillItem {
   [key: string]: unknown;
@@ -200,7 +219,9 @@ const shouldIncludeFile = (pathName: string): boolean => {
 };
 
 const fetchJson = async (url: string): Promise<unknown> => {
-  const response = await fetch(url, {
+  const response = await fetchTextFromAllowedHost(url, {
+    allowedHosts: SKILL_SOURCE_HOSTS,
+    maxBytes: GITHUB_LISTING_MAX_BYTES,
     headers: {
       'User-Agent': 'commonly-app',
       Accept: 'application/vnd.github.v3+json',
@@ -209,7 +230,7 @@ const fetchJson = async (url: string): Promise<unknown> => {
   if (!response.ok) {
     throw new Error(`Failed to fetch (${response.status})`);
   }
-  return response.json();
+  return JSON.parse(response.text);
 };
 
 export const fetchSkillDirectoryFiles = async (sourceUrl: string, options: FetchDirectoryOptions = {}): Promise<SkillFile[]> => {
@@ -243,9 +264,15 @@ export const fetchSkillDirectoryFiles = async (sourceUrl: string, options: Fetch
       if (!item.path || !item.download_url) continue;
       if (!shouldIncludeFile(String(item.path))) continue;
       if (item.size && Number(item.size) > maxBytes) continue;
-      const resp = await fetch(String(item.download_url));
+      // The remaining budget is the body cap, so a file that would overrun it
+      // ends the walk (as the `totalBytes > maxBytes` break below always did)
+      // without first being read into memory whole.
+      const resp = await fetchTextFromAllowedHost(String(item.download_url), {
+        allowedHosts: SKILL_SOURCE_HOSTS,
+        maxBytes: maxBytes - totalBytes,
+      });
       if (!resp.ok) continue;
-      const content = await resp.text();
+      const content = resp.text;
       totalBytes += content.length;
       if (totalBytes > maxBytes) break;
       files.push({
@@ -370,15 +397,14 @@ export const fetchSkillBundleFromClawHub = async (
 export const fetchSkillContentFromSource = async (sourceUrl: string): Promise<FetchSkillContentResult> => {
   if (!sourceUrl) return { content: '', resolvedUrl: sourceUrl };
   const resolvedUrl = toRawGitHubUrl(sourceUrl);
-  if (!/^https?:\/\//i.test(resolvedUrl)) {
-    throw new Error('Unsupported skill source URL.');
-  }
-  const response = await fetch(resolvedUrl);
+  const response = await fetchTextFromAllowedHost(resolvedUrl, {
+    allowedHosts: SKILL_SOURCE_HOSTS,
+    maxBytes: SKILL_FILE_MAX_BYTES,
+  });
   if (!response.ok) {
     throw new Error(`Failed to fetch skill content (${response.status}).`);
   }
-  const content = await response.text();
-  return { content, resolvedUrl };
+  return { content: response.text, resolvedUrl };
 };
 
 export default {

@@ -22,6 +22,12 @@ const SkillsCatalogService = require('../services/skillsCatalogService');
 const { getOpenClawConfigPath, syncOpenClawSkills, getGatewaySkillEntries, syncGatewaySkillEnv } = require('../services/agentProvisionerService');
 // eslint-disable-next-line global-require
 const SkillRating = require('../models/SkillRating');
+// eslint-disable-next-line global-require
+const { isOutboundUrlRefused } = require('../services/outboundUrlGuard');
+
+// The reply to a source URL the fetch guard refused. Fixed text: the refusal's
+// own message names the host it refused and goes to the server log only.
+const SOURCE_URL_REFUSED = 'Skill source URL must be an https link on github.com or raw.githubusercontent.com.';
 
 interface AuthReq {
   user?: { id: string };
@@ -219,6 +225,10 @@ router.get('/requirements', auth, async (req: AuthReq, res: Res) => {
     const primaryEnv = metadata.primaryEnv || (metadata.envs.length === 1 ? metadata.envs[0] : null) || (requirements.length === 1 ? requirements[0] : null);
     return res.json({ sourceUrl: fetched.resolvedUrl || sourceUrl, requirements, primaryEnv, detectedCount: requirements.length });
   } catch (error) {
+    if (isOutboundUrlRefused(error)) {
+      console.warn('[skills] Refused requirements source URL:', (error as Error).message);
+      return res.status(400).json({ error: SOURCE_URL_REFUSED });
+    }
     console.error('Error fetching skill requirements:', error);
     return res.status(500).json({ error: 'Failed to fetch skill requirements' });
   }
@@ -301,6 +311,10 @@ router.post('/import', auth, async (req: AuthReq, res: Res) => {
     return res.status(201).json({ assetId: asset?._id, podId, name, scope: normalizedScope, sync });
   } catch (error) {
     const e = error as PodError;
+    if (isOutboundUrlRefused(error)) {
+      console.warn('[skills] Refused import source URL:', e.message);
+      return res.status(400).json({ error: SOURCE_URL_REFUSED });
+    }
     console.error('Error importing skill:', error);
     return res.status(e.code === 'POD_ACCESS_DENIED' ? 403 : 500).json({ error: e.message || 'Failed to import skill' });
   }

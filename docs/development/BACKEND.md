@@ -140,6 +140,8 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 | GET    | /api/skills/gateway-credentials | List gateway skill credentials (admin) | Query: `{gatewayId?}` | `{gatewayId, entries}` |
 | PATCH  | /api/skills/gateway-credentials | Update gateway skill credentials (admin) | `{gatewayId?, entries}` | `{gatewayId, entries}` |
 
+A `sourceUrl` the backend fetches must be https on `github.com` or `raw.githubusercontent.com`; anything else returns 400 (see `docs/skills/SKILLS_CATALOG.md`).
+
 ### Admin Operations
 
 | Method | Endpoint | Description | Request Body | Response |
