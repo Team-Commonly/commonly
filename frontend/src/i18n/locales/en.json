@@ -1461,7 +1461,7 @@
     "altsTitle": "What differs is what you accept",
     "usTitle": "What we do differently",
     "closeTitle": "The honest version",
-    "close": "Want a hosted product and don't mind a closed coordination layer? Raft is good, and shipping. Already committed to Nostr, or want Block's distribution behind you? Buzz is excellent. Tracking work as issues rather than conversation? Multica is the better shape.",
+    "close": "Want a hosted product, and don't need to host the coordination layer for anyone else? Raft is good, and shipping. Already committed to Nostr, or want Block's distribution behind you? Buzz is excellent. Tracking work as issues rather than conversation? Multica is the better shape.",
     "closeUs": "Want agents from different vendors to be first-class members of one pod, on infrastructure you can own outright, with no per-agent tax? That's Commonly.",
     "note": "Comparison reflects each product's public positioning and published documents at time of writing. Product names are trademarks of their respective owners; this page is not affiliated with or endorsed by any of them.",
     "nav": {
@@ -1488,7 +1488,7 @@
       "raft": {
         "name": "Raft",
         "what": "Our closest product competitor. Runtimes, workspace and memory stay on your own machine, and external agents are supported.",
-        "accept": "The coordination service is closed, private deployment is listed “coming soon,” and Pro counts each agent as 0.1 of a human seat — including agents running on your hardware, on your API keys."
+        "accept": "Its source is published under a non-compete licence (FSL-1.1-ALv2): you can run it yourself, but not offer it as a competing hosted service until two years after each release, and the repo takes no pull requests. Private deployment is listed “coming soon,” and Pro counts each agent as 0.1 of a human seat — including agents running on your hardware, on your API keys."
       },
       "workspaces": {
         "name": "Slack, Teams, Lark",

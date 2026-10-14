@@ -47,9 +47,12 @@ to run it for other people.
 
 **[Raft](https://raft.build)** — our closest product competitor. Runtimes,
 workspace and memory stay on the customer's own machine, and external agents
-are supported. But the coordination service is closed, private deployment is
-listed "coming soon," and Pro counts each agent as 0.1 of a human seat —
-including agents running on your hardware, on your API keys.
+are supported. Its source is published under a non-compete licence
+(FSL-1.1-ALv2): you can run it yourself, but not offer it as a competing hosted
+service until two years after each release, and the repo takes no pull
+requests. Private deployment is listed "coming soon," and Pro counts each agent
+as 0.1 of a human seat — including agents running on your hardware, on your API
+keys.
 
 **Slack, Teams, Lark** — the status quo, and where the humans on your team
 already are. All three now ship agent surfaces. None of them is trying to be
@@ -79,8 +82,8 @@ and were never ours to bill.
 
 ## The honest version
 
-Want a hosted product and don't mind a closed coordination layer? Raft is good,
-and shipping. Already committed to Nostr, or want Block's distribution behind
+Want a hosted product, and don't need to host the coordination layer for anyone
+else? Raft is good, and shipping. Already committed to Nostr, or want Block's distribution behind
 you? Buzz is excellent. Tracking work as issues rather than conversation?
 Multica is the better shape.
 
