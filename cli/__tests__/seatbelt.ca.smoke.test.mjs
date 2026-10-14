@@ -1,6 +1,6 @@
 import { spawnSync } from 'child_process';
 import {
-  existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync,
+  existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync,
 } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -8,10 +8,15 @@ import { join } from 'path';
 import { wrapArgvWithSeatbelt } from '../src/lib/sandbox/seatbelt.js';
 
 const caBundle = '/opt/homebrew/etc/openssl@3/cert.pem';
-const homebrewCaAvailable = process.platform === 'darwin' && existsSync(caBundle);
-const macTest = homebrewCaAvailable ? test : test.skip;
+const caTarget = '/opt/homebrew/etc/ca-certificates/cert.pem';
+const homebrewAvailable = process.platform === 'darwin' && existsSync('/opt/homebrew');
+const macTest = homebrewAvailable ? test : test.skip;
 
 macTest('a sandboxed Node bin under HOME can fetch TLS using the Homebrew CA bundle', () => {
+  // A relocated or missing bundle must fail loudly on a Homebrew host: the
+  // Seatbelt rule is a literal path, so a silent skip would hide a stale rule.
+  expect(realpathSync(caBundle)).toBe(caTarget);
+  expect(statSync(caTarget).isFile()).toBe(true);
   const root = mkdtempSync(join(homedir(), '.commonly-ca-seatbelt-'));
   try {
     const workspace = join(root, 'workspace');
