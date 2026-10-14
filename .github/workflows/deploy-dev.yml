@@ -71,6 +71,48 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Materialize private values overlay (runner-only)
+        # DEV_HELM_VALUES_PRIVATE holds real GCP project ID / PG host / AR repos
+        # / ESO SA email. Kept out of the OSS repo per sensitive-data policy.
+        # Written to $RUNNER_TEMP, auto-cleaned when the runner teardowns.
+        run: |
+          printf '%s\n' "${DEV_HELM_VALUES_PRIVATE}" > "$RUNNER_TEMP/values-private.yaml"
+          echo "Wrote $(wc -l < "$RUNNER_TEMP/values-private.yaml") lines to $RUNNER_TEMP/values-private.yaml"
+        env:
+          DEV_HELM_VALUES_PRIVATE: ${{ secrets.DEV_HELM_VALUES_PRIVATE }}
+
+      # clawdbot-gateway is parked (agents.clawdbot.enabled: false since #1051),
+      # and the chart then renders no gateway Deployment at all. Building it
+      # anyway cost 3.3 of the ~6.4 build minutes per deploy and pushed a
+      # ~1.1 GB image nothing ran: 709 such versions by 2026-10-14, about two
+      # thirds of the Artifact Registry bill. Ask the release itself, with the
+      # same three values files the upgrade uses, so the build returns the
+      # moment the flag does. "could not find template" is helm's answer for a
+      # template that rendered empty; any other helm error fails the job rather
+      # than reading as "disabled".
+      - name: Is clawdbot-gateway enabled in this release?
+        id: gateway
+        run: |
+          set -uo pipefail
+          if err=$(helm template commonly-dev k8s/helm/commonly \
+              -f k8s/helm/commonly/values.yaml \
+              -f k8s/helm/commonly/values-dev.yaml \
+              -f "$RUNNER_TEMP/values-private.yaml" \
+              --show-only templates/agents/clawdbot-deployment.yaml 2>&1 >/dev/null); then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$err" | grep -q 'could not find template'; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "clawdbot-gateway is disabled in this release; skipping its build and tag."
+          else
+            printf '%s\n' "$err"
+            exit 1
+          fi
+
       - name: Build + push backend image
         env:
           TAG: ${{ steps.tag.outputs.tag }}
@@ -97,6 +139,7 @@ jobs:
           docker push "$REPO:$TAG"
 
       - name: Build + push clawdbot-gateway image
+        if: steps.gateway.outputs.enabled == 'true'
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
@@ -133,21 +176,6 @@ jobs:
           cluster_name: ${{ env.CLUSTER }}
           location: ${{ env.REGION }}
 
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: v3.14.0
-
-      - name: Materialize private values overlay (runner-only)
-        # DEV_HELM_VALUES_PRIVATE holds real GCP project ID / PG host / AR repos
-        # / ESO SA email. Kept out of the OSS repo per sensitive-data policy.
-        # Written to $RUNNER_TEMP, auto-cleaned when the runner teardowns.
-        run: |
-          printf '%s\n' "${DEV_HELM_VALUES_PRIVATE}" > "$RUNNER_TEMP/values-private.yaml"
-          echo "Wrote $(wc -l < "$RUNNER_TEMP/values-private.yaml") lines to $RUNNER_TEMP/values-private.yaml"
-        env:
-          DEV_HELM_VALUES_PRIVATE: ${{ secrets.DEV_HELM_VALUES_PRIVATE }}
-
       # `--wait` is deliberately NOT used here. It waits for EVERY resource in
       # the release, so any long-unhealthy auxiliary workload fails a deploy
       # that actually succeeded. On 2026-08-04 that produced five consecutive
@@ -171,14 +199,20 @@ jobs:
       - name: Helm upgrade commonly-dev
         env:
           TAG: ${{ steps.tag.outputs.tag }}
+          GATEWAY_ENABLED: ${{ steps.gateway.outputs.enabled }}
         run: |
+          # Point the gateway at this run's tag only when this run built it.
+          GATEWAY_TAG=()
+          if [ "$GATEWAY_ENABLED" = "true" ]; then
+            GATEWAY_TAG=(--set agents.clawdbot.image.tag="$TAG")
+          fi
           helm upgrade commonly-dev k8s/helm/commonly -n "$NAMESPACE" \
             -f k8s/helm/commonly/values.yaml \
             -f k8s/helm/commonly/values-dev.yaml \
             -f "$RUNNER_TEMP/values-private.yaml" \
             --set backend.image.tag="$TAG" \
             --set frontend.image.tag="$TAG" \
-            --set agents.clawdbot.image.tag="$TAG" \
+            "${GATEWAY_TAG[@]}" \
             --set agents.commonlyBot.image.tag="$TAG" \
             --timeout 10m \
             --burst-limit 200 \
