@@ -165,6 +165,44 @@ const findForeignLocalAgentOwner = async (
   return !!foreign;
 };
 
+const nameSlug = (value: unknown): string => String(value || '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  // The line above collapses every run to one '-', so trimming one is enough.
+  .replace(/^-|-$/g, '')
+  .slice(0, 20);
+
+/**
+ * A free seat name built from the owner's username, offered when a proposed
+ * connect_local_agent name is refused. Seat names are instance-wide and stay
+ * held after an uninstall (identity continuity), so a generic proposal such as
+ * "my-claude" works once on the whole instance. The proposing agent gets a
+ * concrete name that will work instead of guessing again (2026-10-14).
+ */
+const suggestLocalAgentName = async (requestedName: string, ownerUserId: unknown): Promise<string | null> => {
+  const owner = await User.findById(ownerUserId) as { username?: string } | null;
+  if (!owner) return null;
+  // A username with no ASCII letters or digits (e.g. '中文') slugs to nothing;
+  // fall back to the account id so a refusal always carries a working name.
+  const who = nameSlug(owner.username) || `user-${String(ownerUserId).slice(-6).toLowerCase()}`;
+  const what = nameSlug(requestedName.replace(/^(my|your-name|your)-/, '').replace(/-code$/, '')) || 'agent';
+  // Cap the base before the suffix, so "-2"…"-5" survive the 40-character limit.
+  const base = `${who}-${what}`.slice(0, 37).replace(/-$/, '');
+  for (let i = 0; i < 5; i += 1) {
+    const candidate = `${base}${i ? `-${i + 1}` : ''}`;
+    // "Free" means nobody holds it, the owner included: an existing seat of
+    // theirs would make the new card reuse that identity instead of a new one.
+    if (LOCAL_AGENT_NAME_RE.test(candidate)
+      // eslint-disable-next-line no-await-in-loop
+      && !(await reservedAgentNameRefusal(candidate))
+      // eslint-disable-next-line no-await-in-loop
+      && !(await AgentInstallation.findOne({ agentName: candidate, instanceId: 'default' }))) {
+      return candidate;
+    }
+  }
+  return null;
+};
+
 /**
  * The decider is the accountable HUMAN — not whoever happens to have created
  * the pod.
@@ -337,11 +375,15 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     // Refused at proposal time so the proposing agent can pick another name
     // before a person is asked to approve one that cannot work.
     const reserved = await reservedAgentNameRefusal(requestedName);
-    if (reserved) return { ok: false, error: reserved.error };
-    if (await findForeignLocalAgentOwner(requestedName, ownerUserId)) {
+    const taken = !reserved && await findForeignLocalAgentOwner(requestedName, ownerUserId);
+    if (reserved || taken) {
+      const suggestion = await suggestLocalAgentName(requestedName, ownerUserId);
+      const why = reserved
+        ? `the agent name "${requestedName}" belongs to a built-in agent`
+        : `the agent name "${requestedName}" is already in use by another user`;
       return {
         ok: false,
-        error: `the agent name "${requestedName}" is already in use by another user — pick a different name`,
+        error: `${why} — pick a different name${suggestion ? `, such as "${suggestion}", which is free` : ''}`,
       };
     }
   }
