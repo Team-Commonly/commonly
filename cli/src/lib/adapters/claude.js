@@ -75,7 +75,7 @@ import {
 import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE } from '../mcp-home.js';
+import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE, selectedMcpVersionDir } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
@@ -445,6 +445,8 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
     }
     if (headerHelper) entry.headersHelper = headerHelper.command;
     mcpServersMap[server.name] = entry;
+    const versionDir = ctx.publicSeat && selectedMcpVersionDir(spawnCommand);
+    if (versionDir) ctx.mcpReadDirectories?.push(versionDir);
   }
   return { mcpServers: mcpServersMap };
 };
@@ -469,11 +471,13 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
       ? await createTokenHeaderHelpers(mcpServers, dir)
       : new Map();
     const unavailableMcp = [];
+    const mcpReadDirectories = [];
     const config = buildMcpConfig(mcpServers, {
       ...ctx,
       credentialFile: credential?.path || null,
       dynamicHeaderHelpers,
       unavailableMcp,
+      mcpReadDirectories,
     });
     await writeFile(
       file,
@@ -497,7 +501,7 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
         + `inherits it. Put the credential on the entry's env to get the file channel.`,
       );
     }
-    return { dir, file, credential, expansionEnv, unavailableMcp };
+    return { dir, file, credential, expansionEnv, unavailableMcp, mcpReadDirectories };
   } catch (err) {
     try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     throw err;
@@ -644,6 +648,7 @@ const prepareArgv = async (innerArgv, ctx) => {
       mcpConfigDir: ctx.mcpConfigDir,
       executablePaths: [...mcpExecutables, ...commitHookExecutables, ...originalHookExecutables],
       allowClaudeRuntimeAccess: true,
+      readOnlyDirectories: ctx.mcpReadDirectories || [],
     });
     return {
       cmd: wrapped[0],
@@ -672,7 +677,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     const claudeBin = resolveClaudePath(claudeEnv);
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
-      readOnlyPaths: [ctx.mcpConfigDir, commitHooksPath, originalHooksPath].filter(Boolean),
+      readOnlyPaths: [ctx.mcpConfigDir, commitHooksPath, originalHooksPath, ...(ctx.mcpReadDirectories || [])].filter(Boolean),
     });
     return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv };
   }
@@ -812,6 +817,7 @@ export default {
         ...ctx,
         mcpConfigPath: mcpConfig?.file || null,
         mcpConfigDir: mcpConfig?.dir || null,
+        mcpReadDirectories: mcpConfig?.mcpReadDirectories || [],
         publicClaudeState,
         claudeEnv,
       };
@@ -848,6 +854,7 @@ export default {
           ...ctx,
           mcpConfigPath: mcpConfig?.file || null,
           mcpConfigDir: mcpConfig?.dir || null,
+          mcpReadDirectories: mcpConfig?.mcpReadDirectories || [],
           publicClaudeState,
           claudeEnv: buildClaudeEnv(
             ctx.env,

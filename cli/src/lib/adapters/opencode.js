@@ -39,7 +39,7 @@ import {
 } from 'path';
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE } from '../mcp-home.js';
+import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE, selectedMcpVersionDir } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import {
   isLegacySandboxTrust,
@@ -165,6 +165,8 @@ const buildMcpConfig = (servers, ctx = {}) => {
         ...(Object.keys(env).length ? { environment: env } : {}),
         ...(typeof server.cwd === 'string' ? { cwd: server.cwd } : {}),
       };
+      const versionDir = ctx.publicSeat && selectedMcpVersionDir(command);
+      if (versionDir) ctx.mcpReadDirectories?.push(versionDir);
       continue;
     }
 
@@ -674,12 +676,14 @@ export default {
         ...(cacheHome ? [mkdir(cacheHome, { recursive: true, mode: 0o700 })] : []),
       ]);
       const unavailableMcp = [];
+      const mcpReadDirectories = [];
       const mcp = buildMcpConfig(ctx.environment?.mcp, {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
         credentialFile: credential?.path || null,
         publicSeat: isPublic,
         unavailableMcp,
+        mcpReadDirectories,
       });
       const config = {
         permission: isPublic
@@ -749,6 +753,7 @@ export default {
             tempDir,
             binary,
             process.execPath,
+            ...mcpReadDirectories,
           ],
         });
         [cmd, ...spawnArgs] = wrapped;
@@ -764,6 +769,7 @@ export default {
           mcpConfigDir: tempDir,
           loopbackNetworkPorts: providerProxy ? [providerProxy.port] : [],
           readOnlyPaths: [],
+          readOnlyDirectories: mcpReadDirectories,
         });
         [cmd, ...spawnArgs] = wrapped;
       }

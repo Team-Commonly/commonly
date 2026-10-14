@@ -272,3 +272,44 @@ test('a public cold MCP is omitted from Qwen config and the turn is told', async
     }
   });
 });
+
+test('a warm public Qwen spawn grants only the selected MCP version directory', async () => {
+  await withSeat(async (ctx, root) => {
+    const home = join(root, 'mcp-home');
+    const versionDir = join(home, '0.3.13');
+    const packageDir = join(versionDir, 'node_modules', '@commonlyai', 'mcp');
+    await mkdir(join(packageDir, 'src'), { recursive: true });
+    await writeFile(join(packageDir, 'package.json'), JSON.stringify({
+      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+    }));
+    await writeFile(join(packageDir, 'src', 'index.js'), '#!/usr/bin/env node\n');
+    await writeFile(join(home, 'current'), '0.3.13\n');
+    await writeFile(join(home, '.warm.lock'), 'warming\n');
+    const prior = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = home;
+    try {
+      let profileOptions;
+      let config;
+      await qwen.spawn('hello', {
+        ...ctx,
+        environment: { ...ctx.environment, mcp: [{
+          name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'],
+        }] },
+        _wrapArgvWithSeatbelt: (argv, options) => { profileOptions = options; return argv; },
+        _spawnImpl: (_cmd, args) => {
+          config = JSON.parse(readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8'));
+          return fakeChild();
+        },
+      });
+      expect(config.mcpServers.commonly).toMatchObject({
+        command: 'node', args: [join(packageDir, 'src', 'index.js')],
+      });
+      expect(profileOptions.readOnlyDirectories).toContain(versionDir);
+      expect(profileOptions.readOnlyDirectories).not.toContain(home);
+      expect(buildSeatbeltProfile(profileOptions)).toContain(`(subpath "${realpathSync(versionDir)}")`);
+    } finally {
+      if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = prior;
+    }
+  });
+});

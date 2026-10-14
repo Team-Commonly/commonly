@@ -45,7 +45,7 @@ import {
   existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isShippedCommonlyMcpCommand } from './declared-mcp-guard.js';
 import { MCP_PACKAGE, exactVersion, parseVersion } from './mcp-server-version.js';
@@ -323,6 +323,14 @@ export const readBinPath = (home, version, options = {}) => {
   // reader naming `0.3.14-rc.1` gets nothing rather than 0.3.14's build.
   if (!parseVersion(version)) return null;
   return readBinInPackageDir(packageDirFor(home, version), options);
+};
+
+/** Read grant for only the verified warm build selected for this spawn. */
+export const selectedMcpVersionDir = (command, home = mcpHomeDir()) => {
+  if (!Array.isArray(command) || command.length !== 2 || command[0] !== 'node') return null;
+  const version = relative(home, command[1]).split(sep)[0];
+  if (exactVersion(version) !== version || readBinPath(home, version) !== command[1]) return null;
+  return versionDirFor(home, version);
 };
 
 /**

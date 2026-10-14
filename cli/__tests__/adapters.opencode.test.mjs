@@ -252,6 +252,48 @@ describe('opencode MCP config', () => {
       });
     });
   });
+
+  test('a warm public MCP grants only its selected version directory to Seatbelt', async () => {
+    await withTemp(async (root) => {
+      const home = join(root, 'mcp-home');
+      const versionDir = join(home, '0.3.13');
+      const pkgDir = join(versionDir, 'node_modules', '@commonlyai', 'mcp');
+      await mkdir(join(pkgDir, 'src'), { recursive: true });
+      await writeFile(join(pkgDir, 'package.json'), JSON.stringify({
+        name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+      }));
+      await writeFile(join(pkgDir, 'src', 'index.js'), '');
+      await writeFile(join(home, 'current'), '0.3.13\n');
+      await writeFile(join(home, '.warm.lock'), 'warming\n');
+      const workspace = join(root, 'workspace');
+      await mkdir(workspace);
+      const keyFile = join(root, 'provider-key');
+      await writeFile(keyFile, 'provider-secret', { mode: 0o600 });
+      await withProcessEnv('COMMONLY_MCP_HOME', home, async () => {
+        let profileOptions;
+        const spawn = makeSpawnImpl();
+        await opencode.spawn('warm turn', {
+          cwd: workspace,
+          env: { PATH: process.env.PATH },
+          environment: {
+            model: 'gpt-5.4',
+            sandbox: { trust: 'public', mode: 'workspace' },
+            provider: { id: 'local', baseURL: 'https://llm.example.test/v1', keyFile },
+            mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
+          },
+          agentName: 'public-agent',
+          _opencodeHomeRoot: join(root, 'opencode-state'),
+          _binaryPath: '/usr/local/bin/opencode',
+          _platform: 'darwin',
+          _spawnImpl: spawn.impl,
+          _wrapArgvWithSeatbelt: (argv, options) => { profileOptions = options; return argv; },
+        });
+        expect(profileOptions.readOnlyDirectories).toEqual([versionDir]);
+        expect(profileOptions.readOnlyDirectories).not.toContain(home);
+        expect(buildSeatbeltProfile(profileOptions)).toContain(`(subpath "${realpathSync(versionDir)}")`);
+      });
+    });
+  });
 });
 
 describe('opencode external provider config', () => {

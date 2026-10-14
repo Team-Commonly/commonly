@@ -22,7 +22,7 @@ import {
   KEEP_VERSION_DIRS, PRUNE_GRACE_MS, REGISTRY_TTL_MS, STALE_LOCK_MS, WARM_RESULTS,
   claimInUse, inUseMarkerPath, isPidAlive, isUsableWarmHome, kickWarm, lockPathFor,
   liveInUsePids, mcpHomeDir, newestInstalledVersion, packageDirFor, pinShippedSpec, planMcpSpawn,
-  prepareMcpSpawn, readBinPath, readCurrentVersion, readRegistryCache, versionDirFor, warmLooksWanted,
+  prepareMcpSpawn, readBinPath, readCurrentVersion, readRegistryCache, selectedMcpVersionDir, versionDirFor, warmLooksWanted,
 } from '../src/lib/mcp-home.js';
 import { exactVersion } from '../src/lib/mcp-server-version.js';
 import { acquireWarmLock, pruneVersionDirs, resolveRegistryLatest, runCommand, warmMcpHome } from '../src/lib/mcp-warm-child.mjs';
@@ -392,6 +392,16 @@ describe('prepareMcpSpawn — the warm is kicked when it is due, and only then',
     expect(prepareMcpSpawn(SHIPPED_COMMAND, {
       home, publicSeat: true, spawnImpl: () => ({ unref: () => {} }),
     })).toEqual(['node', bin]);
+    expect(selectedMcpVersionDir(['node', bin], home)).toBe(versionDirFor(home, '0.3.13'));
+    expect(selectedMcpVersionDir(['node', join(home, 'current')], home)).toBeNull();
+  });
+
+  test('a failed home read cannot return a cold package runner to a public seat', () => {
+    const home = makeHome();
+    const readFile = () => { throw new Error('unreadable home'); };
+    expect(prepareMcpSpawn(SHIPPED_COMMAND, { home, publicSeat: true, readFile })).toBeNull();
+    expect(prepareMcpSpawn(SHIPPED_COMMAND, { home, publicSeat: false, readFile }))
+      .toEqual(SHIPPED_COMMAND);
   });
 
   test('a warm already running (lock present) is not started twice', () => {

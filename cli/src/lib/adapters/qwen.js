@@ -6,7 +6,7 @@ import { tmpdir } from 'os';
 import { basename, dirname, isAbsolute, join } from 'path';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { deliverSeatCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE } from '../mcp-home.js';
+import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE, selectedMcpVersionDir } from '../mcp-home.js';
 import { writeCredentialFile } from '../credential-file.js';
 import { normalizeSandboxTrust, validateEnvironmentSpec } from '../environment.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
@@ -111,6 +111,8 @@ export const buildQwenMcpConfig = (servers, ctx) => {
         command: command[0], args, env,
         ...(server.cwd ? { cwd: server.cwd } : {}),
       };
+      const versionDir = ctx.publicSeat && selectedMcpVersionDir(command);
+      if (versionDir) ctx.mcpReadDirectories?.push(versionDir);
       continue;
     }
     if (transport !== 'http' || typeof server.url !== 'string') {
@@ -278,12 +280,14 @@ export default {
       });
       const proxyWithBearer = { ...proxy, bearer: (await readFile(proxy.tokenFile, 'utf8')).trim() };
       const unavailableMcp = [];
+      const mcpReadDirectories = [];
       const mcp = buildQwenMcpConfig(ctx.environment?.mcp, {
         credentialFile: credential?.path || '',
         instanceUrl: ctx.instanceUrl || '',
         runtimeToken: ctx.runtimeToken || '',
         publicSeat: isPublic,
         unavailableMcp,
+        mcpReadDirectories,
       });
       await Promise.all([
         writeFile(settingsPath, JSON.stringify({
@@ -323,7 +327,7 @@ export default {
               ],
             },
           },
-        }, { workspacePath: ctx.cwd, homePath: home, readOnlyPaths: [tempDir, executable, packageDir, process.execPath].filter(Boolean) });
+        }, { workspacePath: ctx.cwd, homePath: home, readOnlyPaths: [tempDir, executable, packageDir, process.execPath, ...mcpReadDirectories].filter(Boolean) });
       } else if (isPublic) {
         if ((ctx._platform || process.platform) !== 'darwin') {
           throw new Error(`public Qwen sandbox.mode=${mode} requires Seatbelt on macOS or bwrap on Linux`);
@@ -335,7 +339,7 @@ export default {
           statePath: home,
           mcpConfigDir: tempDir,
           loopbackNetworkPorts: [proxy.port],
-          readOnlyDirectories: packageDir ? [packageDir] : [],
+          readOnlyDirectories: [...(packageDir ? [packageDir] : []), ...mcpReadDirectories],
         });
       }
       const requestedTimeout = Number(ctx.timeoutMs);
