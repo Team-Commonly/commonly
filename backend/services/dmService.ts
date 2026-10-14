@@ -514,6 +514,47 @@ class DMService {
   }
 
   /**
+   * The pods a listing surface (the post feed, post search, followed threads)
+   * shows a user: what `canViewPod` admits, minus its admin bypass. That is
+   * every pod the user is a member of, plus every `agent-dm` pod with a member
+   * in one of those pods (the §3.7 fan-out).
+   *
+   * No admin bypass on purpose. Listing surfaces filter to the caller's own
+   * pods for admins too (CLAUDE.md, "Pod-scoped reads are membership-gated").
+   * An admin reaches any other pod by id or by an explicit `podId`, and those
+   * paths go through `canViewPod`, bypass included.
+   *
+   * Set-shaped so a listing can push it into one query instead of checking
+   * each row. `__tests__/services/dmService.agentDm.test.ts` holds it equal to
+   * `canViewPod` for non-admins and pins the admin difference. Change one,
+   * check the other.
+   */
+  static async listPodIdsForListing(userId: unknown): Promise<string[]> {
+    if (!userId) return [];
+    const uid = String(userId);
+    const memberPods = await Pod.find({ members: uid }).select('_id members').lean() as Array<{
+      _id: unknown; members?: unknown[];
+    }>;
+    const podIds = memberPods.map((p) => String(p._id));
+    const coMemberIds = new Set<string>();
+    memberPods.forEach((p) => {
+      (p.members || []).forEach((m) => {
+        const id = String(m);
+        if (id && id !== uid) coMemberIds.add(id);
+      });
+    });
+    if (coMemberIds.size > 0) {
+      const fanOut = await Pod.find({
+        type: 'agent-dm',
+        _id: { $nin: podIds },
+        members: { $in: [...coMemberIds] },
+      }).select('_id').lean() as Array<{ _id: unknown }>;
+      fanOut.forEach((p) => podIds.push(String(p._id)));
+    }
+    return podIds;
+  }
+
+  /**
    * Find or create a 2-member `agent-dm` pod. Generalization of
    * `getOrCreateAgentRoom` — both members can be agents (the bot ↔ bot
    * case), agent ↔ human (parallel to legacy agent-room), or even

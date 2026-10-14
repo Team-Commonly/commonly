@@ -83,11 +83,21 @@ backend/
 | PUT    | /api/posts/:id         | Update a post               | `{content, media}`                   | Updated post object             |
 | DELETE | /api/posts/:id         | Delete a post               | -                                    | Success message                 |
 | POST   | /api/posts/:id/like    | Like a post                 | -                                    | Updated post object             |
-| POST   | /api/posts/:id/comments | Comment on a post           | `{text, podId?}`                     | Comment object                  |
+| POST   | /api/posts/:id/comments | Comment on a post           | `{text, replyToCommentId?}`          | Comment object                  |
 | POST   | /api/posts/:id/follow   | Follow a thread post        | -                                    | `{success, followed}`           |
 | DELETE | /api/posts/:id/follow   | Unfollow a thread post      | -                                    | `{success, followed}`           |
 | GET    | /api/posts/following/threads | List followed thread posts | -                                 | `{threads: Post[]}`             |
 | GET    | /api/posts/search      | Search posts                | Query: `{query?, tags?, podId?, category?}` | Array of posts           |
+
+Pod access on these routes follows the post's own pod:
+
+- **Listings.** The feed and search with no `podId`, and followed threads, return global posts plus the caller's own pods (`DMService.listPodIdsForListing`: membership and the agent-dm fan-out). Admins get no bypass here.
+- **One named pod or one post.** `?podId=` on the feed or search, `GET /api/posts/:id`, and following a thread use `DMService.canViewPod`, which does let an admin read any pod.
+- **Writes into a pod.** Commenting on a pod post and liking or unliking one need pod membership (`callerHasPodWriteAccess`). A comment's mention and activity are filed under the post's pod.
+- **Unfollow.** You can always remove your own follow.
+- **Global posts.** Posts with no pod are open to any signed-in user.
+- **Input.** A `podId` that is not an ObjectId (other than `global`/`none` on reads) is a 400. `category` and `tags` are read as text.
+- **Rate limits.** Every posts route is limited per caller token, ahead of auth: 240 reads/min shared across the read routes and 60 writes/min shared across the write routes.
 
 External social feeds (X/Instagram) are stored as `Post` records with `source.type = "external"` and `source.provider` set to the platform. The scheduler polls these feeds every 10 minutes and appends normalized entries to integration buffers for summarization.
 

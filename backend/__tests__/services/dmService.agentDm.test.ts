@@ -291,6 +291,74 @@ describe('DMService — agent-dm + sharePod', () => {
     });
   });
 
+  // The listing set feeds the post feed, post search and followed threads. It
+  // must admit exactly what canViewPod admits EXCEPT canViewPod's admin bypass,
+  // which listing surfaces do not get. This world exercises each canViewPod
+  // branch.
+  describe('listPodIdsForListing (canViewPod minus the admin bypass)', () => {
+    let pods;
+    let carol;
+    let dave;
+
+    beforeEach(async () => {
+      carol = await User.create({ username: 'carol', email: 'carol@example.com', password: 'placeholder' });
+      dave = await User.create({
+        username: 'dave-default',
+        email: 'dave@agent.local',
+        password: 'placeholder',
+        isBot: true,
+        botMetadata: { agentName: 'dave', instanceId: 'default' },
+      });
+      const mkPod = (name, type, members) => Pod.create({
+        name, type, createdBy: members[0]._id, members: members.map((m) => m._id),
+      });
+      pods = {
+        team: await mkPod('Team', 'team', [alice, aria]),
+        dm: await mkPod('aria ↔ codex', 'agent-dm', [aria, codex]),
+        farDm: await mkPod('codex ↔ dave', 'agent-dm', [codex, dave]),
+        room: await mkPod('aria', 'agent-room', [aria, bob]),
+        bobOnly: await mkPod('Bob', 'chat', [bob]),
+      };
+    });
+
+    const viaCanViewPod = async (user) => {
+      const ids = [];
+      for (const pod of Object.values(pods)) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await DMService.canViewPod(user._id, pod)) ids.push(String(pod._id));
+      }
+      return ids.sort();
+    };
+
+    const listed = async (user) => [...await DMService.listPodIdsForListing(user._id)].sort();
+
+    it('matches canViewPod for non-admin members, fan-out readers and outsiders', async () => {
+      for (const user of [alice, bob, carol, aria, codex, dave]) {
+        // eslint-disable-next-line no-await-in-loop
+        expect(await listed(user)).toEqual(await viaCanViewPod(user));
+      }
+    });
+
+    it('includes a fan-out agent-dm and leaves out an agent-room and a far agent-dm', async () => {
+      expect(await listed(alice)).toEqual([String(pods.team._id), String(pods.dm._id)].sort());
+    });
+
+    it('returns nothing for a user in no pod', async () => {
+      expect(await DMService.listPodIdsForListing(carol._id)).toEqual([]);
+    });
+
+    it('gives an admin only their own pods, where canViewPod admits them everywhere', async () => {
+      const asMember = await viaCanViewPod(bob);
+      await User.updateOne({ _id: bob._id }, { role: 'admin' });
+      // canViewPod's admin bypass is real and still in force for direct reads...
+      expect(await viaCanViewPod(bob)).toEqual(Object.values(pods).map((p) => String(p._id)).sort());
+      expect(await DMService.canViewPod(bob._id, pods.team)).toBe(true);
+      // ...and the listing set leaves it out: same pods as before the promotion.
+      expect(await listed(bob)).toEqual(asMember);
+      expect(await listed(bob)).not.toContain(String(pods.team._id));
+    });
+  });
+
   describe('AgentInstallation.upsert idempotency', () => {
     let pod;
     beforeEach(async () => {
