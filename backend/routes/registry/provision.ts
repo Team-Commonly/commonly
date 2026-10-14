@@ -38,6 +38,7 @@ const {
 } = require('./tokens');
 const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
 const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
+const { ownsRuntimeIdentity, runtimeCredentialRefusal } = require('../../services/runtimeIdentityOwnership');
 
 // Inlined per-route limiter on this DB-touching handler. The previous version
 // of this comment credited the clean CodeQL status to the query "only
@@ -174,6 +175,16 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
             message: 'Hosted (cloud) agents require entitlement; you can connect your own local/BYO agent instead.',
           });
         }
+      }
+    }
+
+    // Provisioning mints (and with force, rotates) the identity's runtime token,
+    // which acts in every pod the identity is installed in: the same
+    // sole-installer rule as the token routes, admins exempt.
+    if (!(await isGlobalAdminUser(userId))) {
+      const ownership = await ownsRuntimeIdentity(userId, name.toLowerCase(), normalizedInstanceId);
+      if (!ownership.owned) {
+        return res.status(403).json({ code: ownership.failure, error: runtimeCredentialRefusal[ownership.failure] });
       }
     }
 

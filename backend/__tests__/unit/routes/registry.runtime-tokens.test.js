@@ -28,6 +28,14 @@ jest.mock('../../../models/AgentCredential', () => ({
 }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(),
+  // isGlobalAdminUser reads the caller's role; these tests are about issuance.
+  findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ role: 'user' }) }) })),
+}));
+// Ownership (sole installer) has its own suite: registry.runtimeTokenOwnership.
+// Here the caller owns the identity, so the arms below test issuance itself.
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ownsRuntimeIdentity: jest.fn().mockResolvedValue({ owned: true }),
+  runtimeCredentialRefusal: {},
 }));
 jest.mock('../../../services/agentIdentityService', () => ({
   getOrCreateAgentUser: jest.fn(),
