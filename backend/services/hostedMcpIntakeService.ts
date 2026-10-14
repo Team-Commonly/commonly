@@ -346,7 +346,7 @@ export const buildAuthorizeUrl = (
     code_challenge: params.codeChallenge,
     code_challenge_method: 'S256',
     scope: entry.scopes.join(' '),
-    resource: entry.resource,
+    resource: entry.audience ?? entry.resource,
   });
   // Vendor-specific values are part of the reviewed entry, never caller input.
   // Refuse collisions so they cannot replace the client, state, PKCE, scope or
@@ -445,7 +445,7 @@ export const buildTokenExchangeRequest = (
       redirect_uri: params.redirectUri,
       code: params.code,
       code_verifier: params.codeVerifier,
-      resource: entry.resource,
+      resource: entry.audience ?? entry.resource,
       ...authentication.body,
     }),
   };
@@ -464,7 +464,7 @@ export const buildRefreshRequest = (
     body: new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: params.refreshToken,
-      resource: entry.resource,
+      resource: entry.audience ?? entry.resource,
       ...authentication.body,
     }),
   };

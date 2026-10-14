@@ -10,9 +10,9 @@
  *
  * Two shapes matter more than they look.
  *
- * The endpoint is the entry's `resource` — the same URL RFC 8707 puts in the
- * `resource` parameter at authorization, so the audience the vendor validated
- * the token for is the audience the token is presented to.
+ * The endpoint is the entry's `resource`. The OAuth audience may be a parent
+ * resource identifier; catalogue validation requires that it covers this
+ * endpoint's origin and path before we present a bearer token here.
  *
  * The credential is fetched INSIDE the call, never by the broker's
  * `resolveConnection`: a seat listing its tools must not trigger a refresh, and
