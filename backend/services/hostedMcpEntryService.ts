@@ -343,6 +343,17 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
         };
       }
       const tools = assessEntryTools(entry, upstream);
+      const changed = tools.filter((tool) => tool.verdict !== 'ok' || tool.detail);
+      if (changed.length > 0) {
+        // These names and details come from the pin and our comparison, never
+        // from the vendor's live descriptions or schema values.
+        console.warn(JSON.stringify({
+          event: 'hosted_mcp_tool_assessment',
+          entryId: entry.id,
+          connectionId: row.connectionId,
+          tools: changed,
+        }));
+      }
       entries.set(key, { at, tools });
       return { state: 'assessed', entryId: entry.id, at, cached: false, tools };
     },
