@@ -1,0 +1,34 @@
+[
+  {
+    "key": "commonly-me",
+    "displayName": "commonly.me",
+    "monitoredResource": { "type": "uptime_url", "labels": { "host": "commonly.me" } },
+    "httpCheck": {
+      "path": "/",
+      "port": 443,
+      "useSsl": true,
+      "validateSsl": true,
+      "requestMethod": "GET",
+      "acceptedResponseStatusCodes": [{ "statusClass": "STATUS_CLASS_2XX" }]
+    },
+    "period": "60s",
+    "timeout": "10s",
+    "selectedRegions": ["USA_OREGON", "USA_IOWA", "USA_VIRGINIA"]
+  },
+  {
+    "key": "api-health",
+    "displayName": "api.commonly.me /api/health",
+    "monitoredResource": { "type": "uptime_url", "labels": { "host": "api.commonly.me" } },
+    "httpCheck": {
+      "path": "/api/health",
+      "port": 443,
+      "useSsl": true,
+      "validateSsl": true,
+      "requestMethod": "GET",
+      "acceptedResponseStatusCodes": [{ "statusClass": "STATUS_CLASS_2XX" }]
+    },
+    "period": "60s",
+    "timeout": "10s",
+    "selectedRegions": ["USA_OREGON", "USA_IOWA", "USA_VIRGINIA"]
+  }
+]

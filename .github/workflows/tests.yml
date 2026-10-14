@@ -277,6 +277,13 @@ jobs:
             --schema-location default \
             /tmp/dev-rendered.yaml
 
+      - name: Validate alerting config (offline)
+        # k8s/monitoring/ is applied by hand with scripts/monitoring/apply-alerting.py
+        # (docs/runbooks/alerting.md). --check makes no API call: it asserts every
+        # policy links a runbook heading, every metric/uptime reference resolves,
+        # and no project or account identifier is committed.
+        run: python3 scripts/monitoring/apply-alerting.py --check
+
       - name: Assert reliability rollout and scheduling invariants
         run: |
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.strategy.type' /tmp/dev-rendered.yaml)" = "RollingUpdate"
