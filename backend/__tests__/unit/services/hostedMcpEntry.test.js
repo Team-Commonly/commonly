@@ -163,7 +163,7 @@ describe('drift is a named refusal', () => {
     const entry = linear();
     const widened = upstreamOk();
     widened[0] = Object.assign({}, widened[0], {
-      inputSchema: { type: 'object', properties: { team: { type: 'string' }, limit: { type: 'number' } } },
+      inputSchema: { type: 'object', properties: { team: { type: 'number' } } },
     });
     const assessment = assessEntryTools(entry, widened).find((a) => a.name === 'list_issues');
 
@@ -189,6 +189,130 @@ describe('drift is a named refusal', () => {
     // A spelling for the absent value, so two absent schemas compare equal
     // rather than comparing `undefined`.
     expect(canonicalJson(undefined)).toBe('undefined');
+  });
+
+  test('a read pin survives optional top-level properties and schema descriptions with a logged detail', async () => {
+    const entry = linear({ tools: [pinned({})] });
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = {
+      type: 'object', description: VENDOR_TEXT,
+      properties: {
+        team: { type: 'string', description: VENDOR_TEXT },
+        limit: { type: 'number', description: VENDOR_TEXT },
+      },
+    };
+    const assessment = assessEntryTools(entry, upstream)[0];
+    expect(assessment).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+    expect(JSON.stringify(assessment)).not.toContain(VENDOR_TEXT);
+    expect(entryToolProjections(entry)[0].inputSchema).toEqual(pinned({}).inputSchema);
+
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const cache = createHostedMcpDriftCache({ listUpstreamTools: async () => upstream });
+      await cache.assess({ connectionId: 'row-compatible' }, entry);
+      await cache.assess({ connectionId: 'row-compatible' }, entry);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain('"verdict":"ok"');
+      expect(warn.mock.calls[0][0]).not.toContain(VENDOR_TEXT);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('description-only edits at known schema positions are compatible', () => {
+    const schema = {
+      type: 'object', properties: { team: { type: 'string' } },
+      allOf: [{ properties: { team: { type: 'string' } } }],
+    };
+    const entry = linear({ tools: [pinned({ inputSchema: schema })] });
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = {
+      ...schema, description: VENDOR_TEXT,
+      properties: { team: { type: 'string', description: VENDOR_TEXT } },
+      allOf: [{ description: VENDOR_TEXT, properties: { team: { type: 'string', description: VENDOR_TEXT } } }],
+    };
+    expect(assessEntryTools(entry, upstream)[0]).toMatchObject({
+      verdict: 'ok', detail: expect.stringContaining('compatib'),
+    });
+  });
+
+  test('an optional first property is compatible even when the pin had no properties map', () => {
+    const entry = linear({ tools: [pinned({ inputSchema: { type: 'object' } })] });
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = { type: 'object', properties: { limit: { type: 'number' } } };
+    expect(assessEntryTools(entry, upstream)[0]).toMatchObject({
+      verdict: 'ok', detail: expect.stringContaining('compatib'),
+    });
+    upstream[0].inputSchema.required = ['limit'];
+    expect(verdictOf(assessEntryTools(entry, upstream), 'list_issues')).toBe('tool_drift');
+  });
+
+  test.each([
+    ['removed property', { type: 'object', properties: {} }],
+    ['retyped property', { type: 'object', properties: { team: { type: 'number' } } }],
+    ['newly required property', { type: 'object', properties: { team: { type: 'string' }, limit: { type: 'number' } }, required: ['limit'] }],
+    ['changed default', { type: 'object', properties: { team: { type: 'string', default: 'ENG' } } }],
+  ])('a read pin refuses a %s', (_change, inputSchema) => {
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = inputSchema;
+    expect(verdictOf(assessEntryTools(linear(), upstream), 'list_issues')).toBe('tool_drift');
+  });
+
+  test('a widened enum or a nested optional property still withholds a read pin', () => {
+    const enumPin = linear({ tools: [pinned({
+      inputSchema: { type: 'object', properties: { team: { type: 'string', enum: ['ENG'] } } },
+    })] });
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = {
+      type: 'object', properties: { team: { type: 'string', enum: ['ENG', 'OPS'] } },
+    };
+    expect(verdictOf(assessEntryTools(enumPin, upstream), 'list_issues')).toBe('tool_drift');
+
+    const nestedPin = linear({ tools: [pinned({
+      inputSchema: { type: 'object', properties: { team: { type: 'object', properties: { id: { type: 'string' } } } } },
+    })] });
+    upstream[0].inputSchema = {
+      type: 'object', properties: { team: { type: 'object', properties: { id: { type: 'string' }, extra: { type: 'string' } } } },
+    };
+    expect(verdictOf(assessEntryTools(nestedPin, upstream), 'list_issues')).toBe('tool_drift');
+  });
+
+  test('a property or data value named description remains part of the comparison', () => {
+    const schema = {
+      type: 'object', properties: {
+        description: { type: 'string' },
+        team: { type: 'string', default: { description: 'pin' }, enum: [{ description: 'pin' }] },
+      },
+    };
+    const entry = linear({ tools: [pinned({ inputSchema: schema })] });
+    for (const inputSchema of [
+      { ...schema, properties: { ...schema.properties, description: { type: 'number' } } },
+      { ...schema, properties: { ...schema.properties, team: { ...schema.properties.team, default: { description: 'live' } } } },
+      { ...schema, properties: { ...schema.properties, team: { ...schema.properties.team, enum: [{ description: 'live' }] } } },
+    ]) {
+      const upstream = upstreamOk();
+      upstream[0].inputSchema = inputSchema;
+      expect(verdictOf(assessEntryTools(entry, upstream), 'list_issues')).toBe('tool_drift');
+    }
+    const unknownEntry = linear({ tools: [pinned({
+      inputSchema: { ...schema, customKeyword: { description: 'pin' } },
+    })] });
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = { ...schema, customKeyword: { description: 'live' } };
+    expect(verdictOf(assessEntryTools(unknownEntry, upstream), 'list_issues')).toBe('tool_drift');
+  });
+
+  test('write pins keep exact schema equality, and a compatible read change cannot excuse a withdrawn annotation', () => {
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = {
+      type: 'object', properties: { team: { type: 'string' }, limit: { type: 'number' } },
+    };
+    const write = linear({ tools: [pinned({ class: 'write' })] });
+    expect(verdictOf(assessEntryTools(write, upstream), 'list_issues')).toBe('tool_drift');
+    upstream[0].inputSchema = { ...pinned({}).inputSchema, description: VENDOR_TEXT };
+    expect(verdictOf(assessEntryTools(write, upstream), 'list_issues')).toBe('tool_drift');
+    upstream[0].annotations = {};
+    expect(verdictOf(assessEntryTools(linear(), upstream), 'list_issues')).toBe('tool_drift');
   });
 
   test('an annotation that moved toward write is drift; one that tightened is not', () => {
@@ -623,22 +747,23 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entry.tools.find((tool) => tool.name === 'get_diff_threads').description).toContain('not fetch targets');
   });
 
-  test('the 10-01 pins against the 10-14 capture drift on exactly the five re-pinned tools', () => {
+  test('the 10-01 pins remain compatible with exactly five changes in the 10-14 capture', () => {
     // Real vendor data on both sides: the schemas the entry shipped with, assessed
     // against the list Linear served thirteen days later. Every change was an
-    // optional property or description text, and the exact comparison still
-    // withholds all five, which is why they were re-pinned rather than offered.
+    // optional property or description text, so the old reads stay under their
+    // old pins while each compatible change is logged.
     const [entry] = HOSTED_MCP_ENTRIES;
     const first = new Map(LINEAR_FIRST_CAPTURE.tools.map((tool) => [tool.name, tool]));
     const asFirstPinned = {
       ...entry,
       tools: entry.tools.map((tool) => ({ ...tool, inputSchema: first.get(tool.name).inputSchema })),
     };
-    const drifted = assessEntryTools(asFirstPinned, LINEAR_CAPTURE.tools)
-      .filter((assessment) => assessment.verdict !== 'ok');
-    expect(drifted.map((assessment) => assessment.name).sort())
+    const assessed = assessEntryTools(asFirstPinned, LINEAR_CAPTURE.tools);
+    expect(assessed.every((assessment) => assessment.verdict === 'ok')).toBe(true);
+    const changed = assessed.filter((assessment) => assessment.detail);
+    expect(changed.map((assessment) => assessment.name).sort())
       .toEqual(['get_issue', 'list_documents', 'list_issues', 'list_projects', 'list_teams']);
-    expect(new Set(drifted.map((assessment) => assessment.verdict))).toEqual(new Set(['tool_drift']));
+    expect(changed.every((assessment) => assessment.detail.includes('compatibly'))).toBe(true);
     // Control: the shipped pins against the same capture are clean, so the five
     // above are about the first pins and not about the capture.
     expect(assessEntryTools(entry, LINEAR_CAPTURE.tools).every((assessment) => assessment.verdict === 'ok'))

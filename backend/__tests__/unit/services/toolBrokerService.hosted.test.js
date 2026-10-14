@@ -287,6 +287,37 @@ describe('a hosted-MCP grant through the broker', () => {
       .resolves.toEqual([]);
   });
 
+  it('offers and calls a compatibly changed read under the pinned schema and logs one fresh assessment', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    upstreamTools[0] = {
+      ...upstreamTools[0],
+      inputSchema: {
+        type: 'object', properties: { limit: { type: 'number' }, extra: { type: 'string' } },
+      },
+    };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const listed = await listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' });
+      expect(listed).toEqual([expect.objectContaining({
+        name: 'linear.list_issues', inputSchema: ENTRY.tools[0].inputSchema,
+      })]);
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues',
+        args: { limit: 3 }, hostedTurn: true,
+      })).resolves.toMatchObject({ outcome: 'ok' });
+      expect(JSON.parse(toolCalls()[0][1].body).params.arguments).toEqual({ limit: 3 });
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues',
+        args: { extra: 'unreviewed' }, hostedTurn: true,
+      })).rejects.toMatchObject({ code: 'invalid_tool_args' });
+      expect(toolCalls()).toHaveLength(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain('"verdict":"ok"');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('refuses a read pin when the vendor withdraws readOnlyHint', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
     upstreamTools[0] = { ...upstreamTools[0], annotations: {} };
