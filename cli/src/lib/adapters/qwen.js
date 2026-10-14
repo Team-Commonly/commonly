@@ -3,7 +3,7 @@ import { spawn as childSpawn, spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
-import { dirname, isAbsolute, join } from 'path';
+import { basename, dirname, isAbsolute, join } from 'path';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { deliverSeatCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn } from '../mcp-home.js';
@@ -251,8 +251,10 @@ export default {
     }
     // npm launches through a symlink into the package. Qwen loads chunks next
     // to that entry file, so public sandboxes need that exact read-only tree.
-    const packageDir = isPublic && lstatSync(binary).isSymbolicLink()
-      ? dirname(realpathSync(binary)) : null;
+    const symlinkedBinary = isPublic && lstatSync(binary).isSymbolicLink();
+    const executable = symlinkedBinary
+      ? join(realpathSync(dirname(binary)), basename(binary)) : binary;
+    const packageDir = symlinkedBinary ? dirname(realpathSync(executable)) : null;
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-qwen-'));
     await chmod(tempDir, 0o700);
     // Keep child-writable state separate from adapter-owned config and keys.
@@ -294,13 +296,13 @@ export default {
         ].join(','),
         '-o', 'stream-json', '-p', fullPrompt,
       ];
-      let cmd = binary;
+      let cmd = executable;
       let spawnArgs = args;
       if (isPublic && mode === 'bwrap') {
-        if (!isAbsolute(binary)) throw new Error('public Qwen seats require an absolute qwen executable path');
+        if (!isAbsolute(executable)) throw new Error('public Qwen seats require an absolute qwen executable path');
         const bwrap = (ctx._detectBwrap || detectBwrap)();
         if (!bwrap.available) throw new Error(`public Qwen seats require bwrap: ${bwrap.error}`);
-        [cmd, ...spawnArgs] = (ctx._wrapArgvWithBwrap || wrapArgvWithBwrap)([binary, ...args], {
+        [cmd, ...spawnArgs] = (ctx._wrapArgvWithBwrap || wrapArgvWithBwrap)([executable, ...args], {
           ...ctx.environment,
           sandbox: {
             ...sandbox,
@@ -311,15 +313,15 @@ export default {
               ],
             },
           },
-        }, { workspacePath: ctx.cwd, homePath: home, readOnlyPaths: [tempDir, binary, packageDir, process.execPath].filter(Boolean) });
+        }, { workspacePath: ctx.cwd, homePath: home, readOnlyPaths: [tempDir, executable, packageDir, process.execPath].filter(Boolean) });
       } else if (isPublic) {
         if ((ctx._platform || process.platform) !== 'darwin') {
           throw new Error(`public Qwen sandbox.mode=${mode} requires Seatbelt on macOS or bwrap on Linux`);
         }
-        [cmd, ...spawnArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([binary, ...args], {
+        [cmd, ...spawnArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([executable, ...args], {
           workspacePath: ctx.cwd,
           workspaceAccess: mode === 'read-only' ? 'read' : 'write',
-          executablePath: binary,
+          executablePath: executable,
           statePath: home,
           mcpConfigDir: tempDir,
           loopbackNetworkPorts: [proxy.port],

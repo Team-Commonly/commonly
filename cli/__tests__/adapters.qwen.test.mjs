@@ -3,7 +3,7 @@ import { EventEmitter } from 'events';
 import { readFileSync, realpathSync } from 'fs';
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { basename, dirname, join } from 'path';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
 
 const spawnSyncMock = jest.fn();
@@ -96,7 +96,8 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     });
     expect(result.text).toBe('Qwen reply');
     const [{ cmd, args, options, mcp, settings }] = calls;
-    expect(cmd).toBe(ctx._binaryPath);
+    const executable = join(realpathSync(dirname(ctx._binaryPath)), basename(ctx._binaryPath));
+    expect(cmd).toBe(executable);
     expect(args).toEqual(expect.arrayContaining(['--bare', '--safe-mode', '--auth-type', 'openai', '-o', 'stream-json']));
     expect(args[args.indexOf('--exclude-tools') + 1].split(','))
       .toEqual(expect.arrayContaining([
@@ -110,6 +111,7 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     const readOnlyConfigDir = profiles[0].configDir;
     expect(profiles[0].profile).toContain(`(allow file-read* file-test-existence (subpath "${readOnlyConfigDir}"))`);
     expect(profiles[0].profile).toContain(`(allow file-read* file-test-existence (subpath "${realpathSync(join(root, 'qwen-package'))}"))`);
+    expect(profiles[0].profile).toContain(`(allow file-read* file-test-existence (literal "${executable}"))`);
     expect(profiles[0].profile).not.toContain(`file-write* (subpath "${realpathSync(join(root, 'qwen-package'))}")`);
     expect(profiles[0].profile).not.toContain(`file-write* (subpath "${readOnlyConfigDir}")`);
     const versionProbe = spawnSyncMock.mock.calls.find(([, argv]) => argv[0] === '--version');

@@ -1,5 +1,5 @@
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises';
-import { tmpdir } from 'os';
+import { homedir } from 'os';
 import { dirname, join } from 'path';
 import qwen from '../src/lib/adapters/qwen.js';
 import { detectSeatbelt } from '../src/lib/sandbox/seatbelt.js';
@@ -8,7 +8,9 @@ const realSeatbeltTest = process.platform === 'darwin' ? test : test.skip;
 
 realSeatbeltTest('an npm symlink launches Qwen package chunks under real Seatbelt', async () => {
   expect(detectSeatbelt().available).toBe(true);
-  const root = await mkdtemp(join(tmpdir(), 'qwen-seatbelt-smoke-'));
+  // HOME is outside the platform's broad /var and Homebrew read baselines.
+  // A missing symlink lookup rule must fail this real kernel launch.
+  const root = await mkdtemp(join(homedir(), '.qwen-seatbelt-smoke-'));
   const packageDir = join(root, 'qwen-package');
   const binDir = join(root, 'npm', 'bin');
   const binary = join(binDir, 'qwen');
