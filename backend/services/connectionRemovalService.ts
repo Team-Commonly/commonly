@@ -233,6 +233,10 @@ export const defaultDeps = (): RemovalDeps => ({
   secrets: connectorSecrets,
   remove: async (id) => {
     await Integration.findByIdAndDelete(id);
+    // A removed row's credential no longer exists; discard its cached vendor
+    // assessment as well rather than waiting for the five-minute TTL.
+    const { forgetHostedMcpDrift } = await import('./hostedMcpToolDefinitions');
+    forgetHostedMcpDrift(String(id));
   },
 });
 

@@ -329,6 +329,23 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
     expect(fetches).toBe(2);
   });
 
+  test('an expired clean assessment is not used after a tools/list failure', async () => {
+    let clock = 1000;
+    let fetches = 0;
+    const drift = cache(async () => {
+      fetches += 1;
+      if (fetches > 1) throw new Error('vendor unavailable');
+      return upstreamOk();
+    }, { now: () => clock });
+
+    expect((await drift.assess(row, linear())).state).toBe('assessed');
+    clock += 5 * 60 * 1000;
+    const failed = await drift.assess(row, linear());
+    expect(failed).toMatchObject({ state: 'provider_unavailable' });
+    expect(failed.tools).toBeUndefined();
+    expect(fetches).toBe(2);
+  });
+
   test('forgetting a row drops only that row', async () => {
     const seen = [];
     const drift = cache(async (r) => {

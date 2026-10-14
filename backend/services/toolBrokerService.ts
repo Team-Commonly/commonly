@@ -36,9 +36,9 @@ export interface GithubToolConnection {
 
 /**
  * A connection to a hosted-MCP Connection row. It names the ROW that holds the
- * credential rather than carrying a token, because the token is fetched inside
- * the tool's `call` (§4): a seat listing its tools must not trigger a refresh,
- * and a call that never happens must not spend one.
+ * credential rather than carrying a token. Both a call and its drift check
+ * fetch the credential by row id, so a vendor's tools/list is assessed under
+ * the same authority as tools/call rather than another member's token.
  */
 export interface HostedToolConnection {
   type: 'hosted-mcp';
@@ -68,6 +68,8 @@ export interface GithubToolDefinition extends ToolDefinitionBase {
 export interface HostedToolDefinition extends ToolDefinitionBase {
   connectionType: 'hosted-mcp';
   entryId: string;
+  /** Refuse a changed or withdrawn upstream pin before approval or budget use. */
+  assess: (connection: HostedToolConnection) => Promise<void>;
   call: (args: Record<string, unknown>, connection: HostedToolConnection) => Promise<unknown>;
 }
 
@@ -734,16 +736,16 @@ const loadGrantForAgent = async (input: {
 
 /**
  * The definitions a grant may actually call, for the MCP `tools/list` surface.
- * Listing has to answer what calling would allow and no more, so it runs the
- * same checks `callTool` runs instead of a second copy of them: the grant-level
+ * Listing runs the same authority checks as `callTool`: the grant-level
  * checks through `assertGrantUsable` (existence, revocation, expiry, lineage,
  * audience), then the per-tool rule through the same `assertGrantToolAllowed`
  * that function delegates to. Names are matched raw — the sanitized spelling
  * `grantBrokerProjectionService` uses exists for LiteLLM function names, and
  * this surface calls tools by definition name.
  *
- * A grant whose connection no longer resolves refuses here too, with the code
- * the call would give, rather than offering tools every call would reject.
+ * A grant whose connection no longer resolves refuses here too. Drifted pins
+ * are omitted; a failed vendor tools/list leaves pins visible under §3 so the
+ * eventual call can report the provider failure instead of hiding the tool.
  *
  * Deliberate boundary: the list reflects the grant and its connection, not
  * per-call spend state (`budget_exhausted`). Spend is re-checked on every call
@@ -785,9 +787,36 @@ export const listToolsForGrant = async (input: {
   for (const definition of allowed) {
     if (!byConnectionType.has(definition.connectionType)) byConnectionType.set(definition.connectionType, definition);
   }
-  for (const definition of byConnectionType.values()) await resolveConnection(grant, definition);
+  const connections = new Map<string, ToolConnection>();
+  for (const definition of byConnectionType.values()) {
+    connections.set(definition.connectionType, await resolveConnection(grant, definition));
+  }
 
-  return allowed;
+  const offered: ToolDefinition[] = [];
+  let hostedListFailed = false;
+  for (const definition of allowed) {
+    if (definition.connectionType === 'hosted-mcp' && !hostedListFailed) {
+      try {
+        await definition.assess(asHostedConnection(connections.get('hosted-mcp')!));
+      } catch (error) {
+        // Drift and withdrawal hide that pin. A failed vendor list is not a
+        // comparison (§3): leave the pins visible and let a call name the
+        // provider failure. Do not retry once per pin during one listing.
+        if (error instanceof RoomGrantError
+          && (error.code === 'tool_drift' || error.code === 'tool_unavailable')) continue;
+        if (error instanceof RoomGrantError
+          && (error.code === 'provider_error'
+            || error.code === 'provider_unreachable'
+            || error.code === 'credential_rejected')) {
+          hostedListFailed = true;
+        } else {
+          throw error;
+        }
+      }
+    }
+    offered.push(definition);
+  }
+  return offered;
 };
 
 /**
@@ -1082,6 +1111,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
 
     const connection = await resolveConnection(grant, definition);
     credentialOwnerId = connection.ownerUserId;
+    if (definition.connectionType === 'hosted-mcp') {
+      await definition.assess(asHostedConnection(connection));
+    }
 
     // Validate the shape before reserving a budget slot; malformed requests
     // are refusals, not spendable calls.
@@ -1262,6 +1294,9 @@ export const executeApprovedToolCall = async (
     });
     const connection = await resolveConnection(grant, definition);
     credentialOwnerId = connection.ownerUserId;
+    if (definition.connectionType === 'hosted-mcp') {
+      await definition.assess(asHostedConnection(connection));
+    }
     const executionArgs = definition.connectionType === 'github-app'
       ? providerArgsFromApprovedEnvelope(input.args, asGithubConnection(connection))
       : input.args;
