@@ -1290,7 +1290,11 @@
       "name": "工具调用",
       "loading": "正在加载确切的工具调用…",
       "unavailable": "无法显示待批准内容 — 刷新后再决定。",
-      "ownerOnly": "参数仅对批准负责人可见。"
+      "ownerOnly": "参数仅对批准负责人可见。",
+      "ran": "已批准 — 工具调用已执行。",
+      "failed": "已批准 — 工具调用失败（{{code}}）。",
+      "refused": "已批准 — 工具调用被拒绝（{{code}}）。",
+      "expiredPending": "该工具调用批准已过期。"
     },
     "approve": "批准",
     "decline": "拒绝",

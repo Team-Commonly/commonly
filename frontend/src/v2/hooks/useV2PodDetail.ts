@@ -100,6 +100,9 @@ export interface V2Message {
     os?: 'mac' | 'linux' | 'windows' | string;
     commands?: Partial<Record<'mac' | 'linux' | 'windows', string>>;
     supportedOs?: Array<'mac' | 'linux' | 'windows' | string>;
+    toolCallEnding?: 'ran' | 'failed' | 'refused' | 'declined' | 'expired';
+    toolCallCode?: string;
+    toolCallTrailId?: string;
     // Raw tool-call arguments are intentionally absent from the shared card
     // payload. The owner fetches this field from /api/approvals/pending while
     // the action is flagged; the backend scopes it to ownerUserId.

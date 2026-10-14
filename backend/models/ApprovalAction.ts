@@ -17,12 +17,14 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  *     as `expired` and scrub their envelope when the deadline passes.
  *
  * The resolved row IS the AuthorizedAction record from ADR-020 D2: it links
- * the approving user, the executing agent identity, the action + params, and
- * the execution result. Never deleted (audit trail); no TTL index.
+ * the approving user, the executing agent identity, and the action + params.
+ * Legacy actions keep their result; tool calls keep ending/code/trail id, never
+ * vendor result prose. Never deleted (audit trail); no TTL index.
  */
 
 export type ApprovalStatus = 'flagged' | 'resolved' | 'expired' | 'moot';
 export type ApprovalDecision = 'approved' | 'declined';
+export type ApprovalToolCallEnding = 'ran' | 'failed' | 'refused' | 'declined' | 'expired';
 
 // Registry of executable action types. Adding an action means adding its
 // executor in services/approvalExecutors.ts — the enum here only widens in
@@ -72,6 +74,10 @@ export interface IApprovalAction extends Document {
   executedAt?: Date;
   executionResult?: unknown;
   executionError?: string;
+  /** Broker-only terminal facts. Vendor result and error prose stay in the trail/provider, not this card. */
+  toolCallEnding?: ApprovalToolCallEnding;
+  toolCallCode?: string;
+  toolCallTrailId?: string;
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -105,6 +111,9 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     executedAt: { type: Date },
     executionResult: { type: Schema.Types.Mixed },
     executionError: { type: String },
+    toolCallEnding: { type: String, enum: ['ran', 'failed', 'refused', 'declined', 'expired'] },
+    toolCallCode: { type: String },
+    toolCallTrailId: { type: String },
     // Plain Date — deliberately NOT a Mongo TTL index: expiry is a lifecycle
     // STATE (the card renders "expired"), not a deletion.
     expiresAt: { type: Date, default: () => new Date(Date.now() + DEFAULT_TTL_MS) },
