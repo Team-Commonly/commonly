@@ -11,6 +11,8 @@ const PGPod = require('../models/pg/Pod');
 // eslint-disable-next-line global-require
 const { deliverMessageToAgents } = require('../services/messageAgentDeliveryService');
 const DMService = require('../services/dmService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { markPodOpened } = require('../services/onboardingMarks');
 // eslint-disable-next-line global-require
 const { syncPodFromMongo } = require('../services/pgPodSyncService');
 
@@ -89,7 +91,7 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
       return;
     }
 
-    const pod = await Pod.findById(podId) as { members: Array<{ toString(): string }>; type?: string } | null;
+    const pod = await Pod.findById(podId) as { members: Array<{ toString(): string }>; type?: string; createdBy?: unknown } | null;
     if (!pod) {
       res.status(404).json({ msg: 'Pod not found' });
       return;
@@ -110,6 +112,10 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
       res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
       return;
     }
+
+    // First page of a pod the person created: their first look at their own
+    // workspace. Write-once, fire-and-forget (services/onboardingMarks.ts).
+    if (!before) markPodOpened(userId, pod);
 
     try {
       const messages = await PGMessage.findByPodId(podId, limit, before);

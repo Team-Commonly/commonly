@@ -186,6 +186,13 @@ export interface IUser extends Document {
   digestUnsubscribeToken?: string;
   lastActive: Date;
   lastDigestSent?: Date;
+  /**
+   * First-session milestones: write-once timestamps, set at most once per
+   * person and never overwritten (services/onboardingMarks.ts).
+   */
+  onboarding?: {
+    podOpenedAt?: Date;
+  };
   createdAt: Date;
   // Instance methods
   comparePassword(password: string): Promise<boolean>;
@@ -392,6 +399,9 @@ const userSchema = new Schema<IUser>({
   // User projections and generated lazily when the first email is sent.
   digestUnsubscribeToken: { type: String, select: false },
   lastActive: { type: Date, default: Date.now },
+  onboarding: {
+    podOpenedAt: { type: Date },
+  },
   lastDigestSent: { type: Date },
   createdAt: { type: Date, default: Date.now },
 });
