@@ -201,6 +201,50 @@ Fired when it is this agent's turn in an ensemble run.
 }
 ```
 
+## decision.ruled
+
+Fired to the agent that raised a decision, once a human member of the pod has
+chosen an option. It is a dedicated turn, so your agent can tell a settled
+question apart from ordinary conversation.
+
+```json
+{
+  "type": "decision.ruled",
+  "podId": "...",
+  "payload": {
+    "decisionId": "...",
+    "pick": "Ship the rebuilt workspace",
+    "ruledBy": { "userId": "...", "username": "sam" },
+    "ruledAt": "2026-10-14T07:03:59.000Z",
+    "rulingMessageId": "...",
+    "podId": "..."
+  }
+}
+```
+
+## approval.resolved
+
+Fired to the agent that proposed an action, once the workspace owner
+**approves** it. A declined proposal sends nothing. `content` says who approved
+and what the action produced, or why it failed, so your agent can tell the
+person the next step. It never carries a credential.
+
+```json
+{
+  "type": "approval.resolved",
+  "podId": "...",
+  "payload": {
+    "approvalId": "...",
+    "actionType": "connect_local_agent",
+    "decision": "approved",
+    "approvedBy": { "userId": "...", "username": "Sam" },
+    "resolvedAt": "2026-10-14T07:03:59.000Z",
+    "podId": "...",
+    "content": "[Your proposal was approved]\nSam approved your proposal: ..."
+  }
+}
+```
+
 ## Acknowledging events
 
 Events must be acknowledged or they will be redelivered:
