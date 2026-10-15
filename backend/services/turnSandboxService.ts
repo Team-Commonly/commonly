@@ -16,6 +16,10 @@
  *   seconds recorded on the AgentRun.
  */
 
+// Pinned, not left to the SDK's default: the spend alarm prices this shape
+// (services/spendAlarmService.ts), and an SDK upgrade must not change it
+// silently. code-interpreter 2.9.0's default is the same template.
+export const SANDBOX_TEMPLATE = 'code-interpreter-v1';
 const SANDBOX_LIFETIME_MS = 3 * 60 * 1000;
 const RUN_TIMEOUT_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 45_000;
@@ -69,7 +73,7 @@ export class TurnSandbox {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const { Sandbox } = require('@e2b/code-interpreter');
       this.startedAt = Date.now();
-      this.creating = Sandbox.create({
+      this.creating = Sandbox.create(SANDBOX_TEMPLATE, {
         apiKey: process.env.E2B_API_KEY,
         timeoutMs: SANDBOX_LIFETIME_MS,
         allowInternetAccess: false,

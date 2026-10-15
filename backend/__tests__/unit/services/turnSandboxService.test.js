@@ -34,7 +34,8 @@ describe('TurnSandbox', () => {
 
     expect(first).toEqual({ ok: true, stdout: '4\n', stderr: '', result: '4' });
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    const [options] = mockCreate.mock.calls[0];
+    const [template, options] = mockCreate.mock.calls[0];
+    expect(template).toBe('code-interpreter-v1'); // pinned: the spend alarm prices this shape
     expect(options).toMatchObject({
       apiKey: 'e2b_test_key',
       allowInternetAccess: false,

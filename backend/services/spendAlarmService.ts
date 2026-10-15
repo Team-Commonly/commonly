@@ -44,10 +44,18 @@ export const priceForModel = (model: string | null | undefined): ModelPrice => (
   PRICES.find((row) => row.match.test(String(model || '')))?.price || UNPRICED_MODEL
 );
 
-// E2B's default sandbox (2 vCPU, 512 MiB), per second it runs: e2b.dev/pricing,
-// read 2026-10-15 (~$0.00037 for a 20 s turn). E2B has no spending cap, so the
-// seconds each turn records (AgentRun.sandboxSeconds, TASK-266) are priced here.
-export const SANDBOX_USD_PER_SECOND = 0.00003025;
+// The sandbox's price per second it runs. E2B bills by resource:
+// $0.000014 per vCPU-second and $0.0000045 per GiB-second (e2b.dev/pricing,
+// read 2026-10-15). The template is pinned (turnSandboxService
+// SANDBOX_TEMPLATE); its shape is priced at 2 vCPU and 4 GiB, E2B's stated
+// default and the larger of the shapes on record for it (Rhea cites 2 GiB for
+// the code-interpreter build), so the alarm errs high. E2B has no spending cap,
+// so the seconds each turn records (AgentRun.sandboxSeconds) are priced here.
+const E2B_USD_PER_VCPU_SECOND = 0.000014;
+const E2B_USD_PER_GIB_SECOND = 0.0000045;
+const SANDBOX_SHAPE = { vcpu: 2, gib: 4 };
+export const SANDBOX_USD_PER_SECOND = SANDBOX_SHAPE.vcpu * E2B_USD_PER_VCPU_SECOND
+  + SANDBOX_SHAPE.gib * E2B_USD_PER_GIB_SECOND;
 
 export const spendThresholdUsd = (): number => {
   const raw = Number(process.env.SPEND_ALARM_USD_PER_DAY);
