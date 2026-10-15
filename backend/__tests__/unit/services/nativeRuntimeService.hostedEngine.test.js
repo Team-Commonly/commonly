@@ -47,6 +47,13 @@ jest.mock('../../../services/messageClaimHandoffService', () => ({
 
 jest.mock('../../../models/pg/Message', () => ({ findByPodId: jest.fn().mockResolvedValue([]) }));
 
+// No outsider-writable grant in this pod, so #2211's narrowing stays off and
+// the arms see the hosted tool set itself. (The narrowing's own arms live in
+// nativeRuntimeService.hostedBroker.)
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
+}));
+
 jest.mock('../../../models/Message', () => {
   const chain = {
     sort: () => chain, limit: () => chain, select: () => chain, populate: () => chain, lean: () => Promise.resolve([]),
@@ -122,6 +129,18 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     expect(body.messages[0].role).toBe('system');
     expect(body.messages[0].content).toMatch(/You are Maya, a hosted agent on Commonly/);
     expect(body.messages[0].content).toMatch(/Keeps the research log\./);
+  });
+
+  test('in a pod holding an outsider-writable grant, a hosted turn is narrowed like any native one', async () => {
+    const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    try {
+      await runAgent(hostedInstall(), mention);
+      const offered = axios.post.mock.calls[0][1].tools.map((tool) => tool.function.name).sort();
+      expect(offered).toEqual(['commonly_post_message', 'commonly_read_context']);
+    } finally {
+      podHasOutsiderWritableGrant.mockResolvedValue(false);
+    }
   });
 
   test('the install cannot choose the model, the tools, the prompt or lift the cap', async () => {
