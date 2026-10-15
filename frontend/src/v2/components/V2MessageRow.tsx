@@ -13,7 +13,7 @@ import { formatRelativeTime } from '../utils/grouping';
 import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
-import { normalizeUploadUrl } from '../../utils/apiBaseUrl';
+import { messageImageUrl } from '../utils/messageImageUrl';
 
 // Minimal v2-scoped markdown renderer. Plain HTML elements (no MUI), so
 // styling stays in v2.css under `.v2-msg__content`. The body comes pre-stripped
@@ -58,7 +58,18 @@ const renderWithMentions = (node: React.ReactNode): React.ReactNode => {
   return node;
 };
 
+export const MessageMarkdownImage = ({ src, alt }: React.ImgHTMLAttributes<HTMLImageElement>) => {
+  const safeSrc = messageImageUrl(src);
+  if (safeSrc) return <SignedImage src={safeSrc} alt={alt || ''} />;
+  // Keep the destination usable without initiating a browser image request.
+  if (src && /^(?:https?:\/\/|\/)/i.test(src)) {
+    return <a href={src} target="_blank" rel="noopener noreferrer">{alt || src}</a>;
+  }
+  return <span>{alt || src}</span>;
+};
+
 const messageMarkdownComponents = {
+  img: MessageMarkdownImage,
   a: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
     <a {...props} target="_blank" rel="noopener noreferrer">{renderWithMentions(children)}</a>
   ),
@@ -249,7 +260,10 @@ const SignedImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
   useEffect(() => {
     let active = true;
     if (!/\/api\/uploads\//.test(src)) return undefined;
-    void getSignedAttachmentUrl(src).then((signed) => { if (active && signed) setResolved(signed); });
+    void getSignedAttachmentUrl(src).then((signed) => {
+      const safeSigned = messageImageUrl(signed);
+      if (active && safeSigned) setResolved(safeSigned);
+    });
     return () => { active = false; };
   }, [src]);
   return <img src={resolved} alt={alt} loading="lazy" />;
@@ -474,7 +488,9 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // Upload responses use instance-portable `/api/uploads/...` references.
   // Resolve them against the configured API origin at render time so the
   // browser never requests image bytes from the frontend host.
-  const imageUrl = rawImageUrl ? normalizeUploadUrl(rawImageUrl) : undefined;
+  const imageUrl = messageImageUrl(rawImageUrl);
+  const externalBareImage = rawImageUrl && !imageUrl && !markdownImage && /^https?:\/\//i.test(afterFiles)
+    ? afterFiles : null;
   // Direction C: every image attached to the message is a 156×104 thumbnail in
   // one gallery row; other uploads are chips. Uploaded images resolve to the
   // same `/api/uploads/<key>` reference the legacy image path already uses.
@@ -482,7 +498,10 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   const otherFiles = files.filter((file) => !isImageFile(file));
   const galleryImages: V2LightboxImage[] = [
     ...(imageUrl ? [{ src: imageUrl, name: t('podChat.attachment.image') }] : []),
-    ...imageFiles.filter((file) => file.fileName).map((file) => ({ src: normalizeUploadUrl(`/api/uploads/${file.fileName}`), name: file.name })),
+    ...imageFiles.filter((file) => file.fileName).flatMap((file) => {
+      const src = messageImageUrl(`/api/uploads/${file.fileName}`);
+      return src ? [{ src, name: file.name }] : [];
+    }),
   ];
 
   // GitHub PR URL detection — if the message body contains a `pull/<n>` URL,
@@ -498,7 +517,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // Auto-linkify bare http(s) URLs that aren't already inside markdown link
   // syntax. Without this, agents posting raw URLs render as plain text and
   // the user can't click them.
-  if (stripped) {
+  if (stripped && !externalBareImage) {
     stripped = stripped.replace(
       /(?<![(<[])(https?:\/\/[^\s<>"]+?[^\s<>".,!?;:])(?=[\s.,!?;:]|$)/g,
       '[$1]($1)',
@@ -676,7 +695,9 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
         })()}
         {!imageUrl && stripped && (
           <div className="v2-msg__content">
-            <ReactMarkdown components={messageMarkdownComponents}>{stripped}</ReactMarkdown>
+            {externalBareImage
+              ? <a href={externalBareImage} target="_blank" rel="noopener noreferrer">{externalBareImage}</a>
+              : <ReactMarkdown components={messageMarkdownComponents}>{stripped}</ReactMarkdown>}
           </div>
         )}
         {galleryImages.length > 0 && (

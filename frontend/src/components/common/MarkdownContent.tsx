@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Box, Typography } from '@mui/material';
+import { messageImageUrl } from '../../utils/messageImageUrl';
 
 const HASHTAG_RE = /(#\w+)/g;
 
@@ -61,6 +62,14 @@ export default function MarkdownContent({
   // Using Record<string, unknown> for component props since react-markdown v10
   // types vary by component key and we only need runtime behaviour here.
   const components: Record<string, React.ComponentType<Record<string, unknown>>> = {
+    img({ src, alt }) {
+      const source = String(src || '');
+      const trustedSrc = messageImageUrl(source);
+      if (trustedSrc) return <Box component="img" src={trustedSrc} alt={String(alt || '')} sx={{ maxWidth: '100%' }} />;
+      return /^https?:\/\//i.test(source)
+        ? <Box component="a" href={source} target="_blank" rel="noopener noreferrer">{String(alt || source)}</Box>
+        : null;
+    },
     p({ children: pChildren }) {
       const content = onHashtagClick
         ? renderWithHashtags(childrenToText(pChildren as React.ReactNode), onHashtagClick)

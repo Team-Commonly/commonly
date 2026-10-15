@@ -18,6 +18,9 @@ jest.mock('@mui/material', () => {
 });
 
 describe('MessageContent', () => {
+  const previousApiUrl = process.env.REACT_APP_API_URL;
+  beforeEach(() => { process.env.REACT_APP_API_URL = 'https://api.commonly.me'; });
+  afterEach(() => { process.env.REACT_APP_API_URL = previousApiUrl; });
   it('renders nothing when no children', () => {
     const { container } = render(<MessageContent />);
     expect(container.firstChild).toBeNull();
@@ -28,16 +31,16 @@ describe('MessageContent', () => {
     expect(screen.getByTestId('markdown')).toHaveTextContent('Hello world');
   });
 
-  it('renders inline image for png URL in text', () => {
+  it('leaves a foreign png URL as a link instead of requesting it', () => {
     const content = 'Check this out https://example.com/image.png cool right?';
     render(<MessageContent>{content}</MessageContent>);
-    const img = screen.getByRole('img', { name: 'Shared image' });
-    expect(img).toHaveAttribute('src', 'https://example.com/image.png');
+    expect(screen.queryByRole('img', { name: 'Shared image' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'https://example.com/image.png' })).toHaveAttribute('href', 'https://example.com/image.png');
   });
 
-  it('renders inline image for jpg URL in text', () => {
-    render(<MessageContent>{'Photo: https://cdn.example.com/photo.jpg'}</MessageContent>);
-    expect(screen.getByRole('img')).toBeInTheDocument();
+  it('renders an instance upload in message prose as an image', () => {
+    render(<MessageContent>{'Photo: https://api.commonly.me/api/uploads/photo.jpg'}</MessageContent>);
+    expect(screen.getByRole('img', { name: 'Shared image' })).toHaveAttribute('src', 'https://api.commonly.me/api/uploads/photo.jpg');
   });
 
   it('does not render image for non-image URLs', () => {
@@ -70,7 +73,7 @@ describe('MessageContent', () => {
   });
 
   it('deduplicates repeated image URLs', () => {
-    const content = 'https://example.com/a.png and again https://example.com/a.png';
+    const content = 'https://api.commonly.me/api/uploads/a.png and again https://api.commonly.me/api/uploads/a.png';
     render(<MessageContent>{content}</MessageContent>);
     const imgs = screen.getAllByRole('img', { name: 'Shared image' });
     expect(imgs).toHaveLength(1);

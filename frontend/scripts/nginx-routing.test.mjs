@@ -22,3 +22,32 @@ test('unknown public routes are real 404s while documented app routes retain SPA
   assert.match(notFoundPage, /<h1>We couldn’t find that page<\/h1>/);
   assert.match(notFoundPage, /href="\/guides\/"/);
 });
+
+test('HTML and inherited NGINX locations enforce the same image source policy', async () => {
+  const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
+  assert.match(config, /map \$host \$upload_image_origins \{/);
+  // Every map value is an API origin for that frontend host. A new map arm
+  // cannot quietly permit a third-party image host via the variable.
+  const originMap = config.match(/map \$host \$upload_image_origins \{([^}]+)\}/)?.[1];
+  assert.ok(originMap);
+  assert.deepEqual(originMap.trim().split('\n').map((line) => line.trim()), [
+    'localhost "http://localhost:5000";',
+    '127.0.0.1 "http://localhost:5000";',
+    '~^app-dev\\.(.+)$ "https://api-dev.$1 http://api-dev.$1";',
+    '~^app\\.(.+)$ "https://api.$1 http://api.$1";',
+    'default "https://api.$host http://api.$host";',
+  ]);
+  const policy = /add_header Content-Security-Policy "img-src 'self' \$upload_image_origins data: blob:" always;/g;
+  // Server scope, index.html (which adds Cache-Control), and asset location
+  // (which also adds Cache-Control) each need their own copy.
+  assert.equal([...config.matchAll(policy)].length, 3);
+  assert.doesNotMatch(config, /img-src[^"\n]*\*/);
+  const imagePolicies = [...config.matchAll(/Content-Security-Policy "img-src ([^"\n]+)"/g)];
+  assert.equal(imagePolicies.length, 3);
+  for (const [, sources] of imagePolicies) {
+    assert.deepEqual(sources.split(/\s+/), ["'self'", '$upload_image_origins', 'data:', 'blob:']);
+  }
+  const chatRoom = await readFile(resolve(frontendDir, 'src/components/ChatRoom.tsx'), 'utf8');
+  assert.doesNotMatch(chatRoom, /logo:\s*['"]https?:\/\//);
+  assert.doesNotMatch(chatRoom, /src\s*=\s*['"]https?:\/\//);
+});
