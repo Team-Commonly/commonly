@@ -27,6 +27,7 @@ jest.mock('../../../models/Pod', () => ({
 const mockUserFindById = jest.fn();
 jest.mock('../../../models/User', () => ({
   findById: (...args) => mockUserFindById(...args),
+  findOne: jest.fn(() => ({ select: () => ({ lean: async () => null }) })),
 }));
 
 const mockInstallFindOne = jest.fn();

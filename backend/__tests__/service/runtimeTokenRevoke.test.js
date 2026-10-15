@@ -47,6 +47,7 @@ const app = express();
 app.use(express.json());
 app.use('/api/registry', require('../../routes/registry/agent-tokens'));
 app.use('/api/registry', require('../../routes/registry/admin'));
+app.use('/api/registry', require('../../routes/registry/pod-agents'));
 // A limiter far above anything this suite sends: the probe is a test route,
 // but it runs the database-backed auth middleware, and the repo's CodeQL
 // rule (js/missing-rate-limiting) reads test files too.
@@ -178,5 +179,69 @@ describe('revoking a runtime token kills it in every store', () => {
 
     expect((await probe(first.token)).status).toBe(401);
     expect((await probe(second)).status).toBe(200);
+  });
+
+  test('pod uninstall keeps a shared token until the last installation, then revokes it and preserves identity', async () => {
+    const { workspace, room } = await seed();
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    const { token } = await issueRuntimeTokenForAgent(agentUser, 'laptop', null, { ownerUserId: mockOwner.id });
+    const tokenHash = agentUser.agentRuntimeTokens[0].tokenHash;
+    expect((await probe(token)).status).toBe(200);
+
+    const first = await request(app).delete(`/api/registry/agents/${AGENT}/pods/${workspace._id}`);
+    expect(first.status).toBe(200);
+    expect((await probe(token)).status).toBe(200);
+
+    const last = await request(app).delete(`/api/registry/agents/${AGENT}/pods/${room._id}`);
+    expect(last.status).toBe(200);
+    expect((await probe(token)).status).toBe(401);
+    expect(await storesHolding(tokenHash)).toEqual({ users: 0, installations: 0 });
+    expect((await AgentCredential.findOne({ tokenHash }).lean()).status).toBe('revoked');
+    expect(await User.findById(agentUser._id)).toBeTruthy();
+  });
+
+  test('admin uninstall also revokes a ledger-only child on the last installation', async () => {
+    const { workspaceInstall, roomInstall } = await seed();
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    const parent = await issueRuntimeTokenForAgent(agentUser, 'parent', null, { ownerUserId: mockOwner.id });
+    const { hash, randomSecret } = require('../../utils/secret');
+    const child = `cm_agent_${randomSecret(32)}`;
+    await AgentCredential.create({
+      tokenHash: hash(child), kind: 'runtime', ownerUserId: mockOwner.id,
+      agentUserId: agentUser._id, scopes: ['spawn'], status: 'active',
+    });
+    expect((await probe(child)).status).toBe(200);
+
+    expect((await request(app).delete(`/api/registry/admin/installations/${workspaceInstall._id}`)).status).toBe(200);
+    expect((await probe(parent.token)).status).toBe(200);
+    expect((await probe(child)).status).toBe(200);
+
+    expect((await request(app).delete(`/api/registry/admin/installations/${roomInstall._id}`)).status).toBe(200);
+    expect((await probe(parent.token)).status).toBe(401);
+    expect((await probe(child)).status).toBe(401);
+    expect((await AgentCredential.findOne({ tokenHash: hash(child) }).lean()).status).toBe('revoked');
+  });
+
+  test('orphan removal revokes a bearer left after installation rows disappeared', async () => {
+    const { workspace } = await seed();
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    const { token } = await issueRuntimeTokenForAgent(agentUser, 'orphan', null, { ownerUserId: mockOwner.id });
+    await AgentInstallation.deleteMany({ agentName: AGENT });
+    expect((await request(app).delete(`/api/registry/agents/${AGENT}/pods/${workspace._id}`)).status).toBe(200);
+    expect((await probe(token)).status).toBe(401);
+    expect((await User.findById(agentUser._id)).agentRuntimeTokens).toHaveLength(0);
+  });
+
+  test('admin repeat uninstall cleans credentials stranded by an older path', async () => {
+    const { workspaceInstall } = await seed();
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    const { token } = await issueRuntimeTokenForAgent(agentUser, 'old', null, { ownerUserId: mockOwner.id });
+    await AgentInstallation.updateMany({ agentName: AGENT }, { $set: { status: 'uninstalled' } });
+
+    const result = await request(app).delete(`/api/registry/admin/installations/${workspaceInstall._id}`);
+    expect(result.status).toBe(200);
+    expect(result.body.alreadyUninstalled).toBe(true);
+    expect((await probe(token)).status).toBe(401);
+    expect((await User.findById(agentUser._id)).agentRuntimeTokens).toHaveLength(0);
   });
 });

@@ -196,4 +196,16 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
     expect(res.status).toHaveBeenCalledWith(401);
     expect(next).not.toHaveBeenCalled();
   });
+
+  test('rejects a User-row token left by an older uninstall with no active installations', async () => {
+    mockUserFindOne.mockResolvedValue(buildAgentUser(new Date('2026-08-12T00:00:00Z')));
+    mockInstallationFind.mockReturnValue({ lean: async () => [] });
+    const res = buildRes();
+    const next = jest.fn();
+
+    await agentRuntimeAuth(buildReq('cm_agent_test'), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
 });

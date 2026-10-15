@@ -28,7 +28,7 @@ interface AgentSocket {
 interface AgentNamespace {
   use(fn: (socket: AgentSocket, next: (err?: Error) => void) => void): void;
   on(event: string, handler: (socket: AgentSocket) => void): void;
-  to(room: string): { emit(event: string, data?: unknown): void };
+  to(room: string): { emit(event: string, data?: unknown): void; disconnectSockets?(close?: boolean): void };
   emit(event: string, data?: unknown): void;
 }
 
@@ -347,6 +347,14 @@ class AgentWebSocketService {
     }
   }
 
+  disconnectIdentity(agentName: string, instanceId = 'default'): void {
+    const agentKey = `${agentName.toLowerCase()}:${instanceId.toLowerCase()}`;
+    // Socket.IO broadcasts this room operation through its adapter, including
+    // sockets on other backend replicas. A revoked bearer must not keep an
+    // already-connected transport after the last installation is removed.
+    this.agentNamespace?.to(`agent:${agentKey}`).disconnectSockets?.(true);
+  }
+
   async validateAgentToken(token: string): Promise<AgentTokenInfo | null> {
     if (token.startsWith('cm_agent_')) {
       try {
@@ -394,11 +402,12 @@ class AgentWebSocketService {
           const { agentName, instanceId } = resolveTokenAgentIdentity(agentUser);
 
           if (agentName) {
+            const installs = await AgentInstallation.find({
+              agentName, instanceId, status: 'active',
+            }).select('podId').lean() as Array<{ podId?: { toString: () => string } }>;
+            if (!installs.length) return null;
             if (isFirstTokenUse) {
               try {
-                const installs = await AgentInstallation.find({
-                  agentName, instanceId, status: 'active',
-                }).select('podId').lean() as Array<{ podId?: { toString: () => string } }>;
                 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
                 const { completeConnectAgentStarterTask } = require('./starterTaskService');
                 void completeConnectAgentStarterTask({

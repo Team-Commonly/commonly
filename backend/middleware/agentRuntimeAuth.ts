@@ -159,6 +159,11 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
         instanceId,
         status: 'active',
       }).lean();
+      // Old uninstall paths left User-row tokens behind. Even before a data
+      // cleanup, a token with no active installation must not authenticate.
+      if (installations.length === 0) {
+        return res.status(401).json({ message: 'Agent not installed' });
+      }
       const installationPodIds = installations
         .map((inst) => inst?.podId?.toString())
         .filter(Boolean) as string[];

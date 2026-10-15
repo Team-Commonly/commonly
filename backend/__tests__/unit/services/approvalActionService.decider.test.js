@@ -34,6 +34,7 @@ jest.mock('../../../models/Pod', () => ({
 const mockUserFindById = jest.fn();
 jest.mock('../../../models/User', () => ({
   findById: (...args) => mockUserFindById(...args),
+  findOne: jest.fn(() => ({ select: () => ({ lean: async () => null }) })),
 }));
 
 const mockInstallFindOne = jest.fn();
@@ -278,6 +279,28 @@ describe('proposeAction — decider derivation', () => {
       expect(result.ok).toBe(false);
       expect(result.error).toContain('"my-claude" is already in use by another user');
       expect(result.error).toContain('such as "sam-lee-claude", which is free');
+      expect(mockApprovalCreate).not.toHaveBeenCalled();
+    });
+
+    test('a name still bound to a foreign publisher is refused after its installs disappear', async () => {
+      held([]);
+      const { AgentRegistry } = require('../../../models/AgentRegistry');
+      AgentRegistry.getByName.mockResolvedValueOnce({ ephemeral: true, publisher: { userId: HUMAN_POD_CREATOR } });
+      const result = await propose({ actionType: 'connect_local_agent', params: { name: 'my-claude' }, summary: 'Connect' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('already in use by another user');
+      expect(mockApprovalCreate).not.toHaveBeenCalled();
+    });
+
+    test('a durable principal owner refuses adoption even without installs or registry row', async () => {
+      held([]);
+      const User = require('../../../models/User');
+      User.findOne.mockReturnValueOnce({
+        select: () => ({ lean: async () => ({ botMetadata: { ownerUserId: HUMAN_POD_CREATOR } }) }),
+      });
+      const result = await propose({ actionType: 'connect_local_agent', params: { name: 'my-claude' }, summary: 'Connect' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('already in use by another user');
       expect(mockApprovalCreate).not.toHaveBeenCalled();
     });
 

@@ -38,6 +38,7 @@ const Pod = require('../../models/Pod');
 const Post = require('../../models/Post');
 const File = require('../../models/File');
 const AuditLog = require('../../models/AuditLog');
+const { AgentInstallation } = require('../../models/AgentRegistry');
 
 const uploadsRoutes = require('../../routes/uploads');
 
@@ -162,6 +163,10 @@ describe('ADR-002 Phase 1b-a — signed-URL mint (integration)', () => {
       type: 'chat',
       createdBy: owner._id,
       members: [owner._id, agent._id],
+    });
+    await AgentInstallation.create({
+      agentName: 'attachment-reader', instanceId: 'default', podId: pod._id,
+      version: '1.0.0', installedBy: owner._id,
     });
     await File.create({
       fileName: 'agent-readable.png',

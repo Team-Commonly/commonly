@@ -32,6 +32,11 @@ beforeAll(async () => {
   AgentCredential = require('../../../models/AgentCredential');
   User = require('../../../models/User');
   agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth').default;
+  const { AgentInstallation } = require('../../../models/AgentRegistry');
+  await AgentInstallation.create({
+    agentName: 'testbot', instanceId: 'default', podId: new mongoose.Types.ObjectId(),
+    version: '1.0.0', installedBy: new mongoose.Types.ObjectId(),
+  });
 });
 
 afterAll(async () => {

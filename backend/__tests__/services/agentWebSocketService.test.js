@@ -1,6 +1,7 @@
 jest.mock('../../models/AgentRegistry', () => ({
   AgentInstallation: {
     findOne: jest.fn(),
+    find: jest.fn(),
     updateOne: jest.fn(),
   },
 }));
@@ -101,6 +102,9 @@ describe('agentWebSocketService', () => {
         botMetadata: { agentName: 'openclaw', instanceId: 'cuz' },
       });
       User.updateOne.mockResolvedValue({});
+      AgentInstallation.find.mockReturnValue({
+        select: () => ({ lean: async () => [{ podId: 'pod-123' }] }),
+      });
 
       const token = 'cm_agent_sharedtoken';
       const result = await agentWebSocketService.validateAgentToken(token);
@@ -119,6 +123,18 @@ describe('agentWebSocketService', () => {
         instanceId: 'cuz',
         agentUserId: 'user-1',
       });
+    });
+
+    it('rejects a User-row token after the last installation is gone', async () => {
+      User.findOne.mockResolvedValue({
+        _id: 'user-1', isBot: true, username: 'openclaw',
+        botMetadata: { agentName: 'openclaw', instanceId: 'default' },
+        agentRuntimeTokens: [{ tokenHash: hash('cm_agent_old'), lastUsedAt: new Date() }],
+      });
+      User.updateOne.mockResolvedValue({});
+      AgentInstallation.find.mockReturnValue({ select: () => ({ lean: async () => [] }) });
+
+      expect(await agentWebSocketService.validateAgentToken('cm_agent_old')).toBeNull();
     });
   });
 
@@ -156,6 +172,7 @@ describe('agentWebSocketService', () => {
           }
         }),
         to: jest.fn(() => mockNamespace),
+        disconnectSockets: jest.fn(),
       };
 
       mockIo = {
@@ -174,6 +191,14 @@ describe('agentWebSocketService', () => {
       agentWebSocketService.init(mockIo);
 
       expect(agentWebSocketService.pingInterval).not.toBeNull();
+    });
+
+    it('disconnects the identity room when its last installation is removed', () => {
+      agentWebSocketService.init(mockIo);
+      agentWebSocketService.disconnectIdentity('OpenClaw', 'Default');
+
+      expect(mockNamespace.to).toHaveBeenCalledWith('agent:openclaw:default');
+      expect(mockNamespace.disconnectSockets).toHaveBeenCalledWith(true);
     });
 
     it('stores lastPong timestamp when agent connects', () => {

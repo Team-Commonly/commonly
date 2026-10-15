@@ -132,6 +132,8 @@ export interface IUser extends Document {
     capabilities?: string[];
     agentName?: string;
     instanceId?: string;
+    // Durable owner of a self-serve identity; uninstall keeps this User row.
+    ownerUserId?: string;
     // ADR-026 D3: the machine this identity is bound to (adoption CAS).
     machineId?: string | null;
     // ADR-026 Phase 2: an owner's pending "run this on machine X" ask. The
@@ -278,6 +280,7 @@ const userSchema = new Schema<IUser>({
     capabilities: [{ type: String }],
     agentName: { type: String },
     instanceId: { type: String },
+    ownerUserId: { type: String },
     // ADR-026 D3 — declared or Mongoose strips it (the #1282 lesson).
     machineId: { type: String, default: null },
     // ADR-026 Phase 2 — same lesson: declared or stripped.

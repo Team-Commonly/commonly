@@ -216,6 +216,15 @@ describe('ADR-006 self-serve webhook install', () => {
       });
     expect(first.status).toBe(200);
 
+    const issued = await request(app)
+      .post(`/api/registry/pods/${pod._id}/agents/reinstall-target/runtime-tokens`)
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ label: 'old runtime' });
+    expect(issued.status).toBe(200);
+    const oldToken = issued.body.token;
+    expect((await request(app).get('/api/agents/runtime/events')
+      .set('Authorization', `Bearer ${oldToken}`)).status).toBe(200);
+
     // Simulate reset-demo-account.sh's raw mongo updateMany: mark
     // the AgentInstallation as uninstalled WITHOUT cascading to
     // AgentProfile (which is what causes the 500 in production). Also
@@ -241,10 +250,123 @@ describe('ADR-006 self-serve webhook install', () => {
       });
     expect(second.status).toBe(200);
 
+    expect((await request(app).get('/api/agents/runtime/events')
+      .set('Authorization', `Bearer ${oldToken}`)).status).toBe(401);
+    const replacement = await request(app)
+      .post(`/api/registry/pods/${pod._id}/agents/reinstall-target/runtime-tokens`)
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ label: 'new runtime' });
+    expect(replacement.status).toBe(200);
+    expect(replacement.body.token).toMatch(/^cm_agent_/);
+
     // Confirm there's exactly ONE AgentProfile row and it's active.
     const profiles = await AgentProfile.find({ agentName: 'reinstall-target', podId: pod._id });
     expect(profiles).toHaveLength(1);
     expect(profiles[0].status).toBe('active');
+  });
+
+  it('keeps an ephemeral name bound to its owner across uninstall and all instance ids', async () => {
+    const name = 'my-private-seat';
+    const ownerInstall = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ agentName: name, podId: pod._id.toString(), config: { runtime: { runtimeType: 'webhook' } }, scopes: [] });
+    expect(ownerInstall.status).toBe(200);
+    const botBefore = await User.findOne({ username: name }).lean();
+    expect(botBefore).toBeTruthy();
+    expect(botBefore.botMetadata.ownerUserId).toBe(podMember._id.toString());
+    expect((await request(app)
+      .delete(`/api/registry/agents/${name}/pods/${pod._id}`)
+      .set('Authorization', `Bearer ${memberToken}`)).status).toBe(200);
+
+    const anotherPod = await Pod.create({
+      name: 'Outsider workspace', type: 'chat', createdBy: outsider._id, members: [outsider._id],
+    });
+    for (const instanceId of ['default', 'another-instance']) {
+      const refused = await request(app)
+        .post('/api/registry/install')
+        .set('Authorization', `Bearer ${outsiderToken}`)
+        .send({ agentName: name, instanceId, podId: anotherPod._id.toString(), config: { runtime: { runtimeType: 'webhook' } }, scopes: [] });
+      expect(refused.status).toBe(409);
+      expect(refused.body.code).toBe('agent_name_taken');
+    }
+    expect(await AgentInstallation.countDocuments({ agentName: name, podId: anotherPod._id })).toBe(0);
+    expect((await User.findOne({ username: name }).lean())._id.toString()).toBe(botBefore._id.toString());
+
+    const ownerReinstall = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ agentName: name, podId: pod._id.toString(), config: { runtime: { runtimeType: 'webhook' } }, scopes: [] });
+    expect(ownerReinstall.status).toBe(200);
+    expect((await User.findOne({ username: name }).lean())._id.toString()).toBe(botBefore._id.toString());
+  });
+
+  it('refuses a second spelling that would derive another owner’s bot username', async () => {
+    const first = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ agentName: 'my-private-seat', podId: pod._id.toString(), config: { runtime: { runtimeType: 'webhook' } }, scopes: [] });
+    expect(first.status).toBe(200);
+    const firstUser = await User.findOne({ username: 'my-private-seat' }).lean();
+    const anotherPod = await Pod.create({
+      name: 'Another owner', type: 'chat', createdBy: outsider._id, members: [outsider._id],
+    });
+    const collision = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${outsiderToken}`)
+      .send({ agentName: 'my-private', instanceId: 'seat', podId: anotherPod._id.toString(), config: { runtime: { runtimeType: 'webhook' } }, scopes: [] });
+    expect(collision.status).toBe(409);
+    expect(collision.body.code).toBe('agent_identity_conflict');
+    expect(await AgentRegistry.findOne({ agentName: 'my-private' })).toBeNull();
+    expect(await AgentInstallation.countDocuments({ agentName: 'my-private' })).toBe(0);
+    expect((await User.findOne({ username: 'my-private-seat' }).lean())._id.toString()).toBe(firstUser._id.toString());
+  });
+
+  it('registry install refuses when the durable bot owner disagrees with its publisher', async () => {
+    const name = 'my-owner-mismatch';
+    const first = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ agentName: name, podId: pod._id.toString(), config: { runtime: { runtimeType: 'webhook' } }, scopes: [] });
+    expect(first.status).toBe(200);
+    expect((await request(app).delete(`/api/registry/agents/${name}/pods/${pod._id}`)
+      .set('Authorization', `Bearer ${memberToken}`)).status).toBe(200);
+    await User.updateOne({ username: name }, { $set: { 'botMetadata.ownerUserId': outsider._id.toString() } });
+
+    const refused = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ agentName: name, podId: pod._id.toString(), config: { runtime: { runtimeType: 'webhook' } }, scopes: [] });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('agent_identity_conflict');
+    expect(await AgentInstallation.countDocuments({ agentName: name, status: 'active' })).toBe(0);
+  });
+
+  it('refuses to adopt an unowned legacy bot when its registry row is gone', async () => {
+    const name = 'my-orphan-legacy';
+    const first = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ agentName: name, podId: pod._id.toString(), config: { runtime: { runtimeType: 'webhook' } }, scopes: [] });
+    expect(first.status).toBe(200);
+    const originalBot = await User.findOne({ username: name }).lean();
+
+    // Simulate a pre-owner-stamp bot whose registry and installation rows
+    // were removed outside the normal uninstall route. Its User and memory
+    // still exist, but no durable owner record can validate a new installer.
+    await AgentInstallation.deleteMany({ agentName: name });
+    await AgentRegistry.deleteOne({ agentName: name });
+    await User.updateOne({ _id: originalBot._id }, { $unset: { 'botMetadata.ownerUserId': '' } });
+
+    const refused = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ agentName: name, podId: pod._id.toString(), config: { runtime: { runtimeType: 'webhook' } }, scopes: [] });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('agent_identity_conflict');
+    expect(await AgentRegistry.findOne({ agentName: name })).toBeNull();
+    expect(await AgentInstallation.countDocuments({ agentName: name })).toBe(0);
+    expect((await User.findOne({ username: name }).lean())._id.toString()).toBe(originalBot._id.toString());
   });
 
   it('marketplace catalog excludes ephemeral self-serve agents', async () => {

@@ -33,9 +33,11 @@ jest.mock('../../../models/AgentProfile', () => ({
 // The revoke-everywhere effect is a real-mongod claim (runtimeTokenRevoke.test.js);
 // here only the route's part: it finds the copy by id and revokes by hash.
 const mockRevokeOne = jest.fn().mockResolvedValue(undefined);
+const mockRevokeAfterLastUninstall = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../../routes/registry/tokens', () => ({
   ...jest.requireActual('../../../routes/registry/tokens'),
   revokeRuntimeTokenEverywhere: (...args) => mockRevokeOne(...args),
+  revokeRuntimeTokensAfterLastUninstall: (...args) => mockRevokeAfterLastUninstall(...args),
 }));
 jest.mock('../../../services/agentIdentityService', () => ({
   resolveAgentType: jest.fn((agentName) => agentName),
@@ -161,6 +163,7 @@ describe('admin agent installations', () => {
     expect(res.status).toBe(200);
     expect(installation.status).toBe('uninstalled');
     expect(installation.save).toHaveBeenCalled();
+    expect(mockRevokeAfterLastUninstall).toHaveBeenCalledWith('openclaw', 'default');
     expect(AgentProfile.deleteOne).toHaveBeenCalled();
     expect(AgentIdentityService.removeAgentFromPod).toHaveBeenCalled();
   });
