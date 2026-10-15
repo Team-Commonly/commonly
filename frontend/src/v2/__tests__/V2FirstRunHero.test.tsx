@@ -366,6 +366,16 @@ describe('V2FirstRunHero', () => {
 
     expect(await screen.findByRole('button', { name: 'Say hello' })).toBeInTheDocument();
   });
+
+  test('a Guide request made before the hero mounts opens it on the shell', async () => {
+    requestFirstRunGuide();
+    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
+
+    renderHero();
+    await flush();
+
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' })).toBeInTheDocument();
+  });
 });
 
 describe('V2Layout first-run placement', () => {

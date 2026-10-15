@@ -6,7 +6,7 @@ import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { requestFirstRunGuide } from '../firstRunGuide';
 import {
@@ -19,6 +19,7 @@ import {
 const V2FeedbackMenu: React.FC = () => {
   const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
   const v2Root = anchorEl?.closest('.v2-root') as HTMLElement | null;
   const open = Boolean(anchorEl);
@@ -57,7 +58,11 @@ const V2FeedbackMenu: React.FC = () => {
           <button
             type="button"
             className="v2-feedback-menu__item"
-            onClick={() => { requestFirstRunGuide(); handleClose(); }}
+            onClick={() => {
+              requestFirstRunGuide();
+              handleClose();
+              if (location.pathname !== '/v2' && location.pathname !== '/v2/') navigate('/v2');
+            }}
           >
             <MenuBookOutlinedIcon aria-hidden="true" />
             <span>{t('firstRun.reopen')}</span>
