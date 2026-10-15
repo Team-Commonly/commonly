@@ -112,4 +112,44 @@ describe('globalModelConfigService', () => {
     expect(SystemSetting.findOne).not.toHaveBeenCalled();
     expect(SystemSetting.findOneAndUpdate).not.toHaveBeenCalled();
   });
+
+  describe('LITELLM_CHAT_MODEL as the llmService default', () => {
+    const original = process.env.LITELLM_CHAT_MODEL;
+    afterEach(() => {
+      if (original === undefined) delete process.env.LITELLM_CHAT_MODEL;
+      else process.env.LITELLM_CHAT_MODEL = original;
+    });
+
+    const stored = (value) => SystemSetting.findOne.mockReturnValueOnce({
+      lean: jest.fn().mockResolvedValueOnce(value ? { key: 'llm.globalModelConfig', value } : null),
+    });
+
+    it('defaults an auto-routed llmService to the operator chat model when none is persisted', async () => {
+      process.env.LITELLM_CHAT_MODEL = 'deepseek-v4-flash';
+      stored(null);
+      const result = await GlobalModelConfigService.getConfig();
+      expect(result.llmService.model).toBe('deepseek-v4-flash');
+    });
+
+    it('keeps an admin-persisted model over the env default', async () => {
+      process.env.LITELLM_CHAT_MODEL = 'deepseek-v4-flash';
+      stored({ llmService: { provider: 'litellm', model: 'cloudflare/llama-3.1-8b' } });
+      const result = await GlobalModelConfigService.getConfig();
+      expect(result.llmService.model).toBe('cloudflare/llama-3.1-8b');
+    });
+
+    it('keeps a legacy persisted defaultModel over the env default', async () => {
+      process.env.LITELLM_CHAT_MODEL = 'deepseek-v4-flash';
+      stored({ llmService: { provider: 'auto', defaultModel: 'cloudflare/llama-3.1-8b' } });
+      const result = await GlobalModelConfigService.getConfig();
+      expect(result.llmService.model).toBe('cloudflare/llama-3.1-8b');
+    });
+
+    it('does not hand a LiteLLM model name to a Gemini-direct provider', async () => {
+      process.env.LITELLM_CHAT_MODEL = 'deepseek-v4-flash';
+      stored({ llmService: { provider: 'gemini' } });
+      const result = await GlobalModelConfigService.getConfig();
+      expect(result.llmService.model).toBe('gemini-2.5-flash');
+    });
+  });
 });

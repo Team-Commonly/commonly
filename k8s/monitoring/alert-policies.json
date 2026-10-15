@@ -235,5 +235,33 @@
         }
       }
     ]
+  },
+  {
+    "displayName": "commonly-dev: LiteLLM is failing platform calls",
+    "severity": "WARNING",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "More than 5 in-cluster LLM calls (summaries, digest, chat summaries, native apps, commonly-bot) failed in an hour, after LiteLLM's fallbacks. Usually a provider key died. Before 2026-10-15 this ran at ~150/day unseen (Gemini 401s). Runbook: docs/runbooks/alerting.md#litellm-failing"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "failed platform calls > 5 per hour",
+        "conditionThreshold": {
+          "filter": "metric.type=\"logging.googleapis.com/user/litellm_platform_call_failures\" AND resource.type=\"k8s_container\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "3600s",
+              "perSeriesAligner": "ALIGN_SUM",
+              "crossSeriesReducer": "REDUCE_SUM"
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 5,
+          "duration": "0s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
   }
 ]
