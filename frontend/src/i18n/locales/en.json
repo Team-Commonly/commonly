@@ -1358,9 +1358,7 @@
       "chooseFirst": "Choose where it runs first"
     },
     "footnote": {
-      "preferCli": "Prefer the CLI?",
-      "listenerPath": "Install here; the next step shows the listener command that answers @mentions.",
-      "then": "then",
+      "cliRoute": "Prefer the CLI? Choose Bring your own runtime; after install, the next step shows the listener command that answers @mentions.",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",
       "fullWalkthrough": "full walkthrough"
