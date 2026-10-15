@@ -12,6 +12,7 @@ jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
 }));
 
 const Pod = require('../../../models/Pod');
+const { AgentInstallation } = require('../../../models/AgentRegistry');
 const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
 const AgentIdentityService = require('../../../services/agentIdentityService');
 
@@ -29,6 +30,28 @@ describe('AgentIdentityService.ensureAgentInPod — agent-room 1:1 invariant', (
       .rejects.toHaveProperty('code', 'outsider_grant_non_native_agent_join');
     expect(pod.members).toEqual(['human']);
     expect(pod.save).not.toHaveBeenCalled();
+  });
+
+  it('refuses an undeclared join when the active installation is non-native', async () => {
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    const findOne = jest.spyOn(AgentInstallation, 'findOne').mockReturnValue({
+      select: () => ({ lean: async () => ({ config: { runtime: { runtimeType: 'opencode' } } }) }),
+    });
+    const pod = { _id: 'p-chat', type: 'chat', members: ['human'], save: jest.fn() };
+    Pod.findById.mockResolvedValue(pod);
+
+    try {
+      await expect(AgentIdentityService.ensureAgentInPod({
+        _id: 'bot', botMetadata: { agentName: 'opencode', instanceId: 'seat-1' },
+      }, 'p-chat')).rejects.toHaveProperty('code', 'outsider_grant_non_native_agent_join');
+      expect(findOne).toHaveBeenCalledWith({
+        podId: 'p-chat', agentName: 'opencode', instanceId: 'seat-1', status: 'active',
+      });
+      expect(pod.members).toEqual(['human']);
+      expect(pod.save).not.toHaveBeenCalled();
+    } finally {
+      findOne.mockRestore();
+    }
   });
 
   it('allows a narrowed native bot into the protected pod', async () => {
