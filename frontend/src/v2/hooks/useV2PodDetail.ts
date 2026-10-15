@@ -80,6 +80,9 @@ export interface V2Message {
     expiresAt?: string;
     executionResult?: { podId?: string; podName?: string } | Record<string, unknown>;
     executionError?: string;
+    toolCallEnding?: 'ran' | 'failed' | 'refused' | 'declined' | 'expired';
+    toolCallCode?: string;
+    toolCallTrailId?: string;
     // Raw tool-call arguments are intentionally absent from the shared card
     // payload. The owner fetches this field from /api/approvals/pending while
     // the action is flagged; the backend scopes it to ownerUserId.

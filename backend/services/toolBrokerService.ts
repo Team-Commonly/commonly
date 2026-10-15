@@ -24,6 +24,8 @@ export interface ToolDefinitionBase {
   requiredWriteMode: RoomGrantWriteMode;
   irreversible?: boolean | ((args: Record<string, unknown>) => boolean);
   inputSchema: Record<string, unknown>;
+  /** Prose-free fields a parked call may return in its resolution cue. */
+  receipt?: ReadonlyArray<{ field: string; kind: 'positive-integer' }>;
 }
 
 /** A connection to an installed GitHub App: the tenant a call runs against. */
@@ -100,6 +102,7 @@ export interface BrokerCallResult {
   callId: string;
   result: unknown;
   outcome: 'ok' | 'failed';
+  receipt?: Record<string, number>;
 }
 
 const issueView = (issue: Record<string, unknown>): Record<string, unknown> => ({
@@ -212,6 +215,7 @@ const createIssue: GithubToolDefinition = {
   requiredWriteMode: 'write-with-confirm',
   connectionType: 'github-app',
   irreversible: true,
+  receipt: [{ field: 'number', kind: 'positive-integer' }],
   inputSchema: {
     type: 'object',
     properties: {
@@ -1043,6 +1047,22 @@ const isToolErrorResult = (result: unknown): boolean => (
   && (result as { isError?: unknown }).isError === true
 );
 
+/** Only definition-declared, shape-checked values may leave an approved write as a receipt. */
+const approvedCallReceipt = (
+  definition: ToolDefinition,
+  result: unknown,
+): Record<string, number> | undefined => {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return undefined;
+  const values = result as Record<string, unknown>;
+  const receipt: Record<string, number> = {};
+  for (const field of definition.receipt || []) {
+    const value = values[field.field];
+    if (field.kind === 'positive-integer' && typeof value === 'number'
+      && Number.isSafeInteger(value) && value > 0) receipt[field.field] = value;
+  }
+  return Object.keys(receipt).length ? receipt : undefined;
+};
+
 /** Keep both execution paths' trail semantics in one place. */
 const recordExecutionResult = async (
   input: BrokerCallInput,
@@ -1166,6 +1186,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
           summary: `${definition.description} (approval required)`,
           ownerUserId: connection.ownerUserId,
           agentUserId: input.agentUserId,
+          approvalExpiresAt: new Date((grant as IRoomGrant).expiresAt),
           toolCall: {
             grantId: String((grant as Record<string, unknown>).grantId || input.grantId),
             callId,
@@ -1326,13 +1347,20 @@ export const executeApprovedToolCall = async (
       startedAt,
       { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
     );
-    return { ...recorded, result };
+    const receipt = recorded.outcome === 'ok' ? approvedCallReceipt(definition, result) : undefined;
+    return {
+      ...recorded,
+      result,
+      ...(receipt ? { receipt } : {}),
+    };
   } catch (error) {
-    const reason = safeReason(error);
+    const reason = error instanceof RoomGrantError || error instanceof HostedMcpCredentialError
+      ? safeReason(error) : 'broker_error';
+    const outcome = executionErrorOutcome(error);
     await recordCall(
       { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
       grant,
-      executionErrorOutcome(error),
+      outcome,
       startedAt,
       reason,
       {
@@ -1342,7 +1370,12 @@ export const executeApprovedToolCall = async (
         credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
       },
     );
-    throw error;
+    // The caller needs the trail identity and classification, never the
+    // provider's message. This is the approved path only; its resolver turns
+    // these facts into the card and the seat's event.
+    throw new RoomGrantError(reason, 'approved tool call did not run',
+      error instanceof RoomGrantError ? error.statusCode : 502,
+      { callId, outcome, recorded: true });
   }
 };
 
