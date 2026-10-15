@@ -312,6 +312,17 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
     await installation.save();
   }
 
+  // The check above runs before the token exists. A migration can mark the
+  // identity in-process while this mint is still saving, and its revoke may
+  // run before the save lands (Rhea on #2236). Re-check now the token is
+  // stored: if the identity went in-process meanwhile, take the token back
+  // and refuse. A save that landed before the migration's revoke is caught
+  // by that revoke, so no ordering leaves a live token.
+  if (await runsInProcess(agentUser, installation)) {
+    await revokeRuntimeTokenEverywhere(tokenRecord.tokenHash);
+    throw new InProcessAgentTokenRefused();
+  }
+
   return {
     token: rawToken,
     label: label || 'Runtime token',
@@ -334,6 +345,10 @@ const issueRuntimeTokenForInstallation = async (installation: any, label: any) =
     createdAt: new Date(),
   });
   await installation.save();
+  if (await runsInProcess(null, installation)) {
+    await revokeRuntimeTokenEverywhere(hash(rawToken));
+    throw new InProcessAgentTokenRefused();
+  }
   return { token: rawToken, label: label || 'Runtime token' };
 };
 

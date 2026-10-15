@@ -1,8 +1,9 @@
 /**
- * TASK-265: moving hosted installs from the Durable Object onto the native
- * engine. Real installation, event and user models on an in-memory Mongo; the
- * worker calls and the token revoke are mocked. Each arm below is one of the
- * findings in Rhea's and sprint-review's HOLDs on #2236.
+ * TASK-265: the hosted-engine migration, forward-only and resumable. Real
+ * installation, event and user models on an in-memory Mongo; the worker
+ * calls and the token revoke are mocked. The arms are Rhea's and
+ * sprint-review's findings across three reviews of #2236: each step can fail,
+ * and the next run must finish the identity from where it stopped.
  */
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
@@ -44,7 +45,7 @@ const install = (agentName, podId, hosted) => AgentInstallation.create({
   config: { runtime: { runtimeType: 'hosted' }, ...(hosted ? { hosted } : {}) },
 });
 const hostedOf = async (id) => (await AgentInstallation.findById(id).lean()).config.hosted;
-const engines = async (ids) => Promise.all(ids.map(async (id) => (await hostedOf(id))?.engine));
+const field = async (ids, pick) => Promise.all(ids.map(async (id) => pick((await hostedOf(id)) || {})));
 const entryFor = (report, name) => report.identities.find((row) => row.agentName === name);
 
 let podA; let podB; let maya; let mayaB; let idle; let born;
@@ -74,82 +75,102 @@ test('a dry run reports per identity and changes nothing', async () => {
   const report = await migrate({ apply: false, now: NOW });
 
   expect(report.dryRun).toBe(true);
-  expect(report.identities.map((row) => [row.agentName, row.installs, row.provisioned]).sort())
-    .toEqual([['idle-agent', 1, false], ['maya-agent', 2, true]]);
+  expect(report.identities.map((row) => [row.agentName, row.installs, row.doProvisioned, row.from]).sort())
+    .toEqual([['idle-agent', 1, false, 'new'], ['maya-agent', 2, true, 'new']]);
   expect(mockDeprovision).not.toHaveBeenCalled();
-  expect(mockRevoke).not.toHaveBeenCalled();
-  expect(await engines([maya._id, mayaB._id, idle._id])).toEqual([undefined, undefined, undefined]);
+  expect(await field([maya._id, mayaB._id], (h) => h.engine)).toEqual([undefined, undefined]);
 });
 
-test('rows are native BEFORE the revoke, so no token can be minted in between (Rhea 1)', async () => {
+test('a clean run: marked native before the revoke, stopped, revoked, done', async () => {
   let enginesAtRevoke;
   mockRevoke.mockImplementation(async () => {
-    enginesAtRevoke = await engines([maya._id, mayaB._id]);
+    enginesAtRevoke = await field([maya._id, mayaB._id], (h) => h.engine);
     return ['hash-1'];
   });
 
   const report = await migrate({ apply: true, now: NOW });
 
   expect(enginesAtRevoke).toEqual(['native', 'native']);
-  expect(entryFor(report, 'maya-agent')).toMatchObject({ durableObjectStopped: true, tokensRevoked: 1 });
+  expect(entryFor(report, 'maya-agent')).toMatchObject({ reached: 'done', durableObjectStopped: true, tokensRevoked: 1 });
   expect(await hostedOf(maya._id)).toEqual(expect.objectContaining({
     engine: 'native', provisionedAt: NOW, about: 'Keeps the research log.', migratedFrom: 'durable-object',
+    migration: { state: 'done', doProvisioned: true },
   }));
+  // A second run has nothing left to do for a done identity.
+  jest.clearAllMocks();
+  const again = await migrate({ apply: true, now: NOW });
+  expect(entryFor(again, 'maya-agent')).toBeUndefined();
+  expect(mockRevoke).not.toHaveBeenCalled();
 });
 
-test('a row that fails to save restores the others; the worker and the tokens are untouched (Rhea 2)', async () => {
-  // Fail exactly the second row's native mark, after the first row of the
-  // same identity is already native, so the restore has real work to do.
+test('marking interrupted part-way: the next run marks the rest and finishes', async () => {
   const original = AgentInstallation.updateOne.bind(AgentInstallation);
-  jest.spyOn(AgentInstallation, 'updateOne').mockImplementation((filter, update, ...rest) => {
-    const marking = update?.$set?.['config.hosted']?.engine === 'native';
-    if (marking && String(filter?._id) === String(mayaB._id)) return Promise.reject(new Error('write failed'));
+  const spy = jest.spyOn(AgentInstallation, 'updateOne').mockImplementation((filter, update, ...rest) => {
+    if (String(filter?._id) === String(mayaB._id) && update?.$set?.['config.hosted']) return Promise.reject(new Error('write failed'));
     return original(filter, update, ...rest);
   });
-
-  const report = await migrate({ apply: true, now: NOW });
-
-  expect(entryFor(report, 'maya-agent').error).toMatch(/restored, nothing changed/);
-  expect(await engines([maya._id, mayaB._id])).toEqual([undefined, undefined]);
-  expect((await hostedOf(maya._id)).provisionedAt).toEqual(new Date('2026-10-01'));
-  expect(mockDeprovision).not.toHaveBeenCalledWith('maya-agent', 'default');
-  expect(mockRevoke).not.toHaveBeenCalled();
-});
-
-test('a Durable Object that will not stop restores every row (Rhea 2)', async () => {
-  mockDeprovision.mockRejectedValueOnce(new Error('worker down'));
-
-  const report = await migrate({ apply: true, now: NOW });
-
-  expect(entryFor(report, 'maya-agent').error).toMatch(/did not stop .*restored/);
-  expect(await engines([maya._id, mayaB._id])).toEqual([undefined, undefined]);
-  expect(mockRevoke).not.toHaveBeenCalled();
-});
-
-test('a failed revoke is reported, and the next run finishes it (Rhea 2)', async () => {
-  mockRevoke.mockRejectedValueOnce(new Error('db down'));
   const first = await migrate({ apply: true, now: NOW });
-  expect(entryFor(first, 'maya-agent').error).toMatch(/run again to finish/);
-  expect(await engines([maya._id, mayaB._id])).toEqual(['native', 'native']);
+  expect(entryFor(first, 'maya-agent')).toMatchObject({ reached: 'mark', error: expect.stringMatching(/run again/) });
+  expect(mockDeprovision).not.toHaveBeenCalledWith('maya-agent', 'default');
+
+  spy.mockRestore();
+  const second = await migrate({ apply: true, now: NOW });
+  expect(entryFor(second, 'maya-agent')).toMatchObject({ reached: 'done', durableObjectStopped: true });
+  expect(await field([maya._id, mayaB._id], (h) => h.migration?.state)).toEqual(['done', 'done']);
+});
+
+test('a stop that failed is retried on the next run, not assumed (Rhea: marker is not shutdown)', async () => {
+  mockDeprovision.mockRejectedValueOnce(new Error('worker down'));
+  const first = await migrate({ apply: true, now: NOW });
+  expect(entryFor(first, 'maya-agent')).toMatchObject({ reached: 'stop', error: expect.stringMatching(/run again to stop/) });
+  expect(await field([maya._id, mayaB._id], (h) => h.migration?.state)).toEqual(['marked', 'marked']);
+  expect(mockRevoke).not.toHaveBeenCalled();
 
   const second = await migrate({ apply: true, now: NOW });
-  expect(entryFor(second, 'maya-agent')).toMatchObject({ alreadyMigrated: true, tokensRevoked: 1 });
-  expect(mockDeprovision).toHaveBeenCalledTimes(1); // not stopped twice
+  expect(entryFor(second, 'maya-agent')).toMatchObject({ from: 'marked', reached: 'done', durableObjectStopped: true });
+  expect(mockDeprovision).toHaveBeenCalledTimes(2);
 });
 
-test('a provisioned identity is refused when the worker is not configured (Rhea 3)', async () => {
+test('a failed revoke resumes at the revoke, without stopping the worker twice', async () => {
+  mockRevoke.mockRejectedValueOnce(new Error('db down'));
+  const first = await migrate({ apply: true, now: NOW });
+  expect(entryFor(first, 'maya-agent')).toMatchObject({ reached: 'revoke' });
+
+  const second = await migrate({ apply: true, now: NOW });
+  expect(entryFor(second, 'maya-agent')).toMatchObject({ from: 'stopped', reached: 'done', tokensRevoked: 1 });
+  expect(mockDeprovision).toHaveBeenCalledTimes(1);
+});
+
+test('a failed event write is resumed: the next run handles the events and finishes (Rhea 4)', async () => {
+  const [event] = await AgentEvent.create([{
+    agentName: 'maya-agent', instanceId: 'default', podId: podA, type: 'chat.mention', payload: {}, status: 'pending',
+    createdAt: new Date(NOW.getTime() - 60 * 1000),
+  }]);
+  const original = AgentEvent.updateOne.bind(AgentEvent);
+  const spy = jest.spyOn(AgentEvent, 'updateOne').mockRejectedValueOnce(new Error('event write failed'));
+  const first = await migrate({ apply: true, now: NOW });
+  expect(entryFor(first, 'maya-agent')).toMatchObject({ reached: 'events' });
+  expect((await AgentEvent.findById(event._id).lean()).status).toBe('pending');
+
+  spy.mockImplementation((...args) => original(...args));
+  const second = await migrate({ apply: true, now: NOW });
+  expect(entryFor(second, 'maya-agent')).toMatchObject({ reached: 'done', pendingToSweep: 1 });
+  expect((await AgentEvent.findById(event._id).lean()).status).toBe('delivered');
+});
+
+test('a provisioned identity is refused when the worker is not configured; a stopped one still moves', async () => {
   mockConfigured = false;
 
   const report = await migrate({ apply: true, now: NOW });
 
-  expect(entryFor(report, 'maya-agent').error).toMatch(/cannot be stopped; refused/);
-  expect(await engines([maya._id, mayaB._id])).toEqual([undefined, undefined]);
-  expect(mockRevoke).not.toHaveBeenCalledWith(expect.objectContaining({ agentName: 'maya-agent' }));
-  // A stopped identity needs no worker and still moves.
-  expect(await engines([idle._id])).toEqual(['native']);
+  expect(entryFor(report, 'maya-agent')).toMatchObject({ reached: 'refused' });
+  expect(await field([maya._id, mayaB._id], (h) => h.engine)).toEqual([undefined, undefined]);
+  expect(entryFor(report, 'idle-agent')).toMatchObject({ reached: 'done' });
+  expect(await hostedOf(idle._id)).toEqual(expect.objectContaining({ engine: 'native', provisionedAt: null }));
+  expect(mockDeprovision).not.toHaveBeenCalled();
 });
 
-test('pending events: recent on a running install go to the sweep; on a stopped one, or stale, they close (Rhea 4, sprint-review)', async () => {
+test('pending events: recent on a running install go to the sweep; on a stopped one, or stale, they close', async () => {
   const at = (ms) => new Date(NOW.getTime() - ms);
   const [toSweep, stale, onStopped] = await AgentEvent.create([
     { agentName: 'maya-agent', instanceId: 'default', podId: podA, type: 'chat.mention', payload: {}, status: 'pending', createdAt: at(60 * 1000) },
@@ -157,23 +178,18 @@ test('pending events: recent on a running install go to the sweep; on a stopped 
     { agentName: 'idle-agent', instanceId: 'default', podId: podA, type: 'chat.mention', payload: {}, status: 'pending', createdAt: at(60 * 1000) },
   ]);
 
-  const dry = await migrate({ apply: false, now: NOW });
-  expect(entryFor(dry, 'maya-agent')).toMatchObject({ pendingToSweep: 1, pendingClosed: 1 });
-  expect(entryFor(dry, 'idle-agent')).toMatchObject({ pendingToSweep: 0, pendingClosed: 1 });
-
   await migrate({ apply: true, now: NOW });
 
-  const swept = await AgentEvent.findById(toSweep._id).lean();
-  expect(swept).toMatchObject({ status: 'delivered', deliveryNonce: null });
-  expect((await AgentEvent.findById(stale._id).lean())).toMatchObject({ status: 'failed', error: expect.stringMatching(/stale/) });
-  expect((await AgentEvent.findById(onStopped._id).lean())).toMatchObject({ status: 'failed', error: expect.stringMatching(/stopped/) });
+  expect(await AgentEvent.findById(toSweep._id).lean()).toMatchObject({ status: 'delivered', deliveryNonce: null });
+  expect(await AgentEvent.findById(stale._id).lean()).toMatchObject({ status: 'failed', error: expect.stringMatching(/stale/) });
+  expect(await AgentEvent.findById(onStopped._id).lean()).toMatchObject({ status: 'failed', error: expect.stringMatching(/stopped/) });
 });
 
-test('a stopped install stays stopped with no worker call; one born native is not touched or reported', async () => {
+test('an install born native is never touched or reported', async () => {
   const report = await migrate({ apply: true, now: NOW });
 
-  expect(await hostedOf(idle._id)).toEqual(expect.objectContaining({ engine: 'native', provisionedAt: null }));
-  expect(mockDeprovision).not.toHaveBeenCalledWith('idle-agent', 'default');
-  expect((await hostedOf(born._id)).migratedFrom).toBeUndefined();
   expect(entryFor(report, 'native-agent')).toBeUndefined();
+  const hosted = await hostedOf(born._id);
+  expect(hosted.migratedFrom).toBeUndefined();
+  expect(hosted.migration).toBeUndefined();
 });

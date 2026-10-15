@@ -141,6 +141,44 @@ describe('agent runtime tokens', () => {
     expect(agentUser.agentRuntimeTokens).toHaveLength(0);
   });
 
+  // Rhea on #2236: a mint that passed the in-process check can still be
+  // saving when a migration marks the identity in-process. The issuer
+  // re-checks after its save and takes the token back.
+  it('a mint whose identity went in-process while it was saving takes its token back and refuses', async () => {
+    const User = require('../../../models/User');
+    const AgentCredential = require('../../../models/AgentCredential');
+    if (!User.updateMany) User.updateMany = jest.fn();
+    User.updateMany.mockResolvedValue({ modifiedCount: 1 });
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] }),
+    });
+    const installation = {
+      agentName: 'maya-agent', podId: 'pod-1', instanceId: 'default', status: 'active', installedBy: 'user-1',
+      config: { runtime: { runtimeType: 'hosted' } }, runtimeTokens: [], save: jest.fn().mockResolvedValue(true),
+    };
+    const agentUser = { agentRuntimeTokens: [], botMetadata: { agentName: 'maya-agent' }, save: jest.fn().mockResolvedValue(true) };
+    AgentInstallation.findOne.mockResolvedValue(installation);
+    // Not in-process at the check; in-process by the time the save landed.
+    AgentInstallation.exists.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'inst-1' });
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+
+    const res = await request(app)
+      .post('/api/registry/pods/pod-1/agents/maya-agent/runtime-tokens')
+      .send({ label: 'racing a migration' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('in_process_agent_no_token');
+    expect(res.body.token).toBeUndefined();
+    const savedHash = agentUser.agentRuntimeTokens[0].tokenHash;
+    expect(AgentCredential.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ tokenHash: { $in: [savedHash] } }), expect.anything(),
+    );
+    expect(User.updateMany).toHaveBeenCalledWith(
+      { 'agentRuntimeTokens.tokenHash': savedHash }, { $pull: { agentRuntimeTokens: { tokenHash: savedHash } } },
+    );
+  });
+
   it('matches every in-process shape in any spelling, and nothing else', async () => {
     await mintFor('scout', { runtime: { runtimeType: 'native' } });
     const [query] = AgentInstallation.exists.mock.calls[0];
