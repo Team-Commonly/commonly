@@ -35,6 +35,10 @@ jest.mock('../../../services/hostedMcpCredentialService', () => ({
   credentialFor: (...args) => mockCredentialFor(...args),
 }));
 jest.mock('../../../services/githubAppService', () => ({}));
+jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
+  outsiderGrantPodRefusal: jest.fn(async () => null),
+  outsiderGrantRefusalMessage: jest.fn((reason) => `Use a separate pod: ${reason}`),
+}));
 jest.mock('../../../services/seatGrantConfinement', () => ({
   judgeSeatConfinement: jest.fn(async () => ({ refusal: null, scope: 'unbound' })),
 }));
@@ -90,6 +94,7 @@ jest.mock('../../../services/roomGrantService', () => {
 // from the comment and the suppression stops applying).
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const broker = require('../../../services/toolBrokerService');
+const { outsiderGrantPodRefusal } = require('../../../services/outsiderGrantPodEligibility');
 
 const {
   callTool, listToolsForGrant, getToolDefinitions, allToolDefinitions, executeApprovedToolCall,
@@ -213,6 +218,7 @@ afterAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  outsiderGrantPodRefusal.mockResolvedValue(null);
   upstreamTools = ENTRY.tools.map((tool) => ({
     name: tool.upstreamName, inputSchema: tool.inputSchema, annotations: tool.annotations,
   }));
@@ -239,6 +245,21 @@ beforeEach(() => {
 });
 
 describe('a hosted-MCP grant through the broker', () => {
+  it.each([
+    'pod_required', 'pod_not_private', 'pod_joinable', 'pod_bridged', 'non_native_agent', 'write_mode_unconfined',
+  ])(
+    'rechecks and refuses %s before a vendor call', async (reason) => {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+      outsiderGrantPodRefusal.mockResolvedValue(reason);
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+      })).rejects.toMatchObject({ code: `outsider_grant_${reason}` });
+      await expect(listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' }))
+        .rejects.toMatchObject({ code: `outsider_grant_${reason}` });
+      expect(toolCalls()).toHaveLength(0);
+    },
+  );
+
   it('refuses an undeclared top-level argument before vendor call or budget, recording only its digest', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant({ budget: { calls: 3 } }));
     const args = { limit: 3, unexpected: 'private value' };

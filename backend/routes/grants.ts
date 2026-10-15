@@ -22,6 +22,7 @@ import { resolveBrokerFor } from '../services/installable/toolInstallables';
 import { grantBrokerRefusal } from '../services/grantBrokerConfinement';
 import type { GrantBrokerRefusal } from '../services/grantBrokerConfinement';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../services/seatEnvironmentProjection';
+import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from '../services/outsiderGrantPodEligibility';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -385,6 +386,14 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       });
     }
 
+    const outsiderRefusal = await outsiderGrantPodRefusal(target, body.writeMode);
+    if (outsiderRefusal) {
+      return res.status(403).json({
+        error: `outsider_grant_${outsiderRefusal}`,
+        message: outsiderGrantRefusalMessage(outsiderRefusal),
+      });
+    }
+
     const grantInput: RoomGrantCreateInput = {
       connectionId,
       installationId,
@@ -422,6 +431,13 @@ router.post(
       // membership context for the seat-grant check.
       currentMemberIds: members ?? parent.audience,
     });
+    const outsiderRefusal = await outsiderGrantPodRefusal(parent.target, parent.writeMode);
+    if (outsiderRefusal) {
+      return res.status(403).json({
+        error: `outsider_grant_${outsiderRefusal}`,
+        message: outsiderGrantRefusalMessage(outsiderRefusal),
+      });
+    }
     const body = (req.body || {}) as Record<string, unknown>;
     const child = await attenuateGrant({
       parentGrantId: parent.grantId,

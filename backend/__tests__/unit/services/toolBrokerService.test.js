@@ -36,6 +36,10 @@ jest.mock('../../../services/seatGrantConfinement', () => ({
   judgeSeatConfinement: (...args) => mockSeatConfinement(...args),
 }));
 jest.mock('../../../services/githubAppService', () => mockGithub);
+jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
+  outsiderGrantPodRefusal: jest.fn(async () => null),
+  outsiderGrantRefusalMessage: jest.fn((reason) => `Use a separate pod: ${reason}`),
+}));
 jest.mock('../../../services/roomGrantService', () => {
   class MockRoomGrantError extends Error {
     constructor(code, message, statusCode = 400) {

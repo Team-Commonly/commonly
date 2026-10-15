@@ -21,6 +21,10 @@ jest.mock('../../../services/githubAppService', () => ({
 const mockProposeAction = jest.fn();
 jest.mock('../../../services/approvalActionService', () => ({ proposeAction: (...args) => mockProposeAction(...args) }));
 jest.mock('../../../services/dmService', () => mockDmService);
+jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
+  outsiderGrantPodRefusal: jest.fn(async () => null),
+  outsiderGrantRefusalMessage: jest.fn((reason) => `Use a separate pod: ${reason}`),
+}));
 // The seat's own declaration is judged inside `callTool`/`listToolsForGrant`
 // (TASK-175). This suite has no Mongo, so the RESOLUTION is mocked here and the
 // resolution itself is witnessed on memory Mongo in
@@ -46,6 +50,7 @@ jest.mock('../../../services/roomGrantService', () => {
 });
 
 const broker = require('../../../services/toolBrokerService');
+const { outsiderGrantPodRefusal } = require('../../../services/outsiderGrantPodEligibility');
 
 // Both models write `createdAt` (timestamps: true) and the broker compares it
 // against the resolved row's, so the fixtures carry the fields a real row has;
@@ -62,6 +67,7 @@ const grant = (overrides = {}) => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  outsiderGrantPodRefusal.mockResolvedValue(null);
   mockSeatConfinement.mockResolvedValue({ refusal: null, scope: 'unbound' });
   mockReserveBudgetLineage.mockResolvedValue(true);
   mockRoomGrant.findOne.mockResolvedValue(grant());
@@ -72,6 +78,18 @@ beforeEach(() => {
   });
   mockProposeAction.mockResolvedValue({ ok: true, approvalId: 'approval-1' });
   mockDmService.getOrCreateAgentRoom.mockResolvedValue({ _id: 'room-1' });
+});
+
+test('approval after a pod becomes ineligible refuses before provider execution', async () => {
+  outsiderGrantPodRefusal.mockResolvedValue('pod_bridged');
+  await expect(broker.executeApprovedToolCall({
+    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue',
+    args: { title: 'hello' }, expectedArgsDigest: mockToolCall.digestArgs({ title: 'hello' }),
+    approvalId: 'approval-1',
+  })).rejects.toMatchObject({ code: 'outsider_grant_pod_bridged' });
+  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+    outcome: 'refused', reason: 'outsider_grant_pod_bridged',
+  }));
 });
 
 test('records a refusal when the approval proposal is refused, naming the owner', async () => {

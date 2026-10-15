@@ -24,12 +24,17 @@ jest.mock('../../../models/Integration', () => ({ findById: jest.fn(), findOne: 
 jest.mock('../../../models/Installable', () => ({ findOne: jest.fn() }));
 jest.mock('../../../services/githubAppService', () => ({}));
 jest.mock('../../../models/ToolCall', () => ({ __esModule: true, default: {}, digestArgs: jest.fn(), reserveBudgetLineage: jest.fn() }));
+jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
+  outsiderGrantPodRefusal: jest.fn(async () => null),
+  outsiderGrantRefusalMessage: jest.fn((reason) => `Use a separate pod: ${reason}`),
+}));
 
 const Pod = require('../../../models/Pod');
 const Integration = require('../../../models/Integration');
 const Installable = require('../../../models/Installable');
 const { buildGithubToolInstallable, GRANT_BROKER_ID } = require('../../../services/installable/toolInstallables');
 const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
+const { outsiderGrantPodRefusal } = require('../../../services/outsiderGrantPodEligibility');
 
 const POD = 'aaaaaaaaaaaaaaaaaaaaaa01';
 const OWNER = 'bbbbbbbbbbbbbbbbbbbbbb01';
@@ -70,6 +75,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   jest.clearAllMocks();
+  outsiderGrantPodRefusal.mockResolvedValue(null);
   await RoomGrant.deleteMany({});
   Pod.findById.mockImplementation((id) => ({
     select: () => ({ lean: async () => (String(id) === POD ? { _id: POD, type: 'team', members: [OWNER, SEAT] } : null) }),
@@ -85,6 +91,22 @@ beforeEach(async () => {
 });
 
 describe('POST /api/grants', () => {
+  test.each([
+    ['pod_required', { kind: 'seat', id: SEAT }],
+    ['pod_not_private', { kind: 'pod', id: POD }],
+    ['pod_joinable', { kind: 'pod', id: POD }],
+    ['pod_bridged', { kind: 'pod', id: POD }],
+    ['non_native_agent', { kind: 'pod', id: POD }],
+    ['write_mode_unconfined', { kind: 'pod', id: POD }],
+  ])('refuses outsider connector attach when %s', async (reason, target) => {
+    outsiderGrantPodRefusal.mockResolvedValue(reason);
+    const res = await mint({ target });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: `outsider_grant_${reason}` });
+    expect(res.body.message).toMatch(/separate pod/);
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
   test('brokerId comes from the tool Installable, never the body', async () => {
     const res = await mint({});
     expect(res.status).toBe(201);
@@ -244,13 +266,12 @@ describe('POST /api/grants on a hosted-mcp connection', () => {
     expect(allowed.status).toBe(201);
   });
 
-  test('the write refusal is hosted-only: a github-app row still mints write', async () => {
-    // The control for the `hosted &&` conjunct in that refusal. Without this
-    // arm, dropping the conjunct refuses a github write grant and no test says so.
+  test('a github-app write grant is refused by the CTO pod-eligibility ruling', async () => {
+    outsiderGrantPodRefusal.mockResolvedValue('write_mode_unconfined');
     const res = await mint({ writeMode: 'write' });
-    expect(res.status).toBe(201);
-    const row = await RoomGrant.findOne({ grantId: res.body.grantId }).lean();
-    expect(row.writeMode).toBe('write');
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: 'outsider_grant_write_mode_unconfined' });
+    expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
   test('a hosted row with no credential is a mismatch, and one that is still pending is too', async () => {
