@@ -14,6 +14,7 @@ import V2ThreadStarter from './V2ThreadStarter';
 import {
   HistorySearchState,
   UseV2PodDetailResult,
+  V2Start,
 } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
 import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
@@ -41,6 +42,7 @@ const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 const NO_AGENTS_HINT_KEY = 'v2.noAgentsHint';
 const JUST_CREATED_POD_KEY = 'v2.justCreated';
 const AGENT_INVITE_TAB: V2InviteTab = 'agent';
+const PEOPLE_INVITE_TAB: V2InviteTab = 'people';
 // A sent direct message is durable in the room, but it is not a reply. Give
 // the person a clear, bounded wait state instead of leaving the composer to
 // imply that the agent is working. Two minutes is long enough for a normal
@@ -341,7 +343,15 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // "Connect an agent I already use" stays reachable at every width.
   const viewerId = currentUser?._id || null;
   const startsByMessageId = useMemo(() => {
-    const byMessage = new Map<string, Array<{ id: string; label: string }>>();
+    // A start that navigates must stay inside the app: an in-app /v2/ path
+    // only, never a protocol-relative or absolute URL from a payload. A start
+    // whose action this thread cannot perform is dropped rather than shown dead.
+    const isUsableStart = (start: V2Start) => {
+      if (start.href !== undefined) return /^\/v2\/[^/\\]/.test(start.href);
+      if (start.action !== undefined) return start.action === 'invite' && Boolean(onOpenInvite);
+      return true;
+    };
+    const byMessage = new Map<string, V2Start[]>();
     if (!viewerId) return byMessage;
     messages.forEach((message, index) => {
       const offered = message.payload?.kind === 'starts' ? message.payload.starts : undefined;
@@ -349,11 +359,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       const sentSince = new Set(messages.slice(index + 1)
         .filter((later) => later.user_id === viewerId)
         .map((later) => (later.content || '').trim()));
-      const open = offered.filter((start) => start && start.label && !sentSince.has(start.label));
+      const open = offered.filter((start) => start && start.label && isUsableStart(start)
+        && !sentSince.has(start.label));
       if (open.length > 0) byMessage.set(String(message.id), open);
     });
     return byMessage;
-  }, [messages, viewerId]);
+  }, [messages, viewerId, onOpenInvite]);
 
   // #891 surface 1: agent reachability at the moment of composing a mention.
   // Best-effort — a failed read renders nothing rather than something wrong,
@@ -1594,7 +1605,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             onReply={isReadOnly ? undefined : aimAtMessage}
             onThread={isReadOnly ? undefined : aimAtMessageThread}
             startsByMessageId={isReadOnly ? undefined : startsByMessageId}
-            onStart={isReadOnly ? undefined : (label) => { void handleSend(label); }}
+            onStart={isReadOnly ? undefined : (start) => {
+              if (start.href) { navigate(start.href); return; }
+              if (start.action === 'invite') { onOpenInvite?.(PEOPLE_INVITE_TAB); return; }
+              void handleSend(start.label);
+            }}
             startsDisabled={sending}
             onQuoteNavigate={onQuoteNavigate}
             onDecisionRuled={handleDecisionRuled}

@@ -4,6 +4,14 @@ import { V2Pod, V2PodMember } from './useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
 
+/** One button under a message whose payload is `kind: 'starts'`. */
+export interface V2Start {
+  id: string;
+  label: string;
+  href?: string;
+  action?: string;
+}
+
 export interface V2Message {
   id: string;
   pod_id: string;
@@ -66,9 +74,11 @@ export interface V2Message {
   // the `...raw` spread — declared here so consumers can read it typed.
   payload?: {
     kind?: string;
-    // kind 'starts': the offers Scout's welcome makes, rendered as buttons
-    // under that message (first session, direction B).
-    starts?: Array<{ id: string; label: string }>;
+    // kind 'starts': offers rendered as buttons under the message (first
+    // session, direction B). A plain start sends its label as the person's own
+    // message; `href` (an in-app /v2/ path) navigates, and `action: 'invite'`
+    // opens the pod's invite dialog (a new pod's next steps, 2026-10-15).
+    starts?: V2Start[];
     approvalId?: string;
     actionType?: string;
     summary?: string;

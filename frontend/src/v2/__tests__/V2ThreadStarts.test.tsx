@@ -7,7 +7,7 @@
 // can take the offer away before it is seen.
 import React, { useState } from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
 
@@ -84,7 +84,7 @@ const message = (id, userId, username, content, minute, extra = {}) => ({
   ...extra,
 });
 
-const Harness = ({ initial, sendSpy }) => {
+const Harness = ({ initial, sendSpy, onOpenInvite = undefined }) => {
   const [messages, setMessages] = useState(initial);
   const sendMessage = async (...args) => {
     sendSpy(...args);
@@ -102,14 +102,20 @@ const Harness = ({ initial, sendSpy }) => {
     error: null,
     refresh: jest.fn(),
   };
-  return <V2Thread detail={detail} />;
+  return <V2Thread detail={detail} onOpenInvite={onOpenInvite} />;
 };
 
-const renderThread = (initial, sendSpy = jest.fn()) => {
+const LocationProbe = () => {
+  const location = useLocation();
+  return <output data-testid="location">{`${location.pathname}${location.search}`}</output>;
+};
+
+const renderThread = (initial, sendSpy = jest.fn(), { onOpenInvite = undefined } = {}) => {
   render(
     <AuthContext.Provider value={authValue}>
       <MemoryRouter>
-        <Harness initial={initial} sendSpy={sendSpy} />
+        <Harness initial={initial} sendSpy={sendSpy} onOpenInvite={onOpenInvite} />
+        <LocationProbe />
       </MemoryRouter>
     </AuthContext.Provider>,
   );
@@ -189,5 +195,70 @@ describe("V2Thread — Scout's starts", () => {
     ]);
 
     expect(startsGroup()).not.toBeInTheDocument();
+  });
+});
+
+// A new pod's next steps (2026-10-15): the proposer's first message in a pod
+// it just created offers two starts that act instead of sending text. One opens
+// Bring your own aimed at this pod; the other opens this pod's invite dialog.
+const BYO_HREF = '/v2/agents/byo?pod=pod-1&name=maya-agent';
+const nextSteps = (starts) => ({
+  id: 'next-steps',
+  pod_id: 'pod-1',
+  user_id: 'scout-1',
+  content: 'This pod is ready. Two ways to get it going: bring in an agent you already use, or invite a teammate.',
+  message_type: 'text',
+  created_at: at(1),
+  user: { username: 'scout', isBot: true },
+  payload: { kind: 'starts', starts },
+});
+const CONNECT_HERE = { id: 'connect-agent-here', label: 'Connect an agent to this pod', href: BYO_HREF };
+const INVITE = { id: 'invite-teammate', label: 'Invite a teammate', action: 'invite' };
+
+describe("V2Thread — a new pod's next steps", () => {
+  test('the connect start navigates to Bring your own for this pod and sends no message', () => {
+    const sendSpy = renderThread([nextSteps([CONNECT_HERE, INVITE])], jest.fn(), { onOpenInvite: jest.fn() });
+
+    fireEvent.click(within(startsGroup()).getByRole('button', { name: 'Connect an agent to this pod' }));
+
+    expect(screen.getByTestId('location')).toHaveTextContent(BYO_HREF);
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  test("the invite start opens this pod's invite dialog on the people tab and sends no message", () => {
+    const onOpenInvite = jest.fn();
+    const sendSpy = renderThread([nextSteps([CONNECT_HERE, INVITE])], jest.fn(), { onOpenInvite });
+
+    fireEvent.click(within(startsGroup()).getByRole('button', { name: 'Invite a teammate' }));
+
+    expect(onOpenInvite).toHaveBeenCalledWith('people');
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  test('both stay after use: acting on one never takes the other away', () => {
+    renderThread([nextSteps([CONNECT_HERE, INVITE])], jest.fn(), { onOpenInvite: jest.fn() });
+
+    fireEvent.click(within(startsGroup()).getByRole('button', { name: 'Invite a teammate' }));
+
+    const labels = within(startsGroup()).getAllByRole('button').map((button) => button.textContent);
+    expect(labels).toEqual(['Connect an agent to this pod', 'Invite a teammate']);
+  });
+
+  test('an invite start is not shown where this thread cannot open the dialog', () => {
+    renderThread([nextSteps([CONNECT_HERE, INVITE])]);
+
+    const labels = within(startsGroup()).getAllByRole('button').map((button) => button.textContent);
+    expect(labels).toEqual(['Connect an agent to this pod']);
+  });
+
+  test('a start whose link leaves the app is never rendered', () => {
+    renderThread([nextSteps([
+      { id: 'a', label: 'Protocol-relative', href: '//evil.example/x' },
+      { id: 'b', label: 'Absolute', href: 'https://evil.example/x' },
+      { id: 'c', label: 'Double slash', href: '/v2//evil.example' },
+      { id: 'd', label: 'Unknown action', action: 'delete-pod' },
+    ])], jest.fn(), { onOpenInvite: jest.fn() });
+
+    expect(startsGroup()).toBeNull();
   });
 });

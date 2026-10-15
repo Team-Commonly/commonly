@@ -54,6 +54,7 @@ jest.mock('../../../services/attentionItemService', () => ({
   resolve: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../../models/Message', () => ({ updateOne: jest.fn().mockResolvedValue({}) }));
+jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn().mockResolvedValue({ id: 1 }) }));
 
 const mockEnqueue = jest.fn();
 jest.mock('../../../services/agentEventService', () => ({
@@ -135,6 +136,24 @@ describe('approving a proposal wakes the agent that proposed it', () => {
     await decide('approved', { actionType: 'create_pod', params: { name: 'Design Studio', type: 'chat' }, summary: 'Create a pod for design work' });
     expect(mockEnqueue).toHaveBeenCalledTimes(1);
     expect(mockEnqueue.mock.calls[0][0].payload.content).toContain('The pod "Design Studio" now exists (pod-new).');
+  });
+
+  test('create_pod: once the agent joined and posted the next steps, the cue says so and asks for one line', async () => {
+    mockPodCreate.mockResolvedValue({ _id: 'pod-new', name: 'Design Studio' });
+    mockInstallFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ displayName: 'Scout', config: {} }) });
+    mockInstallUpsert.mockResolvedValue({});
+    jest.requireMock('../../../services/agentIdentityService').getOrCreateAgentUser.mockResolvedValueOnce({ _id: 'scout-bot' });
+    await decide('approved', { actionType: 'create_pod', params: { name: 'Design Studio', type: 'chat' }, summary: 'Create a pod for design work' });
+    expect(jest.requireMock('../../../services/agentMessageService').postMessage).toHaveBeenCalledTimes(1);
+    const cue = mockEnqueue.mock.calls[0][0].payload.content;
+    expect(cue).toContain('already posted there as buttons');
+    expect(cue).toMatch(/one short line/);
+  });
+
+  test('create_pod: an agent that could not join posted nothing, and the cue claims no posted steps', async () => {
+    mockPodCreate.mockResolvedValue({ _id: 'pod-new', name: 'Design Studio' });
+    await decide('approved', { actionType: 'create_pod', params: { name: 'Design Studio', type: 'chat' }, summary: 'Create a pod for design work' });
+    expect(mockEnqueue.mock.calls[0][0].payload.content).not.toContain('already posted there as buttons');
   });
 
   test('a failed execution still wakes the proposer, with the failure to explain', async () => {

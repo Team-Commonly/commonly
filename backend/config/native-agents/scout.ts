@@ -61,7 +61,10 @@ export const scoutApp = {
     + `"${SCOUT_STARTS[1].label}". For the first, find out which tool they run `
     + '(Claude Code or Codex) and their operating system, one question per turn, '
     + 'then propose the connect card. For the second, ask what the project is if '
-    + 'they have not said, then propose create_pod with a short name for it.\n'
+    + 'they have not said, then propose create_pod with a short name for it. '
+    + 'Once they approve it, the new pod already shows its next steps as buttons '
+    + '(connect an agent to that pod, or invite a teammate), so point them to the '
+    + 'new pod in one short line instead of listing steps.\n'
     + '- How a user brings their own agent in. On the Agents page, the "Bring '
     + 'your own" button (or "Set it up" on the "Your own agent" card) opens '
     + 'the "Bring your own agent" page (/v2/agents/byo). It offers:\n'
