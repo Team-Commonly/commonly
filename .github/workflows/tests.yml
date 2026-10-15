@@ -304,13 +304,16 @@ jobs:
           # Nightly DB backups (2026-10-14): both jobs render, run on spot-pool (the only
           # pool with the GKE metadata server, so the only one where backup-sa's
           # Workload Identity works), and dump the same Postgres the backend uses.
-          test "$(yq -N 'select(.kind == "CronJob") | .metadata.name' /tmp/dev-rendered.yaml | sort | paste -sd, -)" = "mongodb-backup,postgres-backup"
-          test "$(yq -N 'select(.kind == "CronJob") | .spec.jobTemplate.spec.template.spec.nodeSelector."workload-tier"' /tmp/dev-rendered.yaml | sort -u)" = "spot"
+          test "$(yq -N 'select(.kind == "CronJob" and .metadata.labels.component == "backup") | .metadata.name' /tmp/dev-rendered.yaml | sort | paste -sd, -)" = "mongodb-backup,postgres-backup"
+          test "$(yq -N 'select(.kind == "CronJob" and .metadata.labels.component == "backup") | .spec.jobTemplate.spec.template.spec.nodeSelector."workload-tier"' /tmp/dev-rendered.yaml | sort -u)" = "spot"
           for pair in PG_HOST:PG_HOST PG_PORT:PGPORT PG_USER:PG_USER PG_DATABASE:PG_DATABASE; do
             backend=$(B="${pair%%:*}" yq -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .env[] | select(.name == strenv(B)) | .value' /tmp/dev-rendered.yaml)
             dump=$(D="${pair##*:}" yq -N 'select(.kind == "CronJob" and .metadata.name == "postgres-backup") | .spec.jobTemplate.spec.template.spec.initContainers[0].env[] | select(.name == strenv(D)) | .value' /tmp/dev-rendered.yaml)
             test -n "$backend" && test "$backend" = "$dump"
           done
+          # Stranger journey (2026-10-15): renders, and never retries (a retry would sign
+          # up a second account and could hide a flaky step behind a later pass).
+          test "$(yq -N 'select(.kind == "CronJob" and .metadata.name == "stranger-journey") | .spec.jobTemplate.spec.backoffLimit' /tmp/dev-rendered.yaml)" = "0"
 
       - name: Render Slack OAuth secret wiring
         run: |

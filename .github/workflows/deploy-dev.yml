@@ -307,6 +307,37 @@ jobs:
           echo "::error title=Chat unavailable on the new backend::$POD has pg/status=$STATUS and pg/messages=$ROUTE (401 means mounted, 404 unmounted). Chat history fails until the pod restarts: kubectl rollout restart deploy/backend -n $NAMESPACE"
           exit 1
 
+      # The stranger journey walks signup -> Scout's welcome -> a real question
+      # -> the connect card against the release just deployed
+      # (docs/runbooks/alerting.md#stranger-journey). It runs as a Job from the
+      # same CronJob as the daily run, so its result lands in Cloud Logging and
+      # pages the same way. This step waits so the deploy log carries the
+      # verdict, but never fails the deploy on it: the release is already
+      # serving, and the alert is the response path.
+      - name: Run the stranger journey against this release
+        if: success()
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -uo pipefail
+          if ! kubectl get cronjob stranger-journey -n "$NAMESPACE" >/dev/null 2>&1; then
+            echo "No stranger-journey CronJob in this release; skipping."
+            exit 0
+          fi
+          JOB="stranger-journey-deploy-${TAG}-${GITHUB_RUN_ATTEMPT}"
+          kubectl create job --from=cronjob/stranger-journey "$JOB" -n "$NAMESPACE"
+          for _ in $(seq 1 60); do
+            DONE=$(kubectl get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}{.status.failed}')
+            [ -n "$DONE" ] && break
+            sleep 10
+          done
+          kubectl logs "job/$JOB" -n "$NAMESPACE" --tail=12 || true
+          if [ "$(kubectl get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}')" = "1" ]; then
+            echo "::notice title=Stranger journey::passed on $TAG"
+          else
+            echo "::warning title=Stranger journey did not pass on $TAG::read the job log above; the journey alert pages on a failed step"
+          fi
+
       # Unhealthy workloads outside the deployed set are surfaced, never
       # failed on. Silence here is how litellm accumulated 561 restarts
       # without anyone noticing; failing on it is how five good deploys got

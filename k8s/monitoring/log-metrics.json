@@ -22,5 +22,11 @@
     "description": "LiteLLM access-log lines where an in-cluster platform caller (backend, commonly-bot) got a 4xx/5xx on /chat/completions. In-cluster callers use http://litellm:4000/chat/completions; public traffic only reaches /v1/... through the ingress, so internet probes are excluded. Counted after LiteLLM's own fallbacks, so it fires when a feature actually got no answer.",
     "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND textPayload=~\"\\\"POST /chat/completions HTTP/1.1\\\" [45][0-9][0-9]\"",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
+  },
+  {
+    "name": "stranger_journey_failures",
+    "description": "Stranger-journey runs that ended with result=fail (one JSON line per run from k8s/helm/commonly/files/stranger-journey.py). The failed step and its error are in the same log line.",
+    "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"journey\" AND jsonPayload.journey=\"stranger\" AND jsonPayload.result=\"fail\"",
+    "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   }
 ]

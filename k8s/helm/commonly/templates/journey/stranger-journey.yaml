@@ -1,0 +1,86 @@
+{{- if .Values.strangerJourney.enabled }}
+# Synthetic stranger journey (docs/runbooks/alerting.md#stranger-journey): a
+# fresh .invalid signup walks the first-open path against the public API. Runs
+# daily on this schedule and once after every Deploy Dev
+# (`kubectl create job --from=cronjob/stranger-journey`). The trigger reaches
+# the script as the Job's name, so a deploy run and a daily run read
+# differently in the logs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stranger-journey
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    component: stranger-journey
+data:
+  stranger-journey.py: |
+{{ .Files.Get "files/stranger-journey.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: stranger-journey
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    component: stranger-journey
+spec:
+  schedule: {{ .Values.strangerJourney.schedule | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # One attempt: a retry would sign up a second account and could hide a
+      # flaky step behind a later pass.
+      backoffLimit: 0
+      activeDeadlineSeconds: 900
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            {{- include "commonly.labels" . | nindent 12 }}
+            component: stranger-journey
+          annotations:
+            checksum/script: {{ .Files.Get "files/stranger-journey.py" | sha256sum }}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          containers:
+          - name: journey
+            image: "{{ .Values.strangerJourney.image.repository }}:{{ .Values.strangerJourney.image.tag }}"
+            imagePullPolicy: IfNotPresent
+            command: ["python3", "-I", "/journey/stranger-journey.py"]
+            env:
+            - name: JOURNEY_API
+              value: {{ .Values.strangerJourney.apiUrl | quote }}
+            - name: JOURNEY_TRIGGER
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['job-name']
+            volumeMounts:
+            - name: script
+              mountPath: /journey
+              readOnly: true
+            resources:
+              requests:
+                memory: "64Mi"
+                cpu: "50m"
+              limits:
+                memory: "128Mi"
+                cpu: "200m"
+          {{- with .Values.strangerJourney.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.strangerJourney.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumes:
+          - name: script
+            configMap:
+              name: stranger-journey
+{{- end }}

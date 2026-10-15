@@ -263,5 +263,33 @@
         }
       }
     ]
+  },
+  {
+    "displayName": "commonly-dev: the stranger journey failed",
+    "severity": "CRITICAL",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "A synthetic stranger could not get from signup to an approved connect card (or a step blew its budget). The failed step is in the journey's last log line. Runbook: docs/runbooks/alerting.md#stranger-journey"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "a journey run failed",
+        "conditionThreshold": {
+          "filter": "metric.type=\"logging.googleapis.com/user/stranger_journey_failures\" AND resource.type=\"k8s_container\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "300s",
+              "perSeriesAligner": "ALIGN_SUM",
+              "crossSeriesReducer": "REDUCE_SUM"
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 0,
+          "duration": "0s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
   }
 ]

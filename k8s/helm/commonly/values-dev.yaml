@@ -338,6 +338,19 @@ litellm:
       value: "dev"
       effect: "NoSchedule"
 
+strangerJourney:
+  # Daily at 14:17 UTC (07:17 PT) and after every Deploy Dev. Stateless and
+  # retry-free, so spot is fine; a reclaim mid-run fails the Job and pages,
+  # which is the correct reading of "we could not prove the path".
+  enabled: true
+  nodeSelector:
+    workload-tier: spot
+  tolerations:
+    - key: "workload-tier"
+      operator: "Equal"
+      value: "spot"
+      effect: "NoSchedule"
+
 backup:
   # Nightly dumps of Atlas (Mongo) and Aiven (Postgres) to GCS, enabled
   # 2026-10-14. Runbook: docs/runbooks/db-backup-restore.md. The bucket, the

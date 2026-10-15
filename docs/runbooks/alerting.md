@@ -149,3 +149,38 @@ moderation key is real. That guardrail's OpenAI key is still a placeholder,
 so it 401s every call on any model. Production platform calls send
 `injection-guard` only (`LLMSERVICE_GUARDRAILS`).
 
+### Stranger journey
+
+`stranger-journey` (CronJob, daily at 14:17 UTC, plus one run after every
+Deploy Dev) signs up a throwaway `eng-smoke-journey-*@ops.commonly.invalid`
+account and walks the first ten minutes against the public API. Every Growth
+funnel script drops `*.invalid`. The steps:
+
+| Step | Passes when | Budget |
+|---|---|---|
+| signup | register, then login returns a token | 15 s |
+| workspace | "My Workspace" exists | 60 s |
+| welcome | Scout's message carries `payload.kind: 'starts'` with both start labels | 90 s |
+| answer | Scout replies to Hamza's day-2 question (verbatim, 2026-09-12) | 60 s |
+| card | a `connect_local_agent` approval card within 3 Scout turns | 240 s |
+| approve | resolve returns 200 with `connectPath` `/v2/agents/byo?pod=<pod>&name=<seat>` | 15 s |
+| byo | the BYO page's load calls succeed for that pod, and the seat is listed in it | 15 s |
+
+Read the run:
+
+```bash
+kubectl get jobs -n commonly-dev -l component=stranger-journey --sort-by=.metadata.creationTimestamp | tail -3
+kubectl logs -n commonly-dev job/<name>        # one JSON line per step; the last is the verdict
+kubectl create job --from=cronjob/stranger-journey stranger-journey-manual-$(date +%s) -n commonly-dev   # re-run
+```
+
+Soft checks are logged and never fail a run, so one LLM wording change cannot
+page. They are whether Scout's answer points at the connect path, whether it
+mentions an SDK, and whether the seat is named after the user. A failed run
+sends two emails: this policy's, and the generic Job alert's
+`BackoffLimitExceeded`.
+
+Cleanup uninstalls the seat and deletes the pod and its messages. The bare
+account row stays until the synthetic-account purge exists. The `/register`
+limit is 10 per hour per client IP, and the cluster egress IP is not shared
+with anyone's laptop.
