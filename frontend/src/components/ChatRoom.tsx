@@ -181,7 +181,7 @@ const BASE_INTEGRATION_OPTIONS = [
         color: '#5865F2',
         hoverColor: '#4752C4',
         description: 'Connect Discord to sync messages with your server.',
-        logo: 'https://cdn.simpleicons.org/discord/5865F2',
+        mark: 'D',
         capabilities: ['gateway', 'summary', 'commands'],
     },
     {
@@ -190,7 +190,7 @@ const BASE_INTEGRATION_OPTIONS = [
         color: '#4A154B',
         hoverColor: '#3B1140',
         description: 'Install the Commonly app and choose channels.',
-        logo: 'https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png',
+        mark: 'S',
         capabilities: ['webhook', 'summary', 'commands'],
     },
     {
@@ -199,7 +199,7 @@ const BASE_INTEGRATION_OPTIONS = [
         color: '#00A2FF',
         hoverColor: '#0089D9',
         description: 'Connect your GroupMe bot to start syncing.',
-        logo: 'https://cdn.simpleicons.org/groupme/00A2FF',
+        mark: 'G',
         capabilities: ['webhook', 'commands', 'summary'],
     },
     {
@@ -208,7 +208,7 @@ const BASE_INTEGRATION_OPTIONS = [
         color: '#229ED9',
         hoverColor: '#1B86BC',
         description: 'Add the bot to a chat and run /commonly-enable.',
-        logo: 'https://telegram.org/img/t_logo.png',
+        mark: 'T',
         capabilities: ['webhook', 'summary', 'commands'],
     },
     {
@@ -217,7 +217,7 @@ const BASE_INTEGRATION_OPTIONS = [
         color: '#111827',
         hoverColor: '#0B0F1A',
         description: 'Pull posts from X into this pod.',
-        logo: 'https://cdn.simpleicons.org/x/111827',
+        mark: 'X',
         capabilities: ['polling', 'posts', 'summary'],
     },
     {
@@ -226,7 +226,7 @@ const BASE_INTEGRATION_OPTIONS = [
         color: '#E4405F',
         hoverColor: '#C13584',
         description: 'Pull Instagram posts into this pod.',
-        logo: 'https://cdn.simpleicons.org/instagram/E4405F',
+        mark: 'I',
         capabilities: ['polling', 'posts', 'summary'],
     },
 ];
@@ -3550,12 +3550,9 @@ const ChatRoom = () => {
                                                                     borderRadius: 2
                                                                 }}
                                                             >
-                                                                <Box
-                                                                    component="img"
-                                                                    src={item.logo}
-                                                                    alt={`${item.label} logo`}
-                                                                    sx={{ width: 18, height: 18 }}
-                                                                />
+                                                                <Box component="span" aria-hidden="true" sx={{ fontWeight: 700, fontSize: 17 }}>
+                                                                    {item.mark}
+                                                                </Box>
                                                             </Box>
                                                             <Box>
                                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>

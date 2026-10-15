@@ -32,4 +32,11 @@ test('HTML and inherited NGINX locations enforce the same image source policy', 
   // (which also adds Cache-Control) each need their own copy.
   assert.equal([...config.matchAll(policy)].length, 3);
   assert.doesNotMatch(config, /img-src[^"\n]*\*/);
+  const imagePolicies = [...config.matchAll(/Content-Security-Policy "img-src ([^"\n]+)"/g)];
+  assert.equal(imagePolicies.length, 3);
+  for (const [, sources] of imagePolicies) {
+    assert.deepEqual(sources.split(/\s+/), ["'self'", '$upload_image_origins', 'data:', 'blob:']);
+  }
+  const chatRoom = await readFile(resolve(frontendDir, 'src/components/ChatRoom.tsx'), 'utf8');
+  assert.doesNotMatch(chatRoom, /logo:\s*['"]https?:\/\//);
 });
