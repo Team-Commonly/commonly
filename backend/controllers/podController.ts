@@ -552,6 +552,21 @@ exports.joinPod = async (req: any, res: any) => {
         });
       }
 
+      const joiningUser = await User.findById(userId).select('isBot botType botMetadata').lean();
+      if (joiningUser?.isBot || joiningUser?.botType) {
+        const { assertInstalledAgentMayJoinPod } = require('../services/outsiderGrantAgentJoinPolicy');
+        try {
+          await assertInstalledAgentMayJoinPod(
+            pod._id, joiningUser.botMetadata?.agentName, joiningUser.botMetadata?.instanceId,
+          );
+        } catch (joinError: any) {
+          if (joinError?.code === 'outsider_grant_non_native_agent_join') {
+            return res.status(403).json({ code: joinError.code, message: joinError.message });
+          }
+          throw joinError;
+        }
+      }
+
       await Pod.updateOne(
         { _id: pod._id },
         {

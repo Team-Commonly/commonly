@@ -14,6 +14,8 @@
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { createHash } = require('crypto');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { assertAgentRuntimeMayJoinPod } = require('./outsiderGrantAgentJoinPolicy');
 
 interface HireArgs {
   agentName: string;
@@ -76,6 +78,8 @@ export const hirePersona = async ({ agentName, userId, podId }: HireArgs): Promi
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { buildInstallationConfig } = require('../scripts/seed-native-agents');
+  const installationConfig = buildInstallationConfig(manifest);
+  await assertAgentRuntimeMayJoinPod(podId, installationConfig?.runtime?.runtimeType);
   await AgentInstallation.findOneAndUpdate(
     { agentName: key, podId, instanceId },
     {
@@ -84,7 +88,7 @@ export const hirePersona = async ({ agentName, userId, podId }: HireArgs): Promi
         version: '1.0.0',
         displayName: manifest.displayName,
         scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
-        config: buildInstallationConfig(manifest),
+        config: installationConfig,
       },
       $setOnInsert: {
         agentName: key,

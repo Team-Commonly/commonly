@@ -35,11 +35,15 @@ jest.mock('../../../models/AgentProfile', () => ({
 jest.mock('../../../models/User', () => ({
   findById: jest.fn(),
 }));
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
+}));
 
 const Pod = require('../../../models/Pod');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentProfile = require('../../../models/AgentProfile');
 const User = require('../../../models/User');
+const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
 const registryRoutes = require('../../../routes/registry');
 
 const app = express();
@@ -85,7 +89,72 @@ const setPod = (over = {}) => {
 describe('agent config PATCH — installer gate', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    podHasOutsiderWritableGrant.mockResolvedValue(false);
     setCallerRole('user');
+  });
+
+  it('refuses a non-admin runtime switch before saving any fan-out row', async () => {
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    const primary = installation({
+      installedBy: MEMBER,
+      config: new Map([['runtime', { runtimeType: 'native' }]]),
+    });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', config: { runtime: { runtimeType: 'opencode' } } });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('runtime_type_change');
+    expect(primary.save).not.toHaveBeenCalled();
+    expect(primary.config.get('runtime')).toEqual({ runtimeType: 'native' });
+    expect(podHasOutsiderWritableGrant).not.toHaveBeenCalled();
+  });
+
+  it('allows an existing non-native installation to reactivate once the grant is revoked', async () => {
+    const primary = installation({
+      installedBy: MEMBER,
+      status: 'paused',
+      config: new Map([['runtime', { runtimeType: 'opencode' }]]),
+    });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', status: 'active' });
+    expect(res.status).toBe(200);
+    expect(primary.save).toHaveBeenCalledTimes(1);
+    expect(primary.status).toBe('active');
+  });
+
+  it('refuses the entire runtime fan-out when a later pod holds a live grant', async () => {
+    podHasOutsiderWritableGrant.mockImplementation(async (podId) => String(podId) === 'pod-2');
+    const primary = installation({ installedBy: MEMBER, config: new Map([
+      ['runtime', { runtimeType: 'native' }],
+    ]) });
+    const peer = installation({ podId: 'pod-2', installedBy: MEMBER, config: new Map([
+      ['runtime', { runtimeType: 'native' }],
+    ]) });
+    setCallerRole('admin');
+    setPod();
+    Pod.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([
+      { _id: 'pod-1', members: [{ userId: MEMBER }] },
+      { _id: 'pod-2', members: [{ userId: MEMBER }] },
+    ]) }) });
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary, peer]);
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', config: { runtime: { runtimeType: 'opencode' } } });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('outsider_grant_non_native_agent_join');
+    expect(primary.save).not.toHaveBeenCalled();
+    expect(peer.save).not.toHaveBeenCalled();
   });
 
   it('refuses a non-installer member changing config, and leaves the row alone', async () => {

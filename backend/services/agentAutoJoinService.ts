@@ -2,6 +2,7 @@ import Pod from '../models/Pod';
 import Activity from '../models/Activity';
 import { AgentInstallation } from '../models/AgentRegistry';
 import AgentIdentityService from './agentIdentityService';
+import { assertAgentRuntimeMayJoinPod, runtimeTypeFromConfig } from './outsiderGrantAgentJoinPolicy';
 
 const MAX_TOTAL_INSTALLS = Math.max(1, parseInt(process.env.AGENT_AUTO_JOIN_MAX_TOTAL || '200', 10));
 const MAX_PER_SOURCE = Math.max(1, parseInt(process.env.AGENT_AUTO_JOIN_MAX_PER_SOURCE || '25', 10));
@@ -58,7 +59,9 @@ class AgentAutoJoinService {
           continue;
         }
 
-        const sourceConfig = (sourceInstall.config || {}) as Record<string, unknown>;
+        const sourceConfig = (sourceInstall.config instanceof Map
+          ? Object.fromEntries(sourceInstall.config)
+          : sourceInstall.config || {}) as Record<string, unknown>;
         const sourceAutonomy = (sourceConfig.autonomy || {}) as Record<string, unknown>;
         const mergedConfig = {
           ...sourceConfig,
@@ -72,6 +75,8 @@ class AgentAutoJoinService {
         };
 
         try {
+          // eslint-disable-next-line no-await-in-loop
+          await assertAgentRuntimeMayJoinPod((pod as Record<string, unknown>)._id, runtimeTypeFromConfig(sourceInstall.config));
           // eslint-disable-next-line no-await-in-loop
           await AgentInstallation.install(String(sourceInstall.agentName), (pod as { _id: import('mongoose').Types.ObjectId })._id, {
             version: String(sourceInstall.version || '1.0.0'),

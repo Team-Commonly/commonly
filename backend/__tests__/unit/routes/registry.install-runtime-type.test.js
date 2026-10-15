@@ -9,6 +9,9 @@ jest.mock('../../../models/AgentRegistry', () => ({
     install: jest.fn(),
   },
 }));
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
+}));
 
 jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(),
@@ -66,6 +69,7 @@ const AgentProfile = require('../../../models/AgentProfile');
 const AgentTemplate = require('../../../models/AgentTemplate');
 const Activity = require('../../../models/Activity');
 const AgentIdentityService = require('../../../services/agentIdentityService');
+const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
 const FirstContactService = require('../../../services/firstContactService');
 const installRouter = require('../../../routes/registry/install');
 
@@ -110,6 +114,7 @@ describe('registry install runtimeType fallback', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    podHasOutsiderWritableGrant.mockResolvedValue(false);
 
     Pod.findById.mockReturnValue(buildLeanChain({
       _id: 'pod-1',
@@ -243,6 +248,30 @@ describe('registry install runtimeType fallback', () => {
       }),
     );
     expect(res.status).not.toHaveBeenCalledWith(500);
+  });
+
+  it('refuses a non-native install into a protected pod before any installation or membership write', async () => {
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'sample-agent', displayName: 'Sample Agent', latestVersion: '1.0.0',
+      manifest: persistedManifest({
+        name: 'sample-agent', version: '1.0.0', context: { required: [] },
+        runtime: { type: 'standalone', runtimeType: 'opencode' },
+      }),
+    });
+    const req = {
+      body: { agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [] },
+      user: { id: 'user-1', username: 'installer' }, userId: 'user-1',
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await installHandler(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'outsider_grant_non_native_agent_join',
+      message: expect.stringContaining('Use a separate pod'),
+    }));
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+    expect(AgentIdentityService.ensureAgentInPod).not.toHaveBeenCalled();
   });
 
   it('does not copy manifest.runtime.type deployment metadata into runtimeType', async () => {

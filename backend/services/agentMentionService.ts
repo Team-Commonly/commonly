@@ -14,6 +14,8 @@ const ThreadUserState = require('../models/pg/ThreadUserState') as {
 };
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { assertAgentRuntimeMayJoinPod } = require('./outsiderGrantAgentJoinPolicy');
 // eslint-disable-next-line global-require
 const chatSummarizerService = require('./chatSummarizerService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -350,6 +352,10 @@ const autoJoinAgentToPod = async (
       return false;
     }
   }
+
+  // This auto-join creates a row without a native runtime declaration. Refuse
+  // before either the installation or membership write in a protected pod.
+  await assertAgentRuntimeMayJoinPod(podId, undefined);
 
   // Upsert the AgentInstallation (heartbeat off — agent-dm and pulled-
   // in agents are reactive, not scheduled). Idempotent.

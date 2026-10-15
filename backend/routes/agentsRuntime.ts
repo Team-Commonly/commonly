@@ -46,6 +46,10 @@ const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit
 const { resolveDiscordBotToken } = require('../utils/discordBotToken');
 const { rateLimitObserver } = require('../middleware/rateLimitObserver');
 const { adapterForRuntimeBinding } = require('../services/grantBrokerConfinement');
+const {
+  assertAgentRuntimeMayJoinPod,
+  runtimeTypeFromConfig,
+} = require('../services/outsiderGrantAgentJoinPolicy');
 
 // ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
 // Token-global (covers any pod the token is valid for). Complementary to the
@@ -2921,6 +2925,7 @@ router.post('/posts', agentRuntimeAuth, async (req: any, res: any) => {
  */
 async function ensureCommonlyBotInstalled(podId: any, installedBy: any) {
   try {
+    await assertAgentRuntimeMayJoinPod(podId, undefined);
     await AgentInstallation.install('commonly-bot', podId, {
       version: '1.0.0',
       config: {},
@@ -3140,13 +3145,24 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
         return refusePodNameCollision('caller is not a member and the pod is not directly joinable');
       }
 
+      const sourceInstall = req.agentInstallation || (req.agentInstallations || [])[0];
+      const sourceConfig = sourceInstall?.config instanceof Map
+        ? Object.fromEntries(sourceInstall.config) : sourceInstall?.config || {};
+      try {
+        await assertAgentRuntimeMayJoinPod(existingPod._id, runtimeTypeFromConfig(sourceConfig));
+      } catch (joinError: any) {
+        if (joinError?.code === 'outsider_grant_non_native_agent_join') {
+          return res.status(403).json({ code: joinError.code, message: joinError.message });
+        }
+        throw joinError;
+      }
+
       if (!isMember) {
         existingPod.members.push(agentUser._id);
         await existingPod.save();
         await existingPod.populate('members', 'username profilePicture');
       }
       // Ensure an AgentInstallation exists so the agent appears in the Agents section
-      const sourceInstall = req.agentInstallation || (req.agentInstallations || [])[0];
       if (sourceInstall) {
         try {
           const existing = await AgentInstallation.findOne({
@@ -3158,10 +3174,10 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
             await AgentInstallation.install(sourceInstall.agentName, existingPod._id, {
               version: sourceInstall.version || '1.0.0',
               config: {
-                ...(sourceInstall.config || {}),
+                ...sourceConfig,
                 heartbeat: { enabled: false },
                 autonomy: {
-                  ...(sourceInstall.config?.autonomy || {}),
+                  ...(sourceConfig.autonomy || {}),
                   autoJoined: true,
                   autoJoinedFromPodId: sourceInstall.podId?.toString(),
                   autoJoinSource: 'pod-dedup',
@@ -3290,6 +3306,17 @@ router.post('/pods/:podId/self-install', phase4RateLimit, agentRuntimeAuth, asyn
       return res.status(403).json({ message: 'No active installation found for this agent' });
     }
 
+    const sourceConfig = sourceInstall.config instanceof Map
+      ? Object.fromEntries(sourceInstall.config) : sourceInstall.config || {};
+    try {
+      await assertAgentRuntimeMayJoinPod(podId, runtimeTypeFromConfig(sourceConfig));
+    } catch (joinError: any) {
+      if (joinError?.code === 'outsider_grant_non_native_agent_join') {
+        return res.status(403).json({ code: joinError.code, message: joinError.message });
+      }
+      throw joinError;
+    }
+
     const alreadyInstalled = await AgentInstallation.isInstalled(
       sourceInstall.agentName,
       podId,
@@ -3300,11 +3327,11 @@ router.post('/pods/:podId/self-install', phase4RateLimit, agentRuntimeAuth, asyn
     }
 
     const mergedConfig = {
-      ...(sourceInstall.config || {}),
+      ...sourceConfig,
       // Agent self-installed pods never get heartbeat — prevents cascading heartbeat explosion
       heartbeat: { enabled: false },
       autonomy: {
-        ...(sourceInstall.config?.autonomy || {}),
+        ...(sourceConfig.autonomy || {}),
         autoJoined: true,
         autoJoinedFromPodId: sourceInstall.podId?.toString(),
         autoJoinSource: 'self-install',

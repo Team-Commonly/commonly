@@ -19,6 +19,11 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const { MONGO_BINARY_VERSION, MONGOMS_DOWNLOAD_DIR } = require('../../utils/mongoBinaryConfig');
 const jwt = require('jsonwebtoken');
 
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
+}));
+const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
+
 // Models
 const User = require('../../../models/User');
 const Pod = require('../../../models/Pod');
@@ -93,6 +98,7 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
+  podHasOutsiderWritableGrant.mockResolvedValue(false);
   // Clean up agent users and installations; restore pod to original membership
   await User.deleteMany({ isBot: true });
   await AgentInstallation.deleteMany({});
@@ -102,6 +108,23 @@ afterEach(async () => {
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe('POST /api/registry/admin/agents/claude-code/session-token', () => {
+  test('refuses an admin seat attach in a protected pod before any identity, membership, install, or token write', async () => {
+    podHasOutsiderWritableGrant.mockResolvedValueOnce(true);
+    const before = await Pod.findById(testPod._id).lean();
+    const res = await request(app)
+      .post('/api/registry/admin/agents/claude-code/session-token')
+      .send({ podId: testPod._id.toString(), instanceId: 'protected-pod' });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual(expect.objectContaining({
+      code: 'outsider_grant_non_native_agent_join',
+      message: expect.stringContaining('Use a separate pod'),
+    }));
+    expect((await Pod.findById(testPod._id)).members.map(String)).toEqual(before.members.map(String));
+    expect(await User.findOne({ isBot: true, botType: 'agent' })).toBeNull();
+    expect(await AgentInstallation.findOne({ podId: testPod._id, instanceId: 'protected-pod' })).toBeNull();
+  });
+
   test('returns 200 with token starting cm_agent_ and expiresAt ~24h from now', async () => {
     const before = Date.now();
     const res = await request(app)

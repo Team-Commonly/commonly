@@ -22,10 +22,11 @@
 
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(), verify: jest.fn(), decode: jest.fn() }));
 
+const mockSourceConfig = { value: {} };
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
   req.agentUser = { _id: 'bot-1' };
   req.agentInstallation = {
-    agentName: 'openclaw', instanceId: 'nova', version: '1.0.0', config: {}, scopes: [],
+    agentName: 'openclaw', instanceId: 'nova', version: '1.0.0', config: mockSourceConfig.value, scopes: [],
   };
   next();
 });
@@ -71,10 +72,14 @@ jest.mock('../../../models/Activity', () => ({}));
 jest.mock('../../../models/User', () => ({ find: jest.fn(), findById: jest.fn() }));
 jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({ find: jest.fn(), findOne: jest.fn() }));
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
+}));
 
 const express = require('express');
 const request = require('supertest');
 const router = require('../../../routes/agentsRuntime');
+const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
 
 const app = express();
 app.use(express.json());
@@ -105,6 +110,8 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFoundPod.value = null;
+    mockSourceConfig.value = {};
+    podHasOutsiderWritableGrant.mockResolvedValue(false);
   });
 
   describe.each(['agent-room', 'agent-dm'])('name collides with an existing %s', (type) => {
@@ -150,6 +157,29 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
     mockFoundPod.value = existing('agent-admin', asMember);
     const res = await createPod();
     expect(res.status).not.toBe(403);
+  });
+
+  test('a protected pod refuses non-native dedup before member and install writes', async () => {
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    mockSourceConfig.value = new Map([['runtime', { runtimeType: 'opencode' }]]);
+    mockFoundPod.value = existing('chat', asMember, { joinPolicy: 'invite-only' });
+    const res = await createPod();
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('outsider_grant_non_native_agent_join');
+    expect(podSave).not.toHaveBeenCalled();
+    expect(mockInstall).not.toHaveBeenCalled();
+  });
+
+  test('a native Map config keeps its runtime declaration when copied into a protected pod', async () => {
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    mockSourceConfig.value = new Map([['runtime', { runtimeType: 'native' }]]);
+    mockFoundPod.value = existing('chat', asMember, { joinPolicy: 'invite-only' });
+    const res = await createPod();
+    expect(res.status).toBe(200);
+    expect(mockInstall).toHaveBeenCalledWith('openclaw', mockFoundPod.value._id, expect.objectContaining({
+      config: expect.objectContaining({ runtime: { runtimeType: 'native' } }),
+    }));
+    expect(mockInstall.mock.calls.map(([agentName]) => agentName)).not.toContain('commonly-bot');
   });
 
   // ------------------------------------------------------------------

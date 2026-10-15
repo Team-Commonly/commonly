@@ -49,6 +49,10 @@ jest.mock('../../../services/agentIdentityService', () => ({
   // Mirror the production set so the test exercises the real guard.
   DM_POD_TYPES_GUARD: new Set(['agent-room', 'agent-dm']),
 }));
+jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({
+  assertInstalledAgentMayJoinPod: jest.fn(),
+}));
+const { assertInstalledAgentMayJoinPod } = require('../../../services/outsiderGrantAgentJoinPolicy');
 
 describe('podController', () => {
   beforeEach(() => {
@@ -398,6 +402,30 @@ describe('podController', () => {
       },
     );
     expect(res.status).not.toHaveBeenCalledWith(403);
+  });
+
+  it('joinPod refuses a bot before membership when its installation cannot enter a protected pod', async () => {
+    const pod = {
+      _id: 'chat-1', type: 'chat', members: ['human-id'],
+      joinPolicy: 'open', publicRead: true, communityListed: true,
+    };
+    Pod.findById.mockResolvedValue(pod);
+    User.findById.mockReturnValue({ select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        isBot: true, botMetadata: { agentName: 'outside-agent', instanceId: 'default' },
+      }),
+    }) });
+    assertInstalledAgentMayJoinPod.mockRejectedValue(Object.assign(new Error('Use a separate pod'), {
+      code: 'outsider_grant_non_native_agent_join',
+    }));
+    const req = { params: { id: 'chat-1' }, userId: 'bot-id', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.joinPod(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'outsider_grant_non_native_agent_join',
+    }));
+    expect(Pod.updateOne).not.toHaveBeenCalled();
   });
 
   it('getPodsByType filters agent-room to caller membership for non-admins', async () => {

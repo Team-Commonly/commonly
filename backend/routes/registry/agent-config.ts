@@ -27,6 +27,7 @@ const {
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
 const { configWriteRefusal, runtimeKeepingType } = require('../../services/configWriteGuard');
+const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 
 const agentConfigRouter = express.Router();
 
@@ -261,6 +262,23 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     if (writeRefusal) {
       const { status: refusalStatus, ...refusalBody } = writeRefusal;
       return res.status(refusalStatus).json(refusalBody);
+    }
+    // Decide for every fan-out target before saving any row. A runtime object
+    // without runtimeType also removes an existing native declaration here.
+    if (config?.runtime !== undefined || status === 'active') {
+      try {
+        for (const targetInstallation of installationsToUpdate) {
+          const stored = normalizeConfigMap(targetInstallation.config) || {};
+          const runtime = config?.runtime !== undefined ? config.runtime : stored.runtime;
+          // eslint-disable-next-line no-await-in-loop
+          await assertAgentRuntimeMayJoinPod(targetInstallation.podId, runtime?.runtimeType);
+        }
+      } catch (joinError: any) {
+        if (joinError?.code === 'outsider_grant_non_native_agent_join') {
+          return res.status(403).json({ code: joinError.code, message: joinError.message });
+        }
+        throw joinError;
+      }
     }
 
     for (const targetInstallation of installationsToUpdate) {

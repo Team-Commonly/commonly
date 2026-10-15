@@ -9,6 +9,8 @@ import crypto, { createHash } from 'crypto';
 import mongoose from 'mongoose';
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+import User from '../models/User';
+import { assertInstalledAgentMayJoinPod } from '../services/outsiderGrantAgentJoinPolicy';
 const router = express.Router();
 const auth = require('../middleware/auth');
 const Pod = require('../models/Pod');
@@ -247,6 +249,19 @@ router.post('/invites/:token/redeem', inviteWriteRateLimit, auth, async (req: an
       (m: any) => String(m?._id || m) === String(userId),
     );
     if (!alreadyMember) {
+      const joiningUser = await User.findById(userId).select('isBot botType botMetadata').lean();
+      if (joiningUser?.isBot || joiningUser?.botType) {
+        try {
+          await assertInstalledAgentMayJoinPod(
+            pod._id, joiningUser.botMetadata?.agentName, joiningUser.botMetadata?.instanceId,
+          );
+        } catch (joinError: any) {
+          if (joinError?.code === 'outsider_grant_non_native_agent_join') {
+            return res.status(403).json({ code: joinError.code, message: joinError.message });
+          }
+          throw joinError;
+        }
+      }
       pod.members.push(userId);
       pod.updatedAt = new Date();
       await pod.save();
