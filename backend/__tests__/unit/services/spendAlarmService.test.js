@@ -80,6 +80,50 @@ describe('userSpendForDay', () => {
   });
 });
 
+describe('sandbox seconds (TASK-266)', () => {
+  test('are priced per run, once, and alone can cross the line', async () => {
+    const withSandbox = (userId, seconds, turns) => ({ ...run(userId, turns), sandboxSeconds: seconds });
+    await AgentRun.create([
+      // 100,000 s of sandbox and a 2-turn run: priced once, not once per turn.
+      withSandbox(USER_A, 100_000, [
+        { model: 'deepseek-v4-flash', promptTokens: 0, completionTokens: 0 },
+        { model: 'deepseek-v4-flash', promptTokens: 0, completionTokens: 0 },
+      ]),
+      // A run with no turns still costs its sandbox seconds.
+      withSandbox(USER_B, 10, []),
+    ]);
+
+    const rows = await spend.userSpendForDay(NOW);
+    const a = rows.find((r) => r.userId === String(USER_A));
+    expect(a.sandboxSeconds).toBe(100_000);
+    // Literal, worked by hand: 100,000 s x (2 vCPU x $0.000014 + 4 GiB x $0.0000045).
+    expect(a.usd).toBeCloseTo(4.6, 6);
+    expect(a.runs).toBe(1);
+    expect(rows.find((r) => r.userId === String(USER_B)).sandboxSeconds).toBe(10);
+  });
+});
+
+describe('the $2 line with sandbox time in it (literal amounts, independent of the exported rate)', () => {
+  const alarmLines = (warn) => warn.mock.calls
+    .map(([line]) => { try { return JSON.parse(line); } catch (_) { return null; } })
+    .filter((line) => line && line.alarm === 'user_spend');
+  const sonnetOut = (tokens) => [{ model: 'claude-sonnet-5-5', promptTokens: 0, completionTokens: tokens }];
+
+  test.each([
+    // $1.30 of model output + 20,000 s of sandbox ($0.92) = $2.22: over the line.
+    [20_000, 2.22, 1],
+    // $1.30 + 15,000 s ($0.69) = $1.99: under it.
+    [15_000, 1.99, 0],
+  ])('$1.30 of model spend plus %i sandbox seconds is $%f, %i alarm(s)', async (seconds, usd, alarms) => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await AgentRun.create({ ...run(USER_A, sonnetOut(130_000)), sandboxSeconds: seconds });
+    const [row] = await spend.userSpendForDay(NOW);
+    expect(row.usd).toBeCloseTo(usd, 6);
+    await spend.checkSpend(NOW);
+    expect(alarmLines(warn)).toHaveLength(alarms);
+  });
+});
+
 describe('checkSpend', () => {
   const alarmLines = (warn) => warn.mock.calls
     .map(([line]) => { try { return JSON.parse(line); } catch (_) { return null; } })
@@ -98,7 +142,7 @@ describe('checkSpend', () => {
     const lines = alarmLines(warn);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({
-      alarm: 'user_spend', day: '2026-10-15', userId: String(USER_A), usd: 3, thresholdUsd: 2, runs: 1,
+      alarm: 'user_spend', day: '2026-10-15', userId: String(USER_A), usd: 3, thresholdUsd: 2, runs: 1, sandboxSeconds: 0,
     });
   });
 

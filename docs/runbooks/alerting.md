@@ -237,7 +237,7 @@ user, the amount and the token split.
 It reports and never blocks. The per-user run ceiling and the per-install
 caps are what stop runs. Hosted turns and the E2B sandbox have no
 provider-side spending cap, so this alert is the warning before the bill.
-Sandbox seconds join the sum when TASK-266 records them on the run.
+Sandbox seconds (`AgentRun.sandboxSeconds`, TASK-266) are in the sum, priced at E2B's default sandbox rate (`SANDBOX_USD_PER_SECOND`).
 
 When it fires:
 

@@ -18,6 +18,12 @@ createNamespace: true
 errorTracking:
   enabled: false
 
+# The run-code sandbox for native turns (E2B, TASK-266). Off by default: on,
+# the api-keys ExternalSecret references commonly-dev-e2b-api-key, and ESO
+# rejects the whole secret if that key is missing.
+hostedSandbox:
+  enabled: false
+
 # Paid tier (Stripe). Opt-in, and OFF by default so self-hosted deployments
 # never reach for billing credentials they do not have.
 #

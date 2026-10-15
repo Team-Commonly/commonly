@@ -79,6 +79,8 @@ export interface IAgentRun extends Document {
   status: AgentRunStatus;
   turns: IAgentRunTurn[];
   totalTokens: number;
+  /** Seconds the turn's run-code sandbox ran (TASK-266); absent when no code ran. */
+  sandboxSeconds?: number;
   startedAt: Date;
   completedAt?: Date;
   errorKind?: AgentRunErrorKind;
@@ -134,6 +136,7 @@ const AgentRunSchema = new Schema<IAgentRun>(
     },
     turns: { type: [AgentRunTurnSchema], default: [] },
     totalTokens: { type: Number, default: 0 },
+    sandboxSeconds: { type: Number },
     startedAt: { type: Date, default: Date.now },
     completedAt: { type: Date },
     errorKind: {

@@ -8,6 +8,12 @@ global:
 errorTracking:
   enabled: true
 
+# commonly-dev-e2b-api-key has one enabled version (Cofounder, 2026-10-15).
+# Tools stay opt-in per install, so this offers code runs to nobody until an
+# agent declares commonly_run_code.
+hostedSandbox:
+  enabled: true
+
 # All three commonly-dev-stripe-* secrets verified present with an ENABLED
 # version on 2026-08-06 before this was flipped. Do not set true anywhere the
 # secrets are absent: an empty secret container passes `describe` and still

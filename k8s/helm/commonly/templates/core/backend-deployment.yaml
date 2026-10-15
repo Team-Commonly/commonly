@@ -76,6 +76,16 @@ spec:
         - name: SENTRY_RELEASE
           value: {{ .Values.backend.image.tag | quote }}
         {{- end }}
+        {{- if .Values.hostedSandbox.enabled }}
+        # Native turns that declare commonly_run_code run it in an E2B sandbox
+        # (services/turnSandboxService.ts). Unset, the tool is never offered.
+        - name: E2B_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: e2b-api-key
+              optional: true
+        {{- end }}
         {{- if .Values.backend.env.registrationInviteOnly }}
         - name: REGISTRATION_INVITE_ONLY
           value: {{ .Values.backend.env.registrationInviteOnly | quote }}
