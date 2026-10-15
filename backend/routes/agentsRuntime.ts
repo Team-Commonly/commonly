@@ -25,6 +25,7 @@ const AgentEventService = require('../services/agentEventService');
 const HostedRuntimeMeter = require('../services/hostedRuntimeService');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
+const { maybePostFirstAgentIntro } = require('../services/firstAgentIntroService');
 const AgentThreadService = require('../services/agentThreadService');
 const PodContextService = require('../services/podContextService');
 const GlobalModelConfigService = require('../services/globalModelConfigService');
@@ -581,6 +582,13 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
       || 'default';
     if (!agentName) {
       return res.status(403).json({ message: 'Agent token not authorized for events' });
+    }
+    // The event poll is the listener's first usable check-in. /installations
+    // can be called during token verification before a process is running.
+    try {
+      await maybePostFirstAgentIntro(agentName, instanceId, req.agentInstallations || []);
+    } catch (introError: unknown) {
+      console.warn('[first-agent-intro] post failed', (introError as Error).message);
     }
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
     const installationPodIds = (req.agentInstallations || [])

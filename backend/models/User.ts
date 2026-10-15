@@ -195,6 +195,7 @@ export interface IUser extends Document {
     firstStartId?: string;
     firstStartAt?: Date;
     byoOpenedAt?: Date;
+    firstAgentIntroAt?: Date;
   };
   createdAt: Date;
   // Instance methods
@@ -407,6 +408,7 @@ const userSchema = new Schema<IUser>({
     firstStartId: { type: String },
     firstStartAt: { type: Date },
     byoOpenedAt: { type: Date },
+    firstAgentIntroAt: { type: Date },
   },
   lastDigestSent: { type: Date },
   createdAt: { type: Date, default: Date.now },
