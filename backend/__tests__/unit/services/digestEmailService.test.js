@@ -90,6 +90,7 @@ describe('digestEmailService', () => {
     const freshUser = await User.findById(user._id).select('+digestUnsubscribeToken');
     expect(freshUser.emailPreferences.dailyDigest).toBe(true);
     expect(freshUser.digestUnsubscribeToken).toMatch(/^[a-f0-9]{48}$/);
+    expect(freshUser.lastDigestSent).toBeInstanceOf(Date);
   });
 
   it('never sends an empty digest', async () => {
@@ -159,6 +160,8 @@ describe('digestEmailService', () => {
     expect(mockSendEmail).toHaveBeenCalledTimes(2);
     expect((await Summary.findById(firstDigest._id)).metadata.emailedAt).toBeInstanceOf(Date);
     expect((await Summary.findById(secondDigest._id)).metadata.emailedAt).toBeInstanceOf(Date);
+    expect((await User.findById(firstUser._id)).lastDigestSent).toBeUndefined();
+    expect((await User.findById(secondUser._id)).lastDigestSent).toBeInstanceOf(Date);
 
     await digestEmailService.sendDigestEmails([
       runEntry(firstDigest),
