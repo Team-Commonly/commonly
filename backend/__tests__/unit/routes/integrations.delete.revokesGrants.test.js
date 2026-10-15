@@ -362,9 +362,12 @@ describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
     // whole on a row with no owner left to ask. What the 409 closes is the gap
     // before anyone looks, not an inability to clean up.
     //
-    // The row carries no `revokePage` entry (the catalogue is empty on this
-    // head), so this is also the arm that says the page copied onto the row is
-    // what finishes a removal whose entry is gone.
+    // The row names an entry the shipped catalogue does not carry, so this is
+    // also the arm that says the page copied onto the row is what finishes a
+    // removal whose entry is gone. It seeded `entryId: 'linear'` until #2230
+    // and passed only because the row's page and the Linear entry's page were
+    // the same string; once the entry's page changed, `revokeAt` came from the
+    // entry (`connectionRemovalService.ts:124`) and the arm went red (Vera).
     const page = 'https://linear.app/settings/security';
     User.findById.mockResolvedValue({ _id: 'admin-1', role: 'admin' });
     const connection = await Integration.create({
@@ -373,7 +376,7 @@ describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
       scope: 'user',
       createdBy: 'bbbbbbbbbbbbbbbbbbbbbb09',
       isActive: true,
-      config: { entryId: 'linear', credentialRef: new mongoose.Types.ObjectId().toString(), revokePage: page },
+      config: { entryId: 'not-a-shipped-entry', credentialRef: new mongoose.Types.ObjectId().toString(), revokePage: page },
     });
     const root = grantFixture({ connectionId: String(connection._id), installationId: 'install-orphan' });
     await RoomGrant.create(root);

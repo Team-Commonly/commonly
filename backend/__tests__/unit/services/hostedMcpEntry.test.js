@@ -591,7 +591,10 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // requires and the broker calls with.
     expect(entry.tools.every((tool) => tool.name === tool.upstreamName)).toBe(true);
     expect(new Set(entry.tools.map((tool) => `${entry.id}.${tool.name}`)).size).toBe(36);
-    expect(hostedMcpRevokeTarget(entry)).toEqual({ page: 'https://linear.app/settings/security' });
+    // The person's own "Authorized applications" list, where the grant shows as
+    // "MCP · Read · Revoke" (fresh-account walk, 2026-10-15). `/settings/security`
+    // is the workspace admin page and has no per-person app list.
+    expect(hostedMcpRevokeTarget(entry)).toEqual({ page: 'https://linear.app/settings/account/security' });
     // With no separate audience, `resource` is the RFC 8707 value every
     // authorization and token request carries; `issuer` is what the
     // callback checks a returned `iss` against (RFC 9207), and `client: 'cimd'`
