@@ -273,7 +273,7 @@ describe('V2FirstRunHero', () => {
     expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' })).toBeInTheDocument();
   });
 
-  test('Escape closes for this view and persists nothing', async () => {
+  test('Escape dismisses the guide across reloads until asked for again', async () => {
     const priorControl = document.createElement('button');
     document.body.appendChild(priorControl);
     priorControl.focus();
@@ -284,26 +284,21 @@ describe('V2FirstRunHero', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
 
     expect(screen.queryByRole('dialog', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
-    // Closing is not skipping: the setup it started is still in progress.
-    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
+    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBeNull();
     expect(priorControl).toHaveFocus();
     priorControl.remove();
 
-    // The property that matters: it comes back.
     unmount();
+    mockGet.mockClear();
     renderHero();
     await flush();
-    expect(await screen.findByRole('dialog', { name: 'Bring your agent into your pod' }))
-      .toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalled();
+    await askForGuide();
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' })).toBeInTheDocument();
   });
 
-  /*
-   * This is the defect that shipped: `onMouseDown={dismiss}` on the overlay
-   * meant one stray click destroyed the only explanation of the product a new
-   * user ever sees, permanently. 15 users attached an agent and never sent a
-   * message, and step 3 of this card is "say hello".
-   */
-  test('a backdrop click closes for this view and the guide returns', async () => {
+  test('a backdrop click dismisses the guide across reloads until asked for again', async () => {
     const { unmount } = renderHero();
     await askForGuide();
 
@@ -311,13 +306,16 @@ describe('V2FirstRunHero', () => {
     fireEvent.mouseDown(dialog.parentElement as HTMLElement);
 
     expect(screen.queryByRole('dialog', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
-    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
+    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBeNull();
 
     unmount();
+    mockGet.mockClear();
     renderHero();
     await flush();
-    expect(await screen.findByRole('dialog', { name: 'Bring your agent into your pod' }))
-      .toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalled();
+    await askForGuide();
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' })).toBeInTheDocument();
   });
 
   test.each([
