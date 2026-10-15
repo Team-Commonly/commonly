@@ -70,6 +70,8 @@ export interface GithubToolDefinition extends ToolDefinitionBase {
 export interface HostedToolDefinition extends ToolDefinitionBase {
   connectionType: 'hosted-mcp';
   entryId: string;
+  /** Server-owned catalogue title for the agent-facing untrusted-content marker. */
+  entryTitle: string;
   /** Refuse a changed or withdrawn upstream pin before approval or budget use. */
   assess: (connection: HostedToolConnection) => Promise<void>;
   call: (args: Record<string, unknown>, connection: HostedToolConnection) => Promise<unknown>;
@@ -101,6 +103,7 @@ export interface BrokerCallResult {
   callId: string;
   result: unknown;
   outcome: 'ok' | 'failed';
+  untrustedSourceTitle?: string;
 }
 
 const issueView = (issue: Record<string, unknown>): Record<string, unknown> => ({
@@ -1262,7 +1265,12 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       startedAt,
       { credentialOwnerId },
     );
-    return { ...recorded, result };
+    return {
+      ...recorded,
+      result,
+      ...(definition.connectionType === 'hosted-mcp'
+        ? { untrustedSourceTitle: definition.entryTitle } : {}),
+    };
   } catch (error) {
     const reason = safeReason(error);
     // Audit refusals and failures with the token-derived identity. If the
@@ -1342,7 +1350,12 @@ export const executeApprovedToolCall = async (
       startedAt,
       { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
     );
-    return { ...recorded, result };
+    return {
+      ...recorded,
+      result,
+      ...(definition.connectionType === 'hosted-mcp'
+        ? { untrustedSourceTitle: definition.entryTitle } : {}),
+    };
   } catch (error) {
     const reason = safeReason(error);
     await recordCall(

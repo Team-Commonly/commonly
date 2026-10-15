@@ -223,6 +223,7 @@ export interface HostedBrokerCall {
   content: unknown;
   callId?: string;
   outcome: HostedBrokerOutcome;
+  untrustedSourceTitle?: string;
 }
 
 /**
@@ -267,7 +268,13 @@ export const dispatchHostedBrokerTool = async (
       // (Wren, TASK-175 74882). This is the only caller that sets it.
       hostedTurn: true,
     });
-    return { content: result.result, callId: result.callId, outcome: result.outcome };
+    return {
+      content: result.result,
+      callId: result.callId,
+      outcome: result.outcome,
+      ...(result.untrustedSourceTitle
+        ? { untrustedSourceTitle: result.untrustedSourceTitle } : {}),
+    };
   } catch (error) {
     const e = error as { code?: string; message?: string; details?: Record<string, unknown> };
     const callId = typeof e.details?.callId === 'string' ? e.details.callId : undefined;

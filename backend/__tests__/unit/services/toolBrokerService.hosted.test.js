@@ -500,6 +500,7 @@ describe('a hosted-MCP grant through the broker', () => {
     });
     expect(result.result).toEqual({ content: [{ type: 'text', text: 'done' }] });
     expect(result.outcome).toBe('ok');
+    expect(result.untrustedSourceTitle).toBe('Linear');
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
       outcome: 'ok',
       // The hosted row's `createdBy` — the member whose credential the vendor saw.
@@ -529,6 +530,7 @@ describe('a hosted-MCP grant through the broker', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({ result: vendorError, outcome: 'failed' }));
+    expect(result.untrustedSourceTitle).toBe('Linear');
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
       outcome: 'failed',
       reason: 'upstream_tool_error',
@@ -579,6 +581,7 @@ describe('a hosted-MCP grant through the broker', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({ result: vendorError, outcome: 'failed' }));
+    expect(result.untrustedSourceTitle).toBe('Linear');
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
       outcome: 'failed',
       reason: 'upstream_tool_error',

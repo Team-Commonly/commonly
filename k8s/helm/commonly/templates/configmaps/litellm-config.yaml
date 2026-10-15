@@ -311,7 +311,9 @@ data:
       # (writes /chatgpt-auth/rotate-now → sidecar polls and swaps auth.json).
       routing_strategy: least-busy
       enable_pre_call_checks: true
-      # Fallback chain — nemotron only.
+      # Fallback chain. The Codex entries below predate the 2026-10-15 probe and
+      # point at nemotron, which is itself dead now (the gateway they served is
+      # parked). Read the dead-route note at the end of the list.
       #   - Gemini removed 2026-05-03: GEMINI_API_KEY belongs to a project that
       #     doesn't have generativelanguage.googleapis.com enabled (403). Until
       #     a working key is provisioned in a project where the API is enabled,
@@ -329,9 +331,23 @@ data:
         - {"gpt-5.4-nano":            ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
         - {"openai-codex/gpt-5.4-nano": ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
         - {"codex-cli/gpt-5.4":        ["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]}
-        # No fallback for nemotron itself — fail fast rather than chain through
-        # dead endpoints. The rotator + next-request path will pick a fresh
-        # Codex account on the subsequent call.
+        # Dead routes fall back to deepseek-v4-flash (2026-10-15). Probing every
+        # chat route from the backend pod found exactly two answering:
+        # deepseek-v4-flash and cloudflare/llama-3.1-8b. Every Gemini name 401s
+        # (Google: ACCESS_TOKEN_TYPE_UNSUPPORTED for GEMINI_API_KEY) and both
+        # nemotron names 401 at OpenRouter. Callers still ask for those names:
+        # the commonly-bot client defaults to gemini-2.5-flash; pod-welcomer,
+        # task-clerk and pod-summarizer run on nemotron. With no fallback each
+        # call died and the feature fell back to a template or to silence; 154
+        # Gemini 401s in 24h, unnoticed. A fallback keeps the feature answering;
+        # the "LiteLLM is failing its callers" alert covers deepseek itself
+        # going dead (docs/runbooks/alerting.md#litellm-failing).
+        - {"gemini-2.5-flash":        ["deepseek-v4-flash"]}
+        - {"google/gemini-2.5-flash": ["deepseek-v4-flash"]}
+        - {"google/gemini-2.5-flash-lite": ["deepseek-v4-flash"]}
+        - {"google/gemini-2.0-flash": ["deepseek-v4-flash"]}
+        - {"openrouter/nvidia/nemotron-3-super-120b-a12b:free": ["deepseek-v4-flash"]}
+        - {"nvidia/nemotron-3-super-120b-a12b:free": ["deepseek-v4-flash"]}
       # One retry on rate-limit, with a deliberate 1s delay so the 429 callback
       # has time to rotate auth.json before the retry reads it. This means a
       # 429 on account-N triggers (a) signal-driven rotation to account-N+1,

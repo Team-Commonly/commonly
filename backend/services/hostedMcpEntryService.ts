@@ -260,6 +260,7 @@ export const entryToolProjections = (entry: HostedMcpEntry): HostedMcpToolProjec
     requiredWriteMode: writeModeFor(tool),
     connectionType: 'hosted-mcp',
     entryId: entry.id,
+    entryTitle: entry.title,
     irreversible: tool.irreversible,
     inputSchema: tool.inputSchema,
   }));

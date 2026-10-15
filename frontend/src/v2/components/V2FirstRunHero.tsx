@@ -59,16 +59,6 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   const navigate = useNavigate();
   const dialogRef = useRef<HTMLElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  // Closing is not skipping. Clicking away or pressing Escape hides the card
-  // for this view only and writes nothing — it returns on the next load. Only
-  // the explicit Skip button persists anything.
-  //
-  // This split is the whole point of the component's second version: the first
-  // one dismissed permanently on `onMouseDown` anywhere on the overlay, so the
-  // most reflexive gesture a person makes when a modal appears destroyed the
-  // only explanation of the product they were ever shown. 15 users attached an
-  // agent and never sent a message; step 3 of this card is "say hello".
-  const [closed, setClosed] = useState(false);
   // `engaged` is a session latch. Once a zero-install user sees the hero, an
   // install appearing during the poll must advance the card to Waiting / Say
   // hello rather than make it disappear mid-flow. The persisted started flag
@@ -98,15 +88,10 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   // nothing re-offering the guide, a stored skip and its expiry had nothing
   // left to suppress, so Skip simply ends the setup in progress.
   const shouldProbe = engaged;
-  const visible = !closed && engaged;
+  const visible = engaged;
 
-  /** Hide for this view only. Writes nothing; returns on the next load. */
+  /** Every dismissal ends this guide until the person asks for it again. */
   const close = useCallback(() => {
-    setClosed(true);
-  }, []);
-
-  /** The explicit Skip button: ends the setup in progress until asked for again. */
-  const skip = useCallback(() => {
     writeFlag(FIRST_RUN_STARTED_KEY, false);
     setEngaged(false);
   }, []);
@@ -116,9 +101,6 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
       // Asking for the guide starts a setup: the started latch is the one
       // visibility model for new and connected users alike.
       writeFlag(FIRST_RUN_STARTED_KEY, true);
-      // Also clear a session close, or asking for the guide from the menu does
-      // nothing for anyone who clicked away earlier in the same visit.
-      setClosed(false);
       setEngaged(true);
       setStatusError(null);
       setRoomError(null);
@@ -179,7 +161,6 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        // Escape means "not now", never "never". It used to persist.
         close();
         return;
       }
@@ -268,7 +249,7 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
               {t('firstRun.lede')}
             </p>
           </div>
-          <button type="button" className="v2-first-run__skip" onClick={skip}>{t('firstRun.skip')}</button>
+          <button type="button" className="v2-first-run__skip" onClick={close}>{t('firstRun.skip')}</button>
         </div>
 
         <ol className="v2-first-run__steps">

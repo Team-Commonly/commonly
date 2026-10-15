@@ -9,6 +9,7 @@
 const request = require('supertest');
 const express = require('express');
 const AdmZip = require('adm-zip');
+const crypto = require('crypto');
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.user = { id: 'user-1' };
@@ -119,10 +120,6 @@ describe('a catalog source without the skill is a 404 or a 502, never a 500', ()
   test.each([
     ['ClawHub cannot be reached', () => { routes[CLAWHUB_META] = () => { throw new TypeError('fetch failed'); }; }],
     ['ClawHub fails', () => { routes[CLAWHUB_META] = () => new Response('{}', { status: 503 }); }],
-    ['the bundle streams past the size cap', () => {
-      routes[CLAWHUB_META] = () => new Response(JSON.stringify({ latestVersion: { version: '1.2.0' } }));
-      routes[CLAWHUB_ZIP] = () => new Response(Buffer.alloc(2 * 1024 * 1024 + 1));
-    }],
     ['the download is not a zip', () => {
       routes[CLAWHUB_META] = () => new Response(JSON.stringify({ latestVersion: { version: '1.2.0' } }));
       routes[CLAWHUB_ZIP] = () => new Response('not a zip');
@@ -154,6 +151,52 @@ describe('a catalog source without the skill is a 404 or a 502, never a 500', ()
     // cannot tell; what proves it is that the request told fetch not to.
     expect(fetchSpy.mock.calls[0][1]).toEqual(expect.objectContaining({ redirect: 'manual' }));
     expect(PodAssetService.upsertImportedSkillAsset).not.toHaveBeenCalled();
+  });
+
+  // The caps and the allowlist only show when the input is otherwise good: a
+  // VALID zip or VALID metadata over its cap imports without the cap and is a
+  // 502 with it, and a redirect to another https host is requested only if
+  // the allowlist lets it (Sprint Review's re-gate on #2195: an over-cap body
+  // of zeros failed as "not a zip" whether or not the cap ran).
+  test('a valid ClawHub bundle that streams past 2 MB is a 502, not an import', async () => {
+    routes[CLAWHUB_META] = () => new Response(JSON.stringify({ latestVersion: { version: '1.2.0' } }));
+    // Random bytes do not compress, so the zip itself stays over the cap.
+    const zip = new AdmZip();
+    zip.addFile('SKILL.md', Buffer.from('# Notes'));
+    zip.addFile('padding.bin', crypto.randomBytes(2 * 1024 * 1024 + 1024));
+    const oversized = zip.toBuffer();
+    expect(oversized.length).toBeGreaterThan(2 * 1024 * 1024);
+    routes[CLAWHUB_ZIP] = () => new Response(oversized);
+
+    const res = await request(app).post('/api/skills/import').send(importBody({ sourceUrl: LEGACY_SOURCE }));
+
+    expect(res.status).toBe(502);
+    expect(res.body.code).toBe('skill_source_unreachable');
+    expect(PodAssetService.upsertImportedSkillAsset).not.toHaveBeenCalled();
+  });
+
+  test('valid ClawHub metadata over 256 KB is a 502, not an import', async () => {
+    const meta = { latestVersion: { version: '1.2.0' }, readme: 'x'.repeat(256 * 1024 + 1) };
+    routes[CLAWHUB_META] = () => new Response(JSON.stringify(meta));
+    routes[CLAWHUB_ZIP] = () => zipResponse(zipOf({ 'SKILL.md': '# Notes' }));
+
+    const res = await request(app).post('/api/skills/import').send(importBody({ sourceUrl: LEGACY_SOURCE }));
+
+    expect(res.status).toBe(502);
+    expect(requestedUrls()).toEqual([CLAWHUB_META]);
+    expect(PodAssetService.upsertImportedSkillAsset).not.toHaveBeenCalled();
+  });
+
+  test('a ClawHub redirect to another https host is never requested', async () => {
+    routes[CLAWHUB_META] = () => new Response(null, {
+      status: 302,
+      headers: { location: 'https://skills.example.com/api/skill?owner=acme&slug=notes' },
+    });
+
+    const res = await request(app).post('/api/skills/import').send(importBody({ sourceUrl: LEGACY_SOURCE }));
+
+    expect(res.status).toBe(502);
+    expect(requestedUrls()).toEqual([CLAWHUB_META]);
   });
 
   test('requirements for a legacy entry ClawHub does not have is the same 404', async () => {

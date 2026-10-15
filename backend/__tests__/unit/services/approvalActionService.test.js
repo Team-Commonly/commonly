@@ -294,7 +294,7 @@ describe('approved connect_local_agent execution — the seat, never the token',
       expect.objectContaining({
         $set: expect.objectContaining({
           status: 'active',
-          config: { runtime: { runtimeType: 'webhook' } },
+          config: { runtime: { runtimeType: 'webhook', host: 'byo' } },
         }),
         $setOnInsert: expect.objectContaining({ installedBy: OWNER }),
       }),

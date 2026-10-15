@@ -32,6 +32,7 @@ import {
   HostedBrokerProjection,
 } from './grantBrokerProjectionService';
 import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
+import { untrustedConnectorMarker } from './brokerResultMarker';
 
 // --- public surface --------------------------------------------------------
 
@@ -1206,7 +1207,9 @@ export async function runAgent(
             messages.push({
               role: 'tool',
               tool_call_id: tc.id,
-              content: JSON.stringify(brokerCall.content ?? { ok: brokerCall.outcome === 'ok' }),
+              content: (brokerCall.untrustedSourceTitle
+                ? `${untrustedConnectorMarker(brokerCall.untrustedSourceTitle)}\n`
+                : '') + JSON.stringify(brokerCall.content ?? { ok: brokerCall.outcome === 'ok' }),
             });
           } else {
           // Grants can be minted after the turn's tool list was assembled.

@@ -39,6 +39,16 @@ interface PendingApprovalsResponse {
   approvals?: PendingApproval[];
 }
 
+interface ResolveApprovalResponse {
+  approval?: {
+    actionType?: string;
+    status?: string;
+    decision?: string;
+    executionError?: string;
+    executionResult?: { connectPath?: string };
+  };
+}
+
 // The consent line is derived from the fields the executor actually reads —
 // `actionType` + `params` — and never from `summary`.
 //
@@ -177,11 +187,23 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
     setDeciding(true);
     setError(null);
     try {
-      await api.post(`/api/approvals/${encodeURIComponent(payload.approvalId)}/resolve`, { decision });
+      const response = await api.post<ResolveApprovalResponse>(
+        `/api/approvals/${encodeURIComponent(payload.approvalId)}/resolve`, { decision },
+      );
       // The card's own state lands via messageCardUpdated. The attention counts
       // (nav rail, pod inspector) refresh only on this event or window focus; a
       // resolved approval kept reading "1 waiting on you" until then (2026-10-14).
       notifyAttentionChanged();
+      const resolved = response.approval;
+      const path = resolved?.executionResult?.connectPath;
+      if (
+        decision === 'approved'
+        && resolved?.actionType === 'connect_local_agent'
+        && resolved.status === 'resolved'
+        && resolved.decision === 'approved'
+        && !resolved.executionError
+        && path?.startsWith('/v2/agents/byo?')
+      ) navigate(path);
     } catch (err) {
       const status409 = (err as { response?: { status?: number } })?.response?.status;
       setError(status409 === 410 ? t('approvalCard.errors.expired') : t('approvalCard.errors.failed'));

@@ -209,7 +209,7 @@ goes with it. The 2026-10-14 results:
 |---|---|---|
 | Mongo collections | 58 | 58 |
 | users, pods, posts, installations, tasks | 820, 450, 715, 560, 1328 | identical |
-| Postgres tables | 142 | 142 |
+| Postgres tables | 142 (134 tables + 8 views) | 142 |
 | messages | 25,948 at count time | 25,946 at dump time; 2 were posted in between |
 
 To recover production from a verified backup:
@@ -221,6 +221,139 @@ To recover production from a verified backup:
 
 Aiven's and Atlas's own snapshots are separate, plan-dependent, and visible
 only in their consoles.
+
+### Restore drill in a throwaway namespace
+
+The 2026-10-15 drill restored that night's scheduled objects in a namespace
+created for the drill and deleted afterwards. Two things differ from the pod
+above.
+
+**Fetching the object.** Workload Identity binds the Google service account
+to `${K8S_NAMESPACE}/backup-sa` only, so a pod in any other namespace cannot
+read the bucket. A short-lived fetcher in the backup namespace streams the
+object, and `kubectl exec -i` carries it into the restore pod. The bytes pass
+through the operator's machine but are never written to its disk.
+
+```bash
+export DRILL_NS="restore-test-<mmdd>"
+export MONGO_VERSION="<atlas-version>"   # mongosh: db.version()
+export PG_VERSION="<aiven-version>"      # psql: SHOW server_version
+export MONGO_OBJECT="gs://${BACKUP_BUCKET}/mongodb/daily/backup-<timestamp>.archive.gz"
+export PG_OBJECT="gs://${BACKUP_BUCKET}/postgresql/daily/backup-<timestamp>.sql.gz"
+
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Namespace
+metadata: {name: ${DRILL_NS}}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: mongo-restore, namespace: ${DRILL_NS}}
+spec:
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  nodeSelector: {workload-tier: spot}
+  tolerations: [{key: workload-tier, operator: Equal, value: spot, effect: NoSchedule}]
+  volumes: [{name: work, emptyDir: {}}, {name: data, emptyDir: {}}]
+  containers:
+  - name: mongo
+    image: mongo:${MONGO_VERSION}
+    command: [bash, -c, 'mongod --dbpath /data/db --bind_ip 127.0.0.1 --wiredTigerCacheSizeGB 0.5 --logpath /tmp/mongod.log & sleep 7200']
+    resources: {requests: {cpu: 500m, memory: 2Gi}, limits: {cpu: "1", memory: 2Gi}}
+    volumeMounts: [{name: work, mountPath: /work}, {name: data, mountPath: /data/db}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: pg-restore, namespace: ${DRILL_NS}}
+spec:
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  nodeSelector: {workload-tier: spot}
+  tolerations: [{key: workload-tier, operator: Equal, value: spot, effect: NoSchedule}]
+  volumes: [{name: work, emptyDir: {}}, {name: data, emptyDir: {}}]
+  containers:
+  - name: postgres
+    image: postgres:${PG_VERSION}
+    env: [{name: POSTGRES_PASSWORD, value: drill-only}, {name: PGDATA, value: /var/lib/postgresql/data/pgdata}]
+    resources: {requests: {cpu: 500m, memory: 1Gi}, limits: {cpu: "1", memory: 1Gi}}
+    volumeMounts: [{name: work, mountPath: /work}, {name: data, mountPath: /var/lib/postgresql/data}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: restore-fetch, namespace: ${K8S_NAMESPACE}}
+spec:
+  serviceAccountName: backup-sa
+  restartPolicy: Never
+  activeDeadlineSeconds: 3600
+  nodeSelector: {workload-tier: spot}
+  tolerations: [{key: workload-tier, operator: Equal, value: spot, effect: NoSchedule}]
+  containers:
+  - name: fetch
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
+    command: [sleep, "3600"]
+EOF
+kubectl wait --for=condition=Ready --timeout=300s -n "${DRILL_NS}" pod/mongo-restore pod/pg-restore
+kubectl wait --for=condition=Ready --timeout=300s -n "${K8S_NAMESPACE}" pod/restore-fetch
+
+set -o pipefail
+kubectl exec -n "${K8S_NAMESPACE}" restore-fetch -- gsutil -q cat "${MONGO_OBJECT}" \
+  | kubectl exec -i -n "${DRILL_NS}" mongo-restore -- sh -c 'cat > /work/backup.archive.gz'
+kubectl exec -n "${K8S_NAMESPACE}" restore-fetch -- gsutil -q cat "${PG_OBJECT}" \
+  | kubectl exec -i -n "${DRILL_NS}" pg-restore -- sh -c 'cat > /work/backup.sql.gz'
+kubectl delete pod restore-fetch -n "${K8S_NAMESPACE}"
+
+# Integrity: GCS reports MD5 in base64, md5sum prints hex.
+gcloud storage objects describe "${MONGO_OBJECT}" --format='value(size,md5_hash)'
+kubectl exec -n "${DRILL_NS}" mongo-restore -- \
+  sh -c 'stat -c %s /work/backup.archive.gz; md5sum /work/backup.archive.gz'
+```
+
+Then restore with the same commands as the pod above (`mongorestore
+--uri=mongodb://127.0.0.1:27017 --archive=/work/backup.archive.gz --gzip`,
+then `CREATE ROLE avnadmin`, `createdb`, and `gunzip -c | psql -v
+ON_ERROR_STOP=1`), run through `kubectl exec -n "${DRILL_NS}"`.
+
+**Comparing counts.** Production keeps moving after the dump, so a raw count
+taken hours later never matches. Instead, count the production documents
+created before the Job's `.status.startTime` and compare that number with the
+restored count. Three effects can remain, and none of them is a lost row:
+
+- `agentevents` is pruned by `agentEventService` after delivery, so its
+  pre-cutoff count in production *falls* below the restored count.
+- A row deleted after the dump lowers production's pre-cutoff count by one.
+- The restored mongod runs its own TTL monitor, so a document past its
+  `expiresAt` disappears seconds after `mongorestore` counts it as restored.
+  `db.serverStatus().metrics.ttl.deletedDocuments` accounts for that gap.
+
+The Postgres dump holds two schemas: `public` for the app, and `litellm` for
+the LiteLLM proxy, which shares the Aiven database. Treat a restored copy as
+holding credentials, because `LiteLLM_VerificationToken` stores the hashed
+virtual keys.
+
+Delete the namespace and confirm that nothing remains:
+
+```bash
+kubectl delete namespace "${DRILL_NS}" --wait=true
+kubectl get namespace "${DRILL_NS}"                    # NotFound
+kubectl get pod restore-fetch -n "${K8S_NAMESPACE}"    # NotFound
+```
+
+The 2026-10-15 results, from that night's 02:00Z CronJob objects:
+
+| | Restored | Production, created before 02:00:00Z |
+|---|---|---|
+| Mongo collections | 58 | 58 |
+| podassets | 146,871 | 146,871 |
+| agentevents | 21,424 (90 written during the dump) | 20,178, pruned since |
+| messages, agentruns, agentcredentials | 10,428, 7,229, 5,250 | identical |
+| Postgres | 134 tables (65 `litellm`, 69 `public`) + 8 views | identical |
+| `litellm` SpendLogGuardrailIndex, SpendLogToolIndex, VerificationToken, DailyUserSpend | 31,692, 8,556, 5,962, 5,601 | identical |
+| `public.messages` | 26,189 | 26,188; one row deleted since |
+
+Both objects matched their GCS size and MD5. Streaming the 147 MiB archive
+took 12 s, `mongorestore` took 31 s (211,598 documents, 0 failed, 1 later
+removed by TTL), and `psql` took 5 s. The namespace was gone less than six
+minutes after it was created.
 
 ### In-cluster databases
 
