@@ -25,6 +25,7 @@
  * live agents read null (finding D). Pure function: callers fetch, this
  * derives; the seam is what makes the honesty rules testable without a DB.
  */
+import { hostedRunsNative } from './hostedEngine';
 
 export const AGENT_LISTENING_STALE_MS = 5 * 60 * 1000;
 
@@ -81,7 +82,9 @@ export function deriveAgentState(
   const isByo = runtime.host === 'byo'
     || runtimeType === 'local-cli'
     || (runtimeType === 'webhook' && !runtime.host && !isPushWebhook);
-  const isNative = runtimeType === 'native';
+  // A provisioned hosted install on the native engine has no connection to
+  // make either (services/hostedEngine.ts).
+  const isNative = runtimeType === 'native' || hostedRunsNative(installation);
 
   let state: AgentReachState;
   let lastUsedAt: Date | null = null;

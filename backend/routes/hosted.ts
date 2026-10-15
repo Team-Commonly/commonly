@@ -22,6 +22,13 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const User = require('../models/User');
 const AgentIdentityService = require('../services/agentIdentityService');
 const hostedRuntime = require('../services/hostedRuntimeService');
+const { isNativeRuntimeAvailable } = require('../services/nativeRuntimeService');
+const {
+  HOSTED_ENGINE_NATIVE,
+  engineForNewHostedInstall,
+  hostedEngineOf,
+  readHostedConfig,
+} = require('../services/hostedEngine');
 const { markByoOpened } = require('../services/onboardingMarks');
 const {
   revokeRuntimeTokensForAgent,
@@ -120,8 +127,26 @@ const resolveOwnedHostedInstallation = async (req: any, source: Record<string, a
   return { installation, agentName, instanceId: instanceGiven ? instanceId : String(installation.instanceId || instanceId) };
 };
 
-const requireConfigured = (res: express.Response): boolean => {
-  if (hostedRuntime.isConfigured()) return true;
+/**
+ * Whether an engine can run turns on this instance: the native engine needs
+ * LiteLLM, the Durable Object needs the worker (services/hostedEngine.ts).
+ */
+const engineAvailable = (engine: string): boolean => (
+  engine === HOSTED_ENGINE_NATIVE ? isNativeRuntimeAvailable() : hostedRuntime.isConfigured()
+);
+
+/**
+ * Refuses before any database read when no engine can run on this instance.
+ * The engine-specific check follows once the installation is known.
+ */
+const requireAnyEngine = (res: express.Response): boolean => (
+  hostedRuntime.isConfigured() || isNativeRuntimeAvailable()
+    ? true
+    : requireConfigured(res, engineForNewHostedInstall())
+);
+
+const requireConfigured = (res: express.Response, engine: string): boolean => {
+  if (engineAvailable(engine)) return true;
   res.status(503).json({
     code: 'hosted_runtime_unconfigured',
     message: 'Hosted runtime is not configured on this instance; connect your own agent instead.',
@@ -153,7 +178,8 @@ const relayWorkerError = (res: express.Response, error: any) => {
  */
 router.get('/availability', hostedRateLimit, auth, async (req: any, res: any) => {
   markByoOpened(getUserId(req));
-  return res.json({ configured: hostedRuntime.isConfigured(), caps: hostedRuntime.hostedCaps() });
+  const engine = engineForNewHostedInstall();
+  return res.json({ configured: engineAvailable(engine), engine, caps: hostedRuntime.hostedCaps() });
 });
 
 /**
@@ -161,10 +187,12 @@ router.get('/availability', hostedRateLimit, auth, async (req: any, res: any) =>
  */
 router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
   try {
-    if (!requireConfigured(res)) return undefined;
+    if (!requireAnyEngine(res)) return undefined;
     const resolved = await resolveOwnedHostedInstallation(req, req.body || {});
     if (resolved.error) return res.status(resolved.error.status).json(resolved.error.body);
     const { installation, agentName, instanceId } = resolved;
+    const engine = hostedEngineOf(installation);
+    if (!requireConfigured(res, engine)) return undefined;
     const userId = getUserId(req);
 
     // Defense in depth: the install route already refused the (N+1)th hosted
@@ -200,6 +228,24 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
     // ROTATE, never reuse (Otto on #1355). Both runtime-auth paths must lose
     // the old bearer, including legacy installation-only copies.
     await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId, installation });
+
+    if (engine === HOSTED_ENGINE_NATIVE) {
+      // Nothing to start: turns run in-process. No token is minted, so with
+      // the revoke above nothing outside the backend can act as this agent.
+      // Idempotent: the install already marked it provisioned.
+      const hosted = readHostedConfig(installation);
+      installation.config.set('hosted', { ...hosted, provisionedAt: hosted.provisionedAt || new Date() });
+      await installation.save();
+      return res.json({
+        provisioned: true,
+        engine,
+        agentName,
+        instanceId,
+        podId: installation.podId,
+        caps: hostedRuntime.hostedCaps(),
+      });
+    }
+
     const token = await issueRuntimeTokenForAgent(
       agentUser,
       'Hosted runtime',
@@ -235,10 +281,21 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
  */
 router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) => {
   try {
-    if (!requireConfigured(res)) return undefined;
+    if (!requireAnyEngine(res)) return undefined;
     const resolved = await resolveOwnedHostedInstallation(req, req.body || {});
     if (resolved.error) return res.status(resolved.error.status).json(resolved.error.body);
     const { installation, agentName, instanceId } = resolved;
+    if (hostedEngineOf(installation) === HOSTED_ENGINE_NATIVE) {
+      // Stopping is the record alone: an unprovisioned native-engine install
+      // no longer routes to the runtime (hostedRunsNative). Engine and
+      // persona stay for the next provision.
+      installation.config.set('hosted', {
+        ...readHostedConfig(installation), provisionedAt: null, deprovisionedAt: new Date(),
+      });
+      await installation.save();
+      return res.json({ deprovisioned: true, agentName, instanceId });
+    }
+    if (!requireConfigured(res, hostedEngineOf(installation))) return undefined;
     await hostedRuntime.deprovisionAgent(agentName, instanceId);
     installation.config.set('hosted', { provisionedAt: null, deprovisionedAt: new Date() });
     await installation.save();
@@ -254,10 +311,24 @@ router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) =>
  */
 router.get('/status', hostedRateLimit, auth, async (req: any, res: any) => {
   try {
-    if (!requireConfigured(res)) return undefined;
+    if (!requireAnyEngine(res)) return undefined;
     const resolved = await resolveOwnedHostedInstallation(req, req.query || {});
     if (resolved.error) return res.status(resolved.error.status).json(resolved.error.body);
-    const { agentName, instanceId } = resolved;
+    const { installation, agentName, instanceId } = resolved;
+    const engine = hostedEngineOf(installation);
+    if (!requireConfigured(res, engine)) return undefined;
+    if (engine === HOSTED_ENGINE_NATIVE) {
+      // No loop to report on: a native-engine agent is ready once provisioned,
+      // and the runtime it needs is available (checked just above).
+      const { provisionedAt } = readHostedConfig(installation);
+      const meter = await hostedRuntime.meterAllowsTurn(agentName, instanceId);
+      return res.json({
+        agentName,
+        instanceId,
+        runtime: { engine, ready: Boolean(provisionedAt), provisionedAt: provisionedAt || null },
+        meter,
+      });
+    }
     const [runtime, meter] = await Promise.all([
       hostedRuntime.getAgentStatus(agentName, instanceId),
       hostedRuntime.meterAllowsTurn(agentName, instanceId),

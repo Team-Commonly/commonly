@@ -23,6 +23,7 @@ const AgentMessageService = require('../../services/agentMessageService');
 const { deriveAgentState } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
+const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
 const {
@@ -497,6 +498,16 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
           cap: agentsPerUser,
           holders,
         });
+      }
+    }
+
+    // `config.hosted` is the kernel's record of where a hosted agent runs
+    // (services/hostedEngine.ts). A client never writes it: honouring one
+    // would let a browser pick its own engine or claim to be provisioned.
+    if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE) {
+      delete installConfig.hosted;
+      if (HostedEngine.engineForNewHostedInstall() === HostedEngine.HOSTED_ENGINE_NATIVE) {
+        installConfig.hosted = HostedEngine.nativeHostedConfigForInstall(explicitDescription || undefined);
       }
     }
 

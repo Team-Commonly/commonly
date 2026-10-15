@@ -65,10 +65,22 @@ function resolveDays(envKey: string, fallback: number): number {
  */
 export const STALENESS_EXEMPT_RUNTIME_TYPES: readonly string[] = ['native'];
 
-type InstallRuntimeShape = { config?: { runtime?: { runtimeType?: unknown } | null } | null };
+type InstallRuntimeShape = {
+  config?: { runtime?: { runtimeType?: unknown } | null; hosted?: { engine?: unknown } | null } | null;
+};
+
+/**
+ * A hosted install on the native engine runs in-process with no token too
+ * (services/hostedEngine.ts). It keeps runtimeType 'hosted', so the engine,
+ * not the runtime type, is what exempts it.
+ */
+const HOSTED_NATIVE_ENGINE = 'native';
 
 export function isStalenessExempt(install: InstallRuntimeShape | null | undefined): boolean {
   const runtimeType = String(install?.config?.runtime?.runtimeType || '').trim().toLowerCase();
+  if (runtimeType === 'hosted') {
+    return String(install?.config?.hosted?.engine || '').trim().toLowerCase() === HOSTED_NATIVE_ENGINE;
+  }
   return runtimeType !== '' && STALENESS_EXEMPT_RUNTIME_TYPES.includes(runtimeType);
 }
 
@@ -147,7 +159,7 @@ export async function markStaleInstallations(
   // without the projection every install reads as non-native and the
   // exemption is silently a no-op.
   const allActiveInstalls = await AgentInstallation.find({ status: 'active' })
-    .select('_id agentName instanceId podId config.runtime')
+    .select('_id agentName instanceId podId config.runtime config.hosted.engine')
     .lean();
 
   // Exempt runtimes never enter the evaluation, so a pair that exists only as
@@ -246,6 +258,7 @@ export async function markStaleInstallations(
       status: 'active',
       createdAt: { $lt: cutoff },
       'config.runtime.runtimeType': { $nin: STALENESS_EXEMPT_RUNTIME_TYPES },
+      'config.hosted.engine': { $ne: HOSTED_NATIVE_ENGINE },
       $or: orClauses,
     },
     { $set: { status: 'stale', staleSince: now } },

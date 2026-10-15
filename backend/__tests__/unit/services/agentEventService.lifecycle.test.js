@@ -519,3 +519,41 @@ describe('driver paths reach a terminal state', () => {
     });
   });
 });
+
+// ADR-023 amendment A1: a hosted install routes in-process only when it is on
+// the native engine AND provisioned. A Durable Object install keeps polling,
+// and a stopped native one routes nowhere, as a stopped Durable Object did.
+describe('hosted installs route by engine', () => {
+  beforeEach(() => { jest.clearAllMocks(); });
+
+  const enqueueHosted = async (hosted) => {
+    const install = {
+      _id: 'inst-h', agentName: 'maya-agent', config: { runtime: { runtimeType: 'hosted' }, ...(hosted ? { hosted } : {}) },
+    };
+    AgentInstallation.findOne.mockReturnValue({ lean: () => Promise.resolve(install) });
+    AgentInstallation.find.mockReturnValue({ lean: () => Promise.resolve([]) });
+    runAgent.mockResolvedValue({ status: 'succeeded' });
+    AgentEvent.create.mockImplementation(async (doc) => ({ _id: 'evt-h', ...doc }));
+    AgentEvent.findOneAndUpdate.mockResolvedValue({ _id: 'evt-h', status: 'acked' });
+    await AgentEventService.enqueue({
+      agentName: 'maya-agent', instanceId: 'default', podId: 'p1', type: 'chat.mention', payload: { content: 'hi' },
+    });
+    await flush();
+    await flush();
+  };
+
+  test('a provisioned native-engine install runs in-process, claimed at creation', async () => {
+    await enqueueHosted({ engine: 'native', provisionedAt: new Date() });
+    expect(AgentEvent.create).toHaveBeenCalledWith(expect.objectContaining({ status: 'delivered', attempts: 1 }));
+    expect(runAgent).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ['on the Durable Object', undefined],
+    ['stopped on the native engine', { engine: 'native', provisionedAt: null }],
+  ])('an install %s is queued for a poller and never run in-process', async (_label, hosted) => {
+    await enqueueHosted(hosted);
+    expect(AgentEvent.create).toHaveBeenCalledWith(expect.not.objectContaining({ status: 'delivered' }));
+    expect(runAgent).not.toHaveBeenCalled();
+  });
+});
