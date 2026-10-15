@@ -9,7 +9,7 @@ counts as a real signup (every Growth funnel script drops `*.invalid`).
   2. workspace   the "My Workspace" pod exists
   3. welcome     Scout greets with the structural 'starts' payload (#2194)
   4. answer      Scout replies to Hamza's day-2 question (verbatim, 2026-09-12)
-  5. card        within 3 Scout turns, a connect_local_agent approval card
+  5. card        a connect_local_agent approval card within the step's budget
   6. approve     resolving it returns the BYO connect path for this pod and name
   7. byo         the calls the BYO page makes on load succeed for that path, and
                  the seat is listed in the pod (the rendered page itself is not
@@ -56,6 +56,9 @@ FOLLOW_UPS = ['Claude Code', 'macOS']
 GOOD_ANSWER_MARKERS = ('agent run', 'agents/byo', 'MCP', 'connect page')
 WELCOME_LABELS = ('Connect an agent I already use', 'Start a pod for a project')
 
+# How long Scout must stay silent, without a card, before the journey answers
+# its next question. Its runs post within seconds; 20 s rides out a slow turn.
+SCOUT_QUIET_S = 20
 BUDGET_S = {'signup': 15, 'workspace': 60, 'welcome': 90, 'answer': 60, 'card': 240, 'approve': 15, 'byo': 15}
 
 
@@ -193,6 +196,7 @@ class Journey:
 
     def answer(self):
         asked = self.post(DAY2_QUESTION)
+        self.asked = asked
         replies = poll(lambda: self.scout_after(asked), BUDGET_S['answer'])
         if not replies:
             raise StepFailed("Scout did not answer Hamza's day-2 question")
@@ -213,23 +217,42 @@ class Journey:
         return None
 
     def card_step(self):
-        turns = 1
-        for follow_up in FOLLOW_UPS:
+        # Wait for the card within the budget, not for a fixed number of Scout
+        # messages. On 2026-10-15 Scout hit a seat-name collision, said so in
+        # one message, and re-proposed a free name about 10 s later, all in
+        # the same run. Counting messages made the journey give up and delete
+        # the pod under it. A follow-up answer is sent only after Scout has
+        # gone quiet without proposing a card.
+        deadline = time.monotonic() + BUDGET_S['card'] - 5
+        follow_ups = list(FOLLOW_UPS)
+        last_post = self.asked  # our latest message; Scout's reply to it unlocks the next answer
+        seen, last_change = 0, time.monotonic()
+        scout = []
+        while time.monotonic() < deadline:
+            scout = self.scout_after(self.asked)
+            self.card = self.card_in(scout)
             if self.card:
                 break
-            sent = self.post(follow_up)
-            replies = poll(lambda: self.scout_after(sent), 90)
-            if not replies:
-                raise StepFailed(f'Scout did not reply to "{follow_up}"')
-            turns += 1
-            self.card = self.card_in(replies)
+            if len(scout) != seen:
+                seen, last_change = len(scout), time.monotonic()
+            replied = any(message_id(m) > last_post for m in scout)
+            if follow_ups and replied and time.monotonic() - last_change >= SCOUT_QUIET_S:
+                last_post = self.post(follow_ups.pop(0))
+                last_change = time.monotonic()
+            time.sleep(3)
+        sent = len(FOLLOW_UPS) - len(follow_ups)
         if not self.card:
-            raise StepFailed(f'no connect_local_agent card within {turns} Scout turns')
+            raise StepFailed(f'no connect_local_agent card within {BUDGET_S["card"]} s '
+                             f'({len(scout)} Scout messages, {sent} follow-ups sent)')
         params = (self.card.get('payload') or {}).get('params') or {}
         self.seat = params.get('name')
         if not self.seat:
             raise StepFailed('the connect card carries no params.name')
-        return {'turns': turns, 'seat': self.seat, 'soft': {'seat_named_for_user': self.seat.startswith(self.username)}}
+        said = ' '.join(m.get('content') or '' for m in scout).lower()
+        return {'scout_messages': len(scout), 'follow_ups': sent, 'seat': self.seat, 'soft': {
+            'seat_named_for_user': self.seat.startswith(self.username),
+            'name_collision_recovered': 'already in use' in said,
+        }}
 
     def approve(self):
         approval = self.card['payload']['approvalId']
