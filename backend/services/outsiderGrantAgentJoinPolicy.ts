@@ -29,9 +29,10 @@ export const assertAgentRuntimeMayJoinPod = async (podId: unknown, runtimeType: 
 export const assertInstalledAgentMayJoinPod = async (
   podId: unknown, agentName: unknown, instanceId: unknown,
 ): Promise<void> => {
-  if (!await podHasOutsiderWritableGrant(String(podId))) return;
+  const podIdValue = String(podId ?? '');
+  if (!await podHasOutsiderWritableGrant(podIdValue)) return;
   const installation = await AgentInstallation.findOne({
-    podId,
+    podId: podIdValue,
     agentName: String(agentName || '').trim().toLowerCase(),
     instanceId: String(instanceId || 'default'),
     status: 'active',

@@ -47,6 +47,18 @@ describe('outsider-writable grant agent join policy', () => {
     expect(runtimeTypeFromConfig(new Map([['runtime', { runtimeType: 'native' }]]))).toBe('native');
   });
 
+  it('never puts a caller-controlled query object in the installation lookup', async () => {
+    AgentInstallation.findOne.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
+    });
+    await expect(assertInstalledAgentMayJoinPod({ $ne: null }, 'bot', 'default')).rejects.toHaveProperty(
+      'code', 'outsider_grant_non_native_agent_join',
+    );
+    expect(AgentInstallation.findOne).toHaveBeenCalledWith(expect.objectContaining({
+      podId: '[object Object]',
+    }));
+  });
+
   it('refuses absent and non-native installations before membership', async () => {
     const lean = jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({
       config: new Map([['runtime', { runtimeType: 'webhook' }]]),
