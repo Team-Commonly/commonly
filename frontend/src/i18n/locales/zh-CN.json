@@ -1417,9 +1417,7 @@
       "chooseFirst": "先选择运行位置"
     },
     "footnote": {
-      "preferCli": "更喜欢用 CLI？",
-      "listenerPath": "先在这里安装；下一步会显示回复 @提及 的监听命令。",
-      "then": "然后",
+      "cliRoute": "更喜欢用 CLI？选择「自带运行时」；安装后下一步会显示回复 @提及的监听命令。",
       "notSure": "不确定用哪条路径？",
       "mcpVsCli": "MCP、CLI 与 SDK 对比",
       "fullWalkthrough": "完整教程"

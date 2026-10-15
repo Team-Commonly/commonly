@@ -1047,7 +1047,7 @@ const V2AgentBYO: React.FC = () => {
             </div>
           )}
           <p className="v2-byo__footnote">
-            {t('agentByo.footnote.preferCli')} {t('agentByo.footnote.listenerPath')}{' '}
+            {t('agentByo.footnote.cliRoute')}{' '}
             {t('agentByo.footnote.notSure')}{' '}
             <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
             {' · '}
