@@ -260,12 +260,12 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
             <fieldset className="v2-pod-join-settings" disabled={policyBusy}>
               <legend>{t('podsSidebar.create.whoCanJoin')}</legend>
               <label>
-                <input type="radio" name={`pod-${pod._id}-join-policy`} checked={joinPolicy === 'invite-only'} onChange={() => { void changeJoinPolicy('invite-only'); }} />
-                <span>{t('podsSidebar.create.privateOption')}</span>
-              </label>
-              <label>
                 <input type="radio" name={`pod-${pod._id}-join-policy`} checked={joinPolicy === 'open'} onChange={() => { void changeJoinPolicy('open'); }} />
                 <span>{t('podsSidebar.create.teamOption')}</span>
+              </label>
+              <label>
+                <input type="radio" name={`pod-${pod._id}-join-policy`} checked={joinPolicy === 'invite-only'} onChange={() => { void changeJoinPolicy('invite-only'); }} />
+                <span>{t('podsSidebar.create.privateOption')}</span>
               </label>
             </fieldset>
             {joinPolicy === 'open' && <p className="v2-pods__join-policy-hint">{t('podsSidebar.create.teamDescription')}</p>}
