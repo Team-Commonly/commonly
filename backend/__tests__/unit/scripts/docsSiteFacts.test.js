@@ -51,8 +51,10 @@ describe('docs.commonly.me says what the product does', () => {
 
   test('the hosted limits match the code', () => {
     const turns = hostedDefault('DEFAULT_TURNS_PER_DAY');
+    const proTurns = hostedDefault('DEFAULT_TURNS_PER_DAY_PRO');
     const agents = hostedDefault('DEFAULT_AGENTS_PER_USER');
     expect(quickstart).toContain(`${turns} turns a day`);
+    expect(quickstart).toContain(`${proTurns} turns a day on Pro`);
     expect(agents).toBe(1);
     expect(quickstart).toMatch(/run one hosted agent/);
   });

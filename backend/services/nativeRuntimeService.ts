@@ -35,6 +35,7 @@ import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
 import { isSandboxConfigured, TurnSandbox } from './turnSandboxService';
 import { untrustedConnectorMarker } from './brokerResultMarker';
 import { hostedNativeDecline, hostedNativeRunConfig, hostedRunsNative } from './hostedEngine';
+import { hostedCapsForOwner, ownerIsPro } from './hostedRuntimeService';
 
 // --- public surface --------------------------------------------------------
 
@@ -807,6 +808,10 @@ export async function runAgent(
   // too, on a configuration built server-side: its stored config came from the
   // browser and must not choose the model, the tools or the cap.
   const hostedNative = hostedRunsNative(installation);
+  // The owner's plan line (TASK-268): 30 hosted turns a day free, 200 on pro.
+  const hostedTurnsPerDay = hostedNative
+    ? (await hostedCapsForOwner(installation.installedBy)).turnsPerDay
+    : 0;
   if (runtimeType !== 'native' && !hostedNative) {
     return failedResult(
       '',
@@ -815,7 +820,7 @@ export async function runAgent(
     );
   }
   if (hostedNative) {
-    const decline = hostedNativeDecline(String(trigger?.type || ''));
+    const decline = hostedNativeDecline(String(trigger?.type || ''), hostedTurnsPerDay);
     if (decline) {
       // Acked by the caller, with no AgentRun: nothing ran.
       return {
@@ -823,7 +828,7 @@ export async function runAgent(
       };
     }
   }
-  const cfg = hostedNative ? normalizeConfig(hostedNativeRunConfig(installation)) : installedCfg;
+  const cfg = hostedNative ? normalizeConfig(hostedNativeRunConfig(installation, hostedTurnsPerDay)) : installedCfg;
 
   const podId = String(installation.podId);
   const agentName = String(installation.agentName || '').toLowerCase();
@@ -873,8 +878,8 @@ export async function runAgent(
   // a runaway guard and a spend ceiling have opposite safe directions.
   // Forward-only: rows without userId predate the stamp and cannot be
   // counted; the window inherits the cap's fixed-UTC-midnight semantics.
-  const userCeiling = Number(process.env.AGENT_USER_DAILY_RUN_CEILING ?? 120);
-  if (Number.isFinite(userCeiling) && userCeiling > 0) {
+  const freeCeiling = Number(process.env.AGENT_USER_DAILY_RUN_CEILING ?? 120);
+  if (Number.isFinite(freeCeiling) && freeCeiling > 0) {
     const installedBy = installation.installedBy ? String(installation.installedBy) : '';
     if (!installedBy) {
       console.warn(
@@ -882,6 +887,13 @@ export async function runAgent(
         + 'per-user ceiling unenforceable for this install',
       );
     } else {
+      // A pro owner's hosted line (200 turns a day, TASK-268) sits above the
+      // free ceiling, so pro owners get the pro ceiling; a failed plan lookup
+      // reads as free, the lower one.
+      const proCeiling = Number(process.env.AGENT_USER_DAILY_RUN_CEILING_PRO ?? 300);
+      const userCeiling = (await ownerIsPro(installedBy)) && Number.isFinite(proCeiling) && proCeiling > 0
+        ? proCeiling
+        : freeCeiling;
       try {
         const AgentRunModel = require('../models/AgentRun');
         const dayStart = new Date();
