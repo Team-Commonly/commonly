@@ -350,7 +350,10 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].opts.env.CODEX_HOME).toBe(publicHome);
   });
 
-  test('a public cold MCP is absent from Codex overrides and the prompt says so', async () => {
+  // TASK-273: a public seat whose MCP did not start used to run with a notice,
+  // and the model narrated the failure to a stranger (2026-10-15). It now
+  // refuses the turn before Codex runs.
+  test('a public cold MCP refuses the turn before Codex runs', async () => {
     const home = await mkdtemp(join(tmpdir(), 'commonly-codex-mcp-home-'));
     const publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-public-home-'));
     await writeFile(join(home, '.warm.lock'), 'warming\n');
@@ -358,7 +361,7 @@ describe('codex adapter — spawn()', () => {
     process.env.COMMONLY_MCP_HOME = home;
     try {
       const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
-      await codex.spawn('hi', {
+      await expect(codex.spawn('hi', {
         cwd: '/tmp/public-workspace',
         environment: {
           sandbox: { trust: 'public', mode: 'workspace' },
@@ -366,12 +369,8 @@ describe('codex adapter — spawn()', () => {
         },
         _publicCodexHome: publicHome,
         _spawnImpl: impl,
-      });
-      const args = calls[0].args;
-      expect(args.filter((arg) => arg.startsWith('mcp_servers.'))).toEqual([]);
-      expect(args.at(-1)).toContain('An MCP server was not started');
-      expect(args.join(' ')).toContain('**/.npmrc');
-      expect(args.join(' ')).toContain('**/.yarnrc*');
+      })).rejects.toMatchObject({ code: 'public_mcp_unavailable' });
+      expect(calls).toHaveLength(0);
     } finally {
       if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
       else process.env.COMMONLY_MCP_HOME = prior;
@@ -410,6 +409,10 @@ describe('codex adapter — spawn()', () => {
       const permissionConfig = args.find((arg) => arg.startsWith('permissions.commonly_public.filesystem='));
       expect(permissionConfig).toContain(`${JSON.stringify(versionDir)}="read"`);
       expect(permissionConfig).not.toContain(`${JSON.stringify(home)}="read"`);
+      // Moved here from the cold-MCP arm, which no longer spawns: a public seat
+      // still denies package-manager credential files.
+      expect(args.join(' ')).toContain('**/.npmrc');
+      expect(args.join(' ')).toContain('**/.yarnrc*');
     } finally {
       if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
       else process.env.COMMONLY_MCP_HOME = prior;

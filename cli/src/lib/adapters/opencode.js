@@ -39,7 +39,7 @@ import {
 } from 'path';
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE, selectedMcpVersionDir } from '../mcp-home.js';
+import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import {
   isLegacySandboxTrust,
@@ -685,6 +685,7 @@ export default {
         unavailableMcp,
         mcpReadDirectories,
       });
+      if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
       const config = {
         permission: isPublic
           ? publicPermissions(sandboxMode, Object.keys(mcp))
@@ -717,8 +718,7 @@ export default {
         credentialFile: credential?.path || null,
       });
       const args = buildArgs({
-        prompt: unavailableMcp.length
-          ? `${fullPrompt}\n\n${PUBLIC_MCP_UNAVAILABLE_NOTICE}` : fullPrompt,
+        prompt: fullPrompt,
         sessionId: ctx.sessionId,
         cwd: ctx.cwd,
         model: qualifiedProviderModel(provider, ctx.environment?.model),

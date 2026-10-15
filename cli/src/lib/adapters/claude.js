@@ -75,7 +75,7 @@ import {
 import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE, selectedMcpVersionDir } from '../mcp-home.js';
+import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
@@ -801,9 +801,7 @@ export default {
           publicSeat: publicNativeSandbox,
         });
       }
-      if (mcpConfig?.unavailableMcp.length) {
-        baseArgs[1] = `${fullPrompt}\n\n${PUBLIC_MCP_UNAVAILABLE_NOTICE}`;
-      }
+      if (mcpConfig?.unavailableMcp.length) throw publicMcpUnavailableError(mcpConfig.unavailableMcp);
       const claudeEnv = buildClaudeEnv(
         ctx.env,
         publicClaudeState,
@@ -847,8 +845,7 @@ export default {
         // as fresh too: otherwise a session-recovery path is the one fresh
         // session that misses the durable-state cue.
         const freshPrompt = buildPrompt(prompt, ctx.memoryLongTerm, { freshSession: true });
-        const retryBase = ['-p', mcpConfig?.unavailableMcp.length
-          ? `${freshPrompt}\n\n${PUBLIC_MCP_UNAVAILABLE_NOTICE}` : freshPrompt,
+        const retryBase = ['-p', freshPrompt,
         '--output-format', 'text', '--session-id', freshId, ...modelArgs];
         const retryCtx = {
           ...ctx,

@@ -6,7 +6,7 @@ import { tmpdir } from 'os';
 import { basename, dirname, isAbsolute, join } from 'path';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { deliverSeatCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE, selectedMcpVersionDir } from '../mcp-home.js';
+import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { writeCredentialFile } from '../credential-file.js';
 import { normalizeSandboxTrust, validateEnvironmentSpec } from '../environment.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
@@ -289,6 +289,7 @@ export default {
         unavailableMcp,
         mcpReadDirectories,
       });
+      if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
       await Promise.all([
         writeFile(settingsPath, JSON.stringify({
           privacy: { usageStatisticsEnabled: false },
@@ -307,8 +308,7 @@ export default {
         '--mcp-config', mcpPath, '--exclude-tools', [
           ...EXCLUDED_TOOLS, ...(isPublic ? PUBLIC_READ_TOOLS : []),
         ].join(','),
-        '-o', 'stream-json', '-p', unavailableMcp.length
-          ? `${fullPrompt}\n\n${PUBLIC_MCP_UNAVAILABLE_NOTICE}` : fullPrompt,
+        '-o', 'stream-json', '-p', fullPrompt,
       ];
       let cmd = executable;
       let spawnArgs = args;
