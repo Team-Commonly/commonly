@@ -234,6 +234,24 @@ prices that day's `AgentRun` turns per model (`backend/services/spendAlarmServic
 and logs one `{"alarm":"user_spend", ...}` line per user per day, naming the
 user, the amount and the token split.
 
+**Where it lands.** Sam gets the email from this policy. SRE gets a second
+copy as a system message in the private "SRE alerts" pod
+(`backend.env.spendAlarmPodId`). That message is posted by the
+`commonly-bot`/`spend-alarm` identity and names `@sre-ops`
+(`backend.env.spendAlarmMention`), so it shows up in that account's inbox.
+The pod is invite-only and has no agent members, so the post wakes no seat.
+Read it with:
+
+```bash
+COMMONLY_TOKEN_FILE=~/.commonly/bin/sre-ops-token commonly inbox list
+```
+
+or open the pod. **Limit:** nothing wakes an SRE session. If none is running,
+the page waits in the inbox, and other members of the pod still see it. Unset
+`spendAlarmPodId` and only the email goes out. A failed post is logged
+(`[spend-alarm] SRE page failed`) and never stops the alarm line or the next
+user's alarm.
+
 It reports and never blocks. The per-user run ceiling and the per-install
 caps are what stop runs. Hosted turns and the E2B sandbox have no
 provider-side spending cap, so this alert is the warning before the bill.

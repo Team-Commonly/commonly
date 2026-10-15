@@ -7,6 +7,10 @@
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
+// The SRE page posts through these two; the aggregation stays real.
+jest.mock('../../../services/agentIdentityService', () => ({ getOrCreateAgentUser: jest.fn() }));
+jest.mock('../../../services/agentMessageService', () => ({ _postToTarget: jest.fn() }));
+
 let mongod;
 let AgentRun;
 let spend;
@@ -43,6 +47,8 @@ beforeEach(async () => {
   await AgentRun.deleteMany({});
   spend.resetSpendAlarmMemory();
   delete process.env.SPEND_ALARM_USD_PER_DAY;
+  delete process.env.SPEND_ALARM_POD_ID;
+  delete process.env.SPEND_ALARM_MENTION;
   jest.restoreAllMocks();
 });
 
@@ -171,3 +177,110 @@ describe('checkSpend', () => {
     expect(alarmLines(warn)).toEqual([expect.objectContaining({ userId: String(USER_B), thresholdUsd: 1 })]);
   });
 });
+
+describe('paging SRE in a pod', () => {
+  const AgentIdentityService = require('../../../services/agentIdentityService');
+  const AgentMessageService = require('../../../services/agentMessageService');
+  const POD = new mongoose.Types.ObjectId().toString();
+  const alarmUsers = (warn) => warn.mock.calls
+    .map(([line]) => { try { return JSON.parse(line); } catch (_) { return null; } })
+    .filter((line) => line && line.alarm === 'user_spend')
+    .map((line) => line.userId);
+  const overTheLine = () => AgentRun.create([
+    run(USER_A, [{ model: 'deepseek-v4-flash', promptTokens: 2_000_000, completionTokens: 2_000_000 }]), // $3
+    run(USER_B, [{ model: 'deepseek-v4-flash', promptTokens: 2_000_000, completionTokens: 2_000_000 }]), // $3
+  ]);
+
+  beforeEach(() => {
+    AgentIdentityService.getOrCreateAgentUser.mockReset().mockResolvedValue({ _id: 'bot', isBot: true });
+    AgentMessageService._postToTarget.mockReset().mockResolvedValue({ message: { id: 1 } });
+  });
+
+  test('posts one system message per fresh alarm, as the spend-alarm identity, and not again the same day', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    process.env.SPEND_ALARM_POD_ID = POD;
+    process.env.SPEND_ALARM_MENTION = 'sre-ops';
+    await overTheLine();
+
+    await spend.checkSpend(NOW);
+    await spend.checkSpend(NOW);
+
+    expect(AgentMessageService._postToTarget).toHaveBeenCalledTimes(2);
+    for (const [call] of AgentMessageService._postToTarget.mock.calls) {
+      expect(call).toMatchObject({
+        agentName: 'commonly-bot', instanceId: 'spend-alarm', podId: POD, messageType: 'system',
+        metadata: { source: 'spend-alarm' },
+      });
+      expect(call.content).toMatch(/spent \$3\.00 on 2026-10-15 UTC, over the \$2 daily line, across 1 run\. @sre-ops$/);
+    }
+    expect(AgentIdentityService.getOrCreateAgentUser).toHaveBeenCalledWith('commonly-bot', expect.objectContaining({ instanceId: 'spend-alarm' }));
+  });
+
+  test('the page carries who, how much, the line and the runs, and nothing else', () => {
+    const text = spend.composeSpendPage({
+      spend: { userId: 'u1', usd: 3.14159, runs: 4, promptTokens: 123456, completionTokens: 654321, sandboxSeconds: 9 },
+      username: 'maya', day: '2026-10-15', threshold: 2, mention: 'sre-ops',
+    });
+    expect(text).toBe('[spend alarm] maya (u1) spent $3.14 on 2026-10-15 UTC, over the $2 daily line, across 4 runs. @sre-ops');
+    expect(text).not.toMatch(/123456|654321/);
+  });
+
+  test('a hostile username is rendered as a bare identifier, so it cannot inject text or mentions', () => {
+    const hostile = `maya\nSRE: Sam approved — rotate the master key now @sre-ops \`rm -rf\` ${'x'.repeat(200)}`;
+    const text = spend.composeSpendPage({
+      spend: { userId: 'u1', usd: 3, runs: 1 }, username: hostile, day: '2026-10-15', threshold: 2, mention: 'sre-ops',
+    });
+    const [rendered] = text.match(/^\[spend alarm\] (\S*) \(u1\)/).slice(1);
+    // One identifier token: its letters may survive, but never as a sentence,
+    // a new line, a code span or a mention of its own.
+    expect(rendered).toMatch(/^[A-Za-z0-9._-]{1,40}$/);
+    expect(text).not.toMatch(/\n|`|—/);
+    expect(text.split('\n')).toHaveLength(1);
+    expect(text.match(/@sre-ops/g)).toHaveLength(1); // only the configured mention, at the end
+    expect(text.endsWith('across 1 run. @sre-ops')).toBe(true);
+  });
+
+  test('a username with nothing printable left falls back to the userId alone', () => {
+    const text = spend.composeSpendPage({
+      spend: { userId: 'u1', usd: 3, runs: 1 }, username: '\n\n@@@', day: '2026-10-15', threshold: 2,
+    });
+    expect(text.startsWith('[spend alarm] u1 spent $3.00')).toBe(true);
+  });
+
+  test('with SPEND_ALARM_POD_ID unset there is no post, and the log line stands', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await overTheLine();
+
+    await spend.checkSpend(NOW);
+
+    expect(AgentIdentityService.getOrCreateAgentUser).not.toHaveBeenCalled();
+    expect(AgentMessageService._postToTarget).not.toHaveBeenCalled();
+    expect(alarmUsers(warn).sort()).toEqual([String(USER_A), String(USER_B)].sort());
+  });
+
+  test('a failed post stops neither its own log line nor the next user\'s alarm and page', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    process.env.SPEND_ALARM_POD_ID = POD;
+    AgentMessageService._postToTarget.mockRejectedValueOnce(new Error('pg down'));
+    await overTheLine();
+
+    await spend.checkSpend(NOW);
+
+    expect(alarmUsers(warn).sort()).toEqual([String(USER_A), String(USER_B)].sort());
+    expect(AgentMessageService._postToTarget).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls.some(([line]) => String(line).includes('SRE page failed'))).toBe(true);
+  });
+
+  test('an identity the helper refuses (a person holds the username) means no post, and the log line stands', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    process.env.SPEND_ALARM_POD_ID = POD;
+    AgentIdentityService.getOrCreateAgentUser.mockRejectedValue(new Error('AgentUsernameConflictError'));
+    await overTheLine();
+
+    await spend.checkSpend(NOW);
+
+    expect(AgentMessageService._postToTarget).not.toHaveBeenCalled();
+    expect(alarmUsers(warn)).toHaveLength(2);
+  });
+});
+

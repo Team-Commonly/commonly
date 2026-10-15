@@ -79,6 +79,10 @@ backend:
     # 2026-10-15 (posted on #2219) showed only the account's own footprint. To
     # pause it, set "false"; the scheduler registers the job only for "true".
     syntheticAccountPurge: "true"
+    # The spend alarm pages SRE here too (private, invite-only "SRE alerts"
+    # pod, no agents; created 2026-10-15 by sre-ops).
+    spendAlarmPodId: "6ad10a3271fd296f2b21cc1a"
+    spendAlarmMention: "sre-ops"
     marketplaceManifestPath: "/app/packages/commonly-marketplace/marketplace.json"
     logLevel: debug
     # Session threshold tuned for multi-step agent tasks. 150KB was killing

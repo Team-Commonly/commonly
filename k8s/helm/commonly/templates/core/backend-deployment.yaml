@@ -552,6 +552,17 @@ spec:
           value: {{ .Values.backend.env.agentWorkSweepDisabled | quote }}
         {{- end }}
 
+        # TASK-263: the spend alarm also posts into this pod, naming this
+        # account, so the page reaches SRE's inbox as well as the email.
+        {{- with .Values.backend.env.spendAlarmPodId }}
+        - name: SPEND_ALARM_POD_ID
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.backend.env.spendAlarmMention }}
+        - name: SPEND_ALARM_MENTION
+          value: {{ . | quote }}
+        {{- end }}
+
         # TASK-260: the scheduler purges the stranger journey's throwaway
         # accounts at 02:47/14:47 UTC (services/syntheticAccountPurgeService.ts).
         # Opt-in per deployment; it deletes rows.
