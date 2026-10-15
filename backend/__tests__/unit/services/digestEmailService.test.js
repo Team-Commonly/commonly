@@ -170,6 +170,26 @@ describe('digestEmailService', () => {
     expect(mockSendEmail).toHaveBeenCalledTimes(2);
   });
 
+  it('sets lastDigestSent only after SMTP accepts the message', async () => {
+    const user = await createUser();
+    const digest = await createDigest(user);
+    let releaseSmtp;
+    let smtpStarted;
+    const enteredSmtp = new Promise((resolve) => { smtpStarted = resolve; });
+    mockSendEmail.mockImplementation(() => new Promise((resolve) => {
+      releaseSmtp = resolve;
+      smtpStarted();
+    }));
+
+    const sending = digestEmailService.sendDigestEmails([runEntry(digest)]);
+    await enteredSmtp;
+    expect((await User.findById(user._id)).lastDigestSent).toBeUndefined();
+
+    releaseSmtp({ data: { data: { succeeded: 1 } } });
+    await sending;
+    expect((await User.findById(user._id)).lastDigestSent).toBeInstanceOf(Date);
+  });
+
   it('logs once and skips the entire run when SMTP is unconfigured', async () => {
     delete process.env.SMTP2GO_API_KEY;
     const user = await createUser();

@@ -374,11 +374,16 @@ This might be a great time to start a new conversation or share something intere
         podId: { $exists: true },
         createdAt: { $gte: startTime },
       });
-      const recentMemberIds = await Pod.distinct('members', { _id: { $in: recentPodIds } });
+      // Public-read pods include every signup; their activity is not a reason
+      // to wake every stale account for an LLM-generated digest.
+      const recentMemberIds = await Pod.distinct('members', {
+        _id: { $in: recentPodIds },
+        publicRead: { $ne: true },
+      });
 
       const activeUsers = await User.find({
+        isBot: { $ne: true },
         $or: [
-          { subscribedPods: { $exists: true, $ne: [] } },
           { lastActive: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
           { _id: { $in: recentMemberIds } },
         ],

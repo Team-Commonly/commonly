@@ -15,8 +15,13 @@ const person = async (lastActive = new Date()) => {
   });
 };
 
-const podWithSummary = async (owner, name) => {
-  const pod = await Pod.create({ name, createdBy: owner._id, members: [owner._id] });
+const podWithSummary = async (owner, name, options = {}) => {
+  const pod = await Pod.create({
+    name,
+    createdBy: owner._id,
+    members: [owner._id, ...(options.members || []).map((member) => member._id)],
+    publicRead: options.publicRead || false,
+  });
   await Summary.create({
     type: 'chats',
     podId: pod._id,
@@ -34,8 +39,9 @@ afterEach(clearMongoDb);
 
 test('digest reads current pod membership without subscribedPods and excludes another pod', async () => {
   const member = await person();
+  const creator = await person();
   const other = await person();
-  await podWithSummary(member, 'Member Pod');
+  await podWithSummary(creator, 'Member Pod', { members: [member] });
   await podWithSummary(other, 'Other Pod');
   const service = new DailyDigestService();
   jest.spyOn(service, 'generateDigestContent').mockImplementation(async (data) =>
@@ -51,12 +57,37 @@ test('digest reads current pod membership without subscribedPods and excludes an
 
 test('scheduler includes a member with recent pod work even after seven days away', async () => {
   const member = await person(new Date(Date.now() - 10 * 86400000));
-  await podWithSummary(member, 'Active Agent Pod');
+  const creator = await person(new Date(Date.now() - 10 * 86400000));
+  await podWithSummary(creator, 'Active Agent Pod', { members: [member] });
   const service = new DailyDigestService();
   const generate = jest.spyOn(service, 'generateUserDailyDigest').mockResolvedValue({ _id: 'digest-1' });
 
   const results = await service.generateAllDailyDigests();
 
   expect(generate).toHaveBeenCalledWith(member._id);
-  expect(results).toEqual([expect.objectContaining({ success: true })]);
+  expect(results).toHaveLength(2);
+});
+
+test('scheduler does not wake a stale member for public-read pod activity', async () => {
+  const member = await person(new Date(Date.now() - 10 * 86400000));
+  await podWithSummary(member, 'Public Pod', { publicRead: true });
+  const service = new DailyDigestService();
+  const generate = jest.spyOn(service, 'generateUserDailyDigest').mockResolvedValue({ _id: 'digest-1' });
+
+  await service.generateAllDailyDigests();
+
+  expect(generate).not.toHaveBeenCalled();
+});
+
+test('scheduler does not generate a digest for a bot', async () => {
+  const bot = await person();
+  bot.isBot = true;
+  await bot.save();
+  await podWithSummary(bot, 'Bot Pod');
+  const service = new DailyDigestService();
+  const generate = jest.spyOn(service, 'generateUserDailyDigest').mockResolvedValue({ _id: 'digest-1' });
+
+  await service.generateAllDailyDigests();
+
+  expect(generate).not.toHaveBeenCalled();
 });
