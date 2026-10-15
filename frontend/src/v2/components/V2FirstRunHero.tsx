@@ -4,12 +4,12 @@ import React, {
 import { useNavigate } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
 import { useTranslation } from 'react-i18next';
-import { FIRST_RUN_REOPEN_EVENT } from '../firstRunGuide';
+import { FIRST_RUN_REOPEN_EVENT, FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
 
 const POLL_INTERVAL_MS = 3_000;
 const CHECK_MARK = '✓';
 const EXTERNAL_LINK_MARK = '↗';
-export const FIRST_RUN_STARTED_KEY = 'v2.firstRun.started';
+export { FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
 
 interface ConnectedAgent {
   agentName: string;
@@ -90,14 +90,16 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   const shouldProbe = engaged;
   const visible = engaged;
 
-  /** Every dismissal ends this guide until the person asks for it again. */
+  /** Every dismissal persists; Feedback → Guide saves the latch and returns to the shell. */
   const close = useCallback(() => {
     writeFlag(FIRST_RUN_STARTED_KEY, false);
     setEngaged(false);
   }, []);
 
   useEffect(() => {
-    const reopen = () => {
+    const reopen = (event: Event) => {
+      const detail = (event as CustomEvent<{ handled?: boolean }>).detail;
+      if (detail) detail.handled = true;
       // Asking for the guide starts a setup: the started latch is the one
       // visibility model for new and connected users alike.
       writeFlag(FIRST_RUN_STARTED_KEY, true);

@@ -1,8 +1,9 @@
 // @ts-nocheck
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import V2NavRail from '../components/V2NavRail';
+import { FIRST_RUN_REOPEN_EVENT, FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
 
 const mockLogout = jest.fn();
 
@@ -18,6 +19,54 @@ describe('V2FeedbackMenu', () => {
 
   beforeEach(() => {
     process.env.REACT_APP_VERSION = 'abc12345';
+    localStorage.clear();
+  });
+
+  test('Guide from a feature page saves the request and returns to the shell', () => {
+    const LocationProbe = () => {
+      const location = useLocation();
+      return <span data-testid="location">{location.pathname}</span>;
+    };
+    render(
+      <MemoryRouter initialEntries={['/v2/settings']}>
+        <div className="v2-root">
+          <V2NavRail />
+          <LocationProbe />
+        </div>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Feedback' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guide', hidden: true }));
+
+    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
+    expect(screen.getByTestId('location')).toHaveTextContent('/v2');
+  });
+
+  test('Guide leaves the current pod in place when a mounted guide handler handles the request', () => {
+    const LocationProbe = () => {
+      const location = useLocation();
+      return <span data-testid="location">{location.pathname + location.search}</span>;
+    };
+    const heroListener = (event: Event) => { event.detail.handled = true; };
+    window.addEventListener(FIRST_RUN_REOPEN_EVENT, heroListener);
+    try {
+      render(
+        <MemoryRouter initialEntries={['/v2/pods/pod-123?view=files']}>
+          <div className="v2-root">
+            <V2NavRail />
+            <LocationProbe />
+          </div>
+        </MemoryRouter>,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Feedback' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Guide', hidden: true }));
+
+      expect(screen.getByTestId('location')).toHaveTextContent('/v2/pods/pod-123?view=files');
+      expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
+    } finally {
+      window.removeEventListener(FIRST_RUN_REOPEN_EVENT, heroListener);
+    }
   });
 
   afterEach(() => {
