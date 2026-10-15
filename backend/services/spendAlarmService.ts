@@ -148,6 +148,51 @@ export const userSpendForDay = async (now: Date = new Date()): Promise<UserSpend
   return [...byUser.values()].map(({ runIds, ...spend }) => ({ ...spend, runs: runIds.size }));
 };
 
+// The alarm also pages SRE in a pod, alongside Sam's email from the log-based
+// policy (Cofounder, 2026-10-15). One system message per fresh alarm goes to
+// SPEND_ALARM_POD_ID, a private invite-only pod with no agent members, and
+// names SPEND_ALARM_MENTION so it lands in that account's inbox. It is posted
+// as the dedicated commonly-bot/spend-alarm identity through
+// AgentMessageService._postToTarget, which does not join the poster to the
+// pod; postMessage would (ensureAgentInPod). getOrCreateAgentUser refuses a
+// username a person holds (TASK-133), so the post cannot appear as someone
+// else. Unset pod id means no post. The page never blocks the log line or
+// another user's alarm.
+const PAGE_IDENTITY = { agentName: 'commonly-bot', instanceId: 'spend-alarm', displayName: 'Spend alarm' };
+
+export const composeSpendPage = (
+  { spend, username, day, threshold, mention }:
+  { spend: UserSpend; username?: string; day: string; threshold: number; mention?: string },
+): string => {
+  const who = username ? `${username} (${spend.userId})` : spend.userId;
+  const handle = mention ? ` @${mention}` : '';
+  return `[spend alarm] ${who} spent $${spend.usd.toFixed(2)} on ${day} UTC, over the $${threshold} daily line, `
+    + `across ${spend.runs} run${spend.runs === 1 ? '' : 's'}.${handle}`;
+};
+
+const pageSre = async (content: string): Promise<void> => {
+  const podId = String(process.env.SPEND_ALARM_POD_ID || '').trim();
+  if (!podId) return;
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const AgentIdentityService = require('./agentIdentityService');
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const AgentMessageService = require('./agentMessageService');
+  const agentUser = await AgentIdentityService.getOrCreateAgentUser(PAGE_IDENTITY.agentName, {
+    instanceId: PAGE_IDENTITY.instanceId,
+    displayName: PAGE_IDENTITY.displayName,
+  });
+  await AgentMessageService._postToTarget({
+    ...PAGE_IDENTITY,
+    podId,
+    content,
+    messageType: 'system',
+    metadata: { source: 'spend-alarm' },
+    agentUser,
+    skipDeliveryUpdate: true,
+    skipSummaryPersistence: true,
+  });
+};
+
 // One line per user per UTC day. In memory only: after a restart a user still
 // over the line is logged once more, which pages nothing new (the alert is
 // already open for that day) and costs one log line.
@@ -192,6 +237,17 @@ export const checkSpend = async (now: Date = new Date()): Promise<UserSpend[]> =
       completionTokens: spend.completionTokens,
       sandboxSeconds: spend.sandboxSeconds,
     }));
+    try {
+      await pageSre(composeSpendPage({
+        spend,
+        username: usernames.get(spend.userId),
+        day,
+        threshold,
+        mention: String(process.env.SPEND_ALARM_MENTION || '').trim() || undefined,
+      }));
+    } catch (error) {
+      console.warn(`[spend-alarm] SRE page failed for ${spend.userId}; the log line stands:`, (error as Error).message);
+    }
   }
   return fresh;
 };
