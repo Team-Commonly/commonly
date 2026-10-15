@@ -80,6 +80,28 @@ describe('userSpendForDay', () => {
   });
 });
 
+describe('sandbox seconds (TASK-266)', () => {
+  test('are priced per run, once, and alone can cross the line', async () => {
+    const withSandbox = (userId, seconds, turns) => ({ ...run(userId, turns), sandboxSeconds: seconds });
+    await AgentRun.create([
+      // 100,000 s of sandbox and a 2-turn run: priced once, not once per turn.
+      withSandbox(USER_A, 100_000, [
+        { model: 'deepseek-v4-flash', promptTokens: 0, completionTokens: 0 },
+        { model: 'deepseek-v4-flash', promptTokens: 0, completionTokens: 0 },
+      ]),
+      // A run with no turns still costs its sandbox seconds.
+      withSandbox(USER_B, 10, []),
+    ]);
+
+    const rows = await spend.userSpendForDay(NOW);
+    const a = rows.find((r) => r.userId === String(USER_A));
+    expect(a.sandboxSeconds).toBe(100_000);
+    expect(a.usd).toBeCloseTo(100_000 * spend.SANDBOX_USD_PER_SECOND, 6);
+    expect(a.runs).toBe(1);
+    expect(rows.find((r) => r.userId === String(USER_B)).sandboxSeconds).toBe(10);
+  });
+});
+
 describe('checkSpend', () => {
   const alarmLines = (warn) => warn.mock.calls
     .map(([line]) => { try { return JSON.parse(line); } catch (_) { return null; } })
@@ -98,7 +120,7 @@ describe('checkSpend', () => {
     const lines = alarmLines(warn);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({
-      alarm: 'user_spend', day: '2026-10-15', userId: String(USER_A), usd: 3, thresholdUsd: 2, runs: 1,
+      alarm: 'user_spend', day: '2026-10-15', userId: String(USER_A), usd: 3, thresholdUsd: 2, runs: 1, sandboxSeconds: 0,
     });
   });
 

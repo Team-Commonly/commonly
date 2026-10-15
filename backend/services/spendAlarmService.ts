@@ -44,6 +44,11 @@ export const priceForModel = (model: string | null | undefined): ModelPrice => (
   PRICES.find((row) => row.match.test(String(model || '')))?.price || UNPRICED_MODEL
 );
 
+// E2B's default sandbox (2 vCPU, 512 MiB), per second it runs: e2b.dev/pricing,
+// read 2026-10-15 (~$0.00037 for a 20 s turn). E2B has no spending cap, so the
+// seconds each turn records (AgentRun.sandboxSeconds, TASK-266) are priced here.
+export const SANDBOX_USD_PER_SECOND = 0.00003025;
+
 export const spendThresholdUsd = (): number => {
   const raw = Number(process.env.SPEND_ALARM_USD_PER_DAY);
   return Number.isFinite(raw) && raw > 0 ? raw : 2;
@@ -55,6 +60,7 @@ export interface UserSpend {
   runs: number;
   promptTokens: number;
   completionTokens: number;
+  sandboxSeconds: number;
 }
 
 const utcDayStart = (now: Date): Date => {
@@ -95,6 +101,17 @@ export const userSpendForDay = async (now: Date = new Date()): Promise<UserSpend
     unsplitTokens: number;
   }[];
 
+  // Sandbox seconds sit on the run, not the turn, so they are summed apart from
+  // the per-turn unwind above (which would count each run once per turn).
+  const sandboxRows = await AgentRun.aggregate([
+    {
+      $match: {
+        startedAt: { $gte: utcDayStart(now), $lte: now }, userId: { $ne: null }, sandboxSeconds: { $gt: 0 },
+      },
+    },
+    { $group: { _id: '$userId', seconds: { $sum: '$sandboxSeconds' }, runs: { $addToSet: '$_id' } } },
+  ]) as { _id: unknown; seconds: number; runs: unknown[] }[];
+
   const byUser = new Map<string, UserSpend & { runIds: Set<string> }>();
   for (const row of rows) {
     const userId = String(row._id.userId);
@@ -102,11 +119,21 @@ export const userSpendForDay = async (now: Date = new Date()): Promise<UserSpend
     const completion = row.completionTokens + row.unsplitTokens;
     const usd = (row.promptTokens * price.input + completion * price.output) / 1_000_000;
     const entry = byUser.get(userId) || {
-      userId, usd: 0, runs: 0, promptTokens: 0, completionTokens: 0, runIds: new Set<string>(),
+      userId, usd: 0, runs: 0, promptTokens: 0, completionTokens: 0, sandboxSeconds: 0, runIds: new Set<string>(),
     };
     entry.usd += usd;
     entry.promptTokens += row.promptTokens;
     entry.completionTokens += completion;
+    row.runs.forEach((id) => entry.runIds.add(String(id)));
+    byUser.set(userId, entry);
+  }
+  for (const row of sandboxRows) {
+    const userId = String(row._id);
+    const entry = byUser.get(userId) || {
+      userId, usd: 0, runs: 0, promptTokens: 0, completionTokens: 0, sandboxSeconds: 0, runIds: new Set<string>(),
+    };
+    entry.sandboxSeconds += row.seconds;
+    entry.usd += row.seconds * SANDBOX_USD_PER_SECOND;
     row.runs.forEach((id) => entry.runIds.add(String(id)));
     byUser.set(userId, entry);
   }
@@ -138,6 +165,7 @@ export const checkSpend = async (now: Date = new Date()): Promise<UserSpend[]> =
       runs: spend.runs,
       promptTokens: spend.promptTokens,
       completionTokens: spend.completionTokens,
+      sandboxSeconds: spend.sandboxSeconds,
     }));
   }
   return fresh;

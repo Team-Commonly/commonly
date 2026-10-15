@@ -17,6 +17,10 @@ jest.mock('../../../services/messageClaimService', () => ({
   claim: jest.fn().mockResolvedValue({ claimed: true, expiresAt: new Date() }),
   release: jest.fn().mockResolvedValue({ released: true }),
 }));
+// No outsider-writable grant here, so #2211's narrowing stays off.
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
+}));
 const mockRun = jest.fn();
 const mockClose = jest.fn();
 jest.mock('../../../services/turnSandboxService', () => ({

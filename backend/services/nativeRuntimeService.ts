@@ -1262,8 +1262,11 @@ export async function runAgent(
           // Grants can be minted after the turn's tool list was assembled.
           // Re-read the policy before dispatch; a stale model call is refused.
           dispatchCtx.inPodOnly = await inPodOnlyNow();
+          // A tool the narrowing removed goes to dispatchTool, which refuses it
+          // naming the grant; any other tool not offered this turn is refused here.
+          const narrowedAway = Boolean(dispatchCtx.inPodOnly) && !IN_POD_NATIVE_TOOLS.has(toolName);
           const notOffered = `${toolName || 'That tool'} is not available to you in this turn.`;
-          const result: DispatchResult = offeredToolNames.has(toolName)
+          const result: DispatchResult = offeredToolNames.has(toolName) || narrowedAway
             ? await dispatchTool(toolName, parsedArgs, dispatchCtx)
             : { content: { ok: false, error: notOffered }, error: notOffered };
           const elapsed = Date.now() - toolStart;
