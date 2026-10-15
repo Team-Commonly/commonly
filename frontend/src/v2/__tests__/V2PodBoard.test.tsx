@@ -109,6 +109,39 @@ beforeEach(() => {
 });
 
 describe('V2PodBoard', () => {
+  test('shows the claim holder and local expiry, then hides the lease without a reload', async () => {
+    const now = new Date('2026-10-15T13:00:00.000Z');
+    const expiresAt = new Date(now.getTime() + 60_000).toISOString();
+    const task = {
+      taskId: 'TASK-269', title: 'Show the lease', status: 'claimed',
+      assignee: 'someone-else', claimedBy: 'forge-id', claimExpiresAt: expiresAt, updates: [],
+    };
+    jest.useFakeTimers({ now });
+    axios.get.mockImplementation((url) => {
+      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: [task] } });
+      if (url.endsWith('/focus')) return Promise.resolve({ data: FOCUS });
+      if (url.startsWith('/api/pods/')) return Promise.resolve({ data: {
+        name: 'My Workspace', members: [{ _id: 'forge-id', username: 'forge', displayName: 'Forge' }],
+      } });
+      return Promise.resolve({ data: {} });
+    });
+
+    try {
+      renderBoard();
+      await act(async () => { await Promise.resolve(); });
+      const expectedTime = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(expiresAt));
+      expect(screen.getByText(`Forge holds this until ${expectedTime}`)).toBeInTheDocument();
+
+      act(() => { jest.advanceTimersByTime(59_999); });
+      expect(screen.getByText(`Forge holds this until ${expectedTime}`)).toBeInTheDocument();
+      act(() => { jest.advanceTimersByTime(1); });
+      expect(screen.queryByText(/holds this until/)).not.toBeInTheDocument();
+      expect(axios.get.mock.calls.filter(([url]) => url.startsWith('/api/v1/tasks/'))).toHaveLength(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('renders four canonical columns and places alias statuses in them', async () => {
     renderBoard();
 

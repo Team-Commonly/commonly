@@ -1208,6 +1208,7 @@
   },
   "board": {
     "title": "Board",
+    "claimUntil": "{{holder}} holds this until {{time}}",
     "backToChat": "Back to chat",
     "newTask": "New task",
     "taskCount_one": "{{count}} task",

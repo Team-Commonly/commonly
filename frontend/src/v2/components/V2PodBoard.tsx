@@ -27,6 +27,8 @@ interface BoardTask {
   title: string;
   status: string;
   assignee?: string | null;
+  claimedBy?: string | null;
+  claimExpiresAt?: string | null;
   notes?: string | null;
   prUrl?: string | null;
   updatedAt?: string;
@@ -133,6 +135,7 @@ const V2PodBoard: React.FC = () => {
   const { socket, connected, joinPod, leavePod } = useSocket();
 
   const [tasks, setTasks] = useState<BoardTask[]>([]);
+  const [claimClock, setClaimClock] = useState(() => Date.now());
   const [podName, setPodName] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -143,6 +146,28 @@ const V2PodBoard: React.FC = () => {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [podMembers, setPodMembers] = useState<PodMember[]>([]);
+
+  // Re-render at the next lease boundary even if no socket event arrives.
+  // A lapsed claim must stop looking held while the board stays open.
+  useEffect(() => {
+    const nextExpiry = tasks.reduce((soonest, task) => {
+      if (task.status !== 'claimed' || !task.claimedBy || !task.claimExpiresAt) return soonest;
+      const expiry = Date.parse(task.claimExpiresAt);
+      return Number.isFinite(expiry) && expiry > claimClock ? Math.min(soonest, expiry) : soonest;
+    }, Infinity);
+    if (!Number.isFinite(nextExpiry)) return undefined;
+    const timer = window.setTimeout(() => setClaimClock(Date.now()), Math.min(Math.max(0, nextExpiry - Date.now()), 2_147_483_647));
+    return () => window.clearTimeout(timer);
+  }, [tasks, claimClock]);
+
+  const claimHolderName = useCallback((task: BoardTask): string => {
+    const member = podMembers.find((item) => memberId(item) === task.claimedBy);
+    if (member) return memberLabel(member);
+    // Agent instance claims can use an instance id instead of a User id.
+    // The claim route records the claimant's resolved author on each claim.
+    const claimUpdate = task.updates?.slice().reverse().find((update) => update.text.startsWith('Claimed by '));
+    return claimUpdate?.author || task.claimedBy || '';
+  }, [podMembers]);
   const [focusRead, setFocusRead] = useState<FocusRead | null>(null);
   const [focusLoading, setFocusLoading] = useState(true);
   const [focusError, setFocusError] = useState(false);
@@ -594,6 +619,15 @@ const V2PodBoard: React.FC = () => {
                       {task.assignee && (
                         <span className="v2-board__card-assignee">@{task.assignee}</span>
                       )}
+                      {task.status === 'claimed' && task.claimedBy && task.claimExpiresAt
+                        && Date.parse(task.claimExpiresAt) > claimClock && (
+                          <span className="v2-board__card-assignee">
+                            {t('board.claimUntil', {
+                              holder: claimHolderName(task),
+                              time: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(task.claimExpiresAt)),
+                            })}
+                          </span>
+                        )}
                     </button>
                     <div className="v2-board__card-actions">
                       {col.moves.map((move) => (
