@@ -211,6 +211,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [joinPolicyFixPodId, setJoinPolicyFixPodId] = useState<string | null>(null);
+  const [policyFixedPodId, setPolicyFixedPodId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [segment, setSegment] = useState<'all' | 'granted' | 'not-yet'>('all');
   // Grants and trail rows carry relative ages; they must advance while the
@@ -422,6 +424,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     setSelectedId(null);
     setConfirmRevoke(null);
     setError(null);
+    setJoinPolicyFixPodId(null);
+    setPolicyFixedPodId(null);
   };
   const openGithubAppSetup = () => {
     setGithubAppSetup({ installationId: '', owner: '', repo: '' });
@@ -438,6 +442,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     if (!draft || !draftEntry) return;
     setBusy(true);
     setError(null);
+    setJoinPolicyFixPodId(null);
+    setPolicyFixedPodId(null);
     try {
       const expiresAt = new Date(Date.now() + draft.expiryDays * 86_400_000).toISOString();
       // The mint's body, as routes/grants.ts takes it: the server names the broker (Vera 67728)
@@ -471,6 +477,27 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     } catch (err) {
       const code = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
       setError(code?.message || code?.error || t('tools.grantError', { defaultValue: 'Could not grant it.' }));
+      const creator = pods.find((pod) => pod._id === draft.podId)?.createdBy as { _id?: string } | string | undefined;
+      const owner = typeof creator === 'string' ? creator : creator?._id;
+      if (code?.error === 'outsider_grant_pod_joinable' && owner === viewerId) {
+        setJoinPolicyFixPodId(draft.podId);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const fixJoinPolicy = async () => {
+    if (!draft || joinPolicyFixPodId !== draft.podId || busy) return;
+    setBusy(true);
+    try {
+      await api.patch(`/api/pods/${encodeURIComponent(draft.podId)}/join-policy`, { joinPolicy: 'invite-only' });
+      setJoinPolicyFixPodId(null);
+      setPolicyFixedPodId(draft.podId);
+      setError(null);
+    } catch (requestError) {
+      const data = (requestError as { response?: { data?: { message?: string; error?: string } } })?.response?.data;
+      setError(data?.message || data?.error || t('tools.joinPolicyError', { defaultValue: 'Could not make this pod invite-only.' }));
     } finally {
       setBusy(false);
     }
@@ -856,6 +883,14 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             </button>
           </div>
           {error && <p className="v2-connector-aside__note" role="alert">{error}</p>}
+          {joinPolicyFixPodId === draft.podId && (
+            <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { void fixJoinPolicy(); }}>
+              {t('tools.makePodInviteOnly', { defaultValue: 'Make this pod invite-only' })}
+            </button>
+          )}
+          {policyFixedPodId === draft.podId && (
+            <p className="v2-connector-aside__note" role="status">{t('tools.podInviteOnlyNow', { defaultValue: 'This pod is invite-only. Select Grant to continue.' })}</p>
+          )}
         </section>
       </aside>
     );

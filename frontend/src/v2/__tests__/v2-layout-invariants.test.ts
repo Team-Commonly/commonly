@@ -1567,12 +1567,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-root button.v2-msg__action');
   });
 
-  test('create-pod panel no longer ships audience options (ADR-016 / #768)', () => {
-    // Creation asks name + purpose only; visibility is a later act. If option
-    // buttons ever come back to this panel they MUST carry the
-    // `.v2-root button.` prefix — the global reset (0-2-1) beats a bare class
-    // and renders them as plain prose, which shipped once (#870).
+  test('create-pod join choice uses radios, not the reset-prone option buttons', () => {
+    // Join policy is now chosen at creation, but public visibility remains a
+    // later act. The old option buttons lost to the global button reset (#870).
     expect(v2).not.toMatch(/\.v2-pods__create-option[^\n]*\{/);
+    expect(ruleBody(v2, '.v2-pods__join-policy,\n.v2-pod-join-settings')).toContain('display: flex');
   });
 
   test('the approval card visually outranks the action over the agent prose', () => {

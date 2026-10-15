@@ -977,16 +977,54 @@ body.modern-ui.v2-canvas {
   margin-bottom: 14px;
 }
 
-/* Creation no longer asks about audience (ADR-016 / #768): every pod is born
- * private, and visibility is set later on a pod that has content worth
- * disclosing. The two option cards and their styles are gone with it — along
- * with the selected-state dot, which was a fourth signal saying what the
- * accent fill, border and text colour already said.
- *
- * Kept as a note rather than silence because the rules that lived here fought
- * the global button reset (.v2-root button:not(.MuiButtonBase-root), 0-2-1),
- * and anything reintroducing option buttons in this panel will need the same
- * `.v2-root button.` prefix or it will render as plain prose again (#870). */
+/* Who can join is separate from public visibility. The default remains open;
+ * invite-only is needed before a private pod can hold an outsider-writable
+ * connector grant. These are radios rather than the old option buttons whose
+ * styling lost to the global button reset (#870). */
+
+.v2-pods__join-policy,
+.v2-pod-join-settings {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  margin: 3px 0;
+  padding: 0;
+  border: 0;
+  color: var(--v2-text-secondary);
+  font: 400 12px/16px var(--v2-font);
+}
+
+.v2-pods__join-policy legend,
+.v2-pod-join-settings legend {
+  margin-bottom: 6px;
+  color: var(--v2-text-primary);
+  font-weight: 600;
+}
+
+.v2-pods__join-policy label,
+.v2-pod-join-settings label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.v2-pods__join-policy input,
+.v2-pod-join-settings input { accent-color: var(--v2-accent); }
+
+.v2-pods__join-policy-hint {
+  margin: 0;
+  color: var(--v2-text-tertiary);
+  font: 400 11px/15px var(--v2-font);
+}
+
+.v2-pod-join-settings__error {
+  margin: 8px 0 0;
+  color: var(--v2-danger);
+  font: 400 12px/16px var(--v2-font);
+}
 
 .v2-pods__create-input {
   width: 100%;

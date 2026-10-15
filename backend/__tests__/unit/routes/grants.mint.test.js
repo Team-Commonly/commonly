@@ -26,7 +26,9 @@ jest.mock('../../../services/githubAppService', () => ({}));
 jest.mock('../../../models/ToolCall', () => ({ __esModule: true, default: {}, digestArgs: jest.fn(), reserveBudgetLineage: jest.fn() }));
 jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
   outsiderGrantPodRefusal: jest.fn(async () => null),
-  outsiderGrantRefusalMessage: jest.fn((reason) => `Use a separate pod: ${reason}`),
+  outsiderGrantRefusalMessage: jest.fn((reason) => (reason === 'pod_joinable'
+    ? 'This pod is joinable. Make this pod invite-only to use this connector.'
+    : `Use a separate pod: ${reason}`)),
 }));
 
 const Pod = require('../../../models/Pod');
@@ -94,7 +96,6 @@ describe('POST /api/grants', () => {
   test.each([
     ['pod_required', { kind: 'seat', id: SEAT }],
     ['pod_not_private', { kind: 'pod', id: POD }],
-    ['pod_joinable', { kind: 'pod', id: POD }],
     ['pod_bridged', { kind: 'pod', id: POD }],
     ['non_native_agent', { kind: 'pod', id: POD }],
     ['write_mode_unconfined', { kind: 'pod', id: POD }],
@@ -105,6 +106,25 @@ describe('POST /api/grants', () => {
     expect(res.body).toMatchObject({ error: `outsider_grant_${reason}` });
     expect(res.body.message).toMatch(/separate pod/);
     expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
+  test('offers an in-place policy fix only when joinability is the sole refusal', async () => {
+    outsiderGrantPodRefusal.mockResolvedValueOnce('pod_joinable').mockResolvedValueOnce(null);
+    const res = await mint({});
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: 'outsider_grant_pod_joinable' });
+    expect(res.body.message).toMatch(/Make this pod invite-only/);
+    expect(outsiderGrantPodRefusal).toHaveBeenLastCalledWith(
+      { kind: 'pod', id: POD }, 'read', { assumeInviteOnly: true },
+    );
+  });
+
+  test('a bridged pod names the remaining refusal instead of offering an in-place fix', async () => {
+    outsiderGrantPodRefusal.mockResolvedValueOnce('pod_joinable').mockResolvedValueOnce('pod_bridged');
+    const res = await mint({});
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: 'outsider_grant_pod_bridged' });
+    expect(res.body.message).toMatch(/separate pod/);
   });
 
   test('brokerId comes from the tool Installable, never the body', async () => {

@@ -257,6 +257,8 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           />
           <V2Inspector
             detail={detail}
+            currentUserId={currentUser?._id || currentUser?.id}
+            onPodChanged={() => podsState.refresh({ silent: true })}
             attentionItems={attention.items}
             attentionCount={attention.count === null ? null : (attention.countByPod[selectedPodId] || 0)}
             onClose={toggleInspector}

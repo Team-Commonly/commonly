@@ -209,6 +209,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const [showCreate, setShowCreate] = useState(false);
   const [newPodName, setNewPodName] = useState('');
   const [newPodGoal, setNewPodGoal] = useState('');
+  const [newPodJoinPolicy, setNewPodJoinPolicy] = useState<'open' | 'invite-only'>('open');
   const [createError, setCreateError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const createReturnToConnectors = location.pathname === '/v2'
@@ -314,7 +315,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     setCreating(true);
     setCreateError(null);
     try {
-      const pod = await createPod(name, newPodGoal.trim() || undefined, 'team', 'open');
+      const pod = await createPod(name, newPodGoal.trim() || undefined, 'team', newPodJoinPolicy);
       if (!pod?._id) {
         setCreateError(t('podsSidebar.errors.createFailed'));
         return;
@@ -326,6 +327,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
       }
       setNewPodName('');
       setNewPodGoal('');
+      setNewPodJoinPolicy('open');
       setShowCreate(false);
       if (createReturnToConnectors) navigate('/v2/connectors', { replace: true });
       else selectPod(pod._id);
@@ -451,6 +453,18 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         onChange={(event) => setNewPodGoal(event.target.value)}
         placeholder={t('podsSidebar.create.goalPlaceholder')}
       />
+      <fieldset className="v2-pods__join-policy">
+        <legend>{t('podsSidebar.create.whoCanJoin')}</legend>
+        <label>
+          <input type="radio" name="new-pod-join-policy" value="open" checked={newPodJoinPolicy === 'open'} onChange={() => setNewPodJoinPolicy('open')} />
+          <span>{t('podsSidebar.create.teamOption')}</span>
+        </label>
+        <label>
+          <input type="radio" name="new-pod-join-policy" value="invite-only" checked={newPodJoinPolicy === 'invite-only'} onChange={() => setNewPodJoinPolicy('invite-only')} />
+          <span>{t('podsSidebar.create.privateOption')}</span>
+        </label>
+      </fieldset>
+      {newPodJoinPolicy === 'open' && <p className="v2-pods__join-policy-hint">{t('podsSidebar.create.teamDescription')}</p>}
       {createError && <div className="v2-pods__create-error">{createError}</div>}
       <div className="v2-pods__create-actions">
         <button type="button" className="v2-pods__create-cancel" onClick={() => setShowCreate(false)}>

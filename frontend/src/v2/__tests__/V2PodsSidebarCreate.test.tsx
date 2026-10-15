@@ -73,11 +73,9 @@ describe('V2PodsSidebar create flow', () => {
     });
   });
 
-  it('creates a Pod from name + purpose alone, born private', async () => {
-    // ADR-016 / #768: creation asks for intent, not audience. Every pod is
-    // born private and unlisted; `joinPolicy: 'open'` is the DORMANT
-    // declaration ("open once listed"), not a choice the creator made here.
-    // Visibility moves to a later, deliberate act via POST /pods/:id/visibility.
+  it('keeps open as the default join policy while the pod is born private', async () => {
+    // Join policy is distinct from public visibility: an open pod still starts
+    // private and unlisted until its owner publishes it separately.
     const podsState = {
       pods: [],
       loading: false,
@@ -94,10 +92,8 @@ describe('V2PodsSidebar create flow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'New pod' }));
 
-    // The audience choice is gone — it set one field, could not be honoured
-    // for non-admins, and asked a stranger to decide before they had content.
-    expect(screen.queryByRole('button', { name: /Open to join/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Invite-only/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Open to join' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Invite-only' })).not.toBeChecked();
 
     fireEvent.change(screen.getByPlaceholderText('Pod name'), {
       target: { value: 'Launch circle' },
@@ -117,6 +113,23 @@ describe('V2PodsSidebar create flow', () => {
     });
     expect(sessionStorage.getItem('v2.justCreated.new-private-pod')).toBe('1');
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/new-private-pod');
+  });
+
+  it('creates an invite-only pod when the person chooses it', async () => {
+    const podsState = {
+      pods: [], loading: false, error: null, createPod: mockCreatePod,
+      patchLastMessage: jest.fn(),
+    };
+    render(
+      <MemoryRouter initialEntries={['/v2']}>
+        <V2PodsSidebar selectedPodId={null} podsState={podsState} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'New pod' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Invite-only' }));
+    fireEvent.change(screen.getByPlaceholderText('Pod name'), { target: { value: 'Connector team' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(mockCreatePod).toHaveBeenCalledWith('Connector team', undefined, 'team', 'invite-only'));
   });
 
   it('opens from Connectors and returns there after creating the first pod', async () => {
