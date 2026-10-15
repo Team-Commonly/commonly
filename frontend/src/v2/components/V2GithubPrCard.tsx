@@ -151,10 +151,9 @@ const V2GithubPrCard: React.FC<V2GithubPrCardProps> = ({ owner, repo, number }) 
               <span
                 key={c.login}
                 className="v2-prcard__avatar"
-                style={c.avatarUrl ? { backgroundImage: `url(${c.avatarUrl})` } : undefined}
                 title={c.login}
               >
-                {!c.avatarUrl && c.login.slice(0, 1).toUpperCase()}
+                {c.login.slice(0, 1).toUpperCase()}
               </span>
             ))}
             {overflowCount > 0 && (
