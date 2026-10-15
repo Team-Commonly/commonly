@@ -504,9 +504,14 @@ describe('the sweep re-runs a stuck in-process event', () => {
     expect((await AgentEvent.findById(event._id).lean()).status).toBe('delivered');
 
     settles[1]('done'); // the re-run's settle
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
-    expect((await AgentEvent.findById(event._id).lean()).status).toBe('acked');
+    let status;
+    for (let i = 0; i < 50 && status !== 'acked'; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      // eslint-disable-next-line no-await-in-loop
+      ({ status } = await AgentEvent.findById(event._id).lean());
+    }
+    expect(status).toBe('acked');
   });
 
   test('two sweeps racing (two replicas) re-run it once', async () => {

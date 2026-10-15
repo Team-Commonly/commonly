@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { Types } from 'mongoose';
 import Task from '../models/Task';
 import { postToPublicAddress } from './outboundUrlGuard';
 
@@ -46,6 +47,8 @@ const TASK_UPDATE_CUE_MAX_CURSOR_AGE_MS = 24 * 60 * 60 * 1000;
 // before this any holder of an agent's token could ack ANY of that agent's
 // events by id, delivered to it or not.
 const mintDeliveryNonce = (): string => crypto.randomBytes(16).toString('hex');
+
+const OBJECT_ID_HEX = /^[a-f\d]{24}$/i;
 
 // TASK-264: how many stuck in-process events one sweep re-runs, and how long a
 // 'queued'/'running' AgentRun may sit before it counts as abandoned.
@@ -1141,10 +1144,16 @@ class AgentEventService {
     instanceId: string,
     podId: EnqueueOptions['podId'],
   ): Promise<InstallationDoc | null> {
+    // Plain strings and a validated id, never a caller-shaped value: a podId of
+    // `{ $ne: null }` would otherwise match some other pod's installation.
+    const podKey = String(podId ?? '');
+    if (typeof agentName !== 'string' || typeof instanceId !== 'string' || !OBJECT_ID_HEX.test(podKey)) {
+      return null;
+    }
     const installationDoc = await AgentInstallation.findOne({
       agentName: agentName.toLowerCase(),
       instanceId,
-      podId,
+      podId: new Types.ObjectId(podKey),
       status: 'active',
     }).lean() as InstallationDoc | null;
     if (!installationDoc) return null;
