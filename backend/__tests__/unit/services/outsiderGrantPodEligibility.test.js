@@ -7,7 +7,7 @@ jest.mock('../../../models/Integration', () => ({ __esModule: true, default: moc
 jest.mock('../../../models/User', () => ({ __esModule: true, default: mockUser }));
 jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: mockInstallation }));
 
-const { outsiderGrantPodRefusal } = require('../../../services/outsiderGrantPodEligibility');
+const { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } = require('../../../services/outsiderGrantPodEligibility');
 const POD = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const HUMAN = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const AGENT = 'cccccccccccccccccccccccc';
@@ -56,6 +56,7 @@ test('a public pod is ineligible', async () => {
 test('a directly joinable or legacy pod is ineligible', async () => {
   pod.joinPolicy = 'open';
   expect(await outsiderGrantPodRefusal(target)).toBe('pod_joinable');
+  expect(outsiderGrantRefusalMessage('pod_joinable')).toMatch(/self-install/);
   expect(await outsiderGrantPodRefusal(target, 'read', { assumeInviteOnly: true })).toBeNull();
   delete pod.joinPolicy;
   expect(await outsiderGrantPodRefusal(target)).toBe('pod_joinable');
