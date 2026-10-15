@@ -174,7 +174,7 @@ router.patch('/:userId/role', auth, adminAuth, async (req: any, res: any) => {
 });
 
 // PATCH /api/admin/users/:userId/entitlements — grant/revoke capability
-// flags (today just cloudAgents, the hosted-agent gate; see User.entitlements).
+// flags (cloudAgents for hosted agents and pro for paid-tier access; see User.entitlements).
 // This is the missing admin lever for the staged open-registration plan:
 // new signups default to BYO-only, and an admin flips cloudAgents here.
 router.patch('/:userId/entitlements', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {

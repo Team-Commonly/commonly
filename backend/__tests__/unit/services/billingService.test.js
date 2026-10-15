@@ -1,5 +1,6 @@
 /**
- * billingService — the only writer of `entitlements.pro`.
+ * billingService — the Stripe-derived writer of `entitlements.pro`.
+ * The admin entitlements PATCH is the other authorized writer.
  *
  * These tests exist because every bug here is either "we gave away the product"
  * or "we took money and withheld it". The four properties defended:

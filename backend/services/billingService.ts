@@ -1,5 +1,6 @@
 /**
- * Stripe billing — the only writer of `entitlements.pro`.
+ * Stripe billing — handles Stripe-derived updates to `entitlements.pro`.
+ * The admin entitlements PATCH is the other authorized writer.
  *
  * Design rules, each of which exists because the obvious alternative is a way
  * to lose money or give it away:
