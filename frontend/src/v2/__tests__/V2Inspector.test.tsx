@@ -78,6 +78,17 @@ describe('V2Inspector', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
+  test('pod settings list Open to join before Invite-only', () => {
+    renderInspector({
+      currentUserId: 'owner-1',
+      detail: { ...detail, pod: { ...detail.pod, createdBy: { _id: 'owner-1' }, joinPolicy: 'open' } } as any,
+    });
+    expect(screen.getAllByRole('radio').map((radio) => radio.getAttribute('aria-label') || radio.parentElement?.textContent)).toEqual([
+      'Open to join',
+      'Invite-only',
+    ]);
+  });
+
   test('non-owner cannot see the join-policy controls', () => {
     renderInspector({
       currentUserId: 'another-user',
