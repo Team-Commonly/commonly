@@ -1017,7 +1017,7 @@ body.modern-ui.v2-canvas {
 .v2-pods__join-policy-hint {
   margin: 0;
   color: var(--v2-text-tertiary);
-  font: 400 11px/15px var(--v2-font);
+  font: 400 var(--v2-fs-meta)/16px var(--v2-font);
 }
 
 .v2-pod-join-settings__error {
