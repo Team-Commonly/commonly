@@ -12,7 +12,7 @@ export type OutsiderGrantRefusal = 'pod_required' | 'pod_not_private'
 export const outsiderGrantRefusalMessage = (reason: OutsiderGrantRefusal): string => ({
   pod_required: 'Outsider-writable connectors require a pod grant; use a separate pod.',
   pod_not_private: 'This pod is public. Use a separate private pod for this connector.',
-  pod_joinable: 'This pod is joinable. Use a separate invite-only pod for this connector.',
+  pod_joinable: 'Agents can self-install into this pod. Make it invite-only to use this connector.',
   pod_bridged: 'This pod is bridged to an external channel. Use a separate unbridged pod for this connector.',
   non_native_agent: 'This pod has an agent outside the narrowed native runtime. Use a separate pod for this connector.',
   write_mode_unconfined: 'This grant permits unattended writes. Use write-with-confirm in a separate pod.',
@@ -28,6 +28,7 @@ const configObject = (value: unknown): Record<string, unknown> => {
 export const outsiderGrantPodRefusal = async (
   target: { kind?: string; id?: unknown },
   writeMode?: unknown,
+  options: { assumeInviteOnly?: boolean } = {},
 ): Promise<OutsiderGrantRefusal | null> => {
   if (target.kind !== 'pod' || !target.id) return 'pod_required';
   if (writeMode === 'write') return 'write_mode_unconfined';
@@ -35,7 +36,7 @@ export const outsiderGrantPodRefusal = async (
   const pod = await Pod.findById(podId).select('members publicRead joinPolicy').lean();
   if (!pod) return 'pod_required';
   if (pod.publicRead !== false) return 'pod_not_private';
-  if (pod.joinPolicy !== 'invite-only') return 'pod_joinable';
+  if (pod.joinPolicy !== 'invite-only' && !options.assumeInviteOnly) return 'pod_joinable';
 
   const bridges = await Integration.find({
     // Fail closed when a new channel type is added: only credential rows are

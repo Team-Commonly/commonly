@@ -386,7 +386,13 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       });
     }
 
-    const outsiderRefusal = await outsiderGrantPodRefusal(target, body.writeMode);
+    let outsiderRefusal = await outsiderGrantPodRefusal(target, body.writeMode);
+    // A join-policy change is an in-place repair only when every other pod
+    // condition already passes. Otherwise name the real remaining refusal.
+    if (outsiderRefusal === 'pod_joinable') {
+      outsiderRefusal = await outsiderGrantPodRefusal(target, body.writeMode, { assumeInviteOnly: true })
+        || 'pod_joinable';
+    }
     if (outsiderRefusal) {
       return res.status(403).json({
         error: `outsider_grant_${outsiderRefusal}`,

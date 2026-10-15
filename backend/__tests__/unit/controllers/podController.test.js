@@ -165,6 +165,16 @@ describe('podController', () => {
     expect(res.json).toHaveBeenCalledWith(savedPod);
   });
 
+  it('createPod stores the invite-only choice and retains open as the default', async () => {
+    const savedPod = { _id: 'p-team', populate: jest.fn().mockResolvedValue() };
+    Pod.mockImplementation(() => ({ save: jest.fn().mockResolvedValue(savedPod) }));
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+    await podController.createPod({ body: { name: 'Connector team', type: 'team', joinPolicy: 'invite-only' }, userId: 'creator' }, res);
+    expect(Pod).toHaveBeenCalledWith(expect.objectContaining({ joinPolicy: 'invite-only' }));
+    await podController.createPod({ body: { name: 'Open team', type: 'team' }, userId: 'creator' }, res);
+    expect(Pod).toHaveBeenLastCalledWith(expect.objectContaining({ joinPolicy: 'open' }));
+  });
+
   // The guard is deliberately NOT implemented by narrowing VALID_POD_TYPES,
   // because that constant is also the read filter for getPodsByType. This
   // pins the separation: refusing to CREATE agent-room must not stop READING

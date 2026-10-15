@@ -1099,6 +1099,8 @@
       "wip": "wip",
       "members": "members",
       "manage": "manage",
+      "podSettings": "pod settings",
+      "joinPolicyError": "Could not change who can join. Try again.",
       "agentStatus": {
         "needsYou": "needs you · {{title}}",
         "workingTask": "working · {{title}}",
@@ -1689,6 +1691,7 @@
       "earlier": "Earlier"
     },
     "create": {
+      "whoCanJoin": "Who can join",
       "teamOption": "Open to join",
       "teamDescription": "Anyone can join if this pod is listed in Community.",
       "privateOption": "Invite-only",
@@ -2059,6 +2062,9 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
+    "makePodInviteOnly": "Make this pod invite-only",
+    "podInviteOnlyNow": "This pod is invite-only. Select Grant to continue.",
+    "joinPolicyError": "Could not make this pod invite-only.",
     "grantedAge": "granted {{age}}",
     "aPod": "a pod",
     "aSeat": "an agent",

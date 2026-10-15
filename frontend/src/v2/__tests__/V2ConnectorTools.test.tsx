@@ -106,6 +106,46 @@ const renderTools = (props = {}) => render(
 
 beforeEach(() => { jest.clearAllMocks(); mockApi([githubEntry]); });
 
+test('a sole join-policy refusal offers the owner an in-place fix and then allows retry', async () => {
+  axios.post.mockRejectedValueOnce({ response: { data: {
+    error: 'outsider_grant_pod_joinable', message: 'Agents can self-install into this pod. Make it invite-only to use this connector.',
+  } } }).mockResolvedValueOnce({ data: { grantId: 'grant_new' } });
+  axios.patch.mockResolvedValue({ data: { id: 'p2', joinPolicy: 'invite-only' } });
+  renderTools({ pods: [pods[0], { ...pods[1], createdBy: { _id: 'u1' } }] });
+  fireEvent.click(await screen.findByRole('button', { name: 'Grant again' }));
+  const aside = await screen.findByRole('complementary', { name: 'Add GitHub' });
+  fireEvent.click(within(aside).getByRole('button', { name: 'Grant' }));
+  fireEvent.click(await within(aside).findByRole('button', { name: 'Make this pod invite-only' }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith('/api/pods/p2/join-policy', { joinPolicy: 'invite-only' }, expect.anything()));
+  expect(await within(aside).findByText('This pod is invite-only. Select Grant to continue.')).toBeInTheDocument();
+  fireEvent.click(within(aside).getByRole('button', { name: 'Grant' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
+});
+
+test('the in-place fix is not offered to a non-owner', async () => {
+  axios.post.mockRejectedValueOnce({ response: { data: {
+    error: 'outsider_grant_pod_joinable', message: 'Agents can self-install into this pod. Make it invite-only to use this connector.',
+  } } });
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'Grant again' }));
+  const aside = await screen.findByRole('complementary', { name: 'Add GitHub' });
+  fireEvent.click(within(aside).getByRole('button', { name: 'Grant' }));
+  await within(aside).findByText('Agents can self-install into this pod. Make it invite-only to use this connector.');
+  expect(within(aside).queryByRole('button', { name: 'Make this pod invite-only' })).not.toBeInTheDocument();
+});
+
+test('a bridged-pod refusal never offers the join-policy fix', async () => {
+  axios.post.mockRejectedValueOnce({ response: { data: {
+    error: 'outsider_grant_pod_bridged', message: 'Use a separate unbridged pod for this connector.',
+  } } });
+  renderTools({ pods: [pods[0], { ...pods[1], createdBy: 'u1' }] });
+  fireEvent.click(await screen.findByRole('button', { name: 'Grant again' }));
+  const aside = await screen.findByRole('complementary', { name: 'Add GitHub' });
+  fireEvent.click(within(aside).getByRole('button', { name: 'Grant' }));
+  await within(aside).findByText('Use a separate unbridged pod for this connector.');
+  expect(within(aside).queryByRole('button', { name: 'Make this pod invite-only' })).not.toBeInTheDocument();
+});
+
 test('TASK-131: a grant age advances in place, and a returning tab re-reads, without a reload', async () => {
   jest.useFakeTimers();
   try {

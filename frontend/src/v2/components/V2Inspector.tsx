@@ -11,6 +11,8 @@ import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 
 interface V2InspectorProps {
   detail: UseV2PodDetailResult;
+  currentUserId?: string;
+  onPodChanged?: () => Promise<void>;
   attentionItems?: V2AttentionItem[];
   attentionCount?: number | null;
   onClose?: () => void;
@@ -77,7 +79,7 @@ const agentState = (
   return { kind: 'idle' };
 };
 
-const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], attentionCount = null, onClose, onOpenInvite }) => {
+const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodChanged, attentionItems = [], attentionCount = null, onClose, onOpenInvite }) => {
   const { pod, agents } = detail;
   const api = useV2Api();
   const navigate = useNavigate();
@@ -86,6 +88,13 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
   const [files, setFiles] = useState<ArtifactRow[]>([]);
   const [filesTotal, setFilesTotal] = useState(0);
   const [lightbox, setLightbox] = useState<ArtifactRow | null>(null);
+  const [joinPolicy, setJoinPolicy] = useState<'open' | 'invite-only'>('open');
+  const [policyBusy, setPolicyBusy] = useState(false);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  useEffect(() => {
+    setJoinPolicy(pod?.joinPolicy === 'invite-only' ? 'invite-only' : 'open');
+    setPolicyError(null);
+  }, [pod?._id, pod?.joinPolicy]);
   const attention = useMemo(
     () => attentionItems.filter((item) => item.podId === pod?._id),
     [attentionItems, pod?._id],
@@ -118,6 +127,23 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
   }, [api, pod?._id]);
 
   if (!pod) return null;
+
+  const isOwner = Boolean(currentUserId && pod.createdBy?._id === currentUserId);
+  const changeJoinPolicy = async (next: 'open' | 'invite-only') => {
+    if (!isOwner || policyBusy || next === joinPolicy) return;
+    setPolicyBusy(true);
+    setPolicyError(null);
+    try {
+      await api.patch(`/api/pods/${encodeURIComponent(pod._id)}/join-policy`, { joinPolicy: next });
+      setJoinPolicy(next);
+      await Promise.all([detail.refresh(), onPodChanged?.()]);
+    } catch (requestError) {
+      const data = (requestError as { response?: { data?: { message?: string; error?: string } } })?.response?.data;
+      setPolicyError(data?.message || data?.error || t('inspector.workspace.joinPolicyError'));
+    } finally {
+      setPolicyBusy(false);
+    }
+  };
 
   const openAttention = (item: V2AttentionItem) => {
     const target = item.threadRootId || item.messageId;
@@ -227,6 +253,25 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
             )}
           </div>
         </section>
+
+        {isOwner && !['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && (
+          <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-pod-settings">
+            <h2 id="workspace-inspector-pod-settings" className="v2-workspace-inspector__label">{t('inspector.workspace.podSettings')}</h2>
+            <fieldset className="v2-pod-join-settings" disabled={policyBusy}>
+              <legend>{t('podsSidebar.create.whoCanJoin')}</legend>
+              <label>
+                <input type="radio" name={`pod-${pod._id}-join-policy`} checked={joinPolicy === 'invite-only'} onChange={() => { void changeJoinPolicy('invite-only'); }} />
+                <span>{t('podsSidebar.create.privateOption')}</span>
+              </label>
+              <label>
+                <input type="radio" name={`pod-${pod._id}-join-policy`} checked={joinPolicy === 'open'} onChange={() => { void changeJoinPolicy('open'); }} />
+                <span>{t('podsSidebar.create.teamOption')}</span>
+              </label>
+            </fieldset>
+            {joinPolicy === 'open' && <p className="v2-pods__join-policy-hint">{t('podsSidebar.create.teamDescription')}</p>}
+            {policyError && <p className="v2-pod-join-settings__error" role="alert">{policyError}</p>}
+          </section>
+        )}
 
         {lightbox && <V2Lightbox images={[{ src: `/api/uploads/${lightbox.fileName}`, name: lightbox.name }]} index={0} onClose={() => setLightbox(null)} />}
         <footer className="v2-workspace-inspector__foot">

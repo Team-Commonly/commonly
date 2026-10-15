@@ -767,6 +767,52 @@ router.post('/:id/visibility', podVisibilityRateLimit, auth, async (req: AuthReq
   }
 });
 
+/** Pod join policy is an owner-controlled setting, separate from public visibility. */
+router.patch('/:id/join-policy', podAdminRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const joinPolicy = req.body?.joinPolicy;
+    if (joinPolicy !== 'open' && joinPolicy !== 'invite-only') {
+      return res.status(400).json({ error: 'invalid_join_policy' });
+    }
+    const pod = await Pod.findById(req.params?.id) as {
+      _id: { toString: () => string };
+      type?: string;
+      createdBy?: { toString: () => string };
+      joinPolicy?: string;
+      save: () => Promise<unknown>;
+    } | null;
+    if (!pod) return res.status(404).json({ error: 'pod_not_found' });
+    const userId = req.userId || req.user?.id;
+    if (!userId || pod.createdBy?.toString() !== String(userId)) {
+      return res.status(403).json({ error: 'not_pod_owner', message: 'Only the pod owner can change who may join.' });
+    }
+    if (NON_LISTABLE_POD_TYPES.includes(String(pod.type))) {
+      return res.status(400).json({ error: 'pod_type_not_configurable' });
+    }
+    const previous = pod.joinPolicy;
+    pod.joinPolicy = joinPolicy;
+    await pod.save();
+    if (previous !== joinPolicy) {
+      try {
+        await AuditLog.create({
+          action: 'pod.join_policy_changed',
+          target: pod._id.toString(),
+          detail: `joinPolicy=${joinPolicy} previous=${previous || 'legacy-open'}`,
+          userId,
+          ip: req.ip,
+          userAgent: req.headers?.['user-agent'],
+        });
+      } catch (auditErr) {
+        console.warn('[pods] join-policy audit log write failed (non-fatal):', (auditErr as Error).message);
+      }
+    }
+    return res.json({ id: pod._id.toString(), joinPolicy });
+  } catch (err) {
+    console.error('[pods] join-policy change error:', (err as Error).message);
+    return res.status(500).json({ error: 'Server Error' });
+  }
+});
+
 router.get('/:type/:id', auth, getPodById);
 router.delete('/:id', auth, deletePod);
 

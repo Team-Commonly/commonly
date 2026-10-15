@@ -7,7 +7,7 @@ jest.mock('../../../models/Integration', () => ({ __esModule: true, default: moc
 jest.mock('../../../models/User', () => ({ __esModule: true, default: mockUser }));
 jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: mockInstallation }));
 
-const { outsiderGrantPodRefusal } = require('../../../services/outsiderGrantPodEligibility');
+const { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } = require('../../../services/outsiderGrantPodEligibility');
 const POD = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const HUMAN = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const AGENT = 'cccccccccccccccccccccccc';
@@ -56,8 +56,19 @@ test('a public pod is ineligible', async () => {
 test('a directly joinable or legacy pod is ineligible', async () => {
   pod.joinPolicy = 'open';
   expect(await outsiderGrantPodRefusal(target)).toBe('pod_joinable');
+  expect(outsiderGrantRefusalMessage('pod_joinable')).toMatch(/self-install/);
+  expect(await outsiderGrantPodRefusal(target, 'read', { assumeInviteOnly: true })).toBeNull();
   delete pod.joinPolicy;
   expect(await outsiderGrantPodRefusal(target)).toBe('pod_joinable');
+});
+
+test('closing a joinable pod does not hide its bridge or non-native agent refusal', async () => {
+  pod.joinPolicy = 'open';
+  bridges.push({ type: 'slack', scope: 'pod', podId: POD, status: 'connected', isActive: true });
+  expect(await outsiderGrantPodRefusal(target, 'read', { assumeInviteOnly: true })).toBe('pod_bridged');
+  bridges.pop();
+  installations[0].config.runtime.runtimeType = 'webhook';
+  expect(await outsiderGrantPodRefusal(target, 'read', { assumeInviteOnly: true })).toBe('non_native_agent');
 });
 
 test.each(['discord', 'telegram', 'slack'])('a live %s bridge is ineligible', async (type) => {
@@ -115,6 +126,10 @@ test('a bridge identity or missing member record is ineligible', async () => {
 });
 
 test('each pod change after an eligible attach is seen by the next check', async () => {
+  expect(await outsiderGrantPodRefusal(target)).toBeNull();
+  pod.joinPolicy = 'open';
+  expect(await outsiderGrantPodRefusal(target)).toBe('pod_joinable');
+  pod.joinPolicy = 'invite-only';
   expect(await outsiderGrantPodRefusal(target)).toBeNull();
   pod.members.push('dddddddddddddddddddddddd');
   users.push({ _id: 'dddddddddddddddddddddddd', isBot: true, botType: 'agent',

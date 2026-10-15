@@ -1094,6 +1094,8 @@
       "wip": "进行中",
       "members": "成员",
       "manage": "管理",
+      "podSettings": "Pod 设置",
+      "joinPolicyError": "无法更改加入方式，请重试。",
       "agentStatus": {
         "needsYou": "需要你处理 · {{title}}",
         "workingTask": "进行中 · {{title}}",
@@ -1681,6 +1683,7 @@
       "earlier": "更早"
     },
     "create": {
+      "whoCanJoin": "谁可以加入",
       "teamOption": "开放加入",
       "teamDescription": "列入「社区」后，任何人都可以加入。",
       "privateOption": "仅限邀请",
@@ -2051,6 +2054,9 @@
     "loadFailed": "无法加载产物。"
   },
   "tools": {
+    "makePodInviteOnly": "将此 Pod 设为仅限邀请",
+    "podInviteOnlyNow": "此 Pod 现已设为仅限邀请。再次选择“授权”继续。",
+    "joinPolicyError": "无法将此 Pod 设为仅限邀请。",
     "grantedAge": "{{age}}前授予",
     "aPod": "一个 Pod",
     "aSeat": "一个智能体",

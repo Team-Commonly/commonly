@@ -80,6 +80,52 @@ const setVisibility = (tier, user = 'owner-1') => request(app)
   .set('x-test-user', user)
   .send({ tier });
 
+const setJoinPolicy = (joinPolicy, user = 'owner-1') => request(app)
+  .patch('/api/pods/pod-1/join-policy')
+  .set('x-test-user', user)
+  .send({ joinPolicy });
+
+describe('PATCH /api/pods/:id/join-policy', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    podSave.mockResolvedValue(undefined);
+    mockPod.value = pod({ joinPolicy: 'open' });
+  });
+
+  test('owner can close and reopen a team pod without changing public visibility', async () => {
+    const closed = await setJoinPolicy('invite-only');
+    expect(closed.status).toBe(200);
+    expect(closed.body.joinPolicy).toBe('invite-only');
+    expect(mockPod.value.joinPolicy).toBe('invite-only');
+    expect(mockPod.value.publicRead).toBe(false);
+    const reopened = await setJoinPolicy('open');
+    expect(reopened.status).toBe(200);
+    expect(mockPod.value.joinPolicy).toBe('open');
+    expect(podSave).toHaveBeenCalledTimes(2);
+    expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({ action: 'pod.join_policy_changed' }));
+  });
+
+  test('non-owner cannot change join policy', async () => {
+    const res = await setJoinPolicy('invite-only', 'other-user');
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('not_pod_owner');
+    expect(mockPod.value.joinPolicy).toBe('open');
+    expect(podSave).not.toHaveBeenCalled();
+  });
+
+  test.each(['public', '', null])('invalid policy %s cannot be stored', async (policy) => {
+    expect((await setJoinPolicy(policy)).status).toBe(400);
+    expect(podSave).not.toHaveBeenCalled();
+  });
+
+  test.each(['agent-room', 'agent-dm', 'agent-admin'])('%s remains non-configurable', async (type) => {
+    mockPod.value = pod({ type });
+    const res = await setJoinPolicy('open');
+    expect(res.status).toBe(400);
+    expect(podSave).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /api/pods/:id/visibility', () => {
   beforeEach(() => {
     jest.clearAllMocks();

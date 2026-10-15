@@ -9,6 +9,7 @@ import V2Avatar from '../components/V2Avatar';
 
 const mockNavigate = jest.fn();
 const mockGet = jest.fn();
+const mockPatch = jest.fn();
 
 jest.mock('react-router-dom', () => {
   const actual = jest.requireActual('react-router-dom');
@@ -16,7 +17,7 @@ jest.mock('react-router-dom', () => {
 });
 
 jest.mock('../hooks/useV2Api', () => ({
-  useV2Api: () => ({ get: mockGet }),
+  useV2Api: () => ({ get: mockGet, patch: mockPatch }),
 }));
 
 const detail = {
@@ -47,6 +48,7 @@ const renderInspector = (props: Partial<React.ComponentProps<typeof V2Inspector>
 describe('V2Inspector', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPatch.mockResolvedValue({ id: 'pod-1', joinPolicy: 'invite-only' });
     mockGet.mockImplementation((url: string) => {
       if (url === '/api/v1/tasks/pod-1') {
         return Promise.resolve({ tasks: [
@@ -63,6 +65,25 @@ describe('V2Inspector', () => {
       }
       return Promise.resolve({});
     });
+  });
+
+  test('owner can make an open pod invite-only in pod settings', async () => {
+    const refresh = jest.fn().mockResolvedValue(undefined);
+    renderInspector({
+      currentUserId: 'owner-1',
+      detail: { ...detail, pod: { ...detail.pod, createdBy: { _id: 'owner-1' }, joinPolicy: 'open' }, refresh } as any,
+    });
+    fireEvent.click(screen.getByRole('radio', { name: 'Invite-only' }));
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith('/api/pods/pod-1/join-policy', { joinPolicy: 'invite-only' }));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  test('non-owner cannot see the join-policy controls', () => {
+    renderInspector({
+      currentUserId: 'another-user',
+      detail: { ...detail, pod: { ...detail.pod, createdBy: { _id: 'owner-1' }, joinPolicy: 'open' } } as any,
+    });
+    expect(screen.queryByRole('radio', { name: 'Invite-only' })).not.toBeInTheDocument();
   });
 
   test('renders the files pane from the same artifacts query with podId fixed, and links to all of them', async () => {
