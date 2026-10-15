@@ -190,7 +190,44 @@ const revokeRuntimeTokensForAgent = async (owner: RuntimeTokenOwner): Promise<st
 // embedded record, giving the token per-record status, lineage, and
 // revocability. Callers that do not pass it keep minting legacy-only tokens
 // (additive migration; auth falls back for those).
+/**
+ * A hosted agent on the native engine runs only inside the backend
+ * (services/hostedEngine.ts) and holds no runtime token. A token would let
+ * something outside the backend post as it and read its events, which is what
+ * that engine exists to rule out, so every mint path refuses it here rather
+ * than each route remembering to (Rhea on #2224).
+ */
+class HostedNativeTokenRefused extends Error {
+  code = 'hosted_native_no_token';
+
+  status = 409;
+
+  constructor() {
+    super('Commonly runs this agent, so it has no runtime token. To run it yourself, connect your own agent instead.');
+  }
+}
+
+const runsOnHostedNativeEngine = async (agentUser: any, installation: any): Promise<boolean> => {
+  const pairs: { agentName: string; instanceId: string }[] = [];
+  if (installation?.agentName) {
+    pairs.push({ agentName: String(installation.agentName).toLowerCase(), instanceId: String(installation.instanceId || 'default') });
+  }
+  const meta = agentUser?.botMetadata || {};
+  const name = String(meta.agentName || agentUser?.username || '').toLowerCase();
+  if (name) pairs.push({ agentName: name, instanceId: String(meta.instanceId || 'default') });
+  if (!pairs.length) return false;
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { AgentInstallation } = require('../../models/AgentRegistry');
+  return Boolean(await AgentInstallation.exists({
+    $or: pairs,
+    status: 'active',
+    'config.runtime.runtimeType': 'hosted',
+    'config.hosted.engine': 'native',
+  }));
+};
+
 const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installation: any = null, issuer: any = null) => {
+  if (await runsOnHostedNativeEngine(agentUser, installation)) throw new HostedNativeTokenRefused();
   // Check if agent already has a runtime token (reuse existing)
   const existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0];
   if (existingToken) {
@@ -339,6 +376,7 @@ module.exports = {
   revokeRuntimeTokenEverywhere,
   revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
+  HostedNativeTokenRefused,
   issueRuntimeTokenForInstallation,
   issueUserTokenForInstallation,
 };

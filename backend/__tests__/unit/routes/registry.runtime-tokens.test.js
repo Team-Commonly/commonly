@@ -13,6 +13,7 @@ jest.mock('../../../models/Pod', () => ({
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {},
   AgentInstallation: {
+    exists: jest.fn().mockResolvedValue(null),
     findOne: jest.fn(),
     find: jest.fn(() => ({
       collation: jest.fn(function collation() { return this; }),
@@ -107,6 +108,40 @@ describe('agent runtime tokens', () => {
     expect(installation.runtimeTokens.length).toBe(1);
     expect(installation.save).toHaveBeenCalled();
     expect(agentUser.save).toHaveBeenCalled();
+  });
+
+  // Rhea on #2224: a hosted agent on the native engine runs only inside the
+  // backend and must hold no runtime token, whichever route asks.
+  it('refuses to mint for a hosted agent on the native engine, with a 409 that says why', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] }),
+    });
+    const installation = {
+      agentName: 'maya-agent',
+      podId: 'pod-1',
+      instanceId: 'default',
+      status: 'active',
+      installedBy: 'user-1',
+      config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native', provisionedAt: new Date() } },
+      runtimeTokens: [],
+      save: jest.fn().mockResolvedValue(true),
+    };
+    const agentUser = { agentRuntimeTokens: [], botMetadata: { agentName: 'maya-agent' }, save: jest.fn() };
+    AgentInstallation.findOne.mockResolvedValue(installation);
+    AgentInstallation.exists.mockResolvedValueOnce({ _id: 'inst-1' });
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+
+    const res = await request(app)
+      .post('/api/registry/pods/pod-1/agents/maya-agent/runtime-tokens')
+      .send({ label: 'try it' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('hosted_native_no_token');
+    expect(agentUser.agentRuntimeTokens).toHaveLength(0);
+    expect(AgentInstallation.exists).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'active', 'config.runtime.runtimeType': 'hosted', 'config.hosted.engine': 'native',
+    }));
   });
 
   it('returns {existing:true} (no token) when agent user already has runtime tokens', async () => {
