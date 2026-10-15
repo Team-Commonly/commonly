@@ -312,6 +312,7 @@ describe('native turn with commonly_web_search', () => {
       await runAgent(install, mention);
 
       expect(postedContents()).toEqual(['plain reply']);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].noOutboundRelay).toBe(false);
     });
 
     test('positive control: unbridged, a turn that searched still posts', async () => {
@@ -323,6 +324,20 @@ describe('native turn with commonly_web_search', () => {
       await runAgent(install, mention);
 
       expect(postedContents()).toEqual(['found it']);
+      // In the pod, never through a channel relay (Rhea on #2244).
+      expect(AgentMessageService.postMessage.mock.calls[0][0].noOutboundRelay).toBe(true);
+    });
+
+    test('unbridged, the final-text fallback after a search also posts without outbound relay', async () => {
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_web_search', { query: 'q' })))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      const [args] = AgentMessageService.postMessage.mock.calls[0];
+      expect(args).toMatchObject({ content: 'Here is what shipped.', noOutboundRelay: true });
+      expect(args.metadata).toMatchObject({ fallback: true });
     });
   });
 });

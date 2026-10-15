@@ -464,6 +464,9 @@ async function dispatchTool(
           displayName: ctx.displayName,
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime' },
+          // Web results are in this turn: the post stays in the pod and never
+          // reaches a channel relay, whatever bridges exist when it is stored.
+          noOutboundRelay: Boolean(ctx.webTainted),
         });
         return { content: { ok: true, posted: true, result } };
       }
@@ -1484,6 +1487,7 @@ export async function runAgent(
             displayName,
             installationConfig: cfg,
             metadata: { source: 'native-runtime', fallback: true },
+            noOutboundRelay: Boolean(dispatchCtx.webTainted),
           });
           // The message service suppresses a bare NO_REPLY (and other
           // silent output) without throwing. That is a normal declined turn,

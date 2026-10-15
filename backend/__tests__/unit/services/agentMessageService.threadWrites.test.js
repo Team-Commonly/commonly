@@ -202,6 +202,69 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
     }));
   });
 
+  // TASK-267a, Rhea on #2244: a native turn that read web results posts with
+  // noOutboundRelay, and the flag must reach the relay dispatcher with the
+  // stored message on every path, because the dispatcher (not the turn) is
+  // where bridges are selected after the write.
+  describe('noOutboundRelay reaches the relay dispatcher with the message', () => {
+    const relayPayloads = () => mockDispatch.mock.calls
+      .filter(([eventType]) => eventType === 'chat.message')
+      .map(([, payload]) => payload);
+
+    it('on the Postgres path, and an unflagged post carries no flag', async () => {
+      PGMessage.create.mockResolvedValue({
+        id: '57603', content: 'searched answer', message_type: 'text', created_at: new Date(), thread_root_id: null,
+      });
+      await AgentMessageService.postMessage({
+        agentName: 'scout', instanceId: 'default', podId: POD, content: 'searched answer', noOutboundRelay: true,
+      });
+      await AgentMessageService.postMessage({
+        agentName: 'scout', instanceId: 'default', podId: POD, content: 'plain answer',
+      });
+
+      const [flagged, plain] = relayPayloads();
+      expect(flagged).toMatchObject({ podId: POD, noOutboundRelay: true });
+      expect(plain).not.toHaveProperty('noOutboundRelay');
+    });
+
+    it('on the Mongo path', async () => {
+      delete process.env.PG_HOST;
+      const Message = require('../../../models/Message');
+      Message.mockImplementation((doc) => ({
+        ...doc,
+        _id: 'mongo-message-1',
+        save: jest.fn().mockResolvedValue(undefined),
+        populate: jest.fn().mockResolvedValue(undefined),
+        toObject() { return { ...doc, _id: 'mongo-message-1' }; },
+      }));
+
+      await AgentMessageService.postMessage({
+        agentName: 'scout', instanceId: 'default', podId: POD, content: 'searched answer', noOutboundRelay: true,
+      });
+
+      expect(PGMessage.create).not.toHaveBeenCalled();
+      expect(relayPayloads()).toEqual([expect.objectContaining({ podId: POD, noOutboundRelay: true })]);
+    });
+
+    it('on the error-to-DM route, for the DM post and the source notice', async () => {
+      PGMessage.create.mockResolvedValue({
+        id: '57604', content: 'x', message_type: 'text', created_at: new Date(), thread_root_id: null,
+      });
+      await AgentMessageService.routeErrorToDM({
+        agentName: 'scout',
+        instanceId: 'default',
+        podId: POD,
+        content: 'searched text that failed',
+        agentUser: { _id: 'agent-user-1', username: 'scout' },
+        noOutboundRelay: true,
+      });
+
+      const payloads = relayPayloads();
+      expect(payloads).toHaveLength(2);
+      expect(payloads.every((payload) => payload.noOutboundRelay === true)).toBe(true);
+    });
+  });
+
   it('a ThreadRootError propagates — never swallowed into the Mongo fallback', async () => {
     threadRootResolver.resolveThreadRoot.mockRejectedValue(
       new threadRootResolver.ThreadRootError('root is in another pod', 'thread_root_other_pod'),
