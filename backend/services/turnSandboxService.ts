@@ -7,6 +7,8 @@
  * - No internet (`allowInternetAccess: false`). The model writing this code
  *   holds pod content, so outbound access would turn any injected instruction
  *   into an exfiltration channel.
+ * - No public inbound either (`allowPublicTraffic: false`): sandbox URLs need
+ *   a traffic token that only this process holds.
  * - No environment variables, so no secret is ever inside it.
  * - E2B's own sandbox lifetime (SANDBOX_LIFETIME_MS) is the backstop: if the
  *   kill fails, the sandbox stops itself, and its billed seconds stay bounded.
@@ -71,6 +73,11 @@ export class TurnSandbox {
         apiKey: process.env.E2B_API_KEY,
         timeoutMs: SANDBOX_LIFETIME_MS,
         allowInternetAccess: false,
+        // E2B serves every sandbox port on a public URL unless told not to;
+        // with this off, a URL needs the traffic token only this process holds,
+        // so a server started inside cannot be reached from outside (Rhea on
+        // #2232). The code-interpreter client sends that token on every call.
+        network: { allowPublicTraffic: false },
         envs: {},
         metadata: this.metadata,
       }) as Promise<E2BSandbox>;

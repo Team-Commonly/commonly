@@ -36,7 +36,11 @@ describe('TurnSandbox', () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const [options] = mockCreate.mock.calls[0];
     expect(options).toMatchObject({
-      apiKey: 'e2b_test_key', allowInternetAccess: false, envs: {}, metadata: { podId: 'pod-1' },
+      apiKey: 'e2b_test_key',
+      allowInternetAccess: false,
+      network: { allowPublicTraffic: false },
+      envs: {},
+      metadata: { podId: 'pod-1' },
     });
     expect(options.timeoutMs).toBeGreaterThan(0);
     expect(options.timeoutMs).toBeLessThanOrEqual(5 * 60 * 1000);

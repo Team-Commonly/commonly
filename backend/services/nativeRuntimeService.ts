@@ -1100,6 +1100,9 @@ export async function runAgent(
   }
 
   try {
+    // Tool names offered in the most recent model call; a call to anything
+    // else is refused at dispatch.
+    let offeredToolNames = new Set<string>();
     // Bounded loop. Each iteration = one LiteLLM call + any tool dispatch.
     // Break on: no tool_calls (final assistant text), caps hit, or errors.
     // eslint-disable-next-line no-constant-condition
@@ -1128,6 +1131,12 @@ export async function runAgent(
       const inPodOnly = await inPodOnlyNow();
       let llmResponse: LiteLLMResponse;
       let responseHeaders: Record<string, unknown> = {};
+      // The allowlist is enforced at dispatch too, not only in what the model
+      // is offered: a model can name a tool it was never given, and an
+      // undeclared commonly_run_code (or commonly_propose_action) must not run
+      // because it was asked for (Rhea on #2232).
+      const offeredTools = [...toolsForConfig(cfg, inPodOnly), ...broker.tools];
+      offeredToolNames = new Set(offeredTools.map((tool: any) => String(tool?.function?.name || '')));
       try {
         const axiosResp = await axios.post<LiteLLMResponse>(
           `${litellm.baseUrl}/chat/completions`,
@@ -1140,7 +1149,7 @@ export async function runAgent(
             // `TOOLS`/`toolsForConfig` (wren 73742): it is not the agent's
             // declared capability, it is a live grant that can be revoked
             // between runs, and it is assembled once per run above.
-            tools: [...toolsForConfig(cfg, inPodOnly), ...broker.tools],
+            tools: offeredTools,
             tool_choice: 'auto',
             // Guard the untrusted-user / untrusted-pod-content surface (see the
             // NATIVE_RUNTIME_GUARDRAILS note above). Omitted entirely when empty
@@ -1253,7 +1262,10 @@ export async function runAgent(
           // Grants can be minted after the turn's tool list was assembled.
           // Re-read the policy before dispatch; a stale model call is refused.
           dispatchCtx.inPodOnly = await inPodOnlyNow();
-          const result = await dispatchTool(toolName, parsedArgs, dispatchCtx);
+          const notOffered = `${toolName || 'That tool'} is not available to you in this turn.`;
+          const result: DispatchResult = offeredToolNames.has(toolName)
+            ? await dispatchTool(toolName, parsedArgs, dispatchCtx)
+            : { content: { ok: false, error: notOffered }, error: notOffered };
           const elapsed = Date.now() - toolStart;
           turn.toolCalls.push({
             name: toolName,

@@ -98,4 +98,30 @@ describe('native turn with commonly_run_code', () => {
     expect(TurnSandbox).not.toHaveBeenCalled();
     expect(savedRun.sandboxSeconds).toBeUndefined();
   });
+
+  // Rhea on #2232: the allowlist holds at dispatch, not only in the offer.
+  test.each([
+    ['commonly_run_code', JSON.stringify({ language: 'python', code: 'print(1)' })],
+    ['commonly_propose_action', JSON.stringify({ actionType: 'create_pod', summary: 'x', params: { name: 'x' } })],
+  ])('refuses %s when this install never declared it, and runs nothing', async (name, args) => {
+    const undeclared = { ...install, config: { runtime: { runtimeType: 'native' }, tools: ['commonly_post_message'] } };
+    axios.post
+      .mockResolvedValueOnce({
+        status: 200,
+        headers: {},
+        data: {
+          choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name, arguments: args } }] } }],
+          usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
+        },
+      })
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(undeclared, mention);
+
+    expect(TurnSandbox).not.toHaveBeenCalled();
+    const offered = axios.post.mock.calls[0][1].tools.map((tool) => tool.function.name);
+    expect(offered).not.toContain(name);
+    const toolMessage = axios.post.mock.calls[1][1].messages.find((m) => m.role === 'tool');
+    expect(toolMessage.content).toMatch(/not available to you in this turn/);
+  });
 });
