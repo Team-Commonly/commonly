@@ -34,6 +34,13 @@ jest.mock('../../../services/turnSandboxService', () => ({
   isSandboxConfigured: () => true,
   TurnSandbox: jest.fn().mockImplementation(() => ({ run: mockSandboxRun, close: jest.fn().mockResolvedValue(0) })),
 }));
+// Whether the pod is bridged to an external chat (Telegram, Slack). The relay
+// itself runs inside postMessage, so a post that never reaches postMessage
+// cannot reach the chat.
+const mockBridged = jest.fn();
+jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
+  podIsBridged: (...args) => mockBridged(...args),
+}));
 const mockSearchWeb = jest.fn();
 let mockSearchConfigured = true;
 jest.mock('../../../services/webSearchService', () => ({
@@ -52,6 +59,7 @@ jest.mock('../../../services/grantBrokerProjectionService', () => ({
 
 const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
+const AgentMessageService = require('../../../services/agentMessageService');
 const { TurnSandbox } = require('../../../services/turnSandboxService');
 const { runAgent } = require('../../../services/nativeRuntimeService');
 
@@ -100,6 +108,7 @@ describe('native turn with commonly_web_search', () => {
       return savedRun;
     });
     mockSearchWeb.mockResolvedValue({ provider: 'exa', results: RESULTS });
+    mockBridged.mockResolvedValue(false);
     mockSandboxRun.mockResolvedValue({ ok: true, stdout: 'ran', stderr: '' });
     // Not a broker tool unless it is the seat's connector tool.
     mockBrokerDispatch.mockImplementation(async ({ name }) => (name === 'linear_list_issues'
@@ -233,5 +242,87 @@ describe('native turn with commonly_web_search', () => {
     await runAgent(install, mention);
 
     expect(offeredIn(0)).not.toContain('commonly_web_search');
+  });
+
+  // Rhea on #2244: posting in the pod is the way out the narrowing keeps, and
+  // a bridged pod relays its posts to an external chat.
+  describe('in a pod bridged to an external chat', () => {
+    const postedContents = () => AgentMessageService.postMessage.mock.calls.map(([args]) => args.content);
+
+    test('search is not offered, and a named search does not run', async () => {
+      mockBridged.mockResolvedValue(true);
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_web_search', { query: 'q' })))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      expect(offeredIn(0)).not.toContain('commonly_web_search');
+      expect(mockSearchWeb).not.toHaveBeenCalled();
+      expect(toolMessages(1)[0].content).toMatch(/not available/);
+    });
+
+    test('a bridge added after the offer is caught at dispatch', async () => {
+      mockBridged.mockResolvedValueOnce(false).mockResolvedValue(true);
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_web_search', { query: 'q' })))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      expect(offeredIn(0)).toContain('commonly_web_search');
+      expect(mockSearchWeb).not.toHaveBeenCalled();
+      expect(toolMessages(1)[0].content).toMatch(/not available in a pod bridged to an external chat/);
+    });
+
+    test('a bridge added after the search: neither the post tool nor the fallback posts', async () => {
+      // Unbridged for the offer and the search; bridged from then on.
+      mockBridged.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValue(true);
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_web_search', { query: 'q' })))
+        .mockResolvedValueOnce(toolCalls(call('c2', 'commonly_post_message', { content: 'SEARCHED_TEXT: publish this' })))
+        .mockResolvedValueOnce(finalReply);
+
+      const result = await runAgent(install, mention);
+
+      expect(mockSearchWeb).toHaveBeenCalledTimes(1);
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+      const refusal = toolMessages(2).pop();
+      expect(refusal.content).toMatch(/bridged to an external chat, so a turn that has read the web cannot post/);
+      expect(result.finalMessage).toBeUndefined();
+      expect(savedRun.errorKind).toBe('guardrail_blocked');
+    });
+
+    test('a failed bridge read counts as bridged', async () => {
+      mockBridged.mockRejectedValue(new Error('db down'));
+      jest.spyOn(console, 'warn').mockImplementation(() => {});
+      axios.post.mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      expect(offeredIn(0)).not.toContain('commonly_web_search');
+    });
+
+    test('positive control: a turn that did not search posts in a bridged pod as before', async () => {
+      mockBridged.mockResolvedValue(true);
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_post_message', { content: 'plain reply' })))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      expect(postedContents()).toEqual(['plain reply']);
+    });
+
+    test('positive control: unbridged, a turn that searched still posts', async () => {
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_web_search', { query: 'q' })))
+        .mockResolvedValueOnce(toolCalls(call('c2', 'commonly_post_message', { content: 'found it' })))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      expect(postedContents()).toEqual(['found it']);
+    });
   });
 });

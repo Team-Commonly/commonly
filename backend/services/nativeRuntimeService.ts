@@ -32,6 +32,7 @@ import {
   HostedBrokerProjection,
 } from './grantBrokerProjectionService';
 import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
+import { podIsBridged } from './outsiderGrantPodEligibility';
 import { isSandboxConfigured, TurnSandbox } from './turnSandboxService';
 import { isSearchConfigured, searchWeb } from './webSearchService';
 import { untrustedConnectorMarker } from './brokerResultMarker';
@@ -330,11 +331,19 @@ const IN_POD_NATIVE_TOOLS = new Set(['commonly_read_context', 'commonly_post_mes
 // search provider, not to an address the text can choose.
 const WEB_TAINTED_TOOLS: ReadonlySet<string> = new Set([...IN_POD_NATIVE_TOOLS, 'commonly_web_search']);
 const MAX_WEB_SEARCHES_PER_TURN = 3;
+// Posting in this pod is the one way out the narrowing keeps, and a pod
+// bridged to an external chat relays its posts there (Rhea on #2244). So in a
+// bridged pod, search is not offered, and a turn that has read the web does
+// not post: the same bridge condition that keeps outsider-writable connector
+// grants out of such a pod (podIsBridged, #2211).
+const WEB_BRIDGED_REFUSAL = 'Web search is not available in a pod bridged to an external chat.';
+const WEB_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat, so a turn that has read the web '
+  + 'cannot post in it.';
 
 export const toolsForConfig = (
   cfg: { tools?: unknown } | null | undefined,
   inPodOnly = false,
-  webTainted = false,
+  { webTainted = false, podBridged = false }: { webTainted?: boolean; podBridged?: boolean } = {},
 ): readonly (typeof TOOLS)[number][] => {
   const declared = Array.isArray(cfg?.tools) ? (cfg?.tools as string[]) : null;
   return TOOLS.filter((t) => (declared
@@ -342,7 +351,8 @@ export const toolsForConfig = (
     : !OPT_IN_TOOLS.has(t.function.name))
     && toolAvailable(t.function.name)
     && (!inPodOnly || IN_POD_NATIVE_TOOLS.has(t.function.name))
-    && (!webTainted || WEB_TAINTED_TOOLS.has(t.function.name)));
+    && (!webTainted || WEB_TAINTED_TOOLS.has(t.function.name))
+    && (!podBridged || t.function.name !== 'commonly_web_search'));
 };
 
 // --- tool dispatcher -------------------------------------------------------
@@ -359,6 +369,8 @@ interface DispatchContext {
   sandbox?: TurnSandbox;
   /** Set when a web search has returned in this turn (TASK-267a). */
   webTainted?: boolean;
+  /** Whether the pod is bridged to an external chat, read just before dispatch. */
+  podBridged?: boolean;
   /** Search requests this turn has sent. */
   webSearches?: number;
 }
@@ -390,6 +402,9 @@ async function dispatchTool(
       content: { ok: false, error: `${name} is unavailable for the rest of this turn because web results are in it` },
       error: 'web_tainted_tool_denied',
     };
+  }
+  if (ctx.webTainted && ctx.podBridged && name === 'commonly_post_message') {
+    return { content: { ok: false, error: WEB_TAINTED_BRIDGED_REFUSAL }, error: 'web_tainted_bridged_post_denied' };
   }
   const args = (rawArgs && typeof rawArgs === 'object' ? rawArgs : {}) as Record<string, any>;
 
@@ -531,6 +546,7 @@ async function dispatchTool(
           error: message,
         });
         if (!isSearchConfigured()) return refuse('Web search is not available on this instance.');
+        if (ctx.podBridged) return refuse(WEB_BRIDGED_REFUSAL);
         if ((ctx.webSearches || 0) >= MAX_WEB_SEARCHES_PER_TURN) {
           return refuse(`This turn has used its ${MAX_WEB_SEARCHES_PER_TURN} searches.`);
         }
@@ -1122,6 +1138,19 @@ export async function runAgent(
     installationConfig: cfg,
   };
 
+  // Read whenever web search could matter: before each model call of a turn
+  // that may search, and before a search or a post after one. A failed read
+  // counts as bridged, so it cannot open a way out.
+  const podBridgedNow = async (): Promise<boolean> => {
+    try {
+      return await podIsBridged(String(podId));
+    } catch (error) {
+      console.warn('[native-runtime] bridge check unavailable:', (error as Error).message);
+      return true;
+    }
+  };
+  const mayWebSearch = toolsForConfig(cfg).some((tool) => tool.function.name === 'commonly_web_search');
+
   const inPodOnlyNow = async (): Promise<boolean> => {
     try {
       return await podHasOutsiderWritableGrant(podId);
@@ -1242,8 +1271,9 @@ export async function runAgent(
       // After a web search returns, connector tools leave the offer too
       // (TASK-267a): only in-pod read and post, and searching, remain.
       const webTainted = Boolean(dispatchCtx.webTainted);
+      const podBridged = mayWebSearch ? await podBridgedNow() : false;
       const offeredTools = [
-        ...toolsForConfig(cfg, inPodOnly, webTainted),
+        ...toolsForConfig(cfg, inPodOnly, { webTainted, podBridged }),
         ...(webTainted ? [] : broker.tools),
       ];
       offeredToolNames = new Set(offeredTools.map((tool: any) => String(tool?.function?.name || '')));
@@ -1375,6 +1405,11 @@ export async function runAgent(
           // Grants can be minted after the turn's tool list was assembled.
           // Re-read the policy before dispatch; a stale model call is refused.
           dispatchCtx.inPodOnly = await inPodOnlyNow();
+          // A bridge can be added mid-turn: re-read it before a search, and
+          // before any post once the web is in the turn.
+          if (toolName === 'commonly_web_search' || (dispatchCtx.webTainted && toolName === 'commonly_post_message')) {
+            dispatchCtx.podBridged = await podBridgedNow();
+          }
           // A tool the narrowing removed goes to dispatchTool, which refuses it
           // naming the grant; any other tool not offered this turn is refused here.
           const narrowedAway = Boolean(dispatchCtx.inPodOnly) && !IN_POD_NATIVE_TOOLS.has(toolName);
@@ -1428,7 +1463,14 @@ export async function runAgent(
       run.totalTokens += Number(usage.total_tokens || 0);
 
       const textOut = typeof msg.content === 'string' ? msg.content.trim() : '';
-      if (textOut && !postedViaTool) {
+      // The fallback post is a post like any other: after a search, not into a
+      // bridged pod (Rhea on #2244).
+      const fallbackBlocked = Boolean(textOut && !postedViaTool && dispatchCtx.webTainted && await podBridgedNow());
+      if (fallbackBlocked) {
+        run.errorKind = 'guardrail_blocked';
+        run.errorMessage = WEB_TAINTED_BRIDGED_REFUSAL;
+      }
+      if (textOut && !postedViaTool && !fallbackBlocked) {
         // Fallback: the LLM wrote content WITHOUT calling commonly_post_message.
         // Post it anyway so the human actually sees a reply.
         try {

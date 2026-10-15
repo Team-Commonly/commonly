@@ -17,6 +17,26 @@ export const outsiderGrantRefusalMessage = (reason: OutsiderGrantRefusal): strin
   write_mode_unconfined: 'This grant permits unattended writes. Use write-with-confirm in a separate pod.',
 }[reason]);
 
+/**
+ * True when an integration can relay this pod's messages to an external
+ * audience (a Telegram or Slack chat, a gated user-scope bridge). Shared by
+ * outsider-writable connector grants and native web search (TASK-267a): text
+ * a turn read from outside must not leave through a relay of the pod.
+ */
+export const podIsBridged = async (podId: string): Promise<boolean> => {
+  const bridges = await Integration.find({
+    // Fail closed when a new channel type is added: only credential rows are
+    // known not to relay pod content to an external audience.
+    type: { $nin: ['hosted-mcp', 'github-app'] },
+    revokedAt: null,
+    $or: [{ podId }, { [`config.gates.${podId}.enabled`]: true }],
+  }).select('type scope podId status isActive config.gates config.adminPause').lean();
+  return bridges.some((bridge: any) => bridge.status !== 'disconnected'
+    && bridge.status !== 'error' && bridge.isActive !== false
+    && !bridge.config?.adminPause
+    && (String(bridge.podId) === podId || bridge.config?.gates?.[podId]?.enabled === true));
+};
+
 /** Re-read at mint and on every broker list/call; no cached eligibility. */
 export const outsiderGrantPodRefusal = async (
   target: { kind?: string; id?: unknown },
@@ -31,19 +51,7 @@ export const outsiderGrantPodRefusal = async (
   if (pod.publicRead !== false) return 'pod_not_private';
   if (pod.joinPolicy !== 'invite-only' && !options.assumeInviteOnly) return 'pod_joinable';
 
-  const bridges = await Integration.find({
-    // Fail closed when a new channel type is added: only credential rows are
-    // known not to relay pod content to an external audience.
-    type: { $nin: ['hosted-mcp', 'github-app'] },
-    revokedAt: null,
-    $or: [{ podId }, { [`config.gates.${podId}.enabled`]: true }],
-  }).select('type scope podId status isActive config.gates config.adminPause').lean();
-  if (bridges.some((bridge: any) => bridge.status !== 'disconnected'
-    && bridge.status !== 'error' && bridge.isActive !== false
-    && !bridge.config?.adminPause
-    && (String(bridge.podId) === podId || bridge.config?.gates?.[podId]?.enabled === true))) {
-    return 'pod_bridged';
-  }
+  if (await podIsBridged(podId)) return 'pod_bridged';
 
   const memberIds = (pod.members || []).map(String);
   const users = await User.find({ _id: { $in: memberIds } })
