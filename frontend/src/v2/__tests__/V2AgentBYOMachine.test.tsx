@@ -88,7 +88,11 @@ describe('BYO on-my-computer mode', () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
 
-    // Default mode is 'byo', where the token wording is still correct.
+    // Nothing is preselected, so the note promises no path yet.
+    expect(screen.getByTestId('byo-preview')).toHaveTextContent('This is how it will appear in the pod. The face follows the name.');
+
+    // On "Bring your own runtime", the token wording is correct.
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
     expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once your runtime connects with the token.');
 
     fireEvent.click(screen.getByTestId('byo-mode-machine'));

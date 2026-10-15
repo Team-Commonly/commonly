@@ -105,6 +105,55 @@ describe('GET /api/users/me/agent-connection', () => {
     });
   });
 
+  // Signup installs Scout into every new workspace with installedBy = the new
+  // user. Counting it made every signup look like they had attached an agent,
+  // so the first-run card (which shows only on issued: false) never appeared.
+  it('does not count the Scout that signup installed as an agent the person attached', async () => {
+    mockInstallationFind.mockReturnValue(query([
+      { agentName: 'scout', instanceId: 'u1a2b3c4d5e', podId: 'workspace-1' },
+    ]));
+
+    const res = await request(app)
+      .get('/api/users/me/agent-connection')
+      .set('Authorization', 'Bearer human-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      issued: false,
+      connected: false,
+      lastUsedAt: null,
+      connectedAgent: null,
+    });
+    expect(mockUserFind).not.toHaveBeenCalled();
+  });
+
+  it('counts an agent the person set up alongside their Scout, and only that agent', async () => {
+    mockInstallationFind.mockReturnValue(query([
+      { agentName: 'scout', instanceId: 'u1a2b3c4d5e', podId: 'workspace-1' },
+      { agentName: 'maya-claude', instanceId: 'default', podId: 'workspace-1' },
+    ]));
+    mockUserFind.mockReturnValue(query([]));
+
+    const res = await request(app)
+      .get('/api/users/me/agent-connection')
+      .set('Authorization', 'Bearer human-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      issued: true,
+      connected: false,
+      lastUsedAt: null,
+      connectedAgent: null,
+    });
+    expect(mockUserFind).toHaveBeenCalledWith({
+      isBot: true,
+      $or: [{
+        'botMetadata.agentName': 'maya-claude',
+        'botMetadata.instanceId': 'default',
+      }],
+    });
+  });
+
   it('reports the most recent connection without returning token material', async () => {
     mockInstallationFind.mockReturnValue(query([
       { agentName: 'openclaw', instanceId: 'aria', podId: 'workspace-1' },

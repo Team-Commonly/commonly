@@ -137,14 +137,26 @@ const V2AgentBYO: React.FC = () => {
   // the token and hands it to the runtime server-side; nothing secret is
   // ever rendered on this screen.
   const [hosting, setHosting] = useState<HostedAvailability | null>(null);
-  const [mode, setMode] = useState<'hosted' | 'byo' | 'machine'>('byo');
-  const modeDefaulted = React.useRef(false);
+  // Where the agent runs is the person's choice, so nothing is preselected
+  // when there is a choice to make (UX Lead's first-session artboards, frame
+  // 04; ruled 2026-10-14). Preselecting "Run it here" answered a question this
+  // page's own title never asks, and made every bare visit read as a choice of
+  // hosting. A ?name= deep link comes from Scout's connect_local_agent card:
+  // the person asked to connect THEIR OWN agent (e.g. Claude Code), so it
+  // starts on "Bring your own runtime" (Growth's walk, 2026-10-14: one click
+  // gave a hosted agent named after their Claude Code).
+  const [chosenMode, setMode] = useState<'hosted' | 'byo' | 'machine' | null>(prefill.name ? 'byo' : null);
   const [hosted, setHosted] = useState<{ agentName: string; podId: string } | null>(null);
   const [hostedState, setHostedState] = useState<'starting' | 'running' | 'slow'>('starting');
   // ADR-026 Phase 2: "on my computer" — install + placement request; the
   // daemon on the chosen machine adopts, provisions, and starts the agent.
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [machineId, setMachineId] = useState<string>('');
+  // With no choice cards on screen (no hosting, no computer), bringing your
+  // own runtime is the only path, so it is the mode. With cards, it is the
+  // person's pick, and null until they make one.
+  const choosingMode = Boolean(hosting?.configured) || machines.length > 0;
+  const mode = chosenMode ?? (choosingMode ? null : 'byo');
   // One lookup, two readers (TASK-163): the preview note and the placement
   // payload must name the SAME machine, so it is derived once here rather
   // than restated at each call site.
@@ -265,20 +277,12 @@ const V2AgentBYO: React.FC = () => {
         const availability = await api.get<HostedAvailability>('/api/hosted/availability');
         if (cancelled) return;
         if (availability && typeof availability.configured === 'boolean') {
+          // Sets no mode. This effect re-runs on every pod change (podId is a
+          // dep), and when it once re-asserted a default it silently stomped
+          // an explicit choice — caught live 2026-09-06: pick "On my
+          // computer", pick a pod, and the submit button turned back into
+          // "Run it here".
           setHosting(availability);
-          // Default to hosted ONCE. This effect re-runs on every pod change
-          // (podId is a dep), and re-asserting the default here silently
-          // stomped an explicit mode choice — caught live 2026-09-06: pick
-          // "On my computer", pick a pod, and the submit button turns back
-          // into "Run it here".
-          // A ?name= deep link comes from Scout's connect_local_agent card: the user
-          // asked to connect THEIR OWN agent (e.g. Claude Code), so "Run it here" —
-          // a Commonly-hosted agent — is the wrong preselection (Growth's walk,
-          // 2026-10-14: one click gave a hosted agent named after their Claude Code).
-          if (availability.configured && !modeDefaulted.current) {
-            modeDefaulted.current = true;
-            if (!prefill.name) setMode('hosted');
-          }
         }
       } catch {
         if (!cancelled) setHosting({ configured: false, caps: { agentsPerUser: 0, turnsPerDay: 0 } });
@@ -414,6 +418,7 @@ const V2AgentBYO: React.FC = () => {
       setError(t('agentByo.errors.podRequired'));
       return;
     }
+    if (!mode) return;
     if (mode === 'hosted') {
       await submitHosted(cleanName);
       return;
@@ -641,7 +646,9 @@ const V2AgentBYO: React.FC = () => {
       {!issued && !hosted && !placed && (
         <div className="v2-byo__form">
           {(hosting?.configured || machines.length > 0) && (
-            <div className="v2-byo__modes" role="group" aria-label={t('agentByo.mode.label')}>
+            <>
+            <p className="v2-byo__modes-question" id="byo-modes-question">{t('agentByo.mode.label')}</p>
+            <div className="v2-byo__modes" role="group" aria-labelledby="byo-modes-question">
               <button
                 type="button"
                 className="v2-byo__mode"
@@ -681,6 +688,7 @@ const V2AgentBYO: React.FC = () => {
                 <span className="v2-byo__mode-meta">{t('agentByo.mode.byoMeta')}</span>
               </button>
             </div>
+            </>
           )}
           {mode === 'machine' && (
             <label className="v2-byo__field">
@@ -806,18 +814,26 @@ const V2AgentBYO: React.FC = () => {
             </div>
           )}
           {error && <div className="v2-byo__error">{error}</div>}
-          <button
-            type="button"
-            onClick={submit}
-            disabled={submitting || !podId}
-            className="v2-byo__submit"
-          >
-            {(() => {
-              if (mode === 'hosted') return submitting ? t('agentByo.actions.starting') : t('agentByo.actions.runHere');
-              if (mode === 'machine') return submitting ? t('agentByo.actions.assigning') : t('agentByo.actions.assign');
-              return submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install');
-            })()}
-          </button>
+          {mode === null ? (
+            // Signal §3 not yet: a dashed slot where the act will be, until a
+            // place to run it is chosen.
+            <div className="v2-byo__unchosen" data-testid="byo-mode-unchosen">
+              {t('agentByo.actions.chooseFirst')}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={submit}
+              disabled={submitting || !podId}
+              className="v2-byo__submit"
+            >
+              {(() => {
+                if (mode === 'hosted') return submitting ? t('agentByo.actions.starting') : t('agentByo.actions.runHere');
+                if (mode === 'machine') return submitting ? t('agentByo.actions.assigning') : t('agentByo.actions.assign');
+                return submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install');
+              })()}
+            </button>
+          )}
           <p className="v2-byo__footnote">
             {t('agentByo.footnote.preferCli')} <code>{CLI_INSTALL_COMMAND}</code>, {t('agentByo.footnote.then')}{' '}
             <code>{CLI_INIT_COMMAND}</code>.{' '}
@@ -1074,7 +1090,9 @@ const V2AgentBYO: React.FC = () => {
           </div>
         </div>
         <p className="v2-byo__preview-note">
-          {mode === 'hosted'
+          {mode === null
+            ? t('agentByo.preview.noteUnchosen')
+            : mode === 'hosted'
             ? t('agentByo.preview.noteHosted')
             : mode === 'machine'
               // "On my computer" issues no runtime token — the daemon on the

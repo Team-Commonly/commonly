@@ -1404,7 +1404,8 @@
       "runHere": "在这里运行",
       "starting": "正在启动…",
       "assign": "添加到这台电脑",
-      "assigning": "分配中…"
+      "assigning": "分配中…",
+      "chooseFirst": "先选择运行位置"
     },
     "footnote": {
       "preferCli": "更喜欢用 CLI？",
@@ -1457,7 +1458,7 @@
       "ctaWarning": "{{name}} 还没有在监听 —— 在上面的命令运行起来之前，@提及 不会得到回复。"
     },
     "mode": {
-      "label": "运行方式",
+      "label": "在哪里运行？",
       "hosted": "在这里运行",
       "hostedHint": "由 Commonly 代为运行，无需安装。测试期：每天{{turns}}轮。",
       "byo": "自带运行时",
@@ -1490,7 +1491,8 @@
       "live": "监听中",
       "noteHosted": "这就是它在 Pod 中的样子。头像跟随名字生成。",
       "noteByo": "你的运行时使用令牌连接后即会出现在 Pod 中。",
-      "noteMachine": "{{machine}} 上的守护进程启动它后即会出现在 Pod 中。"
+      "noteMachine": "{{machine}} 上的守护进程启动它后即会出现在 Pod 中。",
+      "noteUnchosen": "这就是它在 Pod 中的样子。头像跟随名字生成。"
     },
     "persona": {
       "hiring": "正在雇佣"

@@ -14,6 +14,8 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const AgentIdentityService = require('../services/agentIdentityService');
 // eslint-disable-next-line global-require
+const { FIRST_PARTY_APPS } = require('../config/native-agents/apps');
+// eslint-disable-next-line global-require
 const {
   getCurrentProfile,
   updateProfile,
@@ -24,6 +26,16 @@ const {
 } = require('../controllers/userController');
 
 const router: ReturnType<typeof express.Router> = express.Router();
+
+// First-party agents that signup installs into every new workspace in the
+// person's name (Scout). Their installation is recorded `installedBy` the new
+// user, but the person did not set them up, so they never count as "an agent
+// you attached". Counting Scout hid the first-run card from every signup.
+const SIGNUP_INSTALLED_AGENT_NAMES: ReadonlySet<string> = new Set(
+  (FIRST_PARTY_APPS as Array<{ agentName: string; perUser?: boolean }>)
+    .filter((app) => app.perUser)
+    .map((app) => app.agentName.toLowerCase()),
+);
 
 const agentConnectionReadLimit = rateLimit({
   windowMs: 60_000,
@@ -111,7 +123,7 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
       }];
     }));
     const identities = Array.from(installationsByIdentity.values())
-      .filter((identity: any) => identity.agentName);
+      .filter((identity: any) => identity.agentName && !SIGNUP_INSTALLED_AGENT_NAMES.has(identity.agentName));
 
     if (identities.length === 0) {
       return res.json({
