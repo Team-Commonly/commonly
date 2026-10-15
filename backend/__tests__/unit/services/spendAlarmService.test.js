@@ -146,6 +146,18 @@ describe('checkSpend', () => {
     });
   });
 
+  test('names the user in the line, so whoever is paged sees who without a lookup', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const User = require('../../../models/User');
+    await User.deleteMany({});
+    await User.create({ _id: USER_A, username: 'maya', email: 'maya@example.com', password: 'x'.repeat(12) });
+    await AgentRun.create(run(USER_A, [{ model: 'deepseek-v4-flash', promptTokens: 2_000_000, completionTokens: 2_000_000 }]));
+
+    await spend.checkSpend(NOW);
+
+    expect(alarmLines(warn)).toEqual([expect.objectContaining({ userId: String(USER_A), username: 'maya' })]);
+  });
+
   test('SPEND_ALARM_USD_PER_DAY moves the line, and a bad value falls back to $2', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await AgentRun.create(run(USER_B, [{ model: 'deepseek-v4-flash', promptTokens: 1_000_000, completionTokens: 1_000_000 }]));

@@ -162,12 +162,29 @@ export const checkSpend = async (now: Date = new Date()): Promise<UserSpend[]> =
   const day = utcDayStart(now).toISOString().slice(0, 10);
   const over = (await userSpendForDay(now)).filter((spend) => spend.usd >= threshold);
   const fresh = over.filter((spend) => !alarmed.has(`${day}:${spend.userId}`));
+  // Name each user in the line, so whoever is paged sees who without a lookup
+  // (Cofounder, 2026-10-15). A failed lookup still logs the id.
+  const usernames = new Map<string, string>();
+  if (fresh.length) {
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const User = require('../models/User');
+      const ids = fresh.map((spend) => spend.userId).filter((id) => /^[a-f\d]{24}$/i.test(id));
+      const users = await User.find({ _id: { $in: ids } }).select('username').lean();
+      users.forEach((user: { _id: unknown; username?: string }) => {
+        if (user.username) usernames.set(String(user._id), user.username);
+      });
+    } catch (error) {
+      console.warn('[spend-alarm] username lookup failed; logging ids only:', (error as Error).message);
+    }
+  }
   for (const spend of fresh) {
     alarmed.add(`${day}:${spend.userId}`);
     console.warn(JSON.stringify({
       alarm: 'user_spend',
       day,
       userId: spend.userId,
+      ...(usernames.has(spend.userId) ? { username: usernames.get(spend.userId) } : {}),
       usd: Number(spend.usd.toFixed(4)),
       thresholdUsd: threshold,
       runs: spend.runs,
