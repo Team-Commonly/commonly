@@ -169,7 +169,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         const existingConfig = normalizeConfigMap(targetInstallation.config) || {};
         const nextConfig = { ...existingConfig, ...config };
         if (config.runtime && typeof config.runtime === 'object') {
-          nextConfig.runtime = runtimeKeepingType(config.runtime, existingConfig);
+          nextConfig.runtime = runtimeKeepingType(config.runtime, existingConfig, { mayChangeType: isInstanceAdmin });
         }
         if (nextConfig.runtime && typeof nextConfig.runtime === 'object') {
           const runtimeConfig = { ...nextConfig.runtime };
@@ -259,7 +259,8 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       isInstanceAdmin,
     });
     if (writeRefusal) {
-      return res.status(403).json(writeRefusal);
+      const { status: refusalStatus, ...refusalBody } = writeRefusal;
+      return res.status(refusalStatus).json(refusalBody);
     }
 
     for (const targetInstallation of installationsToUpdate) {

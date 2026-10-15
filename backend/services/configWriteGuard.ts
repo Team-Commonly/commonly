@@ -39,7 +39,9 @@ export const KERNEL_RUN_COMPUTE_KEYS: readonly string[] = [
 ];
 
 export interface ConfigWriteRefusal {
-  code: 'kernel_owned_field' | 'runtime_type_change' | 'kernel_run_field';
+  code: 'invalid_config' | 'kernel_owned_field' | 'runtime_type_change' | 'kernel_run_field';
+  /** HTTP status: 400 for a malformed body, 403 for a write this caller may not make. */
+  status: 400 | 403;
   error: string;
   fields: string[];
 }
@@ -49,9 +51,11 @@ const asObject = (value: unknown): Record<string, any> | null => {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : null;
 };
 
+const normalizeRuntimeType = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+
 export const storedRuntimeType = (config: unknown): string => {
   const runtime = asObject(asObject(config)?.runtime);
-  return String(runtime?.runtimeType || '').trim().toLowerCase();
+  return normalizeRuntimeType(runtime?.runtimeType);
 };
 
 /**
@@ -67,13 +71,27 @@ export const configWriteRefusal = ({
   targets: unknown[];
   isInstanceAdmin: boolean;
 }): ConfigWriteRefusal | null => {
+  if (requested === undefined || requested === null) return null;
   const body = asObject(requested);
-  if (!body) return null;
+  // A shallow merge spreads whatever it is given: a string becomes indexed
+  // keys, and `runtime: null` erases the stored runtime and with it the type
+  // every rule below reads (Rhea on #2229). Neither shape is a valid write.
+  if (!body) {
+    return {
+      code: 'invalid_config', status: 400, error: 'config must be an object.', fields: ['config'],
+    };
+  }
+  if ('runtime' in body && !asObject(body.runtime)) {
+    return {
+      code: 'invalid_config', status: 400, error: 'config.runtime must be an object.', fields: ['config.runtime'],
+    };
+  }
 
   const owned = KERNEL_OWNED_CONFIG_KEYS.filter((key) => key in body);
   if (owned.length) {
     return {
       code: 'kernel_owned_field',
+      status: 403,
       error: 'Commonly writes this part of an agent\'s configuration itself; it cannot be set by a request.',
       fields: owned.map((key) => `config.${key}`),
     };
@@ -82,10 +100,11 @@ export const configWriteRefusal = ({
 
   const runtime = asObject(body.runtime);
   if (runtime && 'runtimeType' in runtime) {
-    const requestedType = String(runtime.runtimeType ?? '').trim().toLowerCase();
+    const requestedType = normalizeRuntimeType(runtime.runtimeType);
     if (targets.some((target) => storedRuntimeType(target) !== requestedType)) {
       return {
         code: 'runtime_type_change',
+        status: 403,
         error: 'An agent\'s runtime cannot be changed here. Install the agent again with the runtime you want.',
         fields: ['config.runtime.runtimeType'],
       };
@@ -96,6 +115,7 @@ export const configWriteRefusal = ({
   if (compute.length && targets.some((target) => KERNEL_RUN_RUNTIME_TYPES.has(storedRuntimeType(target)))) {
     return {
       code: 'kernel_run_field',
+      status: 403,
       error: 'Commonly runs this agent, so Commonly sets its model, tools and limits.',
       fields: compute.map((key) => `config.${key}`),
     };
@@ -104,15 +124,23 @@ export const configWriteRefusal = ({
 };
 
 /**
- * The runtime block a write leaves behind. A request that sends `runtime`
- * without `runtimeType` (the Agents Hub sends only auth profiles and skill
- * env) keeps the stored type instead of erasing it.
+ * The runtime block a write leaves behind, with a type every reader matches.
+ * A caller who may not change the type gets the stored one back whatever they
+ * sent (equal after normalizing, or the write was refused): saving their
+ * spelling would let `HOSTED` past readers that match `hosted` exactly
+ * (Rhea on #2229). An admin's type is saved normalized. A request that sends
+ * `runtime` without a type (the Agents Hub sends only auth profiles and skill
+ * env) keeps the stored one instead of erasing it.
  */
 export const runtimeKeepingType = (
   requestedRuntime: Record<string, any>,
   existingConfig: unknown,
+  { mayChangeType }: { mayChangeType: boolean },
 ): Record<string, any> => {
-  if ('runtimeType' in requestedRuntime) return requestedRuntime;
-  const runtimeType = asObject(asObject(existingConfig)?.runtime)?.runtimeType;
-  return runtimeType ? { ...requestedRuntime, runtimeType } : requestedRuntime;
+  const storedType = asObject(asObject(existingConfig)?.runtime)?.runtimeType;
+  if (mayChangeType && 'runtimeType' in requestedRuntime) {
+    return { ...requestedRuntime, runtimeType: normalizeRuntimeType(requestedRuntime.runtimeType) };
+  }
+  const { runtimeType: _sent, ...rest } = requestedRuntime;
+  return storedType ? { ...rest, runtimeType: normalizeRuntimeType(storedType) } : rest;
 };

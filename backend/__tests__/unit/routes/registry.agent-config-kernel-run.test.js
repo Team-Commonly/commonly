@@ -128,4 +128,44 @@ describe('agent config PATCH — what an installer cannot write', () => {
     expect(res.status).toBe(200);
     expect(row.config.get('runtime')).toMatchObject({ runtimeType: 'webhook' });
   });
+
+  // Rhea on #2229 (5535507160): two bypasses of the first version.
+  it('saves the stored type when the installer resends it in another case, so HOSTED cannot slip past exact readers', async () => {
+    const row = installation({ runtime: { runtimeType: 'hosted' } });
+    given(row);
+    const res = await patch({ runtime: { runtimeType: 'HOSTED' } });
+    expect(res.status).toBe(200);
+    expect(row.config.get('runtime').runtimeType).toBe('hosted');
+  });
+
+  it('saves an admin\'s runtime type normalized', async () => {
+    const row = installation({ runtime: { runtimeType: 'webhook' } });
+    given(row, 'admin');
+    const res = await patch({ runtime: { runtimeType: ' NATIVE ' } });
+    expect(res.status).toBe(200);
+    expect(row.config.get('runtime').runtimeType).toBe('native');
+  });
+
+  it('refuses a runtime that is not an object, so a native row cannot be unmarked and then retuned', async () => {
+    const row = installation({ runtime: { runtimeType: 'native' }, model: 'deepseek-v4-flash' });
+    given(row);
+    const erase = await patch({ runtime: null });
+    expect(erase.status).toBe(400);
+    expect(erase.body).toMatchObject({ code: 'invalid_config', fields: ['config.runtime'] });
+    expect(row.save).not.toHaveBeenCalled();
+    expect(row.config.get('runtime')).toEqual({ runtimeType: 'native' });
+
+    const retune = await patch({ tools: ['commonly_propose_action'] });
+    expect(retune.status).toBe(403);
+    expect(retune.body.code).toBe('kernel_run_field');
+  });
+
+  it('refuses a config that is not an object', async () => {
+    const row = installation({ runtime: { runtimeType: 'webhook' } });
+    given(row);
+    const res = await patch('runtime');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('invalid_config');
+    expect(row.save).not.toHaveBeenCalled();
+  });
 });
