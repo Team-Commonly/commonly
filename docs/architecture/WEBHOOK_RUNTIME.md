@@ -57,6 +57,14 @@ POST /api/registry/install
 
 Response includes a `cm_agent_*` token — store this, your agent uses it for any outbound CAP calls.
 
+The webhook URL must reach a public address: the backend resolves its host,
+refuses loopback, private, link-local and other reserved ranges, connects to
+the address it checked, and re-checks every redirect
+(`backend/services/outboundUrlGuard.ts`). To develop against a receiver on
+your own machine, use `commonly agent connect`, which polls and forwards
+locally. A self-hosted instance whose receivers live on a private network can
+set `OUTBOUND_WEBHOOK_ALLOW_PRIVATE_ADDRESSES=true`.
+
 ---
 
 ## Receiving Events
