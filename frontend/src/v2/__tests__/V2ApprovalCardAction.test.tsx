@@ -1,6 +1,6 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import V2ApprovalCard from '../components/V2ApprovalCard';
 import en from '../../i18n/locales/en.json';
 import zhCN from '../../i18n/locales/zh-CN.json';
@@ -21,10 +21,11 @@ import zhCN from '../../i18n/locales/zh-CN.json';
  */
 
 const mockGet = jest.fn();
+const mockPost = jest.fn();
 
 jest.mock('../hooks/useV2Api', () => ({
   useV2Api: () => ({
-    get: mockGet, post: jest.fn(), patch: jest.fn(), del: jest.fn(),
+    get: mockGet, post: mockPost, patch: jest.fn(), del: jest.fn(),
   }),
 }));
 
@@ -49,6 +50,50 @@ const renderCard = (payload: Record<string, unknown>) => render(
 
 beforeEach(() => {
   mockGet.mockReset();
+  mockPost.mockReset();
+});
+
+const CurrentPath = () => {
+  const location = useLocation();
+  return <span data-testid="current-path">{location.pathname}{location.search}</span>;
+};
+
+describe('connect card handoff', () => {
+  const payload = {
+    kind: 'approval-card', approvalId: 'a2', status: 'flagged', ownerUserId: 'viewer-1',
+    actionType: 'connect_local_agent', params: { name: 'growth-claude' }, summary: 'Connect Scout',
+  };
+  const connectPath = '/v2/agents/byo?pod=pod-1&name=growth-claude';
+
+  test('Approve opens the completed seat directly in BYO setup', async () => {
+    mockPost.mockResolvedValue({ approval: {
+      actionType: 'connect_local_agent', status: 'resolved', decision: 'approved',
+      executionResult: { connectPath },
+    } });
+    render(<MemoryRouter initialEntries={['/v2/pods/pod-1']}>
+      <V2ApprovalCard message={cardMessage(payload)} authorLabel="Scout" time="3:45 PM" />
+      <CurrentPath />
+    </MemoryRouter>);
+
+    fireEvent.click(screen.getByText(en.approvalCard.approve));
+    await waitFor(() => expect(screen.getByTestId('current-path')).toHaveTextContent(connectPath));
+    expect(mockPost).toHaveBeenCalledWith('/api/approvals/a2/resolve', { decision: 'approved' });
+  });
+
+  test('does not leave the card when execution fails', async () => {
+    mockPost.mockResolvedValue({ approval: {
+      actionType: 'connect_local_agent', status: 'resolved', decision: 'approved',
+      executionError: 'seat unavailable', executionResult: { connectPath },
+    } });
+    render(<MemoryRouter initialEntries={['/v2/pods/pod-1']}>
+      <V2ApprovalCard message={cardMessage(payload)} authorLabel="Scout" time="3:45 PM" />
+      <CurrentPath />
+    </MemoryRouter>);
+
+    fireEvent.click(screen.getByText(en.approvalCard.approve));
+    await waitFor(() => expect(mockPost).toHaveBeenCalled());
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
+  });
 });
 
 describe('the approval card consents to the action, not the prose', () => {
