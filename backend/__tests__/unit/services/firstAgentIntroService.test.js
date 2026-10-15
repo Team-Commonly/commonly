@@ -126,6 +126,25 @@ describe('first agent intro on runtime check-in', () => {
     expect(mockPostMessage.mock.calls[0][0].podId).toBe(String(pod._id));
   });
 
+  test('an agent-owned installation cannot claim a human first-agent intro', async () => {
+    serial += 1;
+    const bot = await User.create({
+      username: `intro-installer-bot-${serial}`,
+      email: `intro-installer-bot-${serial}@test.com`,
+      password: 'password123',
+      isBot: true,
+    });
+    const human = await person();
+    const { row } = await install(bot, 'pixel', {
+      type: 'agent-room', members: [bot._id, human._id], createdBy: bot._id,
+    });
+
+    await poll('pixel', [row]);
+
+    expect(mockPostMessage).not.toHaveBeenCalled();
+    expect((await User.findById(bot._id).lean()).onboarding?.firstAgentIntroAt).toBeUndefined();
+  });
+
   test('an ambiguous post failure does not permit a duplicate intro', async () => {
     const owner = await person();
     const { row } = await install(owner, 'pixel');

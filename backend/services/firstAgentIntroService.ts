@@ -86,9 +86,9 @@ export async function maybePostFirstAgentIntro(
 
     const displayName = installation.displayName || agentName;
     const handle = instanceId !== 'default' ? instanceId : agentName;
-    // Keep the claim even if posting throws. postMessage can persist a message
-    // before a later side effect fails; releasing the claim would let another
-    // check-in announce the same agent twice.
+    // The conditional User update is the at-most-once boundary. postMessage
+    // may persist a message before a later side effect throws, so its claim is
+    // intentionally not rolled back. This set only saves repeat DB lookups.
     checked.add(key);
     await AgentMessageService.postMessage({
       agentName,
