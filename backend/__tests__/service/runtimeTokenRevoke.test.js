@@ -11,6 +11,7 @@
 // probe is the real runtime auth middleware, so "dead" means what an agent
 // would see: its next call is a 401.
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
@@ -46,7 +47,11 @@ const app = express();
 app.use(express.json());
 app.use('/api/registry', require('../../routes/registry/agent-tokens'));
 app.use('/api/registry', require('../../routes/registry/admin'));
-app.get('/probe', agentRuntimeAuth, (req, res) => res.json({ agent: req.agentUser?.username || null }));
+// A limiter far above anything this suite sends: the probe is a test route,
+// but it runs the database-backed auth middleware, and the repo's CodeQL
+// rule (js/missing-rate-limiting) reads test files too.
+const probeLimit = rateLimit({ windowMs: 60 * 1000, max: 10000 });
+app.get('/probe', probeLimit, agentRuntimeAuth, (req, res) => res.json({ agent: req.agentUser?.username || null }));
 
 const AGENT = 'maya-claude';
 
