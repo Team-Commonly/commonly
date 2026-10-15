@@ -34,6 +34,8 @@ const mock = {
     // these, so this is the only place a test can assert on the delivered file
     // rather than on the source that composes it.
     execCommands: [],
+    // What the next exec writes to its stdout sink; empty = no output.
+    execStdout: '',
   };
 
   class KubeConfig {
@@ -69,6 +71,11 @@ const mock = {
       statusCallback,
     ) {
       mock.execCommands.push(Array.isArray(_command) ? _command.join(' ') : String(_command));
+      if (mock.execStdout && _stdout && typeof _stdout.write === 'function') {
+        _stdout.write(mock.execStdout);
+        if (typeof statusCallback === 'function') setImmediate(() => statusCallback({ status: 'Success' }));
+        return Promise.resolve();
+      }
       if (typeof statusCallback === 'function') {
         statusCallback({ status: 'Success' });
       }
@@ -86,7 +93,7 @@ const mock = {
 
 const k8s = require('@kubernetes/client-node');
 const {
-  restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript,
+  restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey,
 } = require('../../../services/agentProvisionerServiceK8s');
 const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
 
@@ -467,6 +474,50 @@ describe('buildPvcVirtualKeyReadScript', () => {
     const script = buildPvcVirtualKeyReadScript('liz');
     const body = script.slice('node -e "'.length, -1);
     expect(() => new vm.Script(body)).not.toThrow();
+  });
+});
+
+// The issuance-failure fallback writes LITELLM_MASTER_KEY into the same slots
+// the reuse read looks at. The dev issuer has no master-key guard of its own,
+// so the read must never return it: otherwise the master key goes to
+// /key/info and then /key/delete.
+describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
+  const axios = require('axios');
+  const MASTER = 'sk-master-for-test';
+  let saved;
+  beforeEach(() => {
+    saved = { base: process.env.LITELLM_BASE_URL, master: process.env.LITELLM_MASTER_KEY };
+    process.env.LITELLM_BASE_URL = 'http://litellm:4000';
+    process.env.LITELLM_MASTER_KEY = MASTER;
+    jest.spyOn(axios, 'get').mockResolvedValue({ data: { info: { metadata: { agent_id: 'theo' } } } });
+    jest.spyOn(axios, 'delete').mockResolvedValue({});
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-freshly-issued' } });
+  });
+  afterEach(() => {
+    k8s.__mock.execStdout = '';
+    jest.restoreAllMocks();
+    if (saved.base === undefined) delete process.env.LITELLM_BASE_URL; else process.env.LITELLM_BASE_URL = saved.base;
+    if (saved.master === undefined) delete process.env.LITELLM_MASTER_KEY; else process.env.LITELLM_MASTER_KEY = saved.master;
+  });
+
+  it('with the master key in openrouter:default, makes no /key/info or /key/delete call and mints a fresh key', async () => {
+    k8s.__mock.execStdout = MASTER; // what the read script prints for that profile
+
+    const key = await issueLiteLLMVirtualKey('theo');
+
+    expect(key).toBe('sk-freshly-issued');
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.delete).not.toHaveBeenCalled();
+    for (const [url] of axios.post.mock.calls) expect(url).not.toContain(MASTER);
+  });
+
+  it('control: an ordinary virtual key IS checked with /key/info and reused', async () => {
+    k8s.__mock.execStdout = 'sk-virtual-theo';
+
+    const key = await issueLiteLLMVirtualKey('theo');
+
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/key/info?key=sk-virtual-theo'), expect.anything());
+    expect(key).toBe('sk-virtual-theo');
   });
 });
 

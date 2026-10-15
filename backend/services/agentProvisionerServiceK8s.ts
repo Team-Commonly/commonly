@@ -1583,7 +1583,11 @@ const readPvcVirtualKey = async (agentId: string): Promise<string | null> => {
         () => resolve(Buffer.concat(chunks).toString().trim()),
       ).catch(() => resolve(''));
     });
-    return out.startsWith('sk-') ? out : null;
+    // The issuance-failure fallback writes LITELLM_MASTER_KEY into these same
+    // slots. Never hand it to an issuer: the dev issuer would send it to
+    // /key/info and then /key/delete it (only the community issuer refuses it).
+    const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
+    return out.startsWith('sk-') && out !== masterKey ? out : null;
   } catch (_: any) {
     return null; // best-effort: no key read means a fresh key is minted
   }
@@ -3540,6 +3544,8 @@ const refreshCodexOAuthTokenIfNeeded = async ({ thresholdDays = 3 } = {}) => {
 
 module.exports = {
   buildPvcVirtualKeyReadScript,
+  // Test seam: the dev issuer, so a test can assert what it sends to LiteLLM.
+  issueLiteLLMVirtualKey,
   getAgentSessionSizes,
   provisionAgentRuntime,
   startAgentRuntime,
