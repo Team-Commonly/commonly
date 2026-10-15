@@ -154,7 +154,10 @@ router.post('/portal', checkoutLimit, auth, async (req: any, res: any) => {
 });
 
 /**
- * POST /api/billing/webhook — the ONLY writer of entitlements.pro.
+ * POST /api/billing/webhook — the writer of entitlements.pro for paying
+ * customers. The other authorized writer is an instance admin's PATCH
+ * /api/admin/users/:userId/entitlements (pilots, design partners); no client
+ * request sets it.
  *
  * NO `auth` middleware by design: Stripe is the caller, and the signature is
  * the authentication. Mounted with `express.raw` in server.ts before the

@@ -46,10 +46,12 @@ const intEnv = (name: string, fallback: number): number => {
 };
 
 /**
- * The hosted caps for a plan: 30 turns a day free, 200 on pro
- * (`entitlements.pro`, written only by the signed Stripe webhook). Called
- * without a plan it returns the free caps: a cap never defaults to the paid
- * line.
+ * The hosted caps for a plan: 30 turns a day free, 200 on pro. Pro is
+ * `entitlements.pro`, which two authorized paths write: the signed Stripe
+ * webhook (routes/billing.ts) and an instance admin's entitlements PATCH
+ * (routes/admin/users.ts, how pilots and design partners get Pro). No client
+ * field sets it. Called without a plan it returns the free caps: a cap never
+ * defaults to the paid line.
  */
 export const hostedCaps = ({ pro = false }: { pro?: boolean } = {}) => ({
   agentsPerUser: intEnv('HOSTED_AGENTS_PER_USER', DEFAULT_AGENTS_PER_USER),
