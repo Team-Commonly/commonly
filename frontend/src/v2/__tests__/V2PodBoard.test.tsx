@@ -143,8 +143,11 @@ describe('V2PodBoard', () => {
   });
 
   test('shows the claim holder and local expiry, then hides the lease without a reload', async () => {
-    const previousTZ = process.env.TZ;
-    process.env.TZ = 'America/Los_Angeles';
+    const NativeDateTimeFormat = Intl.DateTimeFormat;
+    const dateTimeFormatSpy = jest.spyOn(Intl, 'DateTimeFormat').mockImplementation((locale, options) => new NativeDateTimeFormat(locale, {
+      timeZone: 'America/Los_Angeles',
+      ...options,
+    }));
     const now = new Date('2026-10-15T22:00:00.000Z');
     const expiresAt = new Date(now.getTime() + 60_000).toISOString();
     const task = {
@@ -180,8 +183,7 @@ describe('V2PodBoard', () => {
       expect(axios.get.mock.calls.filter(([url]) => url.startsWith('/api/v1/tasks/'))).toHaveLength(1);
     } finally {
       jest.useRealTimers();
-      if (previousTZ === undefined) delete process.env.TZ;
-      else process.env.TZ = previousTZ;
+      dateTimeFormatSpy.mockRestore();
     }
   });
 
