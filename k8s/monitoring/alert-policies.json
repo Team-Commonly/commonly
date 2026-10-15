@@ -317,5 +317,63 @@
         }
       }
     ]
+  },
+  {
+    "displayName": "commonly-dev: signup is closed or failing",
+    "severity": "CRITICAL",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "GET /api/auth/registration-policy has failed, or stopped saying registrationOpen:true, from two or more regions for 2 minutes. A stranger cannot sign up. Runbook: docs/runbooks/alerting.md#signup-or-runtime-auth"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "uptime check failing from 2+ regions",
+        "conditionThreshold": {
+          "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND metric.labels.check_id=\"{{uptime:signup-policy}}\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "60s",
+              "perSeriesAligner": "ALIGN_NEXT_OLDER",
+              "crossSeriesReducer": "REDUCE_COUNT_FALSE",
+              "groupByFields": ["resource.label.host"]
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 1,
+          "duration": "120s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
+  },
+  {
+    "displayName": "commonly-dev: agent runtime auth is failing",
+    "severity": "CRITICAL",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "A bogus cm_agent_ token stopped getting 401 Invalid agent token from /api/agents/runtime/events (two or more regions, 2 minutes). That answer requires the runtime router and its Mongo credential lookups, so agents cannot authenticate. Runbook: docs/runbooks/alerting.md#signup-or-runtime-auth"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "uptime check failing from 2+ regions",
+        "conditionThreshold": {
+          "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND metric.labels.check_id=\"{{uptime:runtime-auth}}\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "60s",
+              "perSeriesAligner": "ALIGN_NEXT_OLDER",
+              "crossSeriesReducer": "REDUCE_COUNT_FALSE",
+              "groupByFields": ["resource.label.host"]
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 1,
+          "duration": "120s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
   }
 ]

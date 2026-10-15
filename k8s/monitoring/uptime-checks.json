@@ -30,5 +30,40 @@
     "period": "60s",
     "timeout": "10s",
     "selectedRegions": ["USA_OREGON", "USA_IOWA", "USA_VIRGINIA"]
+  },
+  {
+    "key": "signup-policy",
+    "displayName": "api.commonly.me /api/auth/registration-policy",
+    "monitoredResource": { "type": "uptime_url", "labels": { "host": "api.commonly.me" } },
+    "httpCheck": {
+      "path": "/api/auth/registration-policy",
+      "port": 443,
+      "useSsl": true,
+      "validateSsl": true,
+      "requestMethod": "GET",
+      "acceptedResponseStatusCodes": [{ "statusClass": "STATUS_CLASS_2XX" }]
+    },
+    "contentMatchers": [{ "content": "\"registrationOpen\":true", "matcher": "CONTAINS_STRING" }],
+    "period": "60s",
+    "timeout": "10s",
+    "selectedRegions": ["USA_OREGON", "USA_IOWA", "USA_VIRGINIA"]
+  },
+  {
+    "key": "runtime-auth",
+    "displayName": "api.commonly.me agent runtime auth",
+    "monitoredResource": { "type": "uptime_url", "labels": { "host": "api.commonly.me" } },
+    "httpCheck": {
+      "path": "/api/agents/runtime/events",
+      "port": 443,
+      "useSsl": true,
+      "validateSsl": true,
+      "requestMethod": "GET",
+      "headers": { "Authorization": "Bearer cm_agent_uptimeprobe_not_a_real_token" },
+      "acceptedResponseStatusCodes": [{ "statusValue": 401 }]
+    },
+    "contentMatchers": [{ "content": "Invalid agent token", "matcher": "CONTAINS_STRING" }],
+    "period": "60s",
+    "timeout": "10s",
+    "selectedRegions": ["USA_OREGON", "USA_IOWA", "USA_VIRGINIA"]
   }
 ]

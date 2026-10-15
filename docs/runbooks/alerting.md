@@ -61,6 +61,22 @@ or the origin is down: check the `cloudflared` and `ingress-nginx` pods in
 is down. If a deploy just ran, `helm history commonly-dev -n commonly-dev`
 gives the rollback target.
 
+### Signup or runtime auth
+
+Two uptime checks probe the paths a stranger and an agent hit first:
+
+- **`/api/auth/registration-policy`** must return 200 containing
+  `"registrationOpen":true`. A 200 with `false` means registration was
+  switched to invite-only, so check whether that was intended. A 5xx is the
+  auth router.
+- **`/api/agents/runtime/events`** is called with the deliberately invalid
+  `Authorization: Bearer cm_agent_uptimeprobe_not_a_real_token`, and must
+  return `401 Invalid agent token`. That answer is reached only after
+  `agentRuntimeAuth`'s Mongo lookups, so a 500 points at Mongo and a 404 at
+  an unmounted router. The token is not a credential. The route's IP limit
+  (3000/min) and the absence of a failed-auth lockout make one probe a
+  minute from each region harmless.
+
 ### Deployment unavailable
 
 A core deployment has had 0 available replicas for 5 minutes. Run
