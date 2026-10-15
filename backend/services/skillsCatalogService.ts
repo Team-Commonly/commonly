@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { fetchTextFromAllowedHost, isOutboundUrlRefused } from './outboundUrlGuard';
+import { fetchBytesFromAllowedHost, fetchTextFromAllowedHost, isOutboundUrlRefused } from './outboundUrlGuard';
 
 const DEFAULT_SOURCE = 'awesome';
 
@@ -350,9 +350,11 @@ interface ClawHubBundle {
 const PER_FILE_BYTES = 100 * 1024;
 const TOTAL_BUNDLE_BYTES = 800 * 1024;
 // A request can reach ClawHub now (an import of a legacy catalog entry), so
-// both calls carry the deadline and the download a size cap, as the GitHub
-// path does through the fetch guard.
-const CLAWHUB_TIMEOUT_MS = 15 * 1000;
+// both calls go through the same fetch guard as GitHub: every hop, redirects
+// included, stays on clawhub.ai, one deadline spans the call, and the body is
+// read against a cap as it streams (Sprint Review on #2195).
+const CLAWHUB_ORIGINS: ReadonlyMap<string, string> = new Map([['clawhub.ai', `${CLAWHUB_BASE}/`]]);
+const CLAWHUB_MAX_META_BYTES = 256 * 1024;
 const CLAWHUB_MAX_ZIP_BYTES = 2 * 1024 * 1024;
 
 /**
@@ -380,46 +382,56 @@ export const fetchSkillBundleFromClawHub = async (
 ): Promise<ClawHubBundle> => {
   const safeOwner = encodeURIComponent(owner);
   const safeSlug = encodeURIComponent(slug);
-  const signal = AbortSignal.timeout(CLAWHUB_TIMEOUT_MS);
-  const reach = async (url: string): Promise<Response> => {
-    try {
-      return await fetch(url, { signal });
-    } catch (error) {
-      throw new SkillSourceUnavailableError(`ClawHub unreachable: ${(error as Error).message}`, false);
-    }
-  };
+  // A refusal (a redirect off clawhub.ai), the deadline, the cap or the
+  // network: all mean this source could not be read, so none is the caller's
+  // 400 about GitHub URLs or a 500.
+  const unreachable = (error: unknown): SkillSourceUnavailableError => (
+    error instanceof SkillSourceUnavailableError
+      ? error
+      : new SkillSourceUnavailableError(`ClawHub: ${(error as Error).message}`, false)
+  );
 
   // Step 1 — metadata (we need latestVersion.version for the download URL).
-  const metaResp = await reach(`${CLAWHUB_BASE}/api/skill?owner=${safeOwner}&slug=${safeSlug}`);
-  if (!metaResp.ok) {
-    throw unavailableForStatus('ClawHub metadata', metaResp.status);
+  let version: string;
+  try {
+    const metaResp = await fetchTextFromAllowedHost(`${CLAWHUB_BASE}/api/skill?owner=${safeOwner}&slug=${safeSlug}`, {
+      allowedOrigins: CLAWHUB_ORIGINS,
+      maxBytes: CLAWHUB_MAX_META_BYTES,
+    });
+    if (!metaResp.ok) throw unavailableForStatus('ClawHub metadata', metaResp.status);
+    const meta = JSON.parse(metaResp.text);
+    version = meta?.latestVersion?.version;
+  } catch (error) {
+    throw unreachable(error);
   }
-  const meta = await metaResp.json();
-  const version = meta?.latestVersion?.version;
   if (!version) {
     throw new SkillSourceUnavailableError('ClawHub has no published version', true);
   }
 
   // Step 2 — download zip.
-  const dlResp = await reach(`${CLAWHUB_BASE}/api/v1/download?slug=${safeSlug}&version=${encodeURIComponent(version)}`);
-  if (!dlResp.ok) {
-    throw unavailableForStatus('ClawHub download', dlResp.status);
+  let buf: Buffer;
+  try {
+    const dlResp = await fetchBytesFromAllowedHost(
+      `${CLAWHUB_BASE}/api/v1/download?slug=${safeSlug}&version=${encodeURIComponent(version)}`,
+      { allowedOrigins: CLAWHUB_ORIGINS, maxBytes: CLAWHUB_MAX_ZIP_BYTES },
+    );
+    if (!dlResp.ok) throw unavailableForStatus('ClawHub download', dlResp.status);
+    buf = dlResp.bytes;
+  } catch (error) {
+    throw unreachable(error);
   }
-  const declaredBytes = Number(dlResp.headers.get('content-length') || 0);
-  if (declaredBytes > CLAWHUB_MAX_ZIP_BYTES) {
-    throw new SkillSourceUnavailableError(`ClawHub bundle is ${declaredBytes} bytes`, false);
-  }
-  const ab = await dlResp.arrayBuffer();
-  if (ab.byteLength > CLAWHUB_MAX_ZIP_BYTES) {
-    throw new SkillSourceUnavailableError(`ClawHub bundle is ${ab.byteLength} bytes`, false);
-  }
-  const buf = Buffer.from(ab);
 
   // Step 3 — unzip. adm-zip is sync but bundles are tiny (<<100KB typical).
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const AdmZip = require('adm-zip');
-  const zip = new AdmZip(buf);
-  const entries = zip.getEntries();
+  let entries;
+  let zip;
+  try {
+    zip = new AdmZip(buf);
+    entries = zip.getEntries();
+  } catch (error) {
+    throw new SkillSourceUnavailableError(`ClawHub bundle is not a zip: ${(error as Error).message}`, false);
+  }
 
   let content = '';
   const extraFiles: SkillFile[] = [];

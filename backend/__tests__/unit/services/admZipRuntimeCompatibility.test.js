@@ -33,17 +33,10 @@ describe('adm-zip runtime consumers', () => {
     zip.addFile('references/guide.md', Buffer.from('Reference text'));
     const archive = asArrayBuffer(zip.toBuffer());
 
+    // Real Responses: the download streams its body through the fetch guard.
     global.fetch = jest.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ latestVersion: { version: '1.2.3' } }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        // A real Response always has headers; the download reads its declared size.
-        headers: new Headers({ 'content-length': String(archive.byteLength) }),
-        arrayBuffer: async () => archive,
-      });
+      .mockResolvedValueOnce(new Response(JSON.stringify({ latestVersion: { version: '1.2.3' } })))
+      .mockResolvedValueOnce(new Response(Buffer.from(archive)));
 
     const result = await SkillsCatalogService.fetchSkillBundleFromClawHub('owner', 'example');
 

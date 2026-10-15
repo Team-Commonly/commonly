@@ -89,8 +89,10 @@ describe('a catalog source without the skill is a 404 or a 502, never a 500', ()
     const res = await request(app).post('/api/skills/import').send(importBody({ sourceUrl: LEGACY_SOURCE }));
 
     expect(res.status).toBe(201);
-    // The dead GitHub repository is never asked.
+    // The dead GitHub repository is never asked, and both ClawHub calls go
+    // through the fetch guard: redirects by hand, every hop on clawhub.ai.
     expect(requestedUrls()).toEqual([CLAWHUB_META, CLAWHUB_ZIP]);
+    fetchSpy.mock.calls.forEach(([, init]) => expect(init).toEqual(expect.objectContaining({ redirect: 'manual' })));
     const written = PodAssetService.upsertImportedSkillAsset.mock.calls[0][0];
     expect(written.markdown).toBe('# Notes');
     expect(written.metadata.sourceUrl).toBe('clawhub:acme/notes@1.2.0');
@@ -117,9 +119,13 @@ describe('a catalog source without the skill is a 404 or a 502, never a 500', ()
   test.each([
     ['ClawHub cannot be reached', () => { routes[CLAWHUB_META] = () => { throw new TypeError('fetch failed'); }; }],
     ['ClawHub fails', () => { routes[CLAWHUB_META] = () => new Response('{}', { status: 503 }); }],
-    ['the bundle is over the size cap', () => {
+    ['the bundle streams past the size cap', () => {
       routes[CLAWHUB_META] = () => new Response(JSON.stringify({ latestVersion: { version: '1.2.0' } }));
-      routes[CLAWHUB_ZIP] = () => new Response('x', { headers: { 'content-length': String(3 * 1024 * 1024) } });
+      routes[CLAWHUB_ZIP] = () => new Response(Buffer.alloc(2 * 1024 * 1024 + 1));
+    }],
+    ['the download is not a zip', () => {
+      routes[CLAWHUB_META] = () => new Response(JSON.stringify({ latestVersion: { version: '1.2.0' } }));
+      routes[CLAWHUB_ZIP] = () => new Response('not a zip');
     }],
   ])('a legacy catalog entry is a 502 when %s', async (_case, arrange) => {
     arrange();
@@ -128,6 +134,25 @@ describe('a catalog source without the skill is a 404 or a 502, never a 500', ()
 
     expect(res.status).toBe(502);
     expect(res.body).toEqual({ error: SOURCE_UNREACHABLE, code: 'skill_source_unreachable' });
+    expect(PodAssetService.upsertImportedSkillAsset).not.toHaveBeenCalled();
+  });
+
+  // ClawHub is a third party now reachable from a request, so it gets the
+  // GitHub path's rule: a redirect that leaves clawhub.ai is never followed.
+  test('a ClawHub redirect off clawhub.ai is not followed, and the import is a 502', async () => {
+    routes[CLAWHUB_META] = () => new Response(null, {
+      status: 302,
+      headers: { location: 'http://169.254.169.254/latest/meta-data/' },
+    });
+
+    const res = await request(app).post('/api/skills/import').send(importBody({ sourceUrl: LEGACY_SOURCE }));
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: SOURCE_UNREACHABLE, code: 'skill_source_unreachable' });
+    expect(requestedUrls()).toEqual([CLAWHUB_META]);
+    // The mocked fetch never follows a redirect itself, so the status alone
+    // cannot tell; what proves it is that the request told fetch not to.
+    expect(fetchSpy.mock.calls[0][1]).toEqual(expect.objectContaining({ redirect: 'manual' }));
     expect(PodAssetService.upsertImportedSkillAsset).not.toHaveBeenCalled();
   });
 
