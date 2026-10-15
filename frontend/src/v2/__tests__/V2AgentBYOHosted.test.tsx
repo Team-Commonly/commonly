@@ -1,7 +1,8 @@
 // @ts-nocheck
 // ADR-023 W2 "Run it here" on the BYO page. The instance reports whether it
-// can host; when it can, the page defaults to the hosted path, installs with
-// runtimeType 'hosted', asks the kernel to provision, and never renders a
+// can host; when it can, the page asks where the agent should run with
+// nothing preselected (ruled 2026-10-14), and choosing "Run it here" installs
+// with runtimeType 'hosted', asks the kernel to provision, and never renders a
 // token. When it cannot, the page is exactly the BYO page it was.
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
@@ -66,13 +67,67 @@ afterEach(() => {
 });
 
 describe('V2AgentBYO — Run it here', () => {
-  test('defaults to hosted when available: install hosted → provision → live screen, no token shown', async () => {
+  test('with hosting available nothing is preselected, and the act waits for a choice', async () => {
+    // A bare visit asks "Where should it run?" with no card pressed. Preselecting
+    // "Run it here" answered a question the page never asked, and made every
+    // bare visit read as a choice of hosting (ruled 2026-10-14).
+    mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    expect(screen.getByRole('group', { name: 'Where should it run?' })).toBeInTheDocument();
+    expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('byo-mode-unchosen')).toHaveTextContent('Choose where it runs first');
+    expect(screen.queryByRole('button', { name: /^run it here$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /install \+ generate token/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    expect(screen.queryByTestId('byo-mode-unchosen')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /install \+ generate token/i })).toBeInTheDocument();
+  });
+
+  // The pod list loads before availability and enables the act. Until the
+  // instance has said whether it can host, the page must not offer an act at
+  // all: an enabled "Install + generate token" there chose a runtime for the
+  // person (Sprint Review's measurement on #2190).
+  test('offers no act while it is not yet known whether there is a choice', async () => {
+    let answerAvailability;
+    let answerMachines;
+    axios.get.mockImplementation((url) => {
+      if (url.startsWith('/api/hosted/availability')) {
+        return new Promise((resolve) => { answerAvailability = resolve; });
+      }
+      if (url === '/api/machines') return new Promise((resolve) => { answerMachines = resolve; });
+      if (url === '/api/pods') return Promise.resolve({ data: pods });
+      return Promise.resolve({ data: {} });
+    });
+    renderPage();
+
+    const podPicker = await screen.findByRole('combobox', { name: /install into pod/i });
+    await waitFor(() => expect(podPicker).toHaveValue('p1'));
+    expect(screen.queryByRole('button', { name: /install \+ generate token/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId('byo-mode-unchosen')).toBeInTheDocument();
+
+    // This instance cannot host. Still no act until the machines list answers,
+    // because a registered computer would make it a choice.
+    await act(async () => { answerAvailability({ data: { configured: false, caps: { agentsPerUser: 0, turnsPerDay: 0 } } }); });
+    expect(screen.queryByRole('button', { name: /install \+ generate token/i })).not.toBeInTheDocument();
+
+    // No computers either: bringing your own runtime is the only path.
+    await act(async () => { answerMachines({ data: { machines: [] } }); });
+    expect(await screen.findByRole('button', { name: /install \+ generate token/i })).toBeEnabled();
+    expect(screen.queryByTestId('byo-mode-unchosen')).not.toBeInTheDocument();
+  });
+
+  test('choosing hosted: install hosted → provision → live screen, no token shown', async () => {
     mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
     axios.post.mockResolvedValue({ data: { ok: true } });
     renderPage();
 
-    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
     expect(screen.getByText(/beta: 200 turns a day/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
     fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
 
     await screen.findByTestId('byo-hosted-result');
@@ -116,7 +171,10 @@ describe('V2AgentBYO — Run it here', () => {
         </MemoryRouter>
       </AuthContext.Provider>,
     );
-    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    // A persona link says what to hire, not where it runs.
+    expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
     fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
     await screen.findByTestId('byo-hosted-result');
     const installCall = axios.post.mock.calls.find(([url]) => url === '/api/registry/install');
@@ -134,6 +192,7 @@ describe('V2AgentBYO — Run it here', () => {
     axios.post.mockResolvedValue({ data: { ok: true } });
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
     fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
     await screen.findByTestId('byo-hosted-starting');
 
@@ -155,6 +214,7 @@ describe('V2AgentBYO — Run it here', () => {
     });
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
     fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
     await screen.findByText(/already have a hosted agent \(beta allows 1\)/i);
     expect(axios.post.mock.calls.some(([url]) => url === '/api/hosted/provision')).toBe(false);

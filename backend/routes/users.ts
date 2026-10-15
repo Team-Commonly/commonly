@@ -14,6 +14,8 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const AgentIdentityService = require('../services/agentIdentityService');
 // eslint-disable-next-line global-require
+const { SIGNUP_INSTALLED_AGENT_NAMES } = require('../config/native-agents/apps');
+// eslint-disable-next-line global-require
 const {
   getCurrentProfile,
   updateProfile,
@@ -111,7 +113,9 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
       }];
     }));
     const identities = Array.from(installationsByIdentity.values())
-      .filter((identity: any) => identity.agentName);
+      // Signup installs Scout in the person's name; it is not an agent they
+      // attached (config/native-agents/apps.ts, SIGNUP_INSTALLED_AGENT_NAMES).
+      .filter((identity: any) => identity.agentName && !SIGNUP_INSTALLED_AGENT_NAMES.has(identity.agentName));
 
     if (identities.length === 0) {
       return res.json({

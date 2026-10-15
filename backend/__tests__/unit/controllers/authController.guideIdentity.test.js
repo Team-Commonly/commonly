@@ -92,6 +92,23 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
     expect(update.$set.config.wakeOnMessage.enabled).toBe(true);
   });
 
+  // The writer side of /api/users/me/agent-connection's rule. The first-run
+  // card shows only while the person has attached no agent, and that endpoint
+  // skips SIGNUP_INSTALLED_AGENT_NAMES. An install signup makes in the person's
+  // name outside that set would hide the card from every new signup, as Scout
+  // did until #2190, with the endpoint's own tests still green.
+  test('every install signup writes in the person\'s name is one the first-run check excludes', async () => {
+    // eslint-disable-next-line global-require
+    const { SIGNUP_INSTALLED_AGENT_NAMES } = require('../../../config/native-agents/apps');
+    await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'User-1');
+
+    const installedInTheirName = mockInstallUpsert.mock.calls
+      .filter(([, update]) => String(update.$setOnInsert?.installedBy ?? update.$set?.installedBy) === 'User-1')
+      .map(([filter]) => String(filter.agentName).toLowerCase());
+    expect(installedInTheirName).toEqual(['scout']);
+    installedInTheirName.forEach((name) => expect(SIGNUP_INSTALLED_AGENT_NAMES.has(name)).toBe(true));
+  });
+
   test('two users get two distinct guide identities — the memory-envelope fork', async () => {
     await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'aaaa1111');
     await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'bbbb2222');

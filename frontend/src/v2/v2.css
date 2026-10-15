@@ -6194,6 +6194,24 @@ body.modern-ui.v2-canvas {
   opacity: 0.6;
   cursor: default;
 }
+/* The question above the choice cards. Nothing is preselected, so the page
+   asks it in words rather than implying an answer with a pressed card. */
+.v2-byo__modes-question {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+}
+/* Signal §3 not yet: where the act will be, until a place to run it is
+   chosen. Sized like the submit button it stands in for. */
+.v2-byo__unchosen {
+  align-self: flex-start;
+  padding: 10px 18px;
+  border: 1px dashed var(--v2-border-strong);
+  border-radius: var(--v2-radius);
+  color: var(--v2-text-muted);
+  font-size: 14px;
+}
 .v2-root button.v2-byo__secondary {
   align-self: flex-start;
   padding: 10px 18px;

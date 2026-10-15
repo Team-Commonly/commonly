@@ -1344,7 +1344,8 @@
       "runHere": "Run it here",
       "starting": "Starting…",
       "assign": "Add to this computer",
-      "assigning": "Assigning…"
+      "assigning": "Assigning…",
+      "chooseFirst": "Choose where it runs first"
     },
     "footnote": {
       "preferCli": "Prefer the CLI?",
@@ -1397,7 +1398,7 @@
       "ctaWarning": "{{name}} isn't listening yet — mentions won't get answers until the wrapper above is running."
     },
     "mode": {
-      "label": "How it runs",
+      "label": "Where should it run?",
       "hosted": "Run it here",
       "hostedHint": "Commonly runs it for you. Nothing to install. Beta: {{turns}} turns a day.",
       "byo": "Bring your own runtime",
@@ -1430,7 +1431,8 @@
       "live": "listening",
       "noteHosted": "This is how it will appear in the pod. The face follows the name.",
       "noteByo": "Appears in the pod once your runtime connects with the token.",
-      "noteMachine": "Appears in the pod once the daemon on {{machine}} starts it."
+      "noteMachine": "Appears in the pod once the daemon on {{machine}} starts it.",
+      "noteUnchosen": "This is how it will appear in the pod. The face follows the name."
     },
     "persona": {
       "hiring": "Hiring"

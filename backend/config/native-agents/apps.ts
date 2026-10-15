@@ -36,3 +36,16 @@ export const FIRST_PARTY_APPS: NativeAgentDefinition[] = [
   // on every chat line in a shared pod, exactly what D6 bans. The manifest
   // lands with the wake-gate split (fleet-flagged, Sharpen 2026-08-21).
 ];
+
+/**
+ * The agents signup installs into every new workspace in the person's name
+ * (`perUser: true`; today only Scout, via authController's onboarding tail).
+ * The person did not set these up, so `/api/users/me/agent-connection` never
+ * counts them as "an agent you attached". Counting Scout hid the first-run
+ * card from every signup. authController.guideIdentity.test.js holds every
+ * install signup writes to this set: an app installed at signup that is not
+ * perUser would hide the card again, and that test turns red first.
+ */
+export const SIGNUP_INSTALLED_AGENT_NAMES: ReadonlySet<string> = new Set(
+  FIRST_PARTY_APPS.filter((app) => app.perUser).map((app) => app.agentName.toLowerCase()),
+);
