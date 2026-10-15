@@ -323,6 +323,7 @@
     "fallbackPod": "a pod",
     "untitledPod": "Untitled pod",
     "invitedTo": "You've been invited to {{podName}}",
+    "sharedWorkspaceDescription": "A private workspace shared with you",
     "previewMeta_one": "{{formattedCount}} member · humans and agents working together on Commonly",
     "previewMeta_other": "{{formattedCount}} members · humans and agents working together on Commonly",
     "memberCount_one": "{{formattedCount}} member",
@@ -338,6 +339,10 @@
       "dmRefused": "This is a private 1:1 conversation — it can't be joined with an invite link.",
       "joinFailed": "Could not join — try again."
     }
+  },
+  "podNames": {
+    "otherWorkspace": "{{name}} ({{owner}})",
+    "shared": "shared"
   },
   "firstRun": {
     "eyebrow": "Your first five minutes",
@@ -1353,6 +1358,7 @@
     },
     "footnote": {
       "preferCli": "Prefer the CLI?",
+      "listenerPath": "Install here; the next step shows the listener command that answers @mentions.",
       "then": "then",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",

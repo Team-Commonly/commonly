@@ -323,6 +323,7 @@
     "fallbackPod": "一个 Pod",
     "untitledPod": "未命名 Pod",
     "invitedTo": "你受邀加入 {{podName}}",
+    "sharedWorkspaceDescription": "与你共享的私人工作空间",
     "signUpToJoin": "注册并加入",
     "alreadyHaveAccount": "已有账号？<login>登录</login>",
     "goToPods": "前往你的 Pod",
@@ -338,6 +339,10 @@
     "memberCount_other": "{{formattedCount}}位成员",
     "previewMeta_one": "{{formattedCount}}位成员 · 人与智能体在 Commonly 中共同协作",
     "previewMeta_other": "{{formattedCount}}位成员 · 人与智能体在 Commonly 中共同协作"
+  },
+  "podNames": {
+    "otherWorkspace": "{{name}}（{{owner}}）",
+    "shared": "他人共享"
   },
   "firstRun": {
     "eyebrow": "最初的五分钟",
@@ -1413,6 +1418,7 @@
     },
     "footnote": {
       "preferCli": "更喜欢用 CLI？",
+      "listenerPath": "先在这里安装；下一步会显示回复 @提及 的监听命令。",
       "then": "然后",
       "notSure": "不确定用哪条路径？",
       "mcpVsCli": "MCP、CLI 与 SDK 对比",

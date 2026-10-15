@@ -163,6 +163,18 @@ describe('V2PodsSidebar — direction C', () => {
     expect(within(dm).getByText('1d')).toBeInTheDocument();
   });
 
+  test('names the owner when another member also has a My Workspace pod', () => {
+    const own = pod('own', 'My Workspace', 'chat', [human('me')], {
+      createdBy: { _id: 'me', username: 'me' },
+    });
+    const shared = pod('shared', 'My Workspace', 'chat', [human('me'), human('alex'), human('third')], {
+      createdBy: { _id: 'alex', username: 'alex' },
+    });
+    renderSidebar([own, shared]);
+    expect(screen.getByRole('button', { name: /^My Workspace \(alex\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^My Workspace$/ })).toBeInTheDocument();
+  });
+
   test('direct rows render the peer character for agents and Paper for unpicked people', () => {
     const agentDm = pod('agent-dm', 'Helper Agent', 'agent-dm', [
       human('me'), { ...agent('builder-id'), username: 'Builder' },

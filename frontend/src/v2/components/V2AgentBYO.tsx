@@ -25,6 +25,7 @@ import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PERSONA_CARDS } from '../agents/personaCatalogData';
 import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
+import { readPodVisits } from '../lib/podRecency';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
 const DEFAULT_POD_TYPE = 'chat';
@@ -32,11 +33,6 @@ const DEFAULT_POD_TYPE = 'chat';
 // 0.1.9 — a machine with an older global install must upgrade, not skip the
 // line because the binary already resolves.
 const CLI_INSTALL_COMMAND = 'npm i -g @commonlyai/cli@latest';
-// `--language` is a requiredOption of `agent init` (python is the only value),
-// so the command exits 1 without it. This footnote is the first thing a
-// stranger copies from the page the docs now send them to; it carried the
-// flagless form until 2026-10-09 and one real user hit the exit (#2095).
-const CLI_INIT_COMMAND = 'commonly agent init --language python --name <n> --pod <podId>';
 const MEMORY_FILE_NAME = 'MEMORY.md';
 const AGENT_KIND = 'agent' as const;
 const HOSTED_STATUS_POLL_MS = 4000;
@@ -354,14 +350,19 @@ const V2AgentBYO: React.FC = () => {
         // into (not in their list) must not survive as a phantom selection.
         const podKnown = podId && installablePods.some((p) => p._id === podId);
         if ((!podId || !podKnown) && installablePods.length > 0) {
-          // Default to the user's OWN pod (their private workspace), never the
-          // most-active pod. Fall back to the first non-public pod only if the
-          // user somehow owns none.
+          // A person coming from a team pod should install there, not in the
+          // private workspace created for them at signup. V2Layout records
+          // visits when a pod opens. Only consider pods still in this safe,
+          // installable list; a stale visit to a public pod cannot select it.
+          const visits = readPodVisits();
+          const recent = installablePods
+            .filter((p) => visits[p._id] > 0)
+            .sort((a, b) => visits[b._id] - visits[a._id])[0];
           const uid = currentUser?._id;
           const own = uid
             ? installablePods.find((p) => p.createdBy?._id && String(p.createdBy._id) === String(uid))
             : undefined;
-          setPodId((own || installablePods[0])._id);
+          setPodId((recent || own || installablePods[0])._id);
         }
       } catch {
         // Defensive: keep the form usable; user will see the error on submit.
@@ -988,7 +989,11 @@ const V2AgentBYO: React.FC = () => {
             >
               {pods.length === 0 && <option value="">{t('agentByo.form.loadingPods')}</option>}
               {pods.map((p) => (
-                <option key={p._id} value={p._id}>{p.name} ({p.type || DEFAULT_POD_TYPE})</option>
+                <option key={p._id} value={p._id}>
+                  {p.name === 'My Workspace' && p.createdBy?._id && String(p.createdBy._id) !== String(currentUser?._id)
+                    ? t('podNames.otherWorkspace', { name: p.name, owner: p.createdBy.username || t('podNames.shared') })
+                    : p.name} ({p.type || DEFAULT_POD_TYPE})
+                </option>
               ))}
             </select>
             <span className="v2-byo__hint">
@@ -1042,8 +1047,7 @@ const V2AgentBYO: React.FC = () => {
             </div>
           )}
           <p className="v2-byo__footnote">
-            {t('agentByo.footnote.preferCli')} <code>{CLI_INSTALL_COMMAND}</code>, {t('agentByo.footnote.then')}{' '}
-            <code>{CLI_INIT_COMMAND}</code>.{' '}
+            {t('agentByo.footnote.preferCli')} {t('agentByo.footnote.listenerPath')}{' '}
             {t('agentByo.footnote.notSure')}{' '}
             <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
             {' · '}

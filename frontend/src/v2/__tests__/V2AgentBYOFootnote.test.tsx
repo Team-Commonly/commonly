@@ -1,8 +1,6 @@
 // @ts-nocheck
-// The BYO page's footnote is the first command a stranger copies, and the docs
-// (#2097) now send them here first. `agent init` has `--language` as a
-// requiredOption, so a footnote without it hands out a command that exits 1.
-// Pinned after a real user hit exactly that (#2095, 2026-10-09).
+// The CLI footnote must lead people to the listener shown after install.
+// `agent init` scaffolds a Python webhook and does not connect Claude/Codex.
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -59,10 +57,10 @@ const renderPage = () => render(
 );
 
 describe('V2AgentBYO footnote', () => {
-  test('the CLI init command it shows carries every requiredOption of `agent init`', async () => {
+  test('points to the listener step instead of the Python scaffold', async () => {
     renderPage();
-    const code = await screen.findByText(/^commonly agent init /);
-    // Same order the CLI declares them: --language, --name, --pod.
-    expect(code.textContent).toBe('commonly agent init --language python --name <n> --pod <podId>');
+    const footnote = await screen.findByText(/Prefer the CLI\?/);
+    expect(footnote).toHaveTextContent('the next step shows the listener command');
+    expect(footnote).not.toHaveTextContent('commonly agent init');
   });
 });

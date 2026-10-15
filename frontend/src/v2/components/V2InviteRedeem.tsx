@@ -182,7 +182,10 @@ const V2InviteRedeem: React.FC = () => {
         <V2Avatar name={podName} size="lg" />
         <div className="v2-invite-card__title">{podName}</div>
         {pod.description && (
-          <div className="v2-invite-card__description">{pod.description}</div>
+          <div className="v2-invite-card__description">
+            {pod.name === 'My Workspace' && pod.description === 'Your private workspace'
+              ? t('inviteRedeem.sharedWorkspaceDescription') : pod.description}
+          </div>
         )}
         <div className="v2-invite-card__meta">
           {t('inviteRedeem.memberCount', {
