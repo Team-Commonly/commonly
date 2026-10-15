@@ -223,3 +223,32 @@ in the backend pod. The container runs
 as uid 65534 with a read-only root filesystem and no capabilities. The
 `/register` limit is 10 per hour per client IP, and the cluster egress IP is
 not shared with anyone's laptop.
+
+### User spend
+
+"One user's agent spend passed the daily line" (WARNING) fires when a user's
+priced model spend for the current UTC day passes `SPEND_ALARM_USD_PER_DAY`,
+$2 by default. That is about 50 times the heaviest user-day in the two weeks
+to 2026-10-15 (roughly 105k tokens, about $0.04). Every 15 minutes the backend
+prices that day's `AgentRun` turns per model (`backend/services/spendAlarmService.ts`)
+and logs one `{"alarm":"user_spend", ...}` line per user per day, naming the
+user, the amount and the token split.
+
+It reports and never blocks. The per-user run ceiling and the per-install
+caps are what stop runs. Hosted turns and the E2B sandbox have no
+provider-side spending cap, so this alert is the warning before the bill.
+Sandbox seconds join the sum when TASK-266 records them on the run.
+
+When it fires:
+
+1. Read the log line for the user and the amount.
+2. Open that user's runs for the day (`AgentRun` by `userId`, newest first)
+   and check whether one install is looping or many are each doing a little.
+3. A loop is the install's problem: uninstall it or lower its cap.
+4. Steady real use that keeps crossing the line is a plan question for Sam,
+   not an ops fix.
+
+A model the price table does not know is charged at an Opus-class rate, so a
+new route over-alarms instead of hiding. If the alert is about a model that
+is not in the table, add its price, with the source, rather than raising the
+threshold.

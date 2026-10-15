@@ -34,5 +34,11 @@
     "description": "Stranger-journey runs that ended with result=pass. Its absence is the alert: a run killed by a spot reclaim or the 900 s deadline prints no verdict at all, so a failure counter alone cannot see it.",
     "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"journey\" AND jsonPayload.journey=\"stranger\" AND jsonPayload.result=\"pass\"",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
+  },
+  {
+    "name": "user_spend_over_threshold",
+    "description": "A user's priced model spend for the UTC day crossed SPEND_ALARM_USD_PER_DAY (default $2). One line per user per day from backend/services/spendAlarmService.ts; the userId, the amount and the token split are in the same log line.",
+    "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"backend\" AND jsonPayload.alarm=\"user_spend\"",
+    "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   }
 ]

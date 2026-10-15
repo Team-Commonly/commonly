@@ -527,6 +527,23 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // TASK-263: price each user's model turns for the UTC day and log one
+    // `alarm: user_spend` line per user past SPEND_ALARM_USD_PER_DAY ($2).
+    // Reports only; the run ceilings enforce (services/spendAlarmService.ts).
+    const spendAlarmJob: CronJob = cron.schedule(
+      '*/15 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { checkSpend } = require('./spendAlarmService');
+          await checkSpend();
+        } catch (error) {
+          console.error('[spend-alarm] check failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -547,6 +564,7 @@ class SchedulerService {
       installableReconcileJob,
       decisionCardReconcileJob,
       approvalToolCallSweepJob,
+      spendAlarmJob,
       ...(process.env.SYNTHETIC_ACCOUNT_PURGE === 'true' ? [syntheticAccountPurgeJob] : []),
     ];
     this.jobs.forEach((job) => job.start());
