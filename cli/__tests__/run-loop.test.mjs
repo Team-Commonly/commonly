@@ -1119,6 +1119,66 @@ describe('performRun', () => {
     );
   });
 
+  test('approval.resolved spawns a turn with the server-composed content', async () => {
+    const content = '[Approval resolved] Sam approved the connect request. Continue from the result.';
+    const events = [makeEvent({
+      _id: 'evt-approval-resolved',
+      type: 'approval.resolved',
+      payload: { content, actionType: 'connect_local_agent' },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0]).toContain(content);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-approval-resolved/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
+  test('approval.resolved with no content is acked without spawning', async () => {
+    const events = [makeEvent({
+      _id: 'evt-approval-resolved-empty',
+      type: 'approval.resolved',
+      payload: { actionType: 'connect_local_agent' },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn();
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-approval-resolved-empty/ack',
+      { result: { outcome: 'no_action', reason: 'no-prompt' } },
+    );
+  });
+
   test('chat event with no podId → no spawn, no message, acked as no_action', async () => {
     const events = [makeEvent({ _id: 'evt-nopod', podId: null })];
     const mockGet = jest.fn().mockResolvedValue({ events });
