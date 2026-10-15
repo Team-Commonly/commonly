@@ -82,6 +82,21 @@ test.each(['webhook', 'claude-code', 'moltbot'])('a %s agent is ineligible', asy
   expect(await outsiderGrantPodRefusal(target)).toBe('non_native_agent');
 });
 
+// TASK-261: a hosted agent on the native engine runs through the same narrowed
+// in-process runtime and holds no token; one on the Durable Object does not.
+test('a hosted agent on the native engine counts as in-process', async () => {
+  installations[0].config = { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native', provisionedAt: new Date() } };
+  expect(await outsiderGrantPodRefusal(target)).toBeNull();
+});
+
+test.each([
+  ['on the Durable Object (no engine recorded)', {}],
+  ['with an engine other than native', { hosted: { engine: 'durable-object' } }],
+])('a hosted agent %s is ineligible', async (_label, extra) => {
+  installations[0].config = { runtime: { runtimeType: 'hosted' }, ...extra };
+  expect(await outsiderGrantPodRefusal(target)).toBe('non_native_agent');
+});
+
 test('an agent with no matching active installation is ineligible', async () => {
   installations = [];
   expect(await outsiderGrantPodRefusal(target)).toBe('non_native_agent');

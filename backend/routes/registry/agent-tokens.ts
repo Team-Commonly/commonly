@@ -192,6 +192,9 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
     );
     return res.json(issued);
   } catch (error) {
+    if ((error as { code?: string })?.code === 'in_process_agent_no_token') {
+      return res.status(409).json({ code: 'in_process_agent_no_token', error: (error as Error).message });
+    }
     console.error('Error issuing agent runtime token:', error);
     return res.status(500).json({ error: 'Failed to issue runtime token' });
   }

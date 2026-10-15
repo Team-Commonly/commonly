@@ -105,6 +105,23 @@ describe('deriveAgentState', () => {
     expect(row.lastUsedAt).toBeNull();
   });
 
+  test('a provisioned hosted install on the native engine is reachable; a stopped one is not', () => {
+    const live = deriveAgentState(
+      byoInstall({ config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native', provisionedAt: new Date(NOW) } } }),
+      [],
+      'owner-1',
+      NOW,
+    );
+    expect(live.state).toBe('reachable');
+    const stopped = deriveAgentState(
+      byoInstall({ config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native', provisionedAt: null } } }),
+      [],
+      'owner-1',
+      NOW,
+    );
+    expect(stopped.state).not.toBe('reachable');
+  });
+
   test('a push webhook (webhookUrl set) is reachable regardless of token use', () => {
     const row = deriveAgentState(
       byoInstall({ config: { runtime: { runtimeType: 'webhook', host: 'byo', webhookUrl: 'https://x.example/cap' } } }),

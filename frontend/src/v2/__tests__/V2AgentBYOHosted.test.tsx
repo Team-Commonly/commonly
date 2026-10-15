@@ -204,6 +204,25 @@ describe('V2AgentBYO — Run it here', () => {
     expect(screen.getByTestId('byo-hosted-running')).toBeInTheDocument();
   });
 
+  // The native engine has no loop to poll: it reports ready once provisioned.
+  test('flips to listening when the native engine reports ready, with no poll ever', async () => {
+    jest.useFakeTimers();
+    mockGet({ configured: true, status: { runtime: { engine: 'native', ready: false } } });
+    axios.post.mockResolvedValue({ data: { ok: true } });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    await screen.findByTestId('byo-hosted-starting');
+
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.getByTestId('byo-hosted-starting')).toBeInTheDocument();
+
+    mockGet({ configured: true, status: { runtime: { engine: 'native', ready: true } } });
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.getByTestId('byo-hosted-running')).toBeInTheDocument();
+  });
+
   test('surfaces the beta cap from the install gate instead of a generic failure', async () => {
     mockGet({ configured: true });
     axios.post.mockImplementation((url) => {

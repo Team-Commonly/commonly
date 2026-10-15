@@ -38,6 +38,10 @@ jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: (name, instance) => (instance === 'default' ? name : `${name}-${instance}`),
 }));
 jest.mock('../../../services/hostedRuntimeService', () => mockHosted);
+const mockNativeAvailable = jest.fn(() => false);
+jest.mock('../../../services/nativeRuntimeService', () => ({
+  isNativeRuntimeAvailable: (...args) => mockNativeAvailable(...args),
+}));
 const mockMarkByoOpened = jest.fn();
 jest.mock('../../../services/onboardingMarks', () => ({ markByoOpened: (...args) => mockMarkByoOpened(...args) }));
 jest.mock('../../../routes/registry/tokens', () => ({
@@ -95,7 +99,7 @@ describe('/api/hosted', () => {
   it('reports availability and caps without the URL or bearer', async () => {
     const res = await request(app).get('/api/hosted/availability');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 } });
+    expect(res.body).toEqual({ configured: true, engine: 'durable-object', caps: { agentsPerUser: 1, turnsPerDay: 200 } });
     mockHosted.isConfigured.mockReturnValue(false);
     const off = await request(app).get('/api/hosted/availability');
     expect(off.body.configured).toBe(false);
@@ -293,5 +297,91 @@ describe('/api/hosted', () => {
     const res = await request(app).get('/api/hosted/status').query({ agentName: 'scout' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ runtime: { lastPollAt: 1 }, meter: { used: 3, cap: 200 } });
+  });
+});
+
+// ADR-023 amendment A1: a hosted install on the native engine has nothing to
+// start. Provision records it and revokes any stray token without minting one,
+// status reports ready from the record, and the worker is never called.
+describe('/api/hosted on the native engine', () => {
+  const PROVISIONED = new Date('2026-10-15T12:00:00Z');
+  const nativeInstallation = (hosted = {}) => makeInstallation({
+    config: new Map([
+      ['runtime', { runtimeType: 'hosted' }],
+      ['hosted', { engine: 'native', provisionedAt: PROVISIONED, about: 'Keeps the research log.', ...hosted }],
+    ]),
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFind.mockReset();
+    mockFind.mockImplementation(async () => { const one = await mockFindOne(); return one ? [one] : []; });
+    // The worker is not configured at all: the native engine must not need it.
+    mockHosted.isConfigured.mockReturnValue(false);
+    mockHosted.isHostedInstallation.mockReturnValue(true);
+    mockHosted.countHostedAgentsForUser.mockResolvedValue(1);
+    mockHosted.meterAllowsTurn.mockResolvedValue({ allowed: true, used: 3, cap: 200 });
+    mockNativeAvailable.mockReturnValue(true);
+    mockUserFindOne.mockResolvedValue({ _id: 'bot-1', username: 'scout', agentRuntimeTokens: [{ tokenHash: 'old' }] });
+    mockRevokeRuntimeTokens.mockResolvedValue(['old']);
+  });
+
+  afterEach(() => { delete process.env.HOSTED_ENGINE; });
+
+  it('availability follows the native runtime when HOSTED_ENGINE=native', async () => {
+    process.env.HOSTED_ENGINE = 'native';
+    const on = await request(app).get('/api/hosted/availability');
+    expect(on.body).toMatchObject({ configured: true, engine: 'native' });
+    mockNativeAvailable.mockReturnValue(false);
+    const off = await request(app).get('/api/hosted/availability');
+    expect(off.body).toMatchObject({ configured: false, engine: 'native' });
+  });
+
+  it('provision revokes any old token, mints none, never calls the worker, and keeps the record', async () => {
+    const installation = nativeInstallation();
+    mockFindOne.mockResolvedValue(installation);
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ provisioned: true, engine: 'native', agentName: 'scout' });
+    expect(mockRevokeRuntimeTokens).toHaveBeenCalledTimes(1);
+    expect(mockIssueToken).not.toHaveBeenCalled();
+    expect(mockHosted.provisionAgent).not.toHaveBeenCalled();
+    expect(installation.config.get('hosted')).toEqual({
+      engine: 'native', provisionedAt: PROVISIONED, about: 'Keeps the research log.',
+    });
+    expect(JSON.stringify(res.body)).not.toMatch(/cm_agent_/);
+  });
+
+  it('provision of a native install 503s when the native runtime is unavailable, even with the worker up', async () => {
+    mockHosted.isConfigured.mockReturnValue(true);
+    mockNativeAvailable.mockReturnValue(false);
+    mockFindOne.mockResolvedValue(nativeInstallation());
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('hosted_runtime_unconfigured');
+    expect(mockHosted.provisionAgent).not.toHaveBeenCalled();
+  });
+
+  it('status is ready once provisioned, without asking the worker', async () => {
+    mockFindOne.mockResolvedValue(nativeInstallation());
+    const res = await request(app).get('/api/hosted/status?agentName=scout');
+    expect(res.status).toBe(200);
+    expect(res.body.runtime).toEqual({ engine: 'native', ready: true, provisionedAt: PROVISIONED.toISOString() });
+    expect(res.body.meter).toMatchObject({ used: 3, cap: 200 });
+    expect(mockHosted.getAgentStatus).not.toHaveBeenCalled();
+  });
+
+  it('deprovision clears provisionedAt and keeps engine and persona, without the worker', async () => {
+    const installation = nativeInstallation();
+    mockFindOne.mockResolvedValue(installation);
+    const res = await request(app).post('/api/hosted/deprovision').send({ agentName: 'scout' });
+    expect(res.status).toBe(200);
+    expect(mockHosted.deprovisionAgent).not.toHaveBeenCalled();
+    const hosted = installation.config.get('hosted');
+    expect(hosted).toMatchObject({ engine: 'native', provisionedAt: null, about: 'Keeps the research log.' });
+    expect(hosted.deprovisionedAt).toBeInstanceOf(Date);
+
+    const status = await request(app).get('/api/hosted/status?agentName=scout');
+    expect(status.body.runtime).toMatchObject({ engine: 'native', ready: false });
   });
 });

@@ -3,6 +3,8 @@ import { AgentInstallation } from '../models/AgentRegistry';
 import Integration from '../models/Integration';
 import Pod from '../models/Pod';
 import User from '../models/User';
+import { HOSTED_ENGINE_NATIVE, hostedEngineOf } from './hostedEngine';
+import { isHostedInstallation } from './hostedRuntimeService';
 
 export type OutsiderGrantRefusal = 'pod_required' | 'pod_not_private'
   | 'pod_joinable' | 'pod_bridged' | 'non_native_agent' | 'write_mode_unconfined';
@@ -64,7 +66,13 @@ export const outsiderGrantPodRefusal = async (
     const config = configObject(installation.config);
     const runtime = configObject(config.runtime);
     const key = `${installation.agentName}:${String(installation.instanceId || 'default')}`;
-    if (runtime.runtimeType !== 'native' || !agentKeys.has(key)) return 'non_native_agent';
+    // A hosted agent on the native engine runs through the same narrowed
+    // in-process runtime and can hold no runtime token (services/hostedEngine.ts,
+    // routes/registry/tokens.ts). A hosted agent on the Durable Object polls
+    // with a token from outside the backend, so it stays refused.
+    const inProcess = runtime.runtimeType === 'native'
+      || (isHostedInstallation(installation) && hostedEngineOf(installation) === HOSTED_ENGINE_NATIVE);
+    if (!inProcess || !agentKeys.has(key)) return 'non_native_agent';
   }
   for (const agent of agents) {
     if (agent.botType !== 'agent') return 'non_native_agent';

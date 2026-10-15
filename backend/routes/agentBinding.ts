@@ -385,6 +385,9 @@ router.post('/runtime-token', bindingRateLimit, daemonAuth('agents:adopt'), asyn
       agentName, instanceId, token: minted.token, rotated: hasToken,
     });
   } catch (err) {
+    if ((err as { code?: string })?.code === 'in_process_agent_no_token') {
+      return res.status(409).json({ code: 'in_process_agent_no_token', message: (err as Error).message });
+    }
     console.error('runtime-token mint error:', err);
     return res.status(500).json({ message: 'Server error' });
   }

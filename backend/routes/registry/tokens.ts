@@ -190,7 +190,56 @@ const revokeRuntimeTokensForAgent = async (owner: RuntimeTokenOwner): Promise<st
 // embedded record, giving the token per-record status, lineage, and
 // revocability. Callers that do not pass it keep minting legacy-only tokens
 // (additive migration; auth falls back for those).
+/**
+ * An agent Commonly runs in-process (runtimeType `native`, or `hosted` on the
+ * native engine; services/hostedEngine.ts) holds no runtime token. A token
+ * would let something outside the backend act as it: post as it, read its
+ * events, and take connector results through the grant routes without the
+ * in-process narrowing that gates outsider-writable text (TASK-224, §12).
+ * Every mint path refuses here rather than each route remembering to
+ * (Rhea on #2224; Wren for plain native).
+ */
+class InProcessAgentTokenRefused extends Error {
+  code = 'in_process_agent_no_token';
+
+  status = 409;
+
+  constructor() {
+    super('Commonly runs this agent, so it has no runtime token. To run an agent yourself, connect your own agent instead.');
+  }
+}
+
+// Any spelling: a type saved before the config-write guard (#2229) normalized
+// it must not turn this refusal off.
+const IN_PROCESS_RUNTIME = {
+  $or: [
+    { 'config.runtime.runtimeType': { $regex: /^\s*native\s*$/i } },
+    {
+      'config.runtime.runtimeType': { $regex: /^\s*hosted\s*$/i },
+      'config.hosted.engine': { $regex: /^\s*native\s*$/i },
+    },
+  ],
+};
+
+const runsInProcess = async (agentUser: any, installation: any): Promise<boolean> => {
+  const pairs: { agentName: string; instanceId: string }[] = [];
+  if (installation?.agentName) {
+    pairs.push({ agentName: String(installation.agentName).toLowerCase(), instanceId: String(installation.instanceId || 'default') });
+  }
+  const meta = agentUser?.botMetadata || {};
+  const name = String(meta.agentName || agentUser?.username || '').toLowerCase();
+  if (name) pairs.push({ agentName: name, instanceId: String(meta.instanceId || 'default') });
+  if (!pairs.length) return false;
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { AgentInstallation } = require('../../models/AgentRegistry');
+  return Boolean(await AgentInstallation.exists({
+    status: 'active',
+    $and: [{ $or: pairs }, IN_PROCESS_RUNTIME],
+  }));
+};
+
 const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installation: any = null, issuer: any = null) => {
+  if (await runsInProcess(agentUser, installation)) throw new InProcessAgentTokenRefused();
   // Check if agent already has a runtime token (reuse existing)
   const existingToken = agentUser.agentRuntimeTokens?.[0] || installation?.runtimeTokens?.[0];
   if (existingToken) {
@@ -276,6 +325,7 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
  * @deprecated Use issueRuntimeTokenForAgent instead
  */
 const issueRuntimeTokenForInstallation = async (installation: any, label: any) => {
+  if (await runsInProcess(null, installation)) throw new InProcessAgentTokenRefused();
   const rawToken = `cm_agent_${randomSecret(32)}`;
   installation.runtimeTokens = installation.runtimeTokens || [];
   installation.runtimeTokens.push({
@@ -339,6 +389,7 @@ module.exports = {
   revokeRuntimeTokenEverywhere,
   revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
+  InProcessAgentTokenRefused,
   issueRuntimeTokenForInstallation,
   issueUserTokenForInstallation,
 };

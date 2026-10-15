@@ -33,6 +33,7 @@ import {
 } from './grantBrokerProjectionService';
 import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
 import { untrustedConnectorMarker } from './brokerResultMarker';
+import { hostedNativeDecline, hostedNativeRunConfig, hostedRunsNative } from './hostedEngine';
 
 // --- public surface --------------------------------------------------------
 
@@ -449,7 +450,8 @@ async function dispatchTool(
             name: i.displayName || i.agentName,
             agentName: i.agentName,
             runtime: runtimeType,
-            state: deriveActivityBucket(lastActiveAt, runtimeType),
+            // A hosted agent on the native engine is ready in the same sense.
+            state: deriveActivityBucket(lastActiveAt, hostedRunsNative(i) ? 'native' : runtimeType),
             lastActiveAt: lastActiveAt ? new Date(lastActiveAt).toISOString() : null,
           };
         });
@@ -761,16 +763,29 @@ export async function runAgent(
     return failedResult('', 'config', 'installation missing podId or agentName');
   }
 
-  const cfg = normalizeConfig(installation.config);
-  const runtimeCfg = normalizeConfig(cfg.runtime);
-  const runtimeType = String(runtimeCfg.runtimeType || '').toLowerCase();
-  if (runtimeType !== 'native') {
+  const installedCfg = normalizeConfig(installation.config);
+  const runtimeType = String(normalizeConfig(installedCfg.runtime).runtimeType || '').toLowerCase();
+  // A hosted install on the native engine (services/hostedEngine.ts) runs here
+  // too, on a configuration built server-side: its stored config came from the
+  // browser and must not choose the model, the tools or the cap.
+  const hostedNative = hostedRunsNative(installation);
+  if (runtimeType !== 'native' && !hostedNative) {
     return failedResult(
       '',
       'config',
       `runtimeType is '${runtimeType || 'unset'}', expected 'native'`,
     );
   }
+  if (hostedNative) {
+    const decline = hostedNativeDecline(String(trigger?.type || ''));
+    if (decline) {
+      // Acked by the caller, with no AgentRun: nothing ran.
+      return {
+        runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+      };
+    }
+  }
+  const cfg = hostedNative ? normalizeConfig(hostedNativeRunConfig(installation)) : installedCfg;
 
   const podId = String(installation.podId);
   const agentName = String(installation.agentName || '').toLowerCase();

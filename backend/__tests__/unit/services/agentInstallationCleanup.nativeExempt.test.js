@@ -133,3 +133,31 @@ describe('markStaleInstallations native exemption', () => {
     );
   });
 });
+
+// ADR-023 amendment A1: a hosted install on the native engine keeps
+// runtimeType 'hosted' and has no poller to look alive, so the engine exempts it.
+describe('markStaleInstallations hosted native-engine exemption', () => {
+  const hosted = (agentName, engine, podId = 'p1') => ({
+    _id: `${agentName}-${podId}`,
+    agentName,
+    instanceId: 'default',
+    podId,
+    config: { runtime: { runtimeType: 'hosted' }, ...(engine ? { hosted: { engine } } : {}) },
+  });
+
+  it('exempts a hosted install on the native engine and nothing else hosted', () => {
+    expect(isStalenessExempt(hosted('maya-agent', 'native'))).toBe(true);
+    expect(isStalenessExempt(hosted('maya-agent', undefined))).toBe(false);
+    expect(isStalenessExempt(hosted('maya-agent', 'durable-object'))).toBe(false);
+  });
+
+  it('never evaluates a native-engine hosted install, and keeps the write filter off them', async () => {
+    givenActiveInstalls([hosted('maya-agent', 'native', 'p1'), hosted('maya-agent', undefined, 'p2')]);
+
+    await markStaleInstallations(7);
+
+    expect(String(selectedFields)).toContain('config.hosted.engine');
+    const [filter] = AgentInstallation.updateMany.mock.calls[0];
+    expect(filter['config.hosted.engine']).toEqual({ $ne: 'native' });
+  });
+});

@@ -13,6 +13,7 @@ jest.mock('../../../models/Pod', () => ({
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {},
   AgentInstallation: {
+    exists: jest.fn().mockResolvedValue(null),
     findOne: jest.fn(),
     find: jest.fn(() => ({
       collation: jest.fn(function collation() { return this; }),
@@ -107,6 +108,50 @@ describe('agent runtime tokens', () => {
     expect(installation.runtimeTokens.length).toBe(1);
     expect(installation.save).toHaveBeenCalled();
     expect(agentUser.save).toHaveBeenCalled();
+  });
+
+  // Rhea on #2224, Wren for plain native: an agent Commonly runs in-process
+  // (native, or hosted on the native engine) holds no runtime token.
+  const mintFor = async (agentName, config) => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] }),
+    });
+    const installation = {
+      agentName, podId: 'pod-1', instanceId: 'default', status: 'active', installedBy: 'user-1',
+      config, runtimeTokens: [], save: jest.fn().mockResolvedValue(true),
+    };
+    const agentUser = { agentRuntimeTokens: [], botMetadata: { agentName }, save: jest.fn() };
+    AgentInstallation.findOne.mockResolvedValue(installation);
+    AgentInstallation.exists.mockResolvedValueOnce({ _id: 'inst-1' });
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+    const res = await request(app)
+      .post(`/api/registry/pods/pod-1/agents/${agentName}/runtime-tokens`)
+      .send({ label: 'try it' });
+    return { res, agentUser };
+  };
+
+  it.each([
+    ['a hosted agent on the native engine', 'maya-agent', { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native', provisionedAt: new Date() } }],
+    ['a plain native agent such as Scout', 'scout', { runtime: { runtimeType: 'native' } }],
+  ])('refuses to mint for %s, with a 409 that says why', async (_label, agentName, config) => {
+    const { res, agentUser } = await mintFor(agentName, config);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('in_process_agent_no_token');
+    expect(agentUser.agentRuntimeTokens).toHaveLength(0);
+  });
+
+  it('matches every in-process shape in any spelling, and nothing else', async () => {
+    await mintFor('scout', { runtime: { runtimeType: 'native' } });
+    const [query] = AgentInstallation.exists.mock.calls[0];
+    expect(query.status).toBe('active');
+    const [, runtimeRule] = query.$and;
+    const matches = (doc) => runtimeRule.$or.some((branch) => Object.entries(branch)
+      .every(([field, cond]) => cond.$regex.test(doc[field] || '')));
+    expect(matches({ 'config.runtime.runtimeType': ' Native ' })).toBe(true);
+    expect(matches({ 'config.runtime.runtimeType': 'HOSTED', 'config.hosted.engine': 'native' })).toBe(true);
+    expect(matches({ 'config.runtime.runtimeType': 'hosted' })).toBe(false); // Durable Object engine
+    expect(matches({ 'config.runtime.runtimeType': 'webhook' })).toBe(false);
   });
 
   it('returns {existing:true} (no token) when agent user already has runtime tokens', async () => {

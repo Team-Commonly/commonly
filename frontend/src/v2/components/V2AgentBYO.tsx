@@ -209,8 +209,9 @@ const V2AgentBYO: React.FC = () => {
   }, [api, placed]);
 
   // Same shape as the listening check below, against the runtime's own
-  // status: the DO reports lastPollAt once its alarm loop has run. ~60s cap,
-  // then honest copy — the agent still picks messages up when it starts.
+  // status: the DO reports lastPollAt once its alarm loop has run, and the
+  // native engine reports ready once provisioned (it has no loop to wait for).
+  // ~60s cap, then honest copy — the agent still picks messages up when it starts.
   useEffect(() => {
     if (!hosted) return undefined;
     let cancelled = false;
@@ -219,11 +220,11 @@ const V2AgentBYO: React.FC = () => {
     const timer = setInterval(async () => {
       ticks += 1;
       try {
-        const data = await api.get<{ runtime?: { lastPollAt?: number | null } }>(
+        const data = await api.get<{ runtime?: { lastPollAt?: number | null; ready?: boolean } }>(
           `/api/hosted/status?agentName=${encodeURIComponent(hosted.agentName)}`,
         );
         if (cancelled) return;
-        if (data?.runtime?.lastPollAt) {
+        if (data?.runtime?.ready === true || data?.runtime?.lastPollAt) {
           setHostedState('running');
           clearInterval(timer);
           return;

@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
 import { postToPublicAddress } from './outboundUrlGuard';
+import { hostedRunsNative } from './hostedEngine';
 
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
@@ -1183,7 +1184,9 @@ class AgentEventService {
       }
     }
     const installationRuntimeType = String(installationRuntimeCfg.runtimeType || '').toLowerCase();
-    return installationRuntimeType === 'native' ? installationDoc : null;
+    // A provisioned hosted install on the native engine runs in-process too
+    // (services/hostedEngine.ts); one on the Durable Object polls.
+    return installationRuntimeType === 'native' || hostedRunsNative(installationDoc) ? installationDoc : null;
   }
 
   /**

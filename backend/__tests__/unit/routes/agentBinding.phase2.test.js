@@ -492,6 +492,23 @@ describe('runtime-token mint', () => {
     }));
   });
 
+  // Rhea on #2224, Wren for plain native: a daemon cannot mint a token for an
+  // agent Commonly runs in-process, whatever the binding says.
+  it.each([
+    ['native', { runtimeType: 'native' }, {}],
+    ['hosted on the native engine', { runtimeType: 'hosted' }, { hosted: { engine: 'native', provisionedAt: new Date() } }],
+  ])('refuses to mint for an agent that runs in-process (%s)', async (_label, runtime, extra) => {
+    await adopt(DAEMON_A);
+    await AgentInstallation.updateOne(
+      { agentName: 'wren-test', instanceId: 'default' },
+      { $set: { 'config.runtime': runtime, ...Object.fromEntries(Object.entries(extra).map(([k, v]) => [`config.${k}`, v])) } },
+    );
+    const res = await mint(DAEMON_A);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('in_process_agent_no_token');
+    expect(await AgentCredential.countDocuments({ kind: 'runtime', agentUserId: bot._id })).toBe(0);
+  });
+
   it('refuses to overwrite an existing token without rotate:true', async () => {
     await adopt(DAEMON_A);
     await mint(DAEMON_A);
