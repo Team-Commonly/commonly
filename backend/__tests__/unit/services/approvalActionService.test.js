@@ -57,6 +57,8 @@ jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
 jest.mock('../../../services/agentNameReservation', () => ({ reservedAgentNameRefusal: jest.fn().mockResolvedValue(null) }));
 // #2160: approving wakes the proposer; that path has its own suite (approvalActionService.proposerWake).
 jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn().mockResolvedValue({}) }));
+const mockPostMessage = jest.fn().mockResolvedValue({ id: 1 });
+jest.mock('../../../services/agentMessageService', () => ({ postMessage: (...args) => mockPostMessage(...args) }));
 const mockResolveAttention = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../../services/attentionItemService', () => ({
   recordActionApproval: jest.fn().mockResolvedValue(undefined),
@@ -222,6 +224,54 @@ describe('approved create_pod execution — D2: user authority owns', () => {
     expect(resolved.executionResult).toEqual(expect.objectContaining({ podId: 'newpod-1', agentJoined: true }));
   });
 
+  // A new pod's next steps (2026-10-15): the first message in the pod is the
+  // proposer offering two buttons, server-composed the #2194 way, so a new
+  // pod is one click from an agent of its own and one from a second person.
+  test('posts the new pod\'s next steps as buttons: connect an agent to THIS pod, invite a teammate', async () => {
+    mockApprovalFindById.mockResolvedValue(flaggedRow());
+    const resolved = flaggedRow({ status: 'resolved', decision: 'approved' });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+    mockPodCreate.mockResolvedValue({ _id: 'newpod-3', name: 'vuedsfr', type: 'chat', members: [OWNER] });
+    mockInstallFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ displayName: 'Scout', config: {} }) });
+    mockInstallUpsert.mockResolvedValue({});
+    mockGetOrCreateAgentUser.mockResolvedValue({ _id: 'guide-bot-1' });
+    mockPodUpdateOne.mockResolvedValue({});
+
+    await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+
+    expect(mockPostMessage).toHaveBeenCalledTimes(1);
+    const posted = mockPostMessage.mock.calls[0][0];
+    expect(posted).toEqual(expect.objectContaining({ agentName: 'guide', podId: 'newpod-3', displayName: 'Scout' }));
+    expect(posted.content).toMatch(/agent you already use/);
+    expect(posted.content).toMatch(/invite a teammate/);
+    expect(posted.payload.kind).toBe('starts');
+    expect(posted.payload.starts.map(({ id }) => id)).toEqual(['connect-agent-here', 'invite-teammate']);
+    const [connect, invite] = posted.payload.starts;
+    expect(connect.label).toBe('Connect an agent to this pod');
+    // Aimed at the NEW pod, never the pod the card was approved in.
+    expect(connect.href.startsWith('/v2/agents/byo?pod=newpod-3')).toBe(true);
+    expect(invite).toEqual({ id: 'invite-teammate', label: 'Invite a teammate', action: 'invite' });
+    expect(resolved.executionResult).toEqual(expect.objectContaining({ nextStepsPosted: true }));
+  });
+
+  test('a failed next-steps post never fails the pod: the result says so and the decision stands', async () => {
+    mockApprovalFindById.mockResolvedValue(flaggedRow());
+    const resolved = flaggedRow({ status: 'resolved', decision: 'approved' });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+    mockPodCreate.mockResolvedValue({ _id: 'newpod-4', name: 'Design Studio', type: 'chat', members: [OWNER] });
+    mockInstallFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ displayName: 'Scout', config: {} }) });
+    mockInstallUpsert.mockResolvedValue({});
+    mockGetOrCreateAgentUser.mockResolvedValue({ _id: 'guide-bot-1' });
+    mockPodUpdateOne.mockResolvedValue({});
+    mockPostMessage.mockRejectedValueOnce(new Error('pg down'));
+
+    const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+
+    expect(res.status).toBe(200);
+    expect(resolved.executionError).toBeUndefined();
+    expect(resolved.executionResult).toEqual(expect.objectContaining({ podId: 'newpod-4', agentJoined: true, nextStepsPosted: false }));
+  });
+
   test('agent-join failure is carried in the result, never a clean "done" (sprint-review finding)', async () => {
     // The pod is real (user owns it), but membership without an installation
     // 403s every post — a lied face here is unrecoverable because execution
@@ -241,8 +291,11 @@ describe('approved create_pod execution — D2: user authority owns', () => {
       podId: 'newpod-2',
       agentJoined: false,
       agentJoinError: expect.stringContaining('install collection offline'),
+      nextStepsPosted: false,
     }));
     expect(resolved.executionError).toBeUndefined();
+    // An agent that could not join cannot post there, so nothing is offered.
+    expect(mockPostMessage).not.toHaveBeenCalled();
   });
 
   test('execution failure keeps the decision and records the error honestly', async () => {

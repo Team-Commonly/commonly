@@ -554,7 +554,12 @@ const describeApprovedOutcome = (row: IApprovalAction): string => {
     const joinNote = result.agentJoinError
       ? ` You could not be added to it: ${String(result.agentJoinError).slice(0, 200)}.`
       : '';
-    return `The pod "${String(result.podName || '')}" now exists (${String(result.podId || '')}).${joinNote}`;
+    const stepsNote = result.nextStepsPosted
+      ? ' Its next steps are already posted there as buttons: connect an agent to that pod, or invite a teammate.'
+        + ' Point them to the new pod in one short line; do not list the steps again.'
+      : '';
+    const pod = `The pod "${String(result.podName || '')}" now exists (${String(result.podId || '')}).`;
+    return `${pod}${joinNote}${stepsNote}`;
   }
   return 'The action ran.';
 };
@@ -951,6 +956,51 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
   return { agentName, podId: String(row.podId), connectPath };
 };
 
+/**
+ * A new pod's first message offers its two next steps as buttons (2026-10-15).
+ * A pod becomes a team when a second person and their agent arrive. Left to
+ * free text, the proposer's reply pointed only at the task board, and the
+ * first outside signup from outreach stopped exactly there. Server-composed,
+ * the #2194 way, so the offers are structure and never model prose:
+ * - connect an agent into THIS pod: the Bring your own link, aimed at it;
+ * - invite a teammate: the pod's own invite dialog.
+ * Never fatal: the pod exists either way, and the proposer's reply still lands.
+ */
+export const NEW_POD_NEXT_STEPS_TEXT = 'This pod is ready. Two ways to get it going: '
+  + 'bring in an agent you already use, or invite a teammate. '
+  + 'Or @mention me with a first task and I\'ll put it on the board.';
+
+const postNewPodNextSteps = async (
+  row: IApprovalAction,
+  podId: string,
+  displayName: string | undefined,
+): Promise<boolean> => {
+  try {
+    const seat = await suggestLocalAgentName('agent', row.ownerUserId).catch(() => null);
+    const href = `/v2/agents/byo?pod=${encodeURIComponent(podId)}${seat ? `&name=${encodeURIComponent(seat)}` : ''}`;
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentMessageService = require('./agentMessageService');
+    await AgentMessageService.postMessage({
+      agentName: String(row.agentName),
+      instanceId: String(row.instanceId || 'default'),
+      podId,
+      displayName,
+      content: NEW_POD_NEXT_STEPS_TEXT,
+      payload: {
+        kind: 'starts',
+        starts: [
+          { id: 'connect-agent-here', label: 'Connect an agent to this pod', href },
+          { id: 'invite-teammate', label: 'Invite a teammate', action: 'invite' },
+        ],
+      },
+    });
+    return true;
+  } catch (err) {
+    console.warn('[approval] create_pod next steps not posted:', (err as Error).message);
+    return false;
+  }
+};
+
 const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
   const params = (row.params || {}) as { name?: string; description?: string; type?: string };
   const name = String(params.name || '').trim();
@@ -991,6 +1041,7 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
   // execution is at-most-once, so a lied face here is unrecoverable).
   let agentJoined = false;
   let agentJoinError: string | undefined;
+  let agentDisplayName: string | undefined;
   try {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AgentIdentityService = require('./agentIdentityService');
@@ -1003,6 +1054,7 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
     // D8's opt-in is per installation. A delegated create_pod produces a
     // different installation, so inherit the capability config but not the
     // source pod's every-message wake setting; the new owner may opt in.
+    agentDisplayName = originInstall?.displayName;
     const originConfig = originInstall?.config;
     const clonedConfig = originConfig instanceof Map
       ? Object.fromEntries(originConfig.entries())
@@ -1048,12 +1100,17 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
     console.warn('[approval] create_pod agent-join failed:', agentJoinError);
   }
 
+  const nextStepsPosted = agentJoined
+    ? await postNewPodNextSteps(row, String(pod._id), agentDisplayName)
+    : false;
+
   return {
     podId: String(pod._id),
     podName: pod.name,
     podType: type,
     agentJoined,
     ...(agentJoinError ? { agentJoinError } : {}),
+    nextStepsPosted,
   };
 };
 

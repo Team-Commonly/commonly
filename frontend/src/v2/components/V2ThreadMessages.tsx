@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { HistorySearchState, V2Message } from '../hooks/useV2PodDetail';
+import { HistorySearchState, V2Message, V2Start } from '../hooks/useV2PodDetail';
 import { UseV2ThreadState } from '../hooks/useV2ThreadState';
 import { ThreadViewItem } from '../utils/threadView';
 import { isGroupedWithPrevious } from '../utils/messageGrouping';
@@ -26,8 +26,8 @@ interface V2ThreadMessagesProps {
   onThread?: (message: V2Message) => void;
   // Scout's starts, keyed by the message that offers them; already filtered to
   // the ones this person has not sent (V2Thread). A click sends the label.
-  startsByMessageId?: Map<string, Array<{ id: string; label: string }>>;
-  onStart?: (label: string) => void;
+  startsByMessageId?: Map<string, V2Start[]>;
+  onStart?: (start: V2Start) => void;
   startsDisabled?: boolean;
   onQuoteNavigate?: (messageId: string | number) => void;
   onDecisionRuled?: (decisionId: string, ruling: V2DecisionRuling) => void;
@@ -291,7 +291,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                       type="button"
                       className="v2-chat__start"
                       disabled={startsDisabled}
-                      onClick={() => onStart(start.label)}
+                      onClick={() => onStart(start)}
                     >
                       {start.label}
                     </button>
