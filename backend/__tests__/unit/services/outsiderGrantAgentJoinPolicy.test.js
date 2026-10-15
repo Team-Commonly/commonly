@@ -34,6 +34,17 @@ describe('outsider-writable grant agent join policy', () => {
     await expect(assertAgentRuntimeMayJoinPod('pod-1', 'opencode')).resolves.toBeUndefined();
   });
 
+  it('allows hosted on the native engine but refuses hosted on the Durable Object', async () => {
+    await expect(assertAgentRuntimeMayJoinPod('pod-1', 'hosted', 'native')).resolves.toBeUndefined();
+    expect(podHasOutsiderWritableGrant).not.toHaveBeenCalled();
+    await expect(assertAgentRuntimeMayJoinPod('pod-1', 'hosted', 'durable-object')).rejects.toHaveProperty(
+      'code', 'outsider_grant_non_native_agent_join',
+    );
+    await expect(assertAgentRuntimeMayJoinPod('pod-1', 'hosted')).rejects.toHaveProperty(
+      'code', 'outsider_grant_non_native_agent_join',
+    );
+  });
+
   it('requires a live native installation for an undeclared membership writer', async () => {
     AgentInstallation.findOne.mockReturnValue({
       select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({
@@ -45,6 +56,22 @@ describe('outsider-writable grant agent join policy', () => {
       podId: 'pod-1', agentName: 'sample-agent', instanceId: 'default', status: 'active',
     }));
     expect(runtimeTypeFromConfig(new Map([['runtime', { runtimeType: 'native' }]]))).toBe('native');
+  });
+
+  it('allows an installed hosted-native agent but refuses an installed Durable Object agent', async () => {
+    const lean = jest.fn()
+      .mockResolvedValueOnce({ config: new Map([
+        ['runtime', { runtimeType: 'hosted' }], ['hosted', { engine: 'native' }],
+      ]) })
+      .mockResolvedValueOnce({ config: new Map([
+        ['runtime', { runtimeType: 'hosted' }], ['hosted', { engine: 'durable-object' }],
+      ]) });
+    AgentInstallation.findOne.mockReturnValue({ select: jest.fn().mockReturnValue({ lean }) });
+    await expect(assertInstalledAgentMayJoinPod('pod-1', 'bot', 'default')).resolves.toBeUndefined();
+    await expect(assertInstalledAgentMayJoinPod('pod-1', 'bot', 'default')).rejects.toHaveProperty(
+      'code', 'outsider_grant_non_native_agent_join',
+    );
+    expect(AgentInstallation.findOne.mock.results[0].value.select).toHaveBeenCalledWith('config');
   });
 
   it('never puts a caller-controlled query object in the installation lookup', async () => {

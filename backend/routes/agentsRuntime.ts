@@ -50,6 +50,7 @@ const {
   assertAgentRuntimeMayJoinPod,
   runtimeTypeFromConfig,
 } = require('../services/outsiderGrantAgentJoinPolicy');
+const { hostedEngineOf } = require('../services/hostedEngine');
 
 // ADR-003 Phase 4: per-token rate limiter for the cross-agent surface.
 // Token-global (covers any pod the token is valid for). Complementary to the
@@ -3149,7 +3150,9 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       const sourceConfig = sourceInstall?.config instanceof Map
         ? Object.fromEntries(sourceInstall.config) : sourceInstall?.config || {};
       try {
-        await assertAgentRuntimeMayJoinPod(existingPod._id, runtimeTypeFromConfig(sourceConfig));
+        await assertAgentRuntimeMayJoinPod(
+          existingPod._id, runtimeTypeFromConfig(sourceConfig), hostedEngineOf({ config: sourceConfig }),
+        );
       } catch (joinError: any) {
         if (joinError?.code === 'outsider_grant_non_native_agent_join') {
           return res.status(403).json({ code: joinError.code, message: joinError.message });
@@ -3309,7 +3312,9 @@ router.post('/pods/:podId/self-install', phase4RateLimit, agentRuntimeAuth, asyn
     const sourceConfig = sourceInstall.config instanceof Map
       ? Object.fromEntries(sourceInstall.config) : sourceInstall.config || {};
     try {
-      await assertAgentRuntimeMayJoinPod(podId, runtimeTypeFromConfig(sourceConfig));
+      await assertAgentRuntimeMayJoinPod(
+        podId, runtimeTypeFromConfig(sourceConfig), hostedEngineOf({ config: sourceConfig }),
+      );
     } catch (joinError: any) {
       if (joinError?.code === 'outsider_grant_non_native_agent_join') {
         return res.status(403).json({ code: joinError.code, message: joinError.message });

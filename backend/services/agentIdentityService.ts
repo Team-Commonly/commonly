@@ -654,7 +654,8 @@ class AgentIdentityService {
   }
 
   static async ensureAgentInPod(
-    agentUser: InstanceType<typeof User>, podId: unknown, intendedRuntimeType?: string,
+    agentUser: InstanceType<typeof User>, podId: unknown,
+    intendedRuntimeType?: string, intendedHostedEngine?: string,
   ): Promise<InstanceType<typeof Pod> | null> {
     if (!agentUser || !podId) return null;
     const pod = await Pod.findById(podId);
@@ -693,7 +694,7 @@ class AgentIdentityService {
         return null;
       }
       if (intendedRuntimeType) {
-        await assertAgentRuntimeMayJoinPod(podId, intendedRuntimeType);
+        await assertAgentRuntimeMayJoinPod(podId, intendedRuntimeType, intendedHostedEngine);
       } else {
         await assertInstalledAgentMayJoinPod(
           podId, agentUser.botMetadata?.agentName, agentUser.botMetadata?.instanceId,

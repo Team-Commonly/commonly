@@ -1,5 +1,6 @@
 /** Keep non-native agents out of pods that hold outsider-writable grants. */
 import { AgentInstallation } from '../models/AgentRegistry';
+import { runsInNarrowedProcess } from './hostedEngine';
 import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
 
 export class OutsiderGrantAgentJoinError extends Error {
@@ -20,8 +21,10 @@ export const runtimeTypeFromConfig = (config: unknown): string => {
     ? String((runtime as { runtimeType?: unknown }).runtimeType || '').trim().toLowerCase() : '';
 };
 
-export const assertAgentRuntimeMayJoinPod = async (podId: unknown, runtimeType: unknown): Promise<void> => {
-  if (String(runtimeType || '').trim().toLowerCase() === 'native') return;
+export const assertAgentRuntimeMayJoinPod = async (
+  podId: unknown, runtimeType: unknown, hostedEngine?: unknown,
+): Promise<void> => {
+  if (runsInNarrowedProcess({ config: { runtime: { runtimeType }, hosted: { engine: hostedEngine } } })) return;
   if (await podHasOutsiderWritableGrant(String(podId))) throw new OutsiderGrantAgentJoinError();
 };
 
@@ -37,5 +40,5 @@ export const assertInstalledAgentMayJoinPod = async (
     instanceId: String(instanceId || 'default'),
     status: 'active',
   }).select('config').lean();
-  if (runtimeTypeFromConfig(installation?.config) !== 'native') throw new OutsiderGrantAgentJoinError();
+  if (!runsInNarrowedProcess(installation)) throw new OutsiderGrantAgentJoinError();
 };

@@ -50,4 +50,22 @@ describe('auto-join into a pod holding an outsider-writable grant', () => {
       }),
     );
   });
+
+  it('copies a hosted-native Map declaration but refuses a Durable Object source', async () => {
+    const source = (engine) => ({
+      agentName: 'hosted-agent', instanceId: 'default', podId: 'source-pod',
+      config: new Map([['runtime', { runtimeType: 'hosted' }], ['hosted', { engine }]]),
+    });
+    AgentInstallation.find.mockReturnValueOnce(chain([source('native')]))
+      .mockReturnValueOnce(chain([source('durable-object')]));
+    expect(await AgentAutoJoinService.runAutoJoinAgentOwnedPods()).toEqual(expect.objectContaining({ installed: 1 }));
+    expect(AgentInstallation.install).toHaveBeenCalledWith(
+      'hosted-agent', 'target-pod', expect.objectContaining({
+        config: expect.objectContaining({ hosted: { engine: 'native' } }),
+      }),
+    );
+    AgentInstallation.install.mockClear();
+    expect(await AgentAutoJoinService.runAutoJoinAgentOwnedPods()).toEqual(expect.objectContaining({ skipped: 1 }));
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+  });
 });

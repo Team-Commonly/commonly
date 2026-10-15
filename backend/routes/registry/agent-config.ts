@@ -28,6 +28,7 @@ const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecVa
 const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
 const { configWriteRefusal, runtimeKeepingType } = require('../../services/configWriteGuard');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
+const { hostedEngineOf } = require('../../services/hostedEngine');
 
 const agentConfigRouter = express.Router();
 
@@ -271,7 +272,10 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
           const stored = normalizeConfigMap(targetInstallation.config) || {};
           const runtime = config?.runtime !== undefined ? config.runtime : stored.runtime;
           // eslint-disable-next-line no-await-in-loop
-          await assertAgentRuntimeMayJoinPod(targetInstallation.podId, runtime?.runtimeType);
+          await assertAgentRuntimeMayJoinPod(
+            targetInstallation.podId, runtime?.runtimeType,
+            hostedEngineOf({ config: stored }),
+          );
         }
       } catch (joinError: any) {
         if (joinError?.code === 'outsider_grant_non_native_agent_join') {

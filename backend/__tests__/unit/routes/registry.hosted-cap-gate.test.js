@@ -4,6 +4,11 @@
 // Mirrors the harness in registry.cloud-entitlement-gate.test.js.
 const mockCountHosted = jest.fn();
 const mockListHosted = jest.fn();
+const mockPodHasOutsiderWritableGrant = jest.fn();
+
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podHasOutsiderWritableGrant: (...args) => mockPodHasOutsiderWritableGrant(...args),
+}));
 
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
@@ -38,12 +43,17 @@ jest.mock('../../../services/hostedRuntimeService', () => ({
   hostedCaps: () => ({ agentsPerUser: 1, turnsPerDay: 200 }),
   countHostedAgentsForUser: (...args) => mockCountHosted(...args),
   listHostedInstallationsForUser: (...args) => mockListHosted(...args),
+  readRuntimeConfig: (installation) => installation?.config?.runtime || {},
+  isHostedInstallation: (installation) => (
+    String(installation?.config?.runtime?.runtimeType || '').trim().toLowerCase() === 'hosted'
+  ),
 }));
 
 const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegistry');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentProfile = require('../../../models/AgentProfile');
+const AgentTemplate = require('../../../models/AgentTemplate');
 const Activity = require('../../../models/Activity');
 const installRouter = require('../../../routes/registry/install');
 
@@ -79,6 +89,7 @@ describe('registry install — hosted runtime cap gate', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPodHasOutsiderWritableGrant.mockResolvedValue(false);
     mockListHosted.mockResolvedValue([]);
     Pod.findById.mockReturnValue(buildLeanChain({
       _id: 'pod-1', createdBy: 'user-1', members: ['user-1'], type: 'chat',
@@ -101,6 +112,7 @@ describe('registry install — hosted runtime cap gate', () => {
     }));
     User.findOne.mockImplementation(() => buildSelectLeanChain(null));
     User.findById.mockReturnValue(buildSelectLeanChain({ username: 'installer', role: 'user' }));
+    AgentTemplate.find.mockReturnValue(buildSelectLeanChain([]));
     AgentProfile.findOneAndUpdate.mockResolvedValue(true);
     Activity.create.mockResolvedValue(true);
   });
@@ -192,6 +204,41 @@ describe('registry install — hosted runtime cap gate', () => {
       await installHandler(req, makeRes());
       const { hosted } = installedConfig();
       expect(hosted).toEqual({ engine: 'native', provisionedAt: expect.any(Date), about: 'Keeps the research log.' });
+    });
+  });
+
+  describe('hosted installs into a pod with an outsider-writable grant', () => {
+    afterEach(() => { delete process.env.HOSTED_ENGINE; });
+
+    it('lets the native engine join, using the same engine written to the installation', async () => {
+      process.env.HOSTED_ENGINE = 'native';
+      mockPodHasOutsiderWritableGrant.mockResolvedValue(true);
+      mockCountHosted.mockResolvedValue(0);
+      const req = makeReq('hosted');
+      req.body.config.hosted = { engine: 'durable-object' };
+      const res = makeRes();
+      await installHandler(req, res);
+      expect(res.status).not.toHaveBeenCalledWith(403);
+      expect(AgentInstallation.install).toHaveBeenCalledWith('my-agent', 'pod-1', expect.objectContaining({
+        config: expect.objectContaining({ hosted: expect.objectContaining({ engine: 'native' }) }),
+      }));
+      expect(require('../../../services/agentIdentityService').ensureAgentInPod)
+        .toHaveBeenCalledWith(expect.anything(), 'pod-1', 'hosted', 'native');
+    });
+
+    it('refuses the Durable Object before any installation or membership write', async () => {
+      process.env.HOSTED_ENGINE = 'durable-object';
+      mockPodHasOutsiderWritableGrant.mockResolvedValue(true);
+      const res = makeRes();
+      const req = makeReq('hosted');
+      req.body.config.hosted = { engine: 'native' };
+      await installHandler(req, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'outsider_grant_non_native_agent_join',
+      }));
+      expect(AgentInstallation.install).not.toHaveBeenCalled();
+      expect(require('../../../services/agentIdentityService').ensureAgentInPod).not.toHaveBeenCalled();
     });
   });
 });
