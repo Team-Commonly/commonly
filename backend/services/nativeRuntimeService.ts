@@ -32,6 +32,7 @@ import {
   HostedBrokerProjection,
 } from './grantBrokerProjectionService';
 import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
+import { isSandboxConfigured, TurnSandbox } from './turnSandboxService';
 import { untrustedConnectorMarker } from './brokerResultMarker';
 
 // --- public surface --------------------------------------------------------
@@ -256,7 +257,32 @@ export const TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'commonly_run_code',
+      description:
+        'Run a short Python or JavaScript program in a fresh, isolated sandbox and get back '
+        + 'what it printed. Use it to calculate, transform data, or check something by running '
+        + 'it rather than guessing. The sandbox has no internet access and none of the pod\'s '
+        + 'files, it is discarded when this turn ends, and each run stops after 30 seconds. '
+        + 'Print the values you want to see.',
+      parameters: {
+        type: 'object',
+        properties: {
+          language: { type: 'string', enum: ['python', 'javascript'] },
+          code: { type: 'string', description: 'The program to run.' },
+        },
+        required: ['language', 'code'],
+      },
+    },
+  },
 ] as const;
+
+// Tools an install gets only by declaring them: proposing an approval, and
+// running code (TASK-266), which also needs a sandbox key on the instance.
+const OPT_IN_TOOLS: ReadonlySet<string> = new Set(['commonly_propose_action', 'commonly_run_code']);
+const toolAvailable = (name: string): boolean => name !== 'commonly_run_code' || isSandboxConfigured();
 
 // ADR-020 D1: the manifest's `tools` list is the capability boundary, and it
 // must be ENFORCED here, not just declared. Before this filter, TOOLS went
@@ -273,7 +299,8 @@ export const toolsForConfig = (
   const declared = Array.isArray(cfg?.tools) ? (cfg?.tools as string[]) : null;
   return TOOLS.filter((t) => (declared
     ? declared.includes(t.function.name)
-    : t.function.name !== 'commonly_propose_action')
+    : !OPT_IN_TOOLS.has(t.function.name))
+    && toolAvailable(t.function.name)
     && (!inPodOnly || IN_POD_NATIVE_TOOLS.has(t.function.name)));
 };
 
@@ -287,6 +314,8 @@ interface DispatchContext {
   displayName: string;
   installationConfig: PlainConfig;
   inPodOnly?: boolean;
+  /** Opened on the turn's first commonly_run_code call; closed when the turn ends. */
+  sandbox?: TurnSandbox;
 }
 
 interface DispatchResult {
@@ -429,6 +458,15 @@ async function dispatchTool(
             note: 'Approval card posted. The action runs only if the owner approves — do not post another message about it.',
           },
         };
+      }
+
+      case 'commonly_run_code': {
+        if (!isSandboxConfigured()) {
+          return { content: null, error: 'Running code is not available on this instance.' };
+        }
+        ctx.sandbox = ctx.sandbox || new TurnSandbox({ podId: ctx.podId, agent: `${ctx.agentName}:${ctx.instanceId}` });
+        const result = await ctx.sandbox.run(String(args.language || ''), String(args.code ?? ''));
+        return { content: result };
       }
 
       case 'commonly_agent_status': {
@@ -1293,6 +1331,12 @@ export async function runAgent(
     run.status = 'failed';
     run.errorKind = run.errorKind || 'unknown';
     run.errorMessage = (loopErr as Error).message?.slice(0, 1000) || 'unknown error';
+  }
+
+  // TASK-266: the sandbox lives for one turn. Close it whatever happened, and
+  // record how long it ran: E2B has no spending cap, so the spend alarm prices it.
+  if (dispatchCtx.sandbox) {
+    run.sandboxSeconds = await dispatchCtx.sandbox.close();
   }
 
   run.completedAt = new Date();

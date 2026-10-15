@@ -53,4 +53,21 @@ describe('toolsForConfig', () => {
     const schema = tools[0].function.parameters.properties.actionType;
     expect(schema.enum.sort()).toEqual(['connect_local_agent', 'create_pod']);
   });
+
+  // TASK-266: running code is opt-in by declaration AND needs a sandbox key.
+  test('run_code is offered only when declared and the instance has a sandbox key', () => {
+    const previous = process.env.E2B_API_KEY;
+    try {
+      delete process.env.E2B_API_KEY;
+      expect(names(toolsForConfig({ tools: ['commonly_run_code'] }))).not.toContain('commonly_run_code');
+      process.env.E2B_API_KEY = 'e2b_test_key';
+      expect(names(toolsForConfig({ tools: ['commonly_run_code'] }))).toContain('commonly_run_code');
+      // Never on the default surface, even with the key.
+      expect(names(toolsForConfig({}))).not.toContain('commonly_run_code');
+      expect(names(toolsForConfig({ tools: ['commonly_post_message'] }))).not.toContain('commonly_run_code');
+    } finally {
+      if (previous === undefined) delete process.env.E2B_API_KEY;
+      else process.env.E2B_API_KEY = previous;
+    }
+  });
 });

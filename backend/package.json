@@ -33,6 +33,7 @@
     "tsc:check:all": "tsc --noEmit"
   },
   "dependencies": {
+    "@e2b/code-interpreter": "2.9.0",
     "@google-cloud/secret-manager": "^6.1.1",
     "@google/generative-ai": "^0.2.1",
     "@kubernetes/client-node": "^0.21.0",
