@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { fetchTextFromAllowedHost } from './outboundUrlGuard';
+import { fetchBytesFromAllowedHost, fetchTextFromAllowedHost, isOutboundUrlRefused } from './outboundUrlGuard';
 
 const DEFAULT_SOURCE = 'awesome';
 
@@ -36,7 +36,43 @@ interface Catalog {
 interface FetchSkillContentResult {
   content: string;
   resolvedUrl: string;
+  // Set when the source itself supplied the skill's other files (a ClawHub
+  // bundle), so the caller must not list a GitHub directory for them.
+  extraFiles?: SkillFile[];
 }
+
+const SKILL_SOURCE_UNAVAILABLE = 'skill_source_unavailable';
+
+/**
+ * A skill's source could not supply it. `missing` means the source answered
+ * and the skill is not there (a 404, or a ClawHub entry with nothing
+ * published); otherwise the source could not be reached or read. Routes map
+ * the two to a 404 and a 502, never a 500: neither is our server failing.
+ * (#2189: 1,655 of 1,659 built-in catalog entries point at a GitHub repository
+ * that went 404 in May 2026, and every import of one returned a 500.)
+ */
+class SkillSourceUnavailableError extends Error {
+  readonly code = SKILL_SOURCE_UNAVAILABLE;
+
+  readonly missing: boolean;
+
+  constructor(reason: string, missing: boolean) {
+    super(`skill source unavailable: ${reason}`);
+    this.name = 'SkillSourceUnavailableError';
+    this.missing = missing;
+  }
+}
+
+export const isSkillSourceUnavailable = (error: unknown): error is { missing: boolean; message: string } => (
+  typeof error === 'object'
+  && error !== null
+  && (error as { code?: unknown }).code === SKILL_SOURCE_UNAVAILABLE
+);
+
+/** A 404 or 410 means the source is there and the skill is not. */
+const unavailableForStatus = (where: string, status: number): SkillSourceUnavailableError => (
+  new SkillSourceUnavailableError(`${where} returned ${status}`, status === 404 || status === 410)
+);
 
 interface SkillFile {
   path: string;
@@ -313,6 +349,13 @@ interface ClawHubBundle {
 
 const PER_FILE_BYTES = 100 * 1024;
 const TOTAL_BUNDLE_BYTES = 800 * 1024;
+// A request can reach ClawHub now (an import of a legacy catalog entry), so
+// both calls go through the same fetch guard as GitHub: every hop, redirects
+// included, stays on clawhub.ai, one deadline spans the call, and the body is
+// read against a cap as it streams (Sprint Review on #2195).
+const CLAWHUB_ORIGINS: ReadonlyMap<string, string> = new Map([['clawhub.ai', `${CLAWHUB_BASE}/`]]);
+const CLAWHUB_MAX_META_BYTES = 256 * 1024;
+const CLAWHUB_MAX_ZIP_BYTES = 2 * 1024 * 1024;
 
 /**
  * Parse a legacy `github.com/openclaw/skills/tree/main/skills/<owner>/<slug>/SKILL.md`
@@ -339,31 +382,56 @@ export const fetchSkillBundleFromClawHub = async (
 ): Promise<ClawHubBundle> => {
   const safeOwner = encodeURIComponent(owner);
   const safeSlug = encodeURIComponent(slug);
+  // A refusal (a redirect off clawhub.ai), the deadline, the cap or the
+  // network: all mean this source could not be read, so none is the caller's
+  // 400 about GitHub URLs or a 500.
+  const unreachable = (error: unknown): SkillSourceUnavailableError => (
+    error instanceof SkillSourceUnavailableError
+      ? error
+      : new SkillSourceUnavailableError(`ClawHub: ${(error as Error).message}`, false)
+  );
 
   // Step 1 — metadata (we need latestVersion.version for the download URL).
-  const metaResp = await fetch(`${CLAWHUB_BASE}/api/skill?owner=${safeOwner}&slug=${safeSlug}`);
-  if (!metaResp.ok) {
-    throw new Error(`ClawHub metadata fetch failed (${metaResp.status})`);
+  let version: string;
+  try {
+    const metaResp = await fetchTextFromAllowedHost(`${CLAWHUB_BASE}/api/skill?owner=${safeOwner}&slug=${safeSlug}`, {
+      allowedOrigins: CLAWHUB_ORIGINS,
+      maxBytes: CLAWHUB_MAX_META_BYTES,
+    });
+    if (!metaResp.ok) throw unavailableForStatus('ClawHub metadata', metaResp.status);
+    const meta = JSON.parse(metaResp.text);
+    version = meta?.latestVersion?.version;
+  } catch (error) {
+    throw unreachable(error);
   }
-  const meta = await metaResp.json();
-  const version = meta?.latestVersion?.version;
   if (!version) {
-    throw new Error('ClawHub metadata has no latestVersion.version');
+    throw new SkillSourceUnavailableError('ClawHub has no published version', true);
   }
 
   // Step 2 — download zip.
-  const dlResp = await fetch(`${CLAWHUB_BASE}/api/v1/download?slug=${safeSlug}&version=${encodeURIComponent(version)}`);
-  if (!dlResp.ok) {
-    throw new Error(`ClawHub download failed (${dlResp.status})`);
+  let buf: Buffer;
+  try {
+    const dlResp = await fetchBytesFromAllowedHost(
+      `${CLAWHUB_BASE}/api/v1/download?slug=${safeSlug}&version=${encodeURIComponent(version)}`,
+      { allowedOrigins: CLAWHUB_ORIGINS, maxBytes: CLAWHUB_MAX_ZIP_BYTES },
+    );
+    if (!dlResp.ok) throw unavailableForStatus('ClawHub download', dlResp.status);
+    buf = dlResp.bytes;
+  } catch (error) {
+    throw unreachable(error);
   }
-  const ab = await dlResp.arrayBuffer();
-  const buf = Buffer.from(ab);
 
   // Step 3 — unzip. adm-zip is sync but bundles are tiny (<<100KB typical).
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const AdmZip = require('adm-zip');
-  const zip = new AdmZip(buf);
-  const entries = zip.getEntries();
+  let entries;
+  let zip;
+  try {
+    zip = new AdmZip(buf);
+    entries = zip.getEntries();
+  } catch (error) {
+    throw new SkillSourceUnavailableError(`ClawHub bundle is not a zip: ${(error as Error).message}`, false);
+  }
 
   let content = '';
   const extraFiles: SkillFile[] = [];
@@ -385,7 +453,7 @@ export const fetchSkillBundleFromClawHub = async (
     totalBytes += e.header.size;
   }
   if (!content) {
-    throw new Error('ClawHub zip had no SKILL.md');
+    throw new SkillSourceUnavailableError('ClawHub bundle has no SKILL.md', true);
   }
   return {
     content,
@@ -397,13 +465,30 @@ export const fetchSkillBundleFromClawHub = async (
 
 export const fetchSkillContentFromSource = async (sourceUrl: string): Promise<FetchSkillContentResult> => {
   if (!sourceUrl) return { content: '', resolvedUrl: sourceUrl };
+  // github.com/openclaw/skills is gone (404 since May 2026), and almost the
+  // whole built-in catalog still points at it. The skills that are still
+  // published live on ClawHub under the same owner and slug; the rest are a
+  // `missing` answer, not a server error (#2189).
+  const legacy = parseLegacyOpenclawSkillsUrl(sourceUrl);
+  if (legacy) {
+    const bundle = await fetchSkillBundleFromClawHub(legacy.owner, legacy.slug);
+    return { content: bundle.content, resolvedUrl: bundle.resolvedUrl, extraFiles: bundle.extraFiles };
+  }
   const resolvedUrl = toRawGitHubUrl(sourceUrl);
-  const response = await fetchTextFromAllowedHost(resolvedUrl, {
-    allowedOrigins: SKILL_SOURCE_ORIGINS,
-    maxBytes: SKILL_FILE_MAX_BYTES,
-  });
+  let response;
+  try {
+    response = await fetchTextFromAllowedHost(resolvedUrl, {
+      allowedOrigins: SKILL_SOURCE_ORIGINS,
+      maxBytes: SKILL_FILE_MAX_BYTES,
+    });
+  } catch (error) {
+    // A refusal stays a refusal (the routes answer 400). Anything else — the
+    // deadline, the size cap, the network — is the source being unreadable.
+    if (isOutboundUrlRefused(error)) throw error;
+    throw new SkillSourceUnavailableError((error as Error).message, false);
+  }
   if (!response.ok) {
-    throw new Error(`Failed to fetch skill content (${response.status}).`);
+    throw unavailableForStatus('skill source', response.status);
   }
   return { content: response.text, resolvedUrl };
 };
@@ -414,6 +499,7 @@ export default {
   fetchSkillDirectoryFiles,
   fetchSkillBundleFromClawHub,
   parseLegacyOpenclawSkillsUrl,
+  isSkillSourceUnavailable,
   getLastRefreshedAt,
   invalidateCache,
 };

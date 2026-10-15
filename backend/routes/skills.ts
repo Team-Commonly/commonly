@@ -28,6 +28,16 @@ const { isOutboundUrlRefused } = require('../services/outboundUrlGuard');
 // The reply to a source URL the fetch guard refused. Fixed text: the refusal's
 // own message names the host it refused and goes to the server log only.
 const SOURCE_URL_REFUSED = 'Skill source URL must be an https link on github.com or raw.githubusercontent.com.';
+// A skill's source not having it is not our server failing (#2189): a 404 when
+// the source answered without the skill, a 502 when it could not be read.
+const SOURCE_MISSING = 'This skill is no longer published at its source.';
+const SOURCE_UNREACHABLE = "Couldn't reach this skill's source. Try again in a few minutes.";
+const sourceUnavailableReply = (res: Res, error: { missing: boolean; message: string }, what: string) => {
+  console.warn(`[skills] ${what} source unavailable:`, error.message);
+  return error.missing
+    ? res.status(404).json({ error: SOURCE_MISSING, code: 'skill_source_missing' })
+    : res.status(502).json({ error: SOURCE_UNREACHABLE, code: 'skill_source_unreachable' });
+};
 
 interface AuthReq {
   user?: { id: string };
@@ -229,6 +239,9 @@ router.get('/requirements', auth, async (req: AuthReq, res: Res) => {
       console.warn('[skills] Refused requirements source URL:', (error as Error).message);
       return res.status(400).json({ error: SOURCE_URL_REFUSED });
     }
+    if (SkillsCatalogService.isSkillSourceUnavailable(error)) {
+      return sourceUnavailableReply(res, error as { missing: boolean; message: string }, 'requirements');
+    }
     console.error('Error fetching skill requirements:', error);
     return res.status(500).json({ error: 'Failed to fetch skill requirements' });
   }
@@ -295,12 +308,20 @@ router.post('/import', auth, async (req: AuthReq, res: Res) => {
     let skillContent = content;
     let resolvedSourceUrl = sourceUrl;
     let extraFiles: unknown[] = [];
+    let filesFromSource: unknown[] | undefined;
     if (!skillContent && sourceUrl) {
-      const fetched = await SkillsCatalogService.fetchSkillContentFromSource(sourceUrl) as { content?: string; resolvedUrl?: string };
+      const fetched = await SkillsCatalogService.fetchSkillContentFromSource(sourceUrl) as {
+        content?: string; resolvedUrl?: string; extraFiles?: unknown[];
+      };
       skillContent = fetched.content;
       resolvedSourceUrl = fetched.resolvedUrl || sourceUrl;
+      filesFromSource = fetched.extraFiles;
     }
-    if (resolvedSourceUrl) {
+    if (filesFromSource) {
+      // The source sent the skill's other files with it (a ClawHub bundle).
+      extraFiles = filesFromSource;
+    } else if (resolvedSourceUrl && !SkillsCatalogService.parseLegacyOpenclawSkillsUrl(resolvedSourceUrl)) {
+      // The legacy openclaw repository is gone (#2189), so it is never listed.
       extraFiles = await SkillsCatalogService.fetchSkillDirectoryFiles(resolvedSourceUrl, { maxFiles: 60, maxBytes: 300_000 });
     }
     if (!skillContent) return res.status(400).json({ error: 'Skill content is required (provide content or a SKILL.md source URL).' });
@@ -314,6 +335,9 @@ router.post('/import', auth, async (req: AuthReq, res: Res) => {
     if (isOutboundUrlRefused(error)) {
       console.warn('[skills] Refused import source URL:', e.message);
       return res.status(400).json({ error: SOURCE_URL_REFUSED });
+    }
+    if (SkillsCatalogService.isSkillSourceUnavailable(error)) {
+      return sourceUnavailableReply(res, error as { missing: boolean; message: string }, 'import');
     }
     console.error('Error importing skill:', error);
     return res.status(e.code === 'POD_ACCESS_DENIED' ? 403 : 500).json({ error: e.message || 'Failed to import skill' });

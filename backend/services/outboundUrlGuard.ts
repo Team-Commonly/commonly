@@ -90,8 +90,8 @@ const toAllowedRequest = (raw: string, allowedOrigins: ReadonlyMap<string, strin
   return { url, target: `${origin}${url.pathname.slice(1)}${url.search}` };
 };
 
-const readTextCapped = async (response: Response, maxBytes: number): Promise<string> => {
-  if (!response.body) return '';
+const readBytesCapped = async (response: Response, maxBytes: number): Promise<Buffer> => {
+  if (!response.body) return Buffer.alloc(0);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;
@@ -105,7 +105,7 @@ const readTextCapped = async (response: Response, maxBytes: number): Promise<str
     }
     chunks.push(value);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 };
 
 interface AllowedHostFetchOptions {
@@ -125,6 +125,40 @@ interface AllowedHostFetchResult {
   text: string;
 }
 
+interface AllowedHostBytesResult {
+  ok: boolean;
+  status: number;
+  /** The body, read up to `maxBytes`. Empty when `ok` is false. */
+  bytes: Buffer;
+}
+
+/**
+ * The one loop both readers share: every hop is rebuilt on the caller's
+ * constant origin, redirects are followed by hand and re-checked, one deadline
+ * spans all of it, and the final body is read against `maxBytes`.
+ */
+const getFromAllowedHost = async (
+  rawUrl: string,
+  { allowedOrigins, maxBytes, headers }: AllowedHostFetchOptions,
+): Promise<AllowedHostBytesResult> => {
+  const signal = AbortSignal.timeout(OUTBOUND_TIMEOUT_MS);
+  let request = toAllowedRequest(rawUrl, allowedOrigins);
+  for (let redirects = 0; ; redirects += 1) {
+    const response = await fetch(request.target, { headers, redirect: 'manual', signal });
+    const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
+    if (location === null) {
+      if (!response.ok) {
+        await response.body?.cancel();
+        return { ok: false, status: response.status, bytes: Buffer.alloc(0) };
+      }
+      return { ok: true, status: response.status, bytes: await readBytesCapped(response, maxBytes) };
+    }
+    await response.body?.cancel();
+    if (redirects >= MAX_REDIRECTS) throw new OutboundUrlRefusedError(`more than ${MAX_REDIRECTS} redirects`);
+    request = toAllowedRequest(location, allowedOrigins, request.url);
+  }
+};
+
 /**
  * GET `rawUrl` as text, provided it and every redirect it produces stay on the
  * hosts in `allowedOrigins`. Throws a refusal (see `isOutboundUrlRefused`)
@@ -134,25 +168,20 @@ interface AllowedHostFetchResult {
  */
 export const fetchTextFromAllowedHost = async (
   rawUrl: string,
-  { allowedOrigins, maxBytes, headers }: AllowedHostFetchOptions,
+  options: AllowedHostFetchOptions,
 ): Promise<AllowedHostFetchResult> => {
-  const signal = AbortSignal.timeout(OUTBOUND_TIMEOUT_MS);
-  let request = toAllowedRequest(rawUrl, allowedOrigins);
-  for (let redirects = 0; ; redirects += 1) {
-    const response = await fetch(request.target, { headers, redirect: 'manual', signal });
-    const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
-    if (location === null) {
-      if (!response.ok) {
-        await response.body?.cancel();
-        return { ok: false, status: response.status, text: '' };
-      }
-      return { ok: true, status: response.status, text: await readTextCapped(response, maxBytes) };
-    }
-    await response.body?.cancel();
-    if (redirects >= MAX_REDIRECTS) throw new OutboundUrlRefusedError(`more than ${MAX_REDIRECTS} redirects`);
-    request = toAllowedRequest(location, allowedOrigins, request.url);
-  }
+  const { ok, status, bytes } = await getFromAllowedHost(rawUrl, options);
+  return { ok, status, text: bytes.toString('utf8') };
 };
+
+/**
+ * `fetchTextFromAllowedHost` for a binary body (a zip): the same hosts,
+ * redirects, deadline and cap, with the body returned as bytes.
+ */
+export const fetchBytesFromAllowedHost = async (
+  rawUrl: string,
+  options: AllowedHostFetchOptions,
+): Promise<AllowedHostBytesResult> => getFromAllowedHost(rawUrl, options);
 
 // ── Open destinations ───────────────────────────────────────────────────────
 
