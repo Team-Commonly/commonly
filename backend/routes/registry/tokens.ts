@@ -218,11 +218,13 @@ const runsOnHostedNativeEngine = async (agentUser: any, installation: any): Prom
   if (!pairs.length) return false;
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { AgentInstallation } = require('../../models/AgentRegistry');
+  // Case-insensitive: a type saved in another spelling before the config
+  // write guard (#2229) must not turn this refusal off.
   return Boolean(await AgentInstallation.exists({
     $or: pairs,
     status: 'active',
-    'config.runtime.runtimeType': 'hosted',
-    'config.hosted.engine': 'native',
+    'config.runtime.runtimeType': { $regex: /^\s*hosted\s*$/i },
+    'config.hosted.engine': { $regex: /^\s*native\s*$/i },
   }));
 };
 

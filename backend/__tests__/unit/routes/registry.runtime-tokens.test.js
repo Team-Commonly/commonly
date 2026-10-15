@@ -139,9 +139,12 @@ describe('agent runtime tokens', () => {
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('hosted_native_no_token');
     expect(agentUser.agentRuntimeTokens).toHaveLength(0);
-    expect(AgentInstallation.exists).toHaveBeenCalledWith(expect.objectContaining({
-      status: 'active', 'config.runtime.runtimeType': 'hosted', 'config.hosted.engine': 'native',
-    }));
+    const [query] = AgentInstallation.exists.mock.calls[0];
+    expect(query.status).toBe('active');
+    // Matched in any spelling, so a 'HOSTED' row saved before #2229 still refuses.
+    expect(query['config.runtime.runtimeType'].$regex.test('HOSTED')).toBe(true);
+    expect(query['config.hosted.engine'].$regex.test(' Native ')).toBe(true);
+    expect(query['config.runtime.runtimeType'].$regex.test('webhook')).toBe(false);
   });
 
   it('returns {existing:true} (no token) when agent user already has runtime tokens', async () => {
