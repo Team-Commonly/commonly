@@ -139,7 +139,10 @@ Secret Manager IAM changed.
 
 ### Job failed
 
-A Job or CronJob emitted a Warning event. The nightly database backups are
+A Job or CronJob emitted a Warning event other than `UnexpectedJob`. The
+CronJob controller emits that reason for any Job made with `kubectl create job
+--from=cronjob/...`, and Deploy Dev starts the stranger journey that way on
+every deploy, so it is filtered out. The nightly database backups are
 the Jobs that matter here: see [db-backup-restore.md](db-backup-restore.md). Read the
 failure with `kubectl logs -n commonly-dev job/<name> --all-containers`.
 

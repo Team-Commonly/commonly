@@ -13,8 +13,8 @@
   },
   {
     "name": "job_warning_events",
-    "description": "Kubernetes Warning events on Jobs and CronJobs in commonly-dev (BackoffLimitExceeded, DeadlineExceeded, FailedCreate). The managed kube-state-metrics package exports no Job or CronJob series, so a failed backup is visible only here.",
-    "filter": "logName:\"logs/events\" AND resource.type=\"k8s_cluster\" AND jsonPayload.involvedObject.namespace=\"commonly-dev\" AND jsonPayload.involvedObject.kind=(\"Job\" OR \"CronJob\") AND jsonPayload.type=\"Warning\"",
+    "description": "Kubernetes Warning events on Jobs and CronJobs in commonly-dev (BackoffLimitExceeded, DeadlineExceeded, FailedCreate). The managed kube-state-metrics package exports no Job or CronJob series, so a failed backup is visible only here. UnexpectedJob is excluded: the CronJob controller emits it for every Job made with `kubectl create job --from=cronjob/...`, which Deploy Dev does for the stranger journey on every deploy (5 events paged on 2026-10-15, 13:48Z; no other reason in 7 days).",
+    "filter": "logName:\"logs/events\" AND resource.type=\"k8s_cluster\" AND jsonPayload.involvedObject.namespace=\"commonly-dev\" AND jsonPayload.involvedObject.kind=(\"Job\" OR \"CronJob\") AND jsonPayload.type=\"Warning\" AND NOT jsonPayload.reason=\"UnexpectedJob\"",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   },
   {
