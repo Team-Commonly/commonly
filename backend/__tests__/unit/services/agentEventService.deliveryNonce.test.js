@@ -422,7 +422,7 @@ describe('the native path carries its own delivery nonce', () => {
   test('a native run that outlives the requeue does not terminate its replacement', async () => {
     let settle;
     runAgent.mockImplementation(() => new Promise((resolve) => { settle = resolve; }));
-    jest.spyOn(AgentInstallation, 'findOne').mockReturnValue({
+    const findOne = jest.spyOn(AgentInstallation, 'findOne').mockReturnValue({
       lean: () => Promise.resolve(nativeInstall),
     });
 
@@ -439,6 +439,10 @@ describe('the native path carries its own delivery nonce', () => {
     // Minting is not enough — the settle handler has to CARRY it.
     expect(born.deliveryNonce).toEqual(expect.any(String));
 
+    // By the sweep the agent no longer runs in-process (TASK-264 re-runs the
+    // ones that still do; see the next test), so the requeue hands the event
+    // to an external poller.
+    findOne.mockReturnValue({ lean: () => Promise.resolve(null) });
     await requeue(event._id);
     const replacement = await claim();
     expect(replacement.payload.deliveryId).not.toBe(born.deliveryNonce);
@@ -451,6 +455,110 @@ describe('the native path carries its own delivery nonce', () => {
     const after = await AgentEvent.findById(event._id).lean();
     expect(after.status).toBe('delivered');
     expect(after.deliveryNonce).toBe(replacement.payload.deliveryId);
+  });
+});
+
+// TASK-264: a native turn that died with its process is re-run in-process by
+// the sweep, under a fresh nonce, instead of being requeued to a queue no
+// native agent polls. The dead (or merely slow) run can still not end it.
+describe('the sweep re-runs a stuck in-process event', () => {
+  const { runAgent } = require('../../../services/nativeRuntimeService');
+  const { AgentInstallation } = require('../../../models/AgentRegistry');
+  const AgentRun = require('../../../models/AgentRun');
+  const nativeInstall = {
+    _id: new mongoose.Types.ObjectId(),
+    agentName: AGENT,
+    instanceId: INSTANCE,
+    podId: POD_ID,
+    status: 'active',
+    config: { runtime: { runtimeType: 'native' } },
+  };
+
+  afterEach(() => { jest.restoreAllMocks(); });
+
+  const enqueueStuck = async () => {
+    const settles = [];
+    runAgent.mockImplementation(() => new Promise((resolve) => { settles.push(resolve); }));
+    jest.spyOn(AgentInstallation, 'findOne').mockReturnValue({ lean: () => Promise.resolve(nativeInstall) });
+    const event = await AgentEventService.enqueue({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID, type: 'chat.mention', payload: { text: 'hi' },
+    });
+    const born = await AgentEvent.findById(event._id).lean();
+    return { event, born, settles };
+  };
+
+  test('re-runs it under a fresh nonce, and the dead run cannot end the new delivery', async () => {
+    const { event, born, settles } = await enqueueStuck();
+    await requeue(event._id);
+
+    const rerun = await AgentEvent.findById(event._id).lean();
+    expect(rerun.status).toBe('delivered');
+    expect(rerun.deliveryNonce).toEqual(expect.any(String));
+    expect(rerun.deliveryNonce).not.toBe(born.deliveryNonce);
+    expect(rerun.attempts).toBe(born.attempts + 1);
+    expect(runAgent).toHaveBeenCalledTimes(2);
+
+    settles[0]('done'); // the dead turn's late settle
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect((await AgentEvent.findById(event._id).lean()).status).toBe('delivered');
+
+    settles[1]('done'); // the re-run's settle
+    let status;
+    for (let i = 0; i < 50 && status !== 'acked'; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      // eslint-disable-next-line no-await-in-loop
+      ({ status } = await AgentEvent.findById(event._id).lean());
+    }
+    expect(status).toBe('acked');
+  });
+
+  test('two sweeps racing (two replicas) re-run it once', async () => {
+    const { event } = await enqueueStuck();
+    await AgentEvent.updateOne({ _id: event._id }, { $set: { deliveredAt: new Date(Date.now() - 60 * 60 * 1000) } });
+    const threshold = new Date(Date.now() - 10 * 60 * 1000);
+    const results = await Promise.all([
+      AgentEventService.redispatchStuckInProcess(threshold, 3),
+      AgentEventService.redispatchStuckInProcess(threshold, 3),
+    ]);
+
+    expect(results.reduce((sum, r) => sum + r.redispatched, 0)).toBe(1);
+    expect(runAgent).toHaveBeenCalledTimes(2); // the original turn plus one re-run
+  });
+
+  test('acks instead of answering twice when the run had already succeeded', async () => {
+    const { event } = await enqueueStuck();
+    jest.spyOn(AgentRun, 'exists').mockResolvedValue({ _id: 'run-1' });
+    await requeue(event._id);
+
+    expect((await AgentEvent.findById(event._id).lean()).status).toBe('acked');
+    expect(runAgent).toHaveBeenCalledTimes(1);
+  });
+
+  test('marks a run its process abandoned as interrupted, and leaves live and finished runs alone', async () => {
+    const base = { podId: new mongoose.Types.ObjectId(), agentName: AGENT, instanceId: INSTANCE, trigger: 'mention' };
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const [abandoned, live, finished] = await AgentRun.create([
+      { ...base, status: 'running', startedAt: hourAgo },
+      { ...base, status: 'running', startedAt: new Date() },
+      { ...base, status: 'succeeded', startedAt: hourAgo },
+    ]);
+    const result = await AgentEventService.garbageCollect({ requeueDeliveredMinutes: 10 });
+
+    expect(result.interruptedRuns).toBe(1);
+    expect((await AgentRun.findById(abandoned._id).lean()).status).toBe('interrupted');
+    expect((await AgentRun.findById(live._id).lean()).status).toBe('running');
+    expect((await AgentRun.findById(finished._id).lean()).status).toBe('succeeded');
+  });
+
+  test('leaves an event at the attempt cap to the expiry pass', async () => {
+    const { event } = await enqueueStuck();
+    await AgentEvent.updateOne({ _id: event._id }, { $set: { attempts: 3 } });
+    await requeue(event._id);
+
+    expect((await AgentEvent.findById(event._id).lean()).status).toBe('failed');
+    expect(runAgent).toHaveBeenCalledTimes(1);
   });
 });
 

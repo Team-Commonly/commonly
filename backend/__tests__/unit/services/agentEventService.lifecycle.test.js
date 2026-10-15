@@ -81,6 +81,9 @@ const { postToPublicAddress } = require('../../../services/outboundUrlGuard');
 // Let fire-and-forget promise chains (webhook delivery, native settle) run.
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+// A real-shaped pod id: the in-process routing lookup refuses anything else.
+const POD_P1 = '64b000000000000000000001';
+
 const lastCall = (mockFn) => mockFn.mock.calls[mockFn.mock.calls.length - 1];
 
 describe('attempts is a delivery counter with exactly one writer', () => {
@@ -100,7 +103,7 @@ describe('attempts is a delivery counter with exactly one writer', () => {
     });
     AgentEvent.findOneAndUpdate.mockReturnValue({
       lean: () => Promise.resolve({
-        _id: 'evt-1', agentName: 'pixel', instanceId: 'default', podId: 'p1',
+        _id: 'evt-1', agentName: 'pixel', instanceId: 'default', podId: POD_P1,
         type: 'chat.mention', payload: {}, status: 'delivered', attempts: 1,
       }),
     });
@@ -119,7 +122,7 @@ describe('attempts is a delivery counter with exactly one writer', () => {
 
   test('acknowledge() does NOT increment — an ack is not a delivery', async () => {
     AgentEvent.findOneAndUpdate.mockResolvedValue({
-      _id: 'evt-1', agentName: 'pixel', instanceId: 'default', podId: 'p1',
+      _id: 'evt-1', agentName: 'pixel', instanceId: 'default', podId: POD_P1,
       type: 'chat.mention', payload: {}, status: 'acked', memoryRevisionAtDelivery: 0,
     });
 
@@ -134,7 +137,7 @@ describe('attempts is a delivery counter with exactly one writer', () => {
 
   test('recordFailure() does NOT increment either', async () => {
     AgentEvent.findOneAndUpdate.mockResolvedValue({
-      _id: 'evt-1', agentName: 'pixel', instanceId: 'default', podId: 'p1',
+      _id: 'evt-1', agentName: 'pixel', instanceId: 'default', podId: POD_P1,
       type: 'chat.mention', payload: {}, status: 'failed',
     });
 
@@ -369,7 +372,7 @@ describe('driver paths reach a terminal state', () => {
 
   test('a successful webhook POST terminates as acked, not delivered', async () => {
     AgentEvent.create.mockResolvedValue({
-      _id: 'evt-w', agentName: 'hookbot', instanceId: 'default', podId: 'p1',
+      _id: 'evt-w', agentName: 'hookbot', instanceId: 'default', podId: POD_P1,
       type: 'chat.mention', payload: {}, status: 'pending', attempts: 0,
     });
     AgentInstallation.find.mockReturnValue({
@@ -381,7 +384,7 @@ describe('driver paths reach a terminal state', () => {
     postToPublicAddress.mockResolvedValueOnce({ ok: true, status: 200, text: JSON.stringify({ outcome: 'no_action' }) });
 
     await AgentEventService.enqueue({
-      agentName: 'hookbot', instanceId: 'default', podId: 'p1', type: 'chat.mention', payload: {},
+      agentName: 'hookbot', instanceId: 'default', podId: POD_P1, type: 'chat.mention', payload: {},
     });
     await flush();
 
@@ -402,7 +405,7 @@ describe('driver paths reach a terminal state', () => {
     const httpsSpy = jest.spyOn(https, 'request').mockImplementation(noNetwork);
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     AgentEvent.create.mockResolvedValue({
-      _id: 'evt-r', agentName: 'hookbot', instanceId: 'default', podId: 'p1',
+      _id: 'evt-r', agentName: 'hookbot', instanceId: 'default', podId: POD_P1,
       type: 'chat.mention', payload: {}, status: 'pending', attempts: 0,
     });
     AgentInstallation.find.mockReturnValue({
@@ -413,7 +416,7 @@ describe('driver paths reach a terminal state', () => {
     });
 
     await AgentEventService.enqueue({
-      agentName: 'hookbot', instanceId: 'default', podId: 'p1', type: 'chat.mention', payload: {},
+      agentName: 'hookbot', instanceId: 'default', podId: POD_P1, type: 'chat.mention', payload: {},
     });
     await flush();
 
@@ -435,15 +438,26 @@ describe('driver paths reach a terminal state', () => {
       AgentInstallation.findOne.mockReturnValue({ lean: () => Promise.resolve(nativeInstall) });
       AgentInstallation.find.mockReturnValue({ lean: () => Promise.resolve([]) });
       AgentEvent.create.mockResolvedValue({
-        _id: 'evt-n', agentName: 'clerk', instanceId: 'default', podId: 'p1',
+        _id: 'evt-n', agentName: 'clerk', instanceId: 'default', podId: POD_P1,
         type: 'task.assigned', payload: {}, status: 'delivered', attempts: 1,
       });
       await AgentEventService.enqueue({
-        agentName: 'clerk', instanceId: 'default', podId: 'p1', type: 'task.assigned', payload: {},
+        agentName: 'clerk', instanceId: 'default', podId: POD_P1, type: 'task.assigned', payload: {},
       });
       await flush();
       await flush();
     };
+
+    test('a podId shaped like a query operator is never looked up or run in-process', async () => {
+      AgentInstallation.findOne.mockReturnValue({ lean: () => Promise.resolve(nativeInstall) });
+      AgentEvent.create.mockResolvedValue({ _id: 'evt-x', agentName: 'clerk', instanceId: 'default', type: 'chat.mention', payload: {} });
+      await AgentEventService.enqueue({
+        agentName: 'clerk', instanceId: 'default', podId: { $ne: null }, type: 'chat.mention', payload: {},
+      });
+      await flush();
+      expect(AgentInstallation.findOne).not.toHaveBeenCalled();
+      expect(runAgent).not.toHaveBeenCalled();
+    });
 
     test('creates the event already counted as one delivery', async () => {
       runAgent.mockResolvedValue({ ok: true });
@@ -462,7 +476,7 @@ describe('driver paths reach a terminal state', () => {
     test('a completed run acks — without this the requeue hands it to an external poller', async () => {
       runAgent.mockResolvedValue({ ok: true });
       AgentEvent.findOneAndUpdate.mockResolvedValue({
-        _id: 'evt-n', agentName: 'clerk', instanceId: 'default', podId: 'p1',
+        _id: 'evt-n', agentName: 'clerk', instanceId: 'default', podId: POD_P1,
         type: 'task.assigned', payload: {}, status: 'acked', memoryRevisionAtDelivery: 0,
       });
 
@@ -478,7 +492,7 @@ describe('driver paths reach a terminal state', () => {
       runAgent
         .mockRejectedValue(new Error('model timeout'));
       AgentEvent.findOneAndUpdate.mockResolvedValue({
-        _id: 'evt-n', agentName: 'clerk', instanceId: 'default', podId: 'p1',
+        _id: 'evt-n', agentName: 'clerk', instanceId: 'default', podId: POD_P1,
         type: 'task.assigned', payload: {}, status: 'failed',
       });
 

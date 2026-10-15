@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { Types } from 'mongoose';
 import Task from '../models/Task';
 import { postToPublicAddress } from './outboundUrlGuard';
 
@@ -46,6 +47,13 @@ const TASK_UPDATE_CUE_MAX_CURSOR_AGE_MS = 24 * 60 * 60 * 1000;
 // before this any holder of an agent's token could ack ANY of that agent's
 // events by id, delivered to it or not.
 const mintDeliveryNonce = (): string => crypto.randomBytes(16).toString('hex');
+
+const OBJECT_ID_HEX = /^[a-f\d]{24}$/i;
+
+// TASK-264: how many stuck in-process events one sweep re-runs, and how long a
+// 'queued'/'running' AgentRun may sit before it counts as abandoned.
+const STUCK_REDISPATCH_BATCH = 50;
+const ABANDONED_RUN_MINUTES = 30;
 
 // The migration on acknowledge() runs in two phases, and BOTH are in this
 // build so the compatibility mode has an end rather than an intention.
@@ -153,6 +161,12 @@ interface GarbageCollectResult {
   // state. Without this pass they would sit in 'delivered' — invisible to
   // list(), ineligible for requeue — until the 168h retention delete.
   expiredDelivered?: number;
+  // TASK-264: in-process events whose turn died with the process, re-run
+  // (or acked, when the run had finished and only the ack was lost), and
+  // AgentRuns left 'queued'/'running' by a dead turn, marked 'interrupted'.
+  redispatchedInProcess?: number;
+  ackedInProcess?: number;
+  interruptedRuns?: number;
 }
 
 interface SessionSizeEntry {
@@ -728,6 +742,32 @@ class AgentEventService {
     let requeuedDelivered = 0;
     let expiredDelivered = 0;
     const attemptCap = Math.max(requeueMaxAttempts, 1);
+
+    // TASK-264: an in-process (native) turn that died with its process — a
+    // deploy, a crash — leaves its event 'delivered' with no ack. The requeue
+    // below would hand it to 'pending', which no native agent polls, so the
+    // person would never get an answer. Re-run those first, through the path
+    // enqueue uses; a re-run refreshes deliveredAt, so the requeue skips it.
+    // Its own try: a failure here must not cost the requeue its pass.
+    let redispatchedInProcess = 0;
+    let ackedInProcess = 0;
+    let interruptedRuns = 0;
+    try {
+      ({ redispatched: redispatchedInProcess, acked: ackedInProcess } = await this.redispatchStuckInProcess(
+        requeueThreshold,
+        attemptCap,
+      ));
+      interruptedRuns = await this.interruptAbandonedRuns(new Date(now - ABANDONED_RUN_MINUTES * 60 * 1000));
+      if (redispatchedInProcess || ackedInProcess || interruptedRuns) {
+        console.log(
+          `[agent-event] in-process restart sweep: re-ran ${redispatchedInProcess}, acked ${ackedInProcess}, `
+          + `marked ${interruptedRuns} abandoned runs interrupted`,
+        );
+      }
+    } catch (err: unknown) {
+      console.warn('[agent-event] in-process restart sweep failed:', (err as Error).message);
+    }
+
     try {
       const requeueResult = await AgentEvent.updateMany(
         {
@@ -837,7 +877,93 @@ class AgentEventService {
       requeuedDelivered,
       requeueDeliveredMinutes: Math.max(requeueDeliveredMinutes, 1),
       expiredDelivered,
+      redispatchedInProcess,
+      ackedInProcess,
+      interruptedRuns,
     };
+  }
+
+  /**
+   * TASK-264. Re-runs in-process events whose turn died with the process.
+   * Each is claimed by swapping its delivery nonce, so two sweeps (two
+   * replicas, or a sweep racing a late settle) cannot both run it, and the
+   * claim counts as a delivery, so the requeue cap still bounds a poison
+   * event. An event whose run already succeeded and only lost its ack is
+   * acked, not answered twice. Either way the dead turn's AgentRun, if it was
+   * left 'queued' or 'running', is marked 'interrupted'.
+   */
+  static async redispatchStuckInProcess(
+    threshold: Date,
+    attemptCap: number,
+  ): Promise<{ redispatched: number; acked: number }> {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentRun = require('../models/AgentRun');
+    const stuck = await AgentEvent.find({
+      status: 'delivered',
+      deliveredAt: { $lt: threshold },
+      $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }],
+    }).sort({ deliveredAt: 1 }).limit(STUCK_REDISPATCH_BATCH).lean() as EventDoc[];
+    let redispatched = 0;
+    let acked = 0;
+    for (const stale of stuck) {
+      const agentName = String(stale.agentName || '');
+      const instanceId = String(stale.instanceId || 'default');
+      // eslint-disable-next-line no-await-in-loop -- one lookup per stuck event; the set is the crashed turns only
+      const installation = await this.resolveInProcessInstallation(agentName, instanceId, stale.podId)
+        .catch(() => null);
+      // Not in-process: an external poller's event, which the requeue handles.
+      if (!installation) continue;
+      const runKey = { podId: stale.podId, agentName, instanceId, triggerEventId: stale._id };
+      // eslint-disable-next-line no-await-in-loop
+      const finished = await AgentRun.exists({ ...runKey, status: 'succeeded' });
+      const deliveryNonce = mintDeliveryNonce();
+      // eslint-disable-next-line no-await-in-loop
+      const claimed = await AgentEvent.findOneAndUpdate(
+        { _id: stale._id, status: 'delivered', deliveryNonce: stale.deliveryNonce ?? null },
+        { $set: { deliveredAt: new Date(), deliveryNonce }, $inc: { attempts: 1 } },
+        { new: true },
+      ) as EventDoc | null;
+      if (!claimed) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await AgentRun.updateMany(
+        { ...runKey, status: { $in: ['queued', 'running'] } },
+        { $set: { status: 'interrupted', completedAt: new Date() } },
+      );
+      if (finished) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.acknowledge(
+          String(stale._id),
+          agentName,
+          instanceId,
+          { outcome: 'acknowledged', reason: 'native-runtime-completed' },
+          deliveryNonce,
+          'native',
+        ).catch((ackErr: Error) => {
+          console.warn('[native-runtime] restart-sweep ack failed:', ackErr?.message || ackErr);
+        });
+        acked += 1;
+        continue;
+      }
+      this.dispatchInProcess(claimed, installation, agentName, instanceId, String(claimed.type || stale.type || ''));
+      redispatched += 1;
+    }
+    return { redispatched, acked };
+  }
+
+  /**
+   * AgentRuns still 'queued' or 'running' long after any turn could have
+   * ended (a native turn is bounded at about two minutes) belong to a turn
+   * whose process died. Marking them 'interrupted' keeps run history honest.
+   * The daily caps count runs by start time, so this changes no budget.
+   */
+  static async interruptAbandonedRuns(startedBefore: Date): Promise<number> {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentRun = require('../models/AgentRun');
+    const result = await AgentRun.updateMany(
+      { status: { $in: ['queued', 'running'] }, startedAt: { $lt: startedBefore } },
+      { $set: { status: 'interrupted', completedAt: new Date() } },
+    ) as { modifiedCount?: number };
+    return result?.modifiedCount || 0;
   }
 
   static hasIntegrationReadScope(installation: InstallationDoc): boolean {
@@ -1007,6 +1133,132 @@ class AgentEventService {
     }
   }
 
+  /**
+   * The installation an event for (agentName, instanceId, podId) runs on
+   * in-process, or null when it belongs to an external poller. One decision,
+   * shared by enqueue and the restart sweep (TASK-264), so the two cannot
+   * disagree about which events the native runtime owns.
+   */
+  static async resolveInProcessInstallation(
+    agentName: string,
+    instanceId: string,
+    podId: EnqueueOptions['podId'],
+  ): Promise<InstallationDoc | null> {
+    // Plain strings and a validated id, never a caller-shaped value: a podId of
+    // `{ $ne: null }` would otherwise match some other pod's installation.
+    const podKey = String(podId ?? '');
+    if (typeof agentName !== 'string' || typeof instanceId !== 'string' || !OBJECT_ID_HEX.test(podKey)) {
+      return null;
+    }
+    const installationDoc = await AgentInstallation.findOne({
+      agentName: agentName.toLowerCase(),
+      instanceId,
+      podId: new Types.ObjectId(podKey),
+      status: 'active',
+    }).lean() as InstallationDoc | null;
+    if (!installationDoc) return null;
+    let installationRuntimeCfg = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
+    if (!installationRuntimeCfg.runtimeType) {
+      // A projection written without its runtime (agent-room installs
+      // before 2026-09-03 did this) must still route like the agent it
+      // projects, or the wake parks in the external queue forever.
+      const sibling = await AgentInstallation.findOne({
+        agentName: agentName.toLowerCase(),
+        instanceId,
+        status: 'active',
+        'config.runtime.runtimeType': { $exists: true },
+      }).sort({ createdAt: -1 }).lean() as InstallationDoc | null;
+      const siblingCfg = (sibling && normalizeConfig(sibling.config)) || null;
+      const siblingRuntime = siblingCfg?.runtime as Record<string, unknown> | undefined;
+      if (siblingRuntime?.runtimeType) {
+        // Inherit everything the native runtime reads (runtime, model,
+        // systemPrompt, tools, budgets), keeping the projection's own keys
+        // on top. A room install written before #1524/#1527 has only
+        // {heartbeat, autoJoinSource}; runtime alone made it route, but
+        // the run then fell to the default model with no system prompt.
+        const own = normalizeConfig(installationDoc.config) || {};
+        const { heartbeat: _h, autoJoinSource: _a, ...inheritable } = siblingCfg as Record<string, unknown>;
+        installationRuntimeCfg = siblingRuntime;
+        installationDoc.config = { ...inheritable, ...own, runtime: siblingRuntime } as InstallationDoc['config'];
+      }
+    }
+    const installationRuntimeType = String(installationRuntimeCfg.runtimeType || '').toLowerCase();
+    return installationRuntimeType === 'native' ? installationDoc : null;
+  }
+
+  /**
+   * Run a claimed in-process event and settle it on the outcome: success acks,
+   * failure records. Fire-and-forget, so neither enqueue nor the restart sweep
+   * (TASK-264) ever blocks on a turn.
+   */
+  static dispatchInProcess(
+    event: EventDoc,
+    nativeInstallation: InstallationDoc,
+    agentName: string,
+    instanceId: string,
+    type: string,
+  ): void {
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const { runAgent } = require('./nativeRuntimeService');
+      const eventIdStr = String((event._id as { toString?: () => string })?.toString?.() || '');
+      // D6: the native path claims at creation, so THIS is its delivery
+      // nonce — and the settle handlers below are its ack. Without carrying
+      // it, a native run that outlives the requeue threshold settles
+      // nonce-less and terminates whatever replacement has since claimed the
+      // event: the D6 race, on the one path that never polls.
+      const nativeDeliveryId = event.deliveryNonce || null;
+      // Fire-and-forget — callers of enqueue() must never block on the
+      // loop. Errors are logged but never rethrown.
+      // Settle the event on the run's actual outcome. nativeRuntimeService
+      // contains no ack or recordFailure call of its own, so before this the
+      // native lifecycle had no terminal state at all: every native event
+      // stayed 'delivered' forever and was structurally unackable. Doing it
+      // here rather than inside runAgent keeps the terminal transition next
+      // to the non-terminal state that created it.
+      Promise.resolve(runAgent(nativeInstallation, {
+        type,
+        eventId: eventIdStr,
+        payload: event.payload,
+      // Two-argument .then, deliberately, NOT .then().catch(): a chained
+      // .catch would also catch a rejection thrown by the success handler,
+      // so a failing acknowledge() would fall through and mark a run that
+      // actually succeeded as 'failed'. The rejection handler here is scoped
+      // to runAgent alone. Both terminal calls swallow their own errors so
+      // this stays fire-and-forget for the caller.
+      })).then(
+        () => this.acknowledge(
+          eventIdStr,
+          agentName,
+          instanceId,
+          { outcome: 'acknowledged', reason: 'native-runtime-completed' },
+          nativeDeliveryId,
+          'native',
+        ).catch((ackErr: Error) => {
+          console.warn('[native-runtime] ack after successful run failed:', ackErr?.message || ackErr);
+        }),
+        (err: Error) => {
+          console.error('[native-runtime] runAgent failed:', err?.message || err);
+          // Terminal on failure too — a native event that errored must not
+          // be left for the requeue to hand to an external poller that
+          // cannot run it.
+          return this.recordFailure(
+            eventIdStr,
+            agentName,
+            instanceId,
+            `native runtime error: ${err?.message || String(err)}`,
+            nativeDeliveryId,
+          ).catch(() => undefined);
+        },
+      );
+    } catch (dispatchErr) {
+      console.warn(
+        '[native-runtime] dispatch error:',
+        (dispatchErr as Error).message,
+      );
+    }
+  }
+
   static async enqueue({
     agentName, podId, type, payload = {}, instanceId = 'default',
   }: EnqueueOptions): Promise<EventDoc> {
@@ -1037,53 +1289,16 @@ class AgentEventService {
     // installations skip the external event queue entirely and run the agent
     // loop in-process instead. Non-native installations continue to land in
     // the pending queue exactly as before.
-    let routedToNative = false;
     let nativeInstallation: InstallationDoc | null = null;
     try {
-      const installationDoc = await AgentInstallation.findOne({
-        agentName: agentName.toLowerCase(),
-        instanceId,
-        podId,
-        status: 'active',
-      }).lean() as InstallationDoc | null;
-      if (installationDoc) {
-        let installationRuntimeCfg = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
-        if (!installationRuntimeCfg.runtimeType) {
-          // A projection written without its runtime (agent-room installs
-          // before 2026-09-03 did this) must still route like the agent it
-          // projects, or the wake parks in the external queue forever.
-          const sibling = await AgentInstallation.findOne({
-            agentName: agentName.toLowerCase(),
-            instanceId,
-            status: 'active',
-            'config.runtime.runtimeType': { $exists: true },
-          }).sort({ createdAt: -1 }).lean() as InstallationDoc | null;
-          const siblingCfg = (sibling && normalizeConfig(sibling.config)) || null;
-          const siblingRuntime = siblingCfg?.runtime as Record<string, unknown> | undefined;
-          if (siblingRuntime?.runtimeType) {
-            // Inherit everything the native runtime reads (runtime, model,
-            // systemPrompt, tools, budgets), keeping the projection's own keys
-            // on top. A room install written before #1524/#1527 has only
-            // {heartbeat, autoJoinSource}; runtime alone made it route, but
-            // the run then fell to the default model with no system prompt.
-            const own = normalizeConfig(installationDoc.config) || {};
-            const { heartbeat: _h, autoJoinSource: _a, ...inheritable } = siblingCfg as Record<string, unknown>;
-            installationRuntimeCfg = siblingRuntime;
-            installationDoc.config = { ...inheritable, ...own, runtime: siblingRuntime } as InstallationDoc['config'];
-          }
-        }
-        const installationRuntimeType = String(installationRuntimeCfg.runtimeType || '').toLowerCase();
-        if (installationRuntimeType === 'native') {
-          routedToNative = true;
-          nativeInstallation = installationDoc;
-        }
-      }
+      nativeInstallation = await this.resolveInProcessInstallation(agentName, instanceId, podId);
     } catch (lookupErr) {
       console.warn(
         '[native-runtime] routing lookup failed, falling back to external queue:',
         (lookupErr as Error).message,
       );
     }
+    const routedToNative = Boolean(nativeInstallation);
 
     const event = await AgentEvent.create({
       agentName: agentName.toLowerCase(),
@@ -1114,65 +1329,7 @@ class AgentEventService {
     }) as EventDoc;
 
     if (routedToNative && nativeInstallation) {
-      try {
-        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-        const { runAgent } = require('./nativeRuntimeService');
-        const eventIdStr = String((event._id as { toString?: () => string })?.toString?.() || '');
-        // D6: the native path claims at creation, so THIS is its delivery
-        // nonce — and the settle handlers below are its ack. Without carrying
-        // it, a native run that outlives the requeue threshold settles
-        // nonce-less and terminates whatever replacement has since claimed the
-        // event: the D6 race, on the one path that never polls.
-        const nativeDeliveryId = event.deliveryNonce || null;
-        // Fire-and-forget — callers of enqueue() must never block on the
-        // loop. Errors are logged but never rethrown.
-        // Settle the event on the run's actual outcome. nativeRuntimeService
-        // contains no ack or recordFailure call of its own, so before this the
-        // native lifecycle had no terminal state at all: every native event
-        // stayed 'delivered' forever and was structurally unackable. Doing it
-        // here rather than inside runAgent keeps the terminal transition next
-        // to the non-terminal state that created it.
-        Promise.resolve(runAgent(nativeInstallation, {
-          type,
-          eventId: eventIdStr,
-          payload: event.payload,
-        // Two-argument .then, deliberately, NOT .then().catch(): a chained
-        // .catch would also catch a rejection thrown by the success handler,
-        // so a failing acknowledge() would fall through and mark a run that
-        // actually succeeded as 'failed'. The rejection handler here is scoped
-        // to runAgent alone. Both terminal calls swallow their own errors so
-        // this stays fire-and-forget for the caller.
-        })).then(
-          () => this.acknowledge(
-            eventIdStr,
-            agentName,
-            instanceId,
-            { outcome: 'acknowledged', reason: 'native-runtime-completed' },
-            nativeDeliveryId,
-            'native',
-          ).catch((ackErr: Error) => {
-            console.warn('[native-runtime] ack after successful run failed:', ackErr?.message || ackErr);
-          }),
-          (err: Error) => {
-            console.error('[native-runtime] runAgent failed:', err?.message || err);
-            // Terminal on failure too — a native event that errored must not
-            // be left for the requeue to hand to an external poller that
-            // cannot run it.
-            return this.recordFailure(
-              eventIdStr,
-              agentName,
-              instanceId,
-              `native runtime error: ${err?.message || String(err)}`,
-              nativeDeliveryId,
-            ).catch(() => undefined);
-          },
-        );
-      } catch (dispatchErr) {
-        console.warn(
-          '[native-runtime] dispatch error:',
-          (dispatchErr as Error).message,
-        );
-      }
+      this.dispatchInProcess(event, nativeInstallation, agentName, instanceId, type);
     }
 
     this.logEventLifecycle('enqueued', {
