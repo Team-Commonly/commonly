@@ -28,8 +28,8 @@ jest.mock('../../../config/socket', () => ({
 jest.mock('../../../services/threadRootResolver', () => ({
   resolveThreadRoot: jest.fn(),
 }));
-jest.mock('../../../services/onboardingMarks', () => ({ markPodOpened: jest.fn() }));
-const { markPodOpened } = require('../../../services/onboardingMarks');
+jest.mock('../../../services/onboardingMarks', () => ({ markPodOpened: jest.fn(), markStartPicked: jest.fn() }));
+const { markPodOpened, markStartPicked } = require('../../../services/onboardingMarks');
 
 const socketConfig = require('../../../config/socket');
 const { resolveThreadRoot } = require('../../../services/threadRootResolver');
@@ -199,6 +199,20 @@ describe('messageController', () => {
       });
       expect(MongoMessage.create).not.toHaveBeenCalled();
       expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
+    });
+
+    it('hands every sent message to the start-pick mark with the sender and the pod', async () => {
+      const pod = { members: ['u1'], type: 'chat', createdBy: 'u1' };
+      Pod.findById.mockResolvedValue(pod);
+      PGMessage.create.mockResolvedValueOnce({ id: 'pg-1', content: 'Start a pod for a project' });
+      PGMessage.findById.mockResolvedValueOnce({ id: 'pg-1', content: 'Start a pod for a project' });
+      const req = { params: { podId: 'p1' }, body: { content: 'Start a pod for a project' }, user: { id: 'u1' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.createMessage(req, res);
+
+      expect(res.json).toHaveBeenCalled();
+      expect(markStartPicked).toHaveBeenCalledWith('u1', pod, 'Start a pod for a project');
     });
 
     it('does not reject or duplicate a reply when PG INSERT succeeded but its post-write read fails', async () => {

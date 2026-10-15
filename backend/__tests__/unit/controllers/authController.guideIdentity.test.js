@@ -109,6 +109,26 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
     installedInTheirName.forEach((name) => expect(SIGNUP_INSTALLED_AGENT_NAMES.has(name)).toBe(true));
   });
 
+  // First session, direction B: the welcome offers the starts as buttons. They
+  // ride the message as a server-composed payload, so the client renders them
+  // from structure and never from Scout's text.
+  test('the welcome carries the starts in its payload, with the copy they sit under', async () => {
+    // eslint-disable-next-line global-require
+    const { SCOUT_STARTS, SCOUT_WELCOME } = require('../../../config/native-agents/scout');
+    await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'User-1');
+
+    const welcome = mockPostMessage.mock.calls[0][0];
+    expect(welcome.content).toBe(SCOUT_WELCOME);
+    expect(welcome.payload).toEqual({
+      kind: 'starts',
+      starts: [
+        { id: 'connect-agent', label: 'Connect an agent I already use' },
+        { id: 'start-pod', label: 'Start a pod for a project' },
+      ],
+    });
+    expect(welcome.payload.starts).toEqual(SCOUT_STARTS.map(({ id, label }) => ({ id, label })));
+  });
+
   test('two users get two distinct guide identities — the memory-envelope fork', async () => {
     await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'aaaa1111');
     await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'bbbb2222');

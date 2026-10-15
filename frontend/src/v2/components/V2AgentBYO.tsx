@@ -666,7 +666,9 @@ const V2AgentBYO: React.FC = () => {
                 onClick={() => setMode('hosted')}
                 data-testid="byo-mode-hosted"
               >
-                <span className="v2-byo__mode-kicker">{t('agentByo.mode.recommended')}</span>
+                {/* A fact, not advice: nothing on this page steers the first
+                    choice (ruled 2026-10-15). */}
+                <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.onCommonly')}</span>
                 <span className="v2-byo__mode-title">{t('agentByo.mode.hosted')}</span>
                 <span className="v2-byo__hint">{t('agentByo.mode.hostedHint', { turns: hosting.caps.turnsPerDay })}</span>
                 <span className="v2-byo__mode-meta">{t('agentByo.mode.hostedMeta')}</span>

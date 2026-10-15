@@ -5,10 +5,10 @@ import {
 } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2FirstRunHero, {
-  FIRST_RUN_DISMISSED_KEY,
   FIRST_RUN_STARTED_KEY,
 } from '../components/V2FirstRunHero';
 import V2Layout from '../components/V2Layout';
+import { requestFirstRunGuide } from '../firstRunGuide';
 
 const mockGet = jest.fn();
 const mockPost = jest.fn();
@@ -110,6 +110,15 @@ const flush = async () => {
   });
 };
 
+// The guide opens only when asked for (Feedback, then Guide). Since direction
+// B (2026-10-15) it never opens on its own: Scout's starts are the first screen.
+const askForGuide = async () => {
+  act(() => {
+    requestFirstRunGuide();
+  });
+  await flush();
+};
+
 describe('V2FirstRunHero', () => {
   const originalVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
 
@@ -134,6 +143,8 @@ describe('V2FirstRunHero', () => {
 
     renderHero();
     await flush();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await askForGuide();
 
     expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' }))
       .toHaveAttribute('aria-modal', 'true');
@@ -155,14 +166,33 @@ describe('V2FirstRunHero', () => {
       podId: 'workspace-1',
     });
     expect(mockNavigate).toHaveBeenCalledWith('/v2/pods/room-1');
-    // Completing writes the same timestamp shape as an explicit skip, so no
-    // path leaves a legacy '1' that a later read would treat as expired.
-    expect(Number(localStorage.getItem(FIRST_RUN_DISMISSED_KEY))).toBeGreaterThan(0);
+    // Completing ends the setup, so the guide does not come back on reload.
+    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBeNull();
+    // And it hands over to the room now: the card is mounted above the route,
+    // so it must close itself rather than sit over the new room on
+    // "Opening…", covering the message box (#2192).
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Opening…')).not.toBeInTheDocument();
+  });
+
+  test('a failed hand-over keeps the card open with its error, so the person can retry (#2192)', async () => {
+    mockGet.mockResolvedValue(connected);
+    mockPost.mockRejectedValueOnce({ response: { data: { message: 'room unavailable' } } });
+    renderHero();
+    await askForGuide();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Say hello' }));
+    await flush();
+
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' })).toBeInTheDocument();
+    expect(screen.getByText('room unavailable')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Say hello' })).toBeEnabled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   test('stops polling after unmount', async () => {
     const view = renderHero();
-    await flush();
+    await askForGuide();
     expect(mockGet).toHaveBeenCalledTimes(1);
 
     view.unmount();
@@ -176,7 +206,7 @@ describe('V2FirstRunHero', () => {
 
   test('pauses polling while the tab is hidden and resumes when visible', async () => {
     renderHero();
-    await flush();
+    await askForGuide();
     expect(mockGet).toHaveBeenCalledTimes(1);
 
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
@@ -206,39 +236,41 @@ describe('V2FirstRunHero', () => {
     });
   });
 
-  test('an explicit recent skip persists and avoids starting the poll', async () => {
-    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(Date.now()));
+  // Direction B (2026-10-15): Scout's welcome offers "Connect an agent I
+  // already use" in the pod, so a modal over it would be a second connect path
+  // on top of the first screen. A person with no agent gets no guide, and no
+  // probe, until they ask for it.
+  test('a person with no agent is not shown the guide on its own, and nothing polls', async () => {
+    mockGet.mockResolvedValue(unissued);
     renderHero();
     await flush();
+    await act(async () => {
+      jest.advanceTimersByTime(9_000);
+      await Promise.resolve();
+    });
 
-    expect(screen.queryByRole('heading', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
-    expect(mockGet).not.toHaveBeenCalledWith('/api/users/me/agent-connection');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalled();
   });
 
-  /*
-   * The guide used to be suppressed forever. These pin the two ways it now
-   * comes back for someone who never connected — the only population the
-   * expiry can reach, since `issued: true` hides it regardless.
-   */
-  test('a skip older than the TTL stops suppressing the guide', async () => {
-    const eightDaysAgo = Date.now() - 8 * 24 * 60 * 60 * 1000;
-    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(eightDaysAgo));
+  test('Skip ends the setup: the guide stays closed after a reload until asked for again', async () => {
+    const { unmount } = renderHero();
+    await askForGuide();
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBeNull();
+
+    unmount();
+    mockGet.mockClear();
     renderHero();
     await flush();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalled();
 
-    expect(await screen.findByRole('dialog', { name: 'Bring your agent into your pod' }))
-      .toBeInTheDocument();
-  });
-
-  test("a legacy '1' flag no longer suppresses forever", async () => {
-    // Written by the version where any stray click set a permanent flag. Those
-    // users are exactly the ones we lost; treat the flag as long expired.
-    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, '1');
-    renderHero();
-    await flush();
-
-    expect(await screen.findByRole('dialog', { name: 'Bring your agent into your pod' }))
-      .toBeInTheDocument();
+    await askForGuide();
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' })).toBeInTheDocument();
   });
 
   test('Escape closes for this view and persists nothing', async () => {
@@ -246,13 +278,14 @@ describe('V2FirstRunHero', () => {
     document.body.appendChild(priorControl);
     priorControl.focus();
     const { unmount } = renderHero();
-    await flush();
+    await askForGuide();
 
     expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' })).toHaveFocus();
     fireEvent.keyDown(document, { key: 'Escape' });
 
     expect(screen.queryByRole('dialog', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
-    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
+    // Closing is not skipping: the setup it started is still in progress.
+    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
     expect(priorControl).toHaveFocus();
     priorControl.remove();
 
@@ -272,13 +305,13 @@ describe('V2FirstRunHero', () => {
    */
   test('a backdrop click closes for this view and the guide returns', async () => {
     const { unmount } = renderHero();
-    await flush();
+    await askForGuide();
 
     const dialog = screen.getByRole('dialog', { name: 'Bring your agent into your pod' });
     fireEvent.mouseDown(dialog.parentElement as HTMLElement);
 
     expect(screen.queryByRole('dialog', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
-    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
+    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
 
     unmount();
     renderHero();
@@ -298,11 +331,10 @@ describe('V2FirstRunHero', () => {
       status: unissued,
       readyControl: 'Open connection setup',
     },
-  ])('reopens for a dismissed $label user and then dismisses normally', async ({
+  ])('opens for a $label user who asks for it, and Skip ends it', async ({
     status,
     readyControl,
   }) => {
-    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(Date.now()));
     mockGet.mockResolvedValue(status);
     renderHero();
     await flush();
@@ -316,7 +348,6 @@ describe('V2FirstRunHero', () => {
 
     expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' }))
       .toBeInTheDocument();
-    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
     expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
     await flush();
     expect(await screen.findByRole(
@@ -326,8 +357,6 @@ describe('V2FirstRunHero', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    // Only the explicit button persists, and it stores when — not a forever bit.
-    expect(Number(localStorage.getItem(FIRST_RUN_DISMISSED_KEY))).toBeGreaterThan(0);
     expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBeNull();
   });
 
@@ -362,7 +391,7 @@ describe('V2Layout first-run placement', () => {
     jest.useRealTimers();
   });
 
-  test('shows onboarding as a shell-level modal when the human owns no installation', async () => {
+  test('a person with no agent sees the pod, not a modal; asking opens the guide as a shell-level modal', async () => {
     render(
       <MemoryRouter initialEntries={['/v2/pods/hq']}>
         <Routes>
@@ -372,6 +401,15 @@ describe('V2Layout first-run placement', () => {
     );
     await flush();
 
+    // First open: the pod itself (Scout's starts live there), no dialog, no probe.
+    await waitFor(() => {
+      expect(screen.getByText('Quiet pod empty state')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/users/me/agent-connection');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guide' }));
+    await flush();
     expect(screen.getByText('Normal pod view')).toBeInTheDocument();
     const dialog = screen.getByRole('dialog', { name: 'Bring your agent into your pod' });
     expect(dialog).toBeInTheDocument();
@@ -384,25 +422,7 @@ describe('V2Layout first-run placement', () => {
     });
   });
 
-  test('keeps the shell unblocked when first-run was already dismissed', async () => {
-    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(Date.now()));
-    render(
-      <MemoryRouter initialEntries={['/v2/pods/hq']}>
-        <Routes>
-          <Route path="/v2/pods/:podId" element={<V2Layout selectionMode="param" />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('Quiet pod empty state')).toBeInTheDocument();
-    });
-    expect(screen.queryByRole('dialog', { name: 'Bring your agent into your pod' })).not.toBeInTheDocument();
-    expect(mockGet).not.toHaveBeenCalledWith('/api/users/me/agent-connection');
-  });
-
-  test('reopens the dismissed guide from the rail and restores onboarding suppression', async () => {
-    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(Date.now()));
+  test('the rail entry opens the guide and starts its setup', async () => {
     render(
       <MemoryRouter initialEntries={['/v2/pods/hq']}>
         <Routes>
@@ -421,7 +441,6 @@ describe('V2Layout first-run placement', () => {
     expect(await screen.findByRole('dialog', { name: 'Bring your agent into your pod' }))
       .toBeInTheDocument();
     expect(screen.queryByText('Quiet pod empty state')).not.toBeInTheDocument();
-    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
     expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
     await waitFor(() => {
       expect(mockGet).toHaveBeenCalledWith('/api/users/me/agent-connection');

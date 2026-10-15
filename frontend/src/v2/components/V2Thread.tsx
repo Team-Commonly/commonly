@@ -333,6 +333,28 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     return buildThreadView(messages, threadState.byRoot, flatReplyIdsRef.current.ids);
   }, [messages, pod?._id, threadState.byRoot]);
 
+  // Scout's starts (first session, direction B, ruled 2026-10-15). A message
+  // whose payload offers starts shows them as buttons until this person has
+  // sent that start after it. Only the viewer's own messages count: a join
+  // row, Scout's follow-ups or another agent posting must not take the offer
+  // away before it is seen, and typing something else leaves it in place, so
+  // "Connect an agent I already use" stays reachable at every width.
+  const viewerId = currentUser?._id || null;
+  const startsByMessageId = useMemo(() => {
+    const byMessage = new Map<string, Array<{ id: string; label: string }>>();
+    if (!viewerId) return byMessage;
+    messages.forEach((message, index) => {
+      const offered = message.payload?.kind === 'starts' ? message.payload.starts : undefined;
+      if (!Array.isArray(offered) || offered.length === 0) return;
+      const sentSince = new Set(messages.slice(index + 1)
+        .filter((later) => later.user_id === viewerId)
+        .map((later) => (later.content || '').trim()));
+      const open = offered.filter((start) => start && start.label && !sentSince.has(start.label));
+      if (open.length > 0) byMessage.set(String(message.id), open);
+    });
+    return byMessage;
+  }, [messages, viewerId]);
+
   // #891 surface 1: agent reachability at the moment of composing a mention.
   // Best-effort — a failed read renders nothing rather than something wrong,
   // and 60s refresh keeps the states honest without hammering the endpoint.
@@ -1262,7 +1284,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     isAgentRoom && awaitingAgentReply && awaitingAgentReply.podId === pod._id,
   );
 
+  // `override` is a start from Scout's welcome: it posts its own text as a
+  // root message and leaves the composer's draft and targets alone.
   const handleSend = async (override?: string) => {
+    const isStart = override !== undefined;
     const text = (override ?? draft).trim();
     if (!text || sending) return;
     const sendPodId = pod?._id;
@@ -1294,8 +1319,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       const created = await sendMessage(
         text,
         'text',
-        replyTarget?.id || undefined,
-        threadTarget?.id || undefined,
+        isStart ? undefined : (replyTarget?.id || undefined),
+        isStart ? undefined : (threadTarget?.id || undefined),
       );
       if (created) {
         rememberSentMessage(sendPodId, created);
@@ -1376,12 +1401,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             setNoAgentsHint({ messageId: created.id });
           }
         }
-        setDraft('');
-        setReplyTarget(null);
-        // Cleared only on SUCCESS, alongside the draft. #1118's rule: a send
-        // failure keeps the draft and its target, so a retry still lands in
-        // the thread the user aimed at.
-        setThreadTarget(null);
+        if (!isStart) {
+          setDraft('');
+          setReplyTarget(null);
+          // Cleared only on SUCCESS, alongside the draft. #1118's rule: a send
+          // failure keeps the draft and its target, so a retry still lands in
+          // the thread the user aimed at.
+          setThreadTarget(null);
+        }
       }
     } finally {
       setSending(false);
@@ -1566,6 +1593,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             onOpenFile={onOpenFile}
             onReply={isReadOnly ? undefined : aimAtMessage}
             onThread={isReadOnly ? undefined : aimAtMessageThread}
+            startsByMessageId={isReadOnly ? undefined : startsByMessageId}
+            onStart={isReadOnly ? undefined : (label) => { void handleSend(label); }}
+            startsDisabled={sending}
             onQuoteNavigate={onQuoteNavigate}
             onDecisionRuled={handleDecisionRuled}
             onAimAtThread={aimAtThread}

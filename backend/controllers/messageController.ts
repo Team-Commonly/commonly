@@ -12,7 +12,7 @@ const PGPod = require('../models/pg/Pod');
 const { deliverMessageToAgents } = require('../services/messageAgentDeliveryService');
 const DMService = require('../services/dmService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { markPodOpened } = require('../services/onboardingMarks');
+const { markPodOpened, markStartPicked } = require('../services/onboardingMarks');
 // eslint-disable-next-line global-require
 const { syncPodFromMongo } = require('../services/pgPodSyncService');
 
@@ -400,6 +400,10 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     } catch (socketErr) {
       console.warn('[messageController] socket emit failed:', (socketErr as Error).message);
     }
+
+    // First-session start picked: write-once, fire-and-forget
+    // (services/onboardingMarks.ts).
+    markStartPicked(userId, pod, messageContent);
 
     res.json(responseMessage);
   } catch (err) {

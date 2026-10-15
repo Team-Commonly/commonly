@@ -192,6 +192,8 @@ export interface IUser extends Document {
    */
   onboarding?: {
     podOpenedAt?: Date;
+    firstStartId?: string;
+    firstStartAt?: Date;
   };
   createdAt: Date;
   // Instance methods
@@ -401,6 +403,8 @@ const userSchema = new Schema<IUser>({
   lastActive: { type: Date, default: Date.now },
   onboarding: {
     podOpenedAt: { type: Date },
+    firstStartId: { type: String },
+    firstStartAt: { type: Date },
   },
   lastDigestSent: { type: Date },
   createdAt: { type: Date, default: Date.now },

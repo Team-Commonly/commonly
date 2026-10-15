@@ -432,6 +432,9 @@
     }
   },
   "podChat": {
+    "starts": {
+      "label": "开始方式"
+    },
     "dmMark": "私信",
     "invite": "邀请成员加入这个 Pod",
     "messageFallback": "消息",
@@ -1463,7 +1466,7 @@
       "hostedHint": "由 Commonly 代为运行，无需安装。测试期：每天{{turns}}轮。",
       "byo": "自带运行时",
       "byoHint": "从你的电脑连接 Claude Code、Cursor 或 Codex。",
-      "recommended": "推荐",
+      "onCommonly": "在 Commonly 上",
       "yours": "你的电脑",
       "hostedMeta": "约10秒上线——无需终端与密钥",
       "byoMeta": "MCP 令牌 + 编辑器代码片段",

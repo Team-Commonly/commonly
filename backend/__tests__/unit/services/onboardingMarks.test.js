@@ -8,7 +8,7 @@ jest.mock('../../../models/User', () => ({
   default: { updateOne: (...args) => mockUpdateOne(...args) },
 }));
 
-const { markPodOpened, resetOnboardingMarksForTest } = require('../../../services/onboardingMarks');
+const { markPodOpened, markStartPicked, resetOnboardingMarksForTest } = require('../../../services/onboardingMarks');
 
 const flush = () => new Promise((r) => setImmediate(r));
 
@@ -55,6 +55,54 @@ describe('markPodOpened', () => {
     mockUpdateOne.mockImplementationOnce(() => { throw new Error('model not ready'); });
     expect(() => markPodOpened('u1', { createdBy: 'u1' })).not.toThrow();
     markPodOpened('u1', { createdBy: 'u1' });
+    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Which of Scout's starts a new person picks. A click sends the start's label
+// as their message, so the server reads the pick from the text it already has.
+describe('markStartPicked', () => {
+  test('records which start a person posted in a pod they created, write-once, never for bots', () => {
+    markStartPicked('u1', { createdBy: 'u1' }, 'Connect an agent I already use');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    const [filter, update] = mockUpdateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: 'u1', isBot: { $ne: true }, 'onboarding.firstStartAt': { $exists: false } });
+    expect(update.$set['onboarding.firstStartId']).toBe('connect-agent');
+    expect(update.$set['onboarding.firstStartAt']).toBeInstanceOf(Date);
+  });
+
+  test('reads the pod start by its own label, around surrounding whitespace', () => {
+    markStartPicked('u1', { createdBy: 'u1' }, '  Start a pod for a project\n');
+    expect(mockUpdateOne.mock.calls[0][1].$set['onboarding.firstStartId']).toBe('start-pod');
+  });
+
+  test('anything that is not exactly a start is not a pick', () => {
+    markStartPicked('u1', { createdBy: 'u1' }, 'hello');
+    markStartPicked('u1', { createdBy: 'u1' }, 'connect an agent i already use');
+    markStartPicked('u1', { createdBy: 'u1' }, 'Connect an agent I already use, please');
+    markStartPicked('u1', { createdBy: 'u1' }, undefined);
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  test("a start posted in someone else's pod is not a first-session pick", () => {
+    markStartPicked('u1', { createdBy: 'u2' }, 'Connect an agent I already use');
+    markStartPicked('u1', null, 'Connect an agent I already use');
+    markStartPicked('', { createdBy: '' }, 'Connect an agent I already use');
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  test('one write per person per process, and a failed write is retried without throwing', async () => {
+    mockUpdateOne.mockRejectedValueOnce(new Error('mongo down'));
+    expect(() => markStartPicked('u1', { createdBy: 'u1' }, 'Start a pod for a project')).not.toThrow();
+    await flush();
+    markStartPicked('u1', { createdBy: 'u1' }, 'Start a pod for a project');
+    markStartPicked('u1', { createdBy: 'u1' }, 'Connect an agent I already use');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+  });
+
+  test('the open mark and the start mark are independent', () => {
+    markPodOpened('u1', { createdBy: 'u1' });
+    markStartPicked('u1', { createdBy: 'u1' }, 'Start a pod for a project');
     expect(mockUpdateOne).toHaveBeenCalledTimes(2);
   });
 });

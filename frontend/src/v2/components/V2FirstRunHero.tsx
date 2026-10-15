@@ -9,7 +9,6 @@ import { FIRST_RUN_REOPEN_EVENT } from '../firstRunGuide';
 const POLL_INTERVAL_MS = 3_000;
 const CHECK_MARK = '✓';
 const EXTERNAL_LINK_MARK = '↗';
-export const FIRST_RUN_DISMISSED_KEY = 'v2.firstRun.dismissed';
 export const FIRST_RUN_STARTED_KEY = 'v2.firstRun.started';
 
 interface ConnectedAgent {
@@ -25,52 +24,12 @@ export interface AgentConnectionStatus {
   connectedAgent: ConnectedAgent | null;
 }
 
-/**
- * How long an explicit "Skip for now" suppresses the guide.
- *
- * It expires rather than persisting forever, and the expiry only matters for
- * someone who never issued a token — `visible` already gates on
- * `status.issued === false`, so a user who did connect never sees it again
- * regardless of this clock. The people it brings back are exactly the ones who
- * skipped and then never managed to connect.
- */
-const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const readFlag = (key: string): boolean => {
   try {
     return localStorage.getItem(key) === '1';
   } catch {
     return false;
-  }
-};
-
-/**
- * Was the guide skipped, and is that skip still in force?
- *
- * Legacy `'1'` values were written by the version where any stray click set a
- * permanent flag. They are treated as long-expired on purpose: those users are
- * indistinguishable from ones who deliberately skipped, and if they connected
- * successfully the `issued` gate keeps the guide hidden anyway. The only people
- * this re-reaches are the ones we lost.
- */
-const readDismissed = (now: number): boolean => {
-  try {
-    const raw = localStorage.getItem(FIRST_RUN_DISMISSED_KEY);
-    if (!raw) return false;
-    if (raw === '1') return false;
-    const at = Number(raw);
-    return Number.isFinite(at) && now - at < DISMISS_TTL_MS;
-  } catch {
-    return false;
-  }
-};
-
-const writeDismissedAt = (at: number | null): void => {
-  try {
-    if (at === null) localStorage.removeItem(FIRST_RUN_DISMISSED_KEY);
-    else localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(at));
-  } catch {
-    // Storage unavailable; this render still behaves, only persistence is lost.
   }
 };
 
@@ -100,7 +59,6 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   const navigate = useNavigate();
   const dialogRef = useRef<HTMLElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const [dismissed, setDismissed] = useState(() => readDismissed(Date.now()));
   // Closing is not skipping. Clicking away or pressing Escape hides the card
   // for this view only and writes nothing — it returns on the next load. Only
   // the explicit Skip button persists anything.
@@ -126,37 +84,38 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
       const next = await api.get<AgentConnectionStatus>('/api/users/me/agent-connection');
       setStatus(next);
       setStatusError(null);
-      if (!next.issued) setEngaged(true);
     } catch {
       setStatusError(t('firstRun.errors.statusUnavailable'));
     }
   }, [api, t]);
 
-  // Reserve the empty-state slot while the ownership probe is unresolved,
-  // but do not flash the full onboarding card for an established user.
-  const shouldProbe = !dismissed && (engaged || status === null || status.issued === false);
-  const visible = !dismissed && !closed && (engaged || status?.issued === false);
+  // The guide opens when someone asks for it (Feedback, then Guide), or when
+  // a setup it started is still in progress (the persisted started latch). It
+  // no longer opens on its own for a person with no agent: since the first
+  // session's direction B (ruled 2026-10-15), Scout's welcome offers "Connect
+  // an agent I already use" in the pod itself, and a modal over that offer
+  // would put a second, heavier connect path on top of the first screen. With
+  // nothing re-offering the guide, a stored skip and its expiry had nothing
+  // left to suppress, so Skip simply ends the setup in progress.
+  const shouldProbe = engaged;
+  const visible = !closed && engaged;
 
   /** Hide for this view only. Writes nothing; returns on the next load. */
   const close = useCallback(() => {
     setClosed(true);
   }, []);
 
-  /** The explicit Skip button: suppress for DISMISS_TTL_MS, then re-offer. */
+  /** The explicit Skip button: ends the setup in progress until asked for again. */
   const skip = useCallback(() => {
-    writeDismissedAt(Date.now());
     writeFlag(FIRST_RUN_STARTED_KEY, false);
-    setDismissed(true);
+    setEngaged(false);
   }, []);
 
   useEffect(() => {
     const reopen = () => {
-      // Clearing dismissal alone does not reopen for an established owner:
-      // issued=true makes the normal first-run gate false. Reusing the started
-      // latch keeps one visibility model for both new and connected users.
-      writeDismissedAt(null);
+      // Asking for the guide starts a setup: the started latch is the one
+      // visibility model for new and connected users alike.
       writeFlag(FIRST_RUN_STARTED_KEY, true);
-      setDismissed(false);
       // Also clear a session close, or asking for the guide from the menu does
       // nothing for anyone who clicked away earlier in the same visit.
       setClosed(false);
@@ -273,11 +232,13 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
       });
       const roomId = data.room?._id;
       if (!roomId) throw new Error('Agent room not returned');
-      // Completion, not a skip — but it writes the same timestamp so no code
-      // path leaves a legacy '1' behind. A user who got here has issued:true,
-      // so the `visible` gate keeps the guide away regardless of the clock.
-      writeDismissedAt(Date.now());
+      // Completion ends the setup, the same way Skip does — in state as well as
+      // storage. The card is mounted above the route, so navigating does not
+      // unmount it: ending only the stored flag left it over the new room,
+      // stuck on "Opening…" and covering the message box (#2192).
       writeFlag(FIRST_RUN_STARTED_KEY, false);
+      setEngaged(false);
+      setOpeningRoom(false);
       navigate(`/v2/pods/${roomId}`);
     } catch (error) {
       const message = (error as { response?: { data?: { message?: string } } })
