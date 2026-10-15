@@ -14,6 +14,7 @@ import { SessionAccountRefusal, loadSessionAccount, sessionRefusal } from './ses
 import { judgeSeatConfinement } from './seatGrantConfinement';
 import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
+import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from './outsiderGrantPodEligibility';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');
@@ -738,6 +739,18 @@ const loadGrantForAgent = async (input: {
   return grant;
 };
 
+const assertOutsiderGrantPodEligible = async (grant: IRoomGrant | Record<string, unknown>): Promise<void> => {
+  const target = (grant as Record<string, unknown>).target as { kind?: string; id?: unknown } | undefined;
+  const refusal = await outsiderGrantPodRefusal(target || {}, (grant as Record<string, unknown>).writeMode);
+  if (refusal) {
+    throw new RoomGrantError(
+      `outsider_grant_${refusal}`,
+      outsiderGrantRefusalMessage(refusal),
+      403,
+    );
+  }
+};
+
 /**
  * The definitions a grant may actually call, for the MCP `tools/list` surface.
  * Listing runs the same authority checks as `callTool`: the grant-level
@@ -771,6 +784,7 @@ export const listToolsForGrant = async (input: {
   // as the call: a seat that may not use the grant must not be handed its tool
   // definitions (TASK-146's rule, now for the seat's own confinement).
   await assertSeatCanConfine(input);
+  await assertOutsiderGrantPodEligible(grant);
 
   const allowed = allToolDefinitions().filter((definition) => {
     try {
@@ -1116,6 +1130,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       requiredWriteMode: definition.requiredWriteMode,
     });
     await assertSeatCanConfine(input);
+    await assertOutsiderGrantPodEligible(grant);
 
     const connection = await resolveConnection(grant, definition);
     credentialOwnerId = connection.ownerUserId;
@@ -1314,6 +1329,7 @@ export const executeApprovedToolCall = async (
       tool: definition.name,
       requiredWriteMode: definition.requiredWriteMode,
     });
+    await assertOutsiderGrantPodEligible(grant);
     const connection = await resolveConnection(grant, definition);
     credentialOwnerId = connection.ownerUserId;
     if (definition.connectionType === 'hosted-mcp') {

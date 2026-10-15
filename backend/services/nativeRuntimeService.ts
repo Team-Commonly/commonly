@@ -31,6 +31,7 @@ import {
   hostedBrokerToolsForRun,
   HostedBrokerProjection,
 } from './grantBrokerProjectionService';
+import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
 import { untrustedConnectorMarker } from './brokerResultMarker';
 
 // --- public surface --------------------------------------------------------
@@ -263,12 +264,17 @@ export const TOOLS = [
 // was decorative (caught in the 2026-08-13 build recon). Installs that
 // predate tool lists (no cfg.tools) keep the pre-gate surface minus
 // approval proposing, which is opt-in by declaration only.
-export const toolsForConfig = (cfg: { tools?: unknown } | null | undefined): readonly (typeof TOOLS)[number][] => {
+const IN_POD_NATIVE_TOOLS = new Set(['commonly_read_context', 'commonly_post_message']);
+
+export const toolsForConfig = (
+  cfg: { tools?: unknown } | null | undefined,
+  inPodOnly = false,
+): readonly (typeof TOOLS)[number][] => {
   const declared = Array.isArray(cfg?.tools) ? (cfg?.tools as string[]) : null;
-  if (!declared) {
-    return TOOLS.filter((t) => t.function.name !== 'commonly_propose_action');
-  }
-  return TOOLS.filter((t) => declared.includes(t.function.name));
+  return TOOLS.filter((t) => (declared
+    ? declared.includes(t.function.name)
+    : t.function.name !== 'commonly_propose_action')
+    && (!inPodOnly || IN_POD_NATIVE_TOOLS.has(t.function.name)));
 };
 
 // --- tool dispatcher -------------------------------------------------------
@@ -280,6 +286,7 @@ interface DispatchContext {
   instanceId: string;
   displayName: string;
   installationConfig: PlainConfig;
+  inPodOnly?: boolean;
 }
 
 interface DispatchResult {
@@ -292,6 +299,14 @@ async function dispatchTool(
   rawArgs: unknown,
   ctx: DispatchContext,
 ): Promise<DispatchResult> {
+  // The model may emit a name it was not offered. The live grant boundary is
+  // enforced at dispatch as well as in the advertised tool list.
+  if (ctx.inPodOnly && !IN_POD_NATIVE_TOOLS.has(name)) {
+    return {
+      content: { ok: false, error: `${name} is unavailable while this pod holds an outsider-writable grant` },
+      error: 'outsider_writable_grant_tool_denied',
+    };
+  }
   const args = (rawArgs && typeof rawArgs === 'object' ? rawArgs : {}) as Record<string, any>;
 
   try {
@@ -965,6 +980,16 @@ export async function runAgent(
     installationConfig: cfg,
   };
 
+  const inPodOnlyNow = async (): Promise<boolean> => {
+    try {
+      return await podHasOutsiderWritableGrant(podId);
+    } catch (error) {
+      // A failed policy read cannot enlarge the native tool surface.
+      console.warn('[native-runtime] outsider grant policy unavailable:', (error as Error).message);
+      return true;
+    }
+  };
+
   const litellm = resolveLiteLLM();
   if (!litellm) {
     run.status = 'failed';
@@ -1062,6 +1087,7 @@ export async function runAgent(
       }
 
       const turnStart = Date.now();
+      const inPodOnly = await inPodOnlyNow();
       let llmResponse: LiteLLMResponse;
       let responseHeaders: Record<string, unknown> = {};
       try {
@@ -1076,7 +1102,7 @@ export async function runAgent(
             // `TOOLS`/`toolsForConfig` (wren 73742): it is not the agent's
             // declared capability, it is a live grant that can be revoked
             // between runs, and it is assembled once per run above.
-            tools: [...toolsForConfig(cfg), ...broker.tools],
+            tools: [...toolsForConfig(cfg, inPodOnly), ...broker.tools],
             tool_choice: 'auto',
             // Guard the untrusted-user / untrusted-pod-content surface (see the
             // NATIVE_RUNTIME_GUARDRAILS note above). Omitted entirely when empty
@@ -1186,6 +1212,9 @@ export async function runAgent(
                 : '') + JSON.stringify(brokerCall.content ?? { ok: brokerCall.outcome === 'ok' }),
             });
           } else {
+          // Grants can be minted after the turn's tool list was assembled.
+          // Re-read the policy before dispatch; a stale model call is refused.
+          dispatchCtx.inPodOnly = await inPodOnlyNow();
           const result = await dispatchTool(toolName, parsedArgs, dispatchCtx);
           const elapsed = Date.now() - toolStart;
           turn.toolCalls.push({

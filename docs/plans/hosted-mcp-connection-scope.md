@@ -509,6 +509,21 @@ The TASK-172 ruling's part 3 wording on `:180` is replaced by §6.
 
 ## 12. Outsider-writable sources and outward effects (#2168 part 2)
 
+**2026-10-15 CTO amendment (TASK-224):** For the native-runtime connector offer, a
+pod eligibility rule is a bounded alternative to the override/parking path
+below. An outsider-writable grant may be a **pod grant only**, and its pod must
+be private, invite-only, unbridged, and contain only native-runtime agent
+members under the TASK-224 tool gate (plus any humans). The grant mint and
+attenuation routes refuse failing conditions and `write` mode, which lets a
+GitHub App tool write without a person's approval; `write-with-confirm`
+remains available. The broker checks again
+on every list, direct call, and approved call. Adding an external agent,
+making the pod public or joinable, or routing a channel to it stops the next
+call. Seat grants remain ineligible until TASK-213. The 2026-10-14 default
+and override design below remains the broader path; its statement that no
+grant can proceed without an override is superseded for this eligible pod
+case. The part 1 untrusted-content marker still applies.
+
 The CTO ruled on #2168 on 2026-10-14. A grant from a source that outsiders can write is refused while any agent in its pod can cause an outward effect without a person. It is allowed with no override when every such effect is approval-gated: a parked call that waits for a person's Approve, on a card that shows the canonical arguments. Anything else needs the owner's override for that source and those tools, recorded and shown on the Tools page, and revoking either side ends it. Part 1's untrusted marker applies either way, and vendor blocks stay byte-identical. This section is the design note the ruling asks for before any code, and the build is its own row. The code it cites is read at `main` `8a3a93ac`.
 
 **The reach.** A grant's reach is the set of pods its results can be posted into without leaving the people the grant was made for. For a pod grant it is the target pod. For a seat grant it is every pod the seat is a member of or installed in, because the seat carries the grant into each of them. An attenuated child keeps its parent's target (`attenuateGrant` is passed none, grants.ts:426), so it has its parent's reach.
