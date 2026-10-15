@@ -27,7 +27,7 @@ jest.mock('../../../models/ToolCall', () => ({ __esModule: true, default: {}, di
 jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
   outsiderGrantPodRefusal: jest.fn(async () => null),
   outsiderGrantRefusalMessage: jest.fn((reason) => (reason === 'pod_joinable'
-    ? 'This pod is joinable. Make this pod invite-only to use this connector.'
+    ? 'Agents can self-install into this pod. Make it invite-only to use this connector.'
     : `Use a separate pod: ${reason}`)),
 }));
 
@@ -113,7 +113,7 @@ describe('POST /api/grants', () => {
     const res = await mint({});
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: 'outsider_grant_pod_joinable' });
-    expect(res.body.message).toMatch(/Make this pod invite-only/);
+    expect(res.body.message).toMatch(/Agents can self-install into this pod/);
     expect(outsiderGrantPodRefusal).toHaveBeenLastCalledWith(
       { kind: 'pod', id: POD }, 'read', { assumeInviteOnly: true },
     );

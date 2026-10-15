@@ -10,7 +10,7 @@ export type OutsiderGrantRefusal = 'pod_required' | 'pod_not_private'
 export const outsiderGrantRefusalMessage = (reason: OutsiderGrantRefusal): string => ({
   pod_required: 'Outsider-writable connectors require a pod grant; use a separate pod.',
   pod_not_private: 'This pod is public. Use a separate private pod for this connector.',
-  pod_joinable: 'This pod is joinable. Make this pod invite-only to use this connector.',
+  pod_joinable: 'Agents can self-install into this pod. Make it invite-only to use this connector.',
   pod_bridged: 'This pod is bridged to an external channel. Use a separate unbridged pod for this connector.',
   non_native_agent: 'This pod has an agent outside the narrowed native runtime. Use a separate pod for this connector.',
   write_mode_unconfined: 'This grant permits unattended writes. Use write-with-confirm in a separate pod.',
