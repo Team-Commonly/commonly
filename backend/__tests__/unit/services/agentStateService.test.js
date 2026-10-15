@@ -62,6 +62,27 @@ describe('deriveAgentState', () => {
     expect(row.state).toBe('listening');
   });
 
+  test('a live legacy BYO seat without a host stamp is listening, then gone-dark when stopped', () => {
+    const installation = byoInstall({
+      config: { runtime: { runtimeType: 'webhook' } },
+    });
+    const live = deriveAgentState(
+      installation,
+      [{ lastUsedAt: new Date(NOW - 10_000) }],
+      'owner-1',
+      NOW,
+    );
+    expect(live.state).toBe('listening');
+
+    const stopped = deriveAgentState(
+      installation,
+      [{ lastUsedAt: new Date(NOW - AGENT_LISTENING_STALE_MS - 1000) }],
+      'owner-1',
+      NOW,
+    );
+    expect(stopped.state).toBe('gone-dark');
+  });
+
   test('stale use → gone-dark, and the owner gets the wake command', () => {
     const row = deriveAgentState(
       byoInstall({ runtimeTokens: [{ lastUsedAt: new Date(NOW - AGENT_LISTENING_STALE_MS - 1000) }] }),
@@ -106,6 +127,19 @@ describe('deriveAgentState', () => {
     );
     expect(row.state).toBe('unknown');
     expect(row.fixCommand).toBeUndefined();
+  });
+
+  test('an explicit non-BYO host is not reclassified from token use', () => {
+    const row = deriveAgentState(
+      byoInstall({
+        config: { runtime: { runtimeType: 'webhook', host: 'cloud' } },
+        runtimeTokens: [{ lastUsedAt: new Date(NOW - 5_000) }],
+      }),
+      [],
+      'owner-1',
+      NOW,
+    );
+    expect(row.state).toBe('unknown');
   });
 
   test('legacy local-cli installs count as BYO', () => {
