@@ -158,6 +158,35 @@ test('a failed event write is resumed: the next run handles the events and finis
   expect((await AgentEvent.findById(event._id).lean()).status).toBe('delivered');
 });
 
+// Sprint-review on #2236: an interruption after marking (deploy, pod restart,
+// kill) leaves exactly this persisted state, with no failure to inject. The
+// dry run must count its events from the same query, and apply must finish it.
+test.each([
+  ['marked', 1],
+  ['stopped', 0],
+])('an identity persisted in state "%s" with a pending event is counted and resumed to done', async (state, stopCalls) => {
+  await AgentInstallation.deleteMany({});
+  const persisted = (podId) => install('resume-agent', podId, {
+    engine: 'native', provisionedAt: NOW, migratedFrom: 'durable-object', migratedAt: NOW,
+    migration: { state, doProvisioned: true },
+  });
+  const [rowA, rowB] = [await persisted(podA), await persisted(podB)];
+  const [event] = await AgentEvent.create([{
+    agentName: 'resume-agent', instanceId: 'default', podId: podA, type: 'chat.mention', payload: {}, status: 'pending',
+    createdAt: new Date(NOW.getTime() - 60 * 1000),
+  }]);
+
+  const dry = await migrate({ apply: false, now: NOW });
+  expect(entryFor(dry, 'resume-agent')).toMatchObject({ from: state, pendingToSweep: 1, pendingClosed: 0 });
+  expect((await AgentEvent.findById(event._id).lean()).status).toBe('pending');
+
+  const applied = await migrate({ apply: true, now: NOW });
+  expect(entryFor(applied, 'resume-agent')).toMatchObject({ from: state, reached: 'done', pendingToSweep: 1 });
+  expect(mockDeprovision).toHaveBeenCalledTimes(stopCalls);
+  expect((await AgentEvent.findById(event._id).lean()).status).toBe('delivered');
+  expect(await field([rowA._id, rowB._id], (h) => h.migration?.state)).toEqual(['done', 'done']);
+});
+
 test('a provisioned identity is refused when the worker is not configured; a stopped one still moves', async () => {
   mockConfigured = false;
 
