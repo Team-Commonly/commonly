@@ -12,6 +12,7 @@ import {
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import MarkdownContent from './MarkdownContent';
+import { messageImageUrl } from '../../utils/messageImageUrl';
 
 const IMAGE_URL_RE = /https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp)(?:\?\S*)?/gi;
 const TASK_COMPLETE_RE = /\b(TASK-\d{3,})\s+(?:completed?|done|finished|shipped|closed)/i;
@@ -25,13 +26,19 @@ interface ImagePreviewProps {
 function ImagePreview({ src }: ImagePreviewProps): React.ReactElement {
   const [open, setOpen] = useState(false);
   const [errored, setErrored] = useState(false);
+  const trustedSrc = messageImageUrl(src);
 
+  if (!trustedSrc) {
+    return /^https?:\/\//i.test(src)
+      ? <Link href={src} target="_blank" rel="noopener noreferrer">{src}</Link>
+      : <></>;
+  }
   if (errored) return <></>;
   return (
     <>
       <Box
         component="img"
-        src={src}
+        src={trustedSrc}
         alt="Shared image"
         sx={{
           display: 'block',
@@ -51,7 +58,7 @@ function ImagePreview({ src }: ImagePreviewProps): React.ReactElement {
         <DialogContent sx={{ p: 1 }}>
           <Box
             component="img"
-            src={src}
+            src={trustedSrc}
             alt="Shared image"
             sx={{ maxWidth: '90vw', maxHeight: '90vh', display: 'block' }}
           />

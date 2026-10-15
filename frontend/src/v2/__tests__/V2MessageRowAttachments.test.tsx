@@ -139,6 +139,7 @@ describe('V2MessageRow attachments (direction C)', () => {
   test('image URL guard accepts only this instance upload origin and path', () => {
     expect(messageImageUrl('https://api.commonly.me/api/uploads/one.png')).toBe('https://api.commonly.me/api/uploads/one.png');
     expect(messageImageUrl('https://api.commonly.me.evil.test/api/uploads/one.png')).toBeNull();
+    expect(messageImageUrl('https://u:p@api.commonly.me/api/uploads/one.png')).toBeNull();
     expect(messageImageUrl('https://outside.example/api/uploads/one.png')).toBeNull();
     expect(messageImageUrl('https://api.commonly.me/other/one.png')).toBeNull();
     expect(messageImageUrl('data:image/svg+xml,<svg/>')).toBeNull();

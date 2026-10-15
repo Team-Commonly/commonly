@@ -450,6 +450,13 @@
   object-fit: contain;
 }
 
+.external-link-mark {
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 /* Update search field in sidebar */
 .sidebar-section .MuiInputBase-root {
   border-radius: 4px !important;
