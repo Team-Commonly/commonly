@@ -1,0 +1,412 @@
+{
+  "sourceCommit": "796afb74711ddc856fe587debc49373e21c8d0f7",
+  "tools": [
+    {
+      "name": "get_me",
+      "description": "Get details of the authenticated GitHub user. Use this when a request is about the user's own profile for GitHub. Or when information is missing to build other tool calls.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true,
+        "title": "Get my user profile"
+      }
+    },
+    {
+      "name": "list_issues",
+      "description": "List issues in a GitHub repository. For pagination, use the 'endCursor' from the previous response's 'pageInfo' in the 'after' parameter.",
+      "inputSchema": {
+        "properties": {
+          "after": {
+            "description": "Cursor for pagination. Use the cursor from the previous response.",
+            "type": "string"
+          },
+          "direction": {
+            "description": "Order direction. If provided, the 'orderBy' also needs to be provided.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "type": "string"
+          },
+          "field_filters": {
+            "description": "Filter by custom issue field values. Each entry takes a field_name and a value; the server looks up the field and coerces the value to its type (single-select option name, text, number, or YYYY-MM-DD date).",
+            "items": {
+              "properties": {
+                "field_name": {
+                  "description": "Name of the custom field (e.g. \"Priority\"). Case-insensitive.",
+                  "type": "string"
+                },
+                "value": {
+                  "description": "Value to filter on. For single-select fields, the option name (e.g. \"P1\"). For dates, YYYY-MM-DD. For numbers, the numeric value as a string. For text, the text value.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field_name",
+                "value"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "fields": {
+            "description": "Subset of fields to return for each issue. If omitted, all fields are returned. Use this to reduce response size when you only need specific fields; omitting 'body' and 'field_values' in particular drops the largest per-result data.",
+            "items": {
+              "enum": [
+                "number",
+                "title",
+                "body",
+                "state",
+                "user",
+                "labels",
+                "assignees",
+                "comments",
+                "created_at",
+                "updated_at",
+                "field_values"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "labels": {
+            "description": "Filter by labels",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "orderBy": {
+            "description": "Order issues by field. If provided, the 'direction' also needs to be provided.",
+            "enum": [
+              "CREATED_AT",
+              "UPDATED_AT",
+              "COMMENTS"
+            ],
+            "type": "string"
+          },
+          "owner": {
+            "description": "Repository owner",
+            "type": "string"
+          },
+          "perPage": {
+            "description": "Results per page for pagination (min 1, max 100)",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number"
+          },
+          "repo": {
+            "description": "Repository name",
+            "type": "string"
+          },
+          "since": {
+            "description": "Filter by date (ISO 8601 timestamp)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Filter by state, by default both open and closed issues are returned when not provided",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true,
+        "title": "List issues"
+      }
+    },
+    {
+      "name": "issue_read",
+      "description": "Get information about a specific issue in a GitHub repository.",
+      "inputSchema": {
+        "properties": {
+          "issue_number": {
+            "description": "The number of the issue",
+            "type": "number"
+          },
+          "method": {
+            "description": "The read operation to perform on a single issue.\nOptions are:\n1. get - Get issue details. Also returns best-effort hierarchy flags (`has_parent`, `has_children`); `parent` and `sub_issues_summary` are optional relationship summaries, and `closed_by_pull_requests` summarizes the pull requests configured to close the issue as `total_count` plus up to 5 `references`.\n2. get_comments - Get issue comments.\n3. get_sub_issues - Get sub-issues (children) of the issue.\n4. get_parent - Get the parent issue, if this issue is a sub-issue of another.\n5. get_labels - Get labels assigned to the issue.\n",
+            "enum": [
+              "get",
+              "get_comments",
+              "get_sub_issues",
+              "get_parent",
+              "get_labels"
+            ],
+            "type": "string"
+          },
+          "owner": {
+            "description": "The owner of the repository",
+            "type": "string"
+          },
+          "page": {
+            "description": "Page number for pagination (min 1)",
+            "minimum": 1,
+            "type": "number"
+          },
+          "perPage": {
+            "description": "Results per page for pagination (min 1, max 100)",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number"
+          },
+          "repo": {
+            "description": "The name of the repository",
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "owner",
+          "repo",
+          "issue_number"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true,
+        "title": "Get issue details"
+      }
+    },
+    {
+      "name": "list_pull_requests",
+      "description": "List pull requests in a GitHub repository. If the user specifies an author, then DO NOT use this tool and use the search_pull_requests tool instead.",
+      "inputSchema": {
+        "properties": {
+          "base": {
+            "description": "Filter by base branch",
+            "type": "string"
+          },
+          "direction": {
+            "description": "Sort direction",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "type": "string"
+          },
+          "fields": {
+            "description": "Subset of fields to return for each pull request. If omitted, all fields are returned. Use this to reduce response size when you only need specific fields; omitting 'body' in particular drops the largest per-result data.",
+            "items": {
+              "enum": [
+                "number",
+                "title",
+                "body",
+                "state",
+                "draft",
+                "merged",
+                "mergeable_state",
+                "html_url",
+                "user",
+                "labels",
+                "assignees",
+                "requested_reviewers",
+                "merged_by",
+                "head",
+                "base",
+                "additions",
+                "deletions",
+                "changed_files",
+                "commits",
+                "comments",
+                "created_at",
+                "updated_at",
+                "closed_at",
+                "merged_at",
+                "milestone"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "head": {
+            "description": "Filter by head user/org and branch",
+            "type": "string"
+          },
+          "owner": {
+            "description": "Repository owner",
+            "type": "string"
+          },
+          "page": {
+            "description": "Page number for pagination (min 1)",
+            "minimum": 1,
+            "type": "number"
+          },
+          "perPage": {
+            "description": "Results per page for pagination (min 1, max 100)",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number"
+          },
+          "repo": {
+            "description": "Repository name",
+            "type": "string"
+          },
+          "sort": {
+            "description": "Sort by",
+            "enum": [
+              "created",
+              "updated",
+              "popularity",
+              "long-running"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "description": "Filter by state",
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true,
+        "title": "List pull requests"
+      }
+    },
+    {
+      "name": "pull_request_read",
+      "description": "Get information on a specific pull request in GitHub repository.",
+      "inputSchema": {
+        "properties": {
+          "after": {
+            "description": "Cursor for pagination, used only by the get_review_comments method. Pass the endCursor from the previous page's PageInfo to fetch the next page.",
+            "type": "string"
+          },
+          "method": {
+            "description": "Action to specify what pull request data needs to be retrieved from GitHub. \nPossible options: \n 1. get - Get details of a specific pull request.\n 2. get_diff - Get the diff of a pull request.\n 3. get_status - Get combined commit status of a head commit in a pull request.\n 4. get_files - Get the list of files changed in a pull request. Use with pagination parameters to control the number of results returned.\n 5. get_commits - Get the list of commits on a pull request. Use with pagination parameters to control the number of results returned.\n 6. get_review_comments - Get review threads on a pull request. Each thread contains logically grouped review comments made on the same code location during pull request reviews. Returns thread metadata and comments with nullable current and original line-range coordinates (line, start_line, original_line, original_start_line). Current coordinates are omitted when unavailable, such as for outdated comments. Use cursor-based pagination (perPage, after) to control results.\n 7. get_reviews - Get the reviews on a pull request. When asked for review comments, use get_review_comments method. Use with pagination parameters to control the number of results returned.\n 8. get_comments - Get comments on a pull request. Use this if user doesn't specifically want review comments. Use with pagination parameters to control the number of results returned.\n 9. get_check_runs - Get check runs for the head commit of a pull request. Check runs are the individual CI/CD jobs and checks that run on the PR.\n",
+            "enum": [
+              "get",
+              "get_diff",
+              "get_status",
+              "get_files",
+              "get_commits",
+              "get_review_comments",
+              "get_reviews",
+              "get_comments",
+              "get_check_runs"
+            ],
+            "type": "string"
+          },
+          "owner": {
+            "description": "Repository owner",
+            "type": "string"
+          },
+          "page": {
+            "description": "Page number for pagination (min 1)",
+            "minimum": 1,
+            "type": "number"
+          },
+          "perPage": {
+            "description": "Results per page for pagination (min 1, max 100)",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number"
+          },
+          "pullNumber": {
+            "description": "Pull request number",
+            "type": "number"
+          },
+          "repo": {
+            "description": "Repository name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "owner",
+          "repo",
+          "pullNumber"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true,
+        "title": "Get details for a single pull request"
+      }
+    },
+    {
+      "name": "get_file_contents",
+      "description": "Get the contents of a file or directory from a GitHub repository",
+      "inputSchema": {
+        "properties": {
+          "fields": {
+            "description": "Subset of fields to return for each entry when the path is a directory. If omitted, all fields are returned. Ignored when the path is a single file. Use this to reduce response size when listing directories and you only need specific fields, e.g. just 'name' and 'type'.",
+            "items": {
+              "enum": [
+                "type",
+                "name",
+                "path",
+                "size",
+                "sha",
+                "url",
+                "git_url",
+                "html_url",
+                "download_url"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "owner": {
+            "description": "Repository owner (username or organization)",
+            "type": "string",
+            "x-mcp-header": "owner"
+          },
+          "path": {
+            "default": "/",
+            "description": "Path to file/directory",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Accepts optional git refs such as `refs/tags/{tag}`, `refs/heads/{branch}` or `refs/pull/{pr_number}/head`",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository name",
+            "type": "string",
+            "x-mcp-header": "repo"
+          },
+          "sha": {
+            "description": "Accepts optional commit SHA. If specified, it will be used instead of ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "repo"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true,
+        "title": "Get file or directory contents"
+      }
+    }
+  ]
+}
