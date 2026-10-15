@@ -90,7 +90,7 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   const shouldProbe = engaged;
   const visible = engaged;
 
-  /** Every dismissal ends this guide until the person asks for it again. */
+  /** Every dismissal persists because Feedback → Guide can emit the reopen event from any page. */
   const close = useCallback(() => {
     writeFlag(FIRST_RUN_STARTED_KEY, false);
     setEngaged(false);
