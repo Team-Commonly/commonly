@@ -72,6 +72,7 @@ describe('V2InviteRedeem', () => {
       token: 'a'.repeat(32),
       pod: { _id: 'other-workspace', name: 'My Workspace', description: 'Your private workspace', type: 'chat', memberCount: 2 },
       alreadyMember: false,
+      isOwner: false,
     });
     render(
       <MemoryRouter initialEntries={[`/v2/invite/${'a'.repeat(32)}`]}>
@@ -80,5 +81,21 @@ describe('V2InviteRedeem', () => {
     );
     expect(await screen.findByText('A private workspace shared with you')).toBeInTheDocument();
     expect(screen.queryByText('Your private workspace')).not.toBeInTheDocument();
+  });
+
+  test('keeps the owner\'s private-workspace description on their own invite', async () => {
+    mockApi.get.mockResolvedValueOnce({
+      token: 'a'.repeat(32),
+      pod: { _id: 'own-workspace', name: 'My Workspace', description: 'Your private workspace', type: 'chat', memberCount: 1 },
+      alreadyMember: true,
+      isOwner: true,
+    });
+    render(
+      <MemoryRouter initialEntries={[`/v2/invite/${'a'.repeat(32)}`]}>
+        <Routes><Route path="/v2/invite/:token" element={<V2InviteRedeem />} /></Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('Your private workspace')).toBeInTheDocument();
+    expect(screen.queryByText('A private workspace shared with you')).not.toBeInTheDocument();
   });
 });
