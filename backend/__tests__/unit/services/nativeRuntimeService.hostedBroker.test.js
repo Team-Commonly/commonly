@@ -54,6 +54,10 @@ jest.mock('../../../models/RoomGrant', () => ({
 }));
 
 const mockCallTool = jest.fn();
+const mockOutsiderGrantPolicy = jest.fn();
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podHasOutsiderWritableGrant: (...args) => mockOutsiderGrantPolicy(...args),
+}));
 jest.mock('../../../services/toolBrokerService', () => ({
   ...jest.requireActual('../../../services/toolBrokerService'),
   callTool: (...args) => mockCallTool(...args),
@@ -75,6 +79,9 @@ jest.mock('../../../services/agentTypingService', () => ({
 
 jest.mock('../../../services/agentMessageService', () => ({
   postMessage: jest.fn().mockResolvedValue({ success: true }),
+}));
+jest.mock('../../../models/pg/Message', () => ({
+  findByPodId: jest.fn().mockResolvedValue([]),
 }));
 
 const AgentRun = require('../../../models/AgentRun');
@@ -161,9 +168,21 @@ const finalTurn = {
 };
 
 const chain = (rows) => ({ select: () => ({ lean: async () => rows }) });
+const nativeToolTurn = (name, args = {}) => ({
+  ...toolCallTurn(),
+  data: {
+    ...toolCallTurn().data,
+    choices: [{ message: {
+      role: 'assistant',
+      content: null,
+      tool_calls: [{ id: 'native-call', type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+    } }],
+  },
+});
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockOutsiderGrantPolicy.mockResolvedValue(false);
   process.env.LITELLM_BASE_URL = 'http://litellm.test';
   process.env.LITELLM_MASTER_KEY = 'test-key';
 
@@ -380,6 +399,69 @@ describe('a hosted run in a granted pod', () => {
 
     expect(mockCallTool).not.toHaveBeenCalled();
     expect(mockAxiosPost.mock.calls[0][1].tools.some((tool) => tool.function.name.startsWith('github'))).toBe(false);
+  });
+});
+
+describe('native tools while an outsider-writable grant is live', () => {
+  const allNativeTools = [
+    'commonly_read_context', 'commonly_read_memory', 'commonly_write_memory',
+    'commonly_post_message', 'commonly_create_task', 'commonly_propose_action',
+    'commonly_agent_status',
+  ];
+  const installation = { ...INSTALLATION, config: { ...INSTALLATION.config, tools: allNativeTools } };
+
+  test('the model sees only context and in-pod posting, plus the granted read tool', async () => {
+    mockOutsiderGrantPolicy.mockResolvedValue(true);
+    mockAxiosPost.mockResolvedValueOnce(finalTurn);
+    await runAgent(installation, { type: 'first_contact', payload: { content: 'hello' } });
+    const names = mockAxiosPost.mock.calls[0][1].tools.map((tool) => tool.function.name);
+    expect(names).toEqual(expect.arrayContaining(['commonly_read_context', 'commonly_post_message', 'github_list_issues']));
+    expect(names.filter((name) => name.startsWith('commonly_')).sort()).toEqual([
+      'commonly_post_message', 'commonly_read_context',
+    ]);
+  });
+
+  test.each([
+    'commonly_read_memory', 'commonly_write_memory', 'commonly_create_task',
+    'commonly_propose_action', 'commonly_agent_status',
+  ])('%s is refused at dispatch even when the model emits its name', async (name) => {
+    mockOutsiderGrantPolicy.mockResolvedValue(true);
+    mockAxiosPost.mockResolvedValueOnce(nativeToolTurn(name)).mockResolvedValueOnce(finalTurn);
+    await runAgent(installation, { type: 'first_contact', payload: { content: 'hello' } });
+    const toolMessage = mockAxiosPost.mock.calls[1][1].messages.find((message) => message.role === 'tool');
+    expect(JSON.parse(toolMessage.content)).toEqual({
+      ok: false,
+      error: `${name} is unavailable while this pod holds an outsider-writable grant`,
+    });
+    const savedRun = await AgentRun.create.mock.results[0].value;
+    expect(savedRun.turns[0].toolCalls[0].error).toBe('outsider_writable_grant_tool_denied');
+  });
+
+  test.each([
+    ['commonly_read_context', {}],
+    ['commonly_post_message', { content: 'A reply in this pod' }],
+  ])('%s still executes in this pod', async (name, args) => {
+    mockOutsiderGrantPolicy.mockResolvedValue(true);
+    mockAxiosPost.mockResolvedValueOnce(nativeToolTurn(name, args)).mockResolvedValueOnce(finalTurn);
+    await runAgent(installation, { type: 'first_contact', payload: { content: 'hello' } });
+    const savedRun = await AgentRun.create.mock.results[0].value;
+    expect(savedRun.turns[0].toolCalls[0].error).toBeUndefined();
+  });
+
+  test('a newly minted grant refuses an already offered tool, and revocation restores it', async () => {
+    mockOutsiderGrantPolicy.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    mockAxiosPost.mockResolvedValueOnce(nativeToolTurn('commonly_write_memory', { content: 'must not persist' }))
+      .mockResolvedValueOnce(finalTurn);
+    await runAgent(installation, { type: 'first_contact', payload: { content: 'hello' } });
+    expect(mockAxiosPost.mock.calls[0][1].tools.map((tool) => tool.function.name)).toContain('commonly_write_memory');
+    const refused = mockAxiosPost.mock.calls[1][1].messages.find((message) => message.role === 'tool');
+    expect(JSON.parse(refused.content).ok).toBe(false);
+
+    jest.clearAllMocks();
+    mockOutsiderGrantPolicy.mockResolvedValue(false);
+    mockAxiosPost.mockResolvedValueOnce(finalTurn);
+    await runAgent(installation, { type: 'first_contact', payload: { content: 'hello again' } });
+    expect(mockAxiosPost.mock.calls[0][1].tools.map((tool) => tool.function.name)).toContain('commonly_write_memory');
   });
 });
 
