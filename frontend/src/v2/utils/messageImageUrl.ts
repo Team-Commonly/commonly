@@ -6,7 +6,9 @@ export const messageImageUrl = (value: string | null | undefined): string | null
   if (!value) return null;
   try {
     const api = new URL(getApiBaseUrl());
-    const normalized = normalizeUploadUrl(value);
+    const normalized = value.startsWith('/api/uploads/') || value.startsWith('/uploads/')
+      ? new URL(value, api).toString()
+      : normalizeUploadUrl(value);
     if (!normalized) return null;
     const image = new URL(normalized);
     if (image.origin !== api.origin || !['http:', 'https:'].includes(image.protocol)) return null;

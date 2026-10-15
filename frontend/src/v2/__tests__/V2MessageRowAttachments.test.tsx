@@ -142,6 +142,8 @@ describe('V2MessageRow attachments (direction C)', () => {
     expect(messageImageUrl('https://outside.example/api/uploads/one.png')).toBeNull();
     expect(messageImageUrl('https://api.commonly.me/other/one.png')).toBeNull();
     expect(messageImageUrl('data:image/svg+xml,<svg/>')).toBeNull();
+    process.env.REACT_APP_API_URL = 'https://api.commonly.me/';
+    expect(messageImageUrl('/api/uploads/one.png')).toBe('https://api.commonly.me/api/uploads/one.png');
   });
 
   // react-markdown is mocked in jsdom, so the collapse is tested at the
