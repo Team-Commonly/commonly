@@ -32,7 +32,7 @@ interface BoardTask {
   notes?: string | null;
   prUrl?: string | null;
   updatedAt?: string;
-  updates?: Array<{ text: string; author: string; createdAt?: string }>;
+  updates?: Array<{ text: string; author: string; authorId?: string | null; createdAt?: string }>;
 }
 
 interface PodMember {
@@ -163,10 +163,10 @@ const V2PodBoard: React.FC = () => {
   const claimHolderName = useCallback((task: BoardTask): string => {
     const member = podMembers.find((item) => memberId(item) === task.claimedBy);
     if (member) return memberLabel(member);
-    // Agent instance claims can use an instance id instead of a User id.
-    // The claim route records the claimant's resolved author on each claim.
-    const claimUpdate = task.updates?.slice().reverse().find((update) => update.text.startsWith('Claimed by '));
-    return claimUpdate?.author || task.claimedBy || '';
+    // The claim route records the claimant's User id and resolved author on
+    // the update. Match identity rather than the wording of the update text.
+    const holderUpdate = task.updates?.slice().reverse().find((update) => update.authorId === task.claimedBy);
+    return holderUpdate?.author || task.claimedBy || '';
   }, [podMembers]);
   const [focusRead, setFocusRead] = useState<FocusRead | null>(null);
   const [focusLoading, setFocusLoading] = useState(true);
@@ -624,7 +624,7 @@ const V2PodBoard: React.FC = () => {
                           <span className="v2-board__card-assignee">
                             {t('board.claimUntil', {
                               holder: claimHolderName(task),
-                              time: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(task.claimExpiresAt)),
+                              time: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(task.claimExpiresAt)),
                             })}
                           </span>
                         )}
