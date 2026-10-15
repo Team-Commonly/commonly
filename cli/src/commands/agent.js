@@ -1040,6 +1040,9 @@ const extractPrompt = (event) => {
       'Continue with this ruling. Post a concise update only if it materially helps the pod; otherwise return NO_REPLY.',
     ].join('\n');
   }
+  if (event.type === 'approval.resolved') {
+    return p.content || null;
+  }
   return null;
 };
 
