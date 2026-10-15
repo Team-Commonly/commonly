@@ -542,6 +542,14 @@ spec:
           value: {{ .Values.backend.env.agentWorkSweepDisabled | quote }}
         {{- end }}
 
+        # TASK-260: the scheduler purges the stranger journey's throwaway
+        # accounts at 02:47/14:47 UTC (services/syntheticAccountPurgeService.ts).
+        # Opt-in per deployment; it deletes rows.
+        {{- if .Values.backend.env.syntheticAccountPurge }}
+        - name: SYNTHETIC_ACCOUNT_PURGE
+          value: {{ .Values.backend.env.syntheticAccountPurge | quote }}
+        {{- end }}
+
         # Native-runtime guardrail set (comma-separated; see
         # docs/runbooks/litellm-guardrails.md). Helm-tracked so the value
         # survives deploys — a kubectl-set env is drift the next upgrade

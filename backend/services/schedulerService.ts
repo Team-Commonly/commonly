@@ -505,6 +505,28 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // TASK-260: remove the stranger journey's throwaway accounts (they cannot
+    // delete themselves). Half an hour after each 02:17/14:17 journey run;
+    // only accounts older than two hours, so a run in flight is never touched.
+    // Off unless the deployment opts in (values-dev).
+    const syntheticAccountPurgeJob: CronJob = cron.schedule(
+      '47 2,14 * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { purgeSyntheticAccounts } = require('./syntheticAccountPurgeService');
+          const report = await purgeSyntheticAccounts({ apply: true });
+          const refused = report.accounts.filter((a: { refused?: string }) => a.refused);
+          console.log(`[synthetic-purge] accounts=${report.accounts.length - refused.length} `
+            + `refused=${refused.length} counts=${JSON.stringify(report.counts)}`);
+          refused.forEach((a: { username: string; refused?: string }) => console.warn(`[synthetic-purge] refused ${a.username}: ${a.refused}`));
+        } catch (error) {
+          console.error('[synthetic-purge] failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -525,6 +547,7 @@ class SchedulerService {
       installableReconcileJob,
       decisionCardReconcileJob,
       approvalToolCallSweepJob,
+      ...(process.env.SYNTHETIC_ACCOUNT_PURGE === 'true' ? [syntheticAccountPurgeJob] : []),
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;

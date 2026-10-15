@@ -1,13 +1,10 @@
 const mongoose = require('mongoose');
 const Pod = require('../models/Pod');
 const Message = require('../models/Message');
-const Post = require('../models/Post');
-const Summary = require('../models/Summary');
-const PodAsset = require('../models/PodAsset');
-const Integration = require('../models/Integration');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const AgentProfile = require('../models/AgentProfile');
 const AgentIdentityService = require('../services/agentIdentityService');
+const { deletePodCascade } = require('../services/podDeletionService');
 const { isPersonalPodType } = require('../services/podTypePolicyService');
 const {
   COMMUNITY_LISTING_QUERY,
@@ -717,27 +714,7 @@ exports.deletePod = async (req: any, res: any) => {
       return res.status(401).json({ msg: 'Not authorized to delete this pod' });
     }
 
-    // Delete all messages in the pod
-    await Message.deleteMany({ podId: req.params.id });
-    if (PGMessage) {
-      await PGMessage.deleteByPodId(req.params.id);
-    }
-
-    await Promise.allSettled([
-      Post.deleteMany({ podId: req.params.id }),
-      Summary.deleteMany({ podId: req.params.id }),
-      PodAsset.deleteMany({ podId: req.params.id }),
-      Integration.deleteMany({ podId: req.params.id }),
-      AgentInstallation.deleteMany({ podId: req.params.id }),
-      AgentProfile.deleteMany({ podId: req.params.id }),
-    ]);
-
-    if (PGPod) {
-      await PGPod.delete(req.params.id);
-    }
-
-    // Delete the pod
-    await Pod.deleteOne({ _id: req.params.id });
+    await deletePodCascade(req.params.id);
 
     res.json({ msg: 'Pod deleted' });
   } catch (err: any) {

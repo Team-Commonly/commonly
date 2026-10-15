@@ -68,6 +68,11 @@ backend:
     pgUser: "avnadmin"
     pgSslEnabled: "true"
     pgCaCertPath: "/app/certs/ca.pem"
+    # Purge the stranger journey's eng-smoke-journey-*@ops.commonly.invalid
+    # accounts twice a day (TASK-260). Ships OFF: the scheduler only registers
+    # the job for exactly "true", and that flip is a separate one-line PR gated
+    # against a posted operator dry run (node dist/scripts/purge-synthetic-accounts.js).
+    syntheticAccountPurge: "false"
     marketplaceManifestPath: "/app/packages/commonly-marketplace/marketplace.json"
     logLevel: debug
     # Session threshold tuned for multi-step agent tasks. 150KB was killing
