@@ -8459,6 +8459,12 @@ body.modern-ui.v2-canvas {
   font-weight: 500;
 }
 
+.v2-board__card-claim-lease {
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+  font-weight: 500;
+}
+
 .v2-board__card-actions {
   display: flex;
   gap: 6px;

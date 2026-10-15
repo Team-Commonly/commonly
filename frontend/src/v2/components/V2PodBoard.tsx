@@ -621,7 +621,7 @@ const V2PodBoard: React.FC = () => {
                       )}
                       {task.status === 'claimed' && task.claimedBy && task.claimExpiresAt
                         && Date.parse(task.claimExpiresAt) > claimClock && (
-                          <span className="v2-board__card-assignee">
+                          <span className="v2-board__card-claim-lease">
                             {t('board.claimUntil', {
                               holder: claimHolderName(task),
                               time: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(task.claimExpiresAt)),

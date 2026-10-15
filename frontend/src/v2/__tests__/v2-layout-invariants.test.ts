@@ -1068,6 +1068,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(title).toContain('overflow: hidden');
   });
 
+  test('a board claim lease reads as secondary status rather than a blue mention', () => {
+    expect(podBoard).toContain('className="v2-board__card-claim-lease"');
+    const lease = ruleBody(v2, '.v2-board__card-claim-lease');
+    expect(lease).toContain('font-size: 12px');
+    expect(lease).toContain('color: var(--v2-text-secondary)');
+  });
+
   test('craft-pass board action chips keep their 32px target and 12px type', () => {
     // These compact controls are repeated on every board card and in the
     // detail dialog. A declaration on the shared selector keeps both paths
