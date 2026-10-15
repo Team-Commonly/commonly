@@ -1,6 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { callTool, listToolsForGrant } from '../services/toolBrokerService';
+import { untrustedConnectorMarker } from '../services/brokerResultMarker';
 
 // The SDK is CommonJS-compatible, but its package exports use subpath entry
 // points. Requiring them here keeps this route compatible with the backend's
@@ -109,7 +110,11 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
       });
       return {
         ...(result.outcome === 'failed' ? { isError: true } : {}),
-        content: [{ type: 'text', text: JSON.stringify(result.result) }],
+        content: [
+          ...(result.untrustedSourceTitle
+            ? [{ type: 'text', text: untrustedConnectorMarker(result.untrustedSourceTitle) }] : []),
+          { type: 'text', text: JSON.stringify(result.result) },
+        ],
       };
     } catch (error) {
       const approvalError = error as { code?: string; details?: { approvalId?: string } };
