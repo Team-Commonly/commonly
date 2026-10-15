@@ -15,6 +15,7 @@ import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 import { AIRTABLE_ENTRY } from './airtable';
 import { ATLASSIAN_ENTRY } from './atlassian';
 import { GOOGLE_CALENDAR_ENTRY } from './googleCalendar';
+import { GITHUB_MCP_ENTRY } from './githubMcp';
 import { GITLAB_ENTRY } from './gitlab';
 import { LINEAR_ENTRY } from './linear';
 import { NOTION_ENTRY } from './notion';
@@ -26,6 +27,7 @@ export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [
   NOTION_ENTRY,
   GITLAB_ENTRY,
   SUPABASE_ENTRY,
+  GITHUB_MCP_ENTRY,
 ];
 
 /**
