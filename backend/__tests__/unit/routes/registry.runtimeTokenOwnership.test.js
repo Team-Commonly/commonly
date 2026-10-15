@@ -71,10 +71,12 @@ jest.mock('../../../routes/registry/helpers', () => ({
 }));
 
 const mockRevoke = jest.fn().mockResolvedValue([]);
+const mockRevokeOne = jest.fn().mockResolvedValue(undefined);
 const mockIssue = jest.fn().mockResolvedValue({ token: 'cm_agent_new' });
 jest.mock('../../../routes/registry/tokens', () => ({
   normalizeScopes: jest.fn((s) => s || []),
   revokeRuntimeTokensForAgent: (...args) => mockRevoke(...args),
+  revokeRuntimeTokenEverywhere: (...args) => mockRevokeOne(...args),
   issueRuntimeTokenForAgent: (...args) => mockIssue(...args),
   issueUserTokenForInstallation: jest.fn(),
 }));
@@ -99,7 +101,7 @@ beforeEach(() => {
   mockIsAdmin.mockResolvedValue(false);
   // The caller is a member of the pod in every case: membership is not the question.
   Pod.findById.mockReturnValue({ lean: () => Promise.resolve({ _id: 'pod-a', createdBy: 'user-a', members: ['user-a'] }) });
-  User.findOne.mockResolvedValue({ agentRuntimeTokens: [{ _id: 'tok-1' }], save: jest.fn() });
+  User.findOne.mockResolvedValue({ agentRuntimeTokens: [{ _id: 'tok-1', tokenHash: 'hash-1' }], save: jest.fn() });
 });
 
 const mint = (body = {}) => request(app).post('/api/registry/pods/pod-a/agents/quire/runtime-tokens').send(body);
@@ -155,10 +157,12 @@ describe('revoking a runtime token needs the same rule', () => {
     expect(User.findOne).not.toHaveBeenCalled();
   });
 
-  test('the sole installer can revoke', async () => {
+  test('the sole installer can revoke, and the revoke goes by the token hash', async () => {
     mockInstalls = [install('user-a', 'pod-a')];
     const res = await request(app).delete('/api/registry/pods/pod-a/agents/quire/runtime-tokens/tok-1');
     expect(res.status).toBe(200);
+    // Every stored copy shares the hash, not the listed id (runtimeTokenRevoke.test.js).
+    expect(mockRevokeOne).toHaveBeenCalledWith('hash-1');
   });
 });
 

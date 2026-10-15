@@ -20,6 +20,7 @@ const {
   buildAgentProfileId,
 } = require('./helpers');
 const { reprovisionInstallation } = require('./reprovision');
+const { revokeRuntimeTokenEverywhere } = require('./tokens');
 
 const adminRouter = express.Router();
 
@@ -237,16 +238,16 @@ adminRouter.delete('/admin/installations/:installationId/runtime-tokens/:tokenId
       return res.status(404).json({ error: 'Installation not found' });
     }
 
-    const originalCount = installation.runtimeTokens?.length || 0;
-    installation.runtimeTokens = (installation.runtimeTokens || []).filter(
-      (token: any) => token._id?.toString() !== tokenId,
+    // The id names this installation's copy; the User row and any sibling
+    // installation hold the same token under other ids, so revoke by hash.
+    const record = (installation.runtimeTokens || []).find(
+      (token: any) => token._id?.toString() === tokenId,
     );
-
-    if ((installation.runtimeTokens || []).length === originalCount) {
+    if (!record?.tokenHash) {
       return res.status(404).json({ error: 'Runtime token not found' });
     }
 
-    await installation.save();
+    await revokeRuntimeTokenEverywhere(record.tokenHash);
     return res.json({ success: true });
   } catch (error) {
     console.error('Error revoking admin runtime token:', error);
