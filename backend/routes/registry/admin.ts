@@ -1,5 +1,5 @@
 // Admin-only registry routes — extracted from registry.js (GH#112)
-export {};
+import { assertAgentRuntimeMayJoinPod, OutsiderGrantAgentJoinError } from '../../services/outsiderGrantAgentJoinPolicy';
 const express = require('express');
 const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');
@@ -314,6 +314,10 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
       return res.status(404).json({ error: 'Pod not found' });
     }
 
+    // A session token also installs and joins a non-native seat. Refuse before
+    // creating its identity, membership, installation, or token.
+    await assertAgentRuntimeMayJoinPod(podId, 'claude-code');
+
     const instanceId = requestedInstanceId || `sess-${randomSecret(8)}`;
 
     // Default to Commonly's existing `<Primary> (Context)` parenthetical naming
@@ -398,6 +402,9 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
       expiresAt,
     });
   } catch (error) {
+    if (error instanceof OutsiderGrantAgentJoinError) {
+      return res.status(error.statusCode).json({ code: error.code, message: error.message });
+    }
     console.error('Error issuing claude-code session token:', error);
     return res.status(500).json({ error: 'Failed to issue session token' });
   }
