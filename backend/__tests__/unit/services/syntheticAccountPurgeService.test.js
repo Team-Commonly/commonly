@@ -140,9 +140,44 @@ describe('syntheticAccountPurgeService', () => {
 
     const report = await purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() });
 
-    expect(report.accounts[0].sharedSeats).toEqual([seat]);
+    expect(report.accounts[0].skippedSeats).toEqual([{ name: seat, reason: 'installed by another user' }]);
     expect(await AgentInstallation.countDocuments({ agentName: seat, installedBy: other._id })).toBe(1);
     expect(await AgentMemory.countDocuments({ agentName: seat })).toBe(1);
     expect(await AgentRegistry.countDocuments({ agentName: seat })).toBe(1);
+  });
+
+  // Registration is open and accepts .invalid, so the selected account may be
+  // anyone's. These arms pin that its seat list cannot reach another identity.
+  it('skips a seat name without the journey prefix, keeping its bot and memory', async () => {
+    const { human, seatBot, seat } = await syntheticAccount('eng-smoke-journey-1015124709', { seat: 'acme-support' });
+
+    const report = await purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() });
+
+    expect(report.accounts[0].skippedSeats).toEqual([{ name: seat, reason: 'name lacks the journey prefix' }]);
+    expect(await User.countDocuments({ _id: human._id })).toBe(0);
+    expect(await User.countDocuments({ _id: seatBot._id })).toBe(1);
+    expect(await AgentMemory.countDocuments({ agentName: seat })).toBe(1);
+    expect(await AgentRegistry.countDocuments({ agentName: seat })).toBe(1);
+  });
+
+  it('skips a prefixed seat whose bot user is older than the account', async () => {
+    const { seatBot, seat } = await syntheticAccount();
+    await User.collection.updateOne({ _id: seatBot._id }, { $set: { createdAt: new Date('2026-01-01T00:00:00Z') } });
+
+    const report = await purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() });
+
+    expect(report.accounts[0].skippedSeats).toEqual([{ name: seat, reason: 'its bot user predates the account' }]);
+    expect(await User.countDocuments({ _id: seatBot._id })).toBe(1);
+    expect(await AgentMemory.countDocuments({ agentName: seat })).toBe(1);
+  });
+
+  it("deletes only the seat's own (name, 'default') memory, not the same name under another instance", async () => {
+    const { seat } = await syntheticAccount();
+    await AgentMemory.collection.insertOne({ agentName: seat, instanceId: 'someone-else' });
+
+    await purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() });
+
+    expect(await AgentMemory.countDocuments({ agentName: seat, instanceId: 'default' })).toBe(0);
+    expect(await AgentMemory.countDocuments({ agentName: seat, instanceId: 'someone-else' })).toBe(1);
   });
 });

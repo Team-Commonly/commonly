@@ -21,12 +21,19 @@
  *     H itself              → user-keyed rows, Community pod membership, the
  *                             PG users row, the Mongo user
  *
- * Two refusals keep it off anything a real person could own. A pod H created
- * that another HUMAN has joined refuses the whole account: deleting the pod
- * would delete that person's conversation. A seat name that anyone other than
- * H has installed is skipped and reported: names are not yet owned by an
- * identity (TASK-270), so a later user can hold the same name. A run reports
- * what it found and what it deleted per collection, and dry-run is the default.
+ * Registration is open and accepts .invalid, so ANYONE can create an account
+ * this selects; the purge must therefore never reach an identity such an
+ * account merely names. A pod H created that another HUMAN has joined refuses
+ * the whole account. A seat H published is cleaned only if all of these hold,
+ * and is otherwise skipped and reported with its reason:
+ *   - its name starts with the journey prefix (the BYO link derives seat names
+ *     from the account's username, so journey seats always carry it);
+ *   - no one else has an installation of that name;
+ *   - its bot user, if any, was created at or after H (an account cannot own
+ *     an identity older than itself).
+ * Memory is deleted only for the seat's own (name, 'default') instance. Names
+ * are not yet owned by an identity (TASK-270); once they are, the seat test
+ * becomes "the seat's owner is H". Dry run is the default.
  */
 const User = require('../models/User');
 const Pod = require('../models/Pod');
@@ -45,6 +52,7 @@ const { deletePodCascade } = require('./podDeletionService');
 
 export const SYNTHETIC_USERNAME = /^eng-smoke-journey-\d{10}$/;
 export const SYNTHETIC_EMAIL_DOMAIN = '@ops.commonly.invalid';
+export const SYNTHETIC_SEAT_PREFIX = 'eng-smoke-journey-';
 const DEFAULT_MIN_AGE_MS = 2 * 60 * 60 * 1000;
 
 interface PgPool {
@@ -58,8 +66,8 @@ export interface AccountReport {
   pods: string[];
   scoutBot: string | null;
   seats: string[];
-  /** Seat names another user also holds; left alone. */
-  sharedSeats: string[];
+  /** Seats left alone, and why. */
+  skippedSeats: { name: string; reason: string }[];
 }
 
 export interface PurgeReport {
@@ -113,7 +121,7 @@ export const purgeSyntheticAccounts = async (
     email: new RegExp(`${SYNTHETIC_EMAIL_DOMAIN.replace(/\./g, '\\.')}$`, 'i'),
     isBot: { $ne: true },
     createdAt: { $lt: new Date(now.getTime() - minAgeMs) },
-  }).select('_id username email isBot').lean();
+  }).select('_id username email isBot createdAt').lean();
   report.examined = candidates.length;
 
   for (const human of candidates) {
@@ -123,19 +131,27 @@ export const purgeSyntheticAccounts = async (
     const scoutBot = await User.findOne({ username: scoutUsername, isBot: true }).select('_id').lean();
     const seatRows = await AgentRegistry.find({ 'publisher.userId': human._id, ephemeral: true })
       .select('agentName').lean();
-    const sharedSeats: string[] = [];
+    const skippedSeats: { name: string; reason: string }[] = [];
     const seatNames: string[] = [];
+    const seatBots: { _id: unknown; username: string }[] = [];
     for (const { agentName } of seatRows as { agentName: string }[]) {
-      const heldByOthers = await AgentInstallation.exists({ agentName, installedBy: { $ne: human._id } });
-      (heldByOthers ? sharedSeats : seatNames).push(agentName);
+      if (!agentName.startsWith(SYNTHETIC_SEAT_PREFIX)) {
+        skippedSeats.push({ name: agentName, reason: 'name lacks the journey prefix' });
+        continue;
+      }
+      if (await AgentInstallation.exists({ agentName, installedBy: { $ne: human._id } })) {
+        skippedSeats.push({ name: agentName, reason: 'installed by another user' });
+        continue;
+      }
+      const bot = await User.findOne({ username: agentName, isBot: true, email: `${agentName}@agents.commonly.local` })
+        .select('_id username createdAt').lean();
+      if (bot && (!bot.createdAt || !human.createdAt || new Date(bot.createdAt) < new Date(human.createdAt))) {
+        skippedSeats.push({ name: agentName, reason: 'its bot user predates the account' });
+        continue;
+      }
+      seatNames.push(agentName);
+      if (bot) seatBots.push(bot);
     }
-    const seatBots = seatNames.length
-      ? await User.find({
-        username: { $in: seatNames },
-        isBot: true,
-        email: { $in: seatNames.map((n) => `${n}@agents.commonly.local`) },
-      }).select('_id username').lean()
-      : [];
     const ownIds = new Set([humanId, scoutBot && String(scoutBot._id), ...seatBots.map((b: any) => String(b._id))]
       .filter(Boolean) as string[]);
 
@@ -146,7 +162,7 @@ export const purgeSyntheticAccounts = async (
       pods: pods.map((p: any) => String(p._id)),
       scoutBot: scoutBot ? scoutUsername : null,
       seats: seatNames,
-      sharedSeats,
+      skippedSeats,
     };
     report.accounts.push(account);
     const foreignIds = pods.flatMap((p: any) => (p.members || []).map(String)).filter((m: string) => !ownIds.has(m));
@@ -181,7 +197,7 @@ export const purgeSyntheticAccounts = async (
     }
 
     for (const name of seatNames) {
-      await remove('agentmemories', AgentMemory, { agentName: name });
+      await remove('agentmemories', AgentMemory, { agentName: name, instanceId: 'default' });
       await remove('agentinstallations', AgentInstallation, { agentName: name, installedBy: human._id });
       await remove('agentregistries', AgentRegistry, { agentName: name, 'publisher.userId': human._id, ephemeral: true });
     }

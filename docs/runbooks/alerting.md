@@ -192,7 +192,11 @@ mentions an SDK, and whether the seat is named after the user.
 
 Cleanup uninstalls the seat and deletes the pod and its messages. The bare
 account row stays: there is no self-delete route, and the admin delete
-removes only the user row. The scoped purge is TASK-260. The container runs
+removes only the user row. The backend's synthetic-account purge
+(`services/syntheticAccountPurgeService.ts`, TASK-260) removes it and its
+footprint at 02:47 and 14:47 UTC once `backend.env.syntheticAccountPurge` is
+`"true"`. Run the report first: `node dist/scripts/purge-synthetic-accounts.js`
+in the backend pod. The container runs
 as uid 65534 with a read-only root filesystem and no capabilities. The
 `/register` limit is 10 per hour per client IP, and the cluster egress IP is
 not shared with anyone's laptop.

@@ -18,7 +18,9 @@ counts as a real signup (every Growth funnel script drops `*.invalid`).
                  The bare account row stays: there is no self-delete route, and
                  the admin delete removes only the user row. It is
                  eng-smoke-journey-*@ops.commonly.invalid, which Growth's
-                 filters exclude. A scoped purge is TASK-260; none exists yet.
+                 filters exclude. The backend's synthetic-account purge
+                 (services/syntheticAccountPurgeService.ts, TASK-260) removes
+                 it once that job is switched on.
 
 Every step prints one JSON line {journey, step, ok, ms, budget_ms, ...}; the last
 line is {journey, result}. Exit 0 only if every hard step passed inside its
