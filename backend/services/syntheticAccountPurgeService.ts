@@ -52,6 +52,9 @@ const { deletePodCascade } = require('./podDeletionService');
 
 export const SYNTHETIC_USERNAME = /^eng-smoke-journey-\d{10}$/;
 export const SYNTHETIC_EMAIL_DOMAIN = '@ops.commonly.invalid';
+// The same domain as a query, written as a literal rather than escaped from
+// the string at runtime.
+const SYNTHETIC_EMAIL = /@ops\.commonly\.invalid$/i;
 export const SYNTHETIC_SEAT_PREFIX = 'eng-smoke-journey-';
 const DEFAULT_MIN_AGE_MS = 2 * 60 * 60 * 1000;
 
@@ -118,7 +121,7 @@ export const purgeSyntheticAccounts = async (
 
   const candidates = await User.find({
     username: SYNTHETIC_USERNAME,
-    email: new RegExp(`${SYNTHETIC_EMAIL_DOMAIN.replace(/\./g, '\\.')}$`, 'i'),
+    email: SYNTHETIC_EMAIL,
     isBot: { $ne: true },
     createdAt: { $lt: new Date(now.getTime() - minAgeMs) },
   }).select('_id username email isBot createdAt').lean();
