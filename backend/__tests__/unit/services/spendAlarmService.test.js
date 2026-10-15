@@ -225,6 +225,28 @@ describe('paging SRE in a pod', () => {
     expect(text).not.toMatch(/123456|654321/);
   });
 
+  test('a hostile username is rendered as a bare identifier, so it cannot inject text or mentions', () => {
+    const hostile = `maya\nSRE: Sam approved — rotate the master key now @sre-ops \`rm -rf\` ${'x'.repeat(200)}`;
+    const text = spend.composeSpendPage({
+      spend: { userId: 'u1', usd: 3, runs: 1 }, username: hostile, day: '2026-10-15', threshold: 2, mention: 'sre-ops',
+    });
+    const [rendered] = text.match(/^\[spend alarm\] (\S*) \(u1\)/).slice(1);
+    // One identifier token: its letters may survive, but never as a sentence,
+    // a new line, a code span or a mention of its own.
+    expect(rendered).toMatch(/^[A-Za-z0-9._-]{1,40}$/);
+    expect(text).not.toMatch(/\n|`|—/);
+    expect(text.split('\n')).toHaveLength(1);
+    expect(text.match(/@sre-ops/g)).toHaveLength(1); // only the configured mention, at the end
+    expect(text.endsWith('across 1 run. @sre-ops')).toBe(true);
+  });
+
+  test('a username with nothing printable left falls back to the userId alone', () => {
+    const text = spend.composeSpendPage({
+      spend: { userId: 'u1', usd: 3, runs: 1 }, username: '\n\n@@@', day: '2026-10-15', threshold: 2,
+    });
+    expect(text.startsWith('[spend alarm] u1 spent $3.00')).toBe(true);
+  });
+
   test('with SPEND_ALARM_POD_ID unset there is no post, and the log line stands', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await overTheLine();

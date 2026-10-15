@@ -164,7 +164,12 @@ export const composeSpendPage = (
   { spend, username, day, threshold, mention }:
   { spend: UserSpend; username?: string; day: string; threshold: number; mention?: string },
 ): string => {
-  const who = username ? `${username} (${spend.userId})` : spend.userId;
+  // A username is user-chosen with no charset or length limit, and this text
+  // lands in an inbox an SRE model session reads. Render it as an identifier
+  // only, so a name cannot carry a newline, an @mention or instructions into
+  // a trusted alarm. The userId stays the key either way.
+  const name = String(username || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40);
+  const who = name ? `${name} (${spend.userId})` : spend.userId;
   const handle = mention ? ` @${mention}` : '';
   return `[spend alarm] ${who} spent $${spend.usd.toFixed(2)} on ${day} UTC, over the $${threshold} daily line, `
     + `across ${spend.runs} run${spend.runs === 1 ? '' : 's'}.${handle}`;
