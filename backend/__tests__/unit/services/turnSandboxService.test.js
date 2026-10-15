@@ -42,6 +42,11 @@ describe('TurnSandbox', () => {
       envs: {},
       metadata: { podId: 'pod-1' },
     });
+    // Exact, not a subset: toMatchObject treats {} as matching any object, so
+    // only these pin that nothing from the process env reaches the sandbox
+    // (sprint-review on #2232).
+    expect(options.envs).toEqual({});
+    expect(mockRunCode.mock.calls.every(([, opts]) => Object.keys(opts.envs).length === 0)).toBe(true);
     expect(options.timeoutMs).toBeGreaterThan(0);
     expect(options.timeoutMs).toBeLessThanOrEqual(5 * 60 * 1000);
     expect(mockRunCode).toHaveBeenLastCalledWith('console.log(1)', expect.objectContaining({ language: 'javascript', envs: {} }));
