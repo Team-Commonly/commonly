@@ -3,7 +3,7 @@ import Activity from '../models/Activity';
 import { AgentInstallation } from '../models/AgentRegistry';
 import AgentIdentityService from './agentIdentityService';
 import { assertAgentRuntimeMayJoinPod, runtimeTypeFromConfig } from './outsiderGrantAgentJoinPolicy';
-import { hostedEngineOf } from './hostedEngine';
+import { hostedEngineInEffect } from './hostedEngine';
 
 const MAX_TOTAL_INSTALLS = Math.max(1, parseInt(process.env.AGENT_AUTO_JOIN_MAX_TOTAL || '200', 10));
 const MAX_PER_SOURCE = Math.max(1, parseInt(process.env.AGENT_AUTO_JOIN_MAX_PER_SOURCE || '25', 10));
@@ -80,7 +80,7 @@ class AgentAutoJoinService {
           await assertAgentRuntimeMayJoinPod(
             (pod as Record<string, unknown>)._id,
             runtimeTypeFromConfig(sourceInstall.config),
-            hostedEngineOf(sourceInstall),
+            hostedEngineInEffect(sourceInstall),
           );
           // eslint-disable-next-line no-await-in-loop
           await AgentInstallation.install(

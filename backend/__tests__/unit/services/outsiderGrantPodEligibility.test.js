@@ -108,6 +108,26 @@ test.each([
   expect(await outsiderGrantPodRefusal(target)).toBe('non_native_agent');
 });
 
+// Rhea on #2236 (a600bf3d): a row the TASK-265 migration marked native but has
+// not finished may still have a running worker or a live token, so it is not
+// in-process until the migration records it done.
+const MIGRATED = { engine: 'native', provisionedAt: new Date(), migratedFrom: 'durable-object' };
+test.each([
+  ['marked', { migration: { state: 'marked', doProvisioned: true } }],
+  ['stopped', { migration: { state: 'stopped', doProvisioned: true } }],
+  ['recorded with no state', {}],
+])('a hosted agent whose migration is %s is ineligible', async (_label, extra) => {
+  installations[0].config = { runtime: { runtimeType: 'hosted' }, hosted: { ...MIGRATED, ...extra } };
+  expect(await outsiderGrantPodRefusal(target)).toBe('non_native_agent');
+});
+
+test('a hosted agent whose migration is done is eligible', async () => {
+  installations[0].config = {
+    runtime: { runtimeType: 'hosted' }, hosted: { ...MIGRATED, migration: { state: 'done', doProvisioned: true } },
+  };
+  expect(await outsiderGrantPodRefusal(target)).toBeNull();
+});
+
 test('an agent with no matching active installation is ineligible', async () => {
   installations = [];
   expect(await outsiderGrantPodRefusal(target)).toBe('non_native_agent');

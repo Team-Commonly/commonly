@@ -37,10 +37,42 @@ export const hostedEngineOf = (installation: any): HostedEngine => (
     : HOSTED_ENGINE_DURABLE_OBJECT
 );
 
+/** Rows the TASK-265 migration moved off the Durable Object carry this in `config.hosted.migratedFrom`. */
+export const MIGRATED_FROM_DURABLE_OBJECT = 'durable-object';
+
+/**
+ * True while the TASK-265 migration has marked a row native but not yet
+ * recorded it done: its Durable Object may still be running, or its old
+ * runtime token may still be live (Rhea on #2236). A migrated row with no
+ * recorded state counts as unfinished, as the migration itself reads it.
+ */
+export const hostedMigrationUnfinished = (installation: any): boolean => {
+  const hosted = readHostedConfig(installation);
+  if (hosted.migratedFrom !== MIGRATED_FROM_DURABLE_OBJECT) return false;
+  const raw = hosted.migration;
+  const migration = raw instanceof Map ? Object.fromEntries(raw) : (raw && typeof raw === 'object' ? raw : {});
+  return (migration as { state?: unknown }).state !== 'done';
+};
+
+/**
+ * The engine that decides how an install runs and what it may join: native
+ * only once any migration onto it has finished. Everything that relies on a
+ * native agent having no channel outside this process (where its turns run,
+ * grant eligibility, agent joins into granted pods) asks this, never
+ * `hostedEngineOf`. The token issuer is the deliberate exception: it refuses
+ * on the stored engine, so an unfinished row can neither mint nor count as
+ * in-process (routes/registry/tokens.ts).
+ */
+export const hostedEngineInEffect = (installation: any): HostedEngine => (
+  hostedEngineOf(installation) === HOSTED_ENGINE_NATIVE && !hostedMigrationUnfinished(installation)
+    ? HOSTED_ENGINE_NATIVE
+    : HOSTED_ENGINE_DURABLE_OBJECT
+);
+
 /** The engine boundary shared by grant eligibility and agent-join checks. */
 export const runsInNarrowedProcess = (installation: any): boolean => (
   String(readRuntimeConfig(installation).runtimeType || '').trim().toLowerCase() === 'native'
-  || (isHostedInstallation(installation) && hostedEngineOf(installation) === HOSTED_ENGINE_NATIVE)
+  || (isHostedInstallation(installation) && hostedEngineInEffect(installation) === HOSTED_ENGINE_NATIVE)
 );
 
 /**
@@ -75,7 +107,7 @@ export const nativeHostedConfigForInstall = (about?: string): Record<string, unk
  */
 export const hostedRunsNative = (installation: any): boolean => (
   isHostedInstallation(installation)
-  && hostedEngineOf(installation) === HOSTED_ENGINE_NATIVE
+  && hostedEngineInEffect(installation) === HOSTED_ENGINE_NATIVE
   && Boolean(readHostedConfig(installation).provisionedAt)
 );
 

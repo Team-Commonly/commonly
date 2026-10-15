@@ -60,6 +60,22 @@ const INSTANCE_RE = /^[a-z0-9-]+$/;
 const getUserId = (req: any) => req.userId || req.user?.id || req.user?._id;
 
 /**
+ * Write a Durable Object install's `config.hosted` only if the row is still on
+ * the Durable Object (TASK-265, Rhea on #2236). The migration can mark a row
+ * native while this request awaits the worker, and a blind save of the record
+ * read at the start would put it back on the Durable Object, after which the
+ * next provision mints again. Same spelling of native as the token issuer's
+ * check. Returns false when the migration got there first.
+ */
+const writeDurableObjectRecord = async (installation: any, hosted: Record<string, unknown>): Promise<boolean> => {
+  const result = await AgentInstallation.updateOne(
+    { _id: installation._id, 'config.hosted.engine': { $not: /^\s*native\s*$/i } },
+    { $set: { 'config.hosted': hosted } },
+  );
+  return Number(result?.matchedCount ?? 0) > 0;
+};
+
+/**
  * Resolve the identity the caller may act on. Returns the hydrated
  * installation (the token path saves onto it) or an error tuple.
  */
@@ -234,10 +250,14 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
     if (engine === HOSTED_ENGINE_NATIVE) {
       // Nothing to start: turns run in-process. No token is minted, so with
       // the revoke above nothing outside the backend can act as this agent.
-      // Idempotent: the install already marked it provisioned.
+      // Idempotent: the install already marked it provisioned. Only the field
+      // this route owns is written, so a migration's record (its state, the
+      // persona) is never replaced by the copy read at the start.
       const hosted = readHostedConfig(installation);
-      installation.config.set('hosted', { ...hosted, provisionedAt: hosted.provisionedAt || new Date() });
-      await installation.save();
+      await AgentInstallation.updateOne(
+        { _id: installation._id },
+        { $set: { 'config.hosted.provisionedAt': hosted.provisionedAt || new Date() } },
+      );
       return res.json({
         provisioned: true,
         engine,
@@ -259,8 +279,23 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
     }
     await hostedRuntime.provisionAgent({ agentName, instanceId, runtimeToken: token.token });
 
-    installation.config.set('hosted', { provisionedAt: new Date() });
-    await installation.save();
+    if (!(await writeDurableObjectRecord(installation, { provisionedAt: new Date() }))) {
+      // Migrated to the native engine while the worker call was in flight. The
+      // migration owns this identity now: stop what this request started and
+      // take its token back. Both are idempotent with the migration's own stop
+      // and revoke, and the token was minted before the mark, so the issuer's
+      // refusal could not have caught it.
+      try {
+        await hostedRuntime.deprovisionAgent(agentName, instanceId);
+      } catch (error: any) {
+        console.warn('[hosted] stopping a provision overtaken by migration failed:', error?.message || error);
+      }
+      await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId, installation });
+      return res.status(409).json({
+        code: 'hosted_engine_migrated',
+        message: 'This agent moved to the native engine while it was starting. Provision it again.',
+      });
+    }
 
     return res.json({
       provisioned: true,
@@ -289,18 +324,19 @@ router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) =>
     const { installation, agentName, instanceId } = resolved;
     if (hostedEngineOf(installation) === HOSTED_ENGINE_NATIVE) {
       // Stopping is the record alone: an unprovisioned native-engine install
-      // no longer routes to the runtime (hostedRunsNative). Engine and
-      // persona stay for the next provision.
-      installation.config.set('hosted', {
-        ...readHostedConfig(installation), provisionedAt: null, deprovisionedAt: new Date(),
-      });
-      await installation.save();
+      // no longer routes to the runtime (hostedRunsNative). Engine, persona
+      // and any migration record stay; only these two fields are written.
+      await AgentInstallation.updateOne(
+        { _id: installation._id },
+        { $set: { 'config.hosted.provisionedAt': null, 'config.hosted.deprovisionedAt': new Date() } },
+      );
       return res.json({ deprovisioned: true, agentName, instanceId });
     }
     if (!requireConfigured(res, hostedEngineOf(installation))) return undefined;
     await hostedRuntime.deprovisionAgent(agentName, instanceId);
-    installation.config.set('hosted', { provisionedAt: null, deprovisionedAt: new Date() });
-    await installation.save();
+    // A row migrated meanwhile keeps the migration's record; the worker is
+    // stopped either way, which is what both wanted.
+    await writeDurableObjectRecord(installation, { provisionedAt: null, deprovisionedAt: new Date() });
     return res.json({ deprovisioned: true, agentName, instanceId });
   } catch (error) {
     return relayWorkerError(res, error);

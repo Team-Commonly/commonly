@@ -16,10 +16,18 @@
  *   1. mark:   every row native, state 'marked'. From here the token issuer
  *              refuses to mint for the identity, and re-checks after saving,
  *              so a mint already in flight takes its own token back
- *              (routes/registry/tokens.ts).
- *   2. stop:   the Durable Object, if one existed; state 'stopped'. Recorded
- *              apart from the mark, so a run interrupted before the stop
- *              stops it on the next run instead of assuming it happened.
+ *              (routes/registry/tokens.ts). Until 'done' the rows are NOT
+ *              native for execution, grant eligibility or joins
+ *              (hostedEngineInEffect), so no step's failure leaves an
+ *              identity with an outside channel counted as in-process.
+ *   2. stop:   the Durable Object, whenever the worker is configured, since
+ *              its stop is idempotent and a provision can land after this
+ *              run read the rows; state 'stopped'. Recorded apart from the
+ *              mark, so a run interrupted before the stop stops it on the
+ *              next run instead of assuming it happened. A provision in
+ *              flight across the migration does not overwrite it either: the
+ *              route's record write is fenced on the stored engine
+ *              (routes/hosted.ts).
  *   3. revoke: the identity's runtime tokens.
  *   4. events: pending events, which nothing polls once the Durable Object
  *              stops. A recent one on a provisioned install is handed to the
@@ -30,7 +38,9 @@
  * report says which, and the next run resumes it. Nothing is reported done
  * that is not.
  */
-import { HOSTED_ENGINE_NATIVE, hostedEngineOf, readHostedConfig } from './hostedEngine';
+import {
+  HOSTED_ENGINE_NATIVE, MIGRATED_FROM_DURABLE_OBJECT, hostedEngineOf, readHostedConfig,
+} from './hostedEngine';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation } = require('../models/AgentRegistry');
@@ -45,7 +55,6 @@ const hostedRuntime = require('./hostedRuntimeService');
 
 const STALE_PENDING_MS = 10 * 60 * 1000;
 const ABOUT_LIMIT = 160;
-const MIGRATED_FROM = 'durable-object';
 
 type MigrationState = 'marked' | 'stopped' | 'done';
 
@@ -106,7 +115,7 @@ export const migrateHostedInstallsToNative = async (
     const instanceId = String(rows[0].instanceId || 'default');
     const isProvisioned = (row: any) => Boolean(readHostedConfig(row).provisionedAt);
     const unmarked = rows.filter((row) => hostedEngineOf(row) !== HOSTED_ENGINE_NATIVE);
-    const migrated = rows.filter((row) => readHostedConfig(row).migratedFrom === MIGRATED_FROM);
+    const migrated = rows.filter((row) => readHostedConfig(row).migratedFrom === MIGRATED_FROM_DURABLE_OBJECT);
     const unfinished = migrated.filter((row) => migrationOf(row).state !== 'done');
     // Done, or born native: nothing to do.
     if (!unmarked.length && !unfinished.length) continue;
@@ -158,7 +167,7 @@ export const migrateHostedInstallsToNative = async (
               engine: HOSTED_ENGINE_NATIVE,
               provisionedAt: isProvisioned(row) ? now : null,
               ...(about ? { about } : {}),
-              migratedFrom: MIGRATED_FROM,
+              migratedFrom: MIGRATED_FROM_DURABLE_OBJECT,
               migratedAt: now,
               migration: { state: 'marked', doProvisioned },
             },
@@ -170,10 +179,13 @@ export const migrateHostedInstallsToNative = async (
       continue;
     }
 
-    // 2. Stop the Durable Object, recorded separately from the mark.
+    // 2. Stop the Durable Object, recorded separately from the mark. Whenever
+    // the worker is configured, not only when this run saw it provisioned: a
+    // provision can complete between the read above and the mark, and the
+    // worker's stop is a no-op for an agent it is not running.
     entry.reached = 'stop';
     try {
-      if (doProvisioned && !stopped) {
+      if (!stopped && hostedRuntime.isConfigured()) {
         // eslint-disable-next-line no-await-in-loop
         await hostedRuntime.deprovisionAgent(agentName, instanceId);
         entry.durableObjectStopped = true;

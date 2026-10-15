@@ -28,7 +28,7 @@ const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecVa
 const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
 const { configWriteRefusal, runtimeKeepingType } = require('../../services/configWriteGuard');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
-const { hostedEngineOf } = require('../../services/hostedEngine');
+const { hostedEngineInEffect } = require('../../services/hostedEngine');
 
 const agentConfigRouter = express.Router();
 
@@ -274,7 +274,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
           // eslint-disable-next-line no-await-in-loop
           await assertAgentRuntimeMayJoinPod(
             targetInstallation.podId, runtime?.runtimeType,
-            hostedEngineOf({ config: stored }),
+            hostedEngineInEffect({ config: stored }),
           );
         }
       } catch (joinError: any) {

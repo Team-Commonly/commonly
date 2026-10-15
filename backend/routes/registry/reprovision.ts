@@ -5,7 +5,7 @@ const AgentProfile = require('../../models/AgentProfile');
 const Integration = require('../../models/Integration');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
-const { hostedEngineOf } = require('../../services/hostedEngine');
+const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const {
   provisionAgentRuntime,
   startAgentRuntime,
@@ -57,7 +57,7 @@ const reprovisionInstallation = async ({
   if (!runtimeType) {
     throw new Error('Unknown agent runtime type');
   }
-  await assertAgentRuntimeMayJoinPod(podId, runtimeType, hostedEngineOf(installation));
+  await assertAgentRuntimeMayJoinPod(podId, runtimeType, hostedEngineInEffect(installation));
 
   const agentUser = await AgentIdentityService.getOrCreateAgentUser(name, {
     instanceId: normalizedInstanceId,

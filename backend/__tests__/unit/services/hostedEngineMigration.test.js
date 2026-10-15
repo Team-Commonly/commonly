@@ -45,8 +45,11 @@ const install = (agentName, podId, hosted) => AgentInstallation.create({
   config: { runtime: { runtimeType: 'hosted' }, ...(hosted ? { hosted } : {}) },
 });
 const hostedOf = async (id) => (await AgentInstallation.findById(id).lean()).config.hosted;
+const readStoredEngine = (row) => require('../../../services/hostedEngine').hostedEngineOf(row);
 const field = async (ids, pick) => Promise.all(ids.map(async (id) => pick((await hostedOf(id)) || {})));
 const entryFor = (report, name) => report.identities.find((row) => row.agentName === name);
+const stopsFor = (name) => mockDeprovision.mock.calls.filter(([agentName]) => agentName === name).length;
+const revokedFor = (name) => mockRevoke.mock.calls.filter(([args]) => args.agentName === name).length;
 
 let podA; let podB; let maya; let mayaB; let idle; let born;
 beforeEach(async () => {
@@ -120,25 +123,89 @@ test('marking interrupted part-way: the next run marks the rest and finishes', a
 });
 
 test('a stop that failed is retried on the next run, not assumed (Rhea: marker is not shutdown)', async () => {
-  mockDeprovision.mockRejectedValueOnce(new Error('worker down'));
+  let failed = false;
+  mockDeprovision.mockImplementation(async (name) => {
+    if (name === 'maya-agent' && !failed) { failed = true; throw new Error('worker down'); }
+    return true;
+  });
   const first = await migrate({ apply: true, now: NOW });
   expect(entryFor(first, 'maya-agent')).toMatchObject({ reached: 'stop', error: expect.stringMatching(/run again to stop/) });
   expect(await field([maya._id, mayaB._id], (h) => h.migration?.state)).toEqual(['marked', 'marked']);
-  expect(mockRevoke).not.toHaveBeenCalled();
+  expect(revokedFor('maya-agent')).toBe(0);
 
   const second = await migrate({ apply: true, now: NOW });
   expect(entryFor(second, 'maya-agent')).toMatchObject({ from: 'marked', reached: 'done', durableObjectStopped: true });
-  expect(mockDeprovision).toHaveBeenCalledTimes(2);
+  expect(stopsFor('maya-agent')).toBe(2);
 });
 
 test('a failed revoke resumes at the revoke, without stopping the worker twice', async () => {
-  mockRevoke.mockRejectedValueOnce(new Error('db down'));
+  let failed = false;
+  mockRevoke.mockImplementation(async ({ agentName }) => {
+    if (agentName === 'maya-agent' && !failed) { failed = true; throw new Error('db down'); }
+    return ['hash-1'];
+  });
   const first = await migrate({ apply: true, now: NOW });
   expect(entryFor(first, 'maya-agent')).toMatchObject({ reached: 'revoke' });
 
   const second = await migrate({ apply: true, now: NOW });
   expect(entryFor(second, 'maya-agent')).toMatchObject({ from: 'stopped', reached: 'done', tokensRevoked: 1 });
-  expect(mockDeprovision).toHaveBeenCalledTimes(1);
+  expect(stopsFor('maya-agent')).toBe(1);
+});
+
+// Rhea on #2236 (a600bf3d): a provision can complete between this run's read
+// and its mark, so the stop cannot be decided from what the run read. With the
+// worker configured every identity is stopped; the worker's stop is a no-op for
+// an agent it is not running.
+test('an identity this run saw unprovisioned is still stopped when the worker is configured', async () => {
+  const report = await migrate({ apply: true, now: NOW });
+  expect(entryFor(report, 'idle-agent')).toMatchObject({ doProvisioned: false, reached: 'done', durableObjectStopped: true });
+  expect(stopsFor('idle-agent')).toBe(1);
+  expect(stopsFor('native-agent')).toBe(0);
+});
+
+test('with no worker configured, an unprovisioned identity migrates without a stop and a provisioned one is refused', async () => {
+  mockConfigured = false;
+  const report = await migrate({ apply: true, now: NOW });
+  expect(entryFor(report, 'idle-agent')).toMatchObject({ reached: 'done' });
+  expect(entryFor(report, 'idle-agent').durableObjectStopped).toBeUndefined();
+  expect(entryFor(report, 'maya-agent')).toMatchObject({ reached: 'refused' });
+  expect(mockDeprovision).not.toHaveBeenCalled();
+});
+
+// Rhea on #2236 (a600bf3d), item 1: until the identity is done, its rows are
+// not native for execution, grant eligibility or joins, whichever step failed.
+// Checked on the rows exactly as the migration leaves them in the store.
+test.each([
+  ['a failed stop', 'stop'],
+  ['a failed revoke', 'revoke'],
+])('after %s the rows are native for nothing; once done, for everything', async (_label, failAt) => {
+  const { hostedRunsNative, runsInNarrowedProcess, hostedEngineInEffect } = require('../../../services/hostedEngine');
+  // Fail maya's step once; the other identities run normally.
+  let failed = false;
+  const failMayaOnce = (fallback) => async (arg) => {
+    const name = typeof arg === 'string' ? arg : arg.agentName;
+    if (name === 'maya-agent' && !failed) { failed = true; throw new Error(`${failAt} failed`); }
+    return fallback;
+  };
+  if (failAt === 'stop') mockDeprovision.mockImplementation(failMayaOnce(true));
+  else mockRevoke.mockImplementation(failMayaOnce(['hash-1']));
+  const first = await migrate({ apply: true, now: NOW });
+  expect(entryFor(first, 'maya-agent')).toMatchObject({ reached: failAt });
+
+  const rowsNow = async () => Promise.all([maya._id, mayaB._id].map((id) => AgentInstallation.findById(id)));
+  const stuck = await rowsNow();
+  expect(stuck.map((row) => readStoredEngine(row))).toEqual(['native', 'native']);
+  expect(stuck.map(hostedEngineInEffect)).toEqual(['durable-object', 'durable-object']);
+  expect(stuck.map(hostedRunsNative)).toEqual([false, false]);
+  expect(stuck.map(runsInNarrowedProcess)).toEqual([false, false]);
+
+  await migrate({ apply: true, now: NOW });
+  const finished = await rowsNow();
+  expect(finished.map(hostedRunsNative)).toEqual([true, true]);
+  expect(finished.map(runsInNarrowedProcess)).toEqual([true, true]);
+  // A row born native was never migrated and is native throughout.
+  const bornRow = await AgentInstallation.findById(born._id);
+  expect(hostedRunsNative(bornRow)).toBe(true);
 });
 
 test('a failed event write is resumed: the next run handles the events and finishes (Rhea 4)', async () => {
