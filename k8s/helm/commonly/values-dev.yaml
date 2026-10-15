@@ -68,6 +68,9 @@ backend:
     pgUser: "avnadmin"
     pgSslEnabled: "true"
     pgCaCertPath: "/app/certs/ca.pem"
+    # Purge the stranger journey's eng-smoke-journey-*@ops.commonly.invalid
+    # accounts twice a day (TASK-260). Requires strangerJourney to be useful.
+    syntheticAccountPurge: "true"
     marketplaceManifestPath: "/app/packages/commonly-marketplace/marketplace.json"
     logLevel: debug
     # Session threshold tuned for multi-step agent tasks. 150KB was killing
