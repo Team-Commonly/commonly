@@ -40,6 +40,8 @@ describe('adm-zip runtime consumers', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
+        // A real Response always has headers; the download reads its declared size.
+        headers: new Headers({ 'content-length': String(archive.byteLength) }),
         arrayBuffer: async () => archive,
       });
 

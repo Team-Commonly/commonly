@@ -44,6 +44,15 @@ Any other URL, or a redirect that leaves those hosts, returns 400. A
 non-GitHub `sourceUrl` sent alongside pasted `content` is stored as metadata and
 never fetched. See `backend/services/outboundUrlGuard.ts`.
 
+Almost every built-in catalog entry (1,655 of 1,659) still points at
+`github.com/openclaw/skills`, which has returned 404 since May 2026. The import
+fetches those from ClawHub (`clawhub.ai`) under the same owner and slug, where
+the skills that are still published live. A source that does not have the skill
+answers **404** (`skill_source_missing`, "This skill is no longer published at
+its source."), and a source that cannot be read answers **502**
+(`skill_source_unreachable`). Neither is ever a 500. See `fetchSkillContentFromSource` in
+`backend/services/skillsCatalogService.ts` (#2189).
+
 ## Gateway Credentials (Shared)
 
 Skill credentials apply to a **gateway**, not an agent. The Skills page exposes a
