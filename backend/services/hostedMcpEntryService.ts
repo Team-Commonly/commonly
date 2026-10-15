@@ -80,6 +80,8 @@ export interface HostedMcpEntry {
   /** The authorization server the protected-resource metadata names. */
   issuer: string;
   client: 'pre-registered' | 'cimd' | 'dcr';
+  /** Entry-pinned exception when an AS omits its token auth-method list. */
+  tokenEndpointAuthMethod?: 'client_secret_basic' | 'client_secret_post';
   scopes: string[];
   /** Only the vendor-specific authorization parameters supported by this code. */
   authorizationParams?: {

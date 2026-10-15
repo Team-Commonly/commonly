@@ -426,6 +426,28 @@ describe('hosted-mcp intake: pre-registered client authentication', () => {
     );
   });
 
+  it('uses GitHub App client_secret_post for exchange and refresh when metadata omits methods', () => {
+    const { GITHUB_MCP_ENTRY } = require('../../../integrations/hostedMcp/githubMcp');
+    const client = { clientId: 'github-client', clientSecret: 'github-secret' };
+    const exchange = buildTokenExchangeRequest(GITHUB_MCP_ENTRY, {}, client, {
+      redirectUri: 'https://api.commonly.me/api/hosted-mcp/github-mcp/callback',
+      code: 'code', codeVerifier: 'pkce-verifier',
+    });
+    const refresh = buildRefreshRequest(GITHUB_MCP_ENTRY, {}, client, { refreshToken: 'refresh' });
+    for (const request of [exchange, refresh]) {
+      expect(request.headers.Authorization).toBeUndefined();
+      expect(request.body.get('client_id')).toBe(client.clientId);
+      expect(request.body.get('client_secret')).toBe(client.clientSecret);
+      expect(request.body.get('resource')).toBe(GITHUB_MCP_ENTRY.resource);
+    }
+    expect(exchange.body.get('code_verifier')).toBe('pkce-verifier');
+    expect(() => buildRefreshRequest(GITHUB_MCP_ENTRY, {
+      token_endpoint_auth_methods_supported: ['client_secret_basic'],
+    }, client, { refreshToken: 'refresh' })).toThrow(expect.objectContaining({
+      code: 'client_auth_unsupported',
+    }));
+  });
+
   it('uses client_secret_post when both endpoints advertise it', () => {
     const staticEntry = entry({ id: 'google-calendar', client: 'pre-registered' });
     const metadata = {
