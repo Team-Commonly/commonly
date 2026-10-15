@@ -32,6 +32,27 @@ describe('htmlToText', () => {
   });
 });
 
+describe('htmlToText on hostile input', () => {
+  // A fetched page is attacker-chosen and up to 1 MB. Each shape below made the
+  // pre-fix patterns rescan to the end of the input once per "<" (quadratic:
+  // 117 KB of "<a " took 1.5 s, so 1 MB was about two minutes of blocked event loop).
+  const MB = 1024 * 1024;
+  test.each([
+    ['"<a " with no ">"', '<a '],
+    ['"<script " with no ">"', '<script '],
+    ['bare "<"', '<'],
+    ['"<!--" with no "-->"', '<!--'],
+    ['"<p" with no ">"', '<p'],
+    ['"&#" fragments', '&#'],
+  ])('1 MB of %s reduces in well under a second', (_name, unit) => {
+    const input = unit.repeat(Math.ceil(MB / unit.length)).slice(0, MB);
+    const started = process.hrtime.bigint();
+    htmlToText(input);
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+    expect(elapsedMs).toBeLessThan(1000);
+  });
+});
+
 describe('decodeEntities', () => {
   test('named, decimal and hex entities decode', () => {
     expect(decodeEntities('&amp; &lt;b&gt; &quot;q&quot; &#39;s&#39; &#x41;&#66; &mdash; &nbsp;')).toBe('& <b> "q" \'s\' AB —  ');

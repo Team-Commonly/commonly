@@ -84,6 +84,8 @@ describe('getFromPublicAddress', () => {
       ['ftp://example.test/page', 'scheme ftp: is not https'],
       ['file:///etc/hostname', 'scheme file: is not https'],
       ['https://user:secret@example.test/', 'credentials in URL'],
+      ['https://example.test:8443/page', 'non-default port 8443'],
+      ['https://example.test:80/page', 'non-default port 80'],
       ['not a url', 'not a valid URL'],
     ])('%s is refused', async (url, reason) => {
       const error = await refusalOf(getFromPublicAddress(url));
@@ -156,6 +158,24 @@ describe('getFromPublicAddress', () => {
       const sent = Object.keys(calls[0].options.headers).map((name) => name.toLowerCase());
       expect(sent).not.toContain('cookie');
       expect(sent).not.toContain('authorization');
+    });
+
+    test('an explicit :443 is the default port and is allowed', async () => {
+      lookupSpy.mockResolvedValue(PUBLIC);
+
+      const result = await getFromPublicAddress('https://page.example.test:443/a');
+
+      expect(result).toMatchObject({ ok: true, url: 'https://page.example.test/a' });
+    });
+
+    test('a redirect to a non-default port is refused before the second request', async () => {
+      lookupSpy.mockResolvedValue(PUBLIC);
+      route = () => ({ status: 302, headers: { location: 'https://page.example.test:8080/admin' } });
+
+      const error = await refusalOf(getFromPublicAddress('https://page.example.test/'));
+
+      expect(error.message).toBe('outbound URL refused: non-default port 8080');
+      expect(calls).toHaveLength(1);
     });
 
     test('the socket is pinned to the checked address: a second DNS answer (rebinding) is never used', async () => {

@@ -33,7 +33,7 @@
  * `getFromPublicAddress` — a GET of a URL an AGENT chose, for a page it reads
  * mid-turn. The same address check and pin as `postToPublicAddress`, held
  * tighter because the caller is a model acting on outsider-written text:
- * https only; public addresses only, whatever the webhook private-address flag
+ * https only, on port 443; public addresses only, whatever the webhook private-address flag
  * says; at most `MAX_FETCH_REDIRECTS` hops; a 10s deadline; the body read to
  * at most 1 MB and then cut off, not refused; only text/html, text/plain and
  * application/json, with HTML reduced to its text; no cookies and no auth
@@ -321,6 +321,8 @@ const toPublicDestination = async (
     throw new OutboundUrlRefusedError(`scheme ${url.protocol} is not http or https`);
   }
   if (policy.httpsOnly && (url.username || url.password)) throw new OutboundUrlRefusedError('credentials in URL');
+  // The URL parser drops a default :443, so any port left here is a non-default one.
+  if (policy.httpsOnly && url.port) throw new OutboundUrlRefusedError(`non-default port ${url.port}`);
   const host = url.hostname.replace(/^\[|\]$/g, '');
   if (METADATA_HOSTNAMES.has(host)) throw new OutboundUrlRefusedError(`host ${host} is not allowed`);
   const family = net.isIP(host);

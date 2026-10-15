@@ -52,9 +52,11 @@ export const htmlToText = (html: string): string => {
   let text = html.replace(/<!--[\s\S]*?(-->|$)/g, ' ');
   for (const tag of DROPPED_ELEMENTS) {
     // An unclosed element runs to the end of the input, as a browser would treat it.
-    text = text.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?(</${tag}\\s*>|$)`, 'gi'), ' ');
+    // `[^<>]*`, not `[^>]*`: a "<" that never closes must not send the opener
+    // scanning to the end of the input once per "<", which is quadratic.
+    text = text.replace(new RegExp(`<${tag}\\b[^<>]*>[\\s\\S]*?(</${tag}\\s*>|$)`, 'gi'), ' ');
   }
-  text = text.replace(/<\/?([a-z][a-z0-9-]*)\b[^>]*>/gi, (_tag, name: string) => (
+  text = text.replace(/<\/?([a-z][a-z0-9-]*)\b[^<>]*>/gi, (_tag, name: string) => (
     BLOCK_TAGS.has(name.toLowerCase()) ? '\n' : ' '
   ));
   // A stray '<' that never closed a tag is text, not markup; leave it.
