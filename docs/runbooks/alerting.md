@@ -68,7 +68,11 @@ Two uptime checks probe the paths a stranger and an agent hit first:
 - **`/api/auth/registration-policy`** must return 200 containing
   `"registrationOpen":true`. A 200 with `false` means registration was
   switched to invite-only, so check whether that was intended. A 5xx is the
-  auth router.
+  auth router. **Closing signup on purpose pages CRITICAL** unless you
+  snooze "commonly-dev: signup is closed or failing" first (Cloud Console →
+  Monitoring → Alerting → Snooze, or a `snoozes` API call scoped to that
+  policy), for as long as signup stays closed. For a permanent close, change
+  the check's content matcher in `uptime-checks.json` and re-apply.
 - **`/api/agents/runtime/events`** is called with the deliberately invalid
   `Authorization: Bearer cm_agent_uptimeprobe_not_a_real_token`, and must
   return `401 Invalid agent token`. That answer is reached only after
