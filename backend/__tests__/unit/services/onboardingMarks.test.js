@@ -8,7 +8,9 @@ jest.mock('../../../models/User', () => ({
   default: { updateOne: (...args) => mockUpdateOne(...args) },
 }));
 
-const { markPodOpened, markStartPicked, resetOnboardingMarksForTest } = require('../../../services/onboardingMarks');
+const {
+  markPodOpened, markStartPicked, markByoOpened, resetOnboardingMarksForTest,
+} = require('../../../services/onboardingMarks');
 
 const flush = () => new Promise((r) => setImmediate(r));
 
@@ -104,5 +106,63 @@ describe('markStartPicked', () => {
     markPodOpened('u1', { createdBy: 'u1' });
     markStartPicked('u1', { createdBy: 'u1' }, 'Start a pod for a project');
     expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+  });
+});
+
+// The first visit to Bring your own, read from the page's own load request.
+describe('markByoOpened', () => {
+  test('marks the first visit to Bring your own, write-once in the filter, never for bots', () => {
+    markByoOpened('u1');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    const [filter, update] = mockUpdateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: 'u1', isBot: { $ne: true }, 'onboarding.byoOpenedAt': { $exists: false } });
+    expect(Object.keys(update)).toEqual(['$set']);
+    expect(Object.keys(update.$set)).toEqual(['onboarding.byoOpenedAt']);
+    expect(update.$set['onboarding.byoOpenedAt']).toBeInstanceOf(Date);
+  });
+
+  test('no person, no write', () => {
+    markByoOpened('');
+    markByoOpened(undefined);
+    markByoOpened(null);
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  test('one write per person per process, however often the page reloads its availability', () => {
+    markByoOpened('u1');
+    markByoOpened('u1');
+    markByoOpened({ toString: () => 'u1' });
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+  });
+
+  test('a failed write is retried on the next visit, and never throws into the request', async () => {
+    mockUpdateOne.mockRejectedValueOnce(new Error('mongo down'));
+    expect(() => markByoOpened('u1')).not.toThrow();
+    await flush();
+    markByoOpened('u1');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the three marks together', () => {
+  const fieldOf = ([filter]) => Object.keys(filter)[2];
+
+  test('they are independent: having one never skips another', () => {
+    markPodOpened('u1', { createdBy: 'u1' });
+    markStartPicked('u1', { createdBy: 'u1' }, 'Connect an agent I already use');
+    markByoOpened('u1');
+    expect(mockUpdateOne.mock.calls.map(fieldOf))
+      .toEqual(['onboarding.podOpenedAt', 'onboarding.firstStartAt', 'onboarding.byoOpenedAt']);
+  });
+
+  test('the reset seam forgets all three', () => {
+    markPodOpened('u1', { createdBy: 'u1' });
+    markStartPicked('u1', { createdBy: 'u1' }, 'Connect an agent I already use');
+    markByoOpened('u1');
+    resetOnboardingMarksForTest();
+    markPodOpened('u1', { createdBy: 'u1' });
+    markStartPicked('u1', { createdBy: 'u1' }, 'Connect an agent I already use');
+    markByoOpened('u1');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(6);
   });
 });

@@ -22,6 +22,7 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const User = require('../models/User');
 const AgentIdentityService = require('../services/agentIdentityService');
 const hostedRuntime = require('../services/hostedRuntimeService');
+const { markByoOpened } = require('../services/onboardingMarks');
 const {
   revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
@@ -145,10 +146,15 @@ const relayWorkerError = (res: express.Response, error: any) => {
  * "Run it here" only where it will work, instead of failing after install.
  * Caps are public knowledge (the install gate quotes them); the URL and
  * bearer are not returned.
+ *
+ * Only the Bring your own page calls this, on load, so it also records the
+ * person's first visit to that page (write-once, fire-and-forget;
+ * services/onboardingMarks.ts).
  */
-router.get('/availability', hostedRateLimit, auth, async (_req: any, res: any) => (
-  res.json({ configured: hostedRuntime.isConfigured(), caps: hostedRuntime.hostedCaps() })
-));
+router.get('/availability', hostedRateLimit, auth, async (req: any, res: any) => {
+  markByoOpened(getUserId(req));
+  return res.json({ configured: hostedRuntime.isConfigured(), caps: hostedRuntime.hostedCaps() });
+});
 
 /**
  * POST /api/hosted/provision { agentName, instanceId? }

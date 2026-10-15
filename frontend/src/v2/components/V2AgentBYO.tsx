@@ -283,6 +283,8 @@ const V2AgentBYO: React.FC = () => {
         // Defensive: keep the form usable; user will see the error on submit.
       }
       try {
+        // This request also records the person's first visit to this page on
+        // the server (User.onboarding.byoOpenedAt). Keep it on page load.
         const availability = await api.get<HostedAvailability>('/api/hosted/availability');
         if (cancelled) return;
         if (availability && typeof availability.configured === 'boolean') {
