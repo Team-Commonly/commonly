@@ -33,7 +33,9 @@ import AgentEvent from '../models/AgentEvent';
 export const HOSTED_RUNTIME_TYPE = 'hosted';
 
 const DEFAULT_AGENTS_PER_USER = 1;
-const DEFAULT_TURNS_PER_DAY = 200;
+// The plan line (TASK-268, ruled 2026-10-15): hosted turns a day per agent.
+const DEFAULT_TURNS_PER_DAY = 30;
+const DEFAULT_TURNS_PER_DAY_PRO = 200;
 const WORKER_TIMEOUT_MS = 10_000;
 
 const intEnv = (name: string, fallback: number): number => {
@@ -43,10 +45,38 @@ const intEnv = (name: string, fallback: number): number => {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
-export const hostedCaps = () => ({
+/**
+ * The hosted caps for a plan: 30 turns a day free, 200 on pro. Pro is
+ * `entitlements.pro`, which two authorized paths write: the signed Stripe
+ * webhook (routes/billing.ts) and an instance admin's entitlements PATCH
+ * (routes/admin/users.ts, how pilots and design partners get Pro). No client
+ * field sets it. Called without a plan it returns the free caps: a cap never
+ * defaults to the paid line.
+ */
+export const hostedCaps = ({ pro = false }: { pro?: boolean } = {}) => ({
   agentsPerUser: intEnv('HOSTED_AGENTS_PER_USER', DEFAULT_AGENTS_PER_USER),
-  turnsPerDay: intEnv('HOSTED_TURNS_PER_DAY', DEFAULT_TURNS_PER_DAY),
+  turnsPerDay: pro
+    ? intEnv('HOSTED_TURNS_PER_DAY_PRO', DEFAULT_TURNS_PER_DAY_PRO)
+    : intEnv('HOSTED_TURNS_PER_DAY', DEFAULT_TURNS_PER_DAY),
 });
+
+/** Whether a user is on pro. A missing user or a failed lookup reads as free. */
+export const ownerIsPro = async (userId: unknown): Promise<boolean> => {
+  const id = String(userId ?? '');
+  if (!/^[a-f\d]{24}$/i.test(id)) return false;
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const User = require('../models/User');
+    const user = await User.findById(id).select('entitlements.pro').lean();
+    return user?.entitlements?.pro === true;
+  } catch (error) {
+    console.warn('[hosted] plan lookup failed; using the free caps:', (error as Error).message);
+    return false;
+  }
+};
+
+/** The hosted caps for whoever owns (installed) a hosted agent. */
+export const hostedCapsForOwner = async (userId: unknown) => hostedCaps({ pro: await ownerIsPro(userId) });
 
 export const hostedRuntimeConfig = () => ({
   url: String(process.env.HOSTED_RUNTIME_URL || '').trim().replace(/\/+$/, ''),
@@ -129,8 +159,11 @@ export interface MeterResult {
   resetsAt: string;
 }
 
-export const meterAllowsTurn = async (agentName: string, instanceId: string): Promise<MeterResult> => {
-  const { turnsPerDay } = hostedCaps();
+export const meterAllowsTurn = async (
+  agentName: string,
+  instanceId: string,
+  turnsPerDay: number = hostedCaps().turnsPerDay,
+): Promise<MeterResult> => {
   const used = await turnsToday(agentName, instanceId);
   const tomorrow = new Date(utcDayStart().getTime() + 24 * 60 * 60 * 1000);
   return {
@@ -223,6 +256,8 @@ export const getAgentStatus = async (agentName: string, instanceId: string): Pro
 module.exports = {
   HOSTED_RUNTIME_TYPE,
   hostedCaps,
+  ownerIsPro,
+  hostedCapsForOwner,
   hostedRuntimeConfig,
   isConfigured,
   readRuntimeConfig,

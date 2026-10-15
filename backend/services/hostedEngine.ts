@@ -17,7 +17,7 @@
  *
  * Every site that has to tell the two engines apart asks this module.
  */
-import { hostedCaps, isHostedInstallation, readRuntimeConfig } from './hostedRuntimeService';
+import { isHostedInstallation, readRuntimeConfig } from './hostedRuntimeService';
 
 export const HOSTED_ENGINE_NATIVE = 'native';
 export const HOSTED_ENGINE_DURABLE_OBJECT = 'durable-object';
@@ -93,9 +93,9 @@ export const HOSTED_NATIVE_EVENT_TYPES: ReadonlySet<string> = new Set(['chat.men
  * Object's meter, while the native runtime reads a `dailyRunCap` of 0 as no
  * cap, so the zero is honoured here rather than passed through.
  */
-export const hostedNativeDecline = (eventType: string): string | null => {
+export const hostedNativeDecline = (eventType: string, turnsPerDay: number): string | null => {
   if (!HOSTED_NATIVE_EVENT_TYPES.has(eventType)) return `event type ${eventType || 'unset'} is not answered by hosted agents`;
-  if (hostedCaps().turnsPerDay <= 0) return 'hosted turns are switched off (HOSTED_TURNS_PER_DAY=0)';
+  if (turnsPerDay <= 0) return 'hosted turns are switched off for this plan (HOSTED_TURNS_PER_DAY*=0)';
   return null;
 };
 
@@ -137,7 +137,7 @@ export const hostedNativeSystemPrompt = (displayName: string, about?: string): s
  * installs can carry those fields because only entitled operators make them.
  * The model is left unset so the runtime's default applies.
  */
-export const hostedNativeRunConfig = (installation: any): Record<string, unknown> => {
+export const hostedNativeRunConfig = (installation: any, turnsPerDay: number): Record<string, unknown> => {
   const hosted = readHostedConfig(installation);
   const displayName = String(installation?.displayName || installation?.agentName || 'Commonly Agent');
   const about = typeof hosted.about === 'string' ? hosted.about : undefined;
@@ -147,9 +147,9 @@ export const hostedNativeRunConfig = (installation: any): Record<string, unknown
     systemPrompt: hostedNativeSystemPrompt(displayName, about),
     tools: [...HOSTED_NATIVE_TOOLS],
     recentMessages: HOSTED_NATIVE_RECENT_MESSAGES,
-    // The hosted meter (200 turns a day) is enforced on the Durable Object's
-    // events feed, which a native turn never reads. The native runtime's
-    // per-install daily cap carries the same number instead.
-    dailyRunCap: hostedCaps().turnsPerDay,
+    // The owner's plan line (TASK-268: 30 free, 200 pro), enforced through the
+    // native runtime's per-install daily cap; the Durable Object's meter reads
+    // the same number on its events feed.
+    dailyRunCap: turnsPerDay,
   };
 };

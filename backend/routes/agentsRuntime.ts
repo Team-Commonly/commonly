@@ -611,7 +611,8 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
     // daily turn budget the feed goes empty for it — the worker idles instead
     // of spending. Events stay pending and deliver after the UTC reset.
     if (installation && HostedRuntimeMeter.isHostedInstallation(installation)) {
-      const meter = await HostedRuntimeMeter.meterAllowsTurn(agentName, instanceId);
+      const { turnsPerDay } = await HostedRuntimeMeter.hostedCapsForOwner(installation.installedBy);
+      const meter = await HostedRuntimeMeter.meterAllowsTurn(agentName, instanceId, turnsPerDay);
       if (!meter.allowed) {
         return res.json({ events: [], meter });
       }

@@ -179,7 +179,9 @@ const relayWorkerError = (res: express.Response, error: any) => {
 router.get('/availability', hostedRateLimit, auth, async (req: any, res: any) => {
   markByoOpened(getUserId(req));
   const engine = engineForNewHostedInstall();
-  return res.json({ configured: engineAvailable(engine), engine, caps: hostedRuntime.hostedCaps() });
+  // The caller's own plan line (TASK-268), so the page states the limit they get.
+  const caps = await hostedRuntime.hostedCapsForOwner(getUserId(req));
+  return res.json({ configured: engineAvailable(engine), engine, caps });
 });
 
 /**
@@ -242,7 +244,7 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
         agentName,
         instanceId,
         podId: installation.podId,
-        caps: hostedRuntime.hostedCaps(),
+        caps: await hostedRuntime.hostedCapsForOwner(userId),
       });
     }
 
@@ -265,7 +267,7 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
       agentName,
       instanceId,
       podId: installation.podId,
-      caps: hostedRuntime.hostedCaps(),
+      caps: await hostedRuntime.hostedCapsForOwner(userId),
     });
   } catch (error) {
     return relayWorkerError(res, error);
@@ -321,7 +323,8 @@ router.get('/status', hostedRateLimit, auth, async (req: any, res: any) => {
       // No loop to report on: a native-engine agent is ready once provisioned,
       // and the runtime it needs is available (checked just above).
       const { provisionedAt } = readHostedConfig(installation);
-      const meter = await hostedRuntime.meterAllowsTurn(agentName, instanceId);
+      const { turnsPerDay } = await hostedRuntime.hostedCapsForOwner(getUserId(req));
+      const meter = await hostedRuntime.meterAllowsTurn(agentName, instanceId, turnsPerDay);
       return res.json({
         agentName,
         instanceId,
@@ -331,7 +334,8 @@ router.get('/status', hostedRateLimit, auth, async (req: any, res: any) => {
     }
     const [runtime, meter] = await Promise.all([
       hostedRuntime.getAgentStatus(agentName, instanceId),
-      hostedRuntime.meterAllowsTurn(agentName, instanceId),
+      hostedRuntime.hostedCapsForOwner(getUserId(req))
+        .then(({ turnsPerDay }: { turnsPerDay: number }) => hostedRuntime.meterAllowsTurn(agentName, instanceId, turnsPerDay)),
     ]);
     return res.json({ agentName, instanceId, runtime, meter });
   } catch (error) {

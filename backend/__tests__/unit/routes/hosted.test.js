@@ -13,6 +13,7 @@ const mockHosted = {
   isConfigured: jest.fn(),
   isHostedInstallation: jest.fn(),
   hostedCaps: jest.fn(() => ({ agentsPerUser: 1, turnsPerDay: 200 })),
+  hostedCapsForOwner: jest.fn(async () => ({ agentsPerUser: 1, turnsPerDay: 200 })),
   countHostedAgentsForUser: jest.fn(),
   listHostedInstallationsForUser: jest.fn(),
   meterAllowsTurn: jest.fn(),
@@ -103,6 +104,14 @@ describe('/api/hosted', () => {
     mockHosted.isConfigured.mockReturnValue(false);
     const off = await request(app).get('/api/hosted/availability');
     expect(off.body.configured).toBe(false);
+  });
+
+  // TASK-268: the page states the caller's own plan line, not a global number.
+  it("reports the caller's own plan caps", async () => {
+    mockHosted.hostedCapsForOwner.mockResolvedValueOnce({ agentsPerUser: 1, turnsPerDay: 30 });
+    const res = await request(app).get('/api/hosted/availability');
+    expect(mockHosted.hostedCapsForOwner).toHaveBeenCalledWith('owner-1');
+    expect(res.body.caps).toEqual({ agentsPerUser: 1, turnsPerDay: 30 });
   });
 
   it("records the caller's first visit to Bring your own (the mark contains its own failures)", async () => {

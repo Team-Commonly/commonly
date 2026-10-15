@@ -23,8 +23,10 @@ jest.mock('../../../models/Pod', () => ({
 
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
 
+let mockOwnerPro = false;
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) })),
+  findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: mockOwnerPro } }) }) })),
 }));
 
 jest.mock('../../../services/agentTypingService', () => ({
@@ -188,5 +190,35 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     const result = await runAgent(hostedInstall(hosted), mention);
     expect(result.status).toBe('failed');
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  // TASK-268: the plan line. Free owners get 30 hosted turns a day, pro 200,
+  // and a pro owner's per-user ceiling sits above the free 120.
+  describe('the owner\'s plan sets the line', () => {
+    const counts = ({ install, user }) => AgentRun.countDocuments.mockImplementation(
+      async (query) => (query.userId ? user : install),
+    );
+    afterEach(() => { mockOwnerPro = false; });
+
+    test.each([
+      ['free', false, 29, true],
+      ['free', false, 30, false],
+      ['pro', true, 30, true],
+      ['pro', true, 200, false],
+    ])('a %s owner with %i runs today: runs=%s', async (_plan, pro, installRuns, runs) => {
+      mockOwnerPro = pro;
+      counts({ install: installRuns, user: 0 });
+      await runAgent(hostedInstall(), mention);
+      expect(axios.post).toHaveBeenCalledTimes(runs ? 1 : 0);
+    });
+
+    test('a pro owner past the free per-user ceiling (120) still runs; a free one is refused', async () => {
+      counts({ install: 0, user: 150 });
+      mockOwnerPro = true;
+      expect((await runAgent(hostedInstall(), mention)).status).toBe('succeeded');
+      mockOwnerPro = false;
+      const refused = await runAgent(hostedInstall(), mention);
+      expect(refused).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'user_ceiling' }));
+    });
   });
 });

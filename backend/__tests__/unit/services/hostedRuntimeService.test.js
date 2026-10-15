@@ -42,10 +42,15 @@ describe('hostedRuntimeService', () => {
     });
 
     it('applies defaults and ignores garbage cap values', () => {
-      expect(hosted.hostedCaps()).toEqual({ agentsPerUser: 1, turnsPerDay: 200 });
+      // The plan line (TASK-268): 30 a day free, 200 on pro, and free when no plan is given.
+      expect(hosted.hostedCaps()).toEqual({ agentsPerUser: 1, turnsPerDay: 30 });
+      expect(hosted.hostedCaps({ pro: true })).toEqual({ agentsPerUser: 1, turnsPerDay: 200 });
       process.env.HOSTED_AGENTS_PER_USER = '3';
       process.env.HOSTED_TURNS_PER_DAY = 'lots';
-      expect(hosted.hostedCaps()).toEqual({ agentsPerUser: 3, turnsPerDay: 200 });
+      process.env.HOSTED_TURNS_PER_DAY_PRO = 'more';
+      expect(hosted.hostedCaps()).toEqual({ agentsPerUser: 3, turnsPerDay: 30 });
+      expect(hosted.hostedCaps({ pro: true })).toEqual({ agentsPerUser: 3, turnsPerDay: 200 });
+      delete process.env.HOSTED_TURNS_PER_DAY_PRO;
     });
   });
 

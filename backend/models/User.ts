@@ -99,9 +99,10 @@ export interface IUser extends Document {
     // BYO agents are NEVER gated by this: "agents you bring connect free and
     // unlimited" is the product's standing promise, and a per-agent cap is the
     // thing this pricing model exists to avoid.
-    // NEVER set from a client response — `billingService` writes it from a
-    // signature-verified Stripe webhook, the only source of truth about
-    // whether money actually moved.
+    // NEVER set from a client response. Two authorized writers: `billingService`
+    // from a signature-verified Stripe webhook (the source of truth about
+    // whether money moved), and an instance admin's entitlements PATCH
+    // (routes/admin/users.ts) for pilots and design partners.
     pro: boolean;
   };
   // Stripe linkage. `customerId` is the join key from webhook -> user; it is
