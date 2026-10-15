@@ -32,7 +32,6 @@ const tokenRouteLimit = rateLimit({
 });
 const express = require('express');
 const auth = require('../../middleware/auth');
-const { AgentInstallation } = require('../../models/AgentRegistry');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
@@ -47,6 +46,7 @@ const {
 const { ownsRuntimeIdentity, runtimeCredentialRefusal } = require('../../services/runtimeIdentityOwnership');
 const {
   normalizeScopes,
+  revokeRuntimeTokenEverywhere,
   revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
   issueUserTokenForInstallation,
@@ -244,26 +244,17 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', to
       return res.status(404).json({ error: 'Agent user not found' });
     }
 
-    const originalCount = agentUser.agentRuntimeTokens?.length || 0;
-    agentUser.agentRuntimeTokens = (agentUser.agentRuntimeTokens || []).filter(
-      (token: any) => token._id?.toString() !== tokenId,
+    // The listed id is this User row's copy. Every other copy of the token
+    // (each installation's, and the ledger row) has a different id, so the
+    // revoke goes by the hash they all share (revokeRuntimeTokenEverywhere).
+    const record = (agentUser.agentRuntimeTokens || []).find(
+      (token: any) => token._id?.toString() === tokenId,
     );
-
-    if ((agentUser.agentRuntimeTokens || []).length === originalCount) {
+    if (!record?.tokenHash) {
       return res.status(404).json({ error: 'Runtime token not found' });
     }
 
-    await agentUser.save();
-    await AgentInstallation.updateMany(
-      {
-        agentName: name.toLowerCase(),
-        instanceId,
-        status: { $ne: 'uninstalled' },
-      },
-      {
-        $pull: { runtimeTokens: { _id: tokenId } },
-      },
-    );
+    await revokeRuntimeTokenEverywhere(record.tokenHash);
     return res.json({ success: true });
   } catch (error) {
     console.error('Error revoking agent runtime token:', error);

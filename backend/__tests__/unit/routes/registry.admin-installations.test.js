@@ -30,6 +30,13 @@ jest.mock('../../../models/AgentProfile', () => ({
   deleteOne: jest.fn(),
 }));
 
+// The revoke-everywhere effect is a real-mongod claim (runtimeTokenRevoke.test.js);
+// here only the route's part: it finds the copy by id and revokes by hash.
+const mockRevokeOne = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../../routes/registry/tokens', () => ({
+  ...jest.requireActual('../../../routes/registry/tokens'),
+  revokeRuntimeTokenEverywhere: (...args) => mockRevokeOne(...args),
+}));
 jest.mock('../../../services/agentIdentityService', () => ({
   resolveAgentType: jest.fn((agentName) => agentName),
   buildAgentUsername: jest.fn((agentName, instanceId = 'default') => (
@@ -107,10 +114,10 @@ describe('admin agent installations', () => {
     expect(res.body.installations[0].installedBy.username).toBe('installer');
   });
 
-  it('revokes a runtime token for an installation', async () => {
+  it('revokes a runtime token for an installation, everywhere, by its hash', async () => {
     const installation = {
       _id: 'install-2',
-      runtimeTokens: [{ _id: 'token-1' }, { _id: 'token-2' }],
+      runtimeTokens: [{ _id: 'token-1', tokenHash: 'hash-1' }, { _id: 'token-2', tokenHash: 'hash-2' }],
       save: jest.fn().mockResolvedValue(true),
     };
 
@@ -120,8 +127,18 @@ describe('admin agent installations', () => {
       .delete('/api/registry/admin/installations/install-2/runtime-tokens/token-1');
 
     expect(res.status).toBe(200);
-    expect(installation.runtimeTokens).toHaveLength(1);
-    expect(installation.save).toHaveBeenCalled();
+    expect(mockRevokeOne).toHaveBeenCalledWith('hash-1');
+  });
+
+  it('a token id this installation does not hold is a 404 and revokes nothing', async () => {
+    AgentInstallation.findById.mockResolvedValue({ _id: 'install-2', runtimeTokens: [{ _id: 'token-2', tokenHash: 'hash-2' }] });
+    mockRevokeOne.mockClear();
+
+    const res = await request(app)
+      .delete('/api/registry/admin/installations/install-2/runtime-tokens/token-1');
+
+    expect(res.status).toBe(404);
+    expect(mockRevokeOne).not.toHaveBeenCalled();
   });
 
   it('uninstalls an installation', async () => {

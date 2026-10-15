@@ -75,6 +75,38 @@ export const revokeRuntimeCredentials = async (
 };
 
 /**
+ * Revoke ONE runtime token everywhere it can authenticate: the credential
+ * ledger, every User row and every installation that holds a copy.
+ *
+ * By hash, because the hash is the one value every copy shares. Issuing
+ * pushes the same record onto the agent's User row and onto the installation
+ * it was issued through, and each store gives its copy its own subdocument
+ * _id; a revoke that matched by that id removed one copy and left the others,
+ * and runtime auth accepts a token from any of them (P0, QA 2026-10-15).
+ * Not scoped by identity either: resolving which agent a token belongs to is
+ * where a mismatch would leave a copy behind, and a hash names one token.
+ * The caller decides who may revoke; this only makes the revoke total.
+ */
+export const revokeRuntimeTokenEverywhere = async (tokenHash: string): Promise<void> => {
+  if (!tokenHash) return;
+  await revokeRuntimeCredentials([tokenHash]);
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const User = require('../../models/User');
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { AgentInstallation } = require('../../models/AgentRegistry');
+  await User.updateMany(
+    { 'agentRuntimeTokens.tokenHash': tokenHash },
+    { $pull: { agentRuntimeTokens: { tokenHash } } },
+  );
+  // Every installation, whatever its status: an uninstalled row can be
+  // reinstalled, and a copy left on it would come back to life with it.
+  await AgentInstallation.updateMany(
+    { 'runtimeTokens.tokenHash': tokenHash },
+    { $pull: { runtimeTokens: { tokenHash } } },
+  );
+};
+
+/**
  * Return every legacy hash for an agent identity, across the portable User
  * row and every installation copy. The two stores are both authentication
  * paths, so a rotation that sees only one is incomplete.
@@ -304,6 +336,7 @@ module.exports = {
   normalizeContextPolicy,
   getRuntimeTokenHashesForAgent,
   revokeRuntimeCredentials,
+  revokeRuntimeTokenEverywhere,
   revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
   issueRuntimeTokenForInstallation,
