@@ -26,6 +26,7 @@ const {
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const { configWriteRefusal, runtimeKeepingType } = require('../../services/configWriteGuard');
 
 const agentConfigRouter = express.Router();
 
@@ -167,6 +168,9 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       if (config) {
         const existingConfig = normalizeConfigMap(targetInstallation.config) || {};
         const nextConfig = { ...existingConfig, ...config };
+        if (config.runtime && typeof config.runtime === 'object') {
+          nextConfig.runtime = runtimeKeepingType(config.runtime, existingConfig);
+        }
         if (nextConfig.runtime && typeof nextConfig.runtime === 'object') {
           const runtimeConfig = { ...nextConfig.runtime };
           const normalizedAuthProfiles = normalizeRuntimeAuthProfiles(runtimeConfig.authProfiles);
@@ -244,6 +248,19 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         .map((entry: any) => entry.podId?.toString?.() || '')
         .filter(Boolean),
     ));
+
+    // The runtime type, what Commonly's compute does for an agent it runs, and
+    // the kernel's own records are not this route's to change
+    // (services/configWriteGuard.ts). Checked against every row the write
+    // would reach, before any of them is saved.
+    const writeRefusal = configWriteRefusal({
+      requested: config,
+      targets: installationsToUpdate.map((entry: any) => entry.config),
+      isInstanceAdmin,
+    });
+    if (writeRefusal) {
+      return res.status(403).json(writeRefusal);
+    }
 
     for (const targetInstallation of installationsToUpdate) {
       applyInstallationSettings(targetInstallation);
