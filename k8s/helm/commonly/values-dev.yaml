@@ -339,9 +339,10 @@ litellm:
       effect: "NoSchedule"
 
 strangerJourney:
-  # Daily at 14:17 UTC (07:17 PT) and after every Deploy Dev. Stateless and
-  # retry-free, so spot is fine; a reclaim mid-run fails the Job and pages,
-  # which is the correct reading of "we could not prove the path".
+  # 02:17 and 14:17 UTC, and after every Deploy Dev. Stateless and retry-free,
+  # so spot is fine. A reclaim mid-run kills the pod before it prints a
+  # verdict: the generic Job alert warns, and two missed runs in a row trip
+  # the CRITICAL "has not passed in 23 h" alert.
   enabled: true
   nodeSelector:
     workload-tier: spot

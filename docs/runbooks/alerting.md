@@ -151,8 +151,8 @@ so it 401s every call on any model. Production platform calls send
 
 ### Stranger journey
 
-`stranger-journey` (CronJob, daily at 14:17 UTC, plus one run after every
-Deploy Dev) signs up a throwaway `eng-smoke-journey-*@ops.commonly.invalid`
+`stranger-journey` (CronJob at 02:17 and 14:17 UTC, plus one run after
+every Deploy Dev) signs up a throwaway `eng-smoke-journey-*@ops.commonly.invalid`
 account and walks the first ten minutes against the public API. Every Growth
 funnel script drops `*.invalid`. The steps:
 
@@ -174,13 +174,25 @@ kubectl logs -n commonly-dev job/<name>        # one JSON line per step; the las
 kubectl create job --from=cronjob/stranger-journey stranger-journey-manual-$(date +%s) -n commonly-dev   # re-run
 ```
 
+Two policies, so a single model wobble cannot wake anyone at CRITICAL:
+
+- **"a stranger journey run failed"** (WARNING): one run printed
+  `result: fail`. The generic Job alert warns too, via `BackoffLimitExceeded`.
+- **"the stranger journey has not passed in 23 h"** (CRITICAL): a
+  metric-absence condition on `stranger_journey_passes`. Runs happen every
+  12 h and after each deploy, so this means at least two in a row failed or
+  died. It also catches the run that never prints a verdict: a spot reclaim
+  or the 900 s deadline kills the pod first. Cloud Monitoring caps absence
+  windows at 23.5 h, which is why the schedule is twice a day. The condition
+  only arms after the first pass following an install or edit.
+
 Soft checks are logged and never fail a run, so one LLM wording change cannot
 page. They are whether Scout's answer points at the connect path, whether it
-mentions an SDK, and whether the seat is named after the user. A failed run
-sends two emails: this policy's, and the generic Job alert's
-`BackoffLimitExceeded`.
+mentions an SDK, and whether the seat is named after the user.
 
 Cleanup uninstalls the seat and deletes the pod and its messages. The bare
-account row stays until the synthetic-account purge exists. The `/register`
-limit is 10 per hour per client IP, and the cluster egress IP is not shared
-with anyone's laptop.
+account row stays: there is no self-delete route, and the admin delete
+removes only the user row. The scoped purge is TASK-260. The container runs
+as uid 65534 with a read-only root filesystem and no capabilities. The
+`/register` limit is 10 per hour per client IP, and the cluster egress IP is
+not shared with anyone's laptop.

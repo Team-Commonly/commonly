@@ -53,7 +53,17 @@ spec:
             image: "{{ .Values.strangerJourney.image.repository }}:{{ .Values.strangerJourney.image.tag }}"
             imagePullPolicy: IfNotPresent
             command: ["python3", "-I", "/journey/stranger-journey.py"]
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65534
+              runAsGroup: 65534
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
             env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
             - name: JOURNEY_API
               value: {{ .Values.strangerJourney.apiUrl | quote }}
             - name: JOURNEY_TRIGGER

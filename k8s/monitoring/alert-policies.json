@@ -265,11 +265,11 @@
     ]
   },
   {
-    "displayName": "commonly-dev: the stranger journey failed",
-    "severity": "CRITICAL",
+    "displayName": "commonly-dev: a stranger journey run failed",
+    "severity": "WARNING",
     "documentation": {
       "mimeType": "text/markdown",
-      "content": "A synthetic stranger could not get from signup to an approved connect card (or a step blew its budget). The failed step is in the journey's last log line. Runbook: docs/runbooks/alerting.md#stranger-journey"
+      "content": "One synthetic stranger run could not get from signup to an approved connect card, or a step blew its budget. One miss can be a model wobble; two in a row trip the CRITICAL 'has not passed in 23 h' policy. The failed step is in the run's last log line. Runbook: docs/runbooks/alerting.md#stranger-journey"
     },
     "combiner": "OR",
     "conditions": [
@@ -287,6 +287,32 @@
           "comparison": "COMPARISON_GT",
           "thresholdValue": 0,
           "duration": "0s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
+  },
+  {
+    "displayName": "commonly-dev: the stranger journey has not passed in 23 h",
+    "severity": "CRITICAL",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "No synthetic stranger run has passed in 23 hours. Runs happen every 12 h and after each deploy, so at least two in a row failed or were killed. Treat the signup-to-connect path as broken for strangers until a run passes. Runbook: docs/runbooks/alerting.md#stranger-journey"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "no result=pass for 23 h",
+        "conditionAbsent": {
+          "filter": "metric.type=\"logging.googleapis.com/user/stranger_journey_passes\" AND resource.type=\"k8s_container\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "3600s",
+              "perSeriesAligner": "ALIGN_SUM",
+              "crossSeriesReducer": "REDUCE_SUM"
+            }
+          ],
+          "duration": "82800s",
           "trigger": { "count": 1 }
         }
       }

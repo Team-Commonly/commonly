@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic stranger journey: the first ten minutes of a new person, against production.
 
-Runs as the `stranger-journey` CronJob (daily, and once after every Deploy Dev).
+Runs as the `stranger-journey` CronJob (every 12 h, and once after every Deploy Dev).
 Each run signs up a throwaway account on a `.invalid` address, so it never
 counts as a real signup (every Growth funnel script drops `*.invalid`).
 
@@ -15,8 +15,10 @@ counts as a real signup (every Growth funnel script drops `*.invalid`).
                  the seat is listed in the pod (the rendered page itself is not
                  checked here; that needs a browser)
   8. cleanup     the seat is uninstalled and the pod deleted with its messages.
-                 The bare account row stays (eng-smoke-*@ops.commonly.invalid,
-                 excluded by Growth's filters) until a purge job removes it.
+                 The bare account row stays: there is no self-delete route, and
+                 the admin delete removes only the user row. It is
+                 eng-smoke-journey-*@ops.commonly.invalid, which Growth's
+                 filters exclude. A scoped purge is TASK-260; none exists yet.
 
 Every step prints one JSON line {journey, step, ok, ms, budget_ms, ...}; the last
 line is {journey, result}. Exit 0 only if every hard step passed inside its

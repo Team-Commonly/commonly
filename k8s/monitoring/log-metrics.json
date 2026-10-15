@@ -28,5 +28,11 @@
     "description": "Stranger-journey runs that ended with result=fail (one JSON line per run from k8s/helm/commonly/files/stranger-journey.py). The failed step and its error are in the same log line.",
     "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"journey\" AND jsonPayload.journey=\"stranger\" AND jsonPayload.result=\"fail\"",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
+  },
+  {
+    "name": "stranger_journey_passes",
+    "description": "Stranger-journey runs that ended with result=pass. Its absence is the alert: a run killed by a spot reclaim or the 900 s deadline prints no verdict at all, so a failure counter alone cannot see it.",
+    "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"journey\" AND jsonPayload.journey=\"stranger\" AND jsonPayload.result=\"pass\"",
+    "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   }
 ]
