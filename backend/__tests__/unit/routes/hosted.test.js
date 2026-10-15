@@ -38,6 +38,8 @@ jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: (name, instance) => (instance === 'default' ? name : `${name}-${instance}`),
 }));
 jest.mock('../../../services/hostedRuntimeService', () => mockHosted);
+const mockMarkByoOpened = jest.fn();
+jest.mock('../../../services/onboardingMarks', () => ({ markByoOpened: (...args) => mockMarkByoOpened(...args) }));
 jest.mock('../../../routes/registry/tokens', () => ({
   revokeRuntimeTokensForAgent: (...args) => mockRevokeRuntimeTokens(...args),
   issueRuntimeTokenForAgent: (...args) => mockIssueToken(...args),
@@ -97,6 +99,13 @@ describe('/api/hosted', () => {
     mockHosted.isConfigured.mockReturnValue(false);
     const off = await request(app).get('/api/hosted/availability');
     expect(off.body.configured).toBe(false);
+  });
+
+  it("records the caller's first visit to Bring your own (the mark contains its own failures)", async () => {
+    const res = await request(app).get('/api/hosted/availability');
+    expect(res.status).toBe(200);
+    expect(mockMarkByoOpened).toHaveBeenCalledTimes(1);
+    expect(mockMarkByoOpened).toHaveBeenCalledWith('owner-1');
   });
 
   it('503s with a code when the runtime is not configured, before touching the DB', async () => {

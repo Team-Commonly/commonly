@@ -16,12 +16,18 @@
  * first time a person posts one of Scout's starts in a pod they created. A
  * click on a start sends its label as their message, so the server reads the
  * pick from the message itself and trusts nothing new from the client.
+ *
+ * byoOpenedAt is the first time a person opens the Bring your own agent page,
+ * read from the page's own load request (GET /api/hosted/availability, which
+ * nothing else calls). It tells "never looked at setup" apart from "looked and
+ * left".
  */
 import User from '../models/User';
 import { SCOUT_STARTS } from '../config/native-agents/scout';
 
 const podOpenedMarked = new Set<string>();
 const startPickedMarked = new Set<string>();
+const byoOpenedMarked = new Set<string>();
 
 export function markPodOpened(userId: unknown, pod: { createdBy?: unknown } | null | undefined): void {
   const id = String(userId || '');
@@ -66,8 +72,27 @@ export function markStartPicked(
   }
 }
 
+export function markByoOpened(userId: unknown): void {
+  const id = String(userId || '');
+  if (!id) return;
+  if (byoOpenedMarked.has(id)) return;
+  byoOpenedMarked.add(id);
+  try {
+    User.updateOne(
+      { _id: id, isBot: { $ne: true }, 'onboarding.byoOpenedAt': { $exists: false } },
+      { $set: { 'onboarding.byoOpenedAt': new Date() } },
+    ).catch(() => {
+      byoOpenedMarked.delete(id);
+    });
+  } catch {
+    // Telemetry fails open: it must never break the page's availability read.
+    byoOpenedMarked.delete(id);
+  }
+}
+
 /** Test seam: forget which people this process has marked. */
 export function resetOnboardingMarksForTest(): void {
   podOpenedMarked.clear();
   startPickedMarked.clear();
+  byoOpenedMarked.clear();
 }
