@@ -338,6 +338,20 @@ litellm:
       value: "dev"
       effect: "NoSchedule"
 
+strangerJourney:
+  # 02:17 and 14:17 UTC, and after every Deploy Dev. Stateless and retry-free,
+  # so spot is fine. A reclaim mid-run kills the pod before it prints a
+  # verdict: the generic Job alert warns, and two missed runs in a row trip
+  # the CRITICAL "has not passed in 23 h" alert.
+  enabled: true
+  nodeSelector:
+    workload-tier: spot
+  tolerations:
+    - key: "workload-tier"
+      operator: "Equal"
+      value: "spot"
+      effect: "NoSchedule"
+
 backup:
   # Nightly dumps of Atlas (Mongo) and Aiven (Postgres) to GCS, enabled
   # 2026-10-14. Runbook: docs/runbooks/db-backup-restore.md. The bucket, the

@@ -487,6 +487,21 @@ litellm:
   tolerations: []
 
 # Backup configuration
+# Synthetic stranger journey (templates/journey/stranger-journey.yaml): a
+# throwaway .invalid signup walks signup -> Scout welcome -> a real question ->
+# the connect card, against apiUrl. Off by default: it creates accounts.
+strangerJourney:
+  enabled: false
+  # Twice a day: the "no pass in 23 h" alert (Cloud Monitoring caps absence
+  # windows at 23.5 h) then fires only after two consecutive missed runs.
+  schedule: "17 2,14 * * *"
+  apiUrl: "https://api.commonly.me"
+  image:
+    repository: python
+    tag: "3.12-alpine"
+  nodeSelector: {}
+  tolerations: []
+
 backup:
   gcpServiceAccount: ""
   nodeSelector: {}
