@@ -75,7 +75,9 @@ import {
 import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
+import {
+  prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
+} from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
@@ -788,7 +790,12 @@ export default {
     let mcpConfig = null;
     let publicClaudeState = null;
     try {
-      const publicNativeSandbox = ctx.environment?.sandbox?.trust === 'public'
+      // Trust is normalized at entry (legacy `internal` reads as public). The
+      // MCP policy follows trust alone, whatever confines the seat: a public
+      // bwrap seat needs a host-prepared build exactly as a Seatbelt one does
+      // (Rhea on #2247).
+      const publicTrust = ctx.environment?.sandbox?.trust === 'public';
+      const publicNativeSandbox = publicTrust
         && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
       if (publicNativeSandbox) {
         publicClaudeState = await preparePublicClaudeState(ctx);
@@ -798,7 +805,7 @@ export default {
           runtimeToken: ctx.runtimeToken,
           instanceUrl: ctx.instanceUrl,
           agentName: ctx.agentName,
-          publicSeat: publicNativeSandbox,
+          publicSeat: publicTrust,
         });
       }
       if (mcpConfig?.unavailableMcp.length) throw publicMcpUnavailableError(mcpConfig.unavailableMcp);
@@ -835,6 +842,10 @@ export default {
       });
       return { text: stdout.trim(), newSessionId: sessionId };
     } catch (err) {
+      // A public seat's refusal is not a session-store failure, whatever its
+      // message happens to contain: it must reach the run loop, never the
+      // fresh-session retry below (Rhea on #2247).
+      if (err?.code === PUBLIC_MCP_UNAVAILABLE_CODE) throw err;
       // Self-heal against a corrupted session store. If the persisted id is
       // already in use (or claude has forgotten about it), discard it and
       // restart the turn with a fresh UUID. Without this, a single bad
