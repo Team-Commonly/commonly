@@ -11,6 +11,7 @@ const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const Integration = require('../../models/Integration');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const DMService = require('../../services/dmService');
 const {
   provisionAgentRuntime,
@@ -152,6 +153,14 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
     const runtimeType = typeConfig?.runtime;
     if (!runtimeType) {
       return res.status(400).json({ error: 'Unknown agent runtime type' });
+    }
+    try {
+      await assertAgentRuntimeMayJoinPod(podId, runtimeType);
+    } catch (joinError: any) {
+      if (joinError?.code === 'outsider_grant_non_native_agent_join') {
+        return res.status(403).json({ code: joinError.code, message: joinError.message });
+      }
+      throw joinError;
     }
 
     // Hosted-agent entitlement gate (mirrors routes/registry/install.ts). A

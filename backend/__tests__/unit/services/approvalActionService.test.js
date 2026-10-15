@@ -55,6 +55,9 @@ jest.mock('../../../services/agentIdentityService', () => ({
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
 // Name reservation has its own suite (agentNameReservation); these arms use free names.
 jest.mock('../../../services/agentNameReservation', () => ({ reservedAgentNameRefusal: jest.fn().mockResolvedValue(null) }));
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
+}));
 // #2160: approving wakes the proposer; that path has its own suite (approvalActionService.proposerWake).
 jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn().mockResolvedValue({}) }));
 const mockPostMessage = jest.fn().mockResolvedValue({ id: 1 });
@@ -66,6 +69,7 @@ jest.mock('../../../services/attentionItemService', () => ({
 }));
 
 const { resolveApproval } = require('../../../services/approvalActionService');
+const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
 
 const OWNER = 'aaaaaaaaaaaaaaaaaaaaaaa1';
 const STRANGER = 'bbbbbbbbbbbbbbbbbbbbbbb2';
@@ -88,6 +92,7 @@ const flaggedRow = (over = {}) => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  podHasOutsiderWritableGrant.mockResolvedValue(false);
   delete process.env.PG_HOST;
   mockUserFindById.mockReturnValue({
     select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({ isBot: false }) })),
@@ -318,6 +323,19 @@ describe('approved connect_local_agent execution — the seat, never the token',
     params: { name: 'sams-claude' },
     summary: 'Set up a seat for your local Claude',
     ...over,
+  });
+
+  test('refuses a webhook seat when the pod gained an outsider-writable grant after proposal', async () => {
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    mockApprovalFindById.mockResolvedValue(seatRow());
+    const resolved = seatRow({ status: 'resolved', decision: 'approved' });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+    mockInstallFindOne.mockResolvedValue(null);
+    const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+    expect(res.status).toBe(200);
+    expect(resolved.executionError).toContain('Use a separate pod');
+    expect(mockRegistryCreate).not.toHaveBeenCalled();
+    expect(mockInstallUpsert).not.toHaveBeenCalled();
   });
 
   test('creates the seat owned by the USER and hands back a connect path — no credential anywhere', async () => {

@@ -42,6 +42,7 @@ const {
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 
 // Inlined per-route limiter. This comment used to attribute its clean CodeQL
 // status to `js/missing-rate-limiting` "only seeing express-rate-limit calls
@@ -461,6 +462,14 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // even when the caller omits an explicit runtimeType.
     const effectiveRuntimeType = String(runtimeConfig.runtimeType || '').trim().toLowerCase()
       || String(AgentIdentityService.getAgentTypeConfig(safeAgentName)?.runtime || '').trim().toLowerCase();
+    try {
+      await assertAgentRuntimeMayJoinPod(podId, effectiveRuntimeType);
+    } catch (joinError: any) {
+      if (joinError?.code === 'outsider_grant_non_native_agent_join') {
+        return res.status(403).json({ code: joinError.code, message: joinError.message });
+      }
+      throw joinError;
+    }
     if (AgentIdentityService.isCloudRuntime({
       runtimeType: effectiveRuntimeType,
       host: runtimeConfig.host,
@@ -630,7 +639,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         ...(explicitDescription ? { description: explicitDescription } : {}),
         ...(avatarSeed ? { profilePicture: avatarSeed } : {}),
       });
-      await AgentIdentityService.ensureAgentInPod(agentUser, podId);
+      await AgentIdentityService.ensureAgentInPod(agentUser, podId, effectiveRuntimeType);
     } catch (identityError: unknown) {
       // A refusal is not a best-effort failure (TASK-133 b, wren 73987/73988):
       // swallowing it would answer 2xx and leave an AgentInstallation row with
@@ -642,6 +651,9 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
           code: refusal.code,
           username: refusal.username,
         });
+      }
+      if (refusal?.code === 'outsider_grant_non_native_agent_join') {
+        return res.status(403).json({ code: refusal.code, message: refusal.message });
       }
       console.warn('Failed to provision agent user identity:', (identityError as Error).message);
     }

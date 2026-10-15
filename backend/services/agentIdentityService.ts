@@ -3,6 +3,7 @@ import User from '../models/User';
 import Pod from '../models/Pod';
 import { AgentRegistry } from '../models/AgentRegistry';
 import { normalizeAvatarUrl } from './avatarService';
+import { assertAgentRuntimeMayJoinPod, assertInstalledAgentMayJoinPod } from './outsiderGrantAgentJoinPolicy';
 
 let dbPg: { pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> } } | null;
 try {
@@ -652,7 +653,9 @@ class AgentIdentityService {
     return buildAgentUsername(agentType, instanceId);
   }
 
-  static async ensureAgentInPod(agentUser: InstanceType<typeof User>, podId: unknown): Promise<InstanceType<typeof Pod> | null> {
+  static async ensureAgentInPod(
+    agentUser: InstanceType<typeof User>, podId: unknown, intendedRuntimeType?: string,
+  ): Promise<InstanceType<typeof Pod> | null> {
     if (!agentUser || !podId) return null;
     const pod = await Pod.findById(podId);
     if (!pod) return null;
@@ -688,6 +691,13 @@ class AgentIdentityService {
           + `and ${agentId} is not already a member. ADR-001 §3.10.`,
         );
         return null;
+      }
+      if (intendedRuntimeType) {
+        await assertAgentRuntimeMayJoinPod(podId, intendedRuntimeType);
+      } else {
+        await assertInstalledAgentMayJoinPod(
+          podId, agentUser.botMetadata?.agentName, agentUser.botMetadata?.instanceId,
+        );
       }
       pod.members.push(agentId);
       await pod.save();

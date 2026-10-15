@@ -21,6 +21,10 @@ jest.mock('../../../models/PodInvite', () => ({
 const Pod = require('../../../models/Pod');
 
 jest.mock('../../../models/Pod');
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({
+  assertInstalledAgentMayJoinPod: jest.fn(),
+}));
 
 jest.mock('../../../services/agentIdentityService', () => ({
   DM_POD_TYPES_GUARD: new Set(['agent-room', 'agent-dm']),
@@ -28,6 +32,8 @@ jest.mock('../../../services/agentIdentityService', () => ({
 
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const routes = require('../../../routes/podInvites');
+const User = require('../../../models/User');
+const { assertInstalledAgentMayJoinPod } = require('../../../services/outsiderGrantAgentJoinPolicy');
 
 const POD_ID = '507f1f77bcf86cd799439011';
 const TOKEN = 'a'.repeat(32);
@@ -196,5 +202,29 @@ describe('pod invite management routes', () => {
     const res = await request(app).post(`/api/invites/${TOKEN}/redeem`).send({}).expect(403);
 
     expect(res.body.code).toBe('dm_membership_refused');
+  });
+
+  it('refuses a bot invite before membership when the pod has an outsider-writable grant', async () => {
+    mockFindOne.mockResolvedValue({ token: TOKEN, podId: POD_ID, isUsable: () => true });
+    const pod = memberPod({ members: [], save: jest.fn() });
+    Pod.findById.mockResolvedValue(pod);
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({
+        isBot: true, botMetadata: { agentName: 'outside-agent', instanceId: 'default' },
+      }) }),
+    });
+    assertInstalledAgentMayJoinPod.mockRejectedValue(Object.assign(new Error('Use a separate pod'), {
+      code: 'outsider_grant_non_native_agent_join',
+    }));
+
+    const res = await request(app).post(`/api/invites/${TOKEN}/redeem`).send({});
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual(expect.objectContaining({
+      code: 'outsider_grant_non_native_agent_join',
+      message: expect.stringContaining('Use a separate pod'),
+    }));
+    expect(assertInstalledAgentMayJoinPod).toHaveBeenCalledWith(POD_ID, 'outside-agent', 'default');
+    expect(pod.members).toEqual([]);
+    expect(pod.save).not.toHaveBeenCalled();
   });
 });

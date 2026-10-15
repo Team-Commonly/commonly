@@ -15,6 +15,7 @@ import { randomUUID } from 'crypto';
 import ApprovalAction, { IApprovalAction, ApprovalActionType, ApprovalToolCall } from '../models/ApprovalAction';
 import Pod from '../models/Pod';
 import User from '../models/User';
+import { assertAgentRuntimeMayJoinPod } from './outsiderGrantAgentJoinPolicy';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation } = require('../models/AgentRegistry');
@@ -880,6 +881,10 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
   if (await findForeignLocalAgentOwner(agentName, row.ownerUserId)) {
     throw new Error(`the agent name "${agentName}" is now in use by another user`);
   }
+
+  // Approval runs later than proposal. Check the live pod boundary before
+  // creating either the ephemeral registry row or the webhook installation.
+  await assertAgentRuntimeMayJoinPod(row.podId, 'webhook');
 
   const connectPath = `/v2/agents/byo?pod=${encodeURIComponent(String(row.podId))}&name=${encodeURIComponent(agentName)}`;
 

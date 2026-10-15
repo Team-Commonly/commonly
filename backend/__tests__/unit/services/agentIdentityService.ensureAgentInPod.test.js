@@ -7,12 +7,38 @@
 // don't stub them still work — only Pod + User need explicit mocks here.
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/User', () => ({ findOne: jest.fn(), findById: jest.fn() }));
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
+}));
 
 const Pod = require('../../../models/Pod');
+const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
 const AgentIdentityService = require('../../../services/agentIdentityService');
 
 describe('AgentIdentityService.ensureAgentInPod — agent-room 1:1 invariant', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    podHasOutsiderWritableGrant.mockResolvedValue(false);
+  });
+
+  it('refuses a non-native bot before adding membership to a protected pod', async () => {
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    const pod = { _id: 'p-chat', type: 'chat', members: ['human'], save: jest.fn() };
+    Pod.findById.mockResolvedValue(pod);
+    await expect(AgentIdentityService.ensureAgentInPod({ _id: 'bot' }, 'p-chat', 'opencode'))
+      .rejects.toHaveProperty('code', 'outsider_grant_non_native_agent_join');
+    expect(pod.members).toEqual(['human']);
+    expect(pod.save).not.toHaveBeenCalled();
+  });
+
+  it('allows a narrowed native bot into the protected pod', async () => {
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    const pod = { _id: 'p-chat', type: 'chat', members: ['human'], save: jest.fn() };
+    Pod.findById.mockResolvedValue(pod);
+    await expect(AgentIdentityService.ensureAgentInPod({ _id: 'bot' }, 'p-chat', 'native'))
+      .resolves.toBe(pod);
+    expect(pod.members).toEqual(['human', 'bot']);
+  });
 
   it('refuses to add a third agent to an existing agent-room', async () => {
     const pod = {
