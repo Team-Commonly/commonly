@@ -43,6 +43,7 @@ const OPAQUE_PLACEHOLDERS = [
   'connector', 'user', 'workspace', 'channel', 'tool', 'tools', 'member', 'agents', 'os',
   // common.aboutPage receives a page title, currently Latin, not a count.
   'adapter', 'title',
+  'holder',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number
