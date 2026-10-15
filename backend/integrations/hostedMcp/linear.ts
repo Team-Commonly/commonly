@@ -40,11 +40,15 @@
  * not constrain that behavior, and the pinned schema cannot narrow one
  * argument without drifting from the live schema.
  *
- * Two facts about this vendor are NOT in this file, because they are the
- * live walk's to settle (§10 step 7): that a removal's revoke took at Linear
- * (shown by something other than the 200 the shared token/revocation endpoint
- * answers either way), and the exact Settings URL a person lands on. The page
- * below is the one the plan names.
+ * One fact about this vendor is NOT in this file, because it is the live
+ * walk's to settle (§10 step 7): that a removal's revoke took at Linear (shown
+ * by something other than the 200 the shared token/revocation endpoint answers
+ * either way). The other, the Settings URL a person lands on, the 2026-10-15
+ * fresh-account walk settled: `/settings/security` is the WORKSPACE security
+ * page (admin controls, no per-person app list), while the approved grant is
+ * listed under Settings → Security & access → "Authorized applications" as
+ * "MCP · Read · Revoke", which is `/settings/account/security`. Linear
+ * redirects both to the signed-in workspace's slug.
  *
  * No tool returned an `outputSchema` in the capture, which is why none is
  * pinned: nothing arrives to pin, and the field is not part of `HostedMcpPinnedTool`.
@@ -87,7 +91,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
   // response carries an ID token, measured at the same time as the tool list.
   // `write` is deliberately absent — see the header.
   scopes: ['read', 'openid'],
-  revoke: { page: 'https://linear.app/settings/security' },
+  revoke: { page: 'https://linear.app/settings/account/security' },
   tools: [
   readTool(
     'list_agent_skills',
