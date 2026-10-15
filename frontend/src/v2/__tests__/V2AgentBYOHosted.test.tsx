@@ -1,7 +1,8 @@
 // @ts-nocheck
 // ADR-023 W2 "Run it here" on the BYO page. The instance reports whether it
-// can host; when it can, the page defaults to the hosted path, installs with
-// runtimeType 'hosted', asks the kernel to provision, and never renders a
+// can host; when it can, the page asks where the agent should run with
+// nothing preselected (ruled 2026-10-14), and choosing "Run it here" installs
+// with runtimeType 'hosted', asks the kernel to provision, and never renders a
 // token. When it cannot, the page is exactly the BYO page it was.
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
@@ -84,6 +85,39 @@ describe('V2AgentBYO — Run it here', () => {
     fireEvent.click(screen.getByTestId('byo-mode-byo'));
     expect(screen.queryByTestId('byo-mode-unchosen')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /install \+ generate token/i })).toBeInTheDocument();
+  });
+
+  // The pod list loads before availability and enables the act. Until the
+  // instance has said whether it can host, the page must not offer an act at
+  // all: an enabled "Install + generate token" there chose a runtime for the
+  // person (Sprint Review's measurement on #2190).
+  test('offers no act while it is not yet known whether there is a choice', async () => {
+    let answerAvailability;
+    let answerMachines;
+    axios.get.mockImplementation((url) => {
+      if (url.startsWith('/api/hosted/availability')) {
+        return new Promise((resolve) => { answerAvailability = resolve; });
+      }
+      if (url === '/api/machines') return new Promise((resolve) => { answerMachines = resolve; });
+      if (url === '/api/pods') return Promise.resolve({ data: pods });
+      return Promise.resolve({ data: {} });
+    });
+    renderPage();
+
+    const podPicker = await screen.findByRole('combobox', { name: /install into pod/i });
+    await waitFor(() => expect(podPicker).toHaveValue('p1'));
+    expect(screen.queryByRole('button', { name: /install \+ generate token/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId('byo-mode-unchosen')).toBeInTheDocument();
+
+    // This instance cannot host. Still no act until the machines list answers,
+    // because a registered computer would make it a choice.
+    await act(async () => { answerAvailability({ data: { configured: false, caps: { agentsPerUser: 0, turnsPerDay: 0 } } }); });
+    expect(screen.queryByRole('button', { name: /install \+ generate token/i })).not.toBeInTheDocument();
+
+    // No computers either: bringing your own runtime is the only path.
+    await act(async () => { answerMachines({ data: { machines: [] } }); });
+    expect(await screen.findByRole('button', { name: /install \+ generate token/i })).toBeEnabled();
+    expect(screen.queryByTestId('byo-mode-unchosen')).not.toBeInTheDocument();
   });
 
   test('choosing hosted: install hosted → provision → live screen, no token shown', async () => {

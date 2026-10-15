@@ -151,11 +151,20 @@ const V2AgentBYO: React.FC = () => {
   // ADR-026 Phase 2: "on my computer" — install + placement request; the
   // daemon on the chosen machine adopts, provisions, and starts the agent.
   const [machines, setMachines] = useState<MachineRow[]>([]);
+  // True once both the availability and the machines requests have answered,
+  // successfully or not. Until then, whether there is a choice is unknown.
+  const [choicesKnown, setChoicesKnown] = useState(false);
   const [machineId, setMachineId] = useState<string>('');
   // With no choice cards on screen (no hosting, no computer), bringing your
   // own runtime is the only path, so it is the mode. With cards, it is the
-  // person's pick, and null until they make one.
-  const choosingMode = Boolean(hosting?.configured) || machines.length > 0;
+  // person's pick, and null until they make one. "Not known yet" counts as a
+  // choice still to make: the pod list loads first and enables the act, so
+  // treating an unanswered availability or machines request as "nothing to
+  // choose" rendered an enabled Bring-your-own act before the cards (Sprint
+  // Review on #2190). A failed or malformed reply still answers: once both
+  // are in, a hosting reply that never arrived well-formed reads as "cannot
+  // host", and the machines list as empty.
+  const choosingMode = !choicesKnown || Boolean(hosting?.configured) || machines.length > 0;
   const mode = chosenMode ?? (choosingMode ? null : 'byo');
   // One lookup, two readers (TASK-163): the preview note and the placement
   // payload must name the SAME machine, so it is derived once here rather
@@ -298,6 +307,7 @@ const V2AgentBYO: React.FC = () => {
       } catch {
         // No daemon machines — the "on my computer" card simply doesn't show.
       }
+      if (!cancelled) setChoicesKnown(true);
     })();
     return () => { cancelled = true; };
   }, [api, podId, currentUser?._id]);
