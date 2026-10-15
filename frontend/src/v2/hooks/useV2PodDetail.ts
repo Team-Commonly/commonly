@@ -66,6 +66,9 @@ export interface V2Message {
   // the `...raw` spread — declared here so consumers can read it typed.
   payload?: {
     kind?: string;
+    // kind 'starts': the offers Scout's welcome makes, rendered as buttons
+    // under that message (first session, direction B).
+    starts?: Array<{ id: string; label: string }>;
     approvalId?: string;
     actionType?: string;
     summary?: string;

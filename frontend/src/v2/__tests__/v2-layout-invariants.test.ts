@@ -2485,8 +2485,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // The box lives in the ONE shared side-row slot rule (with the delivery
       // hint); the derivation from `.v2-msg`'s grid is pinned by the next test.
       const slot = v2.slice(
-        v2.indexOf('.v2-chat__delivery-hint,\n.v2-chat__no-agents {'),
-        v2.indexOf('}', v2.indexOf('.v2-chat__delivery-hint,\n.v2-chat__no-agents {')),
+        v2.indexOf('.v2-chat__delivery-hint,\n.v2-chat__no-agents,\n.v2-chat__starts {'),
+        v2.indexOf('}', v2.indexOf('.v2-chat__delivery-hint,\n.v2-chat__no-agents,\n.v2-chat__starts {')),
       );
       expect(slot).toContain('margin: -4px 0 8px 36px');
       expect(slot).toContain('width: calc(100% - 36px)');
@@ -2501,7 +2501,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // selector line is itself a line-start `.v2-chat__no-agents {`, so it
       // reports the shared rule as the row's own — the TASK-140 trap, one file
       // over. lastIndexOf reaches the standalone block.
-      for (const selector of ['\n.v2-chat__delivery-hint {', '\n.v2-chat__no-agents {']) {
+      for (const selector of ['\n.v2-chat__delivery-hint {', '\n.v2-chat__no-agents {', '\n.v2-chat__starts {']) {
         const from = v2.lastIndexOf(selector);
         expect(from).toBeGreaterThan(-1);
         expect(v2.slice(from, v2.indexOf('}', from))).not.toMatch(/(^|\s)(margin|width):/);
@@ -2538,7 +2538,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // of `.v2-msg__content` at 390, 720 and 1440; 36px put them on it
       // (ux-lead verified by injection on their fixture, right edge and
       // scrollWidth unchanged).
-      const at = v2.indexOf('.v2-chat__delivery-hint,\n.v2-chat__no-agents {');
+      const at = v2.indexOf('.v2-chat__delivery-hint,\n.v2-chat__no-agents,\n.v2-chat__starts {');
       expect(at).toBeGreaterThan(-1);
       const slot = v2.slice(v2.indexOf('{', at) + 1, v2.indexOf('}', at));
       const threadGrid = ruleBody(v2, '.v2-thread .v2-msg');
@@ -2564,7 +2564,26 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // there would outrank the shared rule exactly where it matters (390).
       const phone = mediaBlockContaining(v2, '.v2-chat__messages');
       expect(phone).toContain('padding-inline: 14px');
-      expect(phone).not.toMatch(/\.v2-chat__(?:delivery-hint|no-agents)/);
+      expect(phone).not.toMatch(/\.v2-chat__(?:delivery-hint|no-agents|starts\b)/);
+    });
+
+    test("Scout's starts sit in the shared side-row slot and are 44px touch targets on a phone", () => {
+      // First session, direction B: the welcome's starts render as their own
+      // row under Scout's message, in the slot the delivery cue and the
+      // no-agent row share, so they land on the message text column too.
+      expect(threadMessages).toContain('className="v2-chat__starts"');
+      expect(threadMessages).toContain('className="v2-chat__start"');
+      // The 44px phone minimum must come AFTER the 32px base in the sheet: at
+      // equal specificity the later rule wins, and a base rule placed after
+      // the media block would silently render 32 on a phone.
+      expect(ruleBody(v2, '.v2-root button.v2-chat__start')).toContain('min-height: 32px');
+      expect(ruleBody(v2, '.v2-root button.v2-chat__start')).toContain('border-radius: var(--v2-radius)');
+      const phone = mediaBlockContaining(v2, 'button.v2-chat__start');
+      expect(phone).toContain('min-height: 44px');
+      const base = v2.indexOf('\n.v2-root button.v2-chat__start {');
+      const phoneAt = v2.indexOf(phone);
+      expect(base).toBeGreaterThan(-1);
+      expect(phoneAt).toBeGreaterThan(base);
     });
 
     test('pod focus keeps one bounded panel above the existing board and stays usable on phones', () => {
@@ -2884,7 +2903,7 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     expect(chosen.color).toBe('var(--v2-accent-text)');
     // The caps were data, not only CSS, so the data is where they must not come
     // back from: a lowercase transform over zh-CN copy would be the wrong fix.
-    expect(en).toContain('"recommended": "recommended"');
+    expect(en).toContain('"onCommonly": "on Commonly"');
     expect(en).toContain('"yours": "your machine"');
   });
 

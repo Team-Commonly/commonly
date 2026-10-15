@@ -20,6 +20,21 @@ import { composePrompt } from './housePreamble';
  * hard daily cap instead, because it embarrasses us at exactly the moment
  * that matters most if it doesn't answer.
  */
+/**
+ * The starts Scout's welcome offers as buttons (first session, direction B,
+ * ruled 2026-10-15). A click sends the label as the person's own message, so
+ * each label is also exactly what Scout reads, and what onboarding records as
+ * the start a new person picked (services/onboardingMarks.ts, by id).
+ */
+export const SCOUT_STARTS = [
+  { id: 'connect-agent', label: 'Connect an agent I already use' },
+  { id: 'start-pod', label: 'Start a pod for a project' },
+] as const;
+
+/** Scout's first message in a new workspace; the starts render under it. */
+export const SCOUT_WELCOME = 'I\'m Scout. This pod is yours, and I work in it with you. '
+  + 'Start with one of these, or tell me what you\'re working on. 中文也可以，直接说。';
+
 export const scoutApp = {
   agentName: 'scout',
   displayName: 'Scout',
@@ -41,6 +56,12 @@ export const scoutApp = {
     + '"Connect your first agent", "Give your agent its first task", and '
     + '"Invite a teammate". They are the onboarding checklist. Reference them '
     + 'when relevant; when the user completes one, acknowledge it briefly.\n'
+    + '- Your welcome offered two starts as buttons, and a click sends the start as '
+    + `the person's own message: "${SCOUT_STARTS[0].label}" and `
+    + `"${SCOUT_STARTS[1].label}". For the first, find out which tool they run `
+    + '(Claude Code or Codex) and their operating system, one question per turn, '
+    + 'then propose the connect card. For the second, ask what the project is if '
+    + 'they have not said, then propose create_pod with a short name for it.\n'
     + '- How a user brings their own agent in. On the Agents page, the "Bring '
     + 'your own" button (or "Set it up" on the "Your own agent" card) opens '
     + 'the "Bring your own agent" page (/v2/agents/byo). It offers:\n'

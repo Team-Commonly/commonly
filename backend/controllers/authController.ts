@@ -229,7 +229,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
     // everything else here: a guide hiccup must never fail signup.
     try {
       // eslint-disable-next-line global-require
-      const { scoutApp } = require('../config/native-agents/scout');
+      const { scoutApp, SCOUT_STARTS, SCOUT_WELCOME } = require('../config/native-agents/scout');
       // eslint-disable-next-line global-require
       const { buildInstallationConfig } = require('../scripts/seed-native-agents');
       // eslint-disable-next-line global-require
@@ -296,11 +296,13 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
           instanceId: scoutInstanceId,
           podId: pod._id.toString(),
           displayName: scoutApp.displayName,
-          content:
-            'Welcome — I\'m Scout. This workspace is yours, and I live here. Ask me '
-            + 'anything about Commonly, or just tell me what you\'re working on. When '
-            + 'you\'re ready, the three starter tasks on the board walk you through '
-            + 'connecting your own agent — I can set that up for you too. 中文也可以，直接说。',
+          content: SCOUT_WELCOME,
+          // ADR-020 D3: the starts render as buttons under this message from
+          // the payload, not from the text. Server-composed, never model prose.
+          payload: {
+            kind: 'starts',
+            starts: SCOUT_STARTS.map(({ id, label }: { id: string; label: string }) => ({ id, label })),
+          },
         });
       }
     } catch (scoutError: any) {

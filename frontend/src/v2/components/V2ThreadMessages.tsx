@@ -24,6 +24,11 @@ interface V2ThreadMessagesProps {
   onOpenFile?: (fileName: string) => void;
   onReply?: (message: V2Message) => void;
   onThread?: (message: V2Message) => void;
+  // Scout's starts, keyed by the message that offers them; already filtered to
+  // the ones this person has not sent (V2Thread). A click sends the label.
+  startsByMessageId?: Map<string, Array<{ id: string; label: string }>>;
+  onStart?: (label: string) => void;
+  startsDisabled?: boolean;
   onQuoteNavigate?: (messageId: string | number) => void;
   onDecisionRuled?: (decisionId: string, ruling: V2DecisionRuling) => void;
   onAimAtThread: (rootId: string, preview: string) => void;
@@ -122,6 +127,9 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   onOpenFile,
   onReply,
   onThread,
+  startsByMessageId,
+  onStart,
+  startsDisabled = false,
   onQuoteNavigate,
   onDecisionRuled,
   onAimAtThread,
@@ -275,6 +283,21 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 onQuoteNavigate={onQuoteNavigate}
                 grouped={isGroupedWithPrevious(renderedMessage, previousMessage)}
               />
+              {onStart && (startsByMessageId?.get(String(message.id))?.length ?? 0) > 0 && (
+                <div className="v2-chat__starts" role="group" aria-label={t('podChat.starts.label')}>
+                  {startsByMessageId?.get(String(message.id))?.map((start) => (
+                    <button
+                      key={start.id}
+                      type="button"
+                      className="v2-chat__start"
+                      disabled={startsDisabled}
+                      onClick={() => onStart(start.label)}
+                    >
+                      {start.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               {agentDeliveryHint?.messageId === message.id && (
                 <div className="v2-chat__delivery-hint" role="status">
                   <Trans

@@ -1874,7 +1874,8 @@ body.modern-ui.v2-canvas {
    the expected indent from `.v2-thread .v2-msg`'s own grid, so moving that
    column fails the suite instead of silently misaligning these rows. */
 .v2-chat__delivery-hint,
-.v2-chat__no-agents {
+.v2-chat__no-agents,
+.v2-chat__starts {
   width: calc(100% - 36px);
   margin: -4px 0 8px 36px;
 }
@@ -1924,12 +1925,51 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 
+/* Scout's starts (first session, direction B, ruled 2026-10-15): the welcome's
+   offers, one bordered button per start, in one column at one width so they
+   read as a set. A click sends the start as the person's own message. Box
+   geometry lives in the shared side-row slot rule above. */
+.v2-chat__starts {
+  display: grid;
+  grid-template-columns: minmax(0, max-content);
+  gap: 6px;
+}
+
+.v2-root button.v2-chat__start {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+
+.v2-root button.v2-chat__start:hover:not(:disabled) {
+  background: var(--v2-surface-hover);
+  border-color: var(--v2-border-strong);
+}
+
+.v2-root button.v2-chat__start:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 @media (max-width: 760px) {
   /* The row's single act is a touch target on a phone: full width of the row,
      44 tall. This must override the MINIMUM, not a height — a `height` here
      would lose to the base rule's own min-height and render 32 (TASK-140). */
   .v2-root button.v2-chat__no-agents-action {
     width: 100%;
+    min-height: 44px;
+  }
+  /* Scout's starts are touch targets too: 44 tall on a phone, as drawn. */
+  .v2-root button.v2-chat__start {
     min-height: 44px;
   }
 }
