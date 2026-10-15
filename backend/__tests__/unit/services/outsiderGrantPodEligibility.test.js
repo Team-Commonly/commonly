@@ -65,6 +65,12 @@ test.each(['discord', 'telegram', 'slack'])('a live %s bridge is ineligible', as
   expect(await outsiderGrantPodRefusal(target)).toBe('pod_bridged');
 });
 
+test('future pod integrations count as bridges unless explicitly known as credential rows', async () => {
+  bridges = [{ type: 'future-channel', scope: 'pod', podId: POD, status: 'connected' }];
+  expect(await outsiderGrantPodRefusal(target)).toBe('pod_bridged');
+  expect(mockIntegration.find.mock.calls[0][0].type).toEqual({ $nin: ['hosted-mcp', 'github-app'] });
+});
+
 test('a user-scoped bridge with an enabled gate is ineligible', async () => {
   bridges = [{ type: 'slack', scope: 'user', podId: HUMAN, status: 'connected',
     config: { liveRelay: true, gates: { [POD]: { enabled: true } } } }];

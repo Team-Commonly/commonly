@@ -15,7 +15,7 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const mockPod = { findById: jest.fn() };
-const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
+const mockIntegration = { findOne: jest.fn(), findById: jest.fn(), find: jest.fn() };
 const mockToolCall = { create: jest.fn() };
 const mockReserveBudgetLineage = jest.fn();
 const mockGithub = {
@@ -83,6 +83,9 @@ beforeEach(async () => {
   mockToolCall.create.mockResolvedValue(undefined);
   mockReserveBudgetLineage.mockResolvedValue(true);
   mockIntegration.findById.mockResolvedValue(null);
+  mockIntegration.find.mockImplementation(() => ({
+    select: () => ({ lean: async () => [] }),
+  }));
   mockIntegration.findOne.mockResolvedValue({
     type: 'github-app',
     status: 'connected',
@@ -92,7 +95,9 @@ beforeEach(async () => {
   });
   mockGithub.listOpenIssues.mockResolvedValue([]);
   mockPod.findById.mockImplementation(() => ({
-    select: () => ({ lean: async () => ({ _id: POD, type: 'team', members: [OWNER, SEAT] }) }),
+    select: () => ({ lean: async () => ({
+      _id: POD, type: 'team', members: [OWNER, SEAT], publicRead: false, joinPolicy: 'invite-only',
+    }) }),
   }));
 });
 
@@ -143,6 +148,8 @@ const seatGrant = (over = {}) => ({
   brokerId: 'broker-1',
   ...over,
 });
+
+const podGrant = (over = {}) => seatGrant({ target: { kind: 'pod', id: POD }, audience: [OWNER, SEAT], ...over });
 
 describe('judgeSeatConfinement — which declaration judges the caller', () => {
   test('a pi seat tagged only by runtimeType is refused (the hand-attached shape)', async () => {
@@ -311,23 +318,20 @@ describe('the broker call and the tool list refuse an unconfined seat', () => {
     }));
   });
 
-  test('positive control: the same grant and seat on claude-code runs', async () => {
+  test('a confining seat still cannot use an outsider-writable seat grant', async () => {
     await bindSeat();
     await installRow({ runtime: { runtimeType: 'claude-code', host: 'byo' } });
     await RoomGrant.create(seatGrant());
 
-    const result = await callTool({
+    await expect(callTool({
       grantId: 'grant-1',
       agentUserId: SEAT,
       agentName: AGENT,
       instanceId: INSTANCE,
       tool: 'github.list_issues',
       args: {},
-    });
-
-    expect(result.callId).toBeTruthy();
-    expect(mockGithub.listOpenIssues).toHaveBeenCalled();
-    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ok' }));
+    })).rejects.toMatchObject({ code: 'outsider_grant_pod_required', statusCode: 403 });
+    expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
   });
 
   test('the tool list is refused too — an unconfined seat is handed no definitions', async () => {
@@ -340,25 +344,22 @@ describe('the broker call and the tool list refuse an unconfined seat', () => {
     })).rejects.toMatchObject({ code: 'grant_broker_unconfined' });
   });
 
-  test('positive control: the list resolves for a confining seat', async () => {
+  test('a confining seat cannot list an outsider-writable seat grant', async () => {
     await bindSeat();
     await installRow({ runtime: { runtimeType: 'claude-code' } });
     await RoomGrant.create(seatGrant());
 
-    const listed = await listToolsForGrant({
+    await expect(listToolsForGrant({
       grantId: 'grant-1', agentUserId: SEAT, agentName: AGENT, instanceId: INSTANCE,
-    });
-    expect(listed.map((definition) => definition.name)).toContain('github.list_issues');
+    })).rejects.toMatchObject({ code: 'outsider_grant_pod_required', statusCode: 403 });
   });
 
-  test('a hosted turn is out of scope: no shell, web or file tools to confine', async () => {
-    // The native runtime dispatches in process and sets `hosted`; refusing there
-    // would refuse the hosted path the ruling excludes (Wren 74882).
+  test('a hosted turn does not exempt an outsider-writable seat grant', async () => {
     await bindSeat();
     await installRow({ runtime: { runtimeType: 'pi' } });
     await RoomGrant.create(seatGrant());
 
-    const result = await callTool({
+    await expect(callTool({
       grantId: 'grant-1',
       agentUserId: SEAT,
       agentName: AGENT,
@@ -366,8 +367,30 @@ describe('the broker call and the tool list refuse an unconfined seat', () => {
       tool: 'github.list_issues',
       args: {},
       hostedTurn: true,
-    });
+    })).rejects.toMatchObject({ code: 'outsider_grant_pod_required', statusCode: 403 });
+    expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+  });
 
+  test('positive control: a closed native pod grant lists and calls the tool', async () => {
+    await bindSeat();
+    await User.updateOne({ _id: SEAT }, { $set: { isBot: true, botType: 'agent' } });
+    await installRow({ runtime: { runtimeType: 'native' } });
+    mockPod.findById.mockImplementation(() => ({
+      select: () => ({ lean: async () => ({
+        _id: POD, type: 'team', members: [SEAT], publicRead: false, joinPolicy: 'invite-only',
+      }) }),
+    }));
+    await RoomGrant.create(podGrant({ audience: [SEAT] }));
+
+    const listed = await listToolsForGrant({
+      grantId: 'grant-1', agentUserId: SEAT, agentName: AGENT, instanceId: INSTANCE,
+    });
+    expect(listed.map((definition) => definition.name)).toContain('github.list_issues');
+
+    const result = await callTool({
+      grantId: 'grant-1', agentUserId: SEAT, agentName: AGENT, instanceId: INSTANCE,
+      tool: 'github.list_issues', args: {}, hostedTurn: true,
+    });
     expect(result.callId).toBeTruthy();
     expect(mockGithub.listOpenIssues).toHaveBeenCalled();
   });

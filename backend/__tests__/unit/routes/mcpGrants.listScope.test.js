@@ -12,13 +12,17 @@ const request = require('supertest');
 
 const mockRoomGrant = { findOne: jest.fn() };
 const mockPod = { findById: jest.fn() };
-const mockIntegration = { findOne: jest.fn() };
+const mockIntegration = { findOne: jest.fn(), find: jest.fn() };
+const mockUser = { find: jest.fn() };
+const mockAgentInstallation = { find: jest.fn() };
 const mockToolCall = { create: jest.fn() };
 const mockGithub = { listOpenIssues: jest.fn(), createIssue: jest.fn() };
 
 jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockRoomGrant }));
 jest.mock('../../../models/Pod', () => ({ __esModule: true, default: mockPod }));
 jest.mock('../../../models/Integration', () => ({ __esModule: true, default: mockIntegration }));
+jest.mock('../../../models/User', () => ({ __esModule: true, default: mockUser }));
+jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: mockAgentInstallation }));
 jest.mock('../../../models/ToolCall', () => ({
   __esModule: true,
   default: mockToolCall,
@@ -113,7 +117,20 @@ const { getToolDefinitions } = require('../../../services/toolBrokerService');
 beforeEach(() => {
   jest.clearAllMocks();
   mockSeatConfinement.mockResolvedValue({ refusal: null, scope: 'unbound' });
-  mockRoomGrant.findOne.mockResolvedValue(seatGrant());
+  mockRoomGrant.findOne.mockResolvedValue(podTargetGrant());
+  mockPod.findById.mockReturnValue({
+    select: () => ({ lean: async () => ({
+      _id: 'pod-1', members: ['agent-a', 'owner-1'], publicRead: false, joinPolicy: 'invite-only',
+    }) }),
+  });
+  mockIntegration.find.mockReturnValue({ select: () => ({ lean: async () => [] }) });
+  mockUser.find.mockReturnValue({ select: () => ({ lean: async () => [
+    { _id: 'agent-a', isBot: true, botType: 'agent', botMetadata: { agentName: 'openclaw', instanceId: 'aria' } },
+    { _id: 'owner-1', isBot: false, botType: null },
+  ] }) });
+  mockAgentInstallation.find.mockReturnValue({ select: () => ({ lean: async () => [{
+    agentName: 'openclaw', instanceId: 'aria', config: { runtime: { runtimeType: 'native' } },
+  }] }) });
   mockIntegration.findOne.mockResolvedValue({
     type: 'github-app',
     status: 'connected',
@@ -125,6 +142,13 @@ beforeEach(() => {
 });
 
 describe('MCP tools/list is scoped to the grant in the URL', () => {
+  it('refuses an outsider-writable seat grant even with a confining adapter', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant());
+    const listed = await listTools();
+    expect(listed.text).toContain('outsider_grant_pod_required');
+    expect(listed.text).not.toContain('github.list_issues');
+  });
+
   it('lists exactly the tools the grant names, by raw name', async () => {
     const listed = await listTools();
     expect(listed.status).toBe(200);
@@ -144,32 +168,32 @@ describe('MCP tools/list is scoped to the grant in the URL', () => {
   });
 
   it('refuses a revoked grant', async () => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ revokedAt: new Date() }));
+    mockRoomGrant.findOne.mockResolvedValue(podTargetGrant({ revokedAt: new Date() }));
     const listed = await listTools();
     expect(listed.text).toContain('grant_revoked');
     expect(listed.text).not.toContain('github.list_issues');
   });
 
   it('refuses a grant whose audience does not include the caller', async () => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ audience: ['someone-else'] }));
+    mockRoomGrant.findOne.mockResolvedValue(podTargetGrant({ audience: ['someone-else'] }));
     const listed = await listTools();
     expect(listed.text).toContain('not_in_audience');
     expect(listed.text).not.toContain('github.list_issues');
   });
 
   it('does not offer a tool the grant\u2019s write mode would refuse', async () => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({
+    mockRoomGrant.findOne.mockResolvedValue(podTargetGrant({
       tools: ['github.create_issue'],
       writeMode: 'read',
     }));
     const listed = await listTools();
     expect(listed.text).not.toContain('github.create_issue');
 
-    // Positive control: the same tool IS listed once the grant allows the mode,
-    // so the assertion above is measuring the mode rule, not an empty response.
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({
+    // Positive control: the same tool IS listed with confirmation required.
+    // Unattended `write` is ineligible in a pod holding outsider content.
+    mockRoomGrant.findOne.mockResolvedValue(podTargetGrant({
       tools: ['github.create_issue'],
-      writeMode: 'write',
+      writeMode: 'write-with-confirm',
     }));
     const allowed = await listTools();
     expect(allowed.text).toContain('github.create_issue');
@@ -192,7 +216,7 @@ describe('MCP tools/list is scoped to the grant in the URL', () => {
   // are the same rule. Measured against every registered tool rather than
   // asserted, so a second definition of the rule shows up here.
   it('agrees with tools/call on every registered tool', async () => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({
+    mockRoomGrant.findOne.mockResolvedValue(podTargetGrant({
       tools: ['github.list_issues', 'github.create_issue', 'github.merge_pull_request'],
       writeMode: 'read',
     }));

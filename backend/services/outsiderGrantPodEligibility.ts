@@ -36,7 +36,9 @@ export const outsiderGrantPodRefusal = async (
   if (pod.joinPolicy !== 'invite-only') return 'pod_joinable';
 
   const bridges = await Integration.find({
-    type: { $in: ['discord', 'telegram', 'slack', 'messenger', 'groupme', 'whatsapp', 'x', 'instagram'] },
+    // Fail closed when a new channel type is added: only credential rows are
+    // known not to relay pod content to an external audience.
+    type: { $nin: ['hosted-mcp', 'github-app'] },
     revokedAt: null,
     $or: [{ podId }, { [`config.gates.${podId}.enabled`]: true }],
   }).select('type scope podId status isActive config.gates config.adminPause').lean();
