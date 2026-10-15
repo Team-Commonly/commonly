@@ -148,7 +148,7 @@ def apply(project, email, dry_run):
         u["monitoredResource"]["labels"]["project_id"] = project
         current = existing_checks.get(u["displayName"])
         if current:
-            mask = "displayName,httpCheck,period,timeout,selectedRegions"
+            mask = "displayName,httpCheck,contentMatchers,period,timeout,selectedRegions"
             result = api.call("PATCH", f"{MONITORING}/{current['name']}?updateMask={mask}", u)
             name = current["name"]
             print(f"uptime: updated {u['displayName']}")
