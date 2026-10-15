@@ -93,7 +93,7 @@ describe('agent config PATCH — installer gate', () => {
     setCallerRole('user');
   });
 
-  it('refuses switching a native installation off native before saving any fan-out row', async () => {
+  it('refuses a non-admin runtime switch before saving any fan-out row', async () => {
     podHasOutsiderWritableGrant.mockResolvedValue(true);
     const primary = installation({
       installedBy: MEMBER,
@@ -108,27 +108,27 @@ describe('agent config PATCH — installer gate', () => {
       .send({ instanceId: 'curator', config: { runtime: { runtimeType: 'opencode' } } });
 
     expect(res.status).toBe(403);
-    expect(res.body).toEqual(expect.objectContaining({
-      code: 'outsider_grant_non_native_agent_join',
-      message: expect.stringContaining('Use a separate pod'),
-    }));
+    expect(res.body.code).toBe('runtime_type_change');
     expect(primary.save).not.toHaveBeenCalled();
     expect(primary.config.get('runtime')).toEqual({ runtimeType: 'native' });
+    expect(podHasOutsiderWritableGrant).not.toHaveBeenCalled();
   });
 
-  it('allows the same runtime switch once the grant is revoked', async () => {
+  it('allows an existing non-native installation to reactivate once the grant is revoked', async () => {
     const primary = installation({
       installedBy: MEMBER,
-      config: new Map([['runtime', { runtimeType: 'native' }]]),
+      status: 'paused',
+      config: new Map([['runtime', { runtimeType: 'opencode' }]]),
     });
     setPod();
     AgentInstallation.findOne.mockResolvedValue(primary);
     AgentInstallation.find.mockResolvedValue([primary]);
     const res = await request(app)
       .patch('/api/registry/pods/pod-1/agents/openclaw')
-      .send({ instanceId: 'curator', config: { runtime: { runtimeType: 'opencode' } } });
+      .send({ instanceId: 'curator', status: 'active' });
     expect(res.status).toBe(200);
     expect(primary.save).toHaveBeenCalledTimes(1);
+    expect(primary.status).toBe('active');
   });
 
   it('refuses the entire runtime fan-out when a later pod holds a live grant', async () => {
