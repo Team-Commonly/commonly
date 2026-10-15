@@ -1,8 +1,25 @@
 // @ts-nocheck
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2MessageRow, { CollapsiblePre } from '../components/V2MessageRow';
+import V2MessageRow, { CollapsiblePre, MessageMarkdownImage } from '../components/V2MessageRow';
+import { messageImageUrl } from '../utils/messageImageUrl';
+import { __resetSignedAttachmentUrlCacheForTests } from '../../utils/signedAttachmentUrl';
+
+// The repository-wide markdown mock only returns text. Exercise the image
+// component map in this suite so the row cannot bypass the origin guard.
+jest.mock('react-markdown', () => {
+  const ReactForMock = require('react');
+  return {
+    __esModule: true,
+    default: ({ children, components }) => {
+      const image = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(String(children));
+      return image
+        ? ReactForMock.createElement(components.img, { alt: image[1], src: image[2] })
+        : ReactForMock.createElement('div', { 'data-testid': 'react-markdown' }, children);
+    },
+  };
+});
 
 jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { username: 'viewer' } }),
@@ -73,6 +90,58 @@ describe('V2MessageRow attachments (direction C)', () => {
     const thumb = screen.getByRole('button', { name: 'Open image' });
     expect(thumb.querySelector('img')).toHaveAttribute('src', 'https://api.commonly.me/api/uploads/avatar.png');
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  test('a foreign markdown image is a plain link and creates no image element', () => {
+    const { container } = render(<MessageMarkdownImage src="https://outside.example/collect?secret=x" alt="report" />);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByRole('link', { name: 'report' })).toHaveAttribute('href', 'https://outside.example/collect?secret=x');
+  });
+
+  test('the v2 message row routes markdown images through the origin guard', () => {
+    renderRow(message('![report](https://outside.example/collect.png)'));
+    expect(document.querySelector('.v2-msg__content img')).toBeNull();
+    expect(screen.getByRole('link', { name: 'report' })).toHaveAttribute('href', 'https://outside.example/collect.png');
+  });
+
+  test('an instance upload in markdown still renders as an image', () => {
+    const { container } = render(<MessageMarkdownImage src="/api/uploads/report.png" alt="report" />);
+    expect(container.querySelector('img')).toHaveAttribute('src', 'https://api.commonly.me/api/uploads/report.png');
+  });
+
+  test('a signed upload response cannot switch the image to a foreign host', async () => {
+    __resetSignedAttachmentUrlCacheForTests();
+    localStorage.setItem('token', 'test-token');
+    const previousFetch = global.fetch;
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ url: 'https://outside.example/collect.png?secret=x', expiresIn: 300 }),
+    } as Response);
+    global.fetch = fetchSpy;
+    try {
+      const { container } = render(<MessageMarkdownImage src="/api/uploads/signed-control.png" alt="report" />);
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      await act(async () => { await fetchSpy.mock.results[0].value; });
+      expect(container.querySelector('img')).toHaveAttribute('src', 'https://api.commonly.me/api/uploads/signed-control.png');
+    } finally {
+      global.fetch = previousFetch;
+      localStorage.removeItem('token');
+      __resetSignedAttachmentUrlCacheForTests();
+    }
+  });
+
+  test('a foreign legacy image message cannot enter the gallery', () => {
+    renderRow(message('https://outside.example/collect.png?secret=x', { message_type: 'image' }));
+    expect(document.querySelector('.v2-msg__thumbs')).toBeNull();
+    expect(screen.getByRole('link', { name: /outside\.example/ })).toBeInTheDocument();
+  });
+
+  test('image URL guard accepts only this instance upload origin and path', () => {
+    expect(messageImageUrl('https://api.commonly.me/api/uploads/one.png')).toBe('https://api.commonly.me/api/uploads/one.png');
+    expect(messageImageUrl('https://api.commonly.me.evil.test/api/uploads/one.png')).toBeNull();
+    expect(messageImageUrl('https://outside.example/api/uploads/one.png')).toBeNull();
+    expect(messageImageUrl('https://api.commonly.me/other/one.png')).toBeNull();
+    expect(messageImageUrl('data:image/svg+xml,<svg/>')).toBeNull();
   });
 
   // react-markdown is mocked in jsdom, so the collapse is tested at the

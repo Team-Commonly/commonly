@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
+import { messageImageUrl } from '../utils/messageImageUrl';
 
 export interface V2LightboxImage {
   src: string;
@@ -40,7 +41,10 @@ const V2Lightbox: React.FC<V2LightboxProps> = ({ images, index, onClose }) => {
     let active = true;
     setResolved(null);
     if (!image || !/\/api\/uploads\//.test(image.src)) return undefined;
-    void getSignedAttachmentUrl(image.src).then((signed) => { if (active && signed) setResolved(signed); });
+    void getSignedAttachmentUrl(image.src).then((signed) => {
+      const safeSigned = messageImageUrl(signed);
+      if (active && safeSigned) setResolved(safeSigned);
+    });
     return () => { active = false; };
   }, [image]);
 
@@ -56,7 +60,9 @@ const V2Lightbox: React.FC<V2LightboxProps> = ({ images, index, onClose }) => {
           <button type="button" className="v2-lightbox__nav v2-lightbox__nav--next" aria-label={t('podChat.lightbox.next')} onClick={(event) => { event.stopPropagation(); setCurrent((i) => (i + 1) % count); }}>→</button>
         </>
       )}
-      <img className="v2-lightbox__image" src={resolved || image.src} alt={image.name} onClick={(event) => event.stopPropagation()} />
+      {messageImageUrl(resolved || image.src) && (
+        <img className="v2-lightbox__image" src={resolved || image.src} alt={image.name} onClick={(event) => event.stopPropagation()} />
+      )}
     </div>
   );
 };

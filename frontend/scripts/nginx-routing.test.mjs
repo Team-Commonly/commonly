@@ -22,3 +22,14 @@ test('unknown public routes are real 404s while documented app routes retain SPA
   assert.match(notFoundPage, /<h1>We couldn’t find that page<\/h1>/);
   assert.match(notFoundPage, /href="\/guides\/"/);
 });
+
+test('HTML and inherited NGINX locations enforce the same image source policy', async () => {
+  const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
+  assert.match(config, /map \$host \$upload_image_origins \{/);
+  assert.match(config, /default "https:\/\/api\.\$host http:\/\/api\.\$host";/);
+  const policy = /add_header Content-Security-Policy "img-src 'self' \$upload_image_origins data: blob:" always;/g;
+  // Server scope, index.html (which adds Cache-Control), and asset location
+  // (which also adds Cache-Control) each need their own copy.
+  assert.equal([...config.matchAll(policy)].length, 3);
+  assert.doesNotMatch(config, /img-src[^"\n]*\*/);
+});
