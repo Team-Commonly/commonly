@@ -455,10 +455,13 @@ const endpointAuthentication = (
   const supported = endpoint === 'token'
     ? metadata.token_endpoint_auth_methods_supported
     : metadata.revocation_endpoint_auth_methods_supported;
+  const pinnedMethod = endpoint === 'token' ? entry.tokenEndpointAuthMethod : undefined;
   const methods = supported === undefined
-    ? ['client_secret_basic']
+    ? [pinnedMethod ?? 'client_secret_basic']
     : (Array.isArray(supported) ? supported : []);
-  const method = CONFIDENTIAL_CLIENT_METHODS.find((candidate) => methods.includes(candidate));
+  const method = pinnedMethod
+    ? methods.find((candidate) => candidate === pinnedMethod)
+    : CONFIDENTIAL_CLIENT_METHODS.find((candidate) => methods.includes(candidate));
   if (!method) {
     throw new HostedMcpClientError(
       'client_auth_unsupported',
