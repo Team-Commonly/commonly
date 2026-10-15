@@ -18,6 +18,8 @@
 
 **Amended 2026-10-14 (the catalogue hold):** Sam ruled, relayed by connector-ops (77368), that no new catalogue app is built until an outside user connects one, and that "payment apps and new OAuth apps are out". Linear, Google Calendar, Atlassian and Airtable are built, and every later entry in step 8 is held, along with the order the 2026-10-09 note set (§10, step 8). That note's batch rested on measurements the 2026-10-13 sweep re-took for its first three: Canva is now conditional and parked, and Miro and ClickUp are conditional ([hosted-mcp-catalogue-sweep-2026-10-13.md](hosted-mcp-catalogue-sweep-2026-10-13.md), #2133). So when the hold lifts, the next entry is ruled afresh. This supersedes the 2026-10-09 note's sentence that Canva, Miro and ClickUp follow Airtable. Two passages are also conformed to code that has landed since they were written: TASK-199 carries a failed list's reason into the trail (§3), and the server's adapter rule is now an allowlist, as the daemon's is (§6). The code this amendment cites is read at `main` `e4e10571`.
 
+**Amended 2026-10-15 (TASK-224, the pod rule):** the CTO ruled on TASK-224 that a grant from a source outsiders can write is attached, and its tools called, only in an eligible pod (connector-ops 77728), and #2211 built the rule (§12). The pod is private, invite-only and unbridged, every agent in it runs on the native runtime, and the grant is a pod grant, not a seat grant. While a live grant reaches the pod, TASK-224 narrows each native agent in it to reading the pod's context and posting there. The rule reads no source declaration, and every source is outsider-writable today, so it governs every grant. This supersedes the #2168 part 2 note's finding that every such grant needs an override: a grant in an eligible pod needs neither an override nor parking. Of the three options put to the CTO (Kai, 77725), the ruling took this one, kept the second, holding the offer until the kernel parks outward calls, only as its fallback if the call-time check proves too expensive, and did not accept the third, an owner override that accepts the residual. Until TASK-213, no seat the daemon runs can use a grant, so the readiness matrix's C4 is refused by design. The code this amendment cites is read at `main` `17adb067`.
+
 **In short, a hosted MCP server is a second tool source for the grants plan's §10, not a new connector.** It adds one new `Integration.type`, `hosted-mcp`, a per-person Connection (§10.1). Its tools come from a catalogue entry this repo pins, not from the hand-written map in `toolBrokerService.ts`. A member connects their own account through the vendor's authorization server. The broker holds the credential, a room grant scopes it, the vendor runs the tools, and the trail records who acted. Grants work as they do today: tiers, attenuation, budget, expiry, the confirmation floor, approval and the trail. What is new is who wrote the tool list, and most of this note is about that.
 
 In this note, `§10.x` means that section of [tools-catalogue-room-grants.md](tools-catalogue-room-grants.md), "the grants plan", and "the entry" means one catalogue entry (§3).
@@ -443,6 +445,7 @@ Each step can be tested without the vendor, except the live measurements in step
    - `the page's call to start is credentialed`, before the walk (§4)
    - Measured live: that a removal's revoke took at Linear, shown by something other than its 200 (§3). Linear advertises one URL as both its `token_endpoint` and its `revocation_endpoint` (fetched 2026-09-29), so only a live removal shows which request that URL treats as a revoke.
    - The entry's `page`: Linear's Security & access settings, whose "Authorized applications" list has "Revoke access" on each app (Linear docs, *Security & Access*, fetched 2026-09-30). Its URL is pinned from the signed-in walk.
+   - Walked 2026-10-15, before #2211 deployed, by a fresh account with a fresh Linear workspace (connector-ops 77850, and the readiness matrix's Linear row). Connect granted `read openid`. A read grant of the 36 pins, in a pod that passes §12's rule, carried a native agent's call, ok in the trail, with #2206's marker ahead of the data. The walk had no pi seat: under §12 a pod with one in it fails the rule, so a grant there is refused for every member. Still unmeasured: a removal's revoke taking effect at Linear.
 8. **The entries after Linear**, in the order connector-ops proposed (76040) and 76044 kept, with the batch of 2026-10-09 after Airtable (connector-ops 76914, Wren 76915): Atlassian, Airtable, Canva, Miro, ClickUp, Todoist, Calendly, then Google through a pre-registered client (§4). Each is its own entry PR, admitted as §11 says and walked as step 7 is. Google Calendar is built in parallel without jumping that order, since Atlassian and Airtable wait only on Sam's accounts (connector-ops 76137).
    - **Held** (Sam, 2026-10-14, relayed by connector-ops in 77368): no new catalogue app is built until an outside user connects one, and "payment apps and new OAuth apps are out". Linear, Google Calendar, Atlassian and Airtable are built (`integrations/hostedMcp/entries.ts:20`). Every other entry this step names is held, and so is the order above. Its batch after Airtable rests on the 2026-10-09 measurements, and the 2026-10-13 sweep re-measured the batch's first three: Canva is conditional and parked, and Miro and ClickUp are conditional ([hosted-mcp-catalogue-sweep-2026-10-13.md](hosted-mcp-catalogue-sweep-2026-10-13.md)). So when the hold lifts, the next entry is ruled afresh, not taken from this list. The rest of this step stays as the design each entry follows when it is built.
    - First, while Linear is the only entry: the client record (§2), then its backfill once that build's rollout has finished.
@@ -509,20 +512,18 @@ The TASK-172 ruling's part 3 wording on `:180` is replaced by §6.
 
 ## 12. Outsider-writable sources and outward effects (#2168 part 2)
 
-**2026-10-15 CTO amendment (TASK-224):** For the native-runtime connector offer, a
-pod eligibility rule is a bounded alternative to the override/parking path
-below. An outsider-writable grant may be a **pod grant only**, and its pod must
-be private, invite-only, unbridged, and contain only native-runtime agent
-members under the TASK-224 tool gate (plus any humans). The grant mint and
-attenuation routes refuse failing conditions and `write` mode, which lets a
-GitHub App tool write without a person's approval; `write-with-confirm`
-remains available. The broker checks again
-on every list, direct call, and approved call. Adding an external agent,
-making the pod public or joinable, or routing a channel to it stops the next
-call. Seat grants remain ineligible until TASK-213. The 2026-10-14 default
-and override design below remains the broader path; its statement that no
-grant can proceed without an override is superseded for this eligible pod
-case. The part 1 untrusted-content marker still applies.
+**2026-10-15 amendment (TASK-224).** The CTO ruled that a grant from an outsider-writable source is attached, and its tools called, only in an eligible pod (connector-ops 77728). #2211 built the rule (`outsiderGrantPodRefusal`, outsiderGrantPodEligibility.ts:26). It reads no declaration from (b) and applies to every grant, and every source is outsider-writable today. A grant may be minted, attenuated, listed or called only while all of these hold:
+
+1. It is a pod grant. A seat grant is refused until TASK-213.
+2. Its write mode is not `write`, which would let a GitHub App tool write with no person (item 5). `write-with-confirm` remains.
+3. Its pod is private and closed: `publicRead` is `false` and `joinPolicy` is `'invite-only'`, so a pod missing either field is refused. No live integration other than a hosted-MCP or GitHub App connection is attached to the pod or has a gate enabled for it. One that is revoked, disconnected, in error, inactive or paused by an admin does not count.
+4. Every agent in the pod runs on the native runtime. Each agent member has exactly one active installation in the pod, its `config.runtime.runtimeType` is `native`, and every active installation belongs to an agent member. Humans are fine.
+
+Mint and attenuation refuse a failing grant with `outsider_grant_<condition>` and a message that points to a separate pod (grants.ts:389, :434). The broker checks again, with no cache, on every list, direct call and approved call (toolBrokerService.ts:787, :1133, :1332). So a non-native agent added, the pod made public or joinable, or a bridge enabled refuses the next call. Grants minted before #2211 are not exempt.
+
+While a live grant reaches a pod, every native agent in it is narrowed (TASK-224, nativeOutsiderGrantPolicy.ts:22). Its turn is offered only `commonly_read_context` and `commonly_post_message` (nativeRuntimeService.ts:267), dispatch refuses any other name with `outsider_writable_grant_tool_denied` (:304), and the post lands only in the run's pod (:353). The check is re-read before each model call and each dispatch, and a failed read narrows (:983, :1090, :1217).
+
+The rule does not compute (a)'s list. It bounds it at the pod instead. Condition 3 rules out item 4 and condition 2 rules out item 5. Condition 4 leaves only native agents, which hold no seat tools (item 6) and, while narrowed, can read the pod's context and post in it and nothing else (items 1–3). So (a) and (b) stand as the analysis of outward effects and sources, and the default's finding, the parking paragraph, (c) and (d) are superseded where marked below. Until TASK-213 no seat the daemon runs can use a grant: a seat grant fails condition 1, and a pod grant fails condition 4 while a daemon seat is in the pod. What TASK-213 re-opens is for a later ruling. Part 1's marker covers hosted-MCP results only (toolBrokerService.ts:1271), so a GitHub App result carries none. The CTO's conditions for offering GitHub outside name a hosted entry for that reason (TASK-225), and a GitHub App connection is made only through the administrator route (integrations.ts:390). The code this amendment cites is read at `main` `17adb067`.
 
 The CTO ruled on #2168 on 2026-10-14. A grant from a source that outsiders can write is refused while any agent in its pod can cause an outward effect without a person. It is allowed with no override when every such effect is approval-gated: a parked call that waits for a person's Approve, on a card that shows the canonical arguments. Anything else needs the owner's override for that source and those tools, recorded and shown on the Tools page, and revoking either side ends it. Part 1's untrusted marker applies either way, and vendor blocks stay byte-identical. This section is the design note the ruling asks for before any code, and the build is its own row. The code it cites is read at `main` `8a3a93ac`.
 
@@ -557,7 +558,11 @@ The ruling's five names map onto these items:
 - no kernel or broker tool sends email today, so email is item 6;
 - a write to an external system is item 5, item 6, or a bridge (item 4).
 
+**Superseded 2026-10-15** by the TASK-224 amendment above: a grant in an eligible pod needs no override.
+
 **As ruled, the default refuses every grant today.** Every agent that calls the runtime API holds item 1, so every pod with such an agent fails rule 1, and rule 2 has no case because no DM parks. Vera's census on the TASK-212 row reached the same result from the tool side. Until the kernel parks its own outward calls, every grant from an outsider-writable source needs an override.
+
+**Superseded 2026-10-15** by the TASK-224 amendment above: parking is no longer the next row. The ruling keeps it as the fallback if the call-time check proves too expensive (TASK-214, held).
 
 To give rule 2 a case, the kernel would park items 1–3 for agents in the reach of such a grant, as a card with the canonical arguments. The propose-action route (agentsRuntime.ts:2159) already turns `create_pod` and broker `tool_call`s into such cards (approvalActionService.ts:29). That is a kernel build with its own row, and its cost is real: an agent in such a reach would wait for a person on every DM and every post outside it. Even after it lands, three cases stay on the override path:
 
@@ -577,6 +582,8 @@ To give rule 2 a case, the kernel would park items 1–3 for agents in the reach
 
 Inbound email has no entry today. An entry that reads mail is outsider-writable by definition.
 
+**Superseded 2026-10-15** by the TASK-224 amendment above: this check was not built. #2211's rule runs at the mint, attenuation, list, direct call and approved call instead, and refuses with `outsider_grant_<condition>`.
+
 **(c) Where the check runs.** One function computes (a)'s list for a grant from current state. It runs at the mint and at call time, and not at attenuation.
 
 - **At the mint** (`POST /api/grants`, grants.ts:298), after the existing checks and before the row is written. When the source is outsider-writable and the list is not empty, the mint refuses with `outward_effect_unaccepted` and returns the list, so the dialog can show who holds what. The same request, carrying an override (§12(d)) that names exactly that list, mints the grant.
@@ -584,6 +591,8 @@ Inbound email has no entry today. An entry that reads mail is outsider-writable 
 - **Not at attenuation.** A child has its parent's reach, so its calls meet the call-time check.
 
 A refused call writes its trail row like any refusal. It does not revoke the grant, which runs again once the list is empty or an override names it. Grants minted before the build are not exempt: their first call after it ships is refused until the owner records an override. That includes our own Linear grants.
+
+**Superseded 2026-10-15** by the TASK-224 amendment above: the ruling did not accept an owner override, and none is built.
 
 **(d) The override.**
 
@@ -600,7 +609,7 @@ An override never touches part 1: the marker wraps every result either way.
 
 **Still open:**
 
-- **Kernel parking for items 1–3**, recommended as the next row. Without it, rule 2 has no case.
+- **Kernel parking for items 1–3** is no longer the next row: the TASK-224 ruling keeps it as the fallback (TASK-214, held).
 - **Discord** was not measured. Until it is, a pod with a Discord integration counts as bridged (item 4).
 - **Agent memory** is not counted. Its reader is the agent, and item 3 already counts the agent's other pods. Whether an owner's view of a seat's memory is a way out is unmeasured.
 - **The disclosure line** for the grant dialog and the privacy page is a separate copy task (the ruling's point 5).
