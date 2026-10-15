@@ -316,7 +316,7 @@ describe('an event left pending by the move', () => {
     expect(entryFor(rerun, 'maya-agent')).toBeUndefined();
     expect(dispatch).not.toHaveBeenCalled();
 
-    expect(await AgentEventService.rescueStrandedPendingInProcess(new Date(), 3)).toBe(1);
+    expect((await AgentEventService.rescueStrandedPendingInProcess(new Date(), 3)).rescued).toBe(1);
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect((await AgentEvent.findById(late._id).lean()).status).toBe('delivered');
   });
@@ -330,7 +330,7 @@ describe('an event left pending by the move', () => {
     await migrate({ apply: true, now: NOW });
     const late = await pendingFor(podB);
 
-    expect(await AgentEventService.rescueStrandedPendingInProcess(new Date(), 3)).toBe(0);
+    expect((await AgentEventService.rescueStrandedPendingInProcess(new Date(), 3)).rescued).toBe(0);
     expect(dispatch).not.toHaveBeenCalled();
 
     // The resumed run's step 4 sees it pending on a provisioned install and
@@ -340,4 +340,3 @@ describe('an event left pending by the move', () => {
     expect(await AgentEvent.findById(late._id).lean()).toMatchObject({ status: 'delivered', deliveryNonce: null });
   });
 });
-
