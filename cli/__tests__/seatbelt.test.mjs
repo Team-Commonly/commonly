@@ -167,6 +167,59 @@ describe('macOS Seatbelt profile', () => {
     expect(claudeProfile).toContain(claudeTmp);
   });
 
+  test('admits user preferences only through a domain filter', () => {
+    // Top-level SBPL forms, skipping comment lines and quoted strings (regex
+    // strings in the baseline contain parentheses).
+    const sbplRules = (profile) => {
+      const text = profile.split('\n')
+        .filter((line) => !line.trimStart().startsWith(';'))
+        .join('\n');
+      const rules = [];
+      let depth = 0;
+      let start = -1;
+      for (let i = 0; i < text.length; i += 1) {
+        const ch = text[i];
+        if (ch === '"') {
+          for (i += 1; i < text.length && text[i] !== '"'; i += 1) {
+            if (text[i] === '\\') i += 1;
+          }
+        } else if (ch === '(') {
+          if (depth === 0) start = i;
+          depth += 1;
+        } else if (ch === ')') {
+          depth -= 1;
+          if (depth === 0) rules.push(text.slice(start, i + 1));
+        }
+      }
+      expect(depth).toBe(0);
+      return rules;
+    };
+
+    for (const allowClaudeRuntimeAccess of [false, true]) {
+      const profile = buildSeatbeltProfile({
+        workspacePath: workspace,
+        executablePath: '/usr/bin/true',
+        statePath: state,
+        allowClaudeRuntimeAccess,
+      });
+      // A bare rule lets a confined agent read every app's domain through
+      // cfprefsd, which reads ~/Library/Preferences on the agent's behalf.
+      expect(profile).not.toMatch(/\(allow\s+user-preference-read\s*\)/);
+
+      const preferenceRules = sbplRules(profile)
+        .filter((rule) => rule.includes('user-preference-'));
+      expect(preferenceRules.length).toBeGreaterThan(0);
+      for (const rule of preferenceRules) {
+        expect(rule).toMatch(/^\(allow\s+user-preference-read\s+\(preference-domain\s+"[^"]+"/);
+      }
+      // Widening this list needs a measured reason in seatbelt.js.
+      const domains = preferenceRules.flatMap((rule) => (
+        [...rule.matchAll(/"([^"]+)"/g)].map((match) => match[1])
+      ));
+      expect(domains).toEqual(['kCFPreferencesAnyApplication']);
+    }
+  });
+
   test('rejects relative dynamic paths', () => {
     expect(() => buildSeatbeltProfile({
       workspacePath: 'relative',

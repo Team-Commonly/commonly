@@ -264,7 +264,16 @@ const PLATFORM_BASELINE = String.raw`
   (global-name "com.apple.trustd.agent")
   (global-name "com.apple.xpc.activity.unmanaged")
   (local-name "com.apple.cfprefsd.agent"))
-(allow user-preference-read)
+; cfprefsd serves a sandboxed client a preference domain only when this
+; profile admits user-preference-read for that domain (or file-read-data on
+; its plist, which HOME never gets). An unfiltered rule hands a confined agent
+; every app's domain in ~/Library/Preferences. Admit only the global domain
+; (.GlobalPreferences: locale, languages, units). It is the one domain a
+; sandboxed tool was measured requesting: /usr/bin/security, which Claude
+; runs to read its Keychain credential. Node, OpenCode and Qwen request none.
+; Apple's App Sandbox grants every app this same domain.
+(allow user-preference-read
+  (preference-domain "kCFPreferencesAnyApplication"))
 
 ; The selected provider and declared MCP transports need outbound network. The model's
 ; WebSearch/WebFetch/Bash tools are denied independently in the adapter argv.
