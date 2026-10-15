@@ -290,24 +290,54 @@ test('an install born native is never touched or reported', async () => {
   expect(hosted.migration).toBeUndefined();
 });
 
-// An event that arrives while the run works goes to the Durable Object path,
-// since the rows are not native until 'done', and a later run skips a done
-// identity. The run hands it off after recording done.
-test('an event that arrives during the run is handed off after done, not stranded', async () => {
-  let late;
-  mockRevoke.mockImplementation(async ({ agentName }) => {
-    if (agentName === 'maya-agent') {
-      [late] = await AgentEvent.create([{
-        agentName: 'maya-agent', instanceId: 'default', podId: podA, type: 'chat.mention', status: 'pending',
-        createdAt: new Date(NOW.getTime() - 1000), payload: {},
-      }]);
-    }
-    return ['hash-1'];
+// Rhea on #2236 (b42558aa): enqueue routes before it inserts, so an event can
+// land 'pending' after the run finished, and a rerun skips a done identity.
+// The recurring in-process sweep runs it; the script itself never runs a turn.
+describe('an event left pending by the move', () => {
+  let AgentEventService; let dispatch;
+  beforeEach(() => {
+    // eslint-disable-next-line global-require
+    AgentEventService = require('../../../services/agentEventService');
+    dispatch = jest.spyOn(AgentEventService, 'dispatchInProcess').mockImplementation(() => {});
+  });
+  const pendingFor = async (podId) => {
+    const [event] = await AgentEvent.create([{
+      agentName: 'maya-agent', instanceId: 'default', podId, type: 'chat.mention', status: 'pending', payload: {},
+    }]);
+    await AgentEvent.collection.updateOne({ _id: event._id }, { $set: { createdAt: new Date(Date.now() - 2 * 60 * 1000) } });
+    return event;
+  };
+
+  test('after done: a rerun of the script skips it and runs nothing; the sweep runs it once', async () => {
+    await migrate({ apply: true, now: NOW });
+    const late = await pendingFor(podA);
+
+    const rerun = await migrate({ apply: true, now: NOW });
+    expect(entryFor(rerun, 'maya-agent')).toBeUndefined();
+    expect(dispatch).not.toHaveBeenCalled();
+
+    expect(await AgentEventService.rescueStrandedPendingInProcess(new Date(), 3)).toBe(1);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect((await AgentEvent.findById(late._id).lean()).status).toBe('delivered');
   });
 
-  const report = await migrate({ apply: true, now: NOW });
+  test('while unfinished the sweep leaves it; once the run finishes, the sweep runs it', async () => {
+    let failed = false;
+    mockDeprovision.mockImplementation(async (name) => {
+      if (name === 'maya-agent' && !failed) { failed = true; throw new Error('worker down'); }
+      return true;
+    });
+    await migrate({ apply: true, now: NOW });
+    const late = await pendingFor(podB);
 
-  expect(entryFor(report, 'maya-agent')).toMatchObject({ reached: 'done', pendingToSweep: 0, lateEvents: 1 });
-  const after = await AgentEvent.findById(late._id).lean();
-  expect(after).toMatchObject({ status: 'delivered', deliveryNonce: null });
+    expect(await AgentEventService.rescueStrandedPendingInProcess(new Date(), 3)).toBe(0);
+    expect(dispatch).not.toHaveBeenCalled();
+
+    // The resumed run's step 4 sees it pending on a provisioned install and
+    // hands it to the delivered-path sweep; the script still runs no turn.
+    await migrate({ apply: true, now: new Date() });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(await AgentEvent.findById(late._id).lean()).toMatchObject({ status: 'delivered', deliveryNonce: null });
+  });
 });
+

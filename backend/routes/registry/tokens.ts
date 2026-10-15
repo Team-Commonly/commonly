@@ -210,16 +210,9 @@ class InProcessAgentTokenRefused extends Error {
 }
 
 // Any spelling: a type saved before the config-write guard (#2229) normalized
-// it must not turn this refusal off.
-const IN_PROCESS_RUNTIME = {
-  $or: [
-    { 'config.runtime.runtimeType': { $regex: /^\s*native\s*$/i } },
-    {
-      'config.runtime.runtimeType': { $regex: /^\s*hosted\s*$/i },
-      'config.hosted.engine': { $regex: /^\s*native\s*$/i },
-    },
-  ],
-};
+// it must not turn this refusal off. On the stored config, so an unfinished
+// migration is refused too.
+const { IN_PROCESS_RUNTIME_FILTER: IN_PROCESS_RUNTIME } = require('../../services/hostedEngine');
 
 const runsInProcess = async (agentUser: any, installation: any): Promise<boolean> => {
   const pairs: { agentName: string; instanceId: string }[] = [];

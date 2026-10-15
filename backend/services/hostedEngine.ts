@@ -69,6 +69,24 @@ export const hostedEngineInEffect = (installation: any): HostedEngine => (
     : HOSTED_ENGINE_DURABLE_OBJECT
 );
 
+/**
+ * A Mongo filter for installations whose STORED config runs in-process, in
+ * any spelling (a type saved before the config-write guard, #2229, normalized
+ * it). Broader than the engine in effect: an unfinished migration matches.
+ * The token issuer refuses on it by design (routes/registry/tokens.ts), and
+ * the stranded-event sweep uses it only to pick candidates, deciding each one
+ * with the in-effect engine (agentEventService).
+ */
+export const IN_PROCESS_RUNTIME_FILTER = {
+  $or: [
+    { 'config.runtime.runtimeType': { $regex: /^\s*native\s*$/i } },
+    {
+      'config.runtime.runtimeType': { $regex: /^\s*hosted\s*$/i },
+      'config.hosted.engine': { $regex: /^\s*native\s*$/i },
+    },
+  ],
+};
+
 /** The engine boundary shared by grant eligibility and agent-join checks. */
 export const runsInNarrowedProcess = (installation: any): boolean => (
   String(readRuntimeConfig(installation).runtimeType || '').trim().toLowerCase() === 'native'

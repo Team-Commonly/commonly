@@ -562,6 +562,117 @@ describe('the sweep re-runs a stuck in-process event', () => {
   });
 });
 
+// TASK-265, Rhea on #2236: enqueue decides routing before the insert, so an
+// event enqueued while the hosted migration runs can persist 'pending' after
+// the agent became in-process, and nothing polls it. The recurring sweep runs
+// it. Real installation rows, so the routing decision is the production one.
+describe('the sweep runs a pending event stranded by a move in-process', () => {
+  const { runAgent } = require('../../../services/nativeRuntimeService');
+  const { AgentInstallation } = require('../../../models/AgentRegistry');
+  const OWNER = new mongoose.Types.ObjectId();
+  const HOSTED_DO = { runtime: { runtimeType: 'hosted' }, hosted: { provisionedAt: new Date() } };
+  const MIGRATED = (state) => ({
+    runtime: { runtimeType: 'hosted' },
+    hosted: {
+      engine: 'native', provisionedAt: new Date(), migratedFrom: 'durable-object', migration: { state, doProvisioned: true },
+    },
+  });
+  const install = (agentName, config, podId = POD_ID) => AgentInstallation.create({
+    agentName, instanceId: INSTANCE, podId, version: '1.0.0', status: 'active', installedBy: OWNER, config,
+  });
+  // createdAt is immutable through Mongoose, so age it on the collection.
+  const age = (eventId, ms) => AgentEvent.collection.updateOne(
+    { _id: eventId }, { $set: { createdAt: new Date(Date.now() - ms) } },
+  );
+  const sweep = () => AgentEventService.garbageCollect({ requeueDeliveredMinutes: 10 });
+
+  beforeEach(async () => {
+    await AgentInstallation.deleteMany({});
+    runAgent.mockReset();
+    runAgent.mockResolvedValue({ status: 'succeeded' });
+  });
+  afterEach(async () => {
+    await AgentInstallation.deleteMany({});
+    runAgent.mockReset();
+  });
+
+  test('the enqueue race: routed to the Durable Object, persisted after the migration finished, then run once', async () => {
+    // The turn stays in flight, so the claim the sweep made is what is stored.
+    runAgent.mockImplementation(() => new Promise(() => {}));
+    const row = await install(AGENT, HOSTED_DO);
+    // Routing is decided while the row is still on the Durable Object...
+    const event = await AgentEventService.enqueue({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID, type: 'chat.mention', payload: { text: 'hi' },
+    });
+    expect((await AgentEvent.findById(event._id).lean()).status).toBe('pending');
+    expect(runAgent).not.toHaveBeenCalled();
+    // ...and the migration finishes before anything polls it.
+    await AgentInstallation.updateOne({ _id: row._id }, { $set: { config: MIGRATED('done') } });
+    await age(event._id, 2 * 60 * 1000);
+
+    const result = await sweep();
+
+    expect(result.rescuedPendingInProcess).toBe(1);
+    const ran = await AgentEvent.findById(event._id).lean();
+    expect(ran.status).toBe('delivered');
+    expect(ran.deliveryNonce).toEqual(expect.any(String));
+    expect(ran.attempts).toBe(1);
+    expect(runAgent).toHaveBeenCalledTimes(1);
+
+    await sweep();
+    expect(runAgent).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ['an agent still on the Durable Object', HOSTED_DO, 2 * 60 * 1000, 0],
+    ['a migration not yet done', MIGRATED('stopped'), 2 * 60 * 1000, 0],
+    ['an event under a minute old', MIGRATED('done'), 10 * 1000, 0],
+    ['an event past half an hour', MIGRATED('done'), 31 * 60 * 1000, 0],
+    ['an event at the attempt cap', MIGRATED('done'), 2 * 60 * 1000, 3],
+  ])('leaves alone %s', async (_label, config, ageMs, attempts) => {
+    await install(AGENT, config);
+    const event = await seedEvent();
+    await AgentEvent.updateOne({ _id: event._id }, { $set: { attempts } });
+    await age(event._id, ageMs);
+
+    const result = await sweep();
+
+    expect(result.rescuedPendingInProcess).toBe(0);
+    expect(runAgent).not.toHaveBeenCalled();
+  });
+
+  test('two sweeps racing (two replicas) run it once', async () => {
+    await install(AGENT, MIGRATED('done'));
+    const event = await seedEvent();
+    await age(event._id, 2 * 60 * 1000);
+
+    const counts = await Promise.all([
+      AgentEventService.rescueStrandedPendingInProcess(new Date(), 3),
+      AgentEventService.rescueStrandedPendingInProcess(new Date(), 3),
+    ]);
+
+    expect(counts[0] + counts[1]).toBe(1);
+    expect(runAgent).toHaveBeenCalledTimes(1);
+  });
+
+  test("a backlog of external agents' pending events does not crowd it out", async () => {
+    await install(AGENT, MIGRATED('done'));
+    const backlog = Array.from({ length: 60 }, () => ({
+      agentName: 'offline-seat', instanceId: INSTANCE, podId: POD_ID, type: 'chat.mention', payload: {}, status: 'pending',
+    }));
+    const external = await AgentEvent.create(backlog);
+    await AgentEvent.collection.updateMany(
+      { _id: { $in: external.map((row) => row._id) } },
+      { $set: { createdAt: new Date(Date.now() - 20 * 60 * 1000) } },
+    );
+    const event = await seedEvent();
+    await age(event._id, 2 * 60 * 1000);
+
+    expect(await AgentEventService.rescueStrandedPendingInProcess(new Date(), 3)).toBe(1);
+    expect((await AgentEvent.findById(event._id).lean()).status).not.toBe('pending');
+  });
+});
+
 describe('recordFailure is as terminal as an ack, and gated the same way', () => {
   test('a stale runner\'s failure does not retire the replacement\'s delivery', async () => {
     const event = await seedEvent();

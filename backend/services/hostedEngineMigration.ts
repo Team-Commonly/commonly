@@ -34,10 +34,11 @@
  *              in-process sweep (marked delivered; #2226 re-runs it), so this
  *              script never runs a turn. Others are closed with a reason.
  *   5. done.
- *   6. late events: any that arrived while this run worked went to the
- *              Durable Object path (the rows were not native until 'done')
- *              and are handed off the same way; a later run skips a done
- *              identity, so this is the only pass that sees them.
+ * An event enqueued while this runs is routed before it is inserted, so it
+ * can land 'pending' after step 4 (the rows are not native until 'done') and
+ * a later run skips a done identity. A one-shot scan here cannot be made
+ * durable (Rhea on #2236); the recurring in-process sweep runs such events
+ * instead (AgentEventService.rescueStrandedPendingInProcess).
  * Every step is idempotent. A step that fails stops that identity there; the
  * report says which, and the next run resumes it. Nothing is reported done
  * that is not.
@@ -75,8 +76,6 @@ export interface IdentityReport {
   tokensRevoked?: number;
   pendingToSweep: number;
   pendingClosed: number;
-  /** Events that arrived while this run worked, handed off after 'done'. */
-  lateEvents?: number;
   error?: string;
 }
 
@@ -262,21 +261,6 @@ export const migrateHostedInstallsToNative = async (
       entry.reached = 'done';
     } catch (error) {
       entry.error = `not recorded as done (${(error as Error).message}); run again`;
-      continue;
-    }
-
-    // 6. Events that arrived during this run went to the Durable Object path,
-    // because the rows were not native until 'done'. Nothing polls that path
-    // now, and a later run skips a done identity, so hand them off here.
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const late = await AgentEvent.find({ agentName, instanceId, status: 'pending' }).lean();
-      // eslint-disable-next-line no-await-in-loop
-      await handOff(late);
-      entry.lateEvents = late.length;
-    } catch (error) {
-      entry.error = `done, but events that arrived during the run were not handed off (${(error as Error).message}); `
-        + 'a later run skips a done identity, so check its pending events by hand';
     }
   }
   return report;

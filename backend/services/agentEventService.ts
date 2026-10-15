@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
 import { postToPublicAddress } from './outboundUrlGuard';
-import { hostedRunsNative } from './hostedEngine';
+import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
 
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
@@ -55,6 +55,15 @@ const OBJECT_ID_HEX = /^[a-f\d]{24}$/i;
 // 'queued'/'running' AgentRun may sit before it counts as abandoned.
 const STUCK_REDISPATCH_BATCH = 50;
 const ABANDONED_RUN_MINUTES = 30;
+
+// TASK-265 (Rhea on #2236): an in-process event is born 'delivered', so one
+// left 'pending' for an agent that now runs in-process was routed before the
+// agent moved in-process (the hosted migration: enqueue decides routing before
+// the insert) and nothing polls it. The sweep runs those once they are a
+// minute old, so it never races an enqueue, and leaves ones older than half
+// an hour to the retention delete: a reply that late is no longer an answer.
+const STRANDED_PENDING_MIN_AGE_MS = 60 * 1000;
+const STRANDED_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
 
 // The migration on acknowledge() runs in two phases, and BOTH are in this
 // build so the compatibility mode has an end rather than an intention.
@@ -168,6 +177,8 @@ interface GarbageCollectResult {
   redispatchedInProcess?: number;
   ackedInProcess?: number;
   interruptedRuns?: number;
+  // TASK-265: pending events of agents that now run in-process, run once.
+  rescuedPendingInProcess?: number;
 }
 
 interface SessionSizeEntry {
@@ -753,16 +764,18 @@ class AgentEventService {
     let redispatchedInProcess = 0;
     let ackedInProcess = 0;
     let interruptedRuns = 0;
+    let rescuedPendingInProcess = 0;
     try {
       ({ redispatched: redispatchedInProcess, acked: ackedInProcess } = await this.redispatchStuckInProcess(
         requeueThreshold,
         attemptCap,
       ));
+      rescuedPendingInProcess = await this.rescueStrandedPendingInProcess(new Date(now), attemptCap);
       interruptedRuns = await this.interruptAbandonedRuns(new Date(now - ABANDONED_RUN_MINUTES * 60 * 1000));
-      if (redispatchedInProcess || ackedInProcess || interruptedRuns) {
+      if (redispatchedInProcess || ackedInProcess || interruptedRuns || rescuedPendingInProcess) {
         console.log(
           `[agent-event] in-process restart sweep: re-ran ${redispatchedInProcess}, acked ${ackedInProcess}, `
-          + `marked ${interruptedRuns} abandoned runs interrupted`,
+          + `ran ${rescuedPendingInProcess} stranded pending, marked ${interruptedRuns} abandoned runs interrupted`,
         );
       }
     } catch (err: unknown) {
@@ -881,6 +894,7 @@ class AgentEventService {
       redispatchedInProcess,
       ackedInProcess,
       interruptedRuns,
+      rescuedPendingInProcess,
     };
   }
 
@@ -949,6 +963,58 @@ class AgentEventService {
       redispatched += 1;
     }
     return { redispatched, acked };
+  }
+
+  /**
+   * Run, once, each recent 'pending' event whose agent now resolves
+   * in-process (see STRANDED_PENDING_*). Candidates are limited to identities
+   * with an in-process install, so a backlog of external agents' pending
+   * events cannot crowd them out; each is then decided by the same routing
+   * enqueue uses, with the engine in effect, so an unfinished migration is
+   * left alone. The claim is a compare-and-set from 'pending', so two sweeps
+   * (two replicas) or a late external poll run it at most once, and it counts
+   * as a delivery, so the attempt cap bounds a poison event.
+   */
+  static async rescueStrandedPendingInProcess(now: Date, attemptCap: number): Promise<number> {
+    const identities = await AgentInstallation.find({ status: 'active', ...IN_PROCESS_RUNTIME_FILTER })
+      .select('agentName instanceId').lean() as { agentName?: string; instanceId?: string }[];
+    const pairs = [...new Map(identities.map((row) => {
+      const pair = { agentName: String(row.agentName || '').toLowerCase(), instanceId: String(row.instanceId || 'default') };
+      return [`${pair.agentName}:${pair.instanceId}`, pair] as const;
+    })).values()];
+    if (!pairs.length) return 0;
+    const stranded = await AgentEvent.find({
+      status: 'pending',
+      createdAt: {
+        $lt: new Date(now.getTime() - STRANDED_PENDING_MIN_AGE_MS),
+        $gte: new Date(now.getTime() - STRANDED_PENDING_MAX_AGE_MS),
+      },
+      $and: [
+        { $or: pairs },
+        { $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }] },
+      ],
+    }).sort({ createdAt: 1 }).limit(STUCK_REDISPATCH_BATCH).lean() as EventDoc[];
+    let rescued = 0;
+    for (const event of stranded) {
+      const agentName = String(event.agentName || '');
+      const instanceId = String(event.instanceId || 'default');
+      // eslint-disable-next-line no-await-in-loop -- one lookup per stranded event
+      const installation = await this.resolveInProcessInstallation(agentName, instanceId, event.podId)
+        .catch(() => null);
+      // Not in-process (yet): an external poller's event, or a migration not done.
+      if (!installation) continue;
+      const deliveryNonce = mintDeliveryNonce();
+      // eslint-disable-next-line no-await-in-loop
+      const claimed = await AgentEvent.findOneAndUpdate(
+        { _id: event._id, status: 'pending' },
+        { $set: { status: 'delivered', deliveredAt: new Date(), deliveryNonce }, $inc: { attempts: 1 } },
+        { new: true },
+      ) as EventDoc | null;
+      if (!claimed) continue;
+      this.dispatchInProcess(claimed, installation, agentName, instanceId, String(claimed.type || event.type || ''));
+      rescued += 1;
+    }
+    return rescued;
   }
 
   /**
