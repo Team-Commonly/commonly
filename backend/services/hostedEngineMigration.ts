@@ -34,6 +34,10 @@
  *              in-process sweep (marked delivered; #2226 re-runs it), so this
  *              script never runs a turn. Others are closed with a reason.
  *   5. done.
+ *   6. late events: any that arrived while this run worked went to the
+ *              Durable Object path (the rows were not native until 'done')
+ *              and are handed off the same way; a later run skips a done
+ *              identity, so this is the only pass that sees them.
  * Every step is idempotent. A step that fails stops that identity there; the
  * report says which, and the next run resumes it. Nothing is reported done
  * that is not.
@@ -71,6 +75,8 @@ export interface IdentityReport {
   tokensRevoked?: number;
   pendingToSweep: number;
   pendingClosed: number;
+  /** Events that arrived while this run worked, handed off after 'done'. */
+  lateEvents?: number;
   error?: string;
 }
 
@@ -129,8 +135,29 @@ export const migrateHostedInstallsToNative = async (
     const pending = await AgentEvent.find({ agentName, instanceId, status: 'pending' }).lean();
     const runningPods = new Set(rows.filter(isProvisioned).map((row) => String(row.podId)));
     const recent = (event: any) => now.getTime() - new Date(event.createdAt).getTime() < STALE_PENDING_MS;
-    const toSweep = pending.filter((event: any) => recent(event) && runningPods.has(String(event.podId)));
+    const sweepable = (event: any) => recent(event) && runningPods.has(String(event.podId));
+    const toSweep = pending.filter(sweepable);
     const toClose = pending.filter((event: any) => !toSweep.includes(event));
+    // A recent event on a running install goes to the in-process sweep (#2226
+    // re-runs a delivered event with no nonce); any other is closed with a
+    // reason. Only still-pending events are touched.
+    const handOff = async (events: any[]) => {
+      for (const event of events) {
+        if (sweepable(event)) {
+          // eslint-disable-next-line no-await-in-loop
+          await AgentEvent.updateOne(
+            { _id: event._id, status: 'pending' },
+            { $set: { status: 'delivered', deliveredAt: now, deliveryNonce: null }, $inc: { attempts: 1 } },
+          );
+        } else {
+          const reason = recent(event)
+            ? 'hosted engine migrated while this agent was stopped; it was not run'
+            : 'hosted engine migrated before this event ran (stale)';
+          // eslint-disable-next-line no-await-in-loop
+          await AgentEvent.updateOne({ _id: event._id, status: 'pending' }, { $set: { status: 'failed', error: reason } });
+        }
+      }
+    };
     const entry: IdentityReport = {
       agentName,
       instanceId,
@@ -217,24 +244,11 @@ export const migrateHostedInstallsToNative = async (
       continue;
     }
 
-    // 4. Pending events. Only still-pending events are touched, so a re-run
-    // picks up whatever a failed run left.
+    // 4. Pending events, so a re-run picks up whatever a failed run left.
     entry.reached = 'events';
     try {
-      for (const event of toSweep) {
-        // eslint-disable-next-line no-await-in-loop
-        await AgentEvent.updateOne(
-          { _id: event._id, status: 'pending' },
-          { $set: { status: 'delivered', deliveredAt: now, deliveryNonce: null }, $inc: { attempts: 1 } },
-        );
-      }
-      for (const event of toClose) {
-        const reason = recent(event)
-          ? 'hosted engine migrated while this agent was stopped; it was not run'
-          : 'hosted engine migrated before this event ran (stale)';
-        // eslint-disable-next-line no-await-in-loop
-        await AgentEvent.updateOne({ _id: event._id, status: 'pending' }, { $set: { status: 'failed', error: reason } });
-      }
+      // eslint-disable-next-line no-await-in-loop
+      await handOff(pending);
     } catch (error) {
       entry.error = `pending events not all handled (${(error as Error).message}); run again to finish`;
       continue;
@@ -248,6 +262,21 @@ export const migrateHostedInstallsToNative = async (
       entry.reached = 'done';
     } catch (error) {
       entry.error = `not recorded as done (${(error as Error).message}); run again`;
+      continue;
+    }
+
+    // 6. Events that arrived during this run went to the Durable Object path,
+    // because the rows were not native until 'done'. Nothing polls that path
+    // now, and a later run skips a done identity, so hand them off here.
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const late = await AgentEvent.find({ agentName, instanceId, status: 'pending' }).lean();
+      // eslint-disable-next-line no-await-in-loop
+      await handOff(late);
+      entry.lateEvents = late.length;
+    } catch (error) {
+      entry.error = `done, but events that arrived during the run were not handed off (${(error as Error).message}); `
+        + 'a later run skips a done identity, so check its pending events by hand';
     }
   }
   return report;

@@ -289,3 +289,25 @@ test('an install born native is never touched or reported', async () => {
   expect(hosted.migratedFrom).toBeUndefined();
   expect(hosted.migration).toBeUndefined();
 });
+
+// An event that arrives while the run works goes to the Durable Object path,
+// since the rows are not native until 'done', and a later run skips a done
+// identity. The run hands it off after recording done.
+test('an event that arrives during the run is handed off after done, not stranded', async () => {
+  let late;
+  mockRevoke.mockImplementation(async ({ agentName }) => {
+    if (agentName === 'maya-agent') {
+      [late] = await AgentEvent.create([{
+        agentName: 'maya-agent', instanceId: 'default', podId: podA, type: 'chat.mention', status: 'pending',
+        createdAt: new Date(NOW.getTime() - 1000), payload: {},
+      }]);
+    }
+    return ['hash-1'];
+  });
+
+  const report = await migrate({ apply: true, now: NOW });
+
+  expect(entryFor(report, 'maya-agent')).toMatchObject({ reached: 'done', pendingToSweep: 0, lateEvents: 1 });
+  const after = await AgentEvent.findById(late._id).lean();
+  expect(after).toMatchObject({ status: 'delivered', deliveryNonce: null });
+});
