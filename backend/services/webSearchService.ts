@@ -7,9 +7,9 @@
  * the cheapest per search after it, and page text an agent can cite.
  *
  * Results are third-party text and may carry injected instructions. The
- * caller (the native runtime) marks them untrusted and narrows the rest of
- * the turn to in-pod read and post, the same boundary as connector results
- * (TASK-224). This module only fetches and shapes them.
+ * caller (the native runtime) marks them untrusted with the marker connector
+ * results carry (TASK-224), and narrows the rest of the turn to in-pod read
+ * and post, plus searching again. This module only fetches and shapes them.
  *
  * The query is sent to the provider. It is model-written, so it can contain
  * whatever the turn has read; this is the same exposure as the model call,
@@ -86,7 +86,9 @@ const ADAPTERS: Record<string, Adapter> = { exa, tavily };
 export const searchProvider = (): string => String(process.env.SEARCH_PROVIDER || 'exa').trim().toLowerCase();
 
 /** Configured when there is a key and the provider is one we have an adapter for. */
-export const isSearchConfigured = (): boolean => Boolean(process.env.SEARCH_API_KEY) && Boolean(ADAPTERS[searchProvider()]);
+export const isSearchConfigured = (): boolean => (
+  Boolean(process.env.SEARCH_API_KEY) && Boolean(ADAPTERS[searchProvider()])
+);
 
 export const searchWeb = async (rawQuery: string): Promise<WebSearchOutcome> => {
   const provider = searchProvider();

@@ -81,6 +81,8 @@ export interface IAgentRun extends Document {
   totalTokens: number;
   /** Seconds the turn's run-code sandbox ran (TASK-266); absent when no code ran. */
   sandboxSeconds?: number;
+  /** Web search requests the turn sent (TASK-267a); absent when it searched nothing. */
+  webSearches?: number;
   startedAt: Date;
   completedAt?: Date;
   errorKind?: AgentRunErrorKind;
@@ -137,6 +139,7 @@ const AgentRunSchema = new Schema<IAgentRun>(
     turns: { type: [AgentRunTurnSchema], default: [] },
     totalTokens: { type: Number, default: 0 },
     sandboxSeconds: { type: Number },
+    webSearches: { type: Number },
     startedAt: { type: Date, default: Date.now },
     completedAt: { type: Date },
     errorKind: {

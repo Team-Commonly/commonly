@@ -24,6 +24,14 @@ errorTracking:
 hostedSandbox:
   enabled: false
 
+# Web search for native turns (TASK-267a). Off by default: on, the api-keys
+# ExternalSecret references commonly-dev-search-api-key, and ESO rejects the
+# whole secret if that key is missing. `provider` is exa or tavily, and the
+# key must be that provider's.
+webSearch:
+  enabled: false
+  provider: exa
+
 # Paid tier (Stripe). Opt-in, and OFF by default so self-hosted deployments
 # never reach for billing credentials they do not have.
 #

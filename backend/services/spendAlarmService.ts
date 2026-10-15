@@ -12,7 +12,8 @@
  * cap are the enforcement; a guard here that failed closed would silence
  * agents over a pricing-table typo.
  *
- * Sandbox seconds join the sum when TASK-266 records them on the AgentRun.
+ * Sandbox seconds (TASK-266) and web searches (TASK-267a) are recorded on the
+ * AgentRun and join the sum.
  */
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AgentRun = require('../models/AgentRun');
@@ -57,6 +58,15 @@ const SANDBOX_SHAPE = { vcpu: 2, gib: 4 };
 export const SANDBOX_USD_PER_SECOND = SANDBOX_SHAPE.vcpu * E2B_USD_PER_VCPU_SECOND
   + SANDBOX_SHAPE.gib * E2B_USD_PER_GIB_SECOND;
 
+// One web search as webSearchService sends it to Exa: an auto search at $7 per
+// 1,000 requests, plus page text for its five results at $1 per 1,000 pages
+// (exa.ai/pricing, read 2026-10-15). Priced at the default provider; a switch
+// of SEARCH_PROVIDER should re-check this rate.
+const EXA_USD_PER_SEARCH = 7 / 1000;
+const EXA_USD_PER_PAGE_TEXT = 1 / 1000;
+const SEARCH_RESULT_PAGES = 5;
+export const WEB_SEARCH_USD = EXA_USD_PER_SEARCH + SEARCH_RESULT_PAGES * EXA_USD_PER_PAGE_TEXT;
+
 export const spendThresholdUsd = (): number => {
   const raw = Number(process.env.SPEND_ALARM_USD_PER_DAY);
   return Number.isFinite(raw) && raw > 0 ? raw : 2;
@@ -69,6 +79,7 @@ export interface UserSpend {
   promptTokens: number;
   completionTokens: number;
   sandboxSeconds: number;
+  webSearches: number;
 }
 
 const utcDayStart = (now: Date): Date => {
@@ -109,16 +120,26 @@ export const userSpendForDay = async (now: Date = new Date()): Promise<UserSpend
     unsplitTokens: number;
   }[];
 
-  // Sandbox seconds sit on the run, not the turn, so they are summed apart from
-  // the per-turn unwind above (which would count each run once per turn).
-  const sandboxRows = await AgentRun.aggregate([
+  // Sandbox seconds and web searches sit on the run, not the turn, so they are
+  // summed apart from the per-turn unwind above (which would count each run
+  // once per turn).
+  const runRows = await AgentRun.aggregate([
     {
       $match: {
-        startedAt: { $gte: utcDayStart(now), $lte: now }, userId: { $ne: null }, sandboxSeconds: { $gt: 0 },
+        startedAt: { $gte: utcDayStart(now), $lte: now },
+        userId: { $ne: null },
+        $or: [{ sandboxSeconds: { $gt: 0 } }, { webSearches: { $gt: 0 } }],
       },
     },
-    { $group: { _id: '$userId', seconds: { $sum: '$sandboxSeconds' }, runs: { $addToSet: '$_id' } } },
-  ]) as { _id: unknown; seconds: number; runs: unknown[] }[];
+    {
+      $group: {
+        _id: '$userId',
+        seconds: { $sum: { $ifNull: ['$sandboxSeconds', 0] } },
+        searches: { $sum: { $ifNull: ['$webSearches', 0] } },
+        runs: { $addToSet: '$_id' },
+      },
+    },
+  ]) as { _id: unknown; seconds: number; searches: number; runs: unknown[] }[];
 
   const byUser = new Map<string, UserSpend & { runIds: Set<string> }>();
   for (const row of rows) {
@@ -127,7 +148,14 @@ export const userSpendForDay = async (now: Date = new Date()): Promise<UserSpend
     const completion = row.completionTokens + row.unsplitTokens;
     const usd = (row.promptTokens * price.input + completion * price.output) / 1_000_000;
     const entry = byUser.get(userId) || {
-      userId, usd: 0, runs: 0, promptTokens: 0, completionTokens: 0, sandboxSeconds: 0, runIds: new Set<string>(),
+      userId,
+      usd: 0,
+      runs: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      sandboxSeconds: 0,
+      webSearches: 0,
+      runIds: new Set<string>(),
     };
     entry.usd += usd;
     entry.promptTokens += row.promptTokens;
@@ -135,13 +163,21 @@ export const userSpendForDay = async (now: Date = new Date()): Promise<UserSpend
     row.runs.forEach((id) => entry.runIds.add(String(id)));
     byUser.set(userId, entry);
   }
-  for (const row of sandboxRows) {
+  for (const row of runRows) {
     const userId = String(row._id);
     const entry = byUser.get(userId) || {
-      userId, usd: 0, runs: 0, promptTokens: 0, completionTokens: 0, sandboxSeconds: 0, runIds: new Set<string>(),
+      userId,
+      usd: 0,
+      runs: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      sandboxSeconds: 0,
+      webSearches: 0,
+      runIds: new Set<string>(),
     };
     entry.sandboxSeconds += row.seconds;
-    entry.usd += row.seconds * SANDBOX_USD_PER_SECOND;
+    entry.webSearches += row.searches;
+    entry.usd += row.seconds * SANDBOX_USD_PER_SECOND + row.searches * WEB_SEARCH_USD;
     row.runs.forEach((id) => entry.runIds.add(String(id)));
     byUser.set(userId, entry);
   }
@@ -241,6 +277,7 @@ export const checkSpend = async (now: Date = new Date()): Promise<UserSpend[]> =
       promptTokens: spend.promptTokens,
       completionTokens: spend.completionTokens,
       sandboxSeconds: spend.sandboxSeconds,
+      webSearches: spend.webSearches,
     }));
     try {
       await pageSre(composeSpendPage({
