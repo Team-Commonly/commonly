@@ -296,6 +296,18 @@ describe('telegramBridgeService — multi-pod routing', () => {
     }));
   });
 
+  it('keeps relaying a pending dispatcher-selected row', async () => {
+    await relayAgentMessageToTelegram({
+      podId: GATED_POD,
+      agentUsername: 'kai',
+      displayName: 'Kai',
+      content: 'deploy is green',
+      integration: { ...userScoped({ relayAllAgentMessages: true }), status: 'pending' },
+    });
+
+    expect(telegramSend.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('does not relay through an error row found by the Telegram fallback', async () => {
     IntegrationModel.findOne.mockReturnValue({
       lean: jest.fn().mockResolvedValue({ ...userScoped({ relayAllAgentMessages: true }), status: 'error' }),
@@ -308,7 +320,7 @@ describe('telegramBridgeService — multi-pod routing', () => {
       content: 'Must stay in Commonly',
     });
 
-    expect(IntegrationModel.findOne).toHaveBeenCalledWith(expect.objectContaining({ status: 'connected' }));
+    expect(IntegrationModel.findOne).toHaveBeenCalledWith(expect.objectContaining({ status: { $ne: 'error' } }));
     expect(telegramSend.sendMessage).not.toHaveBeenCalled();
   });
 

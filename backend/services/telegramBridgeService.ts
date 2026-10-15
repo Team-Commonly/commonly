@@ -157,7 +157,7 @@ const findLiveIntegration = async (podId: unknown): Promise<TelegramIntegrationD
     return await IntegrationModel.findOne({
       type: 'telegram',
       isActive: true,
-      status: 'connected',
+      status: { $ne: 'error' },
       podId,
       'config.liveRelay': true,
       'config.chatId': { $exists: true, $ne: null },
@@ -184,7 +184,7 @@ const isRelayableIntegration = (
   isGatedPodTarget(integration, podId)
   && (integration.type === undefined || integration.type === 'telegram')
   && integration.isActive !== false
-  && integration.status === 'connected'
+  && integration.status !== 'error'
   && integration.config?.liveRelay === true
   && integration.config?.chatType === 'private'
   && !integration.config?.adminPause
