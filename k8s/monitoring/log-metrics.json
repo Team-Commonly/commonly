@@ -16,5 +16,11 @@
     "description": "Kubernetes Warning events on Jobs and CronJobs in commonly-dev (BackoffLimitExceeded, DeadlineExceeded, FailedCreate). The managed kube-state-metrics package exports no Job or CronJob series, so a failed backup is visible only here.",
     "filter": "logName:\"logs/events\" AND resource.type=\"k8s_cluster\" AND jsonPayload.involvedObject.namespace=\"commonly-dev\" AND jsonPayload.involvedObject.kind=(\"Job\" OR \"CronJob\") AND jsonPayload.type=\"Warning\"",
     "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
+  },
+  {
+    "name": "litellm_platform_call_failures",
+    "description": "LiteLLM access-log lines where an in-cluster platform caller (backend, commonly-bot) got a 4xx/5xx on /chat/completions. In-cluster callers use http://litellm:4000/chat/completions; public traffic only reaches /v1/... through the ingress, so internet probes are excluded. Counted after LiteLLM's own fallbacks, so it fires when a feature actually got no answer.",
+    "filter": "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"commonly-dev\" AND resource.labels.container_name=\"litellm\" AND textPayload=~\"\\\"POST /chat/completions HTTP/1.1\\\" [45][0-9][0-9]\"",
+    "metricDescriptor": { "metricKind": "DELTA", "valueType": "INT64", "unit": "1" }
   }
 ]

@@ -122,3 +122,30 @@ Secret Manager IAM changed.
 A Job or CronJob emitted a Warning event. The nightly database backups are
 the Jobs that matter here: see [db-backup-restore.md](db-backup-restore.md). Read the
 failure with `kubectl logs -n commonly-dev job/<name> --all-containers`.
+
+### LiteLLM failing
+
+More than 5 platform LLM calls failed in an hour *after* LiteLLM's own
+fallbacks: a summary, digest, native-app reply or commonly-bot call got no
+answer. Find the model and the provider error:
+
+```bash
+kubectl logs -n commonly-dev deploy/litellm -c litellm --since=1h \
+  | grep -E 'AuthenticationError|RateLimitError|NotFoundError|No fallback model group' | sort | uniq -c | sort -rn | head
+```
+
+Then probe each route. From the backend pod, POST a 5-word prompt to
+`$LITELLM_BASE_URL/chat/completions` for each model in `/v1/models`. On
+2026-10-15 only `deepseek-v4-flash` and `cloudflare/llama-3.1-8b` answered.
+Every Gemini name returned 401 (`ACCESS_TOKEN_TYPE_UNSUPPORTED`), and so did
+both nemotron names (OpenRouter) and the placeholder-keyed Anthropic and
+OpenAI routes. A dead key gets fixed in Secret Manager, followed by an ESO
+force-sync and a LiteLLM restart (CLAUDE.md, the ESO rule). Until then,
+point the dead name's `fallbacks` entry in `litellm-config.yaml` at a live
+route.
+
+Do not test with `guardrails: ["openai-moderation-enforce"]` unless the
+moderation key is real. That guardrail's OpenAI key is still a placeholder,
+so it 401s every call on any model. Production platform calls send
+`injection-guard` only (`LLMSERVICE_GUARDRAILS`).
+

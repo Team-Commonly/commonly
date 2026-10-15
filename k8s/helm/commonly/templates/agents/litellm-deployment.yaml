@@ -44,6 +44,11 @@ spec:
       labels:
         {{- include "commonly.selectorLabels" . | nindent 8 }}
         app: litellm
+      annotations:
+        # LiteLLM reads its config once, at boot. Without this a litellm-config
+        # change deploys as a ConfigMap nobody reads until someone restarts the
+        # pod by hand, so a fallback or model fix looks shipped and is not.
+        checksum/config: {{ include (print $.Template.BasePath "/configmaps/litellm-config.yaml") . | sha256sum }}
     spec:
       containers:
       - name: litellm

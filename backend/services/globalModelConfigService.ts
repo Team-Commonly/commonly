@@ -157,6 +157,17 @@ const normalizeContextLimit = (value: unknown): number => {
   return Math.min(parsed, 2000000);
 };
 
+// With no admin-persisted model, a LiteLLM-routed llmService defaults to the
+// operator's LITELLM_CHAT_MODEL. Before this, the hardcoded Gemini default
+// always won: values-dev set LITELLM_CHAT_MODEL=deepseek-v4-flash on 2026-09-01,
+// yet every summary, digest and chat-summary call still asked for
+// gemini-2.5-flash, whose key Google rejects, and fell to the template.
+const defaultLlmServiceModel = (provider: string): string => {
+  const envModel = String(process.env.LITELLM_CHAT_MODEL || '').trim();
+  if (envModel && (provider === 'auto' || provider === 'litellm')) return envModel;
+  return DEFAULT_CONFIG.llmService.model;
+};
+
 const sanitize = (candidate: Partial<GlobalModelConfig> = {}): GlobalModelConfig => {
   const llm = candidate?.llmService || ({} as Partial<LlmServiceConfig>);
   const oc = candidate?.openclaw || ({} as Partial<OpenClawConfig>);
@@ -221,13 +232,16 @@ class GlobalModelConfigService {
     const setting = await SystemSetting.findOne({ key: MODEL_CONFIG_KEY }).lean() as Record<string, unknown> | null;
     const stored = setting?.value && typeof setting.value === 'object' ? setting.value as Partial<GlobalModelConfig> : {};
     const defaults = GlobalModelConfigService.defaults();
+    const storedLlm = (stored.llmService || {}) as Partial<LlmServiceConfig> & { defaultModel?: string };
     const merged = sanitize(
       {
         ...defaults,
         ...stored,
         llmService: {
           ...defaults.llmService,
-          ...(stored.llmService || {}),
+          ...storedLlm,
+          model: storedLlm.model || storedLlm.defaultModel
+            || defaultLlmServiceModel(normalizeProvider(storedLlm.provider ?? defaults.llmService.provider)),
           openrouter: {
             ...defaults.llmService.openrouter,
             ...(stored.llmService?.openrouter || {}),
