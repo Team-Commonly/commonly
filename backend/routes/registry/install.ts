@@ -463,8 +463,10 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // even when the caller omits an explicit runtimeType.
     const effectiveRuntimeType = String(runtimeConfig.runtimeType || '').trim().toLowerCase()
       || String(AgentIdentityService.getAgentTypeConfig(safeAgentName)?.runtime || '').trim().toLowerCase();
+    const newHostedEngine = effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE
+      ? HostedEngine.engineForNewHostedInstall() : undefined;
     try {
-      await assertAgentRuntimeMayJoinPod(podId, effectiveRuntimeType);
+      await assertAgentRuntimeMayJoinPod(podId, effectiveRuntimeType, newHostedEngine);
     } catch (joinError: any) {
       if (joinError?.code === 'outsider_grant_non_native_agent_join') {
         return res.status(403).json({ code: joinError.code, message: joinError.message });
@@ -515,7 +517,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // would let a browser pick its own engine or claim to be provisioned.
     if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE) {
       delete installConfig.hosted;
-      if (HostedEngine.engineForNewHostedInstall() === HostedEngine.HOSTED_ENGINE_NATIVE) {
+      if (newHostedEngine === HostedEngine.HOSTED_ENGINE_NATIVE) {
         installConfig.hosted = HostedEngine.nativeHostedConfigForInstall(explicitDescription || undefined);
       }
     }
@@ -650,7 +652,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         ...(explicitDescription ? { description: explicitDescription } : {}),
         ...(avatarSeed ? { profilePicture: avatarSeed } : {}),
       });
-      await AgentIdentityService.ensureAgentInPod(agentUser, podId, effectiveRuntimeType);
+      await AgentIdentityService.ensureAgentInPod(agentUser, podId, effectiveRuntimeType, newHostedEngine);
     } catch (identityError: unknown) {
       // A refusal is not a best-effort failure (TASK-133 b, wren 73987/73988):
       // swallowing it would answer 2xx and leave an AgentInstallation row with

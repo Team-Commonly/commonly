@@ -63,6 +63,18 @@ describe('AgentIdentityService.ensureAgentInPod — agent-room 1:1 invariant', (
     expect(pod.members).toEqual(['human', 'bot']);
   });
 
+  it('joins a hosted-native bot but refuses a Durable Object bot before membership changes', async () => {
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    const pod = { _id: 'p-chat', type: 'chat', members: ['human'], save: jest.fn() };
+    Pod.findById.mockResolvedValue(pod);
+    await expect(AgentIdentityService.ensureAgentInPod({ _id: 'hosted-native' }, 'p-chat', 'hosted', 'native'))
+      .resolves.toBe(pod);
+    expect(pod.members).toEqual(['human', 'hosted-native']);
+    await expect(AgentIdentityService.ensureAgentInPod({ _id: 'hosted-do' }, 'p-chat', 'hosted', 'durable-object'))
+      .rejects.toHaveProperty('code', 'outsider_grant_non_native_agent_join');
+    expect(pod.members).toEqual(['human', 'hosted-native']);
+  });
+
   it('refuses to add a third agent to an existing agent-room', async () => {
     const pod = {
       _id: 'p-room',

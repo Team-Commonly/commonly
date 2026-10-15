@@ -17,7 +17,7 @@
  *
  * Every site that has to tell the two engines apart asks this module.
  */
-import { hostedCaps, isHostedInstallation } from './hostedRuntimeService';
+import { hostedCaps, isHostedInstallation, readRuntimeConfig } from './hostedRuntimeService';
 
 export const HOSTED_ENGINE_NATIVE = 'native';
 export const HOSTED_ENGINE_DURABLE_OBJECT = 'durable-object';
@@ -35,6 +35,12 @@ export const hostedEngineOf = (installation: any): HostedEngine => (
   String(readHostedConfig(installation).engine || '').trim().toLowerCase() === HOSTED_ENGINE_NATIVE
     ? HOSTED_ENGINE_NATIVE
     : HOSTED_ENGINE_DURABLE_OBJECT
+);
+
+/** The engine boundary shared by grant eligibility and agent-join checks. */
+export const runsInNarrowedProcess = (installation: any): boolean => (
+  String(readRuntimeConfig(installation).runtimeType || '').trim().toLowerCase() === 'native'
+  || (isHostedInstallation(installation) && hostedEngineOf(installation) === HOSTED_ENGINE_NATIVE)
 );
 
 /**

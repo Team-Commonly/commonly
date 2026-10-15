@@ -3,8 +3,7 @@ import { AgentInstallation } from '../models/AgentRegistry';
 import Integration from '../models/Integration';
 import Pod from '../models/Pod';
 import User from '../models/User';
-import { HOSTED_ENGINE_NATIVE, hostedEngineOf } from './hostedEngine';
-import { isHostedInstallation } from './hostedRuntimeService';
+import { runsInNarrowedProcess } from './hostedEngine';
 
 export type OutsiderGrantRefusal = 'pod_required' | 'pod_not_private'
   | 'pod_joinable' | 'pod_bridged' | 'non_native_agent' | 'write_mode_unconfined';
@@ -17,12 +16,6 @@ export const outsiderGrantRefusalMessage = (reason: OutsiderGrantRefusal): strin
   non_native_agent: 'This pod has an agent outside the narrowed native runtime. Use a separate pod for this connector.',
   write_mode_unconfined: 'This grant permits unattended writes. Use write-with-confirm in a separate pod.',
 }[reason]);
-
-const configObject = (value: unknown): Record<string, unknown> => {
-  if (value instanceof Map) return Object.fromEntries(value);
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown> : {};
-};
 
 /** Re-read at mint and on every broker list/call; no cached eligibility. */
 export const outsiderGrantPodRefusal = async (
@@ -63,16 +56,12 @@ export const outsiderGrantPodRefusal = async (
     `${String(agent.botMetadata?.agentName || '').toLowerCase()}:${String(agent.botMetadata?.instanceId || 'default')}`
   )));
   for (const installation of installations) {
-    const config = configObject(installation.config);
-    const runtime = configObject(config.runtime);
     const key = `${installation.agentName}:${String(installation.instanceId || 'default')}`;
     // A hosted agent on the native engine runs through the same narrowed
     // in-process runtime and can hold no runtime token (services/hostedEngine.ts,
     // routes/registry/tokens.ts). A hosted agent on the Durable Object polls
     // with a token from outside the backend, so it stays refused.
-    const inProcess = runtime.runtimeType === 'native'
-      || (isHostedInstallation(installation) && hostedEngineOf(installation) === HOSTED_ENGINE_NATIVE);
-    if (!inProcess || !agentKeys.has(key)) return 'non_native_agent';
+    if (!runsInNarrowedProcess(installation) || !agentKeys.has(key)) return 'non_native_agent';
   }
   for (const agent of agents) {
     if (agent.botType !== 'agent') return 'non_native_agent';
