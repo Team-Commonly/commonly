@@ -2,7 +2,7 @@ import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createServer } from 'http';
 import { chmod, mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
 import { existsSync, readFileSync, realpathSync, unlinkSync } from 'fs';
-import { tmpdir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 import opencode, {
   readOpenCodeVersion,
@@ -37,7 +37,9 @@ const writeJson = (response, body) => {
   response.end(JSON.stringify(body));
 };
 
-const runRealSeatbeltTurn = async ({ removeXdgGitignore = false, seedPersistentConfig = false } = {}) => {
+const runRealSeatbeltTurn = async ({
+  removeXdgGitignore = false, seedPersistentConfig = false, expectMcpTool = false,
+} = {}) => {
   assertSmokeTestedVersion();
   const root = await mkdtemp(join(tmpdir(), 'opencode-seatbelt-smoke-'));
   const workspace = join(root, 'workspace');
@@ -117,6 +119,9 @@ const runRealSeatbeltTurn = async ({ removeXdgGitignore = false, seedPersistentC
           models: { 'seatbelt-smoke-model': { name: 'Seatbelt smoke model' } },
         },
         sandbox: { trust: 'public', mode: 'workspace' },
+        ...(expectMcpTool ? { mcp: [{
+          name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'],
+        }] } : {}),
       },
       agentName: 'seatbelt-smoke',
       runtimeToken: 'seatbelt-smoke-runtime-token',
@@ -150,6 +155,9 @@ const runRealSeatbeltTurn = async ({ removeXdgGitignore = false, seedPersistentC
 
     expect(result.text).toContain(marker);
     expect(observed.some((request) => request.path === '/v1/chat/completions')).toBe(true);
+    if (expectMcpTool) {
+      expect(observed.some((request) => request.body.includes('commonly_probe'))).toBe(true);
+    }
     expect(observed.every((request) => request.authorization === 'Bearer provider-smoke-secret')).toBe(true);
     expect(existsSync(join(persistentConfigDir, '.gitignore'))).toBe(false);
     if (seedPersistentConfig) {
@@ -176,4 +184,40 @@ realSeatbeltTest('removing the pre-created XDG ignore file makes OpenCode fail a
 
 realSeatbeltTest('persistent HOME config cannot override the effective public permission block', async () => {
   await runRealSeatbeltTurn({ seedPersistentConfig: true });
+});
+
+realSeatbeltTest('real public OpenCode offers the warmed Commonly MCP tool under Seatbelt', async () => {
+  // Keep this version tree under the operator HOME. A tempdir fixture would be
+  // readable through macOS's /var baseline and would miss the regression.
+  const mcpHome = await mkdtemp(join(homedir(), '.commonly-opencode-mcp-smoke-'));
+  const priorHome = process.env.COMMONLY_MCP_HOME;
+  try {
+    const pkg = join(mcpHome, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
+    await mkdir(join(pkg, 'src'), { recursive: true });
+    await writeFile(join(pkg, 'package.json'), JSON.stringify({
+      name: '@commonlyai/mcp', version: '0.3.13', type: 'module',
+      bin: { 'commonly-mcp': 'src/index.js' },
+    }));
+    await writeFile(join(pkg, 'src', 'index.js'), `
+      import { createInterface } from 'node:readline';
+      const lines = createInterface({ input: process.stdin });
+      lines.on('line', (line) => {
+        const message = JSON.parse(line);
+        if (message.id === undefined) return;
+        const reply = (result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n');
+        if (message.method === 'initialize') return reply({ protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'commonly-smoke', version: '1' } });
+        if (message.method === 'tools/list') return reply({ tools: [{ name: 'commonly_probe', description: 'smoke', inputSchema: { type: 'object', properties: {} } }] });
+        if (message.method === 'tools/call') return reply({ content: [{ type: 'text', text: 'ok' }] });
+        return reply({});
+      });
+    `);
+    await writeFile(join(mcpHome, 'current'), '0.3.13\n');
+    await writeFile(join(mcpHome, '.warm.lock'), 'smoke lock\n');
+    process.env.COMMONLY_MCP_HOME = mcpHome;
+    await runRealSeatbeltTurn({ expectMcpTool: true, seedPersistentConfig: true });
+  } finally {
+    if (priorHome === undefined) delete process.env.COMMONLY_MCP_HOME;
+    else process.env.COMMONLY_MCP_HOME = priorHome;
+    await rm(mcpHome, { recursive: true, force: true });
+  }
 });
