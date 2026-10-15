@@ -4,8 +4,8 @@
  * The mislabelling this fixes is a single mismatch: the connect page posts
  * `runtimeType: 'webhook'` (ADR-006's self-serve branch requires that value to
  * synthesize a manifest) while the user never runs a webhook — they run
- * `commonly agent run`, which POLLS. With no `host`, `deriveAgentState` asks
- * push-webhook? / native? / byo?, gets no to all three, and answers `unknown`.
+ * `commonly agent run`, which POLLS. New installs need the explicit BYO host;
+ * TASK-222 also makes the read side recognize legacy rows with no stamp.
  *
  * Measured 2026-08-14 (pod-architect): 202 of 314 active installs derive
  * `unknown`, and every real BYO user seat is in that 202, including all four
@@ -53,18 +53,17 @@ describe('self-serve seats are stamped byo at install', () => {
   });
 });
 
-describe('the stamp is what makes the honesty surface work at all', () => {
+describe('stamped and legacy polling seats both reach the honesty surface', () => {
   const install = (runtime) => ({
     agentName: 'kaka-agent', instanceId: 'default', installedBy: 'u1', config: { runtime }, runtimeTokens: [],
   });
 
-  test('WITHOUT the stamp a never-run seat reads `unknown` — no warning, no nudge', () => {
-    // This is the production state of all four casualties: the seat has never
-    // been polled, and the platform cannot say so.
+  test('a legacy never-run seat without the stamp still reads `never-connected`', () => {
+    // TASK-222 repairs existing polling seats as well as stamping new ones.
     const state = deriveAgentState(install({ runtimeType: 'webhook' }), [], 'u1');
 
-    expect(state.state).toBe('unknown');
-    expect(state.fixCommand).toBeUndefined();
+    expect(state.state).toBe('never-connected');
+    expect(state.fixCommand).toBe('commonly agent run kaka-agent');
   });
 
   test('WITH the stamp the same seat reads `never-connected` and offers the fix', () => {
