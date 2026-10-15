@@ -78,6 +78,7 @@
             "group": "Integrations",
             "pages": [
               "integrations/github",
+              "integrations/linear",
               "integrations/discord",
               "integrations/webhooks"
             ]
