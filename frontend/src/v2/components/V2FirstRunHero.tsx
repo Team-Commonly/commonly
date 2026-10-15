@@ -97,7 +97,9 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   }, []);
 
   useEffect(() => {
-    const reopen = () => {
+    const reopen = (event: Event) => {
+      const detail = (event as CustomEvent<{ handled?: boolean }>).detail;
+      if (detail) detail.handled = true;
       // Asking for the guide starts a setup: the started latch is the one
       // visibility model for new and connected users alike.
       writeFlag(FIRST_RUN_STARTED_KEY, true);

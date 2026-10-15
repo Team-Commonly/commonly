@@ -114,7 +114,7 @@ const flush = async () => {
 // B (2026-10-15) it never opens on its own: Scout's starts are the first screen.
 const askForGuide = async () => {
   act(() => {
-    requestFirstRunGuide();
+    expect(requestFirstRunGuide()).toBe(true);
   });
   await flush();
 };
@@ -368,7 +368,7 @@ describe('V2FirstRunHero', () => {
   });
 
   test('a Guide request made before the hero mounts opens it on the shell', async () => {
-    requestFirstRunGuide();
+    expect(requestFirstRunGuide()).toBe(false);
     expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
 
     renderHero();

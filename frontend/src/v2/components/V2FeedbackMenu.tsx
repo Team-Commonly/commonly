@@ -59,9 +59,9 @@ const V2FeedbackMenu: React.FC = () => {
             type="button"
             className="v2-feedback-menu__item"
             onClick={() => {
-              requestFirstRunGuide();
+              const handled = requestFirstRunGuide();
               handleClose();
-              if (location.pathname !== '/v2' && location.pathname !== '/v2/') navigate('/v2');
+              if (!handled && location.pathname !== '/v2' && location.pathname !== '/v2/') navigate('/v2');
             }}
           >
             <MenuBookOutlinedIcon aria-hidden="true" />
