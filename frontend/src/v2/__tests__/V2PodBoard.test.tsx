@@ -143,15 +143,22 @@ describe('V2PodBoard', () => {
   });
 
   test('shows the claim holder and local expiry, then hides the lease without a reload', async () => {
-    const now = new Date('2026-10-15T13:00:00.000Z');
+    const previousTZ = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    const now = new Date('2026-10-15T22:00:00.000Z');
     const expiresAt = new Date(now.getTime() + 60_000).toISOString();
     const task = {
       taskId: 'TASK-269', title: 'Show the lease', status: 'claimed',
       assignee: 'someone-else', claimedBy: 'forge-id', claimExpiresAt: expiresAt, updates: [],
     };
+    const holderFromUpdate = {
+      taskId: 'TASK-270', title: 'Renew the lease', status: 'claimed',
+      claimedBy: 'kai-id', claimExpiresAt: expiresAt,
+      updates: [{ text: 'Lease renewed', author: 'Kai', authorId: 'kai-id' }],
+    };
     jest.useFakeTimers({ now });
     axios.get.mockImplementation((url) => {
-      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: [task] } });
+      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: [task, holderFromUpdate] } });
       if (url.endsWith('/focus')) return Promise.resolve({ data: FOCUS });
       if (url.startsWith('/api/pods/')) return Promise.resolve({ data: {
         name: 'My Workspace', members: [{ _id: 'forge-id', username: 'forge', displayName: 'Forge' }],
@@ -162,16 +169,19 @@ describe('V2PodBoard', () => {
     try {
       renderBoard();
       await act(async () => { await Promise.resolve(); });
-      const expectedTime = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(expiresAt));
-      expect(screen.getByText(`Forge holds this until ${expectedTime}`)).toBeInTheDocument();
+      expect(new Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('America/Los_Angeles');
+      expect(screen.getByText('Forge holds this until 15:01')).toBeInTheDocument();
+      expect(screen.getByText('Kai holds this until 15:01')).toBeInTheDocument();
 
       act(() => { jest.advanceTimersByTime(59_999); });
-      expect(screen.getByText(`Forge holds this until ${expectedTime}`)).toBeInTheDocument();
+      expect(screen.getByText('Forge holds this until 15:01')).toBeInTheDocument();
       act(() => { jest.advanceTimersByTime(1); });
       expect(screen.queryByText(/holds this until/)).not.toBeInTheDocument();
       expect(axios.get.mock.calls.filter(([url]) => url.startsWith('/api/v1/tasks/'))).toHaveLength(1);
     } finally {
       jest.useRealTimers();
+      if (previousTZ === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTZ;
     }
   });
 
