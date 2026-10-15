@@ -85,7 +85,9 @@ const mock = {
 });
 
 const k8s = require('@kubernetes/client-node');
-const { restartAgentRuntime, provisionAgentRuntime } = require('../../../services/agentProvisionerServiceK8s');
+const {
+  restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript,
+} = require('../../../services/agentProvisionerServiceK8s');
 const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
 
 describe('agentProvisionerServiceK8s', () => {
@@ -417,3 +419,54 @@ describe('HEARTBEAT.md delivery — cycle directive reaches unmatched agents', (
     expect(script).toContain(`! grep -qF "${CYCLES_DIRECTIVE_MARKER}"`);
   });
 });
+
+// The reuse read that decides whether a reprovision mints a new LiteLLM key.
+// Reading only openai-codex:codex-cli (the JWT slot under CODEX_BYPASS_LITELLM)
+// never found the key, so every reprovision minted one: 5,891 orphans by 07-01.
+describe('buildPvcVirtualKeyReadScript', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const vm = require('vm');
+  const { execFileSync } = require('child_process');
+
+  let stateDir;
+  beforeEach(() => {
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pvc-key-'));
+  });
+  afterEach(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+
+  const writeProfiles = (agentId, profiles) => {
+    const dir = path.join(stateDir, 'agents', agentId, 'agent');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'auth-profiles.json'), JSON.stringify({ profiles }));
+  };
+  const read = (agentId) => execFileSync('sh', ['-c', buildPvcVirtualKeyReadScript(agentId, stateDir)]).toString();
+
+  it('finds the virtual key in openrouter:default when codex-cli holds the ChatGPT JWT', () => {
+    writeProfiles('liz', {
+      'openrouter:default': { key: 'sk-virtual-liz' },
+      'openai-codex:codex-cli': { access: 'eyJhbGciOiJSUzI1NiJ9.jwt' },
+    });
+    expect(read('liz')).toBe('sk-virtual-liz');
+  });
+
+  it('falls back to codex-cli.access, and never returns a real OpenRouter key', () => {
+    writeProfiles('theo', {
+      'openrouter:default': { key: 'sk-or-v1-real-openrouter' },
+      'openai-codex:codex-cli': { access: 'sk-virtual-theo' },
+    });
+    expect(read('theo')).toBe('sk-virtual-theo');
+  });
+
+  it('prints nothing when there is no profile file', () => {
+    expect(read('nobody')).toBe('');
+  });
+
+  it('is plain JavaScript, so it parses on a gateway Node that does not strip types', () => {
+    const script = buildPvcVirtualKeyReadScript('liz');
+    const body = script.slice('node -e "'.length, -1);
+    expect(() => new vm.Script(body)).not.toThrow();
+  });
+});
+

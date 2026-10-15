@@ -1554,6 +1554,41 @@ const applyOpenClawAcpxPluginDefaults = (config: any) => {
  * Keys are not deduplicated — re-provisioning creates a new key each time.
  * Old keys remain valid in LiteLLM DB (harmless orphans).
  */
+// Where an agent's LiteLLM virtual key lives in its auth-profiles.json.
+// injectOpenRouterKeyToAgentAuthProfiles writes it to openrouter:default for
+// every agent. openai-codex:codex-cli.access held it only before
+// CODEX_BYPASS_LITELLM; with bypass on, that slot holds the ChatGPT JWT. Reading
+// only codex-cli therefore never found a key, and every reprovision minted a
+// fresh one without deleting the last: 5,891 orphaned keys across 30 agents by
+// 2026-07-01. A real OpenRouter key (sk-or-) is skipped, not reused. The script
+// is plain JavaScript because it runs under `node -e` in the gateway, where a
+// TypeScript annotation is a syntax error unless that Node strips types.
+const buildPvcVirtualKeyReadScript = (agentId: string, stateDir = '/state'): string => (
+  `node -e "try{const s=JSON.parse(require('fs').readFileSync('${stateDir}/agents/${agentId}/agent/auth-profiles.json','utf8'));`
+  + "const p=s.profiles||{};const o=p['openrouter:default']||{};const c=p['openai-codex:codex-cli']||{};"
+  + "const vk=[o.key,o.apiKey,c.access].find(function(k){return typeof k==='string'&&k.indexOf('sk-')===0&&k.indexOf('sk-or-')!==0;});"
+  + "process.stdout.write(vk||'');}catch(e){}\""
+);
+
+const readPvcVirtualKey = async (agentId: string): Promise<string | null> => {
+  try {
+    const gwPod = await waitForReadyGatewayPod(10000, 2000);
+    if (!gwPod) return null;
+    const out = await new Promise<string>((resolve) => {
+      const chunks: Buffer[] = [];
+      const sink = new stream.PassThrough();
+      sink.on('data', (d: Buffer) => chunks.push(d));
+      k8sExec.exec(NAMESPACE, gwPod.metadata.name, 'clawdbot-gateway',
+        ['sh', '-c', buildPvcVirtualKeyReadScript(agentId)], sink, null, null, false,
+        () => resolve(Buffer.concat(chunks).toString().trim()),
+      ).catch(() => resolve(''));
+    });
+    return out.startsWith('sk-') ? out : null;
+  } catch (_: any) {
+    return null; // best-effort: no key read means a fresh key is minted
+  }
+};
+
 const issueLiteLLMVirtualKey = async (agentId: any) => {
   const baseUrl = process.env.LITELLM_BASE_URL;
   const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
@@ -1564,23 +1599,7 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
 
     // Read current key from PVC. If it is still valid in LiteLLM, reuse it — this makes
     // the function idempotent so concurrent provisioning calls don't race-delete each other.
-    let existingKey = null;
-    try {
-      const gwPod = await waitForReadyGatewayPod(10000, 2000);
-      if (gwPod) {
-        const readScript = `node -e "try{const s=JSON.parse(require('fs').readFileSync('/state/agents/${agentId}/agent/auth-profiles.json','utf8'));const p=s.profiles&&s.profiles['openai-codex:codex-cli'];process.stdout.write(p&&p.access?p.access:'');} catch (e: any) {}"`;
-        const out = await new Promise((resolve) => {
-          const chunks: any[] = [];
-          const s = new stream.PassThrough();
-          s.on('data', (d: any) => chunks.push(d));
-          k8sExec.exec(NAMESPACE, gwPod.metadata.name, 'clawdbot-gateway',
-            ['sh', '-c', readScript], s, null, null, false,
-            () => resolve(Buffer.concat(chunks).toString().trim()),
-          ).catch(() => resolve(''));
-        });
-        if (out && (out as any).startsWith('sk-')) existingKey = out;
-      }
-    } catch (_: any) { /* best-effort */ }
+    const existingKey = await readPvcVirtualKey(agentId);
 
     // Check if existing key is still valid in LiteLLM DB AND belongs to this agent.
     // Without the ownership check, a key mistakenly written to the wrong agent's PVC
@@ -1655,26 +1674,9 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
     const axios = require('axios');
     const headers = { Authorization: `Bearer ${masterKey}` };
 
-    // Read existing key from openai-codex:codex-cli.access on the agent PVC.
-    // We read from codex-cli.access (not openrouter:default.key) because openrouter:default
-    // may hold the real OpenRouter API key (sk-or-v1-...) which is not a LiteLLM virtual key.
-    let existingKey = null;
-    try {
-      const gwPod = await waitForReadyGatewayPod(10000, 2000);
-      if (gwPod) {
-        const readScript = `node -e "try{const s=JSON.parse(require('fs').readFileSync('/state/agents/${agentId}/agent/auth-profiles.json','utf8'));const p=s.profiles&&s.profiles['openai-codex:codex-cli'];process.stdout.write(p&&p.access?p.access:'');} catch (e: any) {}"`;
-        const out = await new Promise((resolve) => {
-          const chunks: any[] = [];
-          const s = new stream.PassThrough();
-          s.on('data', (d: any) => chunks.push(d));
-          k8sExec.exec(NAMESPACE, gwPod.metadata.name, 'clawdbot-gateway',
-            ['sh', '-c', readScript], s, null, null, false,
-            () => resolve(Buffer.concat(chunks).toString().trim()),
-          ).catch(() => resolve(''));
-        });
-        if (out && (out as any).startsWith('sk-')) existingKey = out;
-      }
-    } catch (_: any) { /* best-effort */ }
+    // Reuse the agent's current virtual key when LiteLLM still recognises it
+    // (see readPvcVirtualKey for where it lives).
+    const existingKey = await readPvcVirtualKey(agentId);
 
     if (existingKey && existingKey !== masterKey) {
       // Safety: never delete the master key even if found on PVC
@@ -3537,6 +3539,7 @@ const refreshCodexOAuthTokenIfNeeded = async ({ thresholdDays = 3 } = {}) => {
 };
 
 module.exports = {
+  buildPvcVirtualKeyReadScript,
   getAgentSessionSizes,
   provisionAgentRuntime,
   startAgentRuntime,
