@@ -424,6 +424,17 @@ describe('native tools while an outsider-writable grant is live', () => {
     ]);
   });
 
+  test('a failed grant-policy read keeps the model on the narrowed native tool set', async () => {
+    mockOutsiderGrantPolicy.mockRejectedValue(new Error('mongo down'));
+    mockAxiosPost.mockResolvedValueOnce(finalTurn);
+    const run = await runAgent(installation, { type: 'first_contact', payload: { content: 'hello' } });
+    expect(run.status).toBe('succeeded');
+    const names = mockAxiosPost.mock.calls[0][1].tools.map((tool) => tool.function.name);
+    expect(names.filter((name) => name.startsWith('commonly_')).sort()).toEqual([
+      'commonly_post_message', 'commonly_read_context',
+    ]);
+  });
+
   test.each([
     'commonly_read_memory', 'commonly_write_memory', 'commonly_create_task',
     'commonly_propose_action', 'commonly_agent_status',
