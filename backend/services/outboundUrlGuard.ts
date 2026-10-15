@@ -29,12 +29,23 @@
  * the connection is made to the address that was checked (a pinned `lookup`),
  * so a second DNS answer cannot substitute another; every redirect hop is
  * resolved and checked the same way. See `classifyAddress` for the ranges.
+ *
+ * `getFromPublicAddress` — a GET of a URL an AGENT chose, for a page it reads
+ * mid-turn. The same address check and pin as `postToPublicAddress`, held
+ * tighter because the caller is a model acting on outsider-written text:
+ * https only; public addresses only, whatever the webhook private-address flag
+ * says; at most `MAX_FETCH_REDIRECTS` hops; a 10s deadline; the body read to
+ * at most 1 MB and then cut off, not refused; only text/html, text/plain and
+ * application/json, with HTML reduced to its text; no cookies and no auth
+ * header ever leave, because the request carries only the headers named here.
  */
 
 import dns from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
+
+import { htmlToText } from './htmlToText';
 
 const MAX_REDIRECTS = 5;
 const OUTBOUND_TIMEOUT_MS = 15 * 1000;
@@ -273,22 +284,43 @@ export const classifyAddress = (address: string): AddressClass => {
 
 const privateAddressesAllowed = (): boolean => process.env.OUTBOUND_WEBHOOK_ALLOW_PRIVATE_ADDRESSES === 'true';
 
-const isAllowedAddress = (address: string): boolean => {
+const isAllowedAddress = (address: string, allowPrivate: boolean): boolean => {
   const kind = classifyAddress(address);
-  return kind === 'public' || (kind === 'private' && privateAddressesAllowed());
+  return kind === 'public' || (kind === 'private' && allowPrivate);
 };
 
+interface DestinationPolicy {
+  /** Allow only https, refusing http as well as everything else. */
+  httpsOnly: boolean;
+  /** Whether a `private` address may pass. `reserved` never does. */
+  allowPrivate: () => boolean;
+}
+
+// Webhooks: http(s), and private addresses only when the operator's flag allows.
+const WEBHOOK_POLICY: DestinationPolicy = { httpsOnly: false, allowPrivate: () => privateAddressesAllowed() };
+// An agent's fetch: https, public addresses only. The webhook flag does not
+// apply, because a local receiver the operator trusts is not a page a model may read.
+const AGENT_FETCH_POLICY: DestinationPolicy = { httpsOnly: true, allowPrivate: () => false };
+
 /** Parse, then resolve and check: the one address the hop connects to. */
-const toPublicDestination = async (raw: string, base?: URL): Promise<{ url: URL; address: dns.LookupAddress }> => {
+const toPublicDestination = async (
+  raw: string,
+  base?: URL,
+  policy: DestinationPolicy = WEBHOOK_POLICY,
+): Promise<{ url: URL; address: dns.LookupAddress }> => {
   let url: URL;
   try {
     url = new URL(raw, base);
   } catch {
     throw new OutboundUrlRefusedError('not a valid URL');
   }
+  if (policy.httpsOnly && url.protocol !== 'https:') {
+    throw new OutboundUrlRefusedError(`scheme ${url.protocol} is not https`);
+  }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new OutboundUrlRefusedError(`scheme ${url.protocol} is not http or https`);
   }
+  if (policy.httpsOnly && (url.username || url.password)) throw new OutboundUrlRefusedError('credentials in URL');
   const host = url.hostname.replace(/^\[|\]$/g, '');
   if (METADATA_HOSTNAMES.has(host)) throw new OutboundUrlRefusedError(`host ${host} is not allowed`);
   const family = net.isIP(host);
@@ -300,7 +332,7 @@ const toPublicDestination = async (raw: string, base?: URL): Promise<{ url: URL;
   if (!answers.length) throw new OutboundUrlRefusedError(`host ${host} does not resolve`);
   // Every answer must pass, not just the first, so a name with a public and a
   // private record is refused rather than decided by which one is used.
-  const refused = answers.find((answer) => !isAllowedAddress(answer.address));
+  const refused = answers.find((answer) => !isAllowedAddress(answer.address, policy.allowPrivate()));
   if (refused) throw new OutboundUrlRefusedError(`host ${host} resolves to ${refused.address}, which is not allowed`);
   return { url, address: answers[0] };
 };
@@ -315,14 +347,37 @@ interface RawResponse {
   status: number;
   location?: string;
   text: string;
+  /** The response's media type, lowercased and without parameters; '' when absent. */
+  contentType: string;
+  /** True when the body was cut off at `maxBytes` rather than read to its end. */
+  truncated: boolean;
 }
+
+interface ReadPolicy {
+  maxBytes: number;
+  /** `error` fails the request at the cap; `truncate` keeps the first `maxBytes` and stops reading. */
+  overflow: 'error' | 'truncate';
+  /** Checked on a 2xx before any body byte is read; a refused type ends the request. */
+  acceptContentType?: (mediaType: string) => boolean;
+}
+
+const WEBHOOK_READ: ReadPolicy = { maxBytes: WEBHOOK_MAX_RESPONSE_BYTES, overflow: 'error' };
+
+const mediaTypeOf = (header: string | string[] | undefined): string => (
+  String(Array.isArray(header) ? header[0] : header || '').split(';')[0].trim().toLowerCase()
+);
 
 const requestPinned = (
   url: URL,
   address: dns.LookupAddress,
   { method, headers, body }: PinnedRequest,
   signal: AbortSignal,
+  read: ReadPolicy = WEBHOOK_READ,
 ): Promise<RawResponse> => new Promise((resolve, reject) => {
+  // Destroying the request after a cut-off or a refused type also emits an
+  // error; only the first outcome counts.
+  let settled = false;
+  const settle = (fn: () => void) => { if (!settled) { settled = true; fn(); } };
   const client = url.protocol === 'https:' ? https : http;
   // The socket connects to the address checked above, whatever DNS answers now.
   // TLS still verifies the certificate against the URL's hostname.
@@ -333,25 +388,40 @@ const requestPinned = (
   const req = client.request(url, { method, headers, lookup, signal }, (res) => {
     const status = res.statusCode || 0;
     const location = REDIRECT_STATUSES.has(status) ? res.headers.location : undefined;
+    const contentType = mediaTypeOf(res.headers['content-type']);
     if (location || status < 200 || status >= 300) {
       res.resume();
-      resolve({ status, location, text: '' });
+      settle(() => resolve({ status, location, text: '', contentType, truncated: false }));
+      return;
+    }
+    if (read.acceptContentType && !read.acceptContentType(contentType)) {
+      settle(() => reject(new OutboundUrlRefusedError(`content type ${contentType || '(none)'} is not allowed`)));
+      req.destroy();
       return;
     }
     const chunks: Buffer[] = [];
     let received = 0;
     res.on('data', (chunk: Buffer) => {
-      received += chunk.length;
-      if (received > WEBHOOK_MAX_RESPONSE_BYTES) {
-        req.destroy(new Error(`response body exceeds ${WEBHOOK_MAX_RESPONSE_BYTES} bytes`));
+      if (settled) return;
+      if (received + chunk.length > read.maxBytes) {
+        if (read.overflow === 'error') {
+          req.destroy(new Error(`response body exceeds ${read.maxBytes} bytes`));
+          return;
+        }
+        chunks.push(chunk.subarray(0, read.maxBytes - received));
+        settle(() => resolve({ status, text: Buffer.concat(chunks).toString('utf8'), contentType, truncated: true }));
+        req.destroy();
         return;
       }
+      received += chunk.length;
       chunks.push(chunk);
     });
-    res.on('end', () => resolve({ status, text: Buffer.concat(chunks).toString('utf8') }));
-    res.on('error', reject);
+    res.on('end', () => settle(() => resolve({
+      status, text: Buffer.concat(chunks).toString('utf8'), contentType, truncated: false,
+    })));
+    res.on('error', (error) => settle(() => reject(error)));
   });
-  req.on('error', reject);
+  req.on('error', (error) => settle(() => reject(error)));
   if (body !== undefined) req.write(body);
   req.end();
 });
@@ -384,5 +454,69 @@ export const postToPublicAddress = async (
       request = { method: 'GET', headers: rest };
     }
     destination = await toPublicDestination(response.location, destination.url);
+  }
+};
+
+// ── A page an agent reads ───────────────────────────────────────────────────
+
+const MAX_FETCH_REDIRECTS = 3;
+const FETCH_TIMEOUT_MS = 10 * 1000;
+const FETCH_MAX_BYTES = 1024 * 1024;
+const FETCH_CONTENT_TYPES = new Set(['text/html', 'text/plain', 'application/json']);
+// The only headers sent. Nothing a caller passes is merged in, so no cookie and
+// no Authorization header can leave with an agent's fetch.
+const FETCH_HEADERS: Readonly<Record<string, string>> = Object.freeze({
+  'User-Agent': 'CommonlyAgentFetch/1.0 (+https://commonly.me)',
+  Accept: 'text/html, text/plain;q=0.9, application/json;q=0.9',
+});
+
+export interface PublicPageResult {
+  ok: boolean;
+  status: number;
+  /** The final hop's media type, lowercased, without parameters. */
+  contentType: string;
+  /** The body as text, HTML reduced to its words. Empty when `ok` is false. */
+  text: string;
+  /** True when the body passed 1 MB and only its start was read. */
+  truncated: boolean;
+  /** The URL the final response came from, after any redirects. */
+  url: string;
+}
+
+/**
+ * GET `rawUrl` on an agent's behalf. Every hop must be https and resolve only
+ * to public addresses, and each connection is pinned to the address that was
+ * checked, so a second DNS answer (rebinding) cannot redirect it. Redirects
+ * are followed by hand, re-checked, at most `MAX_FETCH_REDIRECTS` times; one
+ * 10s deadline covers every hop and the body. A 2xx must be text/html,
+ * text/plain or application/json, checked before any body byte is read; the
+ * body is read to at most 1 MB and then cut off, reported as `truncated`.
+ * Throws a refusal (see `isOutboundUrlRefused`) for a refused URL, hop or
+ * content type, before connecting where the URL is refused; a non-2xx final
+ * response is returned, not thrown.
+ */
+export const getFromPublicAddress = async (rawUrl: string): Promise<PublicPageResult> => {
+  const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+  const request: PinnedRequest = { method: 'GET', headers: { ...FETCH_HEADERS } };
+  const read: ReadPolicy = {
+    maxBytes: FETCH_MAX_BYTES,
+    overflow: 'truncate',
+    acceptContentType: (mediaType) => FETCH_CONTENT_TYPES.has(mediaType),
+  };
+  let destination = await toPublicDestination(rawUrl, undefined, AGENT_FETCH_POLICY);
+  for (let redirects = 0; ; redirects += 1) {
+    const response = await requestPinned(destination.url, destination.address, request, signal, read);
+    if (!response.location) {
+      const ok = response.status >= 200 && response.status < 300;
+      const text = ok && response.contentType === 'text/html' ? htmlToText(response.text) : response.text;
+      return {
+        ok, status: response.status, contentType: response.contentType, text, truncated: response.truncated,
+        url: destination.url.toString(),
+      };
+    }
+    if (redirects >= MAX_FETCH_REDIRECTS) {
+      throw new OutboundUrlRefusedError(`more than ${MAX_FETCH_REDIRECTS} redirects`);
+    }
+    destination = await toPublicDestination(response.location, destination.url, AGENT_FETCH_POLICY);
   }
 };
