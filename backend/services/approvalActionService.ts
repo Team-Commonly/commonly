@@ -930,7 +930,7 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
         version: registryRow?.latestVersion || '1.0.0',
         displayName: agentName,
         scopes: LOCAL_AGENT_SCOPES,
-        config: { runtime: { runtimeType: 'webhook' } },
+        config: { runtime: { runtimeType: 'webhook', host: 'byo' } },
       },
       $setOnInsert: {
         agentName,

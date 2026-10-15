@@ -74,8 +74,13 @@ export function deriveAgentState(
   const instanceId = String(installation.instanceId || 'default');
   const runtime = installation.config?.runtime || {};
   const runtimeType = String(runtime.runtimeType || '').toLowerCase();
-  const isByo = runtime.host === 'byo' || runtimeType === 'local-cli';
   const isPushWebhook = Boolean(runtime.webhookUrl);
+  // Older self-serve and approval-created polling seats were stored as
+  // webhook without a host stamp. The install route already treats this
+  // shape as BYO; classify existing rows the same way for liveness.
+  const isByo = runtime.host === 'byo'
+    || runtimeType === 'local-cli'
+    || (runtimeType === 'webhook' && !runtime.host && !isPushWebhook);
   const isNative = runtimeType === 'native';
 
   let state: AgentReachState;
