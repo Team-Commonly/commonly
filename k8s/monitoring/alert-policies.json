@@ -375,5 +375,33 @@
         }
       }
     ]
+  },
+  {
+    "displayName": "commonly-dev: one user's agent spend passed the daily line",
+    "severity": "WARNING",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "A user's model spend for today (UTC) passed SPEND_ALARM_USD_PER_DAY, $2 by default, about 50 times the heaviest user-day measured in the two weeks to 2026-10-15. Hosted turns and the E2B sandbox have no provider-side cap, so this is the only signal before the bill. The log line names the user, the amount and the tokens. Runbook: docs/runbooks/alerting.md#user-spend"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "a user crossed the daily spend line",
+        "conditionThreshold": {
+          "filter": "metric.type=\"logging.googleapis.com/user/user_spend_over_threshold\" AND resource.type=\"k8s_container\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "300s",
+              "perSeriesAligner": "ALIGN_SUM",
+              "crossSeriesReducer": "REDUCE_SUM"
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 0,
+          "duration": "0s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
   }
 ]
