@@ -10,25 +10,35 @@ import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const AttributionVisit = require('../models/AttributionVisit');
 
-const { VISIT_REFS_PER_DAY, OTHER_REF } = AttributionVisit;
-
-// A ref counted on ANY day still in the table keeps its own row; a new one gets
-// a row only while today has fewer than VISIT_REFS_PER_DAY refs, so a script
-// inventing codes fills the overflow row instead of the table. Known refs are
-// checked across days (sprint-review on #2282): with a same-day check, about
-// five minutes of junk from one address spent the day's slots and pushed every
-// real campaign link into the overflow, silently, until midnight UTC.
-// The cap is a bound on growth, not an exact count: the check and the write
-// are two steps, so a burst of new refs at the crossing overshoots it (1000
-// concurrent new refs at 49 rows gave about 1045, Cofounder's measure). That is
-// once a day per burst, and the table stays bounded by the TTL.
-const bucketFor = async (day: string, ref: string): Promise<string> => {
-  if (await AttributionVisit.exists({ ref })) return ref;
-  const refsToday = await AttributionVisit.countDocuments({ day, ref: { $ne: OTHER_REF } });
-  return refsToday < VISIT_REFS_PER_DAY ? ref : OTHER_REF;
-};
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { cleanSignupRef } = require('../utils/signupRef');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { campaignRefs } = require('../services/attributionCampaignRefs');
+
+const { VISIT_REFS_PER_DAY, OTHER_REF } = AttributionVisit;
+
+// A listed campaign code (services/attributionCampaignRefs.ts) always keeps its
+// own row, so junk can never push a real campaign link into the overflow.
+// Every query here filters on day first ({day, ref} index): a query on ref
+// alone scans the whole table (114 ms per visit at 501k rows, Cofounder's
+// measure on the cross-day rule this replaced).
+
+// Every other ref competes for VISIT_REFS_PER_DAY rows a UTC day, counted afresh
+// each day: a ref already counted today keeps its row, a new one gets a row only
+// while the day has room, and the rest share the overflow row. So rows per day
+// are at most the campaign list + VISIT_REFS_PER_DAY + 1. (A cross-day "known
+// ref" rule, tried in #2283, let junk admitted once bypass the cap on every
+// later day; Cofounder chose the list instead.) The cap bounds growth, it is not
+// an exact count: the check and the write are two steps, so a burst of new refs
+// at the crossing overshoots it (1000 concurrent new refs at 49 rows gave about
+// 1045, Cofounder's measure), once a day per burst.
+const bucketFor = async (day: string, ref: string): Promise<string> => {
+  const campaigns = await campaignRefs();
+  if (campaigns.has(ref)) return ref;
+  if (await AttributionVisit.exists({ day, ref })) return ref;
+  const refsToday = await AttributionVisit.countDocuments({ day, ref: { $nin: [...campaigns, OTHER_REF] } });
+  return refsToday < VISIT_REFS_PER_DAY ? ref : OTHER_REF;
+};
 
 const router = express.Router();
 

@@ -12,6 +12,10 @@ describe('first-touch ref', () => {
     expect(readFirstTouchRef()).toBe('x');
   });
 
+  test('a ref beside other params is still read (the re-engagement deep link)', () => {
+    expect(captureFirstTouchRef('?mode=hosted&ref=email')).toBe('email');
+  });
+
   test('a link without a ref, or with a dirty one, keeps nothing', () => {
     expect(captureFirstTouchRef('?next=/v2')).toBeNull();
     expect(captureFirstTouchRef('?ref=%3Cscript%3E')).toBeNull();
