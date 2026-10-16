@@ -90,6 +90,7 @@ describe('digestEmailService', () => {
     const freshUser = await User.findById(user._id).select('+digestUnsubscribeToken');
     expect(freshUser.emailPreferences.dailyDigest).toBe(true);
     expect(freshUser.digestUnsubscribeToken).toMatch(/^[a-f0-9]{48}$/);
+    expect(freshUser.lastDigestSent).toBeInstanceOf(Date);
   });
 
   it('never sends an empty digest', async () => {
@@ -159,12 +160,34 @@ describe('digestEmailService', () => {
     expect(mockSendEmail).toHaveBeenCalledTimes(2);
     expect((await Summary.findById(firstDigest._id)).metadata.emailedAt).toBeInstanceOf(Date);
     expect((await Summary.findById(secondDigest._id)).metadata.emailedAt).toBeInstanceOf(Date);
+    expect((await User.findById(firstUser._id)).lastDigestSent).toBeUndefined();
+    expect((await User.findById(secondUser._id)).lastDigestSent).toBeInstanceOf(Date);
 
     await digestEmailService.sendDigestEmails([
       runEntry(firstDigest),
       runEntry(secondDigest),
     ]);
     expect(mockSendEmail).toHaveBeenCalledTimes(2);
+  });
+
+  it('sets lastDigestSent only after SMTP accepts the message', async () => {
+    const user = await createUser();
+    const digest = await createDigest(user);
+    let releaseSmtp;
+    let smtpStarted;
+    const enteredSmtp = new Promise((resolve) => { smtpStarted = resolve; });
+    mockSendEmail.mockImplementation(() => new Promise((resolve) => {
+      releaseSmtp = resolve;
+      smtpStarted();
+    }));
+
+    const sending = digestEmailService.sendDigestEmails([runEntry(digest)]);
+    await enteredSmtp;
+    expect((await User.findById(user._id)).lastDigestSent).toBeUndefined();
+
+    releaseSmtp({ data: { data: { succeeded: 1 } } });
+    await sending;
+    expect((await User.findById(user._id)).lastDigestSent).toBeInstanceOf(Date);
   });
 
   it('logs once and skips the entire run when SMTP is unconfigured', async () => {

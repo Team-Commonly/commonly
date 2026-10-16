@@ -171,6 +171,13 @@ export class DigestEmailService {
         });
 
         result.sent += 1;
+        // SMTP has accepted the email. A failed timestamp write should not
+        // reclassify that delivery as a failed send.
+        try {
+          await User.updateOne({ _id: user._id }, { $set: { lastDigestSent: emailedAt } });
+        } catch (markError) {
+          console.warn('Digest sent but lastDigestSent could not be saved:', (markError as Error).message);
+        }
       } catch (error) {
         result.failed += 1;
         console.error('Digest email delivery failed:', {

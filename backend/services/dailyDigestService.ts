@@ -3,6 +3,8 @@ const Summary = require('../models/Summary');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
+const Pod = require('../models/Pod');
+// eslint-disable-next-line global-require
 const DigestTemplateService = require('./digestTemplateService');
 // eslint-disable-next-line global-require
 const { generateText } = require('./llmService');
@@ -71,9 +73,7 @@ export class DailyDigestService {
     try {
       console.log(`Generating daily digest for user ${userId}`);
 
-      const user = await User.findById(userId)
-        .populate('subscribedPods')
-        .lean() as Record<string, unknown> | null;
+      const user = await User.findById(userId).lean() as Record<string, unknown> | null;
       if (!user) {
         throw new Error(`User ${userId} not found`);
       }
@@ -81,8 +81,10 @@ export class DailyDigestService {
       const endTime = new Date();
       const startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000);
 
-      const podIds = (user.subscribedPods as Array<{ _id: unknown }> | undefined)
-        ?.map((pod) => pod._id) || [];
+      // Pod.members is the current access relationship; current pod joins do
+      // not populate the legacy User.subscribedPods field.
+      const pods = await Pod.find({ members: userId }).select('_id').lean() as Array<{ _id: unknown }>;
+      const podIds = pods.map((pod) => pod._id);
 
       const summaries = await Summary.find({
         $or: [
@@ -366,10 +368,24 @@ This might be a great time to start a new conversation or share something intere
     try {
       console.log('Starting daily digest generation for all users...');
 
+      const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const recentPodIds = await Summary.distinct('podId', {
+        type: { $in: ['posts', 'chats'] },
+        podId: { $exists: true },
+        createdAt: { $gte: startTime },
+      });
+      // Public-read pods include every signup; their activity is not a reason
+      // to wake every stale account for an LLM-generated digest.
+      const recentMemberIds = await Pod.distinct('members', {
+        _id: { $in: recentPodIds },
+        publicRead: { $ne: true },
+      });
+
       const activeUsers = await User.find({
+        isBot: { $ne: true },
         $or: [
-          { subscribedPods: { $exists: true, $ne: [] } },
           { lastActive: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+          { _id: { $in: recentMemberIds } },
         ],
       }).lean() as Array<{ _id: unknown; username?: string }>;
 
