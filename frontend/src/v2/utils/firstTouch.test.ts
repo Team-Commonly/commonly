@@ -37,5 +37,7 @@ describe('first-touch ref', () => {
     expect(cleanRef(' X-Thread_2 ')).toBe('x-thread_2');
     expect(cleanRef('a'.repeat(33))).toBeNull();
     expect(cleanRef('https://evil.example')).toBeNull();
+    expect(cleanRef('__proto__')).toBeNull();
+    expect(cleanRef('Constructor')).toBeNull();
   });
 });

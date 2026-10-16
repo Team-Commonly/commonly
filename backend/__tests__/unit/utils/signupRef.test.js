@@ -14,6 +14,9 @@ describe('cleanSignupRef', () => {
     ['a dot path', '../x'],
     ['an object', { $gt: '' }],
     ['a number', 7],
+    ['__proto__', '__proto__'],
+    ['constructor', 'constructor'],
+    ['prototype', 'prototype'],
   ])('drops %s', (_label, raw) => {
     expect(cleanSignupRef(raw)).toBeUndefined();
   });
