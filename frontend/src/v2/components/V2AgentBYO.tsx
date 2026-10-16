@@ -127,6 +127,10 @@ const V2AgentBYO: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState<{ token: string; agentName: string; podId: string; issuedAt: number } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // Which CLI the listener runs. Pinned in the command (`--adapter`), so a Mac
+  // without Claude Code says so instead of quietly starting Codex (QA BYO
+  // walk 1, 2026-10-16). Claude Code by default: it is what most people use.
+  const [listenAdapter, setListenAdapter] = useState<'claude' | 'codex'>('claude');
   // Live listening verification (#887 class, second half). #888 made the
   // listening step legible; this makes it CHECKABLE — the page polls the
   // kernel until THIS agent's runtime token authenticates for the first time
@@ -652,7 +656,7 @@ const V2AgentBYO: React.FC = () => {
   // EINVALIDTAGNAME "#" and installs nothing (ux-lead on #2104). The command
   // names itself; the body above the box says where to run it.
   const listenSnippet = issued
-    ? `${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName}`
+    ? `${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName} --adapter ${listenAdapter}`
     : '';
 
   const cursorSnippet = issued
@@ -905,6 +909,11 @@ const V2AgentBYO: React.FC = () => {
               })()}
             </button>
           )}
+          {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
+              are real alternatives, but shown as equals beside the button they
+              read as a choice a stranger has to make before starting. */}
+          <details className="v2-byo__more" data-testid="byo-more-ways">
+            <summary>{t('agentByo.otherWays.title')}</summary>
           {machines.length === 0 && (
             <div className="v2-byo__add-computer" data-testid="byo-add-computer">
               <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
@@ -930,6 +939,7 @@ const V2AgentBYO: React.FC = () => {
             {' · '}
             <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.fullWalkthrough')}</a>.
           </p>
+          </details>
         </div>
       )}
 
@@ -1011,21 +1021,7 @@ const V2AgentBYO: React.FC = () => {
       {issued && (
         <div className="v2-byo__result">
           <h2>{t('agentByo.result.heading')} <code>{issued.agentName}</code></h2>
-          <p>
-            {t('agentByo.result.copyOnceLead')} <strong>{t('agentByo.result.copyOnceEmphasis')}</strong>. {t('agentByo.result.copyOnceRest')}
-          </p>
-
-          <div className="v2-byo__snippet">
-            <div className="v2-byo__snippet-head">
-              <span>{t('agentByo.snippets.runtimeToken')}</span>
-            </div>
-            <div className="v2-byo__command">
-              <pre className="v2-byo__pre">{issued.token}</pre>
-              <button type="button" onClick={() => copy('tok', issued.token)} className="v2-byo__copy">
-                {copied === 'tok' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
-              </button>
-            </div>
-          </div>
+          <p>{t('agentByo.result.keyOnce')}</p>
 
           {/*
             The listener comes FIRST, right under the token: it is the step that
@@ -1035,11 +1031,27 @@ const V2AgentBYO: React.FC = () => {
             in 10 days went unanswered (#887), and the listener still sat below the
             editor snippets until 2026-10-14 (Growth's walk from Scout's card).
           */}
-          <div className="v2-byo__snippet v2-byo__snippet--listen">
+          <div className="v2-byo__snippet v2-byo__snippet--listen" data-testid="byo-listen">
             <div className="v2-byo__snippet-head">
               <span>{t('agentByo.listen.title')}</span>
             </div>
-            <p className="v2-byo__listen-body">{t('agentByo.listen.body')}</p>
+            <p className="v2-byo__listen-body">{t('agentByo.listen.body', { name: issued.agentName })}</p>
+            {/* Everything a stranger needs BEFORE the paste, in one place (QA
+                BYO walk 1 found none of it on the page). One block, so other
+                systems can add their own line beside it. */}
+            <p className="v2-byo__needs" data-testid="byo-listen-needs">
+              {t('agentByo.listen.needs', {
+                tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
+              })}{' '}
+              <button
+                type="button"
+                className="v2-byo__link"
+                data-testid="byo-listen-adapter-switch"
+                onClick={() => setListenAdapter((a) => (a === 'codex' ? 'claude' : 'codex'))}
+              >
+                {listenAdapter === 'codex' ? t('agentByo.listen.switchToClaude') : t('agentByo.listen.switchToCodex')}
+              </button>
+            </p>
             <div className="v2-byo__command">
               <pre className="v2-byo__pre">{listenSnippet}</pre>
               <button
@@ -1066,29 +1078,46 @@ const V2AgentBYO: React.FC = () => {
             </p>
           </div>
 
-          <div className="v2-byo__snippet">
-            <div className="v2-byo__snippet-head">
-              <span>{t('agentByo.snippets.claudeCode')}</span>
+          {listenAdapter === 'claude' && (
+            <div className="v2-byo__snippet" data-testid="byo-mcp-claude">
+              <div className="v2-byo__snippet-head">
+                <span>{t('agentByo.snippets.claudeCode')}</span>
+              </div>
+              <p className="v2-byo__hint">{t('agentByo.snippets.claudeCodeBody', { name: issued.agentName })}</p>
+              <div className="v2-byo__command">
+                <pre className="v2-byo__pre">{claudeSnippet}</pre>
+                <button type="button" onClick={() => copy('claude', claudeSnippet)} className="v2-byo__copy">
+                  {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+                </button>
+              </div>
             </div>
-            <div className="v2-byo__command">
-              <pre className="v2-byo__pre">{claudeSnippet}</pre>
-              <button type="button" onClick={() => copy('claude', claudeSnippet)} className="v2-byo__copy">
-                {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
-              </button>
-            </div>
-          </div>
+          )}
 
-          <div className="v2-byo__snippet">
-            <div className="v2-byo__snippet-head">
-              <span>{t('agentByo.snippets.cursor')}</span>
+          <details className="v2-byo__more" data-testid="byo-result-more-ways">
+            <summary>{t('agentByo.otherWays.title')}</summary>
+            <div className="v2-byo__snippet">
+              <div className="v2-byo__snippet-head">
+                <span>{t('agentByo.snippets.runtimeToken')}</span>
+              </div>
+              <div className="v2-byo__command">
+                <pre className="v2-byo__pre">{issued.token}</pre>
+                <button type="button" onClick={() => copy('tok', issued.token)} className="v2-byo__copy">
+                  {copied === 'tok' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+                </button>
+              </div>
             </div>
-            <div className="v2-byo__command">
-              <pre className="v2-byo__pre">{cursorSnippet}</pre>
-              <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">
-                {copied === 'cursor' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
-              </button>
+            <div className="v2-byo__snippet">
+              <div className="v2-byo__snippet-head">
+                <span>{t('agentByo.snippets.cursor')}</span>
+              </div>
+              <div className="v2-byo__command">
+                <pre className="v2-byo__pre">{cursorSnippet}</pre>
+                <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">
+                  {copied === 'cursor' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+                </button>
+              </div>
             </div>
-          </div>
+          </details>
 
 
           <div className="v2-byo__snippet">

@@ -93,7 +93,7 @@ describe('BYO on-my-computer mode', () => {
 
     // On "Bring your own runtime", the token wording is correct.
     fireEvent.click(screen.getByTestId('byo-mode-byo'));
-    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once your runtime connects with the token.');
+    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once the command is running.');
 
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
     expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once the daemon on Sam’s MacBook starts it.');
@@ -141,7 +141,7 @@ describe('BYO on-my-computer mode', () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
-    fireEvent.change(screen.getByRole('combobox', { name: /install into pod/i }), { target: { value: 'p2' } });
+    fireEvent.change(screen.getByRole('combobox', { name: /pod it joins/i }), { target: { value: 'p2' } });
     // The effect refetches on podId change; the mode must survive it.
     await waitFor(() => expect(screen.getByText('Add to this computer')).toBeInTheDocument());
     expect(screen.getByTestId('byo-mode-machine')).toHaveAttribute('aria-pressed', 'true');
