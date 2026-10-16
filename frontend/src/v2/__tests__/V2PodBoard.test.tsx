@@ -109,6 +109,51 @@ beforeEach(() => {
 });
 
 describe('V2PodBoard', () => {
+  test('shows the claim holder and local expiry, then hides the lease without a reload', async () => {
+    const NativeDateTimeFormat = Intl.DateTimeFormat;
+    const dateTimeFormatSpy = jest.spyOn(Intl, 'DateTimeFormat').mockImplementation((locale, options) => new NativeDateTimeFormat(locale, {
+      timeZone: 'America/Los_Angeles',
+      ...options,
+    }));
+    const now = new Date('2026-10-15T22:00:00.000Z');
+    const expiresAt = new Date(now.getTime() + 60_000).toISOString();
+    const task = {
+      taskId: 'TASK-269', title: 'Show the lease', status: 'claimed',
+      assignee: 'someone-else', claimedBy: 'forge-id', claimExpiresAt: expiresAt, updates: [],
+    };
+    const holderFromUpdate = {
+      taskId: 'TASK-270', title: 'Renew the lease', status: 'claimed',
+      claimedBy: 'kai-id', claimExpiresAt: expiresAt,
+      updates: [{ text: 'Lease renewed', author: 'Kai', authorId: 'kai-id' }],
+    };
+    jest.useFakeTimers({ now });
+    axios.get.mockImplementation((url) => {
+      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: [task, holderFromUpdate] } });
+      if (url.endsWith('/focus')) return Promise.resolve({ data: FOCUS });
+      if (url.startsWith('/api/pods/')) return Promise.resolve({ data: {
+        name: 'My Workspace', members: [{ _id: 'forge-id', username: 'forge', displayName: 'Forge' }],
+      } });
+      return Promise.resolve({ data: {} });
+    });
+
+    try {
+      renderBoard();
+      await act(async () => { await Promise.resolve(); });
+      expect(new Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('America/Los_Angeles');
+      expect(screen.getByText('Forge holds this until 15:01')).toBeInTheDocument();
+      expect(screen.getByText('Kai holds this until 15:01')).toBeInTheDocument();
+
+      act(() => { jest.advanceTimersByTime(59_999); });
+      expect(screen.getByText('Forge holds this until 15:01')).toBeInTheDocument();
+      act(() => { jest.advanceTimersByTime(1); });
+      expect(screen.queryByText(/holds this until/)).not.toBeInTheDocument();
+      expect(axios.get.mock.calls.filter(([url]) => url.startsWith('/api/v1/tasks/'))).toHaveLength(1);
+    } finally {
+      jest.useRealTimers();
+      dateTimeFormatSpy.mockRestore();
+    }
+  });
+
   test('renders four canonical columns and places alias statuses in them', async () => {
     renderBoard();
 
