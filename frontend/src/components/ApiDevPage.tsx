@@ -22,6 +22,15 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useV2Embedded } from '../v2/hooks/useV2Embedded';
 
+// The two dev panels call /api/dev, which a backend mounts only when it sets
+// COMMONLY_ENABLE_DEV_ROUTES=true (backend/config/devRoutes). Deployed
+// instances do not, so there these calls answer 404.
+export const DEV_ROUTES_NOTE = 'Only where the backend sets COMMONLY_ENABLE_DEV_ROUTES=true (local docker-compose.dev.yml). Deployed instances answer 404.';
+export const DEV_ROUTES_OFF = 'Dev routes are off on this server. They exist only where the backend sets COMMONLY_ENABLE_DEV_ROUTES=true.';
+export const devRouteErrorMessage = (error) => (
+    error?.response?.status === 404 ? DEV_ROUTES_OFF : (error?.response?.data?.error || error?.message)
+);
+
 const ApiDevPage = () => {
     const v2Embedded = useV2Embedded();
     const [responses, setResponses] = useState({});
@@ -601,7 +610,7 @@ const ApiDevPage = () => {
             setLlmStatus(res.data);
             setLlmStatusError(null);
         } catch (error) {
-            setLlmStatusError(error.response?.data?.error || error.message);
+            setLlmStatusError(devRouteErrorMessage(error));
         } finally {
             setLlmStatusLoading(false);
         }
@@ -627,7 +636,7 @@ const ApiDevPage = () => {
             });
             setDevEventSuccess(res.data);
         } catch (error) {
-            setDevEventError(error.response?.data?.error || error.message);
+            setDevEventError(devRouteErrorMessage(error));
         } finally {
             setDevEventLoading(false);
         }
@@ -705,6 +714,7 @@ const ApiDevPage = () => {
                                 <Typography variant="body2" color="text.secondary">
                                     Check LiteLLM + Gemini availability and the configured embedding provider.
                                 </Typography>
+                                <Typography variant="caption" color="text.secondary">{DEV_ROUTES_NOTE}</Typography>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                                     <Button
                                         variant="contained"
@@ -783,6 +793,7 @@ const ApiDevPage = () => {
                                 <Typography variant="body2" color="text.secondary">
                                     Enqueue a test agent event to exercise bridges like Clawdbot.
                                 </Typography>
+                                <Typography variant="caption" color="text.secondary">{DEV_ROUTES_NOTE}</Typography>
                                 <Grid container spacing={2}>
                                     <Grid item xs={12} md={4}>
                                         <TextField

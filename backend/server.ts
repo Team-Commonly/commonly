@@ -288,7 +288,6 @@ app.use('/api/admin/agents/events', agentEventsAdminRoutes); // Admin agent even
 app.use('/api/admin/users', adminUsersRoutes); // Admin user + invitation management
 app.use('/api/admin/analytics', adminAnalyticsRoutes); // Admin activation-funnel analytics (GH#661)
 app.use('/api/admin/installables', adminInstallableRoutes); // Owner-private connector pause/resume
-app.use('/api/dev', devRoutes); // Dev tooling (LLM status, etc.)
 app.use('/api/health', healthRoutes); // Health check endpoints
 app.use('/api/stats', statsRoutes); // Public stats (no auth)
 app.use('/api/email', emailRoutes); // Public digest unsubscribe links
@@ -307,8 +306,10 @@ app.use('/api/agent-memory', require('./routes/agentMemoryView'));
 app.use('/api/admin/pods', adminPodsRoutes); // Admin pod ops (showcase toggle)
 app.use('/api/pods', agentEnsembleRoutes); // Agent Ensemble Pod endpoints
 
-// Test routes (development only)
-if (process.env.NODE_ENV === 'development') {
+// Dev tooling and test routes: opt-in only (config/devRoutes), never NODE_ENV,
+// which a deployed instance can set to `development`.
+if (require('./config/devRoutes').devRoutesEnabled()) {
+  app.use('/api/dev', devRoutes); // Dev tooling (LLM status, enqueue an agent event)
   const testBotRoutes = require('./routes/test-bot');
   app.use('/api/test/bot', testBotRoutes);
 }
