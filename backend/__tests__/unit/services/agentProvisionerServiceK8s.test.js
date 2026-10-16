@@ -34,6 +34,8 @@ const mock = {
     // these, so this is the only place a test can assert on the delivered file
     // rather than on the source that composes it.
     execCommands: [],
+    // What the next exec writes to its stdout sink; empty = no output.
+    execStdout: '',
   };
 
   class KubeConfig {
@@ -69,6 +71,11 @@ const mock = {
       statusCallback,
     ) {
       mock.execCommands.push(Array.isArray(_command) ? _command.join(' ') : String(_command));
+      if (mock.execStdout && _stdout && typeof _stdout.write === 'function') {
+        _stdout.write(mock.execStdout);
+        if (typeof statusCallback === 'function') setImmediate(() => statusCallback({ status: 'Success' }));
+        return Promise.resolve();
+      }
       if (typeof statusCallback === 'function') {
         statusCallback({ status: 'Success' });
       }
@@ -85,7 +92,9 @@ const mock = {
 });
 
 const k8s = require('@kubernetes/client-node');
-const { restartAgentRuntime, provisionAgentRuntime } = require('../../../services/agentProvisionerServiceK8s');
+const {
+  restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey,
+} = require('../../../services/agentProvisionerServiceK8s');
 const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
 
 describe('agentProvisionerServiceK8s', () => {
@@ -417,3 +426,98 @@ describe('HEARTBEAT.md delivery — cycle directive reaches unmatched agents', (
     expect(script).toContain(`! grep -qF "${CYCLES_DIRECTIVE_MARKER}"`);
   });
 });
+
+// The reuse read that decides whether a reprovision mints a new LiteLLM key.
+// Reading only openai-codex:codex-cli (the JWT slot under CODEX_BYPASS_LITELLM)
+// never found the key, so every reprovision minted one: 5,891 orphans by 07-01.
+describe('buildPvcVirtualKeyReadScript', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const vm = require('vm');
+  const { execFileSync } = require('child_process');
+
+  let stateDir;
+  beforeEach(() => {
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pvc-key-'));
+  });
+  afterEach(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+
+  const writeProfiles = (agentId, profiles) => {
+    const dir = path.join(stateDir, 'agents', agentId, 'agent');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'auth-profiles.json'), JSON.stringify({ profiles }));
+  };
+  const read = (agentId) => execFileSync('sh', ['-c', buildPvcVirtualKeyReadScript(agentId, stateDir)]).toString();
+
+  it('finds the virtual key in openrouter:default when codex-cli holds the ChatGPT JWT', () => {
+    writeProfiles('liz', {
+      'openrouter:default': { key: 'sk-virtual-liz' },
+      'openai-codex:codex-cli': { access: 'eyJhbGciOiJSUzI1NiJ9.jwt' },
+    });
+    expect(read('liz')).toBe('sk-virtual-liz');
+  });
+
+  it('falls back to codex-cli.access, and never returns a real OpenRouter key', () => {
+    writeProfiles('theo', {
+      'openrouter:default': { key: 'sk-or-v1-real-openrouter' },
+      'openai-codex:codex-cli': { access: 'sk-virtual-theo' },
+    });
+    expect(read('theo')).toBe('sk-virtual-theo');
+  });
+
+  it('prints nothing when there is no profile file', () => {
+    expect(read('nobody')).toBe('');
+  });
+
+  it('is plain JavaScript, so it parses on a gateway Node that does not strip types', () => {
+    const script = buildPvcVirtualKeyReadScript('liz');
+    const body = script.slice('node -e "'.length, -1);
+    expect(() => new vm.Script(body)).not.toThrow();
+  });
+});
+
+// The issuance-failure fallback writes LITELLM_MASTER_KEY into the same slots
+// the reuse read looks at. The dev issuer has no master-key guard of its own,
+// so the read must never return it: otherwise the master key goes to
+// /key/info and then /key/delete.
+describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
+  const axios = require('axios');
+  const MASTER = 'sk-master-for-test';
+  let saved;
+  beforeEach(() => {
+    saved = { base: process.env.LITELLM_BASE_URL, master: process.env.LITELLM_MASTER_KEY };
+    process.env.LITELLM_BASE_URL = 'http://litellm:4000';
+    process.env.LITELLM_MASTER_KEY = MASTER;
+    jest.spyOn(axios, 'get').mockResolvedValue({ data: { info: { metadata: { agent_id: 'theo' } } } });
+    jest.spyOn(axios, 'delete').mockResolvedValue({});
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-freshly-issued' } });
+  });
+  afterEach(() => {
+    k8s.__mock.execStdout = '';
+    jest.restoreAllMocks();
+    if (saved.base === undefined) delete process.env.LITELLM_BASE_URL; else process.env.LITELLM_BASE_URL = saved.base;
+    if (saved.master === undefined) delete process.env.LITELLM_MASTER_KEY; else process.env.LITELLM_MASTER_KEY = saved.master;
+  });
+
+  it('with the master key in openrouter:default, makes no /key/info or /key/delete call and mints a fresh key', async () => {
+    k8s.__mock.execStdout = MASTER; // what the read script prints for that profile
+
+    const key = await issueLiteLLMVirtualKey('theo');
+
+    expect(key).toBe('sk-freshly-issued');
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.delete).not.toHaveBeenCalled();
+    for (const [url] of axios.post.mock.calls) expect(url).not.toContain(MASTER);
+  });
+
+  it('control: an ordinary virtual key IS checked with /key/info and reused', async () => {
+    k8s.__mock.execStdout = 'sk-virtual-theo';
+
+    const key = await issueLiteLLMVirtualKey('theo');
+
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/key/info?key=sk-virtual-theo'), expect.anything());
+    expect(key).toBe('sk-virtual-theo');
+  });
+});
+
