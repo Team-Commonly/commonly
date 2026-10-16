@@ -182,6 +182,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-byo__hint')).toContain('margin: 0');
   });
 
+  // #2287 (QA BYO walk 1): "Other ways to connect" folds the alternatives so the
+  // page shows one command, and the needs line is read before the Copy button.
+  // jsdom cannot see either; sprint-review deleted all three rules and every
+  // other test stayed green.
+  test('BYO "Other ways" is a spaced disclosure with a link-like summary, and the needs line reads as body', () => {
+    expect(ruleBody(v2, '.v2-root .v2-byo__more')).toContain('gap: 12px');
+    expect(ruleBody(v2, '.v2-root .v2-byo__more > summary')).toContain('cursor: pointer');
+    expect(ruleBody(v2, '.v2-root .v2-byo__more > summary')).toContain('color: var(--v2-accent-text)');
+    expect(ruleBody(v2, '.v2-root .v2-byo__needs')).toContain('color: var(--v2-text-primary)');
+  });
+
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     // Direction C: the name sits in its own column of the card head; the
     // crush guard is min-width 0 on the name and the head, not a flex basis.

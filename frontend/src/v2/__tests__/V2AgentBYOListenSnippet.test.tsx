@@ -76,16 +76,30 @@ describe('BYO listener snippet', () => {
       .toContain('cm_agent_test_token');
   });
 
-  test('what it needs is said before the copy, and Codex users get a Codex command', async () => {
+  // sprint-review on #2287: one test carried four properties, so a break named
+  // the wrong one. One property per test.
+  const listenCommand = () => Array.from(document.querySelectorAll('.v2-byo__pre'))
+    .find((el) => /commonly agent run /.test(el.textContent || ''));
+
+  test('what it needs is said before the command it is about', async () => {
     await issueToken();
-    expect(screen.getByTestId('byo-listen-needs'))
-      .toHaveTextContent(/Node 18\+ with npm, and Claude Code installed and signed in/);
+    const needs = screen.getByTestId('byo-listen-needs');
+    expect(needs).toHaveTextContent(/Node 18\+ with npm, and Claude Code installed and signed in/);
+    // eslint-disable-next-line no-bitwise
+    expect(needs.compareDocumentPosition(listenCommand()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('"I use Codex instead" gives a Codex command and says Codex is what it needs', async () => {
+    await issueToken();
     fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
-    const pre = Array.from(document.querySelectorAll('.v2-byo__pre'))
-      .find((el) => /commonly agent run /.test(el.textContent || ''));
-    expect((pre.textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
+    expect((listenCommand().textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
     expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI installed and signed in/);
-    // The Claude Code MCP line is for Claude Code; it goes with the switch.
+  });
+
+  test('the Claude Code MCP line shows for Claude Code only', async () => {
+    await issueToken();
+    expect(screen.getByTestId('byo-mcp-claude')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
     expect(screen.queryByTestId('byo-mcp-claude')).toBeNull();
   });
 
