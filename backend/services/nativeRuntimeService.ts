@@ -37,6 +37,7 @@ import { isSandboxConfigured, TurnSandbox } from './turnSandboxService';
 import { isSearchConfigured, searchWeb } from './webSearchService';
 import { getFromPublicAddress, isOutboundUrlRefused } from './outboundUrlGuard';
 import { GivenAddresses } from './webAddressProvenance';
+import { nativeCueFromKernel } from './nativeKernelCue';
 import { untrustedConnectorMarker } from './brokerResultMarker';
 import {
   engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline, hostedNativeRunConfig, hostedRunsNative,
@@ -234,6 +235,26 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'commonly_list_tasks',
+      description:
+        'List the tasks on this pod\'s board, each with its id, title, status and assignee, '
+        + 'most recently updated first. Read it before saying anything about what is or is '
+        + 'not on the board.',
+      parameters: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['open', 'done', 'all'],
+            description: 'open (the default) is pending, claimed and blocked tasks.',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'commonly_propose_action',
       description:
         'Propose an action that needs the workspace owner\'s approval. Posts an '
@@ -376,6 +397,9 @@ export const TOOLS = [
   },
 ] as const;
 
+/** Every tool a native turn can be offered, by name. */
+export const NATIVE_TOOL_NAMES: readonly string[] = TOOLS.map((tool) => tool.function.name);
+
 // Tools an install gets only by declaring them: proposing an approval,
 // offering hosting (Scout's), running code (TASK-266), which also needs a
 // sandbox key on the instance, web search (TASK-267a), which needs a search
@@ -417,6 +441,9 @@ const MAX_WEB_SEARCHES_PER_TURN = 3;
 // steered model opens leaks about log2(N) bits a fetch (webAddressProvenance).
 // This cap is what bounds that channel.
 const MAX_WEB_FETCHES_PER_TURN = 3;
+// commonly_list_tasks: the statuses "open" means, and how many rows a turn sees.
+const OPEN_TASK_STATUSES = ['pending', 'claimed', 'blocked'];
+const LIST_TASKS_LIMIT = 25;
 // What a page puts in front of the model. The guard reads up to 1 MB; a turn
 // re-sends its context on every model round, so the model sees the start.
 const MAX_FETCHED_TEXT_CHARS = 24_000;
@@ -504,14 +531,24 @@ export const resolveOwnUserId = async (agentName: string, instanceId: string): P
   }
 };
 
-// Fails closed twice: an unresolved own id admits no message, and a message
-// whose author id is unknown is treated as the agent's own.
+// Only a HUMAN's message gives an address, never an agent's, this one's or
+// another's: two agents steered by the same injected text could otherwise
+// pass an address between them, and another instance of this agent posts
+// under a different user (Cofounder's security read on #2249). Fails closed
+// three times: an unresolved own id admits no message, and a message whose
+// author id or whose bot flag is unknown gives no address. Ids compare
+// lowercased.
 const byOtherAuthors = (
-  messages: Array<{ authorId?: string | null; content?: string }>,
+  messages: Array<{ authorId?: string | null; authorIsBot?: boolean | null; content?: string }>,
   ownUserId: string | null,
-): string[] => (ownUserId === null ? [] : messages
-  .filter((message) => Boolean(message.authorId) && message.authorId !== ownUserId)
-  .map((message) => String(message.content || '')));
+): string[] => {
+  if (ownUserId === null) return [];
+  const own = ownUserId.toLowerCase();
+  return messages
+    .filter((message) => message.authorIsBot === false
+      && Boolean(message.authorId) && String(message.authorId).toLowerCase() !== own)
+    .map((message) => String(message.content || ''));
+};
 
 interface DispatchResult {
   content: unknown;
@@ -794,6 +831,23 @@ async function dispatchTool(
         };
       }
 
+      case 'commonly_list_tasks': {
+        const Task = require('../models/Task');
+        const which = ['done', 'all'].includes(String(args.status)) ? String(args.status) : 'open';
+        const filter: Record<string, unknown> = { podId: ctx.podId };
+        if (which === 'open') filter.status = { $in: OPEN_TASK_STATUSES };
+        if (which === 'done') filter.status = 'done';
+        const [rows, total] = await Promise.all([
+          Task.find(filter).sort({ updatedAt: -1 }).limit(LIST_TASKS_LIMIT)
+            .select('taskId title status assignee').lean(),
+          Task.countDocuments(filter),
+        ]);
+        const tasks = (rows as Array<Record<string, unknown>>).map((row) => ({
+          taskId: row.taskId, title: row.title, status: row.status, assignee: row.assignee || null,
+        }));
+        return { content: { status: which, total, tasks } };
+      }
+
       case 'commonly_agent_status': {
         // One derivation, shared with the pod-agents roster route — the
         // Raft-comparison P4 rule: never fork status vocabulary per surface.
@@ -1052,7 +1106,9 @@ export const resolveSeatUserId = async (
 export async function fetchRecentPodMessages(
   podId: string,
   limit: number,
-): Promise<Array<{ id: string; author: string; authorId: string | null; content: string; createdAt: unknown }>> {
+): Promise<Array<{
+  id: string; author: string; authorId: string | null; authorIsBot: boolean | null; content: string; createdAt: unknown;
+}>> {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const Message = require('../models/pg/Message');
   let rows: Array<Record<string, unknown>> = [];
@@ -1068,17 +1124,24 @@ export async function fetchRecentPodMessages(
     const docs = await MongoMessage.find({ podId })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .populate('userId', 'username')
+      .populate('userId', 'username isBot')
       .lean();
     rows = (docs as Array<Record<string, unknown>>).reverse();
   }
   return rows.map((row) => {
     const user = (row.userId as Record<string, unknown> | undefined) || {};
     const authorId = user._id || row.user_id || row.user_db_id;
+    // A PG row carries the users mirror's `is_bot` as stored (its mapper's
+    // `isBot` reads null as false, so the raw column is read instead); a Mongo
+    // row carries the populated `isBot`. Anything else is unknown: null.
+    let authorIsBot: boolean | null = null;
+    if ('is_bot' in row) authorIsBot = typeof row.is_bot === 'boolean' ? row.is_bot : null;
+    else if (typeof user.isBot === 'boolean') authorIsBot = user.isBot;
     return {
       id: String(row.id || row._id || ''),
       author: (user.username as string) || (row.username as string) || 'unknown',
       authorId: authorId ? String(authorId) : null,
+      authorIsBot,
       content: String(row.content || ''),
       createdAt: row.createdAt || row.created_at || null,
     };
@@ -1417,7 +1480,7 @@ export async function runAgent(
   }
 
   const systemPrompt = buildSystemPrompt(installation, cfg);
-  let userMessage = buildUserMessage(trigger, podName);
+  let userMessage = nativeCueFromKernel(buildUserMessage(trigger, podName), String(podId));
   const model = String(cfg.model || DEFAULT_MODEL);
   // TASK-267b: what commonly_fetch_url may open starts as the prompt and the
   // message this turn answers, before any recent messages are added.
