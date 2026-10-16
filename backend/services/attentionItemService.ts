@@ -107,6 +107,9 @@ const peopleThisAgentIsAnswering = async (
       instanceId: String(author.botMetadata?.instanceId || 'default'),
       replyToMessageId: message?.reply_to_message_id ?? message?.replyToMessageId,
       // Carried from the post, never stored on the row (agentAnswerService).
+      // Only the PG write carries it: the Mongo fallback's post-save hook
+      // (models/Message.ts) passes the document, so with PG down an unclaimed
+      // addressed answer still opens a row. That fails toward showing an ask.
       answeringMessageId: message?.answeringMessageId,
     });
   } catch (error) {

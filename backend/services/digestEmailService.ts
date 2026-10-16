@@ -10,7 +10,9 @@ const SystemSetting = require('../models/SystemSetting');
 /**
  * The switch that stops digest SENDING in seconds, with no deploy and no
  * restart: a system_settings row { key: 'digest.sending', value: { enabled:
- * false } }. No row means on. Generation still runs; only the send stops.
+ * false } }. No row means on. Generation still runs; only the send stops. It
+ * is read before the run and again before each recipient, so flipping it
+ * also stops a run that is already sending.
  * docs/runbooks/daily-digest.md has the one-line flip. Earned 2026-10-16,
  * when the only fallback for a bad run was "land a fix before 06:00Z".
  */
@@ -156,6 +158,14 @@ export class DigestEmailService {
     result.eligible = summaries.length;
 
     for (const summary of summaries) {
+      // Read again per recipient (sprint-review on #2275): the switch is for an
+      // incident, and an incident is often a run that is already sending.
+      // eslint-disable-next-line no-await-in-loop
+      if (!await digestSendingEnabled()) {
+        console.warn(`Digest email delivery stopped mid-run: switched off (${DIGEST_SENDING_KEY}).`);
+        result.disabled = true;
+        break;
+      }
       const userId = summary.metadata?.userId;
       try {
         if (!userId) {

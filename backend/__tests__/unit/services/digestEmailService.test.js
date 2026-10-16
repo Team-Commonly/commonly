@@ -211,6 +211,23 @@ describe('digestEmailService', () => {
       .resolves.toEqual(expect.objectContaining({ disabled: false, sent: 1 }));
   });
 
+  // sprint-review on #2275: the switch is for an incident, and an incident is
+  // often a run that is already sending.
+  it('a switch flipped mid-run stops the recipients after the flip', async () => {
+    const first = await createUser();
+    const second = await createUser();
+    const digests = [await createDigest(first), await createDigest(second)];
+    mockSendEmail.mockImplementationOnce(async () => {
+      await SystemSetting.create({ key: digestEmailService.DIGEST_SENDING_KEY, value: { enabled: false } });
+      return { data: { data: { succeeded: 1 } } };
+    });
+
+    const result = await digestEmailService.sendDigestEmails(digests.map(runEntry));
+
+    expect(result).toEqual(expect.objectContaining({ sent: 1, disabled: true }));
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+  });
+
   it('sends nothing when the switch cannot be read', async () => {
     const user = await createUser();
     const digest = await createDigest(user);
