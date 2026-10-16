@@ -1,0 +1,107 @@
+# Scratch check, never merged to main: does the Bring-your-own path for
+# Claude Code work on Windows PowerShell with a per-user npm prefix (no
+# admin)? It installs the published CLI, exactly as the page tells a person
+# to, and runs the listener against a local stand-in API with a fake token.
+name: Windows BYO smoke (scratch)
+
+on:
+  push:
+    branches: [lily/windows-byo-smoke]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        # Windows PowerShell 5.1: what a company-managed laptop opens.
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/windows-byo-smoke
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Machine facts
+        run: |
+          $PSVersionTable.PSVersion
+          node -v
+          npm -v
+          Write-Output "HOME=$env:HOME USERPROFILE=$env:USERPROFILE APPDATA=$env:APPDATA"
+
+      - name: Per-user npm prefix (no admin)
+        run: |
+          $prefix = Join-Path $env:APPDATA 'npm-user'
+          New-Item -ItemType Directory -Force $prefix | Out-Null
+          npm config set prefix $prefix
+          Add-Content -Path $env:GITHUB_PATH -Value $prefix
+          npm config get prefix
+
+      - name: Install the CLI as the page says
+        run: |
+          $t = Measure-Command { npm i -g @commonlyai/cli@latest | Out-Host }
+          Write-Output ("install took {0:N1}s" -f $t.TotalSeconds)
+
+      - name: commonly --version and where it resolved
+        run: |
+          commonly --version
+          Get-Command commonly -All | Format-Table CommandType, Source -AutoSize
+
+      - name: The page's listener snippet, pasted as written
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Continue'
+          export COMMONLY_API_URL=https://api.commonly.me
+          Write-Output "exit after export: $LASTEXITCODE; COMMONLY_API_URL is now '$env:COMMONLY_API_URL'"
+
+      - name: Claude Code from npm (a claude.cmd / claude.ps1 shim)
+        run: |
+          npm i -g @anthropic-ai/claude-code | Out-Host
+          Get-Command claude -All | Format-Table CommandType, Source -AutoSize
+          claude --version
+          node -e "const r=require('child_process').spawnSync('claude',['--version'],{encoding:'utf8'});console.log('node spawnSync claude ->', r.error ? r.error.code : 'status ' + r.status + ' ' + String(r.stdout).trim())"
+
+      - name: Listener with the npm Claude Code
+        continue-on-error: true
+        run: .\.github\windows-byo-smoke\run-agent.ps1 -Label npm-shim -Seconds 30
+
+      - name: Claude Code native installer (claude.exe)
+        run: |
+          irm https://claude.ai/install.ps1 | iex
+          $bin = Join-Path $env:USERPROFILE '.local\bin'
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          Get-ChildItem $bin | Select-Object -ExpandProperty FullName
+
+      - name: Which claude now, and can node spawn it
+        run: |
+          Get-Command claude -All | Format-Table CommandType, Source -AutoSize
+          claude --version
+          node -e "const r=require('child_process').spawnSync('claude',['--version'],{encoding:'utf8'});console.log('node spawnSync claude ->', r.error ? r.error.code : 'status ' + r.status + ' ' + String(r.stdout).trim())"
+
+      - name: Listener with the native Claude Code
+        continue-on-error: true
+        run: .\.github\windows-byo-smoke\run-agent.ps1 -Label native-exe -Seconds 45
+
+      - name: MCP connection, the page's command as one line (npx direct)
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Continue'
+          claude mcp add commonly -e COMMONLY_API_URL=https://api.commonly.me -e COMMONLY_AGENT_TOKEN=cm_agent_windows_smoke_not_a_real_token -- npx -y @commonlyai/mcp
+          claude mcp get commonly
+          claude mcp list
+          claude mcp remove commonly
+
+      - name: MCP connection through cmd /c npx
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Continue'
+          claude mcp add commonly -e COMMONLY_API_URL=https://api.commonly.me -e COMMONLY_AGENT_TOKEN=cm_agent_windows_smoke_not_a_real_token -- cmd /c npx -y @commonlyai/mcp
+          claude mcp get commonly
+          claude mcp list
+          claude mcp remove commonly
