@@ -29,6 +29,7 @@ jest.mock('../../../models/Pod', () => ({
 const mockUserFindById = jest.fn();
 jest.mock('../../../models/User', () => ({
   findById: (...args) => mockUserFindById(...args),
+  findOne: jest.fn(() => ({ select: () => ({ lean: async () => null }) })),
 }));
 
 const mockInstallFindOne = jest.fn();
@@ -415,6 +416,23 @@ describe('approved connect_local_agent execution — the seat, never the token',
     const resolved = seatRow({ status: 'resolved', decision: 'approved' });
     mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
     mockInstallFindOne.mockResolvedValueOnce({ installedBy: STRANGER }); // foreign probe hits
+
+    const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+
+    expect(res.status).toBe(200);
+    expect(resolved.executionError).toContain('in use by another user');
+    expect(mockInstallUpsert).not.toHaveBeenCalled();
+  });
+
+  test('execution refuses a foreign durable principal after its installation rows disappear', async () => {
+    mockApprovalFindById.mockResolvedValue(seatRow());
+    const resolved = seatRow({ status: 'resolved', decision: 'approved' });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+    const User = require('../../../models/User');
+    User.findOne.mockReturnValueOnce({
+      select: () => ({ lean: async () => ({ botMetadata: { ownerUserId: STRANGER } }) }),
+    });
+    mockInstallFindOne.mockResolvedValue(null);
 
     const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
 

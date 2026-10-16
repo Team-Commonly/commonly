@@ -1,5 +1,6 @@
 /**
- * ADR-003 convergence regression — agent-memory identity-casing split.
+ * TASK-270 closes the old no-install memory path. The bot User and memory
+ * remain for identity continuity, while its retired runtime token gets 401.
  *
  * The bug: `resolveMemoryIdentity` (routes/agentsRuntime.ts) keys the
  * AgentMemory document for every GET/PUT/sync over the HTTP memory boundary.
@@ -10,18 +11,9 @@
  *   - nativeRuntimeService.ts    -> String(installation.agentName || '').toLowerCase()
  *   - agentMemoryService.appendSystemExchange keys { agentName, instanceId } verbatim.
  *
- * The split only surfaces in the identity-continuity case: the bot's
- * AgentInstallation rows are gone (uninstalled / removed) but the User row +
- * its runtime token survive (ADR-001 identity-continuity invariant). With no
- * installation, resolveMemoryIdentity falls through the chain to
- * `botMetadata.agentName` / `username`, which can be mixed-case. A mixed-case
- * key on the agent's GET/PUT diverges from the platform's lowercased key —
- * silent read-after-write split: the agent reads a DIFFERENT doc than the
- * platform writes.
- *
- * This test reproduces exactly that case (mixed-case bot, NO active
- * AgentInstallation) and asserts the agent's PUT and the platform's
- * system_exchange write converge on ONE AgentMemory document.
+ * The old test expected GET/PUT to work without an AgentInstallation, which
+ * let an uninstalled bearer read private memory. That expectation is inverted
+ * under TASK-270; platform writes still preserve the lowercased envelope.
  */
 
 const express = require('express');
@@ -46,7 +38,7 @@ jest.setTimeout(60000);
 const MIXED_AGENT_NAME = 'MixedCase-Agent';
 const RAW_TOKEN = 'cm_agent_mixedcase_identity_regression_token';
 
-describe('AgentMemory — identity-casing convergence (no installation)', () => {
+describe('AgentMemory — uninstalled token cannot reach retained memory (TASK-270)', () => {
   let app;
 
   beforeAll(async () => {
@@ -92,17 +84,15 @@ describe('AgentMemory — identity-casing convergence (no installation)', () => 
     return botUser;
   }
 
-  it('agent PUT and platform system_exchange write converge on ONE doc (lowercased key)', async () => {
+  it('agent PUT is denied while the platform can retain a lowercased memory envelope', async () => {
     await seedMixedCaseBotWithoutInstallation();
 
-    // 1) The agent writes its own memory over the HTTP boundary. With the fix,
-    //    resolveMemoryIdentity lowercases the username-derived agentName.
+    // The old casing regression used this forbidden no-install HTTP path.
     const put = await request(app)
       .put('/api/agents/runtime/memory')
       .set('Authorization', `Bearer ${RAW_TOKEN}`)
       .send({ content: '# MEMORY.md\nproject brain notes' });
-    expect(put.status).toBe(200);
-    expect(put.body.ok).toBe(true);
+    expect(put.status).toBe(401);
 
     // 2) The platform writes a system_exchange. This mirrors EXACTLY how the
     //    platform writers key the doc (systemExchangeTriggers.resolveAgentMembers):
@@ -120,15 +110,13 @@ describe('AgentMemory — identity-casing convergence (no installation)', () => 
     });
     expect(appendResult).not.toBeNull();
 
-    // 3) Exactly ONE AgentMemory document exists for this identity — the agent's
-    //    PUT and the platform's append did NOT split into two casing variants.
+    // Only the platform write creates a document; the refused PUT writes none.
     const allDocs = await AgentMemory.find({}).lean();
     expect(allDocs).toHaveLength(1);
     expect(allDocs[0].agentName).toBe(platformAgentName);
     expect(allDocs[0].instanceId).toBe(platformInstanceId);
 
-    // The single doc holds BOTH the agent's content and the platform's entry.
-    expect(allDocs[0].content).toBe('# MEMORY.md\nproject brain notes');
+    expect(allDocs[0].content).not.toContain('project brain notes');
     expect(allDocs[0].sections.system_exchanges.entries).toHaveLength(1);
     expect(allDocs[0].sections.system_exchanges.entries[0].takeaway)
       .toContain('casing fix');
@@ -138,7 +126,7 @@ describe('AgentMemory — identity-casing convergence (no installation)', () => 
     expect(ghost).toBeNull();
   });
 
-  it('agent GET reads back the platform-written system_exchange (read-after-write across the boundary)', async () => {
+  it('agent GET cannot read the retained platform-written system_exchange', async () => {
     await seedMixedCaseBotWithoutInstallation();
 
     // Platform writes first, keyed the platform way (lowercased agentName).
@@ -152,14 +140,15 @@ describe('AgentMemory — identity-casing convergence (no installation)', () => 
       takeaway: 'concluded the dm',
     });
 
-    // The agent reads its memory over the HTTP boundary and sees the platform's
-    // write — proving both sides resolved the SAME envelope.
+    // Identity continuity keeps this document; auth must still refuse the
+    // uninstalled token before returning its contents.
     const get = await request(app)
       .get('/api/agents/runtime/memory')
       .set('Authorization', `Bearer ${RAW_TOKEN}`);
-    expect(get.status).toBe(200);
-    expect(get.body.sections.system_exchanges.entries).toHaveLength(1);
-    expect(get.body.sections.system_exchanges.entries[0].takeaway)
+    expect(get.status).toBe(401);
+    const retained = await AgentMemory.findOne({ agentName: MIXED_AGENT_NAME.toLowerCase() }).lean();
+    expect(retained.sections.system_exchanges.entries).toHaveLength(1);
+    expect(retained.sections.system_exchanges.entries[0].takeaway)
       .toContain('concluded the dm');
   });
 });

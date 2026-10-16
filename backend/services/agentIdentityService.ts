@@ -159,6 +159,7 @@ export const isReservedAgentEmail = (email: unknown): boolean => (
  */
 /** The refusal's declared code: callers identify it structurally. */
 export const AGENT_USERNAME_CONFLICT_CODE = 'agent_username_conflict';
+export const AGENT_IDENTITY_CONFLICT_CODE = 'agent_identity_conflict';
 
 export class AgentUsernameConflictError extends Error {
   readonly code = AGENT_USERNAME_CONFLICT_CODE;
@@ -177,6 +178,17 @@ export class AgentUsernameConflictError extends Error {
   ) {
     super(`refusing to adopt the existing non-agent account "${username}" (${existingUserId}) as an agent identity`);
     this.name = 'AgentUsernameConflictError';
+  }
+}
+
+export class AgentIdentityConflictError extends Error {
+  readonly code = AGENT_IDENTITY_CONFLICT_CODE;
+
+  readonly status = 409;
+
+  constructor(public readonly username: string) {
+    super(`refusing to bind agent identity to an existing bot account "${username}" with different identity metadata`);
+    this.name = 'AgentIdentityConflictError';
   }
 }
 
@@ -374,6 +386,7 @@ interface GetOrCreateOptions {
   capabilities?: string[];
   botType?: string;
   profilePicture?: string | null;
+  ownerUserId?: string;
 }
 
 /**
@@ -480,6 +493,19 @@ class AgentIdentityService {
     // agent credential looks absent and gets rotated out from under the fleet.
     let agentUser = await User.findOne({ username }).select('+apiToken');
 
+    // buildAgentUsername is not injective: ("foo-bar", "default") and
+    // ("foo", "bar") both address "foo-bar". Check even pre-isBot legacy
+    // rows before either upgrade or refresh can adopt the wrong principal.
+    const storedIdentity = agentUser?.botMetadata;
+    if (options.ownerUserId && storedIdentity?.ownerUserId
+      && String(storedIdentity.ownerUserId) !== String(options.ownerUserId)) {
+      throw new AgentIdentityConflictError(username);
+    }
+    if ((storedIdentity?.agentName && storedIdentity.agentName !== resolvedType)
+      || (storedIdentity?.instanceId && storedIdentity.instanceId !== instanceId)) {
+      throw new AgentIdentityConflictError(username);
+    }
+
     // Determine if this is an official (default instance) agent
     const isOfficial = instanceId === 'default' && !!typeConfig;
 
@@ -496,6 +522,7 @@ class AgentIdentityService {
         capabilities: options.capabilities || typeConfig?.capabilities || [],
         agentName: resolvedType,
         instanceId,
+        ...(options.ownerUserId ? { ownerUserId: String(options.ownerUserId) } : {}),
         runtime: typeConfig?.runtime || 'unknown',
       };
 
@@ -555,6 +582,7 @@ class AgentIdentityService {
         capabilities: options.capabilities || typeConfig?.capabilities || [],
         agentName: resolvedType,
         instanceId,
+        ...(options.ownerUserId ? { ownerUserId: String(options.ownerUserId) } : {}),
         runtime: typeConfig?.runtime || 'unknown',
       };
       await agentUser.save();
@@ -576,7 +604,8 @@ class AgentIdentityService {
         || existingMeta.agentName !== resolvedType
         || existingMeta.instanceId !== instanceId
         || !existingMeta.runtime
-        || !hasStoredDisplayName;
+        || !hasStoredDisplayName
+        || (options.ownerUserId && !existingMeta.ownerUserId);
       if (needsUpdate) {
         const refreshRawDisplayName = hasStoredDisplayName
           ? String(existingMeta.displayName)
@@ -591,6 +620,7 @@ class AgentIdentityService {
           capabilities: options.capabilities || existingMeta.capabilities || typeConfig?.capabilities || [],
           agentName: resolvedType,
           instanceId,
+          ...(options.ownerUserId ? { ownerUserId: String(options.ownerUserId) } : {}),
           runtime: existingMeta.runtime || typeConfig?.runtime || 'unknown',
         };
         await agentUser.save();

@@ -29,6 +29,7 @@ const { notifyPodAgents } = require('../../services/taskEventService');
 const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
 const User = require('../../models/User');
+const { AgentInstallation } = require('../../models/AgentRegistry');
 const tasksApiRoutes = require('../../routes/tasksApi');
 const { hash } = require('../../utils/secret');
 const {
@@ -91,6 +92,10 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       type: 'team',
       createdBy: owner._id,
       members: [owner._id, rival._id, agent._id],
+    });
+    await AgentInstallation.create({
+      agentName: 'claim-audit-agent', instanceId: 'default', podId: pod._id,
+      version: '1.0.0', installedBy: owner._id,
     });
     ownerToken = generateTestToken(owner._id);
     rivalToken = generateTestToken(rival._id);

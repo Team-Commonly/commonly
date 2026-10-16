@@ -28,6 +28,10 @@ jest.mock('../../../services/agentIdentityService', () => ({
   )),
   removeAgentFromPod: jest.fn(),
 }));
+const mockRevokeAfterLastUninstall = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../../routes/registry/tokens', () => ({
+  revokeRuntimeTokensAfterLastUninstall: (...args) => mockRevokeAfterLastUninstall(...args),
+}));
 
 const Pod = require('../../../models/Pod');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
@@ -103,6 +107,7 @@ describe('registry remove agent permissions', () => {
     await deleteHandler(req, res);
 
     expect(AgentInstallation.uninstall).toHaveBeenCalledWith('openclaw', 'pod-1', 'default');
+    expect(mockRevokeAfterLastUninstall).toHaveBeenCalledWith('openclaw', 'default');
     expect(AgentProfile.deleteOne).toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });

@@ -117,7 +117,7 @@ silent agent (the #887 failure class).
 
 `run` is stateless between invocations. If you hit Ctrl+C, close the laptop, or lose network:
 - Unack'd events sit in the kernel queue
-- The runtime token is preserved on the agent's `User` row
+- The runtime token remains valid while the agent has an active installation
 - Session IDs persist in `~/.commonly/sessions/<name>.json`
 
 Running `commonly agent run <name>` again picks up the queued events and resumes the per-pod session.
@@ -173,9 +173,9 @@ Removes all three pieces of state `attach` created:
 
 **Idempotent:** if the backend returns 404 (already uninstalled via UI), the CLI still cleans up local files and reports success.
 
-**`--force`:** skips the backend call, cleans local state only. Use when the backend is unreachable OR the agent was already removed via another path and you just want the local files gone. Caveat: `--force` does NOT revoke the runtime token on the backend — anyone still holding the `cm_agent_*` value in another shell or stored elsewhere can continue to poll until `agentInstallationCleanupService` GCs it (7 days after all installs go inactive). If that matters for your threat model, uninstall via the backend first (drop `--force`).
+**`--force`:** skips the backend call and cleans local state only. Use when the backend is unreachable or the agent was already removed via another path. If an active installation remains on the backend, its runtime token remains valid; uninstall through the backend when it becomes reachable. If the last installation was already removed through the backend, its token is revoked there.
 
-**Identity continuity (ADR-001):** The agent's `User` row survives detach. Memory envelope survives too (per ADR-003 invariant #7). Re-attaching with the same name re-enters the pod with the agent's prior identity and memory intact.
+**Identity continuity (ADR-001):** The agent's `User` row survives detach. Memory envelope survives too (per ADR-003 invariant #7). The self-serve identity keeps its original owner; that owner can re-attach with the same name and recover the prior identity and memory. Another owner must choose a different name.
 
 ---
 
@@ -184,7 +184,7 @@ Removes all three pieces of state `attach` created:
 - The agent's `User` row (intentional — identity continuity)
 - The memory envelope at `/api/agents/runtime/memory` (intentional — reinstall should find it)
 - Any other pod memberships the agent has (detach is pod-scoped)
-- The runtime token on the `User` row — GC'd by `agentInstallationCleanupService` ~7 days after all installs go inactive, to avoid race conditions with other pods still using it
+- Runtime credentials while another pod still has an active installation. Removing the last installation revokes the credentials, clears stored token copies, and disconnects the agent's socket. Reinstalling the same identity needs a newly issued token.
 
 If you want to purge an agent's identity entirely (admin-only), contact a Commonly admin — no first-class CLI command exists for this yet.
 

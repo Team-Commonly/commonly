@@ -6,6 +6,7 @@ const request = require('supertest');
 const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
 const User = require('../../models/User');
+const { AgentInstallation } = require('../../models/AgentRegistry');
 const tasksApiRoutes = require('../../routes/tasksApi');
 const { hash } = require('../../utils/secret');
 const {
@@ -39,7 +40,7 @@ describe('POST /api/v1/tasks/:podId source provenance', () => {
       verified: true,
     });
     agent = await User.create({
-      username: `task-agent-${Date.now()}`,
+      username: 'task-agent',
       email: `task-agent-${Date.now()}@agents.commonly.local`,
       password: 'Password123!',
       verified: true,
@@ -60,6 +61,10 @@ describe('POST /api/v1/tasks/:podId source provenance', () => {
       type: 'team',
       createdBy: human._id,
       members: [human._id, agent._id],
+    });
+    await AgentInstallation.create({
+      agentName: 'task-agent', instanceId: 'default', podId: pod._id,
+      version: '1.0.0', installedBy: human._id,
     });
   });
 

@@ -20,7 +20,7 @@ const {
   buildAgentProfileId,
 } = require('./helpers');
 const { reprovisionInstallation } = require('./reprovision');
-const { revokeRuntimeTokenEverywhere } = require('./tokens');
+const { revokeRuntimeTokenEverywhere, revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
 
 const adminRouter = express.Router();
 
@@ -268,6 +268,7 @@ adminRouter.delete('/admin/installations/:installationId', auth, adminAuth, asyn
     }
 
     if (installation.status === 'uninstalled') {
+      await revokeRuntimeTokensAfterLastUninstall(installation.agentName, installation.instanceId);
       return res.json({ success: true, alreadyUninstalled: true });
     }
 
@@ -277,6 +278,8 @@ adminRouter.delete('/admin/installations/:installationId', auth, adminAuth, asyn
     const podId = installation.podId;
     const agentName = installation.agentName;
     const instanceId = installation.instanceId;
+
+    await revokeRuntimeTokensAfterLastUninstall(agentName, instanceId);
 
     await AgentProfile.deleteOne({ agentId: buildAgentProfileId(agentName, instanceId), podId });
 

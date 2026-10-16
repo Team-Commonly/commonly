@@ -16,8 +16,12 @@ const AgentIdentityService = require('../../services/agentIdentityService');
 // caught value), and a test that mocks the identity service drops the class
 // entirely — which made the catch itself throw. The default keeps the literal
 // correct even when the export is missing; the service owns the value.
-const { AGENT_USERNAME_CONFLICT_CODE = 'agent_username_conflict' } = require('../../services/agentIdentityService') as {
+const {
+  AGENT_USERNAME_CONFLICT_CODE = 'agent_username_conflict',
+  AGENT_IDENTITY_CONFLICT_CODE = 'agent_identity_conflict',
+} = require('../../services/agentIdentityService') as {
   AGENT_USERNAME_CONFLICT_CODE?: string;
+  AGENT_IDENTITY_CONFLICT_CODE?: string;
 };
 const AgentMessageService = require('../../services/agentMessageService');
 const { deriveAgentState } = require('../../services/agentStateService');
@@ -40,6 +44,7 @@ const {
 } = require('./helpers');
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
+  revokeRuntimeTokensAfterLastUninstall,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
@@ -207,11 +212,29 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       });
     }
 
+    let normalizedInstanceId;
+    if (instanceId) {
+      normalizedInstanceId = normalizeInstanceId(instanceId);
+      if (normalizedInstanceId === agentName.toLowerCase()) normalizedInstanceId = 'default';
+    } else {
+      normalizedInstanceId = deriveInstanceId(displayName, agentName);
+    }
+
     let agent = await AgentRegistry.getByName(agentName);
 
     if (agent && agent.status === 'unpublished') {
       return res.status(410).json({
         error: 'This manifest has been unpublished by its author.',
+      });
+    }
+
+    // Ephemeral registry names are owned for their whole lifetime, including
+    // after uninstall. A per-instance installation check cannot protect a
+    // second instance (or a bot User row whose name collides with one).
+    if (agent?.ephemeral && String(agent.publisher?.userId || '') !== String(userId)) {
+      return res.status(409).json({
+        code: 'agent_name_taken',
+        error: `The agent name "${safeAgentName}" is already in use by another user — please choose a different name.`,
       });
     }
 
@@ -253,6 +276,26 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
           error: 'Invalid agentName: must match /^(@[a-z0-9-]+\\/)?[a-z0-9-]+$/',
         });
       }
+      // A different (agentName, instanceId) can derive the same bot username.
+      // Refuse before creating an ephemeral registry row; the identity service
+      // repeats this check at the write boundary for concurrent callers.
+      const resolvedType = AgentIdentityService.resolveAgentType(safeAgentName);
+      const candidateUsername = AgentIdentityService.buildAgentUsername(resolvedType, normalizedInstanceId);
+      const existingPrincipal = await User.findOne({ username: candidateUsername, isBot: true })
+        .select('botMetadata.agentName botMetadata.instanceId botMetadata.ownerUserId').lean();
+      // With no registry owner to verify, a legacy unowned bot is ambiguous.
+      // Do not let the first new installer claim its User and memory.
+      if ((existingPrincipal && (!existingPrincipal.botMetadata?.ownerUserId
+          || String(existingPrincipal.botMetadata.ownerUserId) !== String(userId)))
+        || (existingPrincipal?.botMetadata?.agentName
+          && existingPrincipal.botMetadata.agentName !== resolvedType)
+        || (existingPrincipal?.botMetadata?.instanceId
+          && existingPrincipal.botMetadata.instanceId !== normalizedInstanceId)) {
+        return res.status(409).json({
+          code: AGENT_IDENTITY_CONFLICT_CODE,
+          error: `The agent identity "${candidateUsername}" is already in use. Choose a different name.`,
+        });
+      }
       // manifest.runtime.type is the registry-level deployment shape
       // (enum: 'standalone' | 'commonly-hosted' | 'hybrid'). Self-serve
       // webhook agents run outside Commonly so they map to 'standalone'.
@@ -283,16 +326,6 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         agent: synthManifest.name,
         runtime: requestedRuntimeType,
       });
-    }
-
-    let normalizedInstanceId;
-    if (instanceId) {
-      normalizedInstanceId = normalizeInstanceId(instanceId);
-      if (normalizedInstanceId === agentName.toLowerCase()) {
-        normalizedInstanceId = 'default';
-      }
-    } else {
-      normalizedInstanceId = deriveInstanceId(displayName, agentName);
     }
 
     const existingInPod = await AgentInstallation.findOne({
@@ -610,6 +643,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // Identity before the installation row (TASK-133 b): a refused identity must
     // not leave an AgentInstallation behind, and that refusal is the one error in
     // this block that is not best-effort. Probed first, a 409 writes nothing.
+    let agentUser: any;
     try {
       // Task #62: don't clobber a curated per-instance displayName with the
       // AgentRegistry's default. When installing a NEW pod for an EXISTING
@@ -646,8 +680,9 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         ) || matchingTemplates.find((candidate: any) => candidate.visibility === 'public');
         avatarSeed = normalizeAvatarUrl(template?.iconUrl) || avatarSeed;
       }
-      const agentUser = await AgentIdentityService.getOrCreateAgentUser(agent.agentName, {
+      agentUser = await AgentIdentityService.getOrCreateAgentUser(agent.agentName, {
         instanceId: normalizedInstanceId,
+        ...(agent.ephemeral ? { ownerUserId: String(userId) } : {}),
         ...(explicitDisplayName ? { displayName: explicitDisplayName } : {}),
         ...(explicitDescription ? { description: explicitDescription } : {}),
         ...(avatarSeed ? { profilePicture: avatarSeed } : {}),
@@ -658,7 +693,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       // swallowing it would answer 2xx and leave an AgentInstallation row with
       // no identity behind it. Every other identity failure stays best-effort.
       const refusal = identityError as { code?: string; message?: string; username?: string };
-      if (refusal?.code === AGENT_USERNAME_CONFLICT_CODE) {
+      if (refusal?.code === AGENT_USERNAME_CONFLICT_CODE || refusal?.code === AGENT_IDENTITY_CONFLICT_CODE) {
         return res.status(409).json({
           error: refusal.message,
           code: refusal.code,
@@ -669,6 +704,18 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         return res.status(403).json({ code: refusal.code, message: refusal.message });
       }
       console.warn('Failed to provision agent user identity:', (identityError as Error).message);
+    }
+
+    // A pre-fix uninstall may have left a bearer on the durable bot User or
+    // dormant installation. Reinstall must not make that old bearer live again.
+    if (!isReusingExistingAgent) {
+      const dormantInstall = await AgentInstallation.findOne({
+        agentName: safeAgentName, instanceId: normalizedInstanceId, status: 'uninstalled',
+      });
+      if (dormantInstall) {
+        if (!agentUser) throw new Error('Cannot reinstall without resolving agent identity');
+        await revokeRuntimeTokensAfterLastUninstall(safeAgentName, normalizedInstanceId);
+      }
     }
 
     const installation = await AgentInstallation.install(agentName, podId, {

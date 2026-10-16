@@ -8,6 +8,7 @@ const AgentTemplate = require('../../models/AgentTemplate');
 const AgentEvent = require('../../models/AgentEvent');
 const Pod = require('../../models/Pod');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const { revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
 const {
   getUserId,
   isGlobalAdminUser,
@@ -59,6 +60,8 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
       }
 
       await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
+      // Older uninstall paths could leave a bearer on an orphaned User row.
+      await revokeRuntimeTokensAfterLastUninstall(name, instanceId);
       try {
         const resolvedType = AgentIdentityService.resolveAgentType(name);
         await AgentIdentityService.removeAgentFromPod(
@@ -79,6 +82,7 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
     }
 
     await AgentInstallation.uninstall(name, podId, instanceId);
+    await revokeRuntimeTokensAfterLastUninstall(name, instanceId);
     await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
 
     // ADR-006 OQ #1: ephemeral self-serve registry rows whose only

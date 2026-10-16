@@ -18,7 +18,7 @@ import User from '../models/User';
 import { assertAgentRuntimeMayJoinPod } from './outsiderGrantAgentJoinPolicy';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { AgentInstallation } = require('../models/AgentRegistry');
+const { AgentInstallation, AgentRegistry } = require('../models/AgentRegistry');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { reservedAgentNameRefusal } = require('./agentNameReservation');
 
@@ -152,12 +152,25 @@ const validateParams = (actionType: ApprovalActionType, params: Record<string, u
 // a name any OTHER user already owns would reuse their bot User + memory.
 // Checking at propose time lets the agent pick a new name immediately
 // instead of minting a card doomed to fail; executeConnectLocalAgent
-// re-checks at approval time (state can change in between). Keep both in
-// sync with the registry install route's foreignInstall guard.
+// re-checks at approval time (state can change in between). The registry
+// install route checks the same durable publisher and principal owner.
 const findForeignLocalAgentOwner = async (
   agentName: string,
   ownerUserId: unknown,
 ): Promise<boolean> => {
+  // Installation rows can be pruned, while the registry publisher and bot
+  // principal survive uninstall. Both durable records must agree with the
+  // proposed owner before we offer or execute this seat.
+  const registry = await AgentRegistry.getByName(agentName);
+  if (registry?.ephemeral && String(registry.publisher?.userId || '') !== String(ownerUserId)) return true;
+  const principal = await User.findOne({ username: agentName, isBot: true })
+    .select('botMetadata.ownerUserId').lean();
+  const principalOwner = principal?.botMetadata?.ownerUserId;
+  if (principalOwner && String(principalOwner) !== String(ownerUserId)) return true;
+  // An unowned legacy principal with no registry owner is ambiguous. A
+  // same-owner registry row lets the install route backfill the User stamp.
+  if (principal && !principalOwner && (!registry?.ephemeral
+    || String(registry.publisher?.userId || '') !== String(ownerUserId))) return true;
   const foreign = await AgentInstallation.findOne({
     agentName,
     instanceId: 'default',
@@ -197,7 +210,11 @@ const suggestLocalAgentName = async (requestedName: string, ownerUserId: unknown
       // eslint-disable-next-line no-await-in-loop
       && !(await reservedAgentNameRefusal(candidate))
       // eslint-disable-next-line no-await-in-loop
-      && !(await AgentInstallation.findOne({ agentName: candidate, instanceId: 'default' }))) {
+      && !(await AgentInstallation.findOne({ agentName: candidate, instanceId: 'default' }))
+      // eslint-disable-next-line no-await-in-loop
+      && !(await AgentRegistry.getByName(candidate))
+      // eslint-disable-next-line no-await-in-loop
+      && !(await User.findOne({ username: candidate, isBot: true }).select('_id').lean())) {
       return candidate;
     }
   }
@@ -904,8 +921,6 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
 
   // Ephemeral registry row (ADR-006 self-serve): synthesized when no
   // published manifest exists; excluded from the marketplace catalog.
-  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-  const { AgentRegistry } = require('../models/AgentRegistry');
   let registryRow = await AgentRegistry.getByName(agentName);
   if (registryRow && registryRow.status === 'unpublished') {
     throw new Error('this agent name belongs to an unpublished manifest');

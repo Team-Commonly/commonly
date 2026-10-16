@@ -148,6 +148,17 @@ const revokeRuntimeTokensForAgent = async (owner: RuntimeTokenOwner): Promise<st
     await revokeRuntimeCredentials(hashes);
   }
 
+  // Spawn children live only in the credential ledger, not in either embedded
+  // token array. Revoke them with the identity's parent tokens as well.
+  if (owner.agentUser?._id) {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentCredential = require('../../models/AgentCredential');
+    await AgentCredential.updateMany(
+      { agentUserId: owner.agentUser._id, kind: 'runtime', status: 'active' },
+      { $set: { status: 'revoked', revokedAt: new Date() } },
+    );
+  }
+
   if (Array.isArray(owner.agentUser?.agentRuntimeTokens) && owner.agentUser.agentRuntimeTokens.length) {
     owner.agentUser.agentRuntimeTokens = [];
     await owner.agentUser.save();
@@ -173,6 +184,29 @@ const revokeRuntimeTokensForAgent = async (owner: RuntimeTokenOwner): Promise<st
   }
 
   return hashes;
+};
+
+/** A portable identity keeps its User and memory, but no bearer after its last uninstall. */
+export const revokeRuntimeTokensAfterLastUninstall = async (agentName: string, instanceId: string): Promise<void> => {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { AgentInstallation } = require('../../models/AgentRegistry');
+  const resolvedType = AgentIdentityService.resolveAgentType(agentName);
+  const names = Array.from(new Set([agentName.toLowerCase(), resolvedType]));
+  const activeCount = await AgentInstallation.countDocuments({
+    agentName: { $in: names }, instanceId, status: 'active',
+  }).collation(RUNTIME_INSTALLATION_COLLATION);
+  if (activeCount) return;
+
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const User = require('../../models/User');
+  const username = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
+  const agentUser = await User.findOne({ username, isBot: true });
+  for (const name of names) {
+    await revokeRuntimeTokensForAgent({ agentUser, agentName: name, instanceId });
+  }
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const agentWebSocketService = require('../../services/agentWebSocketService');
+  names.forEach((name) => agentWebSocketService.disconnectIdentity(name, instanceId));
 };
 
 /**
@@ -388,6 +422,7 @@ module.exports = {
   revokeRuntimeCredentials,
   revokeRuntimeTokenEverywhere,
   revokeRuntimeTokensForAgent,
+  revokeRuntimeTokensAfterLastUninstall,
   issueRuntimeTokenForAgent,
   InProcessAgentTokenRefused,
   issueRuntimeTokenForInstallation,

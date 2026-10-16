@@ -83,6 +83,39 @@ const reset = () => {
 };
 
 describe('inline displayName collision resolver (sticky dedup)', () => {
+  test('a username collision cannot adopt a bot for another agent identity', async () => {
+    mockExisting = {
+      _id: 'first-owner-bot',
+      username: 'my-private-seat',
+      isBot: true,
+      botMetadata: { agentName: 'my-private-seat', instanceId: 'default', displayName: 'Private Seat' },
+    };
+    await expect(AgentIdentityService.getOrCreateAgentUser('my-private', { instanceId: 'seat' }))
+      .rejects.toMatchObject({ code: 'agent_identity_conflict', username: 'my-private-seat' });
+    expect(mockSaved).toHaveLength(0);
+  });
+
+  test('the same collision refuses a legacy agent row before isBot was set', async () => {
+    mockExisting = {
+      _id: 'legacy-owner-bot', username: 'my-private-seat', isBot: false,
+      botType: 'agent',
+      botMetadata: { agentName: 'my-private-seat', instanceId: 'default', displayName: 'Private Seat' },
+    };
+    await expect(AgentIdentityService.getOrCreateAgentUser('my-private', { instanceId: 'seat' }))
+      .rejects.toMatchObject({ code: 'agent_identity_conflict' });
+    expect(mockSaved).toHaveLength(0);
+  });
+
+  test('a self-serve owner cannot adopt another owner’s bot principal after uninstall', async () => {
+    mockExisting = {
+      _id: 'owner-bot', username: 'my-private-seat', isBot: true,
+      botMetadata: { agentName: 'my-private-seat', instanceId: 'default', ownerUserId: 'owner-a' },
+    };
+    await expect(AgentIdentityService.getOrCreateAgentUser('my-private-seat', {
+      instanceId: 'default', ownerUserId: 'owner-b',
+    })).rejects.toMatchObject({ code: 'agent_identity_conflict' });
+    expect(mockSaved).toHaveLength(0);
+  });
   beforeEach(reset);
 
   test('a hire that carries a description stores it; one that does not gets no line, never "<name> agent" (#1649)', async () => {
