@@ -57,7 +57,7 @@ describe('hostSandboxRefusal', () => {
     });
     expect(message).toMatch(/runs a connected Claude Code inside a sandbox, and has no sandbox for Windows yet/);
     expect(message).toMatch(/cannot listen for @mentions from native Windows/);
-    expect(message).toContain('WSL (Ubuntu)');
+    expect(message).toContain('WSL 2 (Ubuntu)');
     expect(message).toContain('sudo apt install bubblewrap');
     expect(message).toContain('PowerShell `claude mcp add` command');
     expect(message).toContain('"Run it here"');

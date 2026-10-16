@@ -28,7 +28,7 @@ export const windowsSandboxMessage = (adapterName) => {
   return [
     `Commonly runs a connected ${label} inside a sandbox, and has no sandbox for Windows yet,`,
     'so this agent cannot listen for @mentions from native Windows. Any of these works instead:',
-    `  - WSL (Ubuntu): install Node and ${label} inside WSL, run \`sudo apt install bubblewrap\`,`
+    `  - WSL 2 (Ubuntu): install Node and ${label} inside WSL, run \`sudo apt install bubblewrap\`,`
       + ' then run these same commands there.',
     ...(adapterName === 'claude'
       ? ['  - Use Commonly from your own Claude Code sessions: the Connect page shows a PowerShell `claude mcp add` command.']

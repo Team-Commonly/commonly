@@ -34,7 +34,7 @@ const expandHome = (p) => {
 // Never advise `sandbox.mode: none` here: a public seat refuses it, and the
 // mechanisms that do exist are named instead.
 const MACOS_MESSAGE = 'bwrap is Linux-only. On macOS a public seat runs under Seatbelt '
-  + '(sandbox.mode workspace or read-only); Windows has no supported sandbox yet, so use WSL.';
+  + '(sandbox.mode workspace or read-only); Windows has no supported sandbox yet, so use WSL 2.';
 
 const DEFAULT_RO_BINDS = [
   '/etc/ssl/certs',
