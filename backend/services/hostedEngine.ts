@@ -18,6 +18,8 @@
  * Every site that has to tell the two engines apart asks this module.
  */
 import { isHostedInstallation, readRuntimeConfig } from './hostedRuntimeService';
+import { isSandboxConfigured } from './turnSandboxService';
+import { isSearchConfigured } from './webSearchService';
 
 export const HOSTED_ENGINE_NATIVE = 'native';
 export const HOSTED_ENGINE_DURABLE_OBJECT = 'durable-object';
@@ -149,20 +151,59 @@ export const hostedNativeDecline = (eventType: string, turnsPerDay: number): str
   return null;
 };
 
-/** The Commonly tools a hosted agent gets. Broker grants are appended per run. */
+/**
+ * The Commonly tools a hosted agent gets. Broker grants are appended per run.
+ *
+ * Web search and code runs are on every plan, free included (Cofounder,
+ * 2026-10-16): the out-of-box test is a stranger watching the agent do the
+ * work in its first minute, and a tool held back fails it. The native runtime
+ * still offers each only where this instance holds its key, and bounds it per
+ * turn: 3 searches (nativeRuntimeService), and 5 code runs in one sandbox that
+ * lives at most 3 minutes (turnSandboxService). Both are recorded on the
+ * AgentRun and priced into the per-user spend alarm.
+ */
 export const HOSTED_NATIVE_TOOLS: readonly string[] = [
   'commonly_read_context',
   'commonly_read_memory',
   'commonly_write_memory',
   'commonly_post_message',
   'commonly_create_task',
+  'commonly_web_search',
+  'commonly_run_code',
 ];
 
 /** Recent messages a hosted turn sees, as Scout does. */
 export const HOSTED_NATIVE_RECENT_MESSAGES = 8;
 
-export const hostedNativeSystemPrompt = (displayName: string, about?: string): string => {
+/** The opt-in tools this instance can actually offer a hosted turn. */
+export interface HostedNativeAbilities {
+  webSearch: boolean;
+  runCode: boolean;
+}
+
+const orList = (items: string[]): string => (
+  items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`
+);
+
+// The prompt names a tool only when the turn can be offered it, so an
+// instance without a search or sandbox key never tells its agent it can
+// search or run code. Opening a link stays on the "say so" list until a fetch
+// tool exists (TASK-267b).
+export const hostedNativeSystemPrompt = (
+  displayName: string,
+  about?: string,
+  abilities: HostedNativeAbilities = { webSearch: false, runCode: false },
+): string => {
   const persona = about && about.trim() ? ` ${about.trim()}` : '';
+  const uses = [
+    abilities.webSearch ? 'Use commonly_web_search for anything current or outside the pod.' : '',
+    abilities.runCode ? 'Use commonly_run_code to calculate or check something by running it instead of guessing.' : '',
+  ].filter(Boolean);
+  const missing = [
+    abilities.runCode ? '' : 'running code',
+    abilities.webSearch ? '' : 'searching the web',
+    'opening a link someone shares',
+  ].filter(Boolean);
   return (
     `You are ${displayName}, a hosted agent on Commonly. Commonly runs you for the person who `
     + `set you up, in a shared pod with humans and other agents.${persona}\n`
@@ -170,11 +211,11 @@ export const hostedNativeSystemPrompt = (displayName: string, about?: string): s
     + 'Reply to the message you were mentioned in by calling commonly_post_message once: concise, '
     + 'useful, and addressed to the pod. Use commonly_read_context when the mention alone is not '
     + 'enough. Keep durable facts with commonly_write_memory, and track work with '
-    + 'commonly_create_task. If no reply is genuinely needed, do not post.\n'
+    + `commonly_create_task.${uses.length ? ` ${uses.join(' ')}` : ''} If no reply is genuinely `
+    + 'needed, do not post.\n'
     + '\n'
     + 'Only claim what you actually did. If a task needs a tool you do not have (for example, '
-    + 'running code or browsing the web), say so plainly instead of describing a result you did '
-    + 'not observe.'
+    + `${orList(missing)}), say so plainly instead of describing a result you did not observe.`
   );
 };
 
@@ -194,7 +235,10 @@ export const hostedNativeRunConfig = (installation: any, turnsPerDay: number): R
   return {
     runtime: { runtimeType: 'hosted' },
     hosted: { engine: HOSTED_ENGINE_NATIVE },
-    systemPrompt: hostedNativeSystemPrompt(displayName, about),
+    systemPrompt: hostedNativeSystemPrompt(displayName, about, {
+      webSearch: isSearchConfigured(),
+      runCode: isSandboxConfigured(),
+    }),
     tools: [...HOSTED_NATIVE_TOOLS],
     recentMessages: HOSTED_NATIVE_RECENT_MESSAGES,
     // The owner's plan line (TASK-268: 30 free, 200 pro), enforced through the
