@@ -40,7 +40,7 @@ const OPAQUE_PLACEHOLDERS = [
   'age', 'by', 'pod', 'email', 'provider', 'podName', 'creator', 'date', 'agentName',
   'name', 'second', 'first', 'handle', 'author', 'affiliations', 'username', 'code',
   'label', 'taskId', 'agent', 'machine', 'time', 'section', 'platform', 'projects',
-  'connector', 'user', 'workspace', 'channel', 'tool', 'tools', 'member', 'agents',
+  'connector', 'user', 'workspace', 'channel', 'tool', 'tools', 'member', 'agents', 'os',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number

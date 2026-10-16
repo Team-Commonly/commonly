@@ -69,15 +69,32 @@ const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login 
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
 type MachineAdapter = '' | 'claude' | 'codex';
 
-// The listener does not run on native Windows: Commonly runs it in a sandbox
-// and has none there yet (cli 0.1.106 stops with directions), and PowerShell
-// has no `export`. A Windows visitor is pointed at WSL for the listener and
-// given PowerShell lines for the MCP connection (windows-latest, 2026-10-16).
-const isWindowsBrowser = (): boolean => {
-  if (typeof navigator === 'undefined') return false;
+// Where the listener runs (cli 0.1.106 stops elsewhere, with directions):
+// Commonly runs it in a sandbox. Seatbelt runs Claude Code and Codex on a Mac;
+// on Linux (WSL included) the bubblewrap namespace cannot start Claude Code
+// yet (ubuntu run 38982219348), and native Windows has no sandbox for either.
+// PowerShell also has no `export`, so a Windows visitor gets PowerShell lines
+// for the MCP connection instead (windows-latest, 2026-10-16).
+type SetupOs = 'mac' | 'linux' | 'windows';
+const browserOs = (): SetupOs => {
+  if (typeof navigator === 'undefined') return 'mac';
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-  return /windows/i.test(nav.userAgentData?.platform || nav.userAgent || '');
+  const platform = nav.userAgentData?.platform || nav.userAgent || '';
+  // Browser spellings only, case-sensitive: jsdom's user agent carries the
+  // host's process.platform in lower case ("(linux)"), which must not flip the
+  // page on a Linux CI host.
+  if (/Windows/.test(platform)) return 'windows';
+  if (/X11|CrOS|Linux (x86_64|aarch64|armv|i686)|^Linux$/.test(platform) && !/Android/.test(platform)) return 'linux';
+  return 'mac';
 };
+const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
+  { os: 'mac', labelKey: 'agentByo.listen.osMac' },
+  { os: 'linux', labelKey: 'agentByo.listen.osLinux' },
+  { os: 'windows', labelKey: 'agentByo.listen.osWindows' },
+];
+const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex'): boolean => (
+  os === 'mac' || (os === 'linux' && adapter === 'codex')
+);
 type ModelOption = { value: string; labelKey: string };
 const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
@@ -143,7 +160,8 @@ const V2AgentBYO: React.FC = () => {
   const [listenAdapter, setListenAdapter] = useState<'claude' | 'codex'>('claude');
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
-  const [setupOs, setSetupOs] = useState<'unix' | 'windows'>(() => (isWindowsBrowser() ? 'windows' : 'unix'));
+  const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
+  const listenerAvailable = listenerRunsOn(setupOs, listenAdapter);
   // Live listening verification (#887 class, second half). #888 made the
   // listening step legible; this makes it CHECKABLE — the page polls the
   // kernel until THIS agent's runtime token authenticates for the first time
@@ -1061,33 +1079,29 @@ const V2AgentBYO: React.FC = () => {
                 systems can add their own line beside it. */}
             <p className="v2-byo__os" data-testid="byo-setup-os">
               {t('agentByo.listen.osLabel')}{' '}
-              <button
-                type="button"
-                className="v2-byo__link"
-                aria-pressed={setupOs === 'unix'}
-                data-testid="byo-setup-os-unix"
-                onClick={() => setSetupOs('unix')}
-              >
-                {t('agentByo.listen.osUnix')}
-              </button>
-              {' · '}
-              <button
-                type="button"
-                className="v2-byo__link"
-                aria-pressed={setupOs === 'windows'}
-                data-testid="byo-setup-os-windows"
-                onClick={() => setSetupOs('windows')}
-              >
-                {t('agentByo.listen.osWindows')}
-              </button>
+              {SETUP_OS_OPTIONS.map(({ os, labelKey }, i) => (
+                <React.Fragment key={os}>
+                  {i > 0 && ' · '}
+                  <button
+                    type="button"
+                    className="v2-byo__link"
+                    aria-pressed={setupOs === os}
+                    data-testid={`byo-setup-os-${os}`}
+                    onClick={() => setSetupOs(os)}
+                  >
+                    {t(labelKey)}
+                  </button>
+                </React.Fragment>
+              ))}
             </p>
-            <p className="v2-byo__needs" data-testid="byo-listen-needs">
-              {t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
-                tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
-              })}{' '}
-              {setupOs === 'windows' && listenAdapter === 'claude' && (
-                <>{t('agentByo.listen.needsWindowsClaude')}{' '}</>
-              )}
+            <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
+              {listenerAvailable
+                ? t('agentByo.listen.needs', {
+                  tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
+                })
+                : t(listenAdapter === 'claude' ? 'agentByo.listen.unavailableClaude' : 'agentByo.listen.unavailableCodex', {
+                  os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
+                })}{' '}
               <button
                 type="button"
                 className="v2-byo__link"
@@ -1097,17 +1111,19 @@ const V2AgentBYO: React.FC = () => {
                 {listenAdapter === 'codex' ? t('agentByo.listen.switchToClaude') : t('agentByo.listen.switchToCodex')}
               </button>
             </p>
-            <div className="v2-byo__command">
-              <pre className="v2-byo__pre">{listenSnippet}</pre>
-              <button
-                type="button"
-                onClick={() => copy('listen', listenSnippet)}
-                className="v2-byo__copy"
-              >
-                {copied === 'listen' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
-              </button>
-            </div>
-            {listenState === 'listening' ? (
+            {listenerAvailable && (
+              <div className="v2-byo__command">
+                <pre className="v2-byo__pre">{listenSnippet}</pre>
+                <button
+                  type="button"
+                  onClick={() => copy('listen', listenSnippet)}
+                  className="v2-byo__copy"
+                >
+                  {copied === 'listen' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+                </button>
+              </div>
+            )}
+            {!listenerAvailable ? null : listenState === 'listening' ? (
               <p className="v2-byo__live" data-testid="byo-listen-ok">
                 {t('agentByo.listen.verified', { name: issued.agentName })}
               </p>
@@ -1118,19 +1134,23 @@ const V2AgentBYO: React.FC = () => {
                   : t('agentByo.listen.waiting', { name: issued.agentName })}
               </p>
             )}
-            <p className="v2-byo__listen-note">
-              {t('agentByo.listen.note', { name: issued.agentName })}
-            </p>
+            {listenerAvailable && (
+              <p className="v2-byo__listen-note">
+                {t('agentByo.listen.note', { name: issued.agentName })}
+              </p>
+            )}
           </div>
 
           {listenAdapter === 'claude' && (
             <div className="v2-byo__snippet" data-testid="byo-mcp-claude">
               <div className="v2-byo__snippet-head">
-                <span>{t('agentByo.snippets.claudeCode')}</span>
+                {/* Where no listener runs, this is the way in, not an extra. */}
+                <span>{t(listenerAvailable ? 'agentByo.snippets.claudeCode' : 'agentByo.snippets.claudeCodeMain')}</span>
               </div>
               <p className="v2-byo__hint">
                 {t(
-                  setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows' : 'agentByo.snippets.claudeCodeBody',
+                  setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows'
+                    : listenerAvailable ? 'agentByo.snippets.claudeCodeBody' : 'agentByo.snippets.claudeCodeBodyOwn',
                   { name: issued.agentName },
                 )}
               </p>
@@ -1223,7 +1243,7 @@ const V2AgentBYO: React.FC = () => {
             >
               {t('agentByo.actions.goToPod')}
             </button>
-            {listenState !== 'listening' && (
+            {listenState !== 'listening' && listenerAvailable && (
               // Honest copy at the point of departure (#891 principle 6):
               // never block the button — MCP-only setups are legitimate —
               // but a user leaving before the checkmark must know mentions
