@@ -223,9 +223,13 @@ export const hostedNativeSystemPrompt = (
     + 'when the mention alone is not '
     + 'enough. Keep durable facts with commonly_write_memory, and track work with '
     + 'commonly_create_task; check the board with commonly_list_tasks before saying what is or is '
+    // Walk 5 (2026-10-16): the agent offered to "mark TASK-002 done", which
+    // no hosted tool can do.
+    + 'not on it. You can add tasks and read the board, but you cannot change a task\'s status or '
+    + 'mark one done: if asked to, say so and point them to the pod\'s board. '
     // QA walk 2026-10-16: asked to summarize the pod, a hosted agent also
     // searched the web and ran code, and the reply took 19 s instead of 7.
-    + 'not on it. Answer a question about this pod from the pod itself; reach for the tools below '
+    + 'Answer a question about this pod from the pod itself; reach for the tools below '
     + `only when the answer needs something outside it. ${uses.join(' ')} If no reply is genuinely `
     + 'needed, do not post.\n'
     + '\n'

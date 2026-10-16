@@ -316,6 +316,8 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
         status: 'open', total: 3, tasks: [{ taskId: 'TASK-1', title: 'Say hello to the pod', status: 'pending', assignee: null }],
       });
       expect(systemPromptIn(0)).toMatch(/check the board with commonly_list_tasks before saying what is or is not on it/);
+      // Walk 5: it offered to "mark TASK-002 done" with no tool that can.
+      expect(systemPromptIn(0)).toMatch(/you cannot change a task's status or mark one done: if asked to, say so/);
       // QA walk: a pod summary also searched the web and ran code (19 s).
       expect(systemPromptIn(0)).toMatch(/Answer a question about this pod from the pod itself; reach for the tools below only when/);
       // QA walk: an answer opening "@asker" filed every reply as "needs you".

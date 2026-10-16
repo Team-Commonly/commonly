@@ -506,6 +506,14 @@ interface DispatchContext {
    * resolved, and null when it cannot be: then no pod message gives an address.
    */
   ownUserId: string | null;
+  /**
+   * The message this turn answers: the trigger's own messageId, from the
+   * event, never from the model. Every post the turn makes carries it so the
+   * answer is credited to that message's author even when the turn runs
+   * unclaimed (an addressed agent that lost the claim race, #2269, or a claim
+   * service that failed open). It is not a reply edge and threads nothing.
+   */
+  answeringMessageId?: string;
 }
 
 // The agent's own bot User, found the way the posting path derives it (the
@@ -644,6 +652,7 @@ async function dispatchTool(
           // Web results are in this turn: the post stays in the pod and never
           // reaches a channel relay, whatever bridges exist when it is stored.
           noOutboundRelay: Boolean(ctx.webTainted),
+          answeringMessageId: ctx.answeringMessageId,
         });
         return { content: { ok: true, posted: true, result } };
       }
@@ -688,6 +697,7 @@ async function dispatchTool(
           metadata: { source: 'native-runtime' },
           payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED_OFFER_LABEL, href }] },
           noOutboundRelay: Boolean(ctx.webTainted),
+          answeringMessageId: ctx.answeringMessageId,
         });
         return { content: { ok: true, posted: true, result } };
       }
@@ -1538,6 +1548,7 @@ export async function runAgent(
     installationConfig: cfg,
     ownUserId: null,
     givenAddresses: new GivenAddresses(),
+    answeringMessageId: claimMessageId || undefined,
   };
   // Who wrote what matters only to commonly_fetch_url, so a turn that cannot
   // fetch makes neither lookup (its own user, the trigger's sender).
@@ -1917,6 +1928,7 @@ export async function runAgent(
             installationConfig: cfg,
             metadata: { source: 'native-runtime', fallback: true },
             noOutboundRelay: Boolean(dispatchCtx.webTainted),
+            answeringMessageId: dispatchCtx.answeringMessageId,
           });
           // The message service suppresses a bare NO_REPLY (and other
           // silent output) without throwing. That is a normal declined turn,

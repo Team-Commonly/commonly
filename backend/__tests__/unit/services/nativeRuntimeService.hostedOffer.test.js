@@ -98,6 +98,16 @@ describe('commonly_offer_hosted_agent', () => {
     expect(posted.payload.starts[0].href).toMatch(/^\/v2\/[^/\\]/);
   });
 
+  test('the offer names the message it answers, from the event', async () => {
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_offer_hosted_agent', { content: REPLY }))
+      .mockResolvedValueOnce(says('Posted the button above.'));
+
+    await runAgent(scoutInstall, { ...ask, payload: { ...ask.payload, messageId: '5001' } });
+
+    expect(AgentMessageService.postMessage.mock.calls[0][0].answeringMessageId).toBe('5001');
+  });
+
   test('posts nothing when the person already holds the beta\'s hosted agent, and names it', async () => {
     mockListHosted.mockResolvedValue([{ agentName: 'lee-agent', instanceId: 'default', podId: POD }]);
     axios.post
