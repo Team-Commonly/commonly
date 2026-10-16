@@ -5,6 +5,8 @@ const express = require('express');
 const request = require('supertest');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 const AttributionVisit = require('../../../models/AttributionVisit');
+const SystemSetting = require('../../../models/SystemSetting');
+const { clearCampaignRefsCache, CACHE_MS } = require('../../../services/attributionCampaignRefs');
 const router = require('../../../routes/attribution');
 
 const handler = (() => {
@@ -22,7 +24,10 @@ beforeAll(async () => {
   await AttributionVisit.syncIndexes();
 });
 afterAll(closeMongoDb);
-afterEach(clearMongoDb);
+afterEach(async () => {
+  await clearMongoDb();
+  clearCampaignRefsCache();
+});
 
 it('counts each arrival for the ref on today', async () => {
   await send({ ref: 'X' });
@@ -51,6 +56,104 @@ it('past the daily ref cap, a new ref counts as other; a known one keeps its row
   expect(await AttributionVisit.exists({ day, ref: 'brand-new' })).toBeNull();
   expect((await AttributionVisit.findOne({ day, ref: AttributionVisit.OTHER_REF }).lean()).count).toBe(2);
   expect((await AttributionVisit.findOne({ day, ref: 'seed-3' }).lean()).count).toBe(2);
+});
+
+// sprint-review on #2282: junk could spend a day's slots before a real campaign
+// link arrived, which was then counted as overflow. Cofounder's call: campaign
+// codes are a list (system_settings 'attribution.refs'), and they always keep
+// their own row; everything else competes for the day's cap, afresh each day.
+const today = () => new Date().toISOString().slice(0, 10);
+const fillWithJunk = (day) => AttributionVisit.insertMany(
+  Array.from({ length: AttributionVisit.VISIT_REFS_PER_DAY }, (_v, i) => ({ day, ref: `junk-${i}`, count: 1 })),
+);
+const listCampaigns = (value) => SystemSetting.create({ key: 'attribution.refs', value });
+const rowFor = async (ref) => AttributionVisit.findOne({ day: today(), ref }).lean();
+
+it('a listed campaign code keeps its own row after the day fills with junk', async () => {
+  await listCampaigns(['x', 'x-thread']);
+  await fillWithJunk(today());
+
+  await send({ ref: 'x-thread' });
+
+  expect((await rowFor('x-thread')).count).toBe(1);
+  expect(await rowFor(AttributionVisit.OTHER_REF)).toBeNull();
+});
+
+it('junk counted on an earlier day gets no pass on a full day', async () => {
+  await AttributionVisit.create({ day: '2026-10-01', ref: 'junk-old', count: 9 });
+  await fillWithJunk(today());
+
+  await send({ ref: 'junk-old' });
+
+  expect(await rowFor('junk-old')).toBeNull();
+  expect((await rowFor(AttributionVisit.OTHER_REF)).count).toBe(1);
+});
+
+it.each([
+  ['no settings row', null],
+  ['an empty list', []],
+  ['a value that is not a list', 'x,hn'],
+])('%s means the list is just x, never "allow all"', async (_label, value) => {
+  if (value !== null) await listCampaigns(value);
+  await fillWithJunk(today());
+
+  await send({ ref: 'x' });
+  await send({ ref: 'hn' });
+
+  expect((await rowFor('x')).count).toBe(1);
+  expect(await rowFor('hn')).toBeNull();
+  expect((await rowFor(AttributionVisit.OTHER_REF)).count).toBe(1);
+});
+
+it('each list entry passes the ref rule: bad ones are ignored, good ones normalised', async () => {
+  await listCampaigns(['<b>x</b>', 'REDDIT', 7, { $gt: '' }]);
+  await fillWithJunk(today());
+
+  await send({ ref: 'reddit' });
+
+  expect((await rowFor('reddit')).count).toBe(1);
+});
+
+it('the list is read at most once a minute, then again', async () => {
+  await listCampaigns(['x']);
+  const read = jest.spyOn(SystemSetting, 'findOne');
+  const now = jest.spyOn(Date, 'now');
+  now.mockReturnValue(1_000_000);
+
+  await send({ ref: 'x' });
+  await send({ ref: 'li' });
+  expect(read).toHaveBeenCalledTimes(1);
+
+  now.mockReturnValue(1_000_000 + CACHE_MS + 1);
+  await send({ ref: 'x' });
+  expect(read).toHaveBeenCalledTimes(2);
+  read.mockRestore();
+  now.mockRestore();
+});
+
+it('an unreadable list means x', async () => {
+  const read = jest.spyOn(SystemSetting, 'findOne').mockImplementation(() => { throw new Error('mongo blip'); });
+  await fillWithJunk(today());
+
+  await send({ ref: 'x' });
+
+  expect((await rowFor('x')).count).toBe(1);
+  read.mockRestore();
+});
+
+// Cofounder on #2282: a real ref named "other" must not share the overflow row.
+it('the overflow row cannot be named by a real ref', async () => {
+  const day = new Date().toISOString().slice(0, 10);
+  await send({ ref: 'other' });
+  await AttributionVisit.insertMany(Array.from({ length: AttributionVisit.VISIT_REFS_PER_DAY }, (_v, i) => ({
+    day, ref: `junk-${i}`, count: 1,
+  })));
+
+  await send({ ref: 'past-the-cap' });
+
+  expect((await AttributionVisit.findOne({ day, ref: 'other' }).lean()).count).toBe(1);
+  expect((await AttributionVisit.findOne({ day, ref: AttributionVisit.OTHER_REF }).lean()).count).toBe(1);
+  expect(AttributionVisit.OTHER_REF).not.toBe('other');
 });
 
 it('drops a day row 180 days after it was first written', async () => {
