@@ -30,7 +30,9 @@ export interface RelayPolicyIntegration {
   };
 }
 
-const ESCALATION_MARKERS = /\[(BLOCKED|ESCALATE|DECISION|NEEDS[-_ ]?HUMAN|APPROVAL)\]/i;
+// Also read by attentionItemService: an agent's answer that carries one still
+// opens a needs-you row for the person it answers.
+export const ESCALATION_MARKERS = /\[(BLOCKED|ESCALATE|DECISION|NEEDS[-_ ]?HUMAN|APPROVAL)\]/i;
 const QUESTION_AT_HUMAN = /@[a-z0-9_.-]+[^\n]{0,200}\?/i;
 
 export const shouldEscalate = (opts: {
@@ -147,6 +149,7 @@ export const isRoutedPodTarget = (opts: {
 };
 
 module.exports = {
+  ESCALATION_MARKERS,
   shouldEscalate,
   isGatedPodTarget,
   isRoutedPodTarget,

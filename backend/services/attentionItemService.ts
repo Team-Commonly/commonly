@@ -12,6 +12,8 @@ const Message = require('../models/Message');
 // eslint-disable-next-line global-require
 const PGMessage = require('../models/pg/Message');
 const Task = require('../models/Task');
+// eslint-disable-next-line global-require
+const { ESCALATION_MARKERS } = require('./connectorRelayPolicy');
 
 type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task';
 type Kind = 'mention' | 'approval' | 'decision' | 'handoff';
@@ -78,6 +80,53 @@ const resolveAuthorName = async (authorId: unknown): Promise<string> => {
   }
 };
 
+/**
+ * The people an agent's message is ANSWERING (stickiness Phase 1b; shape ruled
+ * by ux-lead, Sharpen 78222-78224, 2026-10-16). An answer you asked for is not
+ * waiting on you: you see it where you asked. So it opens no needs-you row;
+ * the message and its @mention stay. Before this, almost every agent-mention
+ * row was bulk-acknowledged or left open, and well under 1% was answered.
+ *
+ * An answer is a post by an agent that holds a live claim on a message that
+ * person wrote in this pod (native turns claim the message that woke them and
+ * carry no reply edge), or that explicitly replies to one. Asks still reach
+ * them: decisions and approvals have their own writers, and an answer that
+ * carries an escalation marker ([BLOCKED] ...) is not treated as an answer.
+ * Any failure reads as "answering nobody": an extra row beats a lost ask.
+ */
+const peopleThisAgentIsAnswering = async (
+  message: any,
+  authorId: unknown,
+  content: string,
+  podId: unknown,
+): Promise<Set<string>> => {
+  const answered = new Set<string>();
+  if (!authorId || ESCALATION_MARKERS.test(content)) return answered;
+  try {
+    const author = await User.findById(authorId).select('isBot username botMetadata').lean();
+    if (!author?.isBot) return answered;
+    // eslint-disable-next-line global-require
+    const MessageClaimService = require('./messageClaimService');
+    const claimed: string[] = await MessageClaimService.liveClaimsHeldBy({
+      podId: String(podId),
+      agentName: String(author.botMetadata?.agentName || author.username || ''),
+      instanceId: String(author.botMetadata?.instanceId || 'default'),
+    });
+    const replyTo = message?.reply_to_message_id ?? message?.replyToMessageId;
+    const sourceIds = [...new Set([...claimed, ...(replyTo ? [String(replyTo)] : [])])]
+      .filter((id) => /^\d{1,10}$/.test(id));
+    const sources = await Promise.all(sourceIds.map((id) => PGMessage.findById(id)));
+    sources.forEach((source: any) => {
+      const sourceAuthor = source?.userId?._id ?? source?.userId;
+      if (sourceAuthor) answered.add(String(sourceAuthor));
+    });
+  } catch (error) {
+    // Nothing is added before the last await, so a failure leaves the set empty.
+    console.warn('[attention] answer check failed; recording the mention:', (error as Error).message);
+  }
+  return answered;
+};
+
 export const recordMentionedUsers = async (message: any, options: MentionOptions = {}): Promise<void> => {
   try {
     const podId = message?.podId || message?.pod_id;
@@ -97,11 +146,14 @@ export const recordMentionedUsers = async (message: any, options: MentionOptions
       return new RegExp(`(^|[^A-Za-z0-9_-])@${handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`, 'i').test(content);
     });
     if (!recipients.length) return;
+    const answering = await peopleThisAgentIsAnswering(message, authorId, content, podId);
+    const waitingOn = recipients.filter((member) => !answering.has(String(member._id)));
+    if (!waitingOn.length) return;
     const pod = await Pod.findById(podId).select('name').lean();
     // PG rows arrive with user_id only, so 'Someone' was what every live
     // mention showed. Resolve the author the way chat renders them.
     const authorName = message?.username || message?.userId?.username || await resolveAuthorName(authorId);
-    await recordForRecipients(recipients, {
+    await recordForRecipients(waitingOn, {
       podId, kind: 'mention' as Kind, sourceType: 'message' as SourceType, sourceId: sourceKey('message', messageId),
       title: `${authorName} mentioned you`, actorName: authorName, actorUserId: authorId || undefined, detail: compact(content), podName: pod?.name || 'Pod',
       messageId: String(messageId), threadRootId: String(message?.threadRootId || message?.thread_root_id || messageId),

@@ -22,6 +22,9 @@ jest.mock('../../../models/pg/Message', () => ({
   hasReplyByUserAfter: mockPgMessageHasReplyByUserAfter,
 }));
 
+const mockLiveClaims = jest.fn();
+jest.mock('../../../services/messageClaimService', () => ({ liveClaimsHeldBy: (...args) => mockLiveClaims(...args) }));
+
 const chain = (value) => ({ select: () => ({ lean: async () => value }) });
 const AttentionItemService = require('../../../services/attentionItemService');
 
@@ -491,5 +494,83 @@ describe('attentionItemService', () => {
     const sourcePattern = mockUpdateMany.mock.calls[0][0]['source.id'].$regex;
     expect(sourcePattern.test('task.1:update-1')).toBe(true);
     expect(sourcePattern.test('taskx1:update-1')).toBe(false);
+  });
+});
+
+// Stickiness Phase 1b (ux-lead, Sharpen 78222-78224): an agent's answer to the
+// person who asked opens no needs-you row. QA 10-16: a hosted agent answered 4
+// plain questions and the Agents card read "needs you".
+describe('an agent answering the person who asked', () => {
+  const POD = 'pod-1';
+  const scoutBot = { _id: 'scout-bot', username: 'scout', isBot: true, botMetadata: { agentName: 'scout', instanceId: 'u1' } };
+  const members = [
+    { _id: 'lee', username: 'lee', isBot: false },
+    { _id: 'quinn', username: 'quinn', isBot: false },
+    { _id: 'scout-bot', username: 'scout', isBot: true },
+  ];
+  // P (lee) wrote message 900; the agent holds the claim on it while it answers.
+  const answer = (content, extra = {}) => AttentionItemService.recordMentionedUsers({
+    id: 901, podId: POD, userId: 'scout-bot', username: 'Scout', content, ...extra,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUpdateOne.mockResolvedValue({ modifiedCount: 1 });
+    mockPodFindById.mockReturnValue(chain({ _id: POD, name: 'My Workspace', createdBy: 'lee', members: members.map((m) => ({ userId: m._id })) }));
+    mockUserFind.mockReturnValue(chain(members));
+    mockUserFindById.mockReturnValue(chain(scoutBot));
+    mockLiveClaims.mockResolvedValue(['900']);
+    mockPgMessageFindById.mockImplementation(async (id) => (
+      id === '900' ? { id: 900, userId: { _id: 'lee', username: 'lee' } } : null
+    ));
+  });
+
+  const recipients = () => mockUpdateOne.mock.calls.map(([filter]) => filter.recipientUserId);
+
+  it('four answers to four of their mentions open nothing for them', async () => {
+    for (let i = 0; i < 4; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await answer(`@lee here is answer ${i + 1}.`);
+    }
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+    expect(mockLiveClaims).toHaveBeenCalledWith({ podId: POD, agentName: 'scout', instanceId: 'u1' });
+  });
+
+  it('an answer that also names someone else opens a row for that person only', async () => {
+    await answer('@lee done. @quinn can you take the review?');
+    expect(recipients()).toEqual(['quinn']);
+  });
+
+  it('an explicit reply to their message is an answer even with no live claim', async () => {
+    mockLiveClaims.mockResolvedValue([]);
+    await answer('@lee here you go.', { reply_to_message_id: 900 });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('a lapsed claim, or an unprompted ping, still opens their row', async () => {
+    mockLiveClaims.mockResolvedValue([]);
+    await answer('@lee the deploy failed.');
+    expect(recipients()).toEqual(['lee']);
+  });
+
+  it('an answer carrying an escalation marker still opens their row', async () => {
+    await answer('[BLOCKED] @lee I need the staging key to go on.');
+    expect(recipients()).toEqual(['lee']);
+    expect(mockLiveClaims).not.toHaveBeenCalled();
+  });
+
+  it('a human mention is unchanged', async () => {
+    mockUserFindById.mockReturnValue(chain({ _id: 'quinn', username: 'quinn', isBot: false }));
+    await AttentionItemService.recordMentionedUsers({ id: 902, podId: POD, userId: 'quinn', username: 'quinn', content: '@lee look at this' });
+    expect(recipients()).toEqual(['lee']);
+    expect(mockLiveClaims).not.toHaveBeenCalled();
+  });
+
+  it('records the row when the answer check fails: an extra row beats a lost ask', async () => {
+    mockLiveClaims.mockRejectedValue(new Error('pg down'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await answer('@lee here is the answer.');
+    expect(recipients()).toEqual(['lee']);
+    warn.mockRestore();
   });
 });
