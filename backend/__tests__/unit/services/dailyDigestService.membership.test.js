@@ -4,6 +4,8 @@ const Pod = require('../../../models/Pod');
 const Summary = require('../../../models/Summary');
 const { DailyDigestService } = require('../../../services/dailyDigestService');
 const ActivityService = require('../../../services/activityService');
+const AttentionItem = require('../../../models/AttentionItem');
+const AttentionItemService = require('../../../services/attentionItemService');
 
 let serial = 0;
 const person = async (lastActive = new Date()) => {
@@ -13,6 +15,17 @@ const person = async (lastActive = new Date()) => {
     email: `digest-member-${serial}@example.com`,
     password: 'Password123!',
     lastActive,
+  });
+};
+
+const agentUser = async (username, botMetadata) => {
+  serial += 1;
+  return User.create({
+    username,
+    email: `digest-agent-${serial}@example.com`,
+    password: 'Password123!',
+    isBot: true,
+    botMetadata,
   });
 };
 
@@ -52,7 +65,7 @@ const recap = (overrides = {}) => ({
 test('the digest is the recap: what waits on you, then agent work, then the board', async () => {
   const member = await person(new Date(Date.now() - 2 * 86400000));
   const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
-    needsYou: [{ title: 'Rivet requests approval', podName: 'Payments API' }],
+    needsYou: [{ title: 'Rivet requests approval', podId: 'p1', podName: 'Payments API' }],
     agents: [{
       name: 'Rivet',
       messageCount: 3,
@@ -89,6 +102,7 @@ test("a public pod's agent posts and board moves stay out; what waits on you sta
     name: 'Commonly HQ', createdBy: member._id, members: [member._id], publicRead: true,
   });
   const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    pods: [{ id: String(hq._id), name: 'Commonly HQ' }],
     needsYou: [{ title: 'Commonly Support mentioned you', podName: 'Commonly HQ', podId: String(hq._id) }],
     agents: [{
       name: 'Commonly Support',
@@ -106,15 +120,89 @@ test("a public pod's agent posts and board moves stay out; what waits on you sta
   spy.mockRestore();
 });
 
-test("Scout's welcome is not 'your agents' work': a recap of only Scout is an empty digest", async () => {
+// Scout is known by agentName, never by its name: a person's own agent can be
+// called "Scout..." and is still theirs.
+test("Scout's welcome is not 'your agents' work'; the person's own agent named Scout is", async () => {
   const member = await person(new Date(Date.now() - 2 * 86400000));
+  const scout = await agentUser('scout-a1b2', {
+    agentName: 'scout', instanceId: 'a1b2', displayName: 'Scout',
+  });
+  const theirs = await agentUser('scout-jr-c3d4', {
+    agentName: 'claude-code', instanceId: 'c3d4', displayName: 'Scout Jr',
+  });
   const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
-    agents: [{ name: 'Scout', messageCount: 1, updates: [{ podName: 'My Workspace', content: "I'm Scout." }] }],
+    agents: [
+      {
+        id: String(scout._id),
+        name: 'scout-a1b2',
+        updates: [{ podId: 'p1', podName: 'My Workspace', content: "I'm Scout." }],
+      },
+      {
+        id: String(theirs._id),
+        name: 'scout-jr-c3d4',
+        updates: [{ podId: 'p1', podName: 'Payments API', content: 'Opened #42' }],
+      },
+    ],
   }));
 
   const digest = await new DailyDigestService().generateUserDailyDigest(member._id, { requireAway: true });
 
+  expect(digest.content.split('\n')).toEqual(['- Scout Jr in Payments API: Opened #42']);
+  spy.mockRestore();
+});
+
+test("an agent line names the agent by its display label, not its bot username", async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const rivet = await agentUser('rivet-e5f6', {
+    agentName: 'claude-code', instanceId: 'e5f6', displayName: 'Rivet',
+  });
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    agents: [{
+      id: String(rivet._id),
+      name: 'rivet-e5f6',
+      updates: [{ podId: 'p1', podName: 'Payments API', content: 'Ran the suite' }],
+    }],
+  }));
+
+  const digest = await new DailyDigestService().generateUserDailyDigest(member._id, { requireAway: true });
+
+  expect(digest.content).toBe('- Rivet in Payments API: Ran the suite');
+  spy.mockRestore();
+});
+
+// Privacy read on #2267: createdBy keeps a departed creator's id after
+// leavePod, and the attention queue still counts the creator as a member, so
+// the real queue hands them an ask from a pod they can no longer open. The
+// digest keeps only asks from pods in recap.pods (Pod.members alone).
+test("a creator who left a pod gets none of its 'waiting on you' titles", async () => {
+  const creator = await person(new Date(Date.now() - 2 * 86400000));
+  const stayer = await person();
+  const left = await Pod.create({ name: 'Left Behind', createdBy: creator._id, members: [creator._id, stayer._id] });
+  // What leavePod does: members loses them, createdBy keeps them (the
+  // pre-save hook adds a creator back on save, so this is an update).
+  await Pod.updateOne({ _id: left._id }, { $pull: { members: creator._id } });
+  await AttentionItem.create({
+    recipientUserId: creator._id,
+    podId: left._id,
+    kind: 'mention',
+    source: { type: 'message', id: 'msg-left-1' },
+    title: 'A private ask in Left Behind',
+    podName: 'Left Behind',
+    status: 'open',
+  });
+  const queue = await AttentionItemService.getOpenQueue(creator._id);
+  // The upstream gap this guards: the queue still serves the row.
+  expect(queue.items.map((item) => item.title)).toContain('A private ask in Left Behind');
+  const pods = await Pod.find({ members: creator._id }).select('_id name').lean();
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    pods: pods.map((pod) => ({ id: String(pod._id), name: pod.name })),
+    needsYou: queue.items,
+  }));
+
+  const digest = await new DailyDigestService().generateUserDailyDigest(creator._id, { requireAway: true });
+
   expect(digest.metadata.totalItems).toBe(0);
+  expect(digest.content).not.toMatch(/Left Behind/);
   spy.mockRestore();
 });
 

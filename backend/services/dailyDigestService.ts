@@ -6,6 +6,8 @@ const User = require('../models/User');
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const ActivityService = require('./activityService');
+// eslint-disable-next-line global-require
+const { resolveAgentDisplayLabel } = require('./agentIdentityService');
 
 /**
  * The daily digest is "what your agents did while you were away" (stickiness
@@ -34,8 +36,9 @@ interface DigestResult {
 
 interface RecapLike {
   pods?: Array<{ id: string; name: string }>;
-  needsYou?: Array<{ title?: string; podName?: string }>;
+  needsYou?: Array<{ title?: string; podId?: string; podName?: string }>;
   agents?: Array<{
+    id?: string;
     name?: string;
     recap?: string;
     messageCount?: number;
@@ -51,9 +54,20 @@ const MAX_AGENTS = 5;
 const MAX_BOARD = 5;
 const LINE_MAX = 200;
 
-// Scout is the guide, not one of "your agents": its welcome would otherwise
-// make every new account's first digest say an agent did something.
-const isGuide = (name: unknown): boolean => /^scout(\b|-)/i.test(String(name || '').trim());
+/** What the digest knows about an agent from its User row, keyed by user id. */
+interface AgentIdentity {
+  label: string;
+  // Scout is the guide, not one of "your agents": its welcome would otherwise
+  // make every new account's first digest say an agent did something. Known
+  // by agentName, never by display name, so a person's own agent called
+  // "Scout..." still counts.
+  guide: boolean;
+}
+
+interface RecapContext {
+  publicPodIds?: Set<string>;
+  agentIdentities?: Map<string, AgentIdentity>;
+}
 
 const oneLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, LINE_MAX);
 
@@ -63,25 +77,38 @@ export class DailyDigestService {
    * then each agent's latest work, then board changes. Empty means nothing
    * happened that the person needs to hear about.
    */
-  static recapLines(recap: RecapLike | null | undefined, publicPodIds: Set<string> = new Set()): string[] {
+  static recapLines(
+    recap: RecapLike | null | undefined,
+    { publicPodIds = new Set(), agentIdentities = new Map() }: RecapContext = {},
+  ): string[] {
     if (!recap) return [];
     const lines: string[] = [];
+    // recap.pods is the person's pods by Pod.members alone. An ask from a pod
+    // outside it (a creator who has since left, whose createdBy still names
+    // them) is a title from a pod they can no longer open, so it stays out.
+    const memberPodIds = new Set((recap.pods || []).map((pod) => String(pod.id)));
     // A public pod (Commonly HQ, which every signup joins) is not "your
     // agents": its agent posts and board moves are someone else's work. The
     // dry run on 2026-10-16 found every outside recipient's only line was a
     // support answer to another person in HQ. What waits on YOU stays, wherever.
     const inPrivatePod = (podId: unknown) => !podId || !publicPodIds.has(String(podId));
-    (recap.needsYou || []).slice(0, MAX_NEEDS_YOU).forEach((item) => {
+    const asks = (recap.needsYou || []).filter((item) => memberPodIds.has(String(item.podId)));
+    asks.slice(0, MAX_NEEDS_YOU).forEach((item) => {
       const title = oneLine(item.title);
       if (title) lines.push(`Waiting on you: ${title}${item.podName ? ` (${oneLine(item.podName)})` : ''}`);
     });
     (recap.agents || [])
-      .filter((agent) => !isGuide(agent.name))
-      .map((agent) => ({ agent, updates: (agent.updates || []).filter((update) => inPrivatePod(update.podId)) }))
+      .map((agent) => ({ agent, identity: agentIdentities.get(String(agent.id)) }))
+      .filter(({ identity }) => !identity?.guide)
+      .map(({ agent, identity }) => ({
+        agent,
+        identity,
+        updates: (agent.updates || []).filter((update) => inPrivatePod(update.podId)),
+      }))
       .filter(({ updates }) => updates.length > 0)
       .slice(0, MAX_AGENTS)
-      .forEach(({ agent, updates }) => {
-        const name = oneLine(agent.name) || 'An agent';
+      .forEach(({ agent, identity, updates }) => {
+        const name = oneLine(identity?.label || agent.name) || 'An agent';
         const [latest] = updates;
         // Counted from the updates kept, so a public pod's posts never inflate it.
         const more = updates.length > 1 ? ` (+${updates.length - 1} more)` : '';
@@ -95,6 +122,19 @@ export class DailyDigestService {
       lines.push(`${id}${title} is ${oneLine(task.status) || 'updated'}${pod}`);
     });
     return lines;
+  }
+
+  /** Each recap agent's display label and whether it is the guide, from its User row. */
+  static async agentIdentities(recap: RecapLike | null): Promise<Map<string, AgentIdentity>> {
+    const ids = (recap?.agents || []).map((agent) => String(agent.id || '')).filter((id) => /^[a-f0-9]{24}$/i.test(id));
+    if (ids.length === 0) return new Map();
+    const users = await User.find({ _id: { $in: ids } }).select('username botMetadata').lean() as Array<{
+      _id: unknown; username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string };
+    }>;
+    return new Map(users.map((user) => [String(user._id), {
+      label: resolveAgentDisplayLabel(user, user.username),
+      guide: String(user.botMetadata?.agentName || '').toLowerCase() === 'scout',
+    }]));
   }
 
   /**
@@ -124,7 +164,10 @@ export class DailyDigestService {
       const publicPods = recap
         ? await Pod.find({ members: userId, publicRead: true }).select('_id').lean() as Array<{ _id: unknown }>
         : [];
-      const lines = DailyDigestService.recapLines(recap, new Set(publicPods.map((pod) => String(pod._id))));
+      const lines = DailyDigestService.recapLines(recap, {
+        publicPodIds: new Set(publicPods.map((pod) => String(pod._id))),
+        agentIdentities: await DailyDigestService.agentIdentities(recap),
+      });
       const podCount = recap?.pods?.length || 0;
 
       if (lines.length === 0) {
