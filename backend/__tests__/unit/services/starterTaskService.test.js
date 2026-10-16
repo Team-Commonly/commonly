@@ -137,6 +137,13 @@ describe('completeFirstTaskOnAnswer', () => {
     expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
   });
 
+  // Sprint Review on #2260: attention keeps a [BLOCKED] answer as an ask, so the
+  // checklist must not call the first task done at that moment either.
+  test('an answer that says it is blocked does not complete the card', async () => {
+    await answer({ content: '[BLOCKED] I need the staging key to go on.' });
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   test('Scout answering is the guide, not "your agent"', async () => {
     await answer({ agentName: 'Scout' });
     expect(mockTaskExists).not.toHaveBeenCalled();

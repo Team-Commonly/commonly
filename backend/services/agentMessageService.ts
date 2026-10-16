@@ -1575,7 +1575,8 @@ class AgentMessageService {
     // write never delays or fails a post, and it never throws.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     void require('./starterTaskService').completeFirstTaskOnAnswer({
-      podId: String(podId), agentName, instanceId, replyToMessageId, agentLabel: displayName || agentName,
+      podId: String(podId), agentName, instanceId, replyToMessageId,
+      agentLabel: displayName || agentName, content: sanitizedContent,
     });
 
     return {

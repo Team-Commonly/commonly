@@ -26,6 +26,9 @@ import Task from '../models/Task';
 import { humansAnsweredBy } from './agentAnswerService';
 
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { ESCALATION_MARKERS } = require('./connectorRelayPolicy');
+
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const Pod = require('../models/Pod');
 
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -78,20 +81,25 @@ export const completeConnectAgentStarterTask = async ({
 /**
  * An agent's post just landed in podId. If the pod's "Give your agent its first
  * task" card is still open and the post answers the workspace owner, the card
- * is done. Scout is excluded: it is the guide, not "your agent". The open-card
+ * is done, unless the post carries an escalation marker. Scout is excluded: it
+ * is the guide, not "your agent". The open-card
  * check comes first, so a pod with no open card costs one indexed read.
  */
 export const completeFirstTaskOnAnswer = async ({
-  podId, agentName, instanceId, replyToMessageId, agentLabel,
+  podId, agentName, instanceId, replyToMessageId, agentLabel, content = '',
 }: {
   podId: string;
   agentName: string;
   instanceId?: string;
   replyToMessageId?: unknown;
   agentLabel: string;
+  content?: string;
 }): Promise<void> => {
   try {
     if (!podId || !agentName || String(agentName).toLowerCase() === 'scout') return;
+    // An answer that says it is blocked ([BLOCKED], [DECISION] ...) has not done
+    // the task yet. Attention reads the same marker the other way: still an ask.
+    if (ESCALATION_MARKERS.test(String(content))) return;
     const open = await Task.exists({
       podId: mongoose.Types.ObjectId.createFromHexString(String(podId)), sourceRef: FIRST_TASK_SOURCE_REF, status: OPEN,
     });

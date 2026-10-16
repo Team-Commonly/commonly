@@ -284,6 +284,7 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
     expect(mockFirstTask).toHaveBeenCalledTimes(1);
     expect(mockFirstTask).toHaveBeenCalledWith({
       podId: POD, agentName: 'lee-agent', instanceId: 'default', replyToMessageId: '57577', agentLabel: 'Lee Agent',
+      content: 'Done: the build is green.',
     });
   });
 
