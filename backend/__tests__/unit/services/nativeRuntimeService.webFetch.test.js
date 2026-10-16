@@ -45,6 +45,9 @@ jest.mock('../../../services/messageClaimService', () => ({
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
 }));
+// The holder of a lost claim was addressed too (holderWasAddressed).
+const mockHolderEvent = jest.fn();
+jest.mock('../../../models/AgentEvent', () => ({ exists: (...args) => mockHolderEvent(...args) }));
 const mockSandboxRun = jest.fn();
 jest.mock('../../../services/turnSandboxService', () => ({
   isSandboxConfigured: () => true,
@@ -88,6 +91,7 @@ jest.mock('../../../services/grantBrokerProjectionService', () => ({
 const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const { TurnSandbox } = require('../../../services/turnSandboxService');
+const MessageClaimService = require('../../../services/messageClaimService');
 const { runAgent } = require('../../../services/nativeRuntimeService');
 
 const REPO = 'https://github.com/acme/widget';
@@ -170,6 +174,31 @@ describe('native turn with commonly_fetch_url', () => {
     expect(message.content).toContain('Widget: a small library.');
     expect(savedRun.webFetches).toBe(1);
     expect(savedRun.turns[0].toolCalls[0].result).toEqual({ url: REPO, status: 200, truncated: false, chars: 50 });
+  });
+
+  // Cofounder's security read on #2269: the peer-claim notice was prepended
+  // before the person's message entered the allowed set, so the notice's own
+  // text could give an address. Unreachable today: an agent name carries no
+  // address, and the notice's leading '@' spoils a bare one. The holder here
+  // carries a space to stand in for any notice text that could.
+  test('the peer-claim notice gives no link; the person\'s message still does', async () => {
+    MessageClaimService.claim.mockResolvedValueOnce({
+      claimed: false, claimedBy: 'clerk holder.example/x', instanceId: 'default',
+    });
+    mockHolderEvent.mockResolvedValueOnce({ _id: 'evt-holder' });
+    axios.post
+      .mockResolvedValueOnce(toolCalls(
+        call('c1', 'commonly_fetch_url', { url: 'https://holder.example/x' }),
+        call('c2', 'commonly_fetch_url', { url: REPO }),
+      ))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention());
+
+    expect(axios.post.mock.calls[0][1].messages[1].content).toContain('[Claim notice: @clerk holder.example/x holds');
+    expect(mockGetPage).toHaveBeenCalledTimes(1);
+    expect(mockGetPage).toHaveBeenCalledWith(REPO);
+    expect(toolMessages(1)[0].content).toMatch(/does not appear in this conversation/);
   });
 
   test('a scheme-less link is opened over https', async () => {
