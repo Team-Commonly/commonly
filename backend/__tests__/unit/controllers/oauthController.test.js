@@ -139,6 +139,9 @@ describe('OAuth Controller', () => {
       ['protocol-relative', '//evil.example/x'],
       ['backslash, which browsers read as //', '/\\evil.example/x'],
       ['a control character', '/\t/evil.example'],
+      ['dot-segment (normalises to //)', '/.//evil.example/x'],
+      ['parent-segment (normalises to //)', '/x/..//evil.example/x'],
+      ['encoded dot-segment', '/%2e//evil.example/x'],
     ])('rejects a %s next (open-redirect guard)', async (_label, next) => {
       const res = mockRes();
       await oauthController.startOAuth(startReq('github', { next }), res);

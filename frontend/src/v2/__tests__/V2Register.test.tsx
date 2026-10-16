@@ -28,10 +28,10 @@ const axios = jest.requireMock('axios').default;
 
 const LocationProbe = () => {
   const location = useLocation();
-  return <div data-testid="location">{location.pathname}</div>;
+  return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
 };
 
-const renderRegister = (login = jest.fn().mockResolvedValue({})) => {
+const renderRegister = (login = jest.fn().mockResolvedValue({}), entry = '/v2/register') => {
   const auth = {
     currentUser: null,
     user: null,
@@ -49,7 +49,7 @@ const renderRegister = (login = jest.fn().mockResolvedValue({})) => {
     login,
     ...render(
       <AuthContext.Provider value={auth}>
-        <MemoryRouter initialEntries={['/v2/register']}>
+        <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route path="/v2/register" element={<V2Register />} />
             <Route path="/v2/*" element={<LocationProbe />} />
@@ -84,6 +84,36 @@ describe('V2Register', () => {
 
     await waitFor(() => expect(login).toHaveBeenCalledWith('new@example.com', 'Password123!'));
     expect(screen.getByTestId('location')).toHaveTextContent('/v2');
+  });
+
+  const createAccount = async () => {
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
+    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'new-user' } });
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
+    fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+  };
+
+  it('lands a new account on the deep link it signed up from', async () => {
+    const deepLink = encodeURIComponent('/v2/agents/byo?mode=hosted');
+    const { login } = renderRegister(undefined, `/v2/register?next=${deepLink}`);
+
+    await createAccount();
+
+    await waitFor(() => expect(login).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/v2/agents/byo?mode=hosted'));
+  });
+
+  it.each([
+    ['protocol-relative', '//evil.example/x'],
+    ['dot-segment (normalises to //)', '/.//evil.example/x'],
+  ])('drops a %s next and enters the workspace instead', async (_label, next) => {
+    const { login } = renderRegister(undefined, `/v2/register?next=${encodeURIComponent(next)}`);
+
+    await createAccount();
+
+    await waitFor(() => expect(login).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/v2$/));
   });
 
   it('keeps the sign-in fallback when the immediate login is unavailable', async () => {
