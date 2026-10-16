@@ -14,6 +14,13 @@ errorTracking:
 hostedSandbox:
   enabled: true
 
+# commonly-dev-search-api-key (an Exa key) has one enabled version, created
+# 2026-10-15. Like run_code, search is offered to nobody until an agent
+# declares commonly_web_search.
+webSearch:
+  enabled: true
+  provider: exa
+
 # All three commonly-dev-stripe-* secrets verified present with an ENABLED
 # version on 2026-08-06 before this was flipped. Do not set true anywhere the
 # secrets are absent: an empty secret container passes `describe` and still

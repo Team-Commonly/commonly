@@ -177,6 +177,11 @@ interface PostMessageOptions {
   // human composer path.
   threadRootId?: string | null;
   installationConfig?: unknown;
+  // Server-set, never model-set: the post must not leave Commonly through a
+  // channel relay (Telegram, Slack). A native turn that has read web results
+  // sets it (TASK-267a, Rhea on #2244), and the relay dispatcher refuses such
+  // a message whatever bridges exist by the time it is stored.
+  noOutboundRelay?: boolean;
 }
 
 interface PostTargetOptions {
@@ -194,6 +199,7 @@ interface PostTargetOptions {
   threadRootId?: string | null;
   skipDeliveryUpdate?: boolean;
   skipSummaryPersistence?: boolean;
+  noOutboundRelay?: boolean;
 }
 
 interface HeartbeatFallbackOptions {
@@ -205,6 +211,7 @@ interface HeartbeatFallbackOptions {
   agentUser: AgentUserDoc;
   displayName?: string;
   sourceContent: string;
+  noOutboundRelay?: boolean;
 }
 
 interface RouteErrorOptions {
@@ -217,6 +224,7 @@ interface RouteErrorOptions {
   messageType?: string;
   metadata?: MetadataDoc;
   postSourceNotice?: boolean;
+  noOutboundRelay?: boolean;
 }
 
 interface MessageNormalized {
@@ -637,6 +645,7 @@ class AgentMessageService {
   static async postHeartbeatFallback(options: HeartbeatFallbackOptions): Promise<Record<string, unknown>> {
     const {
       agentName, instanceId, podId, messageType, metadata, agentUser, displayName, sourceContent,
+      noOutboundRelay = false,
     } = options;
     const mentionHandles = await AgentMessageService.resolveHeartbeatMentionHandles({
       podId,
@@ -666,6 +675,7 @@ class AgentMessageService {
       },
       agentUser,
       displayName,
+      noOutboundRelay,
     });
     return {
       success: true,
@@ -981,6 +991,7 @@ class AgentMessageService {
       replyToMessageId = null,
       threadRootId = null,
       installationConfig = null,
+      noOutboundRelay = false,
     } = options;
 
     // Typing indicator cleanup — once postMessage is entered, the runtime has
@@ -1298,6 +1309,7 @@ class AgentMessageService {
           agentUser,
           displayName,
           sourceContent: sanitizedContent,
+          noOutboundRelay,
         });
       }
       AgentMessageService.logMessageLifecycle('skipped', {
@@ -1325,6 +1337,7 @@ class AgentMessageService {
         agentUser,
         displayName,
         sourceContent: sanitizedContent,
+        noOutboundRelay,
       });
     }
 
@@ -1363,6 +1376,7 @@ class AgentMessageService {
         agentUser,
         displayName,
         sourceContent: sanitizedContent,
+        noOutboundRelay,
       });
     }
 
@@ -1379,6 +1393,7 @@ class AgentMessageService {
             messageType,
             metadata,
             postSourceNotice: false,
+            noOutboundRelay,
           });
           if (routed) {
             return { success: true, routedToDM: true, dmPodId: routed.dmPodId };
@@ -1416,6 +1431,7 @@ class AgentMessageService {
           messageType,
           metadata,
           postSourceNotice: shouldPostSourceNotice,
+          noOutboundRelay,
         });
         if (routed) {
           return { success: true, routedToDM: true, dmPodId: routed.dmPodId };
@@ -1551,6 +1567,7 @@ class AgentMessageService {
       displayName,
       replyToMessageId,
       threadRootId,
+      noOutboundRelay,
     });
 
     return {
@@ -1568,7 +1585,7 @@ class AgentMessageService {
   static async routeErrorToDM(options: RouteErrorOptions): Promise<{ routedToDM: true; dmPodId: unknown } | null> {
     const {
       agentName, instanceId = 'default', podId, content, agentUser, displayName,
-      messageType = 'text', metadata = {}, postSourceNotice = true,
+      messageType = 'text', metadata = {}, postSourceNotice = true, noOutboundRelay = false,
     } = options;
 
     const ownerId = await DMService.resolveAgentOwner(agentName, podId, instanceId);
@@ -1584,6 +1601,7 @@ class AgentMessageService {
       metadata,
       agentUser,
       displayName,
+      noOutboundRelay,
     });
 
     if (postSourceNotice) {
@@ -1598,6 +1616,7 @@ class AgentMessageService {
         displayName,
         skipDeliveryUpdate: true,
         skipSummaryPersistence: true,
+        noOutboundRelay,
       });
     }
 
@@ -1620,6 +1639,7 @@ class AgentMessageService {
       threadRootId = null,
       skipDeliveryUpdate = false,
       skipSummaryPersistence = false,
+      noOutboundRelay = false,
     } = options;
 
     // The installation label belongs to this pod; the User label belongs to
@@ -1848,6 +1868,10 @@ class AgentMessageService {
         content: String((message as MessageNormalized)?.content ?? ''),
         podMessageId: (message as MessageNormalized)?._id || (message as MessageNormalized)?.id || null,
         ...(relayCard ? { card: relayCard } : {}),
+        // Decided when the turn made the post, carried with the message, and
+        // enforced where relays are selected, so a bridge enabled while this
+        // post was being stored still cannot carry it out (Rhea on #2244).
+        ...(noOutboundRelay ? { noOutboundRelay: true } : {}),
       });
     } catch (bridgeError) {
       console.warn('[tg-bridge] outbound hook failed:', (bridgeError as Error).message);

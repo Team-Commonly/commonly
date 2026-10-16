@@ -18,6 +18,8 @@ export interface ChatMessageEventPayload {
   content: string;
   podMessageId?: string | null;
   card?: DecisionRelayCard;
+  /** Set by the server on a post that must stay inside Commonly (see dispatch). */
+  noOutboundRelay?: boolean;
 }
 
 export type InternalEventHandler = (
@@ -183,6 +185,11 @@ export const dispatch = async (
   payload: ChatMessageEventPayload,
 ): Promise<void> => {
   if (eventType !== 'chat.message') return;
+  // Every handler here relays the message to an external chat. A post made by
+  // a native turn that read web results carries noOutboundRelay (TASK-267a,
+  // Rhea on #2244), and is refused here, where the bridges are selected, so a
+  // bridge enabled after the turn's own check still sends nothing.
+  if (payload.noOutboundRelay) return;
 
   let selected: Array<{ integration: IIntegration; handler: string }>;
   try {

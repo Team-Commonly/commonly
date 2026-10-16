@@ -109,6 +109,54 @@ describe('sandbox seconds (TASK-266)', () => {
   });
 });
 
+describe('web searches (TASK-267a)', () => {
+  const alarmLines = (warn) => warn.mock.calls
+    .map(([line]) => { try { return JSON.parse(line); } catch (_) { return null; } })
+    .filter((line) => line && line.alarm === 'user_spend');
+
+  test('are priced per run with the sandbox, once however many turns the run took', async () => {
+    await AgentRun.create({
+      ...run(USER_A, [
+        { model: 'deepseek-v4-flash', promptTokens: 0, completionTokens: 0 },
+        { model: 'deepseek-v4-flash', promptTokens: 0, completionTokens: 0 },
+      ]),
+      sandboxSeconds: 10_000,
+      webSearches: 50,
+    });
+    // A run that only searched still counts.
+    await AgentRun.create({ ...run(USER_B, []), webSearches: 3 });
+
+    const rows = await spend.userSpendForDay(NOW);
+    const a = rows.find((r) => r.userId === String(USER_A));
+    // Literal, worked by hand: 10,000 s x $0.000046 = $0.46, and 50 searches x
+    // ($7/1k auto search + 5 pages x $1/1k text) = 50 x $0.012 = $0.60.
+    expect(a.usd).toBeCloseTo(1.06, 6);
+    expect(a).toMatchObject({ webSearches: 50, sandboxSeconds: 10_000, runs: 1 });
+    const b = rows.find((r) => r.userId === String(USER_B));
+    expect(b.usd).toBeCloseTo(0.036, 6);
+    expect(b.webSearches).toBe(3);
+  });
+
+  test.each([
+    // $1.30 of model output + 60 searches ($0.72) = $2.02: over the line.
+    [60, 2.02, 1],
+    // $1.30 + 58 searches ($0.696) = $1.996: under it.
+    [58, 1.996, 0],
+  ])('$1.30 of model spend plus %i searches is $%f, %i alarm(s)', async (searches, usd, alarms) => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await AgentRun.create({
+      ...run(USER_A, [{ model: 'claude-sonnet-5-5', promptTokens: 0, completionTokens: 130_000 }]),
+      webSearches: searches,
+    });
+    const [row] = await spend.userSpendForDay(NOW);
+    expect(row.usd).toBeCloseTo(usd, 6);
+    await spend.checkSpend(NOW);
+    const lines = alarmLines(warn);
+    expect(lines).toHaveLength(alarms);
+    if (alarms) expect(lines[0].webSearches).toBe(searches);
+  });
+});
+
 describe('the $2 line with sandbox time in it (literal amounts, independent of the exported rate)', () => {
   const alarmLines = (warn) => warn.mock.calls
     .map(([line]) => { try { return JSON.parse(line); } catch (_) { return null; } })
@@ -148,7 +196,7 @@ describe('checkSpend', () => {
     const lines = alarmLines(warn);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({
-      alarm: 'user_spend', day: '2026-10-15', userId: String(USER_A), usd: 3, thresholdUsd: 2, runs: 1, sandboxSeconds: 0,
+      alarm: 'user_spend', day: '2026-10-15', userId: String(USER_A), usd: 3, thresholdUsd: 2, runs: 1, sandboxSeconds: 0, webSearches: 0,
     });
   });
 

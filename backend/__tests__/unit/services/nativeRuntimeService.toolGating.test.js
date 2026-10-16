@@ -70,4 +70,21 @@ describe('toolsForConfig', () => {
       else process.env.E2B_API_KEY = previous;
     }
   });
+
+  // TASK-267a: web search is opt-in by declaration AND needs a search key.
+  test('web_search is offered only when declared and the instance has a search key', () => {
+    const previous = process.env.SEARCH_API_KEY;
+    try {
+      delete process.env.SEARCH_API_KEY;
+      expect(names(toolsForConfig({ tools: ['commonly_web_search'] }))).not.toContain('commonly_web_search');
+      process.env.SEARCH_API_KEY = 'search_test_key';
+      expect(names(toolsForConfig({ tools: ['commonly_web_search'] }))).toContain('commonly_web_search');
+      // Never on the default surface, even with the key.
+      expect(names(toolsForConfig({}))).not.toContain('commonly_web_search');
+      expect(names(toolsForConfig({ tools: ['commonly_post_message'] }))).not.toContain('commonly_web_search');
+    } finally {
+      if (previous === undefined) delete process.env.SEARCH_API_KEY;
+      else process.env.SEARCH_API_KEY = previous;
+    }
+  });
 });

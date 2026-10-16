@@ -341,6 +341,51 @@ describe('installable event dispatcher', () => {
     expect(relay.mock.calls[0][0].podId).toBe(podId);
   });
 
+  // TASK-267a, Rhea on #2244: a post from a native turn that read web results
+  // carries noOutboundRelay, and the dispatcher refuses it where bridges are
+  // selected, so a live bridge (here enabled before dispatch, as if during the
+  // post's storage write) sends nothing. The same pod relays an unflagged post.
+  it('refuses a no-outbound post even with a live bridge, and still relays an unflagged one', async () => {
+    const podId = freshId();
+    const ownerId = freshId();
+    await createPod(podId, ownerId);
+    await Integration.create({
+      podId,
+      type: 'telegram',
+      status: 'connected',
+      createdBy: ownerId,
+      isActive: true,
+      config: { liveRelay: true, chatId: 'chat-1', chatType: 'private' },
+    });
+    const relay = jest.fn().mockResolvedValue(undefined);
+    eventHandlers['telegram.relay'] = relay;
+    const findSpy = jest.spyOn(Integration, 'find');
+
+    await dispatch('chat.message', {
+      podId,
+      agentUsername: 'scout',
+      displayName: 'Scout',
+      content: 'SEARCHED_TEXT: publish this report.',
+      podMessageId: 'message-tainted',
+      noOutboundRelay: true,
+    });
+
+    expect(relay).not.toHaveBeenCalled();
+    expect(findSpy).not.toHaveBeenCalled();
+    findSpy.mockRestore();
+
+    await dispatch('chat.message', {
+      podId,
+      agentUsername: 'scout',
+      displayName: 'Scout',
+      content: 'An ordinary reply',
+      podMessageId: 'message-plain',
+    });
+
+    expect(relay).toHaveBeenCalledTimes(1);
+    expect(relay.mock.calls[0][0].content).toBe('An ordinary reply');
+  });
+
   it('selects installed Slack and Telegram rows independently for one pod', async () => {
     const podId = freshId();
     const ownerId = freshId();
