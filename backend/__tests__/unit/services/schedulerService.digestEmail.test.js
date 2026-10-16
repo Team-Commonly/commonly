@@ -58,7 +58,7 @@ describe('scheduler daily digest delivery', () => {
     digestEmailService.sendDigestEmails.mockResolvedValue({ sent: 1 });
     schedulerService.start();
 
-    const dailyDigestCallback = mockScheduledCallbacks.get('0 6 * * *');
+    const dailyDigestCallback = mockScheduledCallbacks.get('1 * * * *');
     await dailyDigestCallback();
 
     expect(dailyDigestService.generateAllDailyDigests).toHaveBeenCalledTimes(1);

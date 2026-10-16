@@ -1,11 +1,15 @@
 # Daily digest: stopping a bad run
 
 The daily digest ("What your agents did while you were away") is generated and
-emailed by the backend scheduler at **06:00 UTC** (`schedulerService`,
-`dailyDigestService` → `digestEmailService`). Content comes from the activity
-recap and is limited to the recipient's own private pods. Only digests with at
-least one line are emailed, and only to verified users who haven't turned the
-digest off.
+emailed by the backend scheduler **every hour, at minute 1** (`schedulerService`,
+`dailyDigestService` → `digestEmailService`). Each run takes the people for
+whom it is **08:00 in their own time zone**. The zone is set once from the
+browser (`POST /api/users/me/timezone`, `User.timezone`); with no zone on file,
+it's **06:00 UTC**. Nobody gets a second digest within 20 hours.
+
+Content comes from the activity recap and is limited to the recipient's own
+private pods. Only digests with at least one line are emailed, and only to
+verified users who haven't turned the digest off.
 
 ## Stop all digest email, in seconds
 

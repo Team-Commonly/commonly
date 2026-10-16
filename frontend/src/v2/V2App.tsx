@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-do
 import V2Layout from './components/V2Layout';
 import V2FeaturePage from './components/V2FeaturePage';
 import { useAuth } from '../context/AuthContext';
+import { useTimeZoneCapture } from './hooks/useTimeZoneCapture';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
@@ -174,6 +175,8 @@ const V2PodIdRoute: React.FC = () => {
 };
 
 const V2App: React.FC = () => {
+  // The daily digest's 08:00 is the person's own (TASK-257 Phase 2b).
+  useTimeZoneCapture();
   React.useEffect(() => {
     try {
       sessionStorage.setItem('commonly.v2.active', '1');
