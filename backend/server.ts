@@ -413,7 +413,13 @@ if (process.env.PG_HOST) {
     // the honest answer: the capability really is absent, and a caller that
     // gets 404 must not be told the pod is fine.
     mountRoutes: () => {
-      app.use('/api/pg/messages', pgMessageRoutes);
+      // Mounted after boot, so it sits after the app's final error handler;
+      // it carries its own copy so its errors are answered the same way.
+      app.use(
+        '/api/pg/messages',
+        pgMessageRoutes,
+        require('./middleware/finalErrorHandler').finalErrorHandler,
+      );
     },
     connect: connectPG,
     initialize: initializePGDB,
@@ -461,6 +467,10 @@ if (process.env.PG_HOST) {
 // Sentry's Express error handler must be registered after application routes.
 // It is a no-op when SENTRY_DSN was absent during process startup.
 attachSentryErrorHandler(app);
+// Last: answers any error passed on above with its status and a generic body,
+// and logs the detail (middleware/finalErrorHandler). After Sentry's, which
+// passes the error on.
+app.use(require('./middleware/finalErrorHandler').finalErrorHandler);
 
 // Socket.io middleware for authentication. The row read lives in
 // middleware/socketAuth.ts so it is the same one the HTTP middleware and the
