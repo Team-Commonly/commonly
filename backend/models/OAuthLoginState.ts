@@ -20,6 +20,8 @@ export interface IOAuthLoginState extends Document {
   invitationCode?: string;
   // Frontend path to land on after login completes. Must be app-relative.
   next?: string;
+  // First-touch ref code (?ref=x) for a signup made through this login.
+  signupRef?: string;
   userId?: Types.ObjectId | null;
   exchangeCode?: string | null;
   exchangeExpiresAt?: Date | null;
@@ -36,6 +38,7 @@ const OAuthLoginStateSchema = new Schema<IOAuthLoginState>(
     state: { type: String, required: true, unique: true, index: true },
     invitationCode: { type: String, default: '' },
     next: { type: String, default: '/v2' },
+    signupRef: { type: String, default: '' },
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     // NO default here — a sparse unique index skips MISSING fields but still
     // indexes explicit nulls, so `default: null` made every pending state row

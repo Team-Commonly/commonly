@@ -116,6 +116,19 @@ describe('V2Register', () => {
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/v2$/));
   });
 
+  it('sends the first-touch ref with the signup', async () => {
+    localStorage.setItem('commonly.firstTouchRef', JSON.stringify({ ref: 'x' }));
+    renderRegister();
+
+    await createAccount();
+
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/auth/register',
+      expect.objectContaining({ signupRef: 'x' }),
+    ));
+    localStorage.clear();
+  });
+
   it('keeps the sign-in fallback when the immediate login is unavailable', async () => {
     const { login } = renderRegister(jest.fn().mockRejectedValue(new Error('login unavailable')));
 

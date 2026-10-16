@@ -150,6 +150,18 @@ describe('OAuth Controller', () => {
       expect(state.next).toBe('/v2');
     });
 
+    it('carries a clean ?ref= into the login state, and drops a dirty one', async () => {
+      const stateFor = async (ref) => {
+        const res = mockRes();
+        await oauthController.startOAuth(startReq('github', { ref }), res);
+        const state = new URL(res.redirect.mock.calls[0][0]).searchParams.get('state');
+        return OAuthLoginState.findOne({ state });
+      };
+
+      expect((await stateFor('X')).signupRef).toBe('x');
+      expect((await stateFor('https://evil.example')).signupRef).toBe('');
+    });
+
     it('keeps a deep link with its query (the re-engagement link)', async () => {
       const res = mockRes();
       await oauthController.startOAuth(startReq('github', { next: '/v2/agents/byo?mode=hosted' }), res);
@@ -204,6 +216,31 @@ describe('OAuth Controller', () => {
       const state = await OAuthLoginState.findOne({ state: 'state-1' });
       expect(String(state.userId)).toBe(String(user._id));
       expect(state.usedAt).toBeTruthy();
+    });
+
+    // ?ref=x on the first visit reaches the provider round trip and is kept
+    // on the account it creates; signing in to an existing one never sets it.
+    it('a new account made through the provider keeps the signup ref', async () => {
+      await seedState({ signupRef: 'x' });
+      mockGithubProfile();
+
+      await oauthController.oauthCallback(callbackReq(), mockRes());
+
+      const user = await User.findOne({ email: 'octo@example.com' });
+      expect(user.onboarding.signupRef).toBe('x');
+    });
+
+    it('signing in to an existing account does not set a signup ref', async () => {
+      await User.create({
+        username: 'octo-human', email: 'octo@example.com', password: 'hashed-pass', verified: true,
+      });
+      await seedState({ signupRef: 'x' });
+      mockGithubProfile();
+
+      await oauthController.oauthCallback(callbackReq(), mockRes());
+
+      const user = await User.findOne({ email: 'octo@example.com' });
+      expect(user.onboarding?.signupRef).toBeUndefined();
     });
 
     it('links to an existing account with the same verified email', async () => {

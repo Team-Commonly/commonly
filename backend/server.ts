@@ -14,6 +14,7 @@ const postRoutes = require('./routes/posts');
 const userRoutes = require('./routes/users');
 const podRoutes = require('./routes/pods');
 const podInvitesRoutes = require('./routes/podInvites');
+const attributionRoutes = require('./routes/attribution');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
 const { socketAuthMiddleware } = require('./middleware/socketAuth');
@@ -235,6 +236,7 @@ app.use('/api/users', userRoutes);
 // GET must mount before `/api/pods`. Its `/:type/:id` catch-all would
 // otherwise consume that request as a pod lookup.
 app.use('/api', podInvitesRoutes);
+app.use('/api', attributionRoutes);
 // Before podRoutes: its `/:type/:id` catch-all would answer `/:podId/grants` as type=<podId>, id='grants' (Wren 67721).
 app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
 app.use('/api/pods', podRoutes);
