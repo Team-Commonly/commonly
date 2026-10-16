@@ -8,6 +8,14 @@ const AgentIdentityService = require('../services/agentIdentityService');
 const { sendEmail } = require('../services/emailService');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
+const { cleanSignupRef } = require('../utils/signupRef');
+
+// The first-touch ref a signup arrived with (?ref=x), stored once on the new
+// account. Anything that is not a short plain code is dropped, not refused.
+const signupRefField = (raw: unknown) => {
+  const ref = cleanSignupRef(raw);
+  return ref ? { onboarding: { signupRef: ref } } : {};
+};
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -383,6 +391,7 @@ exports.register = async (req: any, res: any) => {
       email,
       password,
       invitationCode,
+      signupRef,
     } = req.body;
 
     const normalizedEmail = normalizeEmail(email);
@@ -479,6 +488,7 @@ exports.register = async (req: any, res: any) => {
       password: rawPassword,
       verified: shouldAutoVerify,
       entitlements: { cloudAgents: invitationRedeemed },
+      ...signupRefField(signupRef),
     });
 
     // Save user to database

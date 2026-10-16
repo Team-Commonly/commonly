@@ -62,6 +62,20 @@ describe('V2OAuthButtons', () => {
     expect(screen.getByRole('link', { name: /continue with google/i })).toBeInTheDocument();
   });
 
+  test('carries the first-touch ref into the provider start', async () => {
+    localStorage.setItem('commonly.firstTouchRef', JSON.stringify({ ref: 'x' }));
+    axios.get.mockResolvedValueOnce({ data: { providers: [{ id: 'google', label: 'Google' }] } });
+
+    render(
+      <MemoryRouter>
+        <V2OAuthButtons />
+      </MemoryRouter>,
+    );
+
+    const google = await screen.findByRole('link', { name: /continue with google/i });
+    expect(new URL(google.getAttribute('href') as string, 'https://api.test').searchParams.get('ref')).toBe('x');
+  });
+
   test('renders nothing when no provider is configured', async () => {
     axios.get.mockResolvedValueOnce({ data: { providers: [] } });
 

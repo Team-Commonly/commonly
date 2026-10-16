@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const User = require('../models/User');
 const OAuthLoginState = require('../models/OAuthLoginState');
+const { cleanSignupRef } = require('../utils/signupRef');
 const AgentIdentityService = require('../services/agentIdentityService');
 const {
   isInviteOnlyRegistrationEnabled,
@@ -222,6 +223,7 @@ exports.startOAuth = async (req: any, res: any) => {
       state,
       invitationCode: String(req.query.invite || '').trim(),
       next: safeNextPath(req.query.next),
+      signupRef: cleanSignupRef(req.query.ref) || '',
       expiresAt: new Date(Date.now() + STATE_TTL_MS),
     });
 
@@ -318,11 +320,14 @@ exports.oauthCallback = async (req: any, res: any) => {
         return loginErrorRedirect(res, 'invitation_required');
       }
 
+      const signupRef = cleanSignupRef(stateRow.signupRef);
       user = new User({
         username: await generateUsername(profile.usernameHint, profile.email),
         email: profile.email,
         verified: true, // provider-asserted
         entitlements: { cloudAgents: invitationRedeemed },
+        // Set at creation only: signing in to an existing account never changes it.
+        ...(signupRef ? { onboarding: { signupRef } } : {}),
         authProviders: [{
           provider,
           providerId: profile.providerId,

@@ -198,6 +198,9 @@ export interface IUser extends Document {
     firstStartId?: string;
     firstStartAt?: Date;
     byoOpenedAt?: Date;
+    // The first-touch ref code the signup arrived with (?ref=x), set once at
+    // account creation (utils/signupRef.ts).
+    signupRef?: string;
   };
   createdAt: Date;
   // Instance methods
@@ -411,6 +414,7 @@ const userSchema = new Schema<IUser>({
     firstStartId: { type: String },
     firstStartAt: { type: Date },
     byoOpenedAt: { type: Date },
+    signupRef: { type: String },
   },
   lastDigestSent: { type: Date },
   createdAt: { type: Date, default: Date.now },

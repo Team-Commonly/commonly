@@ -1,9 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import './utils/axiosConfig'; // Import axios configuration
+import axios from './utils/axiosConfig'; // Import axios configuration
 import './i18n';
 import App from './App';
 import './App.css'; // Ensure CSS is loaded
+import { captureFirstTouchRef } from './v2/utils/firstTouch';
 
 if (process.env.REACT_APP_SENTRY_DSN) {
   import('./sentry');
@@ -24,6 +25,12 @@ if (bootPath === '/' || bootPath.startsWith('/v2')) {
 if (bootPath === '/guides' || bootPath.startsWith('/guides/')) {
   document.body.classList.add('guide-canvas');
 }
+
+// First-touch ref (?ref=x), read BEFORE React renders: a redirect in the first
+// render (a signed-in visitor sent from / to their workspace) would drop the
+// query before any effect could see it. The first arrival counts one visit.
+const firstTouchRef = captureFirstTouchRef(window.location.search);
+if (firstTouchRef) axios.post('/api/attribution/visit', { ref: firstTouchRef }).catch(() => {});
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(

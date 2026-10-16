@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from '../../utils/axiosConfig';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useTranslation } from 'react-i18next';
+import { readFirstTouchRef } from '../utils/firstTouch';
 
 // Social sign-in buttons shared by V2Login and V2Register. Renders nothing
 // until /api/auth/oauth/providers confirms a provider is configured, so
@@ -87,6 +88,10 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
     const params = new URLSearchParams();
     if (next) params.set('next', next);
     if (invite) params.set('invite', invite);
+    // A new account made through the provider keeps the first-touch ref too;
+    // signing in to an existing account ignores it (oauthController).
+    const ref = readFirstTouchRef();
+    if (ref) params.set('ref', ref);
     const qs = params.toString();
     return `${getApiBaseUrl()}/api/auth/oauth/${id}/start${qs ? `?${qs}` : ''}`;
   };

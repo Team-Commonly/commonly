@@ -1,0 +1,41 @@
+/**
+ * First-touch attribution: the ref code of the link that first brought this
+ * browser to Commonly (?ref=x on any page). It is kept once, and signup sends it
+ * so the new account records where it came from (onboarding.signupRef); the
+ * first arrival also counts one visit for that ref (POST /api/attribution/visit).
+ *
+ * Codes are short and plain: letters, digits, '-' and '_', at most 32, the same
+ * rule as backend/utils/signupRef.ts. Storage can be missing (a private window,
+ * blocked site data), so every read and write is guarded, and a missing value
+ * just means "no ref".
+ */
+const KEY = 'commonly.firstTouchRef';
+const REF_PATTERN = /^[a-z0-9_-]{1,32}$/;
+
+export const cleanRef = (raw: unknown): string | null => {
+  const ref = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return REF_PATTERN.test(ref) ? ref : null;
+};
+
+/** Keeps the first valid ?ref= this browser arrives with. Returns it only when this call kept it. */
+export const captureFirstTouchRef = (search: string): string | null => {
+  const ref = cleanRef(new URLSearchParams(search).get('ref'));
+  if (!ref) return null;
+  try {
+    if (window.localStorage.getItem(KEY)) return null;
+    window.localStorage.setItem(KEY, JSON.stringify({ ref, at: new Date().toISOString() }));
+    return ref;
+  } catch {
+    return null;
+  }
+};
+
+/** The kept first-touch ref, or undefined. */
+export const readFirstTouchRef = (): string | undefined => {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(KEY) || 'null') as { ref?: unknown } | null;
+    return cleanRef(stored?.ref) || undefined;
+  } catch {
+    return undefined;
+  }
+};

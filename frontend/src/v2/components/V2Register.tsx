@@ -6,6 +6,7 @@ import V2AuthBrand from './V2AuthBrand';
 import { Trans, useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { safeNextPath } from '../utils/safeNextPath';
+import { readFirstTouchRef } from '../utils/firstTouch';
 
 // v2-native sign-up. Pairs with V2Login (reuses the .v2-login styles) so the
 // auth surfaces match after v2 became the default. Mirrors the legacy
@@ -71,6 +72,8 @@ const V2Register: React.FC = () => {
         email: email.trim(),
         password,
         invitationCode: invitationCode.trim(),
+        // Where this signup came from (?ref=x on the first visit), stored once.
+        signupRef: readFirstTouchRef(),
       });
       const data = res.data as { message?: string };
       const message = data?.message || t('auth.register.success.ready');

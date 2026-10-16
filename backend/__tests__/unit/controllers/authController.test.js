@@ -73,6 +73,31 @@ describe('Auth Controller Tests', () => {
       delete process.env.REGISTRATION_INVITE_CODES;
     });
 
+    // ?ref=x on the first visit (frontend firstTouch): the new account keeps
+    // where it came from, once; anything but a short plain code is dropped.
+    it.each([
+      ['a ref code, kept lower-cased', 'X', 'x'],
+      ['junk, dropped', '<b>x</b>', undefined],
+    ])('stores the signup ref: %s', async (_label, sent, stored) => {
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      let saved;
+      User.prototype.save = jest.fn(function save() {
+        saved = this;
+        return Promise.resolve({ _id: 'mockedUserId', username: 'refuser', email: 'ref@example.com' });
+      });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register({
+        body: {
+          username: 'refuser', email: 'ref@example.com', password: 'Password123!', signupRef: sent,
+        },
+      }, res);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(saved.onboarding?.signupRef).toBe(stored);
+    });
+
     it('should register a new user successfully', async () => {
       // Create a mock for bcrypt
       bcrypt.hash.mockResolvedValueOnce('hashedPassword');
