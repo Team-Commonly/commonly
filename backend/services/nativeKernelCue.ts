@@ -23,15 +23,51 @@ export const nativePodContextFrame = (podId: string): string => (
   + 'reaches no one.]'
 );
 
-export const nativeCueFromKernel = (content: string, podId: string): string => {
+// A frame cut just before `marker`, closed again; null when the marker is
+// absent, so a reworded kernel frame falls to the guard below instead of
+// being cut in the wrong place.
+const cutBefore = (frame: string, marker: string): string | null => {
+  const at = frame.indexOf(marker);
+  return at === -1 ? null : `${frame.slice(0, at).trimEnd()}]`;
+};
+
+// Two more frames name a tool native lacks inside guidance it should keep:
+// the collaborative-pod cue (keep "execute it yourself" and the stale-claim
+// race; drop the sentence that delegates by DM tool) and the wake frame (keep
+// NO_REPLY; drop "claim first with commonly_claim_message", which the native
+// runtime does itself). sprint-review on #2261: the first cut of this file
+// left both, and its test only drove a one-seat pod.
+const CUT_MARKERS: Readonly<Record<string, string>> = Object.freeze({
+  [KERNEL_FRAME_TAGS.collaborativePod]: ' Delegate only when',
+  [KERNEL_FRAME_TAGS.wakeOnMessage]: ' If you do act, the message must be claimed first',
+});
+
+const TOOL_NAME = /commonly_[a-z_]+/g;
+
+/**
+ * The kernel's mention content as a native turn should read it. `nativeTools`
+ * is every tool a native turn can be offered: after the rewrites above, a
+ * frame that still names any other commonly_* tool is dropped (and logged)
+ * rather than shown, so a new kernel clause can never teach a native model a
+ * tool it does not have.
+ */
+export const nativeCueFromKernel = (content: string, podId: string, nativeTools: Iterable<string>): string => {
   const { frames, body } = splitKernelFrames(content);
   if (!frames.length) return content;
+  const allowed = new Set(nativeTools);
   const rewritten = frames.flatMap((frame) => {
     const tag = frameTagOf(frame);
-    if (tag === KERNEL_FRAME_TAGS.podContext) return [nativePodContextFrame(podId)];
-    if (tag === KERNEL_FRAME_TAGS.consultation) return [];
-    if (tag === KERNEL_FRAME_TAGS.trigger) return [frame.replace(/commonly_get_messages/g, 'commonly_read_context')];
-    return [frame];
+    let next: string = frame;
+    if (tag === KERNEL_FRAME_TAGS.podContext) next = nativePodContextFrame(podId);
+    else if (tag === KERNEL_FRAME_TAGS.consultation) return [];
+    else if (tag === KERNEL_FRAME_TAGS.trigger) next = frame.replace(/commonly_get_messages/g, 'commonly_read_context');
+    else if (tag && CUT_MARKERS[tag]) next = cutBefore(frame, CUT_MARKERS[tag]) ?? frame;
+    const foreign = [...new Set(next.match(TOOL_NAME) || [])].filter((name) => !allowed.has(name));
+    if (foreign.length) {
+      console.warn(`[native-cue] dropped a kernel frame (${tag || 'untagged'}) naming ${foreign.join(', ')}`);
+      return [];
+    }
+    return [next];
   });
   return joinKernelFrames(rewritten, body);
 };

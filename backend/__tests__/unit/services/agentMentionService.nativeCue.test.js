@@ -40,12 +40,11 @@ const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
 
-const referenceWake = async () => {
-  AgentInstallation.find.mockReturnValue({
-    lean: jest.fn().mockResolvedValue([
-      { agentName: 'seat-a', instanceId: 'default', displayName: 'Seat A' },
-    ]),
-  });
+// Drive the REAL kernel. `installations` decides which frames it writes: one
+// seat is the reference wake; two seats make a collaborative pod; a seat with
+// wake-on-message on gets the wake frame for a message that names no one.
+const kernelContent = async ({ installations, content, type }) => {
+  AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockResolvedValue(installations) });
   AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
   User.find.mockReturnValue({ select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([]) });
   User.findById.mockImplementation(() => ({
@@ -54,9 +53,9 @@ const referenceWake = async () => {
   }));
   Pod.findById.mockReturnValue({
     select: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ type: 'chat', members: ['user-1', 'bot-1'] }),
+      lean: jest.fn().mockResolvedValue({ type: 'chat', members: ['user-1', 'bot-1', 'bot-2'] }),
     }),
-    lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type: 'chat', members: ['user-1', 'bot-1'] }),
+    lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type: 'chat', members: ['user-1', 'bot-1', 'bot-2'] }),
   });
   AgentEvent.countDocuments.mockResolvedValue(0);
 
@@ -64,15 +63,29 @@ const referenceWake = async () => {
     podId: 'pod-1',
     userId: 'user-1',
     username: 'alice',
-    message: { id: 'm-1', content: 'hi @seat-a' },
+    message: { id: 'm-1', content },
   });
-  const call = AgentEventService.enqueue.mock.calls.find(([a]) => a.type === 'chat.mention');
+  // The LAST matching call: one arm may drive several scenarios.
+  const call = AgentEventService.enqueue.mock.calls.filter(([a]) => a.type === type).pop();
+  if (!call) throw new Error(`the kernel enqueued no ${type}`);
   return call[0].payload.content;
 };
 
+const seat = (agentName, extra = {}) => ({ agentName, instanceId: 'default', displayName: agentName, ...extra });
+const referenceWake = () => kernelContent({
+  installations: [seat('seat-a')], content: 'hi @seat-a', type: 'chat.mention',
+});
+const collaborativeMention = () => kernelContent({
+  installations: [seat('seat-a'), seat('seat-b')], content: 'hi @seat-a', type: 'chat.mention',
+});
+const wakeOnMessage = () => kernelContent({
+  installations: [seat('seat-a', { config: { wakeOnMessage: { enabled: true } } })],
+  content: 'just thinking out loud here',
+  type: 'message.posted',
+});
 beforeEach(() => { jest.clearAllMocks(); });
 
-const { splitKernelFrames, frameTagOf } = require('../../../services/kernelFrames');
+const { splitKernelFrames, frameTagOf, KERNEL_FRAME_TAGS } = require('../../../services/kernelFrames');
 const { nativeCueFromKernel } = require('../../../services/nativeKernelCue');
 const { NATIVE_TOOL_NAMES } = require('../../../services/nativeRuntimeService');
 
@@ -91,7 +104,7 @@ describe('native cue from kernel-built mention content', () => {
     const foreign = toolNamesIn(content).filter((name) => !NATIVE_TOOL_NAMES.includes(name));
     expect(foreign).toEqual(expect.arrayContaining(['commonly_attach_file', 'commonly_read_file', 'commonly_dm_agent']));
 
-    const cue = nativeCueFromKernel(content, 'pod-1');
+    const cue = nativeCueFromKernel(content, 'pod-1', NATIVE_TOOL_NAMES);
 
     expect(toolNamesIn(cue).filter((name) => !NATIVE_TOOL_NAMES.includes(name))).toEqual([]);
     expect(cue).not.toMatch(/codex|token file|threadRootId/);
@@ -105,8 +118,39 @@ describe('native cue from kernel-built mention content', () => {
     expect(cue.endsWith('\n\nhi @seat-a')).toBe(true);
   });
 
+  // sprint-review on #2261: the property was only checked on a one-seat pod,
+  // and the collaborative-pod and wake frames carried DM and claim tools
+  // through. Every tag the kernel writes is driven here, from real content.
+  test('across every kernel frame tag, the native cue names only native tools', async () => {
+    const contents = [await referenceWake(), await collaborativeMention(), await wakeOnMessage()];
+    const seen = new Set(contents.flatMap((content) => splitKernelFrames(content).frames.map(frameTagOf)));
+    // The instrument covers every tag, or this arm proves nothing about the one it misses.
+    expect([...seen].sort()).toEqual(expect.arrayContaining(Object.values(KERNEL_FRAME_TAGS)));
+
+    for (const content of contents) {
+      const cue = nativeCueFromKernel(content, 'pod-1', NATIVE_TOOL_NAMES);
+      expect(toolNamesIn(cue).filter((name) => !NATIVE_TOOL_NAMES.includes(name))).toEqual([]);
+    }
+  });
+
+  test('the collaborative-pod and wake frames keep their guidance and lose only the tool sentences', async () => {
+    const collab = nativeCueFromKernel(await collaborativeMention(), 'pod-1', NATIVE_TOOL_NAMES);
+    expect(collab).toMatch(/\[Collaborative pod: .*EXECUTE it yourself.*race them by picking it up directly.*say so in the pod when you do\.\]/);
+    expect(collab).not.toMatch(/Delegate only when|commonly_dm_agent|commonly_open_dm/);
+
+    const wake = nativeCueFromKernel(await wakeOnMessage(), 'pod-1', NATIVE_TOOL_NAMES);
+    expect(wake).toMatch(/\[Wake-on-message: .*return NO_REPLY as your ENTIRE reply.*\]/);
+    expect(wake).not.toMatch(/commonly_claim_message|must be claimed first/);
+  });
+
+  test('a frame that still names a tool native lacks is dropped, not shown', () => {
+    const content = '[Trigger: raised by **alice**.]\n[Some new cue: call commonly_brand_new_tool.]\n\nhi';
+    const cue = nativeCueFromKernel(content, 'pod-1', NATIVE_TOOL_NAMES);
+    expect(cue).toBe('[Trigger: raised by **alice**.]\n\nhi');
+  });
+
   test('content that is not kernel-framed passes through unchanged', () => {
-    expect(nativeCueFromKernel('A human just added you to this workspace.', 'pod-1'))
+    expect(nativeCueFromKernel('A human just added you to this workspace.', 'pod-1', NATIVE_TOOL_NAMES))
       .toBe('A human just added you to this workspace.');
   });
 });

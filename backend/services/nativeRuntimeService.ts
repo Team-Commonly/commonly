@@ -1509,7 +1509,7 @@ export async function runAgent(
   }
 
   const systemPrompt = buildSystemPrompt(installation, cfg);
-  let userMessage = nativeCueFromKernel(buildUserMessage(trigger, podName), String(podId));
+  let userMessage = nativeCueFromKernel(buildUserMessage(trigger, podName), String(podId), NATIVE_TOOL_NAMES);
   const model = String(cfg.model || DEFAULT_MODEL);
   // TASK-267b: what commonly_fetch_url may open starts as the prompt and,
   // when a known human wrote it, the message this turn answers, before any
