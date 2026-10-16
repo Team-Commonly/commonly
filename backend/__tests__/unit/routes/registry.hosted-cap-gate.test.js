@@ -160,6 +160,28 @@ describe('registry install — hosted runtime cap gate', () => {
     }));
     expect(mockListHosted).toHaveBeenCalledWith('user-1');
     expect(AgentInstallation.install).not.toHaveBeenCalled();
+    // QA walk 2026-10-16: the refusal used to come after the ephemeral
+    // registry row was written, leaving an orphan with no installation.
+    expect(AgentRegistry.create).not.toHaveBeenCalled();
+  });
+
+  it('counts once on the self-serve path, and a published agent is still capped', async () => {
+    mockCountHosted.mockResolvedValue(0);
+    await installHandler(makeReq('hosted'), makeRes());
+    expect(mockCountHosted).toHaveBeenCalledTimes(1);
+
+    jest.clearAllMocks();
+    mockCountHosted.mockResolvedValue(1);
+    mockListHosted.mockResolvedValue([]);
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'my-agent', displayName: 'My agent', latestVersion: '1.0.0',
+      manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
+    });
+    const res = makeRes();
+    await installHandler(makeReq('hosted'), res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'hosted_cap_reached' }));
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
   });
 
   it('lets an admin past the cap', async () => {
