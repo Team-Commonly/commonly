@@ -91,7 +91,9 @@ export class DailyDigestService {
     // agents": its agent posts and board moves are someone else's work. The
     // dry run on 2026-10-16 found every outside recipient's only line was a
     // support answer to another person in HQ. What waits on YOU stays, wherever.
-    const inPrivatePod = (podId: unknown) => !podId || !publicPodIds.has(String(podId));
+    // A line with no pod (a feed lookup that missed) has unknown provenance, so
+    // it stays out too: this guard withholds other people's content.
+    const inPrivatePod = (podId: unknown) => Boolean(podId) && !publicPodIds.has(String(podId));
     const asks = (recap.needsYou || []).filter((item) => memberPodIds.has(String(item.podId)));
     asks.slice(0, MAX_NEEDS_YOU).forEach((item) => {
       const title = oneLine(item.title);

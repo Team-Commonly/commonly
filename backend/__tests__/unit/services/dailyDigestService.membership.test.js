@@ -77,7 +77,11 @@ test('the digest is the recap: what waits on you, then agent work, then the boar
       ],
     }],
     board: [{
-      taskId: 'TASK-7', title: 'Fix the refund rounding', status: 'done', podName: 'Payments API',
+      taskId: 'TASK-7',
+      title: 'Fix the refund rounding',
+      status: 'done',
+      podId: 'p1',
+      podName: 'Payments API',
     }],
   }));
 
@@ -151,6 +155,27 @@ test("Scout's welcome is not 'your agents' work'; the person's own agent named S
   spy.mockRestore();
 });
 
+// sprint-review on #2267: the feed builds an update's podId from a pod lookup
+// (activity.pod?.id || null). A line with no pod has unknown provenance and
+// could be a public pod's, so it is withheld rather than mailed.
+test('an agent update or board move with no pod stays out', async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    agents: [{
+      name: 'Rivet',
+      updates: [{ podId: null, podName: 'Direct activity', content: 'Someone else\'s thread' }],
+    }],
+    board: [{
+      taskId: 'TASK-3', title: 'No pod', status: 'done', podName: 'Somewhere',
+    }],
+  }));
+
+  const digest = await new DailyDigestService().generateUserDailyDigest(member._id, { requireAway: true });
+
+  expect(digest.metadata.totalItems).toBe(0);
+  spy.mockRestore();
+});
+
 test("an agent line names the agent by its display label, not its bot username", async () => {
   const member = await person(new Date(Date.now() - 2 * 86400000));
   const rivet = await agentUser('rivet-e5f6', {
@@ -210,7 +235,7 @@ test('the scheduled run skips someone active in the last 20 hours; an on-demand 
   const member = await person(new Date());
   const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
     board: [{
-      taskId: 'TASK-9', title: 'Ship it', status: 'done', podName: 'Payments API',
+      taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API',
     }],
   }));
   const service = new DailyDigestService();
