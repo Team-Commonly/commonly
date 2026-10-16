@@ -79,6 +79,31 @@ const installRateLimit = rateLimit({
 const installRouter = express.Router();
 
 /**
+ * The hosted beta cap (ADR-023 D3.1) as a 403 body, or null when the user has
+ * room. One body for both places the route checks it, so a refusal reads the
+ * same whichever check caught it.
+ */
+const hostedCapRefusal = async (userId: unknown): Promise<Record<string, unknown> | null> => {
+  const { agentsPerUser } = HostedRuntime.hostedCaps();
+  const used = await HostedRuntime.countHostedAgentsForUser(userId);
+  if (used < agentsPerUser) return null;
+  let holders: any[] = [];
+  try {
+    holders = await HostedRuntime.listHostedInstallationsForUser(userId);
+  } catch (error: any) {
+    // Keep the cap response authoritative if diagnostics are unavailable.
+    console.warn('[registry/install] cap holder lookup failed:', error?.message || error);
+  }
+  return {
+    code: 'hosted_cap_reached',
+    message: `Hosted agents are capped at ${agentsPerUser} per user in beta; connect your own agent for more.`,
+    used,
+    cap: agentsPerUser,
+    holders,
+  };
+};
+
+/**
  * Derive instanceId from displayName for consistent agent identity across pods.
  * This ensures the same agent (e.g., "Cuz") gets the same instanceId regardless
  * of which pod it's installed in, allowing shared runtime tokens and memory.
@@ -254,6 +279,8 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // agent that has no published manifest, synthesize an ephemeral registry
     // row owned by them. Marketplace catalog excludes ephemeral rows; only
     // direct getByName() resolves them. Membership check above is the gate.
+    // Set when the self-serve branch below has already checked the hosted cap.
+    let hostedCapChecked = false;
     if (!agent) {
       const requestedRuntimeType = String(
         (config && config.runtime && (config.runtime as any).runtimeType) || '',
@@ -263,6 +290,15 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       // by the cap gate below rather than by entitlement.
       if (requestedRuntimeType !== 'webhook' && requestedRuntimeType !== HostedRuntime.HOSTED_RUNTIME_TYPE) {
         return res.status(404).json({ error: 'Agent not found in registry' });
+      }
+      // The hosted cap is checked again below, where it is authoritative for
+      // every hosted install. Checked here too, before the ephemeral registry
+      // row is written: a refused second hosted install used to leave that row
+      // behind with no installation (QA walk, 2026-10-16).
+      if (requestedRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller) {
+        const refusal = await hostedCapRefusal(userId);
+        if (refusal) return res.status(403).json(refusal);
+        hostedCapChecked = true;
       }
       // ADR-006 §invariant 7 — self-serve is pod-scope only. The route
       // already requires `podId` (pod 404 above guards this), but the
@@ -524,25 +560,9 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // classify 'hosted' as cloud — the gate above is for operator-run tiers
     // (moltbot/codex/...), this one is the per-user beta cap. Admins bypass
     // the cap the same way they bypass the entitlement.
-    if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller) {
-      const { agentsPerUser } = HostedRuntime.hostedCaps();
-      const used = await HostedRuntime.countHostedAgentsForUser(userId);
-      if (used >= agentsPerUser) {
-        let holders: any[] = [];
-        try {
-          holders = await HostedRuntime.listHostedInstallationsForUser(userId);
-        } catch (error: any) {
-          // Keep the cap response authoritative if diagnostics are unavailable.
-          console.warn('[registry/install] cap holder lookup failed:', error?.message || error);
-        }
-        return res.status(403).json({
-          code: 'hosted_cap_reached',
-          message: `Hosted agents are capped at ${agentsPerUser} per user in beta; connect your own agent for more.`,
-          used,
-          cap: agentsPerUser,
-          holders,
-        });
-      }
+    if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller && !hostedCapChecked) {
+      const refusal = await hostedCapRefusal(userId);
+      if (refusal) return res.status(403).json(refusal);
     }
 
     // `config.hosted` is the kernel's record of where a hosted agent runs
