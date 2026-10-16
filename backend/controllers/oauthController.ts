@@ -148,8 +148,18 @@ const callbackUrl = (provider: string, req: any) => {
 const safeNextPath = (value: any) => {
   const next = String(value || '');
   // eslint-disable-next-line no-control-regex
-  const unsafe = !next.startsWith('/') || /^\/[/\\]/.test(next) || /[\u0000-\u001f\u007f]/.test(next);
-  return unsafe ? '/v2' : next;
+  if (!next.startsWith('/') || /^\/[/\\]/.test(next) || /[\u0000-\u001f\u007f]/.test(next)) return '/v2';
+  // Dot segments normalise into a protocol-relative path: /.//host,
+  // /x/..//host and /%2e//host all come out as //host. So the normalised path
+  // is checked too, the same rule as the frontend's safeNextPath.
+  try {
+    const base = 'https://next.invalid';
+    const url = new URL(next, base);
+    if (url.origin !== base || /^\/[/\\]/.test(url.pathname)) return '/v2';
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return '/v2';
+  }
 };
 
 const loginErrorRedirect = (res: any, code: string) =>

@@ -5,6 +5,7 @@ import V2OAuthButtons from './V2OAuthButtons';
 import V2AuthBrand from './V2AuthBrand';
 import { Trans, useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
+import { safeNextPath } from '../utils/safeNextPath';
 
 // v2-native sign-up. Pairs with V2Login (reuses the .v2-login styles) so the
 // auth surfaces match after v2 became the default. Mirrors the legacy
@@ -36,8 +37,9 @@ const V2Register: React.FC = () => {
   const [invitationCode, setInvitationCode] = useState(searchParams.get('invite') || '');
   // Deep-link context (e.g. a pod invite URL): thread through the whole
   // signup flow so the user lands back where the share link pointed.
-  const rawNext = searchParams.get('next');
-  const nextPath = rawNext && rawNext.startsWith('/') ? rawNext : undefined;
+  // Through safeNextPath like login: a raw "starts with /" check let
+  // //host through, and the post-signup navigate then threw instead of landing.
+  const nextPath = safeNextPath(searchParams.get('next')) || undefined;
   const loginHref = nextPath ? `/v2/login?next=${encodeURIComponent(nextPath)}` : '/v2/login';
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
