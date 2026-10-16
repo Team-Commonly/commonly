@@ -582,6 +582,30 @@ class MessageClaimService {
   }
 
   /** Who holds a message right now? Expired leases read as unheld. */
+  /**
+   * Message ids this agent holds a LIVE claim on in the pod. Attention reads
+   * it to tell an answer from a ping (attentionItemService): an agent posting
+   * while it holds the claim on P's message is answering P. A lapsed or
+   * released claim is not live, so it answers nobody. Bounded: a turn holds
+   * one claim, so a handful is generous.
+   */
+  static async liveClaimsHeldBy(options: {
+    podId: string; agentName: string; instanceId?: string;
+  }): Promise<string[]> {
+    const { podId, agentName, instanceId = 'default' } = options;
+    if (!podId || !agentName) return [];
+    await ensureTable();
+    const res = await pool.query(
+      `SELECT message_id FROM message_claims
+       WHERE pod_id = $1 AND LOWER(claimed_by) = $2 AND instance_id = $3
+         AND state = 'claimed' AND expires_at >= NOW()
+       ORDER BY expires_at DESC
+       LIMIT 5`,
+      [String(podId), String(agentName).toLowerCase(), String(instanceId || 'default')],
+    );
+    return res.rows.map((r: { message_id: unknown }) => String(r.message_id));
+  }
+
   static async holder(messageId: string): Promise<ClaimResult> {
     await ensureTable();
     const res = await pool.query(
