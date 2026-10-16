@@ -33,6 +33,8 @@ const {
   loadAgentToken,
   buildDefaultEnvironment,
   bootstrapAgentRecordFromEnv,
+  NO_AGENT_CLI_CODE,
+  savedSeatLacksDefaultSandbox,
   BOOTSTRAP_ADAPTER_DETECT_ORDER,
   runtimeAdapterForInstallation,
   adapterRequiresServerBinding,
@@ -721,14 +723,49 @@ describe('bootstrapAgentRecordFromEnv', () => {
     expect(record.environment).not.toHaveProperty('sandbox');
   });
 
-  test('falls through the detect order when the first CLI is absent', async () => {
+  test('falls through the detect order when the first CLI is absent, and says so', async () => {
+    const lines = [];
     const record = await bootstrapAgentRecordFromEnv({
       name: 'smoke-agent',
       env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
       clientFactory: makeFactory(),
       adapterRegistry: makeRegistry({ claudeFound: false }),
+      log: (line) => lines.push(line),
     });
     expect(record.adapter).toBe('codex');
+    // A Claude Code user who gets a Codex agent must be told, not left to notice.
+    expect(lines).toContain('claude not found on PATH, so this agent runs with codex. To choose, pass --adapter <name>.');
+  });
+
+  test('the first CLI found runs with nothing to report', async () => {
+    const lines = [];
+    await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory(),
+      adapterRegistry: makeRegistry(),
+      log: (line) => lines.push(line),
+    });
+    expect(lines.filter((line) => /not found on PATH/.test(line))).toEqual([]);
+  });
+
+  test('no CLI at all is an error carrying a code the run action can recognise', async () => {
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory(),
+      adapterRegistry: makeRegistry({ claudeFound: false, codexFound: false }),
+    })).rejects.toMatchObject({ code: NO_AGENT_CLI_CODE });
+  });
+
+  test('a saved seat predates the default sandbox only when it has the Connect-page shape and nothing enforced', () => {
+    const saved = (overrides) => ({ adapter: 'claude', workspacePath: null, environment: { mcp: [] }, ...overrides });
+    expect(savedSeatLacksDefaultSandbox(saved())).toBe(true);
+    expect(savedSeatLacksDefaultSandbox(saved({ environment: { mcp: [], sandbox: { trust: 'public' } } }))).toBe(false);
+    expect(savedSeatLacksDefaultSandbox(saved({ environment: { mcp: [], sandbox: { mode: 'workspace' } } }))).toBe(false);
+    expect(savedSeatLacksDefaultSandbox(saved({ workspacePath: '/work/seat' }))).toBe(false);
+    expect(savedSeatLacksDefaultSandbox(saved({ adapter: 'pi' }))).toBe(false);
+    expect(savedSeatLacksDefaultSandbox(saved({ environment: null }))).toBe(false);
   });
 
   test('OpenCode is not selected by automatic bootstrap detection', async () => {

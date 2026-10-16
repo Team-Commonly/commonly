@@ -19,6 +19,7 @@ import { Command } from 'commander';
 
 const homeTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-host-sandbox-test-'));
 const createClientMock = jest.fn();
+let mockCliFound = true;
 
 await jest.unstable_mockModule('os', () => {
   const actual = os;
@@ -31,13 +32,13 @@ await jest.unstable_mockModule('os', () => {
 await jest.unstable_mockModule('../src/lib/api.js', () => ({ createClient: createClientMock }));
 await jest.unstable_mockModule('../src/lib/adapters/index.js', () => ({
   getAdapter: (name) => (['claude', 'codex', 'pi', 'opencode', 'stub'].includes(name)
-    ? { name, detect: async () => true }
+    ? { name, detect: async () => mockCliFound }
     : null),
   listAdapterNames: () => ['claude', 'codex', 'pi', 'opencode', 'stub'],
 }));
 
 const { hostSandboxRefusal } = await import('../src/lib/sandbox/host-check.js');
-const { registerAgent } = await import('../src/commands/agent.js');
+const { registerAgent, saveAgentToken } = await import('../src/commands/agent.js');
 const { defaultSeatSandbox } = await import('../src/lib/default-environment.js');
 
 afterAll(() => fs.rmSync(homeTmpDir, { recursive: true, force: true }));
@@ -160,5 +161,63 @@ describe('agent run on a host that cannot confine the seat', () => {
     const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(stderr).toContain('[byo-win] Commonly runs a connected Claude Code inside a sandbox, and has no sandbox for Windows yet');
     expect(stderr).toContain('sudo apt install bubblewrap');
+  });
+
+  // An npm-installed Claude Code is a .cmd shim Node cannot spawn, so on
+  // Windows "no CLI found" usually means "installed, and not runnable here".
+  test('on Windows, finding no CLI at all also prints the directions', async () => {
+    mockCliFound = false;
+    const oldToken = process.env.COMMONLY_AGENT_TOKEN;
+    process.env.COMMONLY_AGENT_TOKEN = 'cm_agent_test';
+    createClientMock.mockReturnValueOnce({
+      get: jest.fn().mockResolvedValue({
+        agentName: 'byo-win',
+        installations: [{ type: 'installation', podId: 'pod-1', instanceId: 'default', status: 'active', runtimeAdapter: null }],
+      }),
+    });
+    try {
+      const program = new Command();
+      program.exitOverride();
+      registerAgent(program);
+      await expect(program.parseAsync(['agent', 'run', 'byo-win'], { from: 'user' })).rejects.toBe(exitSentinel);
+    } finally {
+      mockCliFound = true;
+      if (oldToken === undefined) delete process.env.COMMONLY_AGENT_TOKEN; else process.env.COMMONLY_AGENT_TOKEN = oldToken;
+    }
+    const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(stderr).toContain('No supported agent CLI found on PATH');
+    expect(stderr).toContain('has no sandbox for Windows yet');
+    expect(fs.existsSync(tokenPath)).toBe(false);
+  });
+});
+
+describe('a saved seat from before the default sandbox', () => {
+  test('starts with one line saying how to pick the default up', async () => {
+    saveAgentToken('byo-old', {
+      agentName: 'byo-old',
+      podId: 'pod-1',
+      instanceUrl: 'https://api.commonly.me',
+      runtimeToken: 'cm_agent_test',
+      adapter: 'claude',
+      workspacePath: null,
+      environment: { mcp: [{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] }] },
+    });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    // Past the warning the run would poll; stop it at its first client.
+    createClientMock.mockImplementation(() => { throw new Error('reached the poll loop'); });
+    try {
+      const program = new Command();
+      program.exitOverride();
+      registerAgent(program);
+      await expect(program.parseAsync(['agent', 'run', 'byo-old'], { from: 'user' })).rejects.toThrow('reached the poll loop');
+      const warned = warnSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(warned).toContain("[byo-old] this agent's saved settings predate the default sandbox");
+      expect(warned).toContain('commonly agent detach byo-old --force, then run a fresh command from the Connect page');
+    } finally {
+      warnSpy.mockRestore();
+      console.log.mockRestore();
+      createClientMock.mockReset();
+    }
   });
 });
