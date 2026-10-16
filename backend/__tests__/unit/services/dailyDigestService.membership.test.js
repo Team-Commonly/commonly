@@ -55,6 +55,41 @@ test('digest reads current pod membership without subscribedPods and excludes an
   expect(digest.content).not.toContain('Other Pod');
 });
 
+// Cofounder's condition on #2210, before any outside digest: the query used to
+// add every `posts` summary and every pod-less chat summary to EVERY digest,
+// whatever pods the recipient is in. Zero such rows existed on 10-16, so
+// nothing leaked, but one posts summary would have mailed one pod's activity
+// to non-members. A digest reads the recipient's own pods and nothing else.
+test("a digest never carries another pod's posts summary or a pod-less summary", async () => {
+  const member = await person();
+  const outsider = await person();
+  await podWithSummary(member, 'Member Pod');
+  const elsewhere = await Pod.create({ name: 'Private Elsewhere', createdBy: outsider._id, members: [outsider._id] });
+  await Summary.create({
+    type: 'posts',
+    podId: elsewhere._id,
+    title: 'Private Elsewhere posts',
+    content: '- A private post',
+    timeRange: { start: new Date(Date.now() - 60000), end: new Date() },
+    metadata: { totalItems: 1 },
+  });
+  await Summary.create({
+    type: 'chats',
+    title: 'Pod-less chat summary',
+    content: '- Somewhere else',
+    timeRange: { start: new Date(Date.now() - 60000), end: new Date() },
+    metadata: { totalItems: 1 },
+  });
+  const service = new DailyDigestService();
+  jest.spyOn(service, 'generateDigestContent').mockImplementation(async (data) =>
+    Object.keys(data.byPod).join(', '));
+
+  const digest = await service.generateUserDailyDigest(member._id);
+
+  expect(digest.metadata.totalItems).toBe(1);
+  expect(digest.content).toBe('Member Pod');
+});
+
 test('scheduler includes a member with recent pod work even after seven days away', async () => {
   const member = await person(new Date(Date.now() - 10 * 86400000));
   const creator = await person(new Date(Date.now() - 10 * 86400000));

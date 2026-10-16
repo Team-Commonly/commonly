@@ -86,12 +86,11 @@ export class DailyDigestService {
       const pods = await Pod.find({ members: userId }).select('_id').lean() as Array<{ _id: unknown }>;
       const podIds = pods.map((pod) => pod._id);
 
+      // The recipient's own pods and nothing else. The query used to add every
+      // `posts` summary and every pod-less chat summary to every digest, so one
+      // posts summary would have mailed a pod's activity to its non-members.
       const summaries = await Summary.find({
-        $or: [
-          { podId: { $in: podIds } },
-          { type: 'posts' },
-          { type: 'chats', podId: { $exists: false } },
-        ],
+        podId: { $in: podIds },
         createdAt: { $gte: startTime, $lte: endTime },
       })
         .populate('podId', 'name type')
