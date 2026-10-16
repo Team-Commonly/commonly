@@ -78,6 +78,14 @@ import {
   spawnRetryPolicy,
 } from '../lib/spawn-retry.js';
 import {
+  CONTENT_REFUSED_REASON,
+  composeRefusalHandoff,
+  contentRefusedResult,
+  isContentRefusal,
+  refusedItemRef,
+  sanitizeHandoffAgent,
+} from '../lib/content-refusal.js';
+import {
   ADDRESSED_EVENT_TYPES,
   CASCADE_DEFAULTS,
   CASCADE_ENV_VARS,
@@ -1112,11 +1120,18 @@ export const performRun = ({
   spawnCredentialLeaseFactory = createSpawnCredentialLease,
   revokeOrphansImpl = revokeOrphanedSpawnCredentials,
   sleepImpl = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
+  // The agent to @mention when the model provider refuses a request's content
+  // (lib/content-refusal.js). Null: the refusal notice names no one.
+  refusalHandoff = null,
 }) => {
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
     throw new Error('environment.provider requires a provider-capable adapter');
   }
   const client = createClient({ instance: instanceUrl, token });
+  const handoffAgent = sanitizeHandoffAgent(refusalHandoff);
+  if (refusalHandoff && !handoffAgent) {
+    log(`--refusal-handoff ignored: '${String(refusalHandoff).slice(0, 64)}' is not an agent handle`);
+  }
 
   // THE BOOT SWEEP IS THE SECOND NET, AND IT HAPPENS ONCE PER PROCESS. A seat
   // that dies mid-turn (kill, crash, reboot) leaves its child credential live
@@ -1908,6 +1923,53 @@ export const performRun = ({
   // claim is not discarded: it remains in the model's context with the same
   // peer frame the single-event path already uses, but is explicitly read-only.
   // Advisory losses retain their existing peer-aware behaviour.
+  // A refused item is acked, never retried (lib/content-refusal.js). Every one
+  // is logged by event id alone. One addressed to this seat also gets a pod
+  // notice the WRAPPER writes, since the model never read it: identifiers
+  // only, and the hand-off agent @mentioned outside a DM. A refused broadcast
+  // gets no notice: its claim releases as `upstream-refused`, and the kernel
+  // hands a human's message to another listener. A notice that fails to post
+  // is logged; the ack still happens, because retrying would only re-send the
+  // refused content.
+  const postRefusalNotice = async (refusedEntries, eventPodId) => {
+    for (const entry of refusedEntries) {
+      log(`[${entry.event.type}] the model provider refused the content of event ${entry.event._id} (content_refused) — acked as refused, not retried`);
+    }
+    const addressed = refusedEntries.filter((entry) => ADDRESSED_EVENT_TYPES.has(entry.event.type));
+    if (addressed.length === 0) return;
+    const mention = Boolean(handoffAgent) && !addressed.some((entry) => entry.event.type === 'dm.message');
+    const text = composeRefusalHandoff({
+      items: addressed.map((entry) => refusedItemRef(entry.event)),
+      handoff: handoffAgent,
+      mention,
+    });
+    let posted = false;
+    try {
+      const delivery = await deliverChatReply({
+        client,
+        podId: eventPodId,
+        text,
+        limit: chatCharLimit,
+        maxChunks: maxChatChunks,
+        uploadName: `${agentName}-refusal-${addressed[0].event._id}.md`,
+        log: (line) => log(`[inbox.batch] ${line}`),
+      });
+      posted = !delivery.skipped && !delivery.refused;
+      log(posted
+        ? `[inbox.batch] refusal notice posted${mention ? `, handed off to @${handoffAgent}` : ''}`
+        : `[inbox.batch] refusal notice not delivered (${delivery.reason})`);
+    } catch (err) {
+      log(`[inbox.batch] refusal notice failed: ${err.message}`);
+    }
+    for (const entry of addressed) {
+      entry.result.details = {
+        ...entry.result.details,
+        handoff: mention ? handoffAgent : null,
+        noticePosted: posted,
+      };
+    }
+  };
+
   const processEventBatch = async (events, inboxCount = events.length) => {
     const eventPodId = events[0]?.podId || podId;
     if (!eventPodId || events.some((event) => (event.podId || podId) !== eventPodId)) {
@@ -2059,19 +2121,76 @@ export const performRun = ({
         hasHeartbeat: entries.some((entry) => entry.event.type === 'heartbeat'),
       },
     };
-    let turnResult;
-    try {
-      turnResult = await runTurn({
-        event: batchEvent,
+    // One item, run as its own turn. Used only after the provider refused a
+    // batch's content: a composite turn cannot say WHICH item was refused, and
+    // refusing them all would swallow the ordinary items with the flagged one.
+    const isolatedTurn = async (entry) => {
+      const before = await snapshotMessages();
+      return runTurn({
+        event: {
+          ...entry.event,
+          _id: `batch-${entry.event._id}`,
+          type: 'inbox.batch',
+          payload: {
+            ...entry.event.payload,
+            batchEventIds: [String(entry.event._id)],
+            hasHeartbeat: entry.event.type === 'heartbeat',
+          },
+        },
         eventPodId,
-        prompt: buildInboxPrompt(entries, inboxCount),
-        preSpawnIds,
+        prompt: buildInboxPrompt([entry], 1),
+        preSpawnIds: before ? new Set(before.map((message) => String(message._id || message.id))) : null,
         snapshotMessages,
-        claimKeeper: compositeClaimKeeper,
+        claimKeeper: entry.claimKeeper,
         trigger,
       });
-      for (const entry of actionEntries) entry.result = turnResult;
-      return { entries };
+    };
+
+    let turnResult;
+    let deferredError = null;
+    try {
+      try {
+        turnResult = await runTurn({
+          event: batchEvent,
+          eventPodId,
+          prompt: buildInboxPrompt(entries, inboxCount),
+          preSpawnIds,
+          snapshotMessages,
+          claimKeeper: compositeClaimKeeper,
+          trigger,
+        });
+        for (const entry of actionEntries) entry.result = turnResult;
+      } catch (err) {
+        if (!isContentRefusal(err)) throw err;
+        if (actionEntries.length === 1) {
+          actionEntries[0].result = contentRefusedResult();
+        } else {
+          log(
+            `[inbox.batch] the model provider refused this batch's content (content_refused); `
+            + `running its ${actionEntries.length} items one at a time so only a refused item is refused`,
+          );
+          for (const entry of actionEntries) {
+            if (!running) break;
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              entry.result = await isolatedTurn(entry);
+            } catch (itemErr) {
+              // Any other failure stops here and leaves this item and the rest
+              // unacked for redelivery; the tick applies the retry policy.
+              if (!isContentRefusal(itemErr)) {
+                deferredError = itemErr;
+                break;
+              }
+              entry.result = contentRefusedResult();
+            }
+          }
+        }
+        await postRefusalNotice(
+          actionEntries.filter((entry) => entry.result?.reason === CONTENT_REFUSED_REASON),
+          eventPodId,
+        );
+      }
+      return deferredError ? { entries, deferredError } : { entries };
     } finally {
       await Promise.all(actionEntries
         .filter((entry) => entry.claimKeeper)
@@ -2080,8 +2199,9 @@ export const performRun = ({
           // broadcast may be handed to one remaining listener, a refusal
           // closes with its reason, and every other completed batch item
           // closes normally. Same decision point as the single-event path.
-          // Same decision point as the single-event path.
-          const release = claimReleaseFor(entry.event, turnResult);
+          // An item left without a result (a failure during isolation)
+          // releases with no outcome, for redelivery, as a thrown turn does.
+          const release = claimReleaseFor(entry.event, entry.result || turnResult);
           await entry.claimKeeper.release(release.outcome, {
             reason: release.reason, status: release.status,
           });
@@ -2120,10 +2240,9 @@ export const performRun = ({
       for (const group of eventGroups.values()) {
         if (!running) break;
         if ((group[0].podId || podId) && !PRIVATE_RESPONSE_EVENT_TYPES.has(group[0].type)) {
-          let batch;
-          try {
-            batch = await processEventBatch(group, inboxCount);
-          } catch (err) {
+          // One failure report for a batch whose items stay unacked, whether
+          // the composite turn threw or an isolated item did after a refusal.
+          const scheduleBatchRetry = (err, unackedCount) => {
             consecutiveSpawnFailures += 1;
             const retry = spawnRetryPolicy({
               error: err,
@@ -2135,7 +2254,7 @@ export const performRun = ({
             const event = group[0];
             const wrapped = new Error(
               `inbox batch processing failed (${retry.failureClass}; ${consecutiveSpawnFailures} consecutive) `
-              + `— ${group.length} events remain unacked; ${retry.circuitOpen ? 'circuit open' : 'retry scheduled'}, `
+              + `— ${unackedCount} events remain unacked; ${retry.circuitOpen ? 'circuit open' : 'retry scheduled'}, `
               + `next probe in ${formatRetryDelay(retry.delayMs)}: ${err.message}`,
               { cause: err },
             );
@@ -2159,6 +2278,12 @@ export const performRun = ({
             });
             if (onError) onError(wrapped);
             else log(`[inbox.batch] ${wrapped.message}`);
+          };
+          let batch;
+          try {
+            batch = await processEventBatch(group, inboxCount);
+          } catch (err) {
+            scheduleBatchRetry(err, group.length);
             break;
           }
           const batchSpawned = batch.entries.some((entry) => (
@@ -2168,6 +2293,9 @@ export const performRun = ({
           if (batchSpawned) consecutiveSpawnFailures = 0;
           for (const entry of batch.entries) {
             const event = entry.event;
+            // No result: an item a failure during refusal isolation never
+            // reached. Unacked, the kernel redelivers it.
+            if (!entry.result) continue;
             if (entry.result?.reason !== 'duplicate-delivery') {
               recordHandledEvent(agentName, event._id);
             }
@@ -2187,6 +2315,10 @@ export const performRun = ({
               onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
             }
           }
+          if (batch.deferredError) {
+            scheduleBatchRetry(batch.deferredError, batch.entries.filter((entry) => !entry.result).length);
+            break;
+          }
           continue;
         }
         const [event] = group;
@@ -2199,65 +2331,72 @@ export const performRun = ({
           try {
             result = await processEvent(event);
           } catch (err) {
-            // Do not record or ack: the kernel must retain the event for
-            // at-least-once delivery. Stop this fetched batch immediately —
-            // continuing could launch every one of the 10 returned events
-            // into the same provider outage before the next poll (#782).
-            consecutiveSpawnFailures += 1;
-            const retry = spawnRetryPolicy({
-              error: err,
-              consecutiveFailures: consecutiveSpawnFailures,
-              intervalMs,
-              jitterRatio: spawnJitterRatio,
-            });
-            nextPollDelayMs = retry.delayMs;
-            const retryIn = formatRetryDelay(retry.delayMs);
-            const state = retry.circuitOpen ? 'circuit open' : 'retry scheduled';
-            const wrapped = new Error(
-              `${event.type} processing failed (${retry.failureClass}; `
-              + `${consecutiveSpawnFailures} consecutive) — event ${event._id} remains unacked; `
-              + `${state}, next probe in ${retryIn}: ${err.message}`,
-              { cause: err },
-            );
-            Object.assign(wrapped, {
-              code: 'agent_spawn_retry_scheduled',
-              failureClass: retry.failureClass,
-              consecutiveFailures: consecutiveSpawnFailures,
-              retryAfterMs: retry.delayMs,
-              circuitOpen: retry.circuitOpen,
-              eventId: event._id,
-              ...(isPodFocusDiagnostic(err) ? {
-                focusDiagnostic: {
-                  errorCode: err.code,
-                  eventIds: err.eventId || event._id,
-                  podId: err.podId || event.podId || podId || null,
-                  focusRevision: err.focusRevision ?? null,
-                  measuredCodePoints: err.measuredCodePoints ?? null,
-                  allowedCodePoints: err.allowedCodePoints ?? FOCUS_FRAME_MAX_CODE_POINTS,
-                },
-              } : {}),
-            });
-            // ONE emission, not two. `wrapped.message` already opens with the
-            // event type, so the log copy added a second prefix and a second
-            // line of identical text into the same merged stream — enough that
-            // `grep -c 'session limit'` returned 8 for 4 failures, and a reader
-            // counting hits per event id saw 2 and inferred two deliveries.
-            // On 2026-08-18 that count pointed at the wrong cause for #993:
-            // two deliveries per event puts `attempts` at 2 and the requeue cap
-            // one step away. It did not decide anything — the cap was ruled out
-            // from the DB, where a capped event would have left a `failed` row
-            // and none existed — but it corroborated the wrong theory, and the
-            // doubling had to be spotted by hand before the count could be
-            // discounted. A log that inflates is worse than one that is silent,
-            // because it argues.
-            //
-            // Routed to the error channel when a caller provides one, and to
-            // the log when it doesn't, so neither contract loses the failure:
-            // an embedder that passes no `onError` still sees it, and `agent
-            // run` — which always passes one — stops printing it twice.
-            if (onError) onError(wrapped);
-            else log(`[${event.type}] ${wrapped.message}`);
-            break;
+            if (isContentRefusal(err)) {
+              // A refused private item is acked without a pod notice: it has no
+              // pod to post into, and its sender's ask expires on its own.
+              result = contentRefusedResult();
+              log(`[${event.type}] the model provider refused the content of event ${event._id} (content_refused) — acked as refused, not retried`);
+            } else {
+              // Do not record or ack: the kernel must retain the event for
+              // at-least-once delivery. Stop this fetched batch immediately —
+              // continuing could launch every one of the 10 returned events
+              // into the same provider outage before the next poll (#782).
+              consecutiveSpawnFailures += 1;
+              const retry = spawnRetryPolicy({
+                error: err,
+                consecutiveFailures: consecutiveSpawnFailures,
+                intervalMs,
+                jitterRatio: spawnJitterRatio,
+              });
+              nextPollDelayMs = retry.delayMs;
+              const retryIn = formatRetryDelay(retry.delayMs);
+              const state = retry.circuitOpen ? 'circuit open' : 'retry scheduled';
+              const wrapped = new Error(
+                `${event.type} processing failed (${retry.failureClass}; `
+                + `${consecutiveSpawnFailures} consecutive) — event ${event._id} remains unacked; `
+                + `${state}, next probe in ${retryIn}: ${err.message}`,
+                { cause: err },
+              );
+              Object.assign(wrapped, {
+                code: 'agent_spawn_retry_scheduled',
+                failureClass: retry.failureClass,
+                consecutiveFailures: consecutiveSpawnFailures,
+                retryAfterMs: retry.delayMs,
+                circuitOpen: retry.circuitOpen,
+                eventId: event._id,
+                ...(isPodFocusDiagnostic(err) ? {
+                  focusDiagnostic: {
+                    errorCode: err.code,
+                    eventIds: err.eventId || event._id,
+                    podId: err.podId || event.podId || podId || null,
+                    focusRevision: err.focusRevision ?? null,
+                    measuredCodePoints: err.measuredCodePoints ?? null,
+                    allowedCodePoints: err.allowedCodePoints ?? FOCUS_FRAME_MAX_CODE_POINTS,
+                  },
+                } : {}),
+              });
+              // ONE emission, not two. `wrapped.message` already opens with the
+              // event type, so the log copy added a second prefix and a second
+              // line of identical text into the same merged stream — enough that
+              // `grep -c 'session limit'` returned 8 for 4 failures, and a reader
+              // counting hits per event id saw 2 and inferred two deliveries.
+              // On 2026-08-18 that count pointed at the wrong cause for #993:
+              // two deliveries per event puts `attempts` at 2 and the requeue cap
+              // one step away. It did not decide anything — the cap was ruled out
+              // from the DB, where a capped event would have left a `failed` row
+              // and none existed — but it corroborated the wrong theory, and the
+              // doubling had to be spotted by hand before the count could be
+              // discounted. A log that inflates is worse than one that is silent,
+              // because it argues.
+              //
+              // Routed to the error channel when a caller provides one, and to
+              // the log when it doesn't, so neither contract loses the failure:
+              // an embedder that passes no `onError` still sees it, and `agent
+              // run` — which always passes one — stops printing it twice.
+              if (onError) onError(wrapped);
+              else log(`[${event.type}] ${wrapped.message}`);
+              break;
+            }
           }
           // Only a completed model turn proves the local runtime and delivery
           // path recovered. A malformed/no-destination event is still acked,
@@ -2904,6 +3043,7 @@ Docs:
     .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
+    .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .action(async (name, opts) => {
       let record = loadAgentToken(name);
       if (!record) {
@@ -2996,6 +3136,7 @@ Docs:
         // server's published default, which is the only lifetime we can justify
         // without an operator saying otherwise.
         spawnCredentialTtlSeconds: resolveSpawnTtlSeconds(process.env),
+        refusalHandoff: opts.refusalHandoff || null,
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
         // Both sinks are stamped, and both must be — but not for the reason
         // this comment gave until now, which its own PR falsified.
