@@ -56,6 +56,27 @@ jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
 }));
 
+// Whether this instance holds a search key and a sandbox key. Off by default,
+// so the arms below that do not name them see an instance with neither.
+let mockSearchConfigured = false;
+let mockSandboxConfigured = false;
+const mockSearchWeb = jest.fn();
+jest.mock('../../../services/webSearchService', () => ({
+  isSearchConfigured: () => mockSearchConfigured,
+  searchWeb: (...args) => mockSearchWeb(...args),
+}));
+// A turn offered search asks whether the pod is bridged to an external chat;
+// these pods are not.
+jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
+  podIsBridged: jest.fn().mockResolvedValue(false),
+}));
+const mockSandboxRun = jest.fn();
+const mockSandboxClose = jest.fn();
+jest.mock('../../../services/turnSandboxService', () => ({
+  isSandboxConfigured: () => mockSandboxConfigured,
+  TurnSandbox: jest.fn().mockImplementation(() => ({ run: mockSandboxRun, close: mockSandboxClose })),
+}));
+
 jest.mock('../../../models/Message', () => {
   const chain = {
     sort: () => chain, limit: () => chain, select: () => chain, populate: () => chain, lean: () => Promise.resolve([]),
@@ -82,6 +103,21 @@ const hostedInstall = (hosted = { engine: 'native', provisionedAt: new Date(), a
 
 const mention = { type: 'chat.mention', eventId: '507f1f77bcf86cd799439012', payload: { content: '@maya-agent what did we decide?' } };
 
+const BASE_TOOLS = [
+  'commonly_create_task', 'commonly_post_message', 'commonly_read_context', 'commonly_read_memory', 'commonly_write_memory',
+];
+const call = (id, name, args) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } });
+const toolCalls = (...calls) => ({
+  status: 200,
+  headers: {},
+  data: {
+    choices: [{ message: { role: 'assistant', content: null, tool_calls: calls } }],
+    usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
+  },
+});
+const offeredIn = (callIndex) => axios.post.mock.calls[callIndex][1].tools.map((tool) => tool.function.name).sort();
+const systemPromptIn = (callIndex) => axios.post.mock.calls[callIndex][1].messages[0].content;
+
 describe('nativeRuntimeService — hosted installs on the native engine', () => {
   const previous = {
     baseUrl: process.env.LITELLM_BASE_URL,
@@ -89,15 +125,22 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     turns: process.env.HOSTED_TURNS_PER_DAY,
   };
 
+  let savedRun;
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.LITELLM_BASE_URL = 'http://litellm.test';
     process.env.LITELLM_MASTER_KEY = 'test-key';
     delete process.env.HOSTED_TURNS_PER_DAY;
+    mockSearchConfigured = false;
+    mockSandboxConfigured = false;
+    mockSearchWeb.mockResolvedValue({ provider: 'exa', results: [{ title: 'Node 26', url: 'https://example.com/node-26', text: 'Released.' }] });
+    mockSandboxRun.mockResolvedValue({ ok: true, stdout: '4\n', stderr: '' });
+    mockSandboxClose.mockResolvedValue(0);
     AgentRun.countDocuments.mockResolvedValue(0);
-    AgentRun.create.mockImplementation(async (doc) => ({
-      _id: 'run-1', ...doc, save: jest.fn().mockResolvedValue(undefined),
-    }));
+    AgentRun.create.mockImplementation(async (doc) => {
+      savedRun = { _id: 'run-1', ...doc, save: jest.fn().mockResolvedValue(undefined) };
+      return savedRun;
+    });
     axios.post.mockResolvedValue({
       status: 200,
       data: {
@@ -127,10 +170,86 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       agentName: 'maya-agent', userId: OWNER, trigger: expect.any(String),
     }));
     const body = axios.post.mock.calls[0][1];
-    expect(body.tools.map((tool) => tool.function.name).sort()).toEqual([...HOSTED_NATIVE_TOOLS].sort());
+    expect(offeredIn(0)).toEqual(BASE_TOOLS);
     expect(body.messages[0].role).toBe('system');
     expect(body.messages[0].content).toMatch(/You are Maya, a hosted agent on Commonly/);
     expect(body.messages[0].content).toMatch(/Keeps the research log\./);
+  });
+
+  // Search and code runs are on every plan (Cofounder, 2026-10-16), offered
+  // only where this instance holds the key, and bounded per turn.
+  describe('web search and code runs', () => {
+    test('are on the hosted list, and an instance with both keys offers both', async () => {
+      mockSearchConfigured = true;
+      mockSandboxConfigured = true;
+      expect(HOSTED_NATIVE_TOOLS).toEqual(expect.arrayContaining(['commonly_web_search', 'commonly_run_code']));
+
+      await runAgent(hostedInstall(), mention);
+
+      expect(offeredIn(0)).toEqual([...BASE_TOOLS, 'commonly_run_code', 'commonly_web_search'].sort());
+      const prompt = systemPromptIn(0);
+      expect(prompt).toMatch(/Use commonly_web_search for anything current/);
+      expect(prompt).toMatch(/Use commonly_run_code to calculate/);
+      expect(prompt).toMatch(/for example, opening a link someone shares\)/);
+    });
+
+    test('an instance with neither key offers neither, and the prompt does not claim them', async () => {
+      await runAgent(hostedInstall(), mention);
+
+      expect(offeredIn(0)).toEqual(BASE_TOOLS);
+      const prompt = systemPromptIn(0);
+      expect(prompt).not.toMatch(/commonly_web_search|commonly_run_code/);
+      expect(prompt).toMatch(/for example, running code, searching the web or opening a link someone shares\)/);
+    });
+
+    test('with one key, only that tool is offered and named', async () => {
+      mockSearchConfigured = true;
+
+      await runAgent(hostedInstall(), mention);
+
+      expect(offeredIn(0)).toEqual([...BASE_TOOLS, 'commonly_web_search'].sort());
+      const prompt = systemPromptIn(0);
+      expect(prompt).toMatch(/Use commonly_web_search/);
+      expect(prompt).not.toMatch(/commonly_run_code/);
+      expect(prompt).toMatch(/for example, running code or opening a link someone shares\)/);
+    });
+
+    test('a hosted turn stops at three searches and records them for the spend alarm', async () => {
+      mockSearchConfigured = true;
+      axios.post
+        .mockResolvedValueOnce(toolCalls(
+          call('c1', 'commonly_web_search', { query: 'a' }),
+          call('c2', 'commonly_web_search', { query: 'b' }),
+          call('c3', 'commonly_web_search', { query: 'c' }),
+          call('c4', 'commonly_web_search', { query: 'd' }),
+        ));
+
+      await runAgent(hostedInstall(), mention);
+
+      expect(mockSearchWeb.mock.calls.map(([query]) => query)).toEqual(['a', 'b', 'c']);
+      expect(savedRun.webSearches).toBe(3);
+    });
+
+    test('a hosted code run goes through the turn sandbox, whose seconds are recorded for the spend alarm', async () => {
+      mockSandboxConfigured = true;
+      mockSandboxClose.mockResolvedValue(7);
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_run_code', { language: 'python', code: 'print(2 + 2)' })));
+
+      await runAgent(hostedInstall(), mention);
+
+      expect(mockSandboxRun).toHaveBeenCalledTimes(1);
+      expect(mockSandboxClose).toHaveBeenCalledTimes(1);
+      expect(savedRun.sandboxSeconds).toBe(7);
+    });
+
+    test('the install cannot add them when the instance has no key', async () => {
+      const install = hostedInstall(undefined, { tools: ['commonly_web_search', 'commonly_run_code'] });
+
+      await runAgent(install, mention);
+
+      expect(offeredIn(0)).toEqual(BASE_TOOLS);
+    });
   });
 
   test('in a pod holding an outsider-writable grant, a hosted turn is narrowed like any native one', async () => {
