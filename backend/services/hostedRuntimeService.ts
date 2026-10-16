@@ -156,6 +156,22 @@ export const turnsToday = async (agentName: string, instanceId: string): Promise
   })
 );
 
+// On the native engine a turn is a run: an AgentRun is created only when the
+// model is actually called. The event count above also counts an event that
+// was acked without a run, such as an addressed turn that stood down to a
+// peer's claim (QA walk 4, 2026-10-16: the ask got no answer and still showed
+// as a used turn). The greeting is left out here too.
+export const nativeTurnsToday = async (agentName: string, instanceId: string): Promise<number> => {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const AgentRun = require('../models/AgentRun');
+  return AgentRun.countDocuments({
+    agentName: String(agentName).toLowerCase(),
+    instanceId: instanceId || 'default',
+    startedAt: { $gte: utcDayStart() },
+    trigger: { $ne: 'first_contact' },
+  });
+};
+
 export interface MeterResult {
   allowed: boolean;
   used: number;
@@ -167,8 +183,10 @@ export const meterAllowsTurn = async (
   agentName: string,
   instanceId: string,
   turnsPerDay: number = hostedCaps().turnsPerDay,
+  // True for a native-engine install, whose turns are runs, not acked events.
+  { countRuns = false }: { countRuns?: boolean } = {},
 ): Promise<MeterResult> => {
-  const used = await turnsToday(agentName, instanceId);
+  const used = countRuns ? await nativeTurnsToday(agentName, instanceId) : await turnsToday(agentName, instanceId);
   const tomorrow = new Date(utcDayStart().getTime() + 24 * 60 * 60 * 1000);
   return {
     allowed: used < turnsPerDay,
@@ -269,6 +287,7 @@ module.exports = {
   countHostedAgentsForUser,
   listHostedInstallationsForUser,
   turnsToday,
+  nativeTurnsToday,
   meterAllowsTurn,
   HostedRuntimeError,
   provisionAgent,

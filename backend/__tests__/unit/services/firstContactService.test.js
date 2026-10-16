@@ -80,7 +80,8 @@ describe('firstContactService', () => {
 
     const { content } = AgentEventService.enqueue.mock.calls[0][0].payload;
     expect(content).toMatch(/exactly ONE specific, answerable question/);
-    expect(content).toMatch(/add one more line, exactly: "\(Mention me as @cto-walk so I see your answer\.\)"/);
+    expect(content).toMatch(/End that same message, after the question, with one more line, exactly: "\(Mention me as @cto-walk so I see your answer\.\)"/);
+    expect(content).toMatch(/post one message, not two/);
   });
 
   test.each([

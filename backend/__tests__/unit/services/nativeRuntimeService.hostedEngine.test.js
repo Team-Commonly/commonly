@@ -342,6 +342,34 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     });
   });
 
+  // QA walk 4 (2026-10-16): given a second round, the greeting run posted its
+  // "(Mention me as @…)" line as a second message. A hosted greeting is one post.
+  test('a hosted first-contact run ends at its first post', async () => {
+    const AgentMessageService = require('../../../services/agentMessageService');
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_post_message', { podId: POD, content: 'Hi! What should we start on?' })))
+      .mockResolvedValueOnce(toolCalls(call('c2', 'commonly_post_message', { podId: POD, content: '(Mention me as @maya so I see your answer.)' })));
+
+    const result = await runAgent(hostedInstall(), {
+      type: 'first_contact', eventId: '507f1f77bcf86cd799439013', payload: { content: 'Greet them.', userId: OWNER },
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    expect(savedRun.status).toBe('succeeded');
+  });
+
+  test('a hosted mention run is not cut short by that rule', async () => {
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_post_message', { podId: POD, content: 'Here is the answer.' })))
+      .mockResolvedValueOnce(toolCalls(call('c2', 'commonly_write_memory', { content: 'answered' })));
+
+    await runAgent(hostedInstall(), mention);
+
+    expect(axios.post.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
   test('in a pod holding an outsider-writable grant, a hosted turn is narrowed like any native one', async () => {
     const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
     podHasOutsiderWritableGrant.mockResolvedValue(true);

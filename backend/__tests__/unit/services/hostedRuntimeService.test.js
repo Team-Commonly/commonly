@@ -10,6 +10,10 @@ jest.mock('../../../models/AgentRegistry', () => ({
     find: (...args) => mockInstallationFind(...args),
   },
 }));
+const mockRunCount = jest.fn();
+jest.mock('../../../models/AgentRun', () => ({
+  countDocuments: (...args) => mockRunCount(...args),
+}));
 jest.mock('../../../models/AgentEvent', () => ({
   countDocuments: (...args) => mockEventCount(...args),
 }));
@@ -25,6 +29,7 @@ describe('hostedRuntimeService', () => {
     mockInstallationCount.mockReset();
     mockInstallationFind.mockReset();
     mockEventCount.mockReset();
+    mockRunCount.mockReset();
     global.fetch = jest.fn();
   });
   afterEach(() => {
@@ -94,6 +99,20 @@ describe('hostedRuntimeService', () => {
         'config.runtime.runtimeType': 'hosted',
       });
       expect(select).toHaveBeenCalledWith('agentName instanceId podId');
+    });
+
+    // QA walk 4: an addressed turn that stood down to a peer's claim was acked
+    // with no run, and still showed as a used turn. On the native engine the
+    // meter counts runs.
+    it('on the native engine, meters runs since the UTC day start, leaving out the greeting', async () => {
+      process.env.HOSTED_TURNS_PER_DAY = '2';
+      mockRunCount.mockResolvedValue(1);
+      const meter = await hosted.meterAllowsTurn('Scout', 'default', 2, { countRuns: true });
+      expect(meter).toMatchObject({ allowed: true, used: 1, cap: 2 });
+      expect(mockEventCount).not.toHaveBeenCalled();
+      const filter = mockRunCount.mock.calls[0][0];
+      expect(filter).toMatchObject({ agentName: 'scout', instanceId: 'default', trigger: { $ne: 'first_contact' } });
+      expect(filter.startedAt.$gte.toISOString()).toMatch(/T00:00:00\.000Z$/);
     });
 
     it('meters acked events by ACK time (deliveredAt) since the UTC day start and reports the reset', async () => {
