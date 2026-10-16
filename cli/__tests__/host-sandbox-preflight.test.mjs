@@ -51,14 +51,14 @@ describe('hostSandboxRefusal', () => {
   // What a Connect-page seat is saved with: the daemon's default, no mode.
   const connectPage = { sandbox: defaultSeatSandbox() };
 
-  test('the Connect page seat on native Windows is refused with three ways forward', () => {
+  test('the Connect page seat on native Windows is refused with the two ways forward', () => {
     const message = hostSandboxRefusal({
       environment: connectPage, adapterName: 'claude', platform: 'win32', detectBwrap: never, detectSeatbelt: never,
     });
     expect(message).toMatch(/runs a connected Claude Code inside a sandbox, and has no sandbox for Windows yet/);
     expect(message).toMatch(/cannot listen for @mentions from native Windows/);
-    expect(message).toContain('WSL 2 (Ubuntu)');
-    expect(message).toContain('sudo apt install bubblewrap');
+    // WSL is Linux, where Claude Code is refused too (next arm).
+    expect(message).not.toContain('WSL');
     expect(message).toContain('PowerShell `claude mcp add` command');
     expect(message).toContain('"Run it here"');
     // The old advice turned the sandbox off, which a public seat refuses anyway.
@@ -73,8 +73,20 @@ describe('hostSandboxRefusal', () => {
         + 'sandbox-exec preflight failed: exit 1');
   });
 
-  test('on Linux, a missing bubblewrap stops the run with the install line', () => {
-    const args = { environment: connectPage, adapterName: 'claude', platform: 'linux', detectSeatbelt: never };
+  // Ubuntu run, 2026-10-16: under bwrap a confined spawn could not even start
+  // Claude Code (`execvp …/.local/bin/claude: No such file or directory`).
+  test('Claude Code on Linux (WSL included) stops at start with its options, before any detection', () => {
+    const message = hostSandboxRefusal({
+      environment: connectPage, adapterName: 'claude', platform: 'linux', detectBwrap: never, detectSeatbelt: never,
+    });
+    expect(message).toMatch(/on Linux \(WSL included\) that sandbox\ncannot run Claude Code yet/);
+    expect(message).toContain('`claude mcp add` command');
+    expect(message).toContain('"Run it here"');
+    expect(message).not.toContain('bubblewrap');
+  });
+
+  test('on Linux, a missing bubblewrap stops an OpenCode seat with the install line', () => {
+    const args = { environment: connectPage, adapterName: 'opencode', platform: 'linux', detectSeatbelt: never };
     expect(hostSandboxRefusal({ ...args, detectBwrap: available })).toBeNull();
     expect(hostSandboxRefusal({ ...args, detectBwrap: missing('bwrap not found on PATH. Install bubblewrap: `apt install bubblewrap` (Debian/Ubuntu).') }))
       .toMatch(/^This seat runs in a bubblewrap sandbox, which is not available here\. bwrap not found on PATH\. Install bubblewrap/);
@@ -86,11 +98,13 @@ describe('hostSandboxRefusal', () => {
     })).toMatch(/no sandbox for Windows yet/);
   });
 
-  test('OpenCode on Windows gets the same directions, without the Claude Code MCP line', () => {
+  test('OpenCode on Windows is pointed at WSL 2, whose sandbox carries its binary, and not at the Claude Code MCP line', () => {
     const message = hostSandboxRefusal({
       environment: connectPage, adapterName: 'opencode', platform: 'win32',
     });
     expect(message).toMatch(/runs a connected OpenCode inside a sandbox/);
+    expect(message).toContain('WSL 2 (Ubuntu)');
+    expect(message).toContain('sudo apt install bubblewrap');
     expect(message).not.toContain('claude mcp add');
   });
 
@@ -160,7 +174,7 @@ describe('agent run on a host that cannot confine the seat', () => {
     expect(fs.existsSync(tokenPath)).toBe(false);
     const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(stderr).toContain('[byo-win] Commonly runs a connected Claude Code inside a sandbox, and has no sandbox for Windows yet');
-    expect(stderr).toContain('sudo apt install bubblewrap');
+    expect(stderr).toContain('PowerShell `claude mcp add` command');
   });
 
   // An npm-installed Claude Code is a .cmd shim Node cannot spawn, so on

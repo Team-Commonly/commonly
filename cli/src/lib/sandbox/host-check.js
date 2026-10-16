@@ -22,20 +22,37 @@ const SEATBELT_MODES = new Set(['workspace', 'read-only']);
 
 const ADAPTER_LABELS = { claude: 'Claude Code', opencode: 'OpenCode', qwen: 'Qwen Code' };
 
+const HOSTED_LINE = '  - A hosted agent: choose "Run it here" on the Connect page. Nothing runs on this machine.';
+
 /** What a person on native Windows can do instead. */
 export const windowsSandboxMessage = (adapterName) => {
   const label = ADAPTER_LABELS[adapterName] || adapterName;
+  // WSL is offered only where the Linux sandbox can run the CLI: not Claude
+  // Code (see linuxClaudeMessage).
   return [
     `Commonly runs a connected ${label} inside a sandbox, and has no sandbox for Windows yet,`,
-    'so this agent cannot listen for @mentions from native Windows. Any of these works instead:',
-    `  - WSL 2 (Ubuntu): install Node and ${label} inside WSL, run \`sudo apt install bubblewrap\`,`
-      + ' then run these same commands there.',
+    'so this agent cannot listen for @mentions from native Windows. Instead:',
     ...(adapterName === 'claude'
       ? ['  - Use Commonly from your own Claude Code sessions: the Connect page shows a PowerShell `claude mcp add` command.']
-      : []),
-    '  - A hosted agent: choose "Run it here" on the Connect page. Nothing runs on this machine.',
+      : [`  - WSL 2 (Ubuntu): install Node and ${label} inside WSL, run \`sudo apt install bubblewrap\`,`
+        + ' then run these same commands there.']),
+    HOSTED_LINE,
   ].join('\n');
 };
+
+/**
+ * Claude Code on Linux (WSL included). The bubblewrap namespace binds the
+ * system binary folders only, and Claude Code installs under the person's
+ * home or /usr/local, so a confined spawn could not even start it; its login
+ * and settings live under that home too (Ubuntu run, 2026-10-16). Until the
+ * namespace carries what Claude needs, the seat stops here with its options.
+ */
+export const linuxClaudeMessage = () => [
+  'Commonly runs a connected Claude Code inside a sandbox, and on Linux (WSL included) that sandbox',
+  'cannot run Claude Code yet, so this agent cannot listen for @mentions here. Instead:',
+  '  - Use Commonly from your own Claude Code sessions: the Connect page shows a `claude mcp add` command.',
+  HOSTED_LINE,
+].join('\n');
 
 /** Why this host cannot confine the seat, or null when it can (or the seat declares no sandbox). */
 export const hostSandboxRefusal = ({
@@ -52,6 +69,7 @@ export const hostSandboxRefusal = ({
   if (mode !== 'bwrap' && !SEATBELT_MODES.has(mode)) return null;
 
   if (platform === 'win32') return windowsSandboxMessage(adapterName);
+  if (mode === 'bwrap' && adapterName === 'claude') return linuxClaudeMessage();
   if (mode === 'bwrap') {
     const bwrap = detectBwrap();
     return bwrap.available ? null : `This seat runs in a bubblewrap sandbox, which is not available here. ${bwrap.error}`;
@@ -62,4 +80,4 @@ export const hostSandboxRefusal = ({
     : `This seat runs in a macOS Seatbelt sandbox (sandbox.mode=${mode}), which is not available here. ${seatbelt.error}`;
 };
 
-export default { hostSandboxRefusal, windowsSandboxMessage };
+export default { hostSandboxRefusal, linuxClaudeMessage, windowsSandboxMessage };
