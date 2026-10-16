@@ -44,6 +44,35 @@ export class ThreadRootError extends Error {
  * Validation is deliberately about the ROOT, not the poster: whether they may
  * write here is the pod membership question, already answered upstream.
  */
+/**
+ * A reply's target must be a message in the reply's own pod. Nothing checked
+ * it when no threadRootId was sent: a reply in one pod could name a message in
+ * another, join that pod's thread, and show that message's text and author as
+ * its preview to everyone who can read the first pod (Cofounder's security
+ * read, 2026-10-16, TASK-278). Every write path calls this before it writes,
+ * and the INSERT in models/pg/Message re-checks it.
+ */
+export async function assertReplyTargetInPod({
+  podId,
+  replyToMessageId,
+}: {
+  podId: string;
+  replyToMessageId?: number | string | null;
+}): Promise<void> {
+  if (replyToMessageId == null || replyToMessageId === '') return;
+  const parentId = Number(replyToMessageId);
+  if (!Number.isInteger(parentId) || parentId <= 0) {
+    throw new ThreadRootError('reply_target_invalid', 'replyToMessageId must be a positive integer');
+  }
+  const { rows } = await (pool as PgPool).query('SELECT pod_id FROM messages WHERE id = $1::int', [parentId]);
+  if (!rows[0]) {
+    throw new ThreadRootError('reply_target_not_found', `message ${parentId} does not exist`);
+  }
+  if (String(rows[0].pod_id) !== String(podId)) {
+    throw new ThreadRootError('reply_target_wrong_pod', `message ${parentId} is in another pod`);
+  }
+}
+
 export async function resolveThreadRoot({
   podId,
   replyToMessageId,
@@ -58,6 +87,7 @@ export async function resolveThreadRoot({
     throw new ThreadRootError('thread_root_invalid', 'threadRootId must be a positive integer');
   }
 
+  await assertReplyTargetInPod({ podId, replyToMessageId });
   const parentId = replyToMessageId == null || replyToMessageId === ''
     ? null : Number(replyToMessageId);
 
@@ -111,5 +141,5 @@ export async function resolveThreadRoot({
   return explicit;
 }
 
-module.exports = { resolveThreadRoot, ThreadRootError };
+module.exports = { resolveThreadRoot, assertReplyTargetInPod, ThreadRootError };
 Object.assign(module.exports, exports);

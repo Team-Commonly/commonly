@@ -15,7 +15,7 @@ const mockDb = newDb();
 const mockPool = new (mockDb.adapters.createPg().Pool)();
 jest.mock('../../../config/db-pg', () => ({ pool: mockPool }));
 
-const { resolveThreadRoot, ThreadRootError } = require('../../../services/threadRootResolver');
+const { resolveThreadRoot, assertReplyTargetInPod, ThreadRootError } = require('../../../services/threadRootResolver');
 const PGMessageTop = require('../../../models/pg/Message');
 
 const POD = 'pod-1';
@@ -223,5 +223,59 @@ describe('the resolver is not consulted when there is nothing to reconcile', () 
     const root = await PGMessageTop.create(POD, 'u', 'gate-root', 'text', null);
     const reply = await PGMessageTop.create(POD, 'u', 'gate-reply', 'text', String(root.id));
     expect(reply.thread_root_id).toBe(root.id);
+  });
+});
+
+// Cofounder's security read, 2026-10-16 (TASK-278): with no threadRootId, a
+// reply's target was never checked to be in the reply's pod. The reply joined
+// the other pod's thread, and this pod's preview showed that message's text
+// and author. Each case runs the real check and the real SQL.
+describe('a reply must target a message in its own pod', () => {
+  const codeOf = (promise) => promise.then(() => 'resolved', (err) => err.code);
+
+  test('a target in the same pod passes', async () => {
+    await expect(assertReplyTargetInPod({ podId: POD, replyToMessageId: 100 })).resolves.toBeUndefined();
+    await expect(assertReplyTargetInPod({ podId: POD })).resolves.toBeUndefined();
+  });
+
+  test.each([
+    ['in another pod', 300, 'reply_target_wrong_pod'],
+    ['that does not exist', 999, 'reply_target_not_found'],
+    ['that is not an id', 'abc', 'reply_target_invalid'],
+  ])('a target %s is refused with %s', async (_label, replyToMessageId, code) => {
+    expect(await codeOf(assertReplyTargetInPod({ podId: POD, replyToMessageId }))).toBe(code);
+  });
+
+  test('the resolver no longer derives a root from another pod\'s message', async () => {
+    expect(await codeOf(resolveThreadRoot({ podId: POD, replyToMessageId: 300 }))).toBe('reply_target_wrong_pod');
+  });
+
+  test('the INSERT refuses a cross-pod reply, so a path that skips the check writes nothing', async () => {
+    const before = (await mockPool.query("SELECT count(*)::int AS n FROM messages WHERE content = 'cross-pod-reply'")).rows[0].n;
+    const err = await PGMessageTop.create(POD, 'u', 'cross-pod-reply', 'text', '300').catch((e) => e);
+    expect(err).toBeInstanceOf(ThreadRootError);
+    expect(err.code).toBe('reply_target_wrong_pod');
+    const after = (await mockPool.query("SELECT count(*)::int AS n FROM messages WHERE content = 'cross-pod-reply'")).rows[0].n;
+    expect(after).toBe(before);
+  });
+
+  test('CONTROL: a same-pod reply is still written and derives its root', async () => {
+    const reply = await PGMessageTop.create(POD, 'u', 'same-pod-reply', 'text', '100');
+    expect(reply.thread_root_id).toBe(100);
+  });
+
+  test('an existing cross-pod reply row no longer previews the other pod\'s message', async () => {
+    await msg(410, OTHER);                // the other pod's message
+    await msg(411, POD, null, 410);       // a reply written before this fix
+    await msg(412, POD, null, 100);       // CONTROL: an ordinary reply in the pod
+    const rows = await PGMessageTop.findByPodId(POD, 200);
+    const leaked = rows.find((row) => String(row.id) === '411');
+    const ordinary = rows.find((row) => String(row.id) === '412');
+    expect(leaked).toBeTruthy();
+    expect(leaked.replyTo).toBeNull();
+    expect(ordinary.replyTo).toEqual(expect.objectContaining({ id: '100' }));
+    // The single-message read (what a new message is broadcast from) too.
+    expect((await PGMessageTop.findById('411')).replyTo).toBeNull();
+    expect((await PGMessageTop.findById('412')).replyTo).toEqual(expect.objectContaining({ id: '100' }));
   });
 });
