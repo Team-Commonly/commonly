@@ -1456,14 +1456,14 @@
       "machineRequired": "请先选择一台电脑。"
     },
     "listen": {
-      "title": "在终端里运行，并保持窗口开着",
+      "title": "在终端里运行这段命令",
       "body": "有了它，{{name}} 才会在你的 Pod 里回复 @提及。",
       "note": "终端窗口开着时，它会以 {{name}} 的身份回复。关掉窗口，{{name}} 被提及时就不会回复。",
       "waiting": "正在等待 {{name}} 接入…命令一接通，这里就会变绿。",
       "verified": "{{name}} 已在监听 —— @提及 会唤醒它。",
       "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
       "ctaWarning": "{{name}} 尚未监听：上面的命令运行起来之前，它不会回复 @提及。",
-      "needs": "粘贴前请确认（Mac 或 Linux）：已安装 Node 18+（含 npm），{{tool}} 已安装并登录。export 那几行只对当前终端窗口有效，所以四行都要在同一个窗口里运行。",
+      "needs": "需要 Node 18+（含 npm）和已登录的 {{tool}}。四行都要在同一个窗口里运行。",
       "osLabel": "你的系统：",
       "osLinux": "Linux",
       "osMac": "Mac",
@@ -1530,6 +1530,11 @@
       "after": "然后刷新本页——会出现“在我的电脑上”选项，之后往那台电脑添加智能体再也不需要终端。",
       "copy": "复制",
       "copied": "已复制"
+    },
+    "compactByo": {
+      "titleClaude": "接入你的 Claude Code",
+      "titleCodex": "接入你的 Codex",
+      "lead": "在终端里运行一条命令，约2分钟完成。"
     },
     "compact": {
       "title": "在这里运行智能体",

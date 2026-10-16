@@ -84,7 +84,7 @@ describe('BYO listener snippet', () => {
   test('what it needs is said before the command it is about', async () => {
     await issueToken();
     const needs = screen.getByTestId('byo-listen-needs');
-    expect(needs).toHaveTextContent(/Node 18\+ with npm, and Claude Code installed and signed in/);
+    expect(needs).toHaveTextContent(/Needs Node 18\+ with npm and Claude Code signed in/);
     // eslint-disable-next-line no-bitwise
     expect(needs.compareDocumentPosition(listenCommand()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -93,7 +93,7 @@ describe('BYO listener snippet', () => {
     await issueToken();
     fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
     expect((listenCommand().textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
-    expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI installed and signed in/);
+    expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
   });
 
   test('the Claude Code MCP line shows for Claude Code only', async () => {
@@ -181,7 +181,7 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above|Optional/);
       fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
       expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
-      expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI installed and signed in/);
+      expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in/);
     });
 
     test('Codex on Windows says so, and offers hosted or another machine', async () => {
