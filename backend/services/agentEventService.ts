@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
 import { postToPublicAddress } from './outboundUrlGuard';
-import { hostedRunsNative } from './hostedEngine';
+import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
 
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
@@ -55,6 +55,16 @@ const OBJECT_ID_HEX = /^[a-f\d]{24}$/i;
 // 'queued'/'running' AgentRun may sit before it counts as abandoned.
 const STUCK_REDISPATCH_BATCH = 50;
 const ABANDONED_RUN_MINUTES = 30;
+
+// TASK-265 (Rhea on #2236): an in-process event is born 'delivered', so one
+// left 'pending' for an agent that now runs in-process was routed before the
+// agent moved in-process (the hosted migration: enqueue decides routing before
+// the insert) and nothing polls it. The sweep runs those once they are a
+// minute old, so it never races an enqueue, and closes ones older than half
+// an hour as 'failed' with a reason: a reply that late is no longer an answer,
+// and a closed event says so where a pending one says nothing.
+const STRANDED_PENDING_MIN_AGE_MS = 60 * 1000;
+const STRANDED_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
 
 // The migration on acknowledge() runs in two phases, and BOTH are in this
 // build so the compatibility mode has an end rather than an intention.
@@ -168,6 +178,10 @@ interface GarbageCollectResult {
   redispatchedInProcess?: number;
   ackedInProcess?: number;
   interruptedRuns?: number;
+  // TASK-265: pending events of agents that now run in-process, run once, or
+  // closed with a reason once past the ceiling.
+  rescuedPendingInProcess?: number;
+  closedPendingInProcess?: number;
 }
 
 interface SessionSizeEntry {
@@ -753,15 +767,22 @@ class AgentEventService {
     let redispatchedInProcess = 0;
     let ackedInProcess = 0;
     let interruptedRuns = 0;
+    let rescuedPendingInProcess = 0;
+    let closedPendingInProcess = 0;
     try {
       ({ redispatched: redispatchedInProcess, acked: ackedInProcess } = await this.redispatchStuckInProcess(
         requeueThreshold,
         attemptCap,
       ));
+      ({ rescued: rescuedPendingInProcess, closed: closedPendingInProcess } = await this.rescueStrandedPendingInProcess(
+        new Date(now),
+        attemptCap,
+      ));
       interruptedRuns = await this.interruptAbandonedRuns(new Date(now - ABANDONED_RUN_MINUTES * 60 * 1000));
-      if (redispatchedInProcess || ackedInProcess || interruptedRuns) {
+      if (redispatchedInProcess || ackedInProcess || interruptedRuns || rescuedPendingInProcess || closedPendingInProcess) {
         console.log(
           `[agent-event] in-process restart sweep: re-ran ${redispatchedInProcess}, acked ${ackedInProcess}, `
+          + `ran ${rescuedPendingInProcess} stranded pending, closed ${closedPendingInProcess} past the ceiling, `
           + `marked ${interruptedRuns} abandoned runs interrupted`,
         );
       }
@@ -881,6 +902,8 @@ class AgentEventService {
       redispatchedInProcess,
       ackedInProcess,
       interruptedRuns,
+      rescuedPendingInProcess,
+      closedPendingInProcess,
     };
   }
 
@@ -949,6 +972,104 @@ class AgentEventService {
       redispatched += 1;
     }
     return { redispatched, acked };
+  }
+
+  /**
+   * The (agent, instance, pod) targets whose events enqueue would run
+   * in-process right now. Starts from identities with a stored in-process
+   * install (the token issuer's filter), loads every active row of those
+   * identities (projections included), and keeps only the rows the routing
+   * rule itself runs, with the engine in effect. An unfinished migration's
+   * rows are therefore not targets, so their events can never fill the
+   * sweep's batch and starve a runnable agent's event (Rhea on #2236).
+   */
+  static async inProcessEventTargets(): Promise<{ agentName: string; instanceId: string; podId: unknown }[]> {
+    const identities = await AgentInstallation.find({ status: 'active', ...IN_PROCESS_RUNTIME_FILTER })
+      .select('agentName instanceId').lean() as { agentName?: string; instanceId?: string }[];
+    const pairs = [...new Map(identities.map((row) => {
+      const pair = { agentName: String(row.agentName || '').toLowerCase(), instanceId: String(row.instanceId || 'default') };
+      return [`${pair.agentName}:${pair.instanceId}`, pair] as const;
+    })).values()];
+    if (!pairs.length) return [];
+    const rows = await AgentInstallation.find({ status: 'active', $or: pairs })
+      .sort({ createdAt: -1 }).lean() as InstallationDoc[];
+    const identityKey = (row: InstallationDoc) => `${String(row.agentName || '').toLowerCase()}:${String(row.instanceId || 'default')}`;
+    // The sibling a projection inherits from: the identity's most recent row
+    // that has a runtime (rows are newest first), as resolveInProcessInstallation finds it.
+    const siblings = new Map<string, InstallationDoc>();
+    for (const row of rows) {
+      const runtime = normalizeConfig(row.config)?.runtime as Record<string, unknown> | undefined;
+      if (runtime?.runtimeType !== undefined && !siblings.has(identityKey(row))) siblings.set(identityKey(row), row);
+    }
+    return rows
+      .filter((row) => this.inProcessInstallationFrom({ ...row }, siblings.get(identityKey(row)) || null))
+      .map((row) => ({
+        agentName: String(row.agentName || '').toLowerCase(),
+        instanceId: String(row.instanceId || 'default'),
+        podId: row.podId,
+      }));
+  }
+
+  /**
+   * Pending events whose agent now runs in-process, which nothing polls (see
+   * STRANDED_PENDING_*). One past the ceiling is closed 'failed' with a
+   * reason, so the dropped question is visible rather than parked (sprint
+   * review on #2236). A recent one is run once: the claim is a
+   * compare-and-set from 'pending', so two sweeps (two replicas) or a late
+   * external poll run it at most once, and it counts as a delivery, so the
+   * attempt cap bounds a poison event. Only targets that would run are
+   * selected, and each is re-checked by enqueue's own routing before it runs.
+   */
+  static async rescueStrandedPendingInProcess(
+    now: Date,
+    attemptCap: number,
+  ): Promise<{ rescued: number; closed: number }> {
+    const targets = await this.inProcessEventTargets();
+    if (!targets.length) return { rescued: 0, closed: 0 };
+    const targetFilter = { $or: targets };
+    const ceiling = new Date(now.getTime() - STRANDED_PENDING_MAX_AGE_MS);
+    const closedResult = await AgentEvent.updateMany(
+      { status: 'pending', createdAt: { $lt: ceiling }, ...targetFilter },
+      {
+        $set: {
+          status: 'failed',
+          error: 'stranded: this agent runs in-process and the event was not run within 30 minutes of being '
+            + 'enqueued; closed so it does not sit pending unanswered',
+        },
+      },
+    ) as { modifiedCount?: number };
+    const stranded = await AgentEvent.find({
+      status: 'pending',
+      createdAt: {
+        $lt: new Date(now.getTime() - STRANDED_PENDING_MIN_AGE_MS),
+        $gte: ceiling,
+      },
+      $and: [
+        targetFilter,
+        { $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }] },
+      ],
+    }).sort({ createdAt: 1 }).limit(STUCK_REDISPATCH_BATCH).lean() as EventDoc[];
+    let rescued = 0;
+    for (const event of stranded) {
+      const agentName = String(event.agentName || '');
+      const instanceId = String(event.instanceId || 'default');
+      // eslint-disable-next-line no-await-in-loop -- one lookup per stranded event
+      const installation = await this.resolveInProcessInstallation(agentName, instanceId, event.podId)
+        .catch(() => null);
+      // Changed since the targets were read (a deprovision, an install removed).
+      if (!installation) continue;
+      const deliveryNonce = mintDeliveryNonce();
+      // eslint-disable-next-line no-await-in-loop
+      const claimed = await AgentEvent.findOneAndUpdate(
+        { _id: event._id, status: 'pending' },
+        { $set: { status: 'delivered', deliveredAt: new Date(), deliveryNonce }, $inc: { attempts: 1 } },
+        { new: true },
+      ) as EventDoc | null;
+      if (!claimed) continue;
+      this.dispatchInProcess(claimed, installation, agentName, instanceId, String(claimed.type || event.type || ''));
+      rescued += 1;
+    }
+    return { rescued, closed: closedResult?.modifiedCount || 0 };
   }
 
   /**
@@ -1158,17 +1279,32 @@ class AgentEventService {
       status: 'active',
     }).lean() as InstallationDoc | null;
     if (!installationDoc) return null;
+    const ownRuntime = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
+    // A projection written without its runtime (agent-room installs before
+    // 2026-09-03 did this) routes like the agent it projects: the identity's
+    // most recent row that has one.
+    const sibling = ownRuntime.runtimeType ? null : await AgentInstallation.findOne({
+      agentName: agentName.toLowerCase(),
+      instanceId,
+      status: 'active',
+      'config.runtime.runtimeType': { $exists: true },
+    }).sort({ createdAt: -1 }).lean() as InstallationDoc | null;
+    return this.inProcessInstallationFrom(installationDoc, sibling);
+  }
+
+  /**
+   * The routing rule itself, without the lookups: the install doc the native
+   * runtime runs for `installationDoc` (merged with `sibling`'s config when the
+   * row is a projection with no runtime of its own), or null. Shared by
+   * `resolveInProcessInstallation` and the stranded-event sweep, so the sweep
+   * can never select an event that enqueue would not run (Rhea on #2236).
+   */
+  static inProcessInstallationFrom(
+    installationDoc: InstallationDoc,
+    sibling: InstallationDoc | null,
+  ): InstallationDoc | null {
     let installationRuntimeCfg = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
     if (!installationRuntimeCfg.runtimeType) {
-      // A projection written without its runtime (agent-room installs
-      // before 2026-09-03 did this) must still route like the agent it
-      // projects, or the wake parks in the external queue forever.
-      const sibling = await AgentInstallation.findOne({
-        agentName: agentName.toLowerCase(),
-        instanceId,
-        status: 'active',
-        'config.runtime.runtimeType': { $exists: true },
-      }).sort({ createdAt: -1 }).lean() as InstallationDoc | null;
       const siblingCfg = (sibling && normalizeConfig(sibling.config)) || null;
       const siblingRuntime = siblingCfg?.runtime as Record<string, unknown> | undefined;
       if (siblingRuntime?.runtimeType) {

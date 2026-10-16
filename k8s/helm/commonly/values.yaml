@@ -144,6 +144,9 @@ backend:
     hostedRuntimeUrl: ""
     hostedAgentsPerUser: ""
     hostedTurnsPerDay: ""
+    # "native" to run new hosted installs in-process (TASK-261); empty keeps
+    # the Durable Object.
+    hostedEngine: ""
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""
     pgHost: "YOUR_PG_HOST"

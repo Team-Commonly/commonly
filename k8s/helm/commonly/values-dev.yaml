@@ -57,6 +57,11 @@ backend:
     # hosted-agent entitlement (redeemed at signup or later), not signup
     # itself. BYO/local agents are open to every account.
     registrationInviteOnly: "0"
+    # TASK-265: new "Run it here" installs run in-process on the native engine
+    # (AgentRun per turn, per-user ceiling, tool gate, connectors). Existing
+    # installs move with dist/scripts/migrate-hosted-to-native.js (dry run,
+    # then --apply). Empty would put new installs back on the Durable Object.
+    hostedEngine: "native"
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: "dev"

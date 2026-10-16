@@ -244,16 +244,9 @@ class InProcessAgentTokenRefused extends Error {
 }
 
 // Any spelling: a type saved before the config-write guard (#2229) normalized
-// it must not turn this refusal off.
-const IN_PROCESS_RUNTIME = {
-  $or: [
-    { 'config.runtime.runtimeType': { $regex: /^\s*native\s*$/i } },
-    {
-      'config.runtime.runtimeType': { $regex: /^\s*hosted\s*$/i },
-      'config.hosted.engine': { $regex: /^\s*native\s*$/i },
-    },
-  ],
-};
+// it must not turn this refusal off. On the stored config, so an unfinished
+// migration is refused too.
+const { IN_PROCESS_RUNTIME_FILTER: IN_PROCESS_RUNTIME } = require('../../services/hostedEngine');
 
 const runsInProcess = async (agentUser: any, installation: any): Promise<boolean> => {
   const pairs: { agentName: string; instanceId: string }[] = [];
@@ -346,6 +339,17 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
     await installation.save();
   }
 
+  // The check above runs before the token exists. A migration can mark the
+  // identity in-process while this mint is still saving, and its revoke may
+  // run before the save lands (Rhea on #2236). Re-check now the token is
+  // stored: if the identity went in-process meanwhile, take the token back
+  // and refuse. A save that landed before the migration's revoke is caught
+  // by that revoke, so no ordering leaves a live token.
+  if (await runsInProcess(agentUser, installation)) {
+    await revokeRuntimeTokenEverywhere(tokenRecord.tokenHash);
+    throw new InProcessAgentTokenRefused();
+  }
+
   return {
     token: rawToken,
     label: label || 'Runtime token',
@@ -368,6 +372,10 @@ const issueRuntimeTokenForInstallation = async (installation: any, label: any) =
     createdAt: new Date(),
   });
   await installation.save();
+  if (await runsInProcess(null, installation)) {
+    await revokeRuntimeTokenEverywhere(hash(rawToken));
+    throw new InProcessAgentTokenRefused();
+  }
   return { token: rawToken, label: label || 'Runtime token' };
 };
 

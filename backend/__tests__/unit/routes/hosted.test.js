@@ -29,8 +29,29 @@ jest.mock('../../../middleware/auth', () => (req, _res, next) => {
   req.user = { id: 'owner-1' };
   next();
 });
+// The route writes config.hosted with updateOne (fenced on the stored engine
+// for the Durable Object branch), so the mock applies it to the in-memory
+// installation the test holds, honouring the engine condition.
+const mockStore = new Map();
+const mockUpdateOne = jest.fn(async (filter, update) => {
+  const installation = mockStore.get(String(filter._id));
+  if (!installation) return { matchedCount: 0, modifiedCount: 0 };
+  const engineCondition = filter['config.hosted.engine'];
+  const engine = String((installation.config.get('hosted') || {}).engine || '');
+  if (engineCondition && engineCondition.$not.test(engine)) return { matchedCount: 0, modifiedCount: 0 };
+  Object.entries(update.$set || {}).forEach(([path, value]) => {
+    const [root, key, field] = path.split('.');
+    if (root !== 'config') throw new Error(`unexpected path ${path}`);
+    installation.config.set(key, field ? { ...(installation.config.get(key) || {}), [field]: value } : value);
+  });
+  return { matchedCount: 1, modifiedCount: 1 };
+});
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { findOne: (...args) => mockFindOne(...args), find: (...args) => mockFind(...args) },
+  AgentInstallation: {
+    findOne: (...args) => mockFindOne(...args),
+    find: (...args) => mockFind(...args),
+    updateOne: (...args) => mockUpdateOne(...args),
+  },
 }));
 jest.mock('../../../models/User', () => ({ findOne: (...args) => mockUserFindOne(...args) }));
 const mockCredentialUpdateMany = jest.fn();
@@ -56,14 +77,27 @@ const app = express();
 app.use(express.json());
 app.use('/api/hosted', hostedRouter);
 
-const makeInstallation = (overrides = {}) => ({
-  agentName: 'scout',
-  instanceId: 'default',
-  podId: 'pod-1',
-  config: new Map([['runtime', { runtimeType: 'hosted' }]]),
-  save: jest.fn().mockResolvedValue(undefined),
-  ...overrides,
-});
+// The route's limiter (30 a minute) is module-level and shared by this file;
+// the migration arms use their own key so they do not spend the others' budget.
+// The auth middleware is mocked, so the header is read only by the limiter.
+let armSeq = 0;
+const asMigrationArm = (req) => { armSeq += 1; return req.set('Authorization', `Bearer migration-arm-${armSeq}`); };
+
+let installationSeq = 0;
+const makeInstallation = (overrides = {}) => {
+  installationSeq += 1;
+  const installation = {
+    _id: `inst-${installationSeq}`,
+    agentName: 'scout',
+    instanceId: 'default',
+    podId: 'pod-1',
+    config: new Map([['runtime', { runtimeType: 'hosted' }]]),
+    save: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+  mockStore.set(installation._id, installation);
+  return installation;
+};
 
 describe('/api/hosted', () => {
   beforeEach(() => {
@@ -251,7 +285,6 @@ describe('/api/hosted', () => {
     });
     expect(mockHosted.provisionAgent).toHaveBeenCalledWith({ agentName: 'scout', instanceId: 'demo', runtimeToken: 'cm_agent_secret' });
     expect(installation.config.get('hosted').provisionedAt).toBeInstanceOf(Date);
-    expect(installation.save).toHaveBeenCalled();
   });
 
   it('rotates: revokes the old credential rows, clears the stored hashes, mints fresh', async () => {
@@ -285,7 +318,8 @@ describe('/api/hosted', () => {
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
     expect(res.status).toBe(502);
     expect(res.body.code).toBe('hosted_runtime_unreachable');
-    expect(installation.save).not.toHaveBeenCalled();
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+    expect(installation.config.get('hosted')).toBeUndefined();
   });
 
   it('deprovisions the owner\'s agent and keeps the installation', async () => {
@@ -296,7 +330,79 @@ describe('/api/hosted', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ deprovisioned: true });
     expect(installation.config.get('hosted').provisionedAt).toBeNull();
-    expect(installation.save).toHaveBeenCalled();
+  });
+
+  // TASK-265, Rhea on #2236: a migration that marks the row native while the
+  // worker call is in flight must win. Before the fence, the route saved the
+  // Durable Object record it read at the start over the migration's, and the
+  // next provision minted a fresh token.
+  describe('against a migration landing mid-request', () => {
+    const MIGRATED = {
+      engine: 'native',
+      provisionedAt: new Date('2026-10-15T17:00:00Z'),
+      migratedFrom: 'durable-object',
+      migration: { state: 'done', doProvisioned: true },
+    };
+
+    it('provision: the migrated record stands, the started worker is stopped, its token is taken back, 409', async () => {
+      const installation = makeInstallation();
+      mockFindOne.mockResolvedValue(installation);
+      mockNativeAvailable.mockReturnValue(true);
+      mockHosted.provisionAgent.mockImplementation(async () => {
+        installation.config.set('hosted', { ...MIGRATED });
+        return { provisioned: true };
+      });
+      mockHosted.deprovisionAgent.mockResolvedValue({ deprovisioned: true });
+
+      const res = await asMigrationArm(request(app).post('/api/hosted/provision')).send({ agentName: 'scout' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('hosted_engine_migrated');
+      expect(installation.config.get('hosted')).toEqual(MIGRATED);
+      expect(mockHosted.deprovisionAgent).toHaveBeenCalledWith('scout', 'default');
+      // Once before minting, once to take back the token minted before the mark.
+      expect(mockRevokeRuntimeTokens).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(res.body)).not.toContain('cm_agent_secret');
+
+      // The next provision finds the native record and mints nothing.
+      const again = await asMigrationArm(request(app).post('/api/hosted/provision')).send({ agentName: 'scout' });
+      expect(again.status).toBe(200);
+      expect(again.body.engine).toBe('native');
+      expect(mockIssueToken).toHaveBeenCalledTimes(1);
+      expect(mockHosted.provisionAgent).toHaveBeenCalledTimes(1);
+      expect(installation.config.get('hosted')).toEqual(MIGRATED);
+    });
+
+    it('provision: a failed stop of the overtaken worker still takes the token back and reports 409', async () => {
+      const installation = makeInstallation();
+      mockFindOne.mockResolvedValue(installation);
+      mockHosted.provisionAgent.mockImplementation(async () => {
+        installation.config.set('hosted', { ...MIGRATED });
+        return { provisioned: true };
+      });
+      mockHosted.deprovisionAgent.mockRejectedValue(new Error('worker unreachable'));
+      jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const res = await asMigrationArm(request(app).post('/api/hosted/provision')).send({ agentName: 'scout' });
+
+      expect(res.status).toBe(409);
+      expect(mockRevokeRuntimeTokens).toHaveBeenCalledTimes(2);
+      expect(installation.config.get('hosted')).toEqual(MIGRATED);
+    });
+
+    it('deprovision: the worker is stopped and the migrated record is kept', async () => {
+      const installation = makeInstallation();
+      mockFindOne.mockResolvedValue(installation);
+      mockHosted.deprovisionAgent.mockImplementation(async () => {
+        installation.config.set('hosted', { ...MIGRATED });
+        return { deprovisioned: true };
+      });
+
+      const res = await asMigrationArm(request(app).post('/api/hosted/deprovision')).send({ agentName: 'scout' });
+
+      expect(res.status).toBe(200);
+      expect(installation.config.get('hosted')).toEqual(MIGRATED);
+    });
   });
 
   it('reports runtime status together with today\'s meter for the owner', async () => {
@@ -392,5 +498,35 @@ describe('/api/hosted on the native engine', () => {
 
     const status = await request(app).get('/api/hosted/status?agentName=scout');
     expect(status.body.runtime).toMatchObject({ engine: 'native', ready: false });
+  });
+
+  // Rhea on #2236: the native branches write only their own fields, so a
+  // migration that advances while the request is in flight is not reverted to
+  // the record read at the start.
+  it.each([
+    ['provision', { provisionedAt: PROVISIONED }],
+    ['deprovision', { provisionedAt: null }],
+  ])('%s on a migrating row never writes back the migration record it read', async (route, expected) => {
+    const installation = nativeInstallation({ migratedFrom: 'durable-object', migration: { state: 'marked', doProvisioned: true } });
+    // The route holds the copy it read; saving it persists that copy's record,
+    // as a hydrated document would. The migration finishes right after the read.
+    mockFindOne.mockImplementation(async () => {
+      const read = {
+        ...installation,
+        config: new Map(installation.config),
+        save: jest.fn(async () => { installation.config.set('hosted', read.config.get('hosted')); }),
+      };
+      installation.config.set('hosted', {
+        ...installation.config.get('hosted'), migration: { state: 'done', doProvisioned: true },
+      });
+      return read;
+    });
+
+    const res = await asMigrationArm(request(app).post(`/api/hosted/${route}`)).send({ agentName: 'scout' });
+
+    expect(res.status).toBe(200);
+    const hosted = installation.config.get('hosted');
+    expect(hosted.migration).toEqual({ state: 'done', doProvisioned: true });
+    expect(hosted).toMatchObject({ engine: 'native', about: 'Keeps the research log.', ...expected });
   });
 });
