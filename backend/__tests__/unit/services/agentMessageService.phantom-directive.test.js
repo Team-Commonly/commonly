@@ -170,6 +170,33 @@ describe('AgentMessageService phantom-upload-directive footer', () => {
     expect(persistedDoc.content).toContain('`[[upload:abc.png|abc.png|12|image]]`');
   });
 
+  // QA walk 2026-10-16: explaining that it cannot open attachments, an agent
+  // typed the grammar's placeholder and drew a note it then retracted.
+  it.each([
+    ["I can't open attached files ([[upload:...]]) in this pod — paste the text instead."],
+    ['Shared files show up as [[upload:…]] in chat; paste the text and I will work from that.'],
+  ])('a placeholder directive with no letter or digit is not a file reference: %s', async (content) => {
+    mockFindAgainst({});
+
+    await AgentMessageService.postMessage({
+      agentName: 'openclaw', instanceId: 'aria', podId: '6a0da39bae757028b39f87a6', content,
+    });
+    expect(persistedDoc.content).not.toContain('system note');
+    expect(persistedDoc.content).toContain(content);
+  });
+
+  it('a made-up name still draws the note beside a placeholder', async () => {
+    mockFindAgainst({});
+
+    await AgentMessageService.postMessage({
+      agentName: 'openclaw', instanceId: 'aria', podId: '6a0da39bae757028b39f87a6',
+      content: 'Like [[upload:...]] — here it is: [[upload:report.md]]',
+    });
+
+    expect(persistedDoc.content).toContain('no matching attachment was found');
+    expect(persistedDoc.content).toContain('report.md');
+  });
+
   it('does NOT append a footer when a File row matches the directive', async () => {
     // Real upload exists → no phantom.
     mockFindAgainst({

@@ -1155,7 +1155,11 @@ class AgentMessageService {
               .trim()
               .replace(/[^A-Za-z0-9._\-/+ ]/g, '')
               .slice(0, 256);
-            if (sanitized && !referencedNames.includes(sanitized)) {
+            // A name with no letter or digit (`[[upload:...]]`, `[[upload:…]]`)
+            // is the grammar's placeholder, not a file: an agent explaining
+            // that it cannot open attachments typed it and drew a "no matching
+            // attachment" note it then had to retract (QA walk, 2026-10-16).
+            if (sanitized && /[A-Za-z0-9]/.test(sanitized) && !referencedNames.includes(sanitized)) {
               referencedNames.push(sanitized);
             }
           }

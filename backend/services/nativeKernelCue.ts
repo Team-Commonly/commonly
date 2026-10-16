@@ -17,10 +17,9 @@ import {
 // itself; the tool-agnostic @handle rule is kept.
 export const nativePodContextFrame = (podId: string): string => (
   `[${KERNEL_FRAME_TAGS.podContext}: this conversation is in pod \`${podId}\`. Reply with `
-  + 'commonly_post_message; it posts as you. You cannot open or attach files here: if a '
-  + 'message points to an attached file ([[upload:...]]), say so and ask whoever posted it '
-  + 'to paste the content. To ask a person for something, @-mention their handle: a bare name '
-  + 'reaches no one.]'
+  + 'commonly_post_message; it posts as you. You cannot open or attach files here: if someone '
+  + 'refers to a file they shared, say so and ask them to paste its content. To ask a person '
+  + 'for something, @-mention their handle: a bare name reaches no one.]'
 );
 
 // A frame cut just before `marker`, closed again; null when the marker is
@@ -44,6 +43,22 @@ const CUT_MARKERS: Readonly<Record<string, string>> = Object.freeze({
 
 const TOOL_NAME = /commonly_[a-z_]+/g;
 
+// A frame that teaches NO_REPLY keeps it. Dropping such a frame whole because
+// one sentence names a tool native lacks would also drop "return NO_REPLY as
+// your ENTIRE reply", and an agent without it posts its private reasoning
+// (AX-43). So there only the offending sentences go (Cofounder's follow-up on
+// #2261); a frame left without NO_REPLY, or still naming a foreign tool, is
+// dropped.
+const SENTENCE_BREAK = /(?<=[.!?])\s+/;
+const withoutSentencesNaming = (frame: string, foreign: readonly string[]): string | null => {
+  const close = frame.lastIndexOf(']');
+  const sentences = frame.slice(1, close).split(SENTENCE_BREAK);
+  const kept = sentences.filter((sentence) => !foreign.some((name) => sentence.includes(name)));
+  if (!kept.length) return null;
+  const stripped = `[${kept.join(' ')}]`;
+  return stripped.includes('NO_REPLY') ? stripped : null;
+};
+
 /**
  * The kernel's mention content as a native turn should read it. `nativeTools`
  * is every tool a native turn can be offered: after the rewrites above, a
@@ -63,11 +78,16 @@ export const nativeCueFromKernel = (content: string, podId: string, nativeTools:
     else if (tag === KERNEL_FRAME_TAGS.trigger) next = frame.replace(/commonly_get_messages/g, 'commonly_read_context');
     else if (tag && CUT_MARKERS[tag]) next = cutBefore(frame, CUT_MARKERS[tag]) ?? frame;
     const foreign = [...new Set(next.match(TOOL_NAME) || [])].filter((name) => !allowed.has(name));
-    if (foreign.length) {
-      console.warn(`[native-cue] dropped a kernel frame (${tag || 'untagged'}) naming ${foreign.join(', ')}`);
-      return [];
+    if (!foreign.length) return [next];
+    const stripped = next.includes('NO_REPLY') ? withoutSentencesNaming(next, foreign) : null;
+    if (stripped && !foreign.some((name) => stripped.includes(name))) {
+      console.warn(
+        `[native-cue] kept a kernel frame (${tag || 'untagged'}) for its NO_REPLY, without ${foreign.join(', ')}`,
+      );
+      return [stripped];
     }
-    return [next];
+    console.warn(`[native-cue] dropped a kernel frame (${tag || 'untagged'}) naming ${foreign.join(', ')}`);
+    return [];
   });
   return joinKernelFrames(rewritten, body);
 };
