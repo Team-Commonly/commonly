@@ -135,6 +135,26 @@ describe('OAuth Controller', () => {
       expect(state.next).toBe('/v2');
     });
 
+    it.each([
+      ['protocol-relative', '//evil.example/x'],
+      ['backslash, which browsers read as //', '/\\evil.example/x'],
+      ['a control character', '/\t/evil.example'],
+    ])('rejects a %s next (open-redirect guard)', async (_label, next) => {
+      const res = mockRes();
+      await oauthController.startOAuth(startReq('github', { next }), res);
+      const url = new URL(res.redirect.mock.calls[0][0]);
+      const state = await OAuthLoginState.findOne({ state: url.searchParams.get('state') });
+      expect(state.next).toBe('/v2');
+    });
+
+    it('keeps a deep link with its query (the re-engagement link)', async () => {
+      const res = mockRes();
+      await oauthController.startOAuth(startReq('github', { next: '/v2/agents/byo?mode=hosted' }), res);
+      const url = new URL(res.redirect.mock.calls[0][0]);
+      const state = await OAuthLoginState.findOne({ state: url.searchParams.get('state') });
+      expect(state.next).toBe('/v2/agents/byo?mode=hosted');
+    });
+
     it('404s an unconfigured provider', async () => {
       const res = mockRes();
       await oauthController.startOAuth(startReq('google'), res);

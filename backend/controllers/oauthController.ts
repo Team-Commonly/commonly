@@ -142,10 +142,14 @@ const callbackUrl = (provider: string, req: any) => {
 };
 
 // Only ever redirect back into the app — never to an absolute URL an
-// attacker put in ?next= (open-redirect guard).
+// attacker put in ?next= (open-redirect guard). A second slash or a backslash
+// after the first is protocol-relative to a browser (//host, /\host), and
+// control characters can be stripped into one.
 const safeNextPath = (value: any) => {
   const next = String(value || '');
-  return next.startsWith('/') && !next.startsWith('//') ? next : '/v2';
+  // eslint-disable-next-line no-control-regex
+  const unsafe = !next.startsWith('/') || /^\/[/\\]/.test(next) || /[\u0000-\u001f\u007f]/.test(next);
+  return unsafe ? '/v2' : next;
 };
 
 const loginErrorRedirect = (res: any, code: string) =>
