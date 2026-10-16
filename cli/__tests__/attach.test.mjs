@@ -701,6 +701,24 @@ describe('bootstrapAgentRecordFromEnv', () => {
     // environment matches what attach would have written for the same adapter
     expect(record.environment.mcp[0].name).toBe('commonly');
     expect(record.environment.mcp[0].env.COMMONLY_AGENT_TOKEN).toBe('${COMMONLY_AGENT_TOKEN}');
+    // and carries the daemon's default sandbox: nobody declared one, so the
+    // seat is public and its mode resolves per host at spawn.
+    expect(record.environment.sandbox).toEqual({ trust: 'public' });
+  });
+
+  test('a pi seat bootstrapped from env gets the kernel server but no sandbox block, which pi refuses', async () => {
+    const record = await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory({
+        ...identityResponse,
+        installations: identityResponse.installations.map((row) => ({ ...row, runtimeAdapter: 'pi' })),
+      }),
+      adapterRegistry: makeRegistry({ claudeFound: false, codexFound: false, piFound: true }),
+    });
+    expect(record.adapter).toBe('pi');
+    expect(record.environment.mcp[0].name).toBe('commonly');
+    expect(record.environment).not.toHaveProperty('sandbox');
   });
 
   test('falls through the detect order when the first CLI is absent', async () => {

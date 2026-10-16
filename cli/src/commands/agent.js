@@ -51,6 +51,7 @@ import {
   ADAPTERS_WITH_GRANT_BROKER,
   ADAPTERS_WITH_DEFAULT_SANDBOX,
   defaultMcpServers,
+  seatBaseline,
   withDefaultMcpServer,
 } from '../lib/default-environment.js';
 import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
@@ -63,6 +64,8 @@ import { claimReleaseFor, ackResultFor } from '../lib/claim-outcome.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
+import { hostSandboxRefusal } from '../lib/sandbox/host-check.js';
+import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
 import {
@@ -356,7 +359,9 @@ export const bootstrapAgentRecordFromEnv = async ({
     instanceUrl,
     runtimeToken,
     adapter: adapterName,
-    environment: buildDefaultEnvironment(adapterName),
+    // The daemon's baseline for a seat nobody wrote a spec for, sandbox
+    // included: this record is derived from nothing the person declared.
+    environment: seatBaseline(buildDefaultEnvironment(adapterName), adapterName, { sandbox: true }),
     workspacePath: null,
   };
 };
@@ -3046,6 +3051,7 @@ Docs:
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .action(async (name, opts) => {
       let record = loadAgentToken(name);
+      let bootstrapped = false;
       if (!record) {
         // First run on this machine: the BYO connect page hands out env vars,
         // not a token file — bootstrap the record from them (#913).
@@ -3059,10 +3065,7 @@ Docs:
           console.error(`${stamp()} [${name}] ${err.message}`);
           process.exit(1);
         }
-        if (record) {
-          saveAgentToken(record.agentName, record);
-          console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
-        } else {
+        if (!record) {
           console.error(
             `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
             + ` (shown on the Connect your own agent page) and re-run, or:`
@@ -3070,6 +3073,19 @@ Docs:
           );
           process.exit(1);
         }
+        bootstrapped = true;
+      }
+
+      // Every turn of a seat this host cannot confine would fail, so say so
+      // once, before a token file is written or a poll is made.
+      const hostRefusal = hostSandboxRefusal({ environment: record.environment, adapterName: record.adapter });
+      if (hostRefusal) {
+        console.error(`${stamp()} [${name}] ${hostRefusal}`);
+        process.exit(1);
+      }
+      if (bootstrapped) {
+        saveAgentToken(record.agentName, record);
+        console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
       }
 
       const adapterRequest = checkRunAdapterRequest({
@@ -3117,6 +3133,11 @@ Docs:
       // Unstamped, it took `ps -o lstart` to establish when nine seats came
       // back on 2026-08-18, and that only worked because the processes were
       // still alive — after the next restart that route is gone too.
+      await prepareMcpBeforeFirstPoll({
+        environment: record.environment,
+        log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+      });
+
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
       console.log(`${stamp()} [${name}] foreground mode; to background and keep it across logins, run: commonly daemon install`);
 
