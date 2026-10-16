@@ -913,6 +913,34 @@ const MENTION_RAW_TYPES = new Set([
   'chat.mention', 'thread.mention', 'dm.message', 'mention', 'chat.message',
 ]);
 
+// Event types whose content is one pod or DM message, written by payload.userId.
+const SENDER_WRITTEN_EVENT_TYPES: ReadonlySet<string> = new Set([...MENTION_RAW_TYPES, 'message.posted']);
+
+/**
+ * Whether the text this turn answers may give commonly_fetch_url an address:
+ * only when it is one message (it names a messageId) that a known HUMAN wrote.
+ * Another agent can write a mention, a DM or a pod message too, and two agents
+ * steered by the same injected text could otherwise pass an address between
+ * them through the trigger itself (Cofounder's security read on #2261). Board
+ * wakes and server cues name no message and list text others wrote (task
+ * titles), so they never give one. Fails closed: an unknown sender, a missing
+ * or non-boolean bot flag, or a failed lookup gives none.
+ */
+export const triggerTextIsHumanWritten = async (trigger: NativeRunTrigger): Promise<boolean> => {
+  if (!SENDER_WRITTEN_EVENT_TYPES.has(String(trigger.type))) return false;
+  const payload = (trigger.payload && typeof trigger.payload === 'object'
+    ? trigger.payload as Record<string, unknown> : {}) as Record<string, unknown>;
+  const senderId = typeof payload.userId === 'string' ? payload.userId.trim() : '';
+  if (!payload.messageId || !senderId) return false;
+  try {
+    const User = require('../models/User');
+    const sender = await User.findById(senderId).select('isBot').lean() as { isBot?: unknown } | null;
+    return Boolean(sender) && sender?.isBot === false;
+  } catch {
+    return false;
+  }
+};
+
 export function buildUserMessage(
   trigger: NativeRunTrigger,
   podName: string,
@@ -1131,11 +1159,12 @@ export async function fetchRecentPodMessages(
   return rows.map((row) => {
     const user = (row.userId as Record<string, unknown> | undefined) || {};
     const authorId = user._id || row.user_id || row.user_db_id;
-    // A PG row carries the users mirror's `is_bot` as stored (its mapper's
-    // `isBot` reads null as false, so the raw column is read instead); a Mongo
-    // row carries the populated `isBot`. Anything else is unknown: null.
+    // A PG row (it has `user_id`) carries the users mirror's `is_bot` as
+    // stored; its mapper's `isBot` reads null or missing as false, so only the
+    // raw column is trusted, and a PG row without it is unknown. A Mongo row
+    // carries the populated `isBot`. Unknown is null, which gives no address.
     let authorIsBot: boolean | null = null;
-    if ('is_bot' in row) authorIsBot = typeof row.is_bot === 'boolean' ? row.is_bot : null;
+    if ('user_id' in row) authorIsBot = typeof row.is_bot === 'boolean' ? row.is_bot : null;
     else if (typeof user.isBot === 'boolean') authorIsBot = user.isBot;
     return {
       id: String(row.id || row._id || ''),
@@ -1482,10 +1511,11 @@ export async function runAgent(
   const systemPrompt = buildSystemPrompt(installation, cfg);
   let userMessage = nativeCueFromKernel(buildUserMessage(trigger, podName), String(podId));
   const model = String(cfg.model || DEFAULT_MODEL);
-  // TASK-267b: what commonly_fetch_url may open starts as the prompt and the
-  // message this turn answers, before any recent messages are added.
+  // TASK-267b: what commonly_fetch_url may open starts as the prompt and,
+  // when a known human wrote it, the message this turn answers, before any
+  // recent messages are added.
   dispatchCtx.givenAddresses.add(systemPrompt);
-  dispatchCtx.givenAddresses.add(userMessage);
+  if (await triggerTextIsHumanWritten(trigger)) dispatchCtx.givenAddresses.add(userMessage);
 
   const recentCount = Math.min(Math.max(Number(cfg.recentMessages) || 0, 0), RECENT_MESSAGES_MAX);
   if (recentCount > 0) {

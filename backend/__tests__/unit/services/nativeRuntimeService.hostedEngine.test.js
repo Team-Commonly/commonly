@@ -26,7 +26,7 @@ jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments
 let mockOwnerPro = false;
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) })),
-  findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: mockOwnerPro } }) }) })),
+  findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: mockOwnerPro }, isBot: false }) }) })),
 }));
 
 jest.mock('../../../services/agentTypingService', () => ({
@@ -116,7 +116,12 @@ const hostedInstall = (hosted = { engine: 'native', provisionedAt: new Date(), a
   config: { runtime: { runtimeType: 'hosted' }, hosted, ...extra },
 });
 
-const mention = { type: 'chat.mention', eventId: '507f1f77bcf86cd799439012', payload: { content: '@maya-agent what did we decide?' } };
+// One pod message the owner (a known human) wrote.
+const mention = {
+  type: 'chat.mention',
+  eventId: '507f1f77bcf86cd799439012',
+  payload: { content: '@maya-agent what did we decide?', userId: '507f1f77bcf86cd799439099', messageId: 'msg-1' },
+};
 
 const BASE_TOOLS = [
   'commonly_create_task', 'commonly_fetch_url', 'commonly_list_tasks', 'commonly_post_message', 'commonly_read_context',
@@ -287,7 +292,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
         .mockResolvedValueOnce(toolCalls(call('c2', 'commonly_fetch_url', { url: repo })));
 
       await runAgent(hostedInstall(), {
-        ...mention, payload: { content: '@maya-agent Read the README of github.com/Team-Commonly/commonly' },
+        ...mention, payload: { ...mention.payload, content: '@maya-agent Read the README of github.com/Team-Commonly/commonly' },
       });
 
       expect(mockGetPage.mock.calls).toEqual([[repo]]);
@@ -327,7 +332,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
         '[Reply mechanics: post your reply by calling commonly_post_message({ podId: "p" }).]',
       ].join('\n');
 
-      await runAgent(hostedInstall(), { ...mention, payload: { content: `${content}\n\n@maya-agent what can you do?` } });
+      await runAgent(hostedInstall(), { ...mention, payload: { ...mention.payload, content: `${content}\n\n@maya-agent what can you do?` } });
 
       const sent = userMessageIn(0);
       expect(sent).not.toMatch(/commonly_attach_file|commonly_read_file|commonly_dm_agent|commonly_get_messages|codex|token file/);

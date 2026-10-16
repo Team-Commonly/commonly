@@ -11,12 +11,16 @@ import {
 // 2026-10-16), and another offered to hand work to "a coding specialist like
 // @codex". So a native turn gets a pod frame that names only what it has,
 // loses the consultation cue, and its trigger frame names the reader native
-// has. Every other frame passes through unchanged.
+// has. Every other frame passes through unchanged. Of the kernel pod frame,
+// what native cannot act on goes (file tools, threading fields, the MCP
+// decision-card tool) along with "post as yourself", which native enforces
+// itself; the tool-agnostic @handle rule is kept.
 export const nativePodContextFrame = (podId: string): string => (
   `[${KERNEL_FRAME_TAGS.podContext}: this conversation is in pod \`${podId}\`. Reply with `
   + 'commonly_post_message; it posts as you. You cannot open or attach files here: if a '
   + 'message points to an attached file ([[upload:...]]), say so and ask whoever posted it '
-  + 'to paste the content.]'
+  + 'to paste the content. To ask a person for something, @-mention their handle: a bare name '
+  + 'reaches no one.]'
 );
 
 export const nativeCueFromKernel = (content: string, podId: string): string => {

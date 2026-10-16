@@ -97,6 +97,9 @@ describe('native cue from kernel-built mention content', () => {
     expect(cue).not.toMatch(/codex|token file|threadRootId/);
     expect(cue).toMatch(/this conversation is in pod `pod-1`/);
     expect(cue).toMatch(/You cannot open or attach files here/);
+    // The tool-agnostic part of the kernel's addressing rule survives.
+    expect(cue).toMatch(/a bare name reaches no one/);
+    expect(cue).not.toMatch(/commonly_request_decision/);
     expect(cue).toContain('[Reply mechanics:');
     expect(cue).toContain('[Trigger: this turn was raised by **alice**');
     expect(cue.endsWith('\n\nhi @seat-a')).toBe(true);
