@@ -111,4 +111,59 @@ describe('BYO listener snippet', () => {
     // No line in the snippet is a bare comment.
     expect(lines.filter((l) => l.trimStart().startsWith('#'))).toHaveLength(0);
   });
+
+  // Windows (windows-latest runs, 2026-10-16): the listener needs WSL, and the
+  // MCP command must be PowerShell lines that start the server through cmd /c.
+  describe('setting up on Windows', () => {
+    const realUserAgent = window.navigator.userAgent;
+    const setUserAgent = (value) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
+    afterEach(() => setUserAgent(realUserAgent));
+    const mcpBox = () => screen.getByTestId('byo-mcp-claude').querySelector('.v2-byo__pre').textContent || '';
+
+    test('a Windows browser is pointed at WSL for the listener, and gets PowerShell lines for the MCP connection', async () => {
+      setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36');
+      await issueToken();
+      expect(screen.getByTestId('byo-setup-os-windows')).toHaveAttribute('aria-pressed', 'true');
+      const needs = screen.getByTestId('byo-listen-needs');
+      expect(needs).toHaveTextContent(/paste this into a WSL 2 \(Ubuntu\) terminal, not PowerShell/);
+      expect(needs).toHaveTextContent(/sudo apt install bubblewrap/);
+      // The listener itself runs in WSL, so it stays the bash lines.
+      const listener = Array.from(document.querySelectorAll('.v2-byo__pre'))
+        .find((el) => /commonly agent run /.test(el.textContent || ''));
+      expect((listener.textContent || '').split('\n')[1]).toMatch(/^export COMMONLY_API_URL=/);
+      const lines = mcpBox().split('\n');
+      expect(lines).toEqual([
+        'npm i -g @commonlyai/mcp',
+        expect.stringMatching(/^claude mcp add commonly -e COMMONLY_API_URL=\S+ -e COMMONLY_AGENT_TOKEN=cm_agent_test_token -- cmd \/c commonly-mcp$/),
+      ]);
+      expect(mcpBox()).not.toContain('\\');
+      expect(screen.getByTestId('byo-mcp-claude')).toHaveTextContent(/Paste both lines in PowerShell/);
+    });
+
+    test('the switch flips both boxes back to Mac or Linux', async () => {
+      setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+      await issueToken();
+      fireEvent.click(screen.getByTestId('byo-setup-os-unix'));
+      expect(screen.getByTestId('byo-setup-os-unix')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/Before you paste \(Mac or Linux\)/);
+      expect(screen.getByTestId('byo-listen-needs')).not.toHaveTextContent(/bubblewrap/);
+      expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
+    });
+
+    test('a Mac browser starts on Mac or Linux', async () => {
+      setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)');
+      await issueToken();
+      expect(screen.getByTestId('byo-setup-os-unix')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('byo-listen-needs')).not.toHaveTextContent(/WSL/);
+    });
+
+    test('Codex on Windows is pointed at WSL without the Claude Code bubblewrap line', async () => {
+      setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+      await issueToken();
+      fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+      expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/WSL 2 \(Ubuntu\)/);
+      expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI installed and signed in/);
+      expect(screen.getByTestId('byo-listen-needs')).not.toHaveTextContent(/bubblewrap/);
+    });
+  });
 });

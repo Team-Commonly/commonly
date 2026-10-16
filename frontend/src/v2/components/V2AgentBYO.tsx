@@ -68,6 +68,16 @@ const MACHINE_STATUS_MAX_TICKS = 30;
 const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install';
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
 type MachineAdapter = '' | 'claude' | 'codex';
+
+// The listener does not run on native Windows: Commonly runs it in a sandbox
+// and has none there yet (cli 0.1.106 stops with directions), and PowerShell
+// has no `export`. A Windows visitor is pointed at WSL for the listener and
+// given PowerShell lines for the MCP connection (windows-latest, 2026-10-16).
+const isWindowsBrowser = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  return /windows/i.test(nav.userAgentData?.platform || nav.userAgent || '');
+};
 type ModelOption = { value: string; labelKey: string };
 const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
@@ -131,6 +141,9 @@ const V2AgentBYO: React.FC = () => {
   // without Claude Code says so instead of quietly starting Codex (QA BYO
   // walk 1, 2026-10-16). Claude Code by default: it is what most people use.
   const [listenAdapter, setListenAdapter] = useState<'claude' | 'codex'>('claude');
+  // Where the person sets up, defaulted from this browser. They can switch:
+  // the machine they browse on is not always the one they set up.
+  const [setupOs, setSetupOs] = useState<'unix' | 'windows'>(() => (isWindowsBrowser() ? 'windows' : 'unix'));
   // Live listening verification (#887 class, second half). #888 made the
   // listening step legible; this makes it CHECKABLE — the page polls the
   // kernel until THIS agent's runtime token authenticates for the first time
@@ -642,6 +655,13 @@ const V2AgentBYO: React.FC = () => {
   const claudeSnippet = issued
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`
     : '';
+  // PowerShell has no `\` continuation, and Claude Code on Windows cannot
+  // start an npm `.cmd` shim directly, so it goes through `cmd /c`. The server
+  // is installed first: started through npx on a fresh machine, it was still
+  // downloading when Claude Code gave up at 30 s (windows-latest, 2026-10-16).
+  const claudeSnippetWindows = issued
+    ? `npm i -g @commonlyai/mcp\nclaude mcp add commonly -e COMMONLY_API_URL=${apiUrl} -e COMMONLY_AGENT_TOKEN=${issued.token} -- cmd /c commonly-mcp`
+    : '';
 
   // The command that makes the agent LISTEN. Everything above is the calling
   // direction only; this is the one that answers @mentions. The CLI-install
@@ -1039,10 +1059,35 @@ const V2AgentBYO: React.FC = () => {
             {/* Everything a stranger needs BEFORE the paste, in one place (QA
                 BYO walk 1 found none of it on the page). One block, so other
                 systems can add their own line beside it. */}
+            <p className="v2-byo__os" data-testid="byo-setup-os">
+              {t('agentByo.listen.osLabel')}{' '}
+              <button
+                type="button"
+                className="v2-byo__link"
+                aria-pressed={setupOs === 'unix'}
+                data-testid="byo-setup-os-unix"
+                onClick={() => setSetupOs('unix')}
+              >
+                {t('agentByo.listen.osUnix')}
+              </button>
+              {' · '}
+              <button
+                type="button"
+                className="v2-byo__link"
+                aria-pressed={setupOs === 'windows'}
+                data-testid="byo-setup-os-windows"
+                onClick={() => setSetupOs('windows')}
+              >
+                {t('agentByo.listen.osWindows')}
+              </button>
+            </p>
             <p className="v2-byo__needs" data-testid="byo-listen-needs">
-              {t('agentByo.listen.needs', {
+              {t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
                 tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
               })}{' '}
+              {setupOs === 'windows' && listenAdapter === 'claude' && (
+                <>{t('agentByo.listen.needsWindowsClaude')}{' '}</>
+              )}
               <button
                 type="button"
                 className="v2-byo__link"
@@ -1083,10 +1128,19 @@ const V2AgentBYO: React.FC = () => {
               <div className="v2-byo__snippet-head">
                 <span>{t('agentByo.snippets.claudeCode')}</span>
               </div>
-              <p className="v2-byo__hint">{t('agentByo.snippets.claudeCodeBody', { name: issued.agentName })}</p>
+              <p className="v2-byo__hint">
+                {t(
+                  setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows' : 'agentByo.snippets.claudeCodeBody',
+                  { name: issued.agentName },
+                )}
+              </p>
               <div className="v2-byo__command">
-                <pre className="v2-byo__pre">{claudeSnippet}</pre>
-                <button type="button" onClick={() => copy('claude', claudeSnippet)} className="v2-byo__copy">
+                <pre className="v2-byo__pre">{setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet}</pre>
+                <button
+                  type="button"
+                  onClick={() => copy('claude', setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet)}
+                  className="v2-byo__copy"
+                >
                   {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
                 </button>
               </div>

@@ -6308,6 +6308,18 @@ body.modern-ui.v2-canvas {
   font: 400 13px/20px var(--v2-font);
   color: var(--v2-text-primary);
 }
+.v2-root .v2-byo__os {
+  /* Which machine the commands are for: Windows gets WSL for the listener
+     and PowerShell lines for MCP. The chosen one reads as ink, not a link. */
+  margin: 0;
+  font: 400 13px/20px var(--v2-font);
+  color: var(--v2-text-secondary);
+}
+.v2-root button.v2-byo__link[aria-pressed="true"] {
+  color: var(--v2-text-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
 .v2-root .v2-byo__more {
   /* "Other ways to connect": the real alternatives, folded so the page shows
      one command, not five equal choices. */
