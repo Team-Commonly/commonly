@@ -81,6 +81,30 @@ describe('PG Message model', () => {
     });
   });
 
+  // The message the posting run is answering (agentAnswerService) reaches the
+  // attention writer with the row and is never stored: the INSERT carries the
+  // same seven parameters, and no reply edge.
+  it("hands the run's answeringMessageId to the attention writer without storing it", async () => {
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: '3', pod_id: 'pod-1', user_id: 'agent', content: '@lee done', message_type: 'text',
+        }],
+      })
+      .mockResolvedValueOnce({});
+
+    await Message.create('pod-1', 'agent', '@lee done', 'text', null, null, null, '78385');
+
+    expect(pool.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('INSERT INTO messages'),
+      ['pod-1', 'agent', '@lee done', 'text', null, null, null],
+    );
+    expect(mockRecordMentionedUsers).toHaveBeenCalledWith(expect.objectContaining({
+      id: '3', answeringMessageId: '78385',
+    }));
+  });
+
   it('findByPodId formats returned rows', async () => {
     pool.query.mockResolvedValueOnce({
       rows: [

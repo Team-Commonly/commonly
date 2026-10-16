@@ -182,6 +182,10 @@ interface PostMessageOptions {
   // sets it (TASK-267a, Rhea on #2244), and the relay dispatcher refuses such
   // a message whatever bridges exist by the time it is stored.
   noOutboundRelay?: boolean;
+  // Server-set, never model-set: the message the posting run is answering,
+  // the native runtime's trigger. Read by the answer rule (agentAnswerService)
+  // only. Never stored and never a reply edge, so an answer is not threaded.
+  answeringMessageId?: string | null;
 }
 
 interface PostTargetOptions {
@@ -200,6 +204,7 @@ interface PostTargetOptions {
   skipDeliveryUpdate?: boolean;
   skipSummaryPersistence?: boolean;
   noOutboundRelay?: boolean;
+  answeringMessageId?: string | null;
 }
 
 interface HeartbeatFallbackOptions {
@@ -992,6 +997,7 @@ class AgentMessageService {
       threadRootId = null,
       installationConfig = null,
       noOutboundRelay = false,
+      answeringMessageId,
     } = options;
 
     // Typing indicator cleanup — once postMessage is entered, the runtime has
@@ -1572,6 +1578,7 @@ class AgentMessageService {
       replyToMessageId,
       threadRootId,
       noOutboundRelay,
+      answeringMessageId,
     });
 
     // The first answer an agent gives the workspace owner completes "Give your
@@ -1579,7 +1586,7 @@ class AgentMessageService {
     // write never delays or fails a post, and it never throws.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     void require('./starterTaskService').completeFirstTaskOnAnswer({
-      podId: String(podId), agentName, instanceId, replyToMessageId,
+      podId: String(podId), agentName, instanceId, replyToMessageId, answeringMessageId,
       agentLabel: displayName || agentName, content: sanitizedContent,
     });
 
@@ -1653,6 +1660,7 @@ class AgentMessageService {
       skipDeliveryUpdate = false,
       skipSummaryPersistence = false,
       noOutboundRelay = false,
+      answeringMessageId,
     } = options;
 
     // The installation label belongs to this pod; the User label belongs to
@@ -1717,7 +1725,10 @@ class AgentMessageService {
           console.warn('[agent-msg] PG pod backfill skipped:', (syncErr as Error).message);
         }
         const newMessage = await (PGMessage as {
-          create(podId: string, userId: string, content: string, type: string, replyToMessageId?: string | null, payload?: unknown, resolvedThreadRootId?: number | null): Promise<Record<string, unknown>>;
+          create(
+            podId: string, userId: string, content: string, type: string, replyToMessageId?: string | null,
+            payload?: unknown, resolvedThreadRootId?: number | null, answeringMessageId?: string | null,
+          ): Promise<Record<string, unknown>>;
         }).create(
           String(podId),
           String(agentUser._id),
@@ -1726,6 +1737,7 @@ class AgentMessageService {
           replyToMessageId,
           payload,
           resolvedThreadRootId,
+          answeringMessageId,
         );
 
         // The raw INSERT row carries no reply JOIN, so a replying agent's
