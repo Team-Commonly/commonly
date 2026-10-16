@@ -6,9 +6,36 @@
  * filters exactly; an undeclared (legacy) config keeps the pre-gate surface
  * MINUS approval proposing, which is opt-in by declaration only.
  */
-const { toolsForConfig } = require('../../../services/nativeRuntimeService');
+const { toolsForConfig, TOOLS } = require('../../../services/nativeRuntimeService');
+const { hostedCaps } = require('../../../services/hostedRuntimeService');
 
 const names = (tools) => tools.map((t) => t.function.name);
+
+// Runs fn with these env vars set (undefined deletes), then restores them.
+const withEnv = (vars, fn) => {
+  const saved = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  try {
+    Object.entries(vars).forEach(([k, v]) => {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    });
+    return fn();
+  } finally {
+    Object.entries(saved).forEach(([k, v]) => {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    });
+  }
+};
+const NATIVE_HOSTING = { HOSTED_ENGINE: 'native', LITELLM_BASE_URL: 'http://litellm.test', LITELLM_MASTER_KEY: 'k' };
+const NO_HOSTING = {
+  HOSTED_ENGINE: undefined,
+  HOSTED_RUNTIME_URL: undefined,
+  HOSTED_RUNTIME_ADMIN_TOKEN: undefined,
+  LITELLM_BASE_URL: undefined,
+  LITELLM_MASTER_KEY: undefined,
+  LITELLM_API_KEY: undefined,
+};
 
 describe('toolsForConfig', () => {
   test('a declared allowlist filters exactly', () => {
@@ -29,11 +56,41 @@ describe('toolsForConfig', () => {
   test('the scout manifest grants propose_action', () => {
     // eslint-disable-next-line global-require
     const { scoutApp } = require('../../../config/native-agents/scout');
-    const tools = toolsForConfig({ tools: [...scoutApp.tools] });
+    // On an instance that can host, so the hosted offer is offered too.
+    const tools = withEnv(NATIVE_HOSTING, () => toolsForConfig({ tools: [...scoutApp.tools] }));
     expect(names(tools)).toContain('commonly_propose_action');
     // The manifest and the runtime's schema must agree — a declared tool with
     // no schema would silently vanish here.
     expect(tools.length).toBe(scoutApp.tools.length);
+  });
+
+  test('the hosted offer is opt-in, and offered only where the instance can host', () => {
+    const declared = { tools: ['commonly_offer_hosted_agent'] };
+    withEnv(NO_HOSTING, () => {
+      expect(names(toolsForConfig(declared))).not.toContain('commonly_offer_hosted_agent');
+    });
+    withEnv(NATIVE_HOSTING, () => {
+      expect(names(toolsForConfig(declared))).toContain('commonly_offer_hosted_agent');
+      // Never on the default surface, even where hosting works.
+      expect(names(toolsForConfig({}))).not.toContain('commonly_offer_hosted_agent');
+      expect(names(toolsForConfig({ tools: ['commonly_post_message'] }))).not.toContain('commonly_offer_hosted_agent');
+    });
+    // The Durable Object engine counts when its worker is configured.
+    withEnv({ ...NO_HOSTING, HOSTED_RUNTIME_URL: 'https://worker.test', HOSTED_RUNTIME_ADMIN_TOKEN: 't' }, () => {
+      expect(names(toolsForConfig(declared))).toContain('commonly_offer_hosted_agent');
+    });
+  });
+
+  // Scout told strangers "200 turns a day" after the free line became 30
+  // (#2237): the number lived in a copy. The offer's description is built from
+  // the cap source, so the model is told the line the meter enforces.
+  test('the hosted offer states the limits the meter enforces', () => {
+    const offer = TOOLS.find((t) => t.function.name === 'commonly_offer_hosted_agent');
+    const free = hostedCaps();
+    const pro = hostedCaps({ pro: true });
+    expect(offer.function.description).toContain(`${free.turnsPerDay} turns a day (${pro.turnsPerDay} on Pro)`);
+    expect(offer.function.description).toContain(`${free.agentsPerUser} hosted agent${free.agentsPerUser === 1 ? '' : 's'} per account`);
+    expect(offer.function.description).toMatch(/no invitation code/);
   });
 
   test('agent_status is declaration-gated like every other tool', () => {

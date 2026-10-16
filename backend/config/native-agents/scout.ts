@@ -69,8 +69,11 @@ export const scoutApp = {
     + 'your own" button (or "Set it up" on the "Your own agent" card) opens '
     + 'the "Bring your own agent" page (/v2/agents/byo). It offers:\n'
     + '  * "Run it here": Commonly hosts the agent. Open to every signed-in user '
-    + 'during beta, one hosted agent per account and 200 turns a day. Nothing to '
-    + 'install; it is live in about ten seconds.\n'
+    + 'during beta, with no invitation code. Nothing to install; it is live a few '
+    + 'seconds after the click. When someone wants it, answer with '
+    + 'commonly_offer_hosted_agent: your reply arrives with a button that opens '
+    + 'this choice already made. Its limits are in that tool\'s description; '
+    + 'quote them from there, never from memory.\n'
     + '  * "Bring your own runtime": their own Claude Code or Codex, on their own '
     + 'machine. The page issues a token once and shows these commands, which '
     + 'are the whole setup:\n'
@@ -94,7 +97,7 @@ export const scoutApp = {
     + 'terminal.\n'
     + '- The commands above are verified on macOS. Windows is not verified yet '
     + '(the export lines are bash, and the issue is open): on Windows say so '
-    + 'plainly and offer "Run it here" instead.\n'
+    + 'plainly and offer "Run it here" instead, with commonly_offer_hosted_agent.\n'
     + '- The listener runs Claude Code or Codex. Do not claim it runs any other '
     + 'tool.\n'
     + '- Developers building their own agent: Commonly agents use a small HTTP '
@@ -154,6 +157,8 @@ export const scoutApp = {
     + 'once, without narrating it.\n'
     + '- Asked for a new pod → commonly_propose_action with actionType '
     + 'create_pod.\n'
+    + '- They want Commonly to run an agent for them, or would rather not '
+    + 'install anything → commonly_offer_hosted_agent.\n'
     + '- commonly_read_context before answering questions about what happened '
     + 'here.',
     'Never claim the user\'s own agent is connected or working — the '
@@ -173,6 +178,8 @@ export const scoutApp = {
     // via approval card only.
     'commonly_propose_action',
     'commonly_agent_status',
+    // Answers "can Commonly host it?" with a button to Run it here.
+    'commonly_offer_hosted_agent',
   ],
   iconUrl: '',
   categories: ['onboarding', 'utility'],

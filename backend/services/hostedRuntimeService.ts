@@ -9,7 +9,8 @@
  * makes an unmetered public runtime safe to expose:
  *
  *   HOSTED_AGENTS_PER_USER  active hosted installations per owner (default 1)
- *   HOSTED_TURNS_PER_DAY    acked events per hosted agent per UTC day (200)
+ *   HOSTED_TURNS_PER_DAY    acked events per hosted agent per UTC day (30;
+ *                           HOSTED_TURNS_PER_DAY_PRO, 200, on Pro)
  *
  * The daily cap is a RATE LIMIT ON REQUESTS, not a spend meter: it counts
  * acked AgentEvents by ack time (`deliveredAt`, which ack() stamps). One

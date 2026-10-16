@@ -77,4 +77,14 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/at most one question per turn/);
     expect(prompt).not.toMatch(/within the hour|within an hour|you will hear back|you'll hear/i);
   });
+
+  // QA 2026-10-16: Scout said "200 turns a day" while the card and the meter
+  // said 30, because the prompt kept its own copy of the plan line. The limits
+  // now reach Scout only through the hosted offer's description.
+  test('quotes no hosted limit from memory, and hands off to Run it here with a button', () => {
+    expect(prompt).not.toMatch(/\d+\s+turns (a|per) day/i);
+    expect(prompt).toContain('commonly_offer_hosted_agent');
+    expect(scoutApp.tools).toContain('commonly_offer_hosted_agent');
+    expect(prompt).toMatch(/with no invitation code/);
+  });
 });

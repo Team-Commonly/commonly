@@ -63,6 +63,8 @@ jest.mock('../../../services/hostedRuntimeService', () => mockHosted);
 const mockNativeAvailable = jest.fn(() => false);
 jest.mock('../../../services/nativeRuntimeService', () => ({
   isNativeRuntimeAvailable: (...args) => mockNativeAvailable(...args),
+  // The real rule, over this file's two switches.
+  hostedEngineAvailable: (engine) => (engine === 'native' ? mockNativeAvailable() : mockHosted.isConfigured()),
 }));
 const mockMarkByoOpened = jest.fn();
 jest.mock('../../../services/onboardingMarks', () => ({ markByoOpened: (...args) => mockMarkByoOpened(...args) }));
