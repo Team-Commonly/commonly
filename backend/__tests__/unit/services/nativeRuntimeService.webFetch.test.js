@@ -159,6 +159,48 @@ describe('native turn with commonly_fetch_url', () => {
     expect(mockGetPage).toHaveBeenCalledWith(REPO);
   });
 
+  // Cofounder's security read on #2249: the comparison ignores a trailing run,
+  // a fragment and host case, and the request used to carry the model's own
+  // argument, so `<given link>!!!…` matched and the appended bytes went out.
+  // The argument only selects; the request is the given address, byte for byte.
+  test.each([
+    ['a trailing run of punctuation', `${REPO}${'!'.repeat(40)}`],
+    ['a trailing run of slashes', `${REPO}${'/'.repeat(40)}`],
+    ['a slash and then every trimmed punctuation character', `${REPO}/.,;:!?*_~`],
+    ['a fragment', `${REPO}#d=Private%20roadmap`],
+    ['the host in another case', 'https://GitHub.COM/acme/widget'],
+    ['http', 'http://github.com/acme/widget'],
+  ])('the request carries the given address byte for byte when the model adds %s', async (_label, url) => {
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_fetch_url', { url })))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention());
+
+    expect(mockGetPage.mock.calls).toEqual([[REPO]]);
+  });
+
+  test('punctuation then a slash is not trimmed into a match: refused, nothing sent', async () => {
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_fetch_url', { url: `${REPO}.,;:!?*_~/` })))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention());
+
+    expect(mockGetPage).not.toHaveBeenCalled();
+    expect(toolMessages(1)[0].content).toMatch(/does not appear in this conversation/);
+  });
+
+  test('a given trailing slash is kept, whether or not the model writes it', async () => {
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_fetch_url', { url: 'https://docs.example/guide' })))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention('@analyst read https://docs.example/guide/ please'));
+
+    expect(mockGetPage.mock.calls).toEqual([['https://docs.example/guide/']]);
+  });
+
   test.each([
     ['an address that appears nowhere', 'https://attacker.example/collect'],
     ['the given link with data added', `${REPO}?d=Private%20roadmap`],

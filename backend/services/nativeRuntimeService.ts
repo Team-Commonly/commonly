@@ -751,15 +751,16 @@ async function dispatchTool(
         if ((ctx.webFetches || 0) >= MAX_WEB_FETCHES_PER_TURN) {
           return refuse(`This turn has read its ${MAX_WEB_FETCHES_PER_TURN} pages.`);
         }
-        const url = String(args.url ?? '').trim();
-        // Checked before anything is sent: an address the model wrote is never requested.
-        if (!ctx.givenAddresses.has(url)) return refuse(WEB_FETCH_NOT_GIVEN_REFUSAL);
+        // The model's argument only selects an address the turn was given. What
+        // is requested is that given address, rebuilt from the given text, so
+        // nothing the model added (a trailing run the comparison ignores, a
+        // fragment, host case) is ever sent. Checked before anything is sent.
+        const target = ctx.givenAddresses.resolve(String(args.url ?? '').trim());
+        if (!target) return refuse(WEB_FETCH_NOT_GIVEN_REFUSAL);
         ctx.webFetches = (ctx.webFetches || 0) + 1;
-        // A given http or scheme-less link is opened over https; the guard refuses anything else.
-        const httpsUrl = /^https?:\/\//i.test(url) ? url.replace(/^http:/i, 'https:') : `https://${url}`;
         let page;
         try {
-          page = await getFromPublicAddress(httpsUrl);
+          page = await getFromPublicAddress(target);
         } catch (error) {
           // The guard's reason names the rule, not the page: no third-party text, no taint.
           if (isOutboundUrlRefused(error)) return refuse(`That address cannot be opened: ${(error as Error).message}`);

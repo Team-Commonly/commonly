@@ -120,6 +120,30 @@ describe('webAddressProvenance', () => {
       expect(given.has('')).toBe(false);
     });
 
+    // The argument only selects: resolve returns the address as given, so
+    // nothing the comparison ignores can reach the request.
+    test.each([
+      ['a trailing run', 'https://example.com/a/b!!!!!!!!'],
+      ['trailing slashes', 'example.com/a/b////'],
+      ['a fragment', 'https://example.com/a/b#d=secret'],
+      ['host case', 'https://EXAMPLE.com/a/b'],
+      ['http', 'http://example.com/a/b'],
+    ])('resolve gives the given address, not one with %s', (_label, url) => {
+      const given = new GivenAddresses();
+      given.add('see https://Example.com/a/b/. ok');
+
+      expect(given.resolve(url)).toBe('https://example.com/a/b/');
+    });
+
+    test('resolve opens a scheme-less given link over https, and refuses what was not given', () => {
+      const given = new GivenAddresses();
+      given.add('what does github.com/acme/widget do?');
+
+      expect(given.resolve('https://github.com/acme/widget')).toBe('https://github.com/acme/widget');
+      expect(given.resolve('https://github.com/acme/widget?d=x')).toBeNull();
+      expect(given.resolve('')).toBeNull();
+    });
+
     test('each text is scanned once: refused attempts against three hostile pages cost no rescan', () => {
       const given = new GivenAddresses();
       const page = Array.from({ length: 400 }, (_, i) => `https://h${i}.example/p${'!'.repeat(50)}x`).join(' ');
