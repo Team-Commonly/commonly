@@ -1286,7 +1286,7 @@
     "badge": "Approval needed",
     "action": {
       "createPod": "Create a pod named \"{{name}}\" ({{type}})",
-      "connectLocalAgent": "Connect a local agent seat named \"{{name}}\"",
+      "connectLocalAgent": "Connect your own agent as “{{name}}”",
       "unknown": "Run \"{{actionType}}\" with: {{params}}"
     },
     "toolCall": {
@@ -1303,25 +1303,25 @@
     "approved": "✓ Approved — done.",
     "approvedButFailed": "Approved, but the action failed: {{error}}",
     "approvedAgentJoinFailed": "Approved — the pod was created, but {{agent}} could not join it. Open the pod and re-add the agent.",
-    "approvedSeatReady": "Approved — the seat is ready. Link your local agent from the connect page.",
+    "approvedSeatReady": "Approved. Next, copy one command into Terminal: the next page shows it.",
     "declined": "Declined.",
     "expired": "Expired without a decision.",
     "openResult": "Open the new pod",
-    "openConnect": "Open the connect page",
+    "openConnect": "Get my connect command",
     "errors": {
       "expired": "This approval expired before the decision landed.",
       "failed": "Couldn't record the decision. Try again."
     }
   },
   "agentByo": {
-    "eyebrow": "Connect any runtime",
+    "eyebrow": "Your own agent",
     "title": "Bring your own agent",
-    "description": "Connect Claude Code, Cursor, or Codex to your Commonly pods via MCP. ~2 minutes.",
+    "description": "Connect the Claude Code or Codex you already use, so it answers you in your pods. One command in Terminal, about 2 minutes.",
     "form": {
       "nameLabel": "Agent name",
-      "nameHint": "Lower-case letters, digits, and dashes. This is the identity your agent posts as.",
-      "podLabel": "Install into pod",
-      "podHint": "Your agent will be installed here. You can install it into more pods later.",
+      "nameHint": "Lower-case letters, digits, and dashes. It posts under this name.",
+      "podLabel": "Pod it joins",
+      "podHint": "It joins this pod. You can add it to more pods later.",
       "loadingPods": "Loading pods…",
       "machineLabel": "Computer",
       "machineHint": "The daemon on this computer will adopt and start the agent.",
@@ -1329,7 +1329,7 @@
       "adapterDefault": "Auto-detect on that computer",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",
-      "adapterHint": "Pin which local CLI this seat should use. Leave it on auto-detect to let the daemon pick an installed adapter.",
+      "adapterHint": "Pick which CLI on that computer runs this agent. Leave it on auto-detect to use whichever is installed.",
       "modelLabel": "Model",
       "modelDefault": "Adapter default",
       "modelOpus": "Opus — strongest reasoning",
@@ -1340,8 +1340,8 @@
       "modelHintCodex": "Suggestions only; the Codex CLI model catalog on that machine determines which slugs work. Uses that computer's own Codex login."
     },
     "actions": {
-      "install": "Install + generate token",
-      "issuing": "Issuing token…",
+      "install": "Get my connect command",
+      "issuing": "Making your command…",
       "copy": "Copy",
       "copied": "Copied!",
       "goToPod": "Go to your pod",
@@ -1360,16 +1360,15 @@
       "fullWalkthrough": "full walkthrough"
     },
     "result": {
-      "heading": "Token issued for",
-      "copyOnceLead": "Copy this",
-      "copyOnceEmphasis": "once",
-      "copyOnceRest": "Commonly hashes the token after issuance — if you lose it, come back here and rotate (re-running install with the same name is idempotent on identity; the token is reissued fresh)."
+      "heading": "Your connect command for",
+      "keyOnce": "The command holds a private key we show only once. Lost it? Come back and press “Get my connect command” again for a new one."
     },
     "snippets": {
-      "runtimeToken": "Runtime token",
-      "claudeCode": "Claude Code",
+      "runtimeToken": "The key on its own",
+      "claudeCode": "Optional: let Claude Code use the pod in your own sessions",
       "cursor": "Cursor — add to ~/.cursor/mcp.json",
-      "memory": "Bring its memory (optional)"
+      "memory": "Bring its memory (optional)",
+      "claudeCodeBody": "Gives your own Claude Code sessions Commonly’s tools. It does not make {{name}} answer @mentions; the command above does."
     },
     "memory": {
       "doneLead": "Memory imported —",
@@ -1394,24 +1393,29 @@
       "machineRequired": "Pick a computer first."
     },
     "listen": {
-      "title": "Make it answer @mentions",
-      "body": "Run this on the machine your agent lives on. It is what makes this agent answer @mentions here; the editor snippets below only let you use Commonly from your editor.",
-      "note": "Leave it running. It polls Commonly and replies as {{name}}. Without it, {{name}} appears in your team but stays silent when mentioned.",
-      "waiting": "Waiting for {{name}} to check in… this flips the moment the command above connects.",
+      "title": "Run this in Terminal, and keep it open",
+      "body": "This is what makes {{name}} answer @mentions in your pods.",
+      "note": "It replies as {{name}} while this Terminal window stays open. Close it and {{name}} stays silent when mentioned.",
+      "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
-      "stillWaiting": "Still no check-in from {{name}}. Run the command above on the machine where your agent lives, then this page will confirm it.",
-      "ctaWarning": "{{name}} isn't listening yet — mentions won't get answers until the wrapper above is running."
+      "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
+      "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
+      "needs": "Before you paste (Mac or Linux): Node 18+ with npm, and {{tool}} installed and signed in. The export lines last only for this Terminal window, so run all four in one.",
+      "toolClaude": "Claude Code",
+      "toolCodex": "the Codex CLI",
+      "switchToCodex": "I use Codex instead",
+      "switchToClaude": "I use Claude Code instead"
     },
     "mode": {
       "label": "Where should it run?",
       "hosted": "Run it here",
       "hostedHint": "Commonly runs it for you. Nothing to install. Beta: {{turns}} turns a day.",
-      "byo": "Bring your own runtime",
-      "byoHint": "Connect Claude Code, Cursor, or Codex from your machine.",
+      "byo": "Use my own agent",
+      "byoHint": "Your Claude Code or Codex, on your computer.",
       "onCommonly": "on Commonly",
       "yours": "your machine",
       "hostedMeta": "Live in ~10 seconds — no terminal, no keys",
-      "byoMeta": "MCP token + snippets for your editor",
+      "byoMeta": "One command in Terminal",
       "machine": "On my computer",
       "machineHint": "Runs on a computer you've added — your files, your CLIs",
       "machineMeta": "Needs the Commonly daemon running there"
@@ -1435,7 +1439,7 @@
       "starting": "starting…",
       "live": "listening",
       "noteHosted": "This is how it will appear in the pod. The face follows the name.",
-      "noteByo": "Appears in the pod once your runtime connects with the token.",
+      "noteByo": "Appears in the pod once the command is running.",
       "noteMachine": "Appears in the pod once the daemon on {{machine}} starts it.",
       "noteUnchosen": "This is how it will appear in the pod. The face follows the name."
     },
@@ -1465,6 +1469,9 @@
       "change": "Change",
       "limits": "Beta: {{agents}} hosted agent per account, {{turns}} turns a day.",
       "otherWays": "Other ways to connect"
+    },
+    "otherWays": {
+      "title": "Other ways to connect"
     }
   },
   "compare": {

@@ -59,8 +59,8 @@ const issueToken = async () => {
 
   renderPage();
   await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
-  fireEvent.click(screen.getByRole('button', { name: /install \+ generate token/i }));
-  await screen.findByText(/token issued for/i);
+  fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+  await screen.findByText(/your connect command for/i);
 };
 
 afterEach(() => jest.clearAllMocks());
@@ -131,9 +131,9 @@ describe('V2AgentBYO memory import', () => {
 
     renderPage();
     await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /install \+ generate token/i }));
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
 
-    await screen.findByText(/token issued for/i);
+    await screen.findByText(/your connect command for/i);
     expect(screen.getByText(AGENT_TOKEN)).toBeInTheDocument();
   });
 });

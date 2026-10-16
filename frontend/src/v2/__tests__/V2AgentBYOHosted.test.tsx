@@ -80,11 +80,11 @@ describe('V2AgentBYO — Run it here', () => {
     expect(screen.getByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByTestId('byo-mode-unchosen')).toHaveTextContent('Choose where it runs first');
     expect(screen.queryByRole('button', { name: /^run it here$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /install \+ generate token/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /get my connect command/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('byo-mode-byo'));
     expect(screen.queryByTestId('byo-mode-unchosen')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /install \+ generate token/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /get my connect command/i })).toBeInTheDocument();
   });
 
   // The pod list loads before availability and enables the act. Until the
@@ -104,19 +104,19 @@ describe('V2AgentBYO — Run it here', () => {
     });
     renderPage();
 
-    const podPicker = await screen.findByRole('combobox', { name: /install into pod/i });
+    const podPicker = await screen.findByRole('combobox', { name: /pod it joins/i });
     await waitFor(() => expect(podPicker).toHaveValue('p1'));
-    expect(screen.queryByRole('button', { name: /install \+ generate token/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /get my connect command/i })).not.toBeInTheDocument();
     expect(screen.getByTestId('byo-mode-unchosen')).toBeInTheDocument();
 
     // This instance cannot host. Still no act until the machines list answers,
     // because a registered computer would make it a choice.
     await act(async () => { answerAvailability({ data: { configured: false, caps: { agentsPerUser: 0, turnsPerDay: 0 } } }); });
-    expect(screen.queryByRole('button', { name: /install \+ generate token/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /get my connect command/i })).not.toBeInTheDocument();
 
     // No computers either: bringing your own runtime is the only path.
     await act(async () => { answerMachines({ data: { machines: [] } }); });
-    expect(await screen.findByRole('button', { name: /install \+ generate token/i })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: /get my connect command/i })).toBeEnabled();
     expect(screen.queryByTestId('byo-mode-unchosen')).not.toBeInTheDocument();
   });
 
@@ -278,7 +278,7 @@ describe('V2AgentBYO — Run it here', () => {
     mockGet({ configured: false });
     renderAt('/v2/agents/byo?pod=p1&mode=hosted');
 
-    expect(await screen.findByRole('button', { name: /install \+ generate token/i })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: /get my connect command/i })).toBeEnabled();
     expect(screen.queryByTestId('byo-mode-hosted')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^run it here$/i })).not.toBeInTheDocument();
     window.history.pushState({}, '', '/');
@@ -399,7 +399,7 @@ describe('V2AgentBYO — Run it here', () => {
     window.history.pushState({}, '', '/v2/agents/byo?persona=planner&pod=p1');
     renderPage();
     await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /install \+ generate token/i }));
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
     await waitFor(() => expect(axios.post.mock.calls.some(([url]) => url === '/api/registry/install')).toBe(true));
     const installCall = axios.post.mock.calls.find(([url]) => url === '/api/registry/install');
     expect(installCall[1]).toMatchObject({
@@ -417,8 +417,8 @@ describe('V2AgentBYO — Run it here', () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
     expect(screen.queryByTestId('byo-mode-hosted')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /install \+ generate token/i }));
-    await screen.findByText(/token issued for/i);
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    await screen.findByText(/your connect command for/i);
     expect(axios.post.mock.calls[0][1]).toMatchObject({ config: { runtime: { runtimeType: 'webhook' } } });
   });
 });

@@ -54,20 +54,39 @@ const issueToken = async () => {
     </AuthContext.Provider>,
   );
   await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
-  fireEvent.click(screen.getByRole('button', { name: /install \+ generate token/i }));
-  await screen.findByText(/token issued for/i);
+  fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+  await screen.findByText(/your connect command for/i);
 };
 
 describe('BYO listener snippet', () => {
-  test('the listener comes right after the token, before the editor (MCP) snippets', async () => {
+  // QA BYO walk 1 (2026-10-16): four equal Copy boxes, and the one titled
+  // "Claude Code" was the MCP line, which does not make the agent answer. The
+  // command that does is THE box: first, and the only one not marked optional
+  // or folded away.
+  test('the connect command is the first box; the MCP line is optional; the bare key is folded away', async () => {
     await issueToken();
     const pres = Array.from(document.querySelectorAll('.v2-byo__pre')).map((el) => el.textContent || '');
     const listener = pres.findIndex((txt) => /commonly agent run /.test(txt));
     const claudeMcp = pres.findIndex((txt) => /claude mcp add commonly/.test(txt));
-    expect(listener).toBeGreaterThan(-1);
-    expect(claudeMcp).toBeGreaterThan(-1);
-    expect(listener).toBe(1); // 0 is the runtime token itself
-    expect(listener).toBeLessThan(claudeMcp);
+    expect(listener).toBe(0);
+    expect(claudeMcp).toBeGreaterThan(listener);
+    expect(screen.getByTestId('byo-mcp-claude')).toHaveTextContent(/^Optional:/);
+    const more = screen.getByTestId('byo-result-more-ways');
+    expect(Array.from(more.querySelectorAll('.v2-byo__pre')).map((el) => el.textContent))
+      .toContain('cm_agent_test_token');
+  });
+
+  test('what it needs is said before the copy, and Codex users get a Codex command', async () => {
+    await issueToken();
+    expect(screen.getByTestId('byo-listen-needs'))
+      .toHaveTextContent(/Node 18\+ with npm, and Claude Code installed and signed in/);
+    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+    const pre = Array.from(document.querySelectorAll('.v2-byo__pre'))
+      .find((el) => /commonly agent run /.test(el.textContent || ''));
+    expect((pre.textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
+    expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI installed and signed in/);
+    // The Claude Code MCP line is for Claude Code; it goes with the switch.
+    expect(screen.queryByTestId('byo-mcp-claude')).toBeNull();
   });
 
   test('every line executes: the CLI install is a command, not a comment, and the run line is last', async () => {
@@ -86,7 +105,9 @@ describe('BYO listener snippet', () => {
     expect(pre.textContent).not.toContain('#');
     expect(lines[1]).toMatch(/^export COMMONLY_API_URL=/);
     expect(lines[2]).toBe('export COMMONLY_AGENT_TOKEN=cm_agent_test_token');
-    expect(lines[3]).toMatch(/^commonly agent run \S+$/);
+    // The command names its tool, so a missing Claude Code is an error, not a
+    // quiet switch to Codex (QA BYO walk 1).
+    expect(lines[3]).toMatch(/^commonly agent run \S+ --adapter claude$/);
     // No line in the snippet is a bare comment.
     expect(lines.filter((l) => l.trimStart().startsWith('#'))).toHaveLength(0);
   });

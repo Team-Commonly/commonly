@@ -6301,6 +6301,25 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
   align-self: flex-start;
 }
+.v2-root .v2-byo__needs {
+  /* What a stranger needs before the paste (QA BYO walk 1): one line above
+     the command, in body ink, so it is read before the Copy button is. */
+  margin: 0;
+  font: 400 13px/20px var(--v2-font);
+  color: var(--v2-text-primary);
+}
+.v2-root .v2-byo__more {
+  /* "Other ways to connect": the real alternatives, folded so the page shows
+     one command, not five equal choices. */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.v2-root .v2-byo__more > summary {
+  cursor: pointer;
+  color: var(--v2-accent-text);
+  font: 500 13px/20px var(--v2-font);
+}
 .v2-root button.v2-byo__secondary {
   align-self: flex-start;
   padding: 10px 18px;

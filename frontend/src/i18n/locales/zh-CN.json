@@ -1278,7 +1278,7 @@
     "badge": "需要批准",
     "action": {
       "createPod": "创建一个名为“{{name}}”的 Pod（类型：{{type}}）",
-      "connectLocalAgent": "连接一个名为“{{name}}”的本地智能体座位",
+      "connectLocalAgent": "接入你自己的智能体，名为“{{name}}”",
       "unknown": "执行“{{actionType}}”，参数：{{params}}"
     },
     "toolCall": {
@@ -1295,11 +1295,11 @@
     "approved": "✓ 已批准 — 已完成。",
     "approvedButFailed": "已批准，但执行失败：{{error}}",
     "approvedAgentJoinFailed": "已批准 — Pod 已创建，但 {{agent}} 未能加入。请打开该 Pod 重新添加智能体。",
-    "approvedSeatReady": "已批准 — 座位已就绪。请在连接页面完成本地智能体的接入。",
+    "approvedSeatReady": "已批准。下一步：在终端里运行一条命令，下一页会给出。",
     "declined": "已拒绝。",
     "expired": "已过期，未做出决定。",
     "openResult": "打开新 Pod",
-    "openConnect": "打开连接页面",
+    "openConnect": "获取接入命令",
     "errors": {
       "expired": "该批准在决定生效前已过期。",
       "failed": "决定未能保存，请重试。"
@@ -1374,14 +1374,14 @@
     }
   },
   "agentByo": {
-    "eyebrow": "连接任意运行时",
+    "eyebrow": "你自己的智能体",
     "title": "接入你自己的智能体",
-    "description": "用 MCP 把 Claude Code、Cursor 或 Codex 接入你的 Commonly Pod，约2分钟。",
+    "description": "接入你已在用的 Claude Code 或 Codex，让它在你的 Pod 里回复你。在终端里运行一条命令，约 2 分钟。",
     "form": {
       "nameLabel": "智能体名称",
-      "nameHint": "小写字母、数字和连字符。这是你的智能体发帖时使用的身份。",
-      "podLabel": "安装到 Pod",
-      "podHint": "你的智能体会安装在这里。之后可以把它安装到更多 Pod。",
+      "nameHint": "小写字母、数字和连字符。它会用这个名字发言。",
+      "podLabel": "加入的 Pod",
+      "podHint": "它会加入这个 Pod，之后还可以加入更多 Pod。",
       "loadingPods": "正在加载 Pod…",
       "machineLabel": "电脑",
       "machineHint": "这台电脑上的守护进程会接管并启动该智能体。",
@@ -1389,7 +1389,7 @@
       "adapterDefault": "在这台电脑上自动检测",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",
-      "adapterHint": "固定这席位要用哪一个本地 CLI。留在自动检测时，由守护进程选择那台电脑上已安装的适配器。",
+      "adapterHint": "选择那台电脑上由哪个 CLI 运行这个智能体。保持自动检测，就用已安装的那个。",
       "modelLabel": "模型",
       "modelDefault": "适配器默认",
       "modelOpus": "Opus——推理最强",
@@ -1400,8 +1400,8 @@
       "modelHintCodex": "这些只是建议；那台电脑上的 Codex CLI 模型目录决定哪些模型标识可用。使用那台电脑自己的 Codex 登录。"
     },
     "actions": {
-      "install": "安装并生成令牌",
-      "issuing": "正在签发令牌…",
+      "install": "获取接入命令",
+      "issuing": "正在生成命令…",
       "copy": "复制",
       "copied": "已复制！",
       "goToPod": "前往你的 Pod",
@@ -1420,16 +1420,15 @@
       "fullWalkthrough": "完整教程"
     },
     "result": {
-      "heading": "已为以下智能体签发令牌：",
-      "copyOnceLead": "请立即复制",
-      "copyOnceEmphasis": "一次",
-      "copyOnceRest": "Commonly 会在签发后把令牌哈希存储 —— 如果弄丢了，回到这里重新轮换（用相同名称重新安装不会改变身份，令牌会重新签发）。"
+      "heading": "你的接入命令：",
+      "keyOnce": "命令里有一个私密密钥，只显示这一次。弄丢了？回到这里再点一次“获取接入命令”，会生成新的。"
     },
     "snippets": {
-      "runtimeToken": "运行时令牌",
-      "claudeCode": "Claude Code",
+      "runtimeToken": "单独的密钥",
+      "claudeCode": "可选：让 Claude Code 在你自己的会话里使用这个 Pod",
       "cursor": "Cursor——添加到 ~/.cursor/mcp.json",
-      "memory": "导入它的记忆（可选）"
+      "memory": "导入它的记忆（可选）",
+      "claudeCodeBody": "为你自己的 Claude Code 会话加上 Commonly 的工具。它不会让 {{name}} 回复 @提及，上面那条命令才会。"
     },
     "memory": {
       "doneLead": "记忆已导入——",
@@ -1454,24 +1453,29 @@
       "machineRequired": "请先选择一台电脑。"
     },
     "listen": {
-      "title": "让它回复 @提及",
-      "body": "在 agent 所在的机器上运行这段命令。正是它让这个 agent 回复这里的 @提及；下面的编辑器配置只是让你在编辑器里调用 Commonly。",
-      "note": "保持它运行。它会轮询 Commonly 并以 {{name}} 的身份回复。不运行的话，{{name}} 会出现在你的团队里，但被提及时始终沉默。",
-      "waiting": "正在等待 {{name}} 接入…… 上面的命令一连接，这里就会更新。",
+      "title": "在终端里运行，并保持窗口开着",
+      "body": "有了它，{{name}} 才会回复你在 Pod 里的 @提及。",
+      "note": "终端窗口开着时，它会以 {{name}} 的身份回复。关掉窗口，{{name}} 被提及时就不会回应。",
+      "waiting": "正在等待 {{name}} 接入…命令一接通，这里就会变绿。",
       "verified": "{{name}} 已在监听 —— @提及 会唤醒它。",
-      "stillWaiting": "仍未收到 {{name}} 的接入信号。请在 agent 所在的机器上运行上面的命令，本页会自动确认。",
-      "ctaWarning": "{{name}} 还没有在监听 —— 在上面的命令运行起来之前，@提及 不会得到回复。"
+      "stillWaiting": "仍未收到 {{name}} 的接入信号。请在你电脑的终端里运行上面的命令，本页会自动确认。",
+      "ctaWarning": "{{name}} 还没有在监听：上面的命令运行起来之前，它不会回复 @提及。",
+      "needs": "粘贴前请确认（Mac 或 Linux）：已装 Node 18+ 和 npm，并已安装且登录 {{tool}}。export 那几行只在当前终端窗口有效，所以四行要在同一个窗口里运行。",
+      "toolClaude": "Claude Code",
+      "toolCodex": "Codex CLI",
+      "switchToCodex": "我用的是 Codex",
+      "switchToClaude": "我用的是 Claude Code"
     },
     "mode": {
       "label": "在哪里运行？",
       "hosted": "在这里运行",
       "hostedHint": "由 Commonly 代为运行，无需安装。测试期：每天{{turns}}轮。",
-      "byo": "自带运行时",
-      "byoHint": "从你的电脑连接 Claude Code、Cursor 或 Codex。",
+      "byo": "用我自己的智能体",
+      "byoHint": "你电脑上的 Claude Code 或 Codex。",
       "onCommonly": "在 Commonly 上",
       "yours": "你的电脑",
       "hostedMeta": "约10秒上线——无需终端与密钥",
-      "byoMeta": "MCP 令牌 + 编辑器代码片段",
+      "byoMeta": "在终端里运行一条命令",
       "machine": "在我的电脑上",
       "machineHint": "在你已添加的电脑上运行——你的文件、你的 CLI",
       "machineMeta": "需要那台电脑运行 Commonly 守护进程"
@@ -1495,7 +1499,7 @@
       "starting": "正在启动…",
       "live": "监听中",
       "noteHosted": "这就是它在 Pod 中的样子。头像跟随名字生成。",
-      "noteByo": "你的运行时使用令牌连接后即会出现在 Pod 中。",
+      "noteByo": "命令运行起来后，它就会出现在 Pod 里。",
       "noteMachine": "{{machine}} 上的守护进程启动它后即会出现在 Pod 中。",
       "noteUnchosen": "这就是它在 Pod 中的样子。头像跟随名字生成。"
     },
@@ -1525,6 +1529,9 @@
       "change": "更改",
       "limits": "测试期：每个账号{{agents}}个托管智能体，每天{{turns}}轮。",
       "otherWays": "其他接入方式"
+    },
+    "otherWays": {
+      "title": "其他接入方式"
     }
   },
   "agentProfile": {
