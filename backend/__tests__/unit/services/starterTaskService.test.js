@@ -9,9 +9,15 @@
  */
 
 const mockFindOneAndUpdate = jest.fn();
+const mockTaskExists = jest.fn();
 jest.mock('../../../models/Task', () => ({
   findOneAndUpdate: (...args) => mockFindOneAndUpdate(...args),
+  exists: (...args) => mockTaskExists(...args),
 }));
+const mockPodFindById = jest.fn();
+jest.mock('../../../models/Pod', () => ({ findById: (...args) => mockPodFindById(...args) }));
+const mockAnswered = jest.fn();
+jest.mock('../../../services/agentAnswerService', () => ({ humansAnsweredBy: (...args) => mockAnswered(...args) }));
 
 const mockEmitTaskUpdated = jest.fn();
 jest.mock('../../../services/taskEventService', () => ({
@@ -20,7 +26,9 @@ jest.mock('../../../services/taskEventService', () => ({
 
 const {
   completeConnectAgentStarterTask,
+  completeFirstTaskOnAnswer,
   CONNECT_AGENT_SOURCE_REF,
+  FIRST_TASK_SOURCE_REF,
 } = require('../../../services/starterTaskService');
 
 const POD_A = 'aaaaaaaaaaaaaaaaaaaaaaaa';
@@ -89,5 +97,64 @@ describe('completeConnectAgentStarterTask', () => {
       agentLabel: 'agent',
     })).resolves.toBeUndefined();
     expect(mockEmitTaskUpdated).not.toHaveBeenCalled();
+  });
+});
+
+// QA walk 3 (2026-10-16): "Give your agent its first task" stayed pending after
+// four answered asks. It completes on the first answer an agent gives the
+// workspace owner; who was answered is agentAnswerService's rule.
+describe('completeFirstTaskOnAnswer', () => {
+  const OWNER = 'cccccccccccccccccccccccc';
+  const answer = (extra = {}) => completeFirstTaskOnAnswer({
+    podId: POD_A, agentName: 'lee-agent', instanceId: 'default', agentLabel: 'lee-agent', ...extra,
+  });
+
+  beforeEach(() => {
+    mockTaskExists.mockReset().mockResolvedValue({ _id: 't2' });
+    mockPodFindById.mockReset().mockReturnValue({ select: () => ({ lean: async () => ({ createdBy: OWNER }) }) });
+    mockAnswered.mockReset().mockResolvedValue(new Set([OWNER]));
+    mockFindOneAndUpdate.mockResolvedValue({ taskId: 'TASK-002', status: 'done' });
+  });
+
+  test("the agent's first answer to the workspace owner completes the card", async () => {
+    await answer({ replyToMessageId: 77 });
+    expect(mockAnswered).toHaveBeenCalledWith({
+      podId: POD_A, agentName: 'lee-agent', instanceId: 'default', replyToMessageId: 77,
+    });
+    const [filter, update] = mockFindOneAndUpdate.mock.calls[0];
+    expect(String(filter.podId)).toBe(POD_A);
+    expect(filter.sourceRef).toBe(FIRST_TASK_SOURCE_REF);
+    expect(filter.status).toEqual({ $in: ['pending', 'claimed'] });
+    expect(update.$push.updates.text).toContain('lee-agent answered your first request');
+    expect(mockEmitTaskUpdated).toHaveBeenCalledWith(POD_A, expect.objectContaining({ taskId: 'TASK-002' }), 'updated');
+  });
+
+  test('a post that answers someone else, or nobody, leaves it open', async () => {
+    mockAnswered.mockResolvedValue(new Set(['dddddddddddddddddddddddd']));
+    await answer();
+    mockAnswered.mockResolvedValue(new Set());
+    await answer();
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('Scout answering is the guide, not "your agent"', async () => {
+    await answer({ agentName: 'Scout' });
+    expect(mockTaskExists).not.toHaveBeenCalled();
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('with no open card it stops at one read, before any answer check', async () => {
+    mockTaskExists.mockResolvedValue(null);
+    await answer();
+    expect(mockTaskExists).toHaveBeenCalledWith(expect.objectContaining({ sourceRef: FIRST_TASK_SOURCE_REF }));
+    expect(mockAnswered).not.toHaveBeenCalled();
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('never throws: a failing board read is logged and swallowed', async () => {
+    mockTaskExists.mockRejectedValue(new Error('mongo down'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(answer()).resolves.toBeUndefined();
+    warn.mockRestore();
   });
 });

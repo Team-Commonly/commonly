@@ -14,14 +14,44 @@
  * hosted provision (routes/hosted.ts), where no token exists to be first-used
  * and the agent is live once provisioned. Never throws; a board write must not
  * be able to fail an auth or provision request.
+ *
+ * TASK-002 "Give your agent its first task" completes on the first ANSWER an
+ * agent gives the workspace owner (QA walk 3, 2026-10-16: it stayed pending
+ * after four answered asks). Who was answered is agentAnswerService's rule,
+ * the same one attention uses. Called fire-and-forget from
+ * AgentMessageService.postMessage after a post lands; same contract.
  */
 import mongoose from 'mongoose';
 import Task from '../models/Task';
+import { humansAnsweredBy } from './agentAnswerService';
+
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const Pod = require('../models/Pod');
 
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { emitTaskUpdated } = require('./taskEventService');
 
 export const CONNECT_AGENT_SOURCE_REF = 'onboarding:connect-agent';
+export const FIRST_TASK_SOURCE_REF = 'onboarding:first-task';
+
+const OPEN = { $in: ['pending', 'claimed'] };
+
+/** Marks one pod's starter card done with a system update. Idempotent: only an open card matches. */
+const completeStarterTask = async (podId: string, sourceRef: string, text: string): Promise<void> => {
+  const task = await Task.findOneAndUpdate(
+    { podId: mongoose.Types.ObjectId.createFromHexString(podId), sourceRef, status: OPEN },
+    {
+      $set: { status: 'done', completedAt: new Date() },
+      $push: {
+        updates: {
+          text, author: 'system', authorId: null, createdAt: new Date(),
+        },
+      },
+    },
+    { new: true },
+  );
+  if (task) emitTaskUpdated(podId, task, 'updated');
+};
 
 export const completeConnectAgentStarterTask = async ({
   podIds,
@@ -33,26 +63,9 @@ export const completeConnectAgentStarterTask = async ({
   const uniquePodIds = Array.from(new Set((podIds || []).filter(Boolean).map(String)));
   for (const podId of uniquePodIds) {
     try {
-      const task = await Task.findOneAndUpdate(
-        {
-          podId: mongoose.Types.ObjectId.createFromHexString(podId),
-          sourceRef: CONNECT_AGENT_SOURCE_REF,
-          status: { $in: ['pending', 'claimed'] },
-        },
-        {
-          $set: { status: 'done', completedAt: new Date() },
-          $push: {
-            updates: {
-              text: `Completed automatically — ${agentLabel} connected and is listening`,
-              author: 'system',
-              authorId: null,
-              createdAt: new Date(),
-            },
-          },
-        },
-        { new: true },
+      await completeStarterTask(
+        podId, CONNECT_AGENT_SOURCE_REF, `Completed automatically — ${agentLabel} connected and is listening`,
       );
-      if (task) emitTaskUpdated(podId, task, 'updated');
     } catch (err) {
       console.warn(
         `[starter-task] connect-agent auto-complete failed for pod ${podId}:`,
@@ -62,7 +75,45 @@ export const completeConnectAgentStarterTask = async ({
   }
 };
 
-export default { CONNECT_AGENT_SOURCE_REF, completeConnectAgentStarterTask };
+/**
+ * An agent's post just landed in podId. If the pod's "Give your agent its first
+ * task" card is still open and the post answers the workspace owner, the card
+ * is done. Scout is excluded: it is the guide, not "your agent". The open-card
+ * check comes first, so a pod with no open card costs one indexed read.
+ */
+export const completeFirstTaskOnAnswer = async ({
+  podId, agentName, instanceId, replyToMessageId, agentLabel,
+}: {
+  podId: string;
+  agentName: string;
+  instanceId?: string;
+  replyToMessageId?: unknown;
+  agentLabel: string;
+}): Promise<void> => {
+  try {
+    if (!podId || !agentName || String(agentName).toLowerCase() === 'scout') return;
+    const open = await Task.exists({
+      podId: mongoose.Types.ObjectId.createFromHexString(String(podId)), sourceRef: FIRST_TASK_SOURCE_REF, status: OPEN,
+    });
+    if (!open) return;
+    const pod = await Pod.findById(podId).select('createdBy').lean();
+    const owner = pod?.createdBy ? String(pod.createdBy) : '';
+    if (!owner) return;
+    const answered = await humansAnsweredBy({
+      podId, agentName, instanceId, replyToMessageId,
+    });
+    if (!answered.has(owner)) return;
+    await completeStarterTask(
+      String(podId), FIRST_TASK_SOURCE_REF, `Completed automatically — ${agentLabel} answered your first request`,
+    );
+  } catch (err) {
+    console.warn(`[starter-task] first-task auto-complete failed for pod ${podId}:`, (err as Error).message);
+  }
+};
+
+export default {
+  CONNECT_AGENT_SOURCE_REF, FIRST_TASK_SOURCE_REF, completeConnectAgentStarterTask, completeFirstTaskOnAnswer,
+};
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = exports["default"]; Object.assign(module.exports, exports);

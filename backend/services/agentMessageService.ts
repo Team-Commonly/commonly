@@ -1570,6 +1570,14 @@ class AgentMessageService {
       noOutboundRelay,
     });
 
+    // The first answer an agent gives the workspace owner completes "Give your
+    // agent its first task" (starterTaskService). Fire-and-forget: a board
+    // write never delays or fails a post, and it never throws.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    void require('./starterTaskService').completeFirstTaskOnAnswer({
+      podId: String(podId), agentName, instanceId, replyToMessageId, agentLabel: displayName || agentName,
+    });
+
     return {
       success: true,
       message: posted.message,
