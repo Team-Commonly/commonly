@@ -12,12 +12,18 @@ const AttributionVisit = require('../models/AttributionVisit');
 
 const { VISIT_REFS_PER_DAY, OTHER_REF } = AttributionVisit;
 
-// A ref already counted today keeps its row; a new one gets a row only while the
-// day has fewer than VISIT_REFS_PER_DAY, so a script inventing codes fills one
-// 'other' row instead of the table. Two first visits racing past the cap can add
-// one row each; the cap is a bound on growth, not an exact count.
+// A ref counted on ANY day still in the table keeps its own row; a new one gets
+// a row only while today has fewer than VISIT_REFS_PER_DAY refs, so a script
+// inventing codes fills the overflow row instead of the table. Known refs are
+// checked across days (sprint-review on #2282): with a same-day check, about
+// five minutes of junk from one address spent the day's slots and pushed every
+// real campaign link into the overflow, silently, until midnight UTC.
+// The cap is a bound on growth, not an exact count: the check and the write
+// are two steps, so a burst of new refs at the crossing overshoots it (1000
+// concurrent new refs at 49 rows gave about 1045, Cofounder's measure). That is
+// once a day per burst, and the table stays bounded by the TTL.
 const bucketFor = async (day: string, ref: string): Promise<string> => {
-  if (await AttributionVisit.exists({ day, ref })) return ref;
+  if (await AttributionVisit.exists({ ref })) return ref;
   const refsToday = await AttributionVisit.countDocuments({ day, ref: { $ne: OTHER_REF } });
   return refsToday < VISIT_REFS_PER_DAY ? ref : OTHER_REF;
 };

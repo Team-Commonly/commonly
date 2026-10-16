@@ -53,6 +53,36 @@ it('past the daily ref cap, a new ref counts as other; a known one keeps its row
   expect((await AttributionVisit.findOne({ day, ref: 'seed-3' }).lean()).count).toBe(2);
 });
 
+// sprint-review on #2282: with a same-day check, junk codes spent the day's
+// slots before a real campaign link arrived, and it was counted as overflow.
+it('a ref counted on an earlier day keeps its own row after the day fills with junk', async () => {
+  const day = new Date().toISOString().slice(0, 10);
+  await AttributionVisit.create({ day: '2026-10-01', ref: 'x', count: 3 });
+  await AttributionVisit.insertMany(Array.from({ length: AttributionVisit.VISIT_REFS_PER_DAY }, (_v, i) => ({
+    day, ref: `junk-${i}`, count: 1,
+  })));
+
+  await send({ ref: 'x' });
+
+  expect((await AttributionVisit.findOne({ day, ref: 'x' }).lean()).count).toBe(1);
+  expect(await AttributionVisit.exists({ day, ref: AttributionVisit.OTHER_REF })).toBeNull();
+});
+
+// Cofounder on #2282: a real ref named "other" must not share the overflow row.
+it('the overflow row cannot be named by a real ref', async () => {
+  const day = new Date().toISOString().slice(0, 10);
+  await send({ ref: 'other' });
+  await AttributionVisit.insertMany(Array.from({ length: AttributionVisit.VISIT_REFS_PER_DAY }, (_v, i) => ({
+    day, ref: `junk-${i}`, count: 1,
+  })));
+
+  await send({ ref: 'past-the-cap' });
+
+  expect((await AttributionVisit.findOne({ day, ref: 'other' }).lean()).count).toBe(1);
+  expect((await AttributionVisit.findOne({ day, ref: AttributionVisit.OTHER_REF }).lean()).count).toBe(1);
+  expect(AttributionVisit.OTHER_REF).not.toBe('other');
+});
+
 it('drops a day row 180 days after it was first written', async () => {
   const indexes = await AttributionVisit.collection.indexes();
   const ttl = indexes.find((index) => index.key && index.key.createdAt === 1);
