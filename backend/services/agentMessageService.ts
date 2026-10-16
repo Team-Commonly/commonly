@@ -1678,6 +1678,17 @@ class AgentMessageService {
       resolvedThreadRootId = await resolveThreadRoot({
         podId: String(podId), replyToMessageId, threadRootId,
       });
+    } else if (replyToMessageId && PGMessage && process.env.PG_HOST) {
+      // A reply's target must be in this pod (TASK-278), checked here so the
+      // refusal propagates rather than falling into the Mongo branch. A store
+      // failure is left to the write below, which re-checks in SQL.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const { assertReplyTargetInPod } = require('./threadRootResolver');
+      try {
+        await assertReplyTargetInPod({ podId: String(podId), replyToMessageId });
+      } catch (checkErr) {
+        if ((checkErr as { name?: string })?.name === 'ThreadRootError') throw checkErr;
+      }
     }
 
     if (PGMessage && process.env.PG_HOST) {

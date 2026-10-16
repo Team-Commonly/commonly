@@ -608,6 +608,22 @@ io.on('connection', (socket: any) => {
           return;
         }
 
+        // A reply's target must be in this pod (TASK-278). Refused here, before
+        // the write, so the refusal cannot fall into the Mongo branch below.
+        if (pgAvailable && replyToMessageId) {
+          try {
+            // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+            const { assertReplyTargetInPod } = require('./services/threadRootResolver');
+            await assertReplyTargetInPod({ podId, replyToMessageId });
+          } catch (checkErr) {
+            const e = checkErr as { name?: string; code?: string; message?: string };
+            if (e.name === 'ThreadRootError') {
+              socket.emit('error', { message: e.message, code: e.code });
+              return;
+            }
+          }
+        }
+
         // Use PostgreSQL for messages if available, otherwise fallback to MongoDB
         if (pgAvailable) {
           try {

@@ -27,12 +27,13 @@ jest.mock('../../../config/socket', () => ({
 }));
 jest.mock('../../../services/threadRootResolver', () => ({
   resolveThreadRoot: jest.fn(),
+  assertReplyTargetInPod: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../../services/onboardingMarks', () => ({ markPodOpened: jest.fn(), markStartPicked: jest.fn() }));
 const { markPodOpened, markStartPicked } = require('../../../services/onboardingMarks');
 
 const socketConfig = require('../../../config/socket');
-const { resolveThreadRoot } = require('../../../services/threadRootResolver');
+const { resolveThreadRoot, assertReplyTargetInPod } = require('../../../services/threadRootResolver');
 
 describe('messageController', () => {
   beforeEach(() => {
@@ -164,6 +165,42 @@ describe('messageController', () => {
           enqueued: 1, implicit: [], agentsInPod: 2, woken: 0,
         },
       });
+    });
+
+    // TASK-278 (Cofounder's security read): a reply's target must be in the
+    // reply's pod, or this pod's preview shows another pod's message.
+    it('refuses a reply whose target is in another pod, before anything is written', async () => {
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+      const err = Object.assign(new Error('the message being replied to is not in this pod'), {
+        name: 'ThreadRootError', code: 'reply_target_unavailable',
+      });
+      assertReplyTargetInPod.mockRejectedValueOnce(err);
+      const req = { params: { podId: 'p1' }, body: { content: 'a reply', replyToMessageId: '500' }, user: { id: 'u1' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.createMessage(req, res);
+
+      expect(assertReplyTargetInPod).toHaveBeenCalledWith({ podId: 'p1', replyToMessageId: '500' });
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'the message being replied to is not in this pod', code: 'reply_target_unavailable',
+      });
+      expect(PGMessage.create).not.toHaveBeenCalled();
+      expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
+    });
+
+    it('a store failure in that check is left to the write, which answers it', async () => {
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+      assertReplyTargetInPod.mockRejectedValueOnce(new Error('PostgreSQL unavailable'));
+      PGMessage.create.mockResolvedValueOnce({ id: 'pg-9', content: 'a reply' });
+      PGMessage.findById.mockResolvedValueOnce({ id: 'pg-9', content: 'a reply' });
+      const req = { params: { podId: 'p1' }, body: { content: 'a reply', replyToMessageId: '100' }, user: { id: 'u1' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.createMessage(req, res);
+
+      expect(PGMessage.create).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalledWith(400);
     });
 
     it('rejects a reply when PostgreSQL is unavailable instead of silently dropping its parent edge', async () => {

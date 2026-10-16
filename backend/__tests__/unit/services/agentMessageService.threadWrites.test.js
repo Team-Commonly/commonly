@@ -87,7 +87,7 @@ jest.mock('../../../services/threadRootResolver', () => {
       this.code = code;
     }
   }
-  return { resolveThreadRoot: jest.fn(), ThreadRootError };
+  return { resolveThreadRoot: jest.fn(), assertReplyTargetInPod: jest.fn().mockResolvedValue(undefined), ThreadRootError };
 });
 jest.mock('../../../services/installable/eventHandlers', () => ({
   dispatch: (...args) => mockDispatch(...args),
@@ -301,6 +301,22 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
       threadRootId: '99999',
     })).rejects.toMatchObject({ name: 'ThreadRootError', code: 'thread_root_other_pod' });
 
+    expect(PGMessage.create).not.toHaveBeenCalled();
+    expect(emitted).toHaveLength(0);
+  });
+
+  // TASK-278: an agent's reply to a message in another pod is refused before
+  // the write, and the refusal propagates instead of falling into Mongo.
+  it('refuses a reply whose target is in another pod, before anything is written', async () => {
+    threadRootResolver.assertReplyTargetInPod.mockRejectedValueOnce(
+      new threadRootResolver.ThreadRootError('the message being replied to is not in this pod', 'reply_target_unavailable'),
+    );
+
+    await expect(AgentMessageService.postMessage({
+      agentName: 'sprint-review', instanceId: 'default', podId: POD, content: 'a reply', replyToMessageId: '500',
+    })).rejects.toMatchObject({ name: 'ThreadRootError', code: 'reply_target_unavailable' });
+
+    expect(threadRootResolver.assertReplyTargetInPod).toHaveBeenCalledWith({ podId: POD, replyToMessageId: '500' });
     expect(PGMessage.create).not.toHaveBeenCalled();
     expect(emitted).toHaveLength(0);
   });

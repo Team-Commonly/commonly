@@ -148,6 +148,10 @@ class Message {
                   FROM messages parent
                  WHERE parent.id = $5::int)
              )::int
+       WHERE ($5::int IS NULL
+              OR $1::varchar IN (SELECT target.pod_id FROM messages target WHERE target.id = $5::int))
+         AND ($7::int IS NULL
+              OR $1::varchar IN (SELECT named.pod_id FROM messages named WHERE named.id = $7::int))
       RETURNING *
     `;
     try {
@@ -156,6 +160,14 @@ class Message {
         payload == null ? null : JSON.stringify(payload),
         resolvedThreadRootId ?? null,
       ]);
+      // No row: the reply target or the named root is not in this pod
+      // (services/threadRootResolver). Callers check first; this is the
+      // backstop for a path that does not, and for a message deleted in between.
+      if (!result.rows[0]) {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { ThreadRootError } = require('../../services/threadRootResolver');
+        throw new ThreadRootError('reply_target_unavailable', 'the message being replied to is not in this pod');
+      }
       await (pool as PgPool).query(
         'UPDATE pods SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',
         [podId],
@@ -212,7 +224,7 @@ class Message {
           rm.user_id as reply_user_id, ru.username as reply_username
         FROM messages m
         LEFT JOIN users u ON m.user_id = u._id
-        LEFT JOIN messages rm ON m.reply_to_message_id = rm.id
+        LEFT JOIN messages rm ON m.reply_to_message_id = rm.id AND rm.pod_id = m.pod_id
         LEFT JOIN users ru ON rm.user_id = ru._id
         WHERE m.pod_id = $1
       `;
@@ -259,7 +271,7 @@ class Message {
           rm.user_id as reply_user_id, ru.username as reply_username
         FROM messages m
         LEFT JOIN users u ON m.user_id = u._id
-        LEFT JOIN messages rm ON m.reply_to_message_id = rm.id
+        LEFT JOIN messages rm ON m.reply_to_message_id = rm.id AND rm.pod_id = m.pod_id
         LEFT JOIN users ru ON rm.user_id = ru._id
         WHERE m.id = $1
       `;

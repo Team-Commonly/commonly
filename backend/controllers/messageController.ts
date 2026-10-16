@@ -258,6 +258,16 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
         // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
         const { resolveThreadRoot } = require('../services/threadRootResolver');
         resolvedThreadRootId = await resolveThreadRoot({ podId, replyToMessageId, threadRootId });
+      } else if (replyToMessageId) {
+        // A reply's target must be in this pod (TASK-278). A store failure here
+        // is left to the write below, which answers it and re-checks in SQL.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        const { assertReplyTargetInPod } = require('../services/threadRootResolver');
+        try {
+          await assertReplyTargetInPod({ podId, replyToMessageId });
+        } catch (checkErr) {
+          if ((checkErr as { name?: string })?.name === 'ThreadRootError') throw checkErr;
+        }
       }
     } catch (err) {
       const e = err as { name?: string; code?: string; message?: string };

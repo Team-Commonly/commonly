@@ -1580,13 +1580,15 @@ export async function runAgent(
 
   const systemPrompt = buildSystemPrompt(installation, cfg);
   let userMessage = nativeCueFromKernel(buildUserMessage(trigger, podName), String(podId), NATIVE_TOOL_NAMES);
-  if (peerClaimFrame) userMessage = `${peerClaimFrame}\n${userMessage}`;
   const model = String(cfg.model || DEFAULT_MODEL);
   // TASK-267b: what commonly_fetch_url may open starts as the prompt and,
   // when a known human wrote it, the message this turn answers, before any
   // recent messages are added.
   dispatchCtx.givenAddresses.add(systemPrompt);
   if (mayFetch && await triggerTextIsHumanWritten(trigger)) dispatchCtx.givenAddresses.add(userMessage);
+  // After the line above: the notice is our text, not the person's, so it
+  // must not give an address.
+  if (peerClaimFrame) userMessage = `${peerClaimFrame}\n${userMessage}`;
 
   const recentCount = Math.min(Math.max(Number(cfg.recentMessages) || 0, 0), RECENT_MESSAGES_MAX);
   if (recentCount > 0) {
