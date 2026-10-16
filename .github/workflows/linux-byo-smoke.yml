@@ -1,0 +1,52 @@
+# Scratch check, never merged to main: does a Connect-page Claude seat on Linux
+# (WSL's case) run under bwrap with #2288's CLI, and what can it see there:
+# the person's Claude login file, and their shell env?
+name: Linux BYO smoke (scratch)
+
+on:
+  push:
+    branches: [lily/linux-byo-smoke]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/linux-byo-smoke
+      - name: Check out the CLI from #2288's branch
+        uses: actions/checkout@v4
+        with:
+          ref: lily/cli-host-sandbox-preflight
+          path: fix
+          sparse-checkout: cli
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: bubblewrap, and whether its namespace starts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap > /dev/null
+          bwrap --version
+          echo "apparmor_restrict_unprivileged_userns=$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
+          bwrap --unshare-all --ro-bind / / true && echo "namespace: OK" || echo "namespace: FAILED"
+      - name: Install the CLI from #2288's tarball, a fake claude, and a dummy login file
+        run: |
+          mkdir -p "$HOME/.npm-user" && npm config set prefix "$HOME/.npm-user" && echo "$HOME/.npm-user/bin" >> "$GITHUB_PATH"
+          (cd fix/cli && npm pack --silent > /tmp/tgz-name) && npm i -g "fix/cli/$(cat /tmp/tgz-name)" > /dev/null
+          "$HOME/.npm-user/bin/commonly" --version
+          mkdir -p "$HOME/.local/bin" && cp .github/linux-byo-smoke/fake-claude.sh "$HOME/.local/bin/claude" && chmod +x "$HOME/.local/bin/claude"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          mkdir -p "$HOME/.claude" && echo '{"claudeAiOauth":{"accessToken":"dummy-not-real"}}' > "$HOME/.claude/.credentials.json"
+      - name: Run A, Ubuntu default (AppArmor restricts unprivileged namespaces)
+        continue-on-error: true
+        run: bash .github/linux-byo-smoke/run.sh ubuntu-default
+      - name: Run B, namespaces allowed (closer to WSL)
+        continue-on-error: true
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --unshare-all --ro-bind / / true && echo "namespace: OK" || echo "namespace: FAILED"
+          bash .github/linux-byo-smoke/run.sh userns-allowed
