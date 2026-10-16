@@ -115,7 +115,8 @@ export const completeFirstTaskOnAnswer = async ({
       String(podId), FIRST_TASK_SOURCE_REF, `Completed automatically — ${agentLabel} answered your first request`,
     );
   } catch (err) {
-    console.warn(`[starter-task] first-task auto-complete failed for pod ${podId}:`, (err as Error).message);
+    // Constant format string: podId reaches here from a request (CodeQL js/tainted-format-string).
+    console.warn('[starter-task] first-task auto-complete failed for pod %s:', String(podId), (err as Error).message);
   }
 };
 
