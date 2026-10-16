@@ -16,6 +16,8 @@ const Task = require('../models/Task');
 const { ESCALATION_MARKERS } = require('./connectorRelayPolicy');
 // eslint-disable-next-line global-require
 const { humansAnsweredBy } = require('./agentAnswerService');
+// eslint-disable-next-line global-require
+const { isListedPodMember } = require('../utils/isPodMember');
 
 type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task';
 type Kind = 'mention' | 'approval' | 'decision' | 'handoff';
@@ -26,22 +28,16 @@ type TaskAttentionOptions = { includeBlocked?: boolean };
 
 const compact = (value: unknown, max = 220): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 const sourceKey = (type: SourceType, id: unknown): string => String(id || '').trim();
-const isCurrentMember = (pod: any, userId: unknown): boolean => (
-  String(pod?.createdBy || '') === String(userId)
-  || (pod?.members || []).some((member: any) => String(member?.userId || member?._id || member) === String(userId))
-);
-
+// Membership is Pod.members and nothing else (isListedPodMember, TASK-161/170):
+// createdBy keeps a departed creator's id after leavePod, so counting it gave
+// that person "waiting on you" rows from a pod they can no longer open.
 const currentHumanMembers = async (podId: unknown): Promise<Array<{ _id: unknown; username?: string }>> => {
-  const pod = await Pod.findById(podId).select('_id name createdBy members').lean();
+  const pod = await Pod.findById(podId).select('_id name members').lean();
   if (!pod) return [];
-  const ids = new Set<string>([String(pod.createdBy || '')]);
-  for (const member of (pod.members || [])) {
-    const id = (member as any)?.userId || (member as any)?._id || member;
-    if (id) ids.add(String(id));
-  }
-  const users = await User.find({ _id: { $in: [...ids].filter(Boolean) }, isBot: { $ne: true } })
+  const ids = (pod.members || []).map((member: any) => String(member?._id || member)).filter(Boolean);
+  const users = await User.find({ _id: { $in: ids }, isBot: { $ne: true } })
     .select('_id username isBot').lean();
-  return users.filter((user: any) => isCurrentMember(pod, user._id));
+  return users.filter((user: any) => isListedPodMember(pod, user._id));
 };
 
 const recordForRecipients = async (
@@ -581,8 +577,8 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
         && row.messageId && superseded.has(`${String(row.podId)}:${String(row.messageId)}`)))
     : rows;
   const podIds = [...new Set(visible.map((row: any) => String(row.podId)))];
-  const pods = await Pod.find({ _id: { $in: podIds } }).select('_id name createdBy members').lean();
-  const allowed = new Map(pods.filter((pod: any) => isCurrentMember(pod, recipientUserId)).map((pod: any) => [String(pod._id), pod]));
+  const pods = await Pod.find({ _id: { $in: podIds } }).select('_id name members').lean();
+  const allowed = new Map(pods.filter((pod: any) => isListedPodMember(pod, recipientUserId)).map((pod: any) => [String(pod._id), pod]));
   const priority: Record<string, number> = { approval: 0, decision: 1, handoff: 1, mention: 2 };
   const renderKind = (row: any): Kind => (
     row.kind === 'decision' && row.source?.type === 'task' ? 'handoff' : row.kind
