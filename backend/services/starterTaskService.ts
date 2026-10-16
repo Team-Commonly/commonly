@@ -10,8 +10,10 @@
  * starter task done" while the card sat in Pending forever.
  *
  * Caller contract: fire-and-forget from the token-auth first-use paths
- * (agentRuntimeAuth HTTP + agentWebSocketService WS). Never throws; a board
- * write must not be able to fail an auth request.
+ * (agentRuntimeAuth HTTP + agentWebSocketService WS), and from the native
+ * hosted provision (routes/hosted.ts), where no token exists to be first-used
+ * and the agent is live once provisioned. Never throws; a board write must not
+ * be able to fail an auth or provision request.
  */
 import mongoose from 'mongoose';
 import Task from '../models/Task';
