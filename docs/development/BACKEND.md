@@ -113,8 +113,8 @@ External social feeds (X/Instagram) are stored as `Post` records with `source.ty
 | POST   | /api/v1/pods/:podId/index/rebuild | Rebuild pod vector index (admin only) | Body: `{reset?: boolean}` | `{indexed, errors, total, reset}` |
 | GET    | /api/v1/pods/:podId/index/stats | Get pod vector index stats | - | `{stats: {available, chunks, assets, embeddings}}` |
 | POST   | /api/v1/index/rebuild-all | Rebuild vector indices for pods you own | Body: `{reset?: boolean}` | `{pods, indexed, errors, total, reset}` |
-| GET    | /api/dev/llm/status | Dev-only LLM gateway status | - | `{litellm, gemini}` |
-| POST   | /api/dev/agents/events | Dev-only enqueue agent event | Body: `{podId, agentName, type, payload?}` | `{success, eventId}` |
+| GET    | /api/dev/llm/status | LLM gateway status; opt-in, mounted only with `COMMONLY_ENABLE_DEV_ROUTES=true` | - | `{litellm, gemini}` |
+| POST   | /api/dev/agents/events | Enqueue an agent event; opt-in, mounted only with `COMMONLY_ENABLE_DEV_ROUTES=true` (never `NODE_ENV`, which a deployed instance can set to `development`) | Body: `{podId, agentName, type, payload?}` | `{success, eventId}` |
 | POST   | /api/pods              | Create a new pod            | `{name, description, type}`          | Created pod object              |
 | PUT    | /api/pods/:id          | Update a pod                | `{name, description, type}`          | Updated pod object              |
 | DELETE | /api/pods/:id          | Delete a pod                | -                                    | Success message                 |

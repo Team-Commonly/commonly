@@ -10,6 +10,8 @@ const { EMBEDDING_CONFIG } = require('../services/vectorSearchService');
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const AgentEventService = require('../services/agentEventService');
+// eslint-disable-next-line global-require
+const { requireDevRoutes } = require('../config/devRoutes');
 
 interface AuthReq {
   user?: { id?: string; _id?: unknown };
@@ -21,6 +23,9 @@ interface Res {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+// Opt-in only (config/devRoutes): server.ts does not mount this router without
+// it, and the router refuses on its own in case it is ever mounted elsewhere.
+router.use(requireDevRoutes);
 
 const getLiteLLMConfig = (): { baseUrl: string; apiKey: string | undefined; model: string } | null => {
   const baseUrl = process.env.LITELLM_BASE_URL;
@@ -43,10 +48,6 @@ const isMember = (pod: { members?: unknown[] }, userId: unknown): boolean => (
 
 router.get('/llm/status', auth, async (req: AuthReq, res: Res) => {
   try {
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(403).json({ error: 'Dev endpoints not available in production' });
-    }
-
     const liteConfig = getLiteLLMConfig();
     const litellmStatus: Record<string, unknown> = {
       enabled: Boolean(liteConfig?.baseUrl),
@@ -85,10 +86,6 @@ router.get('/llm/status', auth, async (req: AuthReq, res: Res) => {
 
 router.post('/agents/events', auth, async (req: AuthReq, res: Res) => {
   try {
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(403).json({ error: 'Dev endpoints not available in production' });
-    }
-
     const { podId, agentName, type, payload } = (req.body || {}) as { podId?: string; agentName?: string; type?: string; payload?: unknown };
     if (!podId || !agentName || !type) {
       return res.status(400).json({ error: 'podId, agentName, and type are required' });

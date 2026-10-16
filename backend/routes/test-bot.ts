@@ -4,6 +4,8 @@ const express = require('express');
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const AgentEventService = require('../services/agentEventService');
+// eslint-disable-next-line global-require
+const { requireDevRoutes } = require('../config/devRoutes');
 
 interface AuthReq {
   body: { podId?: string; discordSummary?: string; integrationId?: string };
@@ -14,12 +16,10 @@ interface Res {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+// Opt-in only (config/devRoutes), like routes/dev.
+router.use(requireDevRoutes);
 
 router.post('/discord-summary', auth, async (req: AuthReq, res: Res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(404).json({ message: 'Not found' });
-  }
-
   try {
     const { podId, discordSummary, integrationId } = req.body;
 

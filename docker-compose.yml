@@ -52,6 +52,8 @@ services:
     environment:
       # Application settings
       - NODE_ENV=development
+      # Mounts /api/dev and /api/test/bot (backend/config/devRoutes). Local only.
+      - COMMONLY_ENABLE_DEV_ROUTES=true
       - PORT=5000
       
       # Database settings
