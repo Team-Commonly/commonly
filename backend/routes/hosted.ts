@@ -268,6 +268,9 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
       });
       return res.json({
         provisioned: true,
+        // Native turns run in-process, so the agent is live from here; the page
+        // shows it running at once instead of polling status first (QA walk 3).
+        ready: true,
         engine,
         agentName,
         instanceId,

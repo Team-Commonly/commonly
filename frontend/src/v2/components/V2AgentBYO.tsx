@@ -154,7 +154,7 @@ const V2AgentBYO: React.FC = () => {
     if (prefill.hosted) return 'hosted';
     return prefill.name ? 'byo' : null;
   });
-  const [hosted, setHosted] = useState<{ agentName: string; podId: string } | null>(null);
+  const [hosted, setHosted] = useState<{ agentName: string; podId: string; ready?: boolean } | null>(null);
   const [hostedState, setHostedState] = useState<'starting' | 'running' | 'slow'>('starting');
   // ADR-026 Phase 2: "on my computer" — install + placement request; the
   // daemon on the chosen machine adopts, provisions, and starts the agent.
@@ -224,12 +224,20 @@ const V2AgentBYO: React.FC = () => {
   // status: the DO reports lastPollAt once its alarm loop has run, and the
   // native engine reports ready once provisioned (it has no loop to wait for).
   // ~60s cap, then honest copy — the agent still picks messages up when it starts.
+  // QA walk 3 (2026-10-16): the first check waited a full interval, so for 4s
+  // the panel said "is live" and "Starting…" at once. A provision that answers
+  // ready (the native engine) is running now; otherwise check at once, then poll.
   useEffect(() => {
     if (!hosted) return undefined;
+    if (hosted.ready) {
+      setHostedState('running');
+      return undefined;
+    }
     let cancelled = false;
     let ticks = 0;
+    let timer: ReturnType<typeof setInterval> | undefined;
     setHostedState('starting');
-    const timer = setInterval(async () => {
+    const check = async () => {
       ticks += 1;
       try {
         const data = await api.get<{ runtime?: { lastPollAt?: number | null; ready?: boolean } }>(
@@ -248,7 +256,9 @@ const V2AgentBYO: React.FC = () => {
         setHostedState('slow');
         clearInterval(timer);
       }
-    }, HOSTED_STATUS_POLL_MS);
+    };
+    timer = setInterval(check, HOSTED_STATUS_POLL_MS);
+    void check();
     return () => { cancelled = true; clearInterval(timer); };
   }, [api, hosted]);
 
@@ -369,8 +379,8 @@ const V2AgentBYO: React.FC = () => {
         }
         if (!/already installed/i.test(data?.error || '')) throw installErr;
       }
-      await api.post('/api/hosted/provision', { agentName: cleanName });
-      setHosted({ agentName: cleanName, podId });
+      const provisioned = await api.post<{ ready?: boolean }>('/api/hosted/provision', { agentName: cleanName });
+      setHosted({ agentName: cleanName, podId, ready: provisioned?.ready === true });
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
       const code = e.response?.data?.code;

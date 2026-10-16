@@ -280,6 +280,35 @@ describe('V2AgentBYO — Run it here', () => {
     expect(screen.getByTestId('byo-hosted-running')).toBeInTheDocument();
   });
 
+  // QA walk 3 (2026-10-16): the first status check waited 4s, so the panel
+  // said "is live" and "Starting…" together. A provision that answers ready is
+  // running at once, with no status call at all.
+  test('a provision that answers ready shows running at once, without asking status', async () => {
+    mockGet({ configured: true, status: { runtime: {} } });
+    axios.post.mockResolvedValue({ data: { provisioned: true, ready: true } });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+
+    expect(await screen.findByTestId('byo-hosted-running')).toBeInTheDocument();
+    expect(screen.queryByTestId('byo-hosted-starting')).not.toBeInTheDocument();
+    expect(axios.get.mock.calls.some(([url]) => url.startsWith('/api/hosted/status'))).toBe(false);
+  });
+
+  test('without ready from provision, status is checked at once, not after the first interval', async () => {
+    jest.useFakeTimers();
+    mockGet({ configured: true, status: { runtime: { lastPollAt: 123 } } });
+    axios.post.mockResolvedValue({ data: { ok: true } });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+
+    // No timer advanced: the first check runs on its own.
+    expect(await screen.findByTestId('byo-hosted-running')).toBeInTheDocument();
+  });
+
   // The native engine has no loop to poll: it reports ready once provisioned.
   test('flips to listening when the native engine reports ready, with no poll ever', async () => {
     jest.useFakeTimers();

@@ -129,6 +129,29 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
     expect(welcome.payload.starts).toEqual(SCOUT_STARTS.map(({ id, label }) => ({ id, label })));
   });
 
+  // QA walk 3 (2026-10-16): where the instance can host, the welcome leads with
+  // hosting, nothing to install. That start navigates (to Bring your own with
+  // hosting chosen, in this workspace) instead of sending a message.
+  test('leads the starts with Run an agent here, aimed at this workspace, where the instance can host', async () => {
+    const saved = { ...process.env };
+    try {
+      process.env.HOSTED_ENGINE = 'native';
+      process.env.LITELLM_BASE_URL = 'http://litellm.test';
+      process.env.LITELLM_MASTER_KEY = 'k';
+      // eslint-disable-next-line global-require
+      const { SCOUT_STARTS, SCOUT_HOSTED_START } = require('../../../config/native-agents/scout');
+      await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'User-1');
+
+      const { starts } = mockPostMessage.mock.calls[0][0].payload;
+      expect(starts[0]).toEqual({
+        id: 'run-hosted', label: SCOUT_HOSTED_START.label, href: '/v2/agents/byo?pod=pod-123&mode=hosted',
+      });
+      expect(starts.slice(1)).toEqual(SCOUT_STARTS.map(({ id, label }) => ({ id, label })));
+    } finally {
+      process.env = saved;
+    }
+  });
+
   test('two users get two distinct guide identities — the memory-envelope fork', async () => {
     await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'aaaa1111');
     await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'bbbb2222');

@@ -229,7 +229,9 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
     // everything else here: a guide hiccup must never fail signup.
     try {
       // eslint-disable-next-line global-require
-      const { scoutApp, SCOUT_STARTS, SCOUT_WELCOME } = require('../config/native-agents/scout');
+      const {
+        scoutApp, SCOUT_HOSTED_START, SCOUT_STARTS, SCOUT_WELCOME,
+      } = require('../config/native-agents/scout');
       // eslint-disable-next-line global-require
       const { buildInstallationConfig } = require('../scripts/seed-native-agents');
       // eslint-disable-next-line global-require
@@ -291,6 +293,13 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
         // begin with the user's first message.
         // eslint-disable-next-line global-require
         const AgentMessageService = require('../services/agentMessageService');
+        // Lead with hosting where this instance can host (QA walk 3, 10-16):
+        // nothing to install, one click to Bring your own with it chosen, one
+        // more to a live agent. It navigates rather than sending a message.
+        // eslint-disable-next-line global-require
+        const { hostedEngineAvailable } = require('../services/nativeRuntimeService');
+        const hostedHref = `/v2/agents/byo?pod=${encodeURIComponent(pod._id.toString())}&mode=hosted`;
+        const hostedStart = hostedEngineAvailable() ? [{ ...SCOUT_HOSTED_START, href: hostedHref }] : [];
         await AgentMessageService.postMessage({
           agentName: scoutApp.agentName,
           instanceId: scoutInstanceId,
@@ -301,7 +310,10 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
           // the payload, not from the text. Server-composed, never model prose.
           payload: {
             kind: 'starts',
-            starts: SCOUT_STARTS.map(({ id, label }: { id: string; label: string }) => ({ id, label })),
+            starts: [
+              ...hostedStart,
+              ...SCOUT_STARTS.map(({ id, label }: { id: string; label: string }) => ({ id, label })),
+            ],
           },
         });
       }
