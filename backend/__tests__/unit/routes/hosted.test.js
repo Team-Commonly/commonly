@@ -66,6 +66,10 @@ jest.mock('../../../services/nativeRuntimeService', () => ({
 }));
 const mockMarkByoOpened = jest.fn();
 jest.mock('../../../services/onboardingMarks', () => ({ markByoOpened: (...args) => mockMarkByoOpened(...args) }));
+const mockCompleteConnectAgent = jest.fn();
+jest.mock('../../../services/starterTaskService', () => ({
+  completeConnectAgentStarterTask: (...args) => mockCompleteConnectAgent(...args),
+}));
 jest.mock('../../../routes/registry/tokens', () => ({
   revokeRuntimeTokensForAgent: (...args) => mockRevokeRuntimeTokens(...args),
   issueRuntimeTokenForAgent: (...args) => mockIssueToken(...args),
@@ -285,6 +289,9 @@ describe('/api/hosted', () => {
     });
     expect(mockHosted.provisionAgent).toHaveBeenCalledWith({ agentName: 'scout', instanceId: 'demo', runtimeToken: 'cm_agent_secret' });
     expect(installation.config.get('hosted').provisionedAt).toBeInstanceOf(Date);
+    // The worker's first use of its token completes the onboarding card, as a
+    // BYO agent's does; provision does not claim it is listening yet.
+    expect(mockCompleteConnectAgent).not.toHaveBeenCalled();
   });
 
   it('rotates: revokes the old credential rows, clears the stored hashes, mints fresh', async () => {
@@ -465,6 +472,19 @@ describe('/api/hosted on the native engine', () => {
       engine: 'native', provisionedAt: PROVISIONED, about: 'Keeps the research log.',
     });
     expect(JSON.stringify(res.body)).not.toMatch(/cm_agent_/);
+  });
+
+  // QA 2026-10-16: "Connect your first agent" stayed pending after a hosted
+  // agent went live, because the card completes on a runtime token's first
+  // use and a native hosted agent has no token. Provision is its live moment.
+  it('provision completes the "Connect your first agent" card in the agent\'s pod', async () => {
+    mockFindOne.mockResolvedValue(nativeInstallation());
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(res.status).toBe(200);
+    expect(mockCompleteConnectAgent).toHaveBeenCalledTimes(1);
+    const [{ podIds, agentLabel }] = mockCompleteConnectAgent.mock.calls[0];
+    expect(podIds.map(String)).toEqual(['pod-1']);
+    expect(agentLabel).toBeTruthy();
   });
 
   it('provision of a native install 503s when the native runtime is unavailable, even with the worker up', async () => {

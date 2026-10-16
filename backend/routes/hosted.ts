@@ -21,6 +21,7 @@ const auth = require('../middleware/auth');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const User = require('../models/User');
 const AgentIdentityService = require('../services/agentIdentityService');
+const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
 const hostedRuntime = require('../services/hostedRuntimeService');
 const { isNativeRuntimeAvailable } = require('../services/nativeRuntimeService');
 const {
@@ -258,6 +259,14 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
         { _id: installation._id },
         { $set: { 'config.hosted.provisionedAt': hosted.provisionedAt || new Date() } },
       );
+      // Live from here, and with no runtime token there is no first use to
+      // complete "Connect your first agent" the way a BYO or Durable Object
+      // agent's does (starterTaskService). QA 2026-10-16: the card sat pending
+      // while the hosted agent answered. Never throws, never awaited.
+      void completeConnectAgentStarterTask({
+        podIds: [installation.podId],
+        agentLabel: agentUser.botMetadata?.displayName || installation.displayName || agentName,
+      });
       return res.json({
         provisioned: true,
         engine,
