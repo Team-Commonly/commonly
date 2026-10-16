@@ -69,7 +69,10 @@ jest.mock('../../../services/nativeRuntimeService', () => ({
 const mockMarkByoOpened = jest.fn();
 jest.mock('../../../services/onboardingMarks', () => ({ markByoOpened: (...args) => mockMarkByoOpened(...args) }));
 const mockCompleteConnectAgent = jest.fn();
+// Spread the real module so only the writer is replaced (Sprint Review on
+// #2252: a factory that lists exports silently drops the rest).
 jest.mock('../../../services/starterTaskService', () => ({
+  ...jest.requireActual('../../../services/starterTaskService'),
   completeConnectAgentStarterTask: (...args) => mockCompleteConnectAgent(...args),
 }));
 jest.mock('../../../routes/registry/tokens', () => ({
@@ -486,7 +489,31 @@ describe('/api/hosted on the native engine', () => {
     expect(mockCompleteConnectAgent).toHaveBeenCalledTimes(1);
     const [{ podIds, agentLabel }] = mockCompleteConnectAgent.mock.calls[0];
     expect(podIds.map(String)).toEqual(['pod-1']);
-    expect(agentLabel).toBeTruthy();
+    // The label reaches the person in the card's update line, so pin the
+    // value, not truthiness (Sprint Review on #2252: a constant passed that).
+    expect(agentLabel).toBe('scout');
+  });
+
+  it('names the agent on the card by its display name first', async () => {
+    // Its own rate-limit bucket: the limiter keys on Authorization (auth is
+    // mocked), and this file's other requests already sit at its 30-a-minute
+    // ceiling, so two more from the shared key 429 a later test.
+    const ownBucket = { Authorization: 'Bearer hosted-label-test' };
+    mockUserFindOne.mockResolvedValue({
+      _id: 'bot-1', username: 'scout', agentRuntimeTokens: [], botMetadata: { displayName: 'Research Scout' },
+    });
+    mockFindOne.mockResolvedValue(nativeInstallation());
+    await request(app).post('/api/hosted/provision').set(ownBucket).send({ agentName: 'scout' });
+    expect(mockCompleteConnectAgent.mock.calls[0][0].agentLabel).toBe('Research Scout');
+
+    mockCompleteConnectAgent.mockClear();
+    mockUserFindOne.mockResolvedValue({ _id: 'bot-1', username: 'scout', agentRuntimeTokens: [] });
+    mockFindOne.mockResolvedValue(makeInstallation({
+      displayName: 'Lab Notes',
+      config: new Map([['runtime', { runtimeType: 'hosted' }], ['hosted', { engine: 'native', provisionedAt: PROVISIONED }]]),
+    }));
+    await request(app).post('/api/hosted/provision').set(ownBucket).send({ agentName: 'scout' });
+    expect(mockCompleteConnectAgent.mock.calls[0][0].agentLabel).toBe('Lab Notes');
   });
 
   it('provision of a native install 503s when the native runtime is unavailable, even with the worker up', async () => {

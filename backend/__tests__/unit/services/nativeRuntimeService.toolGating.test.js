@@ -93,6 +93,22 @@ describe('toolsForConfig', () => {
     expect(offer.function.description).toMatch(/no invitation code/);
   });
 
+  // Sprint Review on #2250: the arm above compares the description with
+  // hostedCaps(), the source it is built from, so a hardcoded literal matching
+  // today's caps passes it too. Loaded under other caps, only a description
+  // derived from the cap source follows.
+  test('the hosted offer follows the cap source, so it cannot be a copied literal', () => {
+    const caps = { HOSTED_TURNS_PER_DAY: '7', HOSTED_TURNS_PER_DAY_PRO: '70', HOSTED_AGENTS_PER_USER: '2' };
+    withEnv(caps, () => {
+      jest.isolateModules(() => {
+        // eslint-disable-next-line global-require
+        const { TOOLS: reloaded } = require('../../../services/nativeRuntimeService');
+        const offer = reloaded.find((t) => t.function.name === 'commonly_offer_hosted_agent');
+        expect(offer.function.description).toContain('2 hosted agents per account and 7 turns a day (70 on Pro)');
+      });
+    });
+  });
+
   test('agent_status is declaration-gated like every other tool', () => {
     // Scout declares it; a legacy config or a minimal allowlist does not
     // receive it implicitly.
