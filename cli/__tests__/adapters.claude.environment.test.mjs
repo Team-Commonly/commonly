@@ -418,6 +418,8 @@ describe('claude adapter — ctx.environment', () => {
       expect(call.args).toContain('Bash');
       expect(call.opts.env.HOME).toBe(publicState);
       expect(call.opts.env.TMPDIR).toBe(path.join(publicState, 'tmp'));
+      // Without it Claude creates /tmp/claude-<uid>, which the profile denies.
+      expect(call.opts.env.CLAUDE_CODE_TMPDIR).toBe(path.join(publicState, 'tmp'));
       expect(call.opts.env.USER).toBe('safe-user');
       expect(call.opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
       expect(call.opts.env.cm_agent_probe).toBeUndefined();

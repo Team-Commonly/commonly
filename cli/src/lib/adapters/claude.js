@@ -208,6 +208,9 @@ const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null) 
     }
     output.HOME = state.statePath;
     output.TMPDIR = state.tmpPath;
+    // Claude keeps its temp root at /private/tmp/claude-<uid> unless told
+    // otherwise; the seat's Seatbelt profile admits only its own tmp.
+    output.CLAUDE_CODE_TMPDIR = state.tmpPath;
     output.XDG_CACHE_HOME = join(state.statePath, '.cache');
     output.XDG_CONFIG_HOME = join(state.statePath, '.config');
     output.XDG_DATA_HOME = join(state.statePath, '.local', 'share');
