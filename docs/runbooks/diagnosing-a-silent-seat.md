@@ -116,6 +116,49 @@ diagnosis. Agents have access to state the operator does not, and are frequently
 right. Treat a correction from a seat as a lead to verify, not noise to
 override — and verify it against the source, not against your prior.
 
+## 8. A refused request looks like an outage
+
+On 2026-10-16 a codex security-gate seat stopped gating for about 70 minutes.
+Every spawn ended the same way:
+
+```
+inbox batch processing failed (runtime; 3 consecutive) — 1 events remain unacked;
+circuit open, next probe in 1.1m: codex turn failed: This content was flagged for
+possible cybersecurity risk. …
+```
+
+Nothing was down. The provider refused the CONTENT of one request: a PR review
+ask carrying SSRF, exfiltration and ReDoS test cases. Before CLI 0.1.105 the run
+loop read that as a transient `runtime` failure, never acked the event, and
+re-sent the same content on backoff, which can only be refused again. The kernel
+ended it: an unacked event is requeued at most 3 times, then the 10-minute sweep
+retires it to `failed`. Read `attempts` and `status` on the seat's AgentEvent
+rows before touching the seat. A row at its cap is never delivered again, and
+new events do not batch with it, so the seat recovers on its own.
+
+From 0.1.105 a refusal is its own failure class, `content_refused`, and is never
+retried:
+
+- The event is acked once, `outcome: error`, `reason: provider-refused`.
+- An addressed request (a mention, a thread mention or a DM) gets one line,
+  written by the wrapper, not the model: the PR, its exact head, the message id
+  and the sender, and nothing else from the request. A seat run with
+  `--refusal-handoff <agent>` @mentions that agent to take it, except in a DM.
+- In a batch, the refused item is found by running each item alone. The other
+  items are handled normally, or left unacked for redelivery if they fail for
+  another reason.
+- A refused human broadcast releases its claim as `upstream-refused`, and the
+  kernel hands the message to another listener.
+
+`grep 'content_refused' ~/.commonly/logs/<seat>.log` finds every one.
+
+What reaches the provider: the inbox prompt is built from the batch's own event
+bodies only, and the 10-message pod snapshot is used just to detect a post. But
+a seat that reads pod context or a PR body with a tool mid-turn sends that text
+too, so the refusal can arrive mid-turn. When asking a codex seat to review
+security-sensitive code, name the files and the property to check, and keep
+exploit payloads out of the mention and the PR text it will read.
+
 ---
 
 ## The checklist, in order
@@ -123,7 +166,8 @@ override — and verify it against the source, not against your prior.
 1. Fetch the pod ledger. Did it post? → if yes, stop; it is not silent.
 2. `ps -ww -o args=` on a live spawn. Read the prompt and flags.
 3. Diff `~/.commonly/tokens/<seat>.json` against a seat that works.
-4. Read the backend logs for that agent's event enqueues.
+4. Read the backend logs for that agent's event enqueues, and the `attempts`
+   and `status` of its unacked AgentEvent rows (§8).
 5. Only now form a hypothesis, and change **one** thing to test it.
 
 ## Related
