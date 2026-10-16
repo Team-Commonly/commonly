@@ -913,6 +913,50 @@ const MENTION_RAW_TYPES = new Set([
   'chat.mention', 'thread.mention', 'dm.message', 'mention', 'chat.message',
 ]);
 
+// The event types that mean a person addressed THIS agent, the wrapper's
+// ADDRESSED_EVENT_TYPES (cli/src/lib/enforcement.js), plus a message that
+// replies to the agent's own (the backend stamps repliesToYourMessage).
+const ADDRESSED_RAW_TYPES: ReadonlySet<string> = new Set(['chat.mention', 'thread.mention', 'dm.message']);
+
+export const wasDirectlyAddressed = (trigger: NativeRunTrigger): boolean => (
+  ADDRESSED_RAW_TYPES.has(String(trigger.type))
+  || (trigger.payload as { repliesToYourMessage?: unknown } | null)?.repliesToYourMessage === true
+);
+
+/**
+ * Whether the agent holding a message's claim was itself addressed by it: it
+ * has an addressed event for that message. False on any failure, so an
+ * addressed turn that cannot tell answers rather than defers.
+ */
+export const holderWasAddressed = async (
+  holder: string,
+  holderInstanceId: string,
+  messageId: string,
+): Promise<boolean> => {
+  try {
+    const AgentEvent = require('../models/AgentEvent');
+    const found = await AgentEvent.exists({
+      agentName: holder.toLowerCase(),
+      instanceId: holderInstanceId || 'default',
+      status: { $in: ['pending', 'delivered', 'acked', 'failed'] },
+      createdAt: { $gte: new Date(Date.now() - 60 * 60 * 1000) },
+      type: { $in: [...ADDRESSED_RAW_TYPES] },
+      'payload.messageId': String(messageId),
+    });
+    return Boolean(found);
+  } catch {
+    return false;
+  }
+};
+
+// The wrapper's peer-aware notice (cli/src/lib/enforcement.js peerHoldsFrame),
+// for the case where the holder was addressed too.
+const peerAddressedClaimFrame = (holder: string, messageId: string): string => (
+  `[Claim notice: @${holder} holds message ${messageId} and was addressed too, so it is likely `
+  + 'answering. You were directly addressed, so you still get this turn, but add your view ONLY '
+  + 'if it is materially different from what they would cover; otherwise return NO_REPLY.]'
+);
+
 // Event types whose content is one pod or DM message, written by payload.userId.
 const SENDER_WRITTEN_EVENT_TYPES: ReadonlySet<string> = new Set([...MENTION_RAW_TYPES, 'message.posted']);
 
@@ -1362,6 +1406,9 @@ export async function runAgent(
     ? String((trigger.payload as { messageId?: unknown } | null)?.messageId || '')
     : '';
   let claimHeld = false;
+  // Set when this turn lost the claim but was directly addressed and the
+  // holder was addressed too: the wrapper's peer-aware notice.
+  let peerClaimFrame = '';
   if (claimMessageId) {
     try {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -1371,7 +1418,7 @@ export async function runAgent(
       });
       if (claim?.claimed) {
         claimHeld = true;
-      } else if (claim) {
+      } else if (claim && !wasDirectlyAddressed(trigger)) {
         console.log(
           `[native-runtime] ${agentName}:${instanceId} stood down — message ${claimMessageId} `
           + `claimed by ${claim.claimedBy || 'another agent'}`,
@@ -1379,6 +1426,26 @@ export async function runAgent(
         return {
           runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
         };
+      } else if (claim) {
+        // ADR-018 D3, the rule the CLI wrapper has always had: losing a CAS
+        // while DIRECTLY ADDRESSED is not a stand-down. A person chose this
+        // agent, and that outranks being beaten to the claim. Native stood
+        // down here unconditionally, so an ambient listener's claim silenced
+        // the agent a stranger had @-mentioned: Scout's wake-on-message turn
+        // claimed first, answered NO_REPLY, and the hosted agent never ran
+        // (QA walk 4, 2026-10-16, message 78340). The turn runs unclaimed.
+        // Only when the holder was addressed too does it get the peer-aware
+        // notice; beaten by an ambient listener, it just answers.
+        const holder = String(claim.claimedBy || '');
+        const holderAddressed = holder
+          ? await holderWasAddressed(holder, String(claim.instanceId || 'default'), claimMessageId)
+          : false;
+        console.log(
+          `[native-runtime] ${agentName}:${instanceId} lost message ${claimMessageId} to `
+          + `${holder || 'another agent'} — proceeding, this agent was directly addressed`
+          + `${holderAddressed ? ' (and so was the holder)' : ''}`,
+        );
+        if (holderAddressed) peerClaimFrame = peerAddressedClaimFrame(holder, claimMessageId);
       }
     } catch (err) {
       console.warn('[native-runtime] claim unavailable — proceeding unguarded (#887):', (err as Error).message);
@@ -1472,7 +1539,10 @@ export async function runAgent(
     ownUserId: null,
     givenAddresses: new GivenAddresses(),
   };
-  dispatchCtx.ownUserId = await resolveOwnUserId(agentName, instanceId);
+  // Who wrote what matters only to commonly_fetch_url, so a turn that cannot
+  // fetch makes neither lookup (its own user, the trigger's sender).
+  const mayFetch = toolsForConfig(cfg).some((tool) => tool.function.name === 'commonly_fetch_url');
+  if (mayFetch) dispatchCtx.ownUserId = await resolveOwnUserId(agentName, instanceId);
 
   // Read whenever a web lookup could matter: before each model call of a turn
   // that may search or read a page, and before a lookup or a post after one. A failed read
@@ -1510,12 +1580,13 @@ export async function runAgent(
 
   const systemPrompt = buildSystemPrompt(installation, cfg);
   let userMessage = nativeCueFromKernel(buildUserMessage(trigger, podName), String(podId), NATIVE_TOOL_NAMES);
+  if (peerClaimFrame) userMessage = `${peerClaimFrame}\n${userMessage}`;
   const model = String(cfg.model || DEFAULT_MODEL);
   // TASK-267b: what commonly_fetch_url may open starts as the prompt and,
   // when a known human wrote it, the message this turn answers, before any
   // recent messages are added.
   dispatchCtx.givenAddresses.add(systemPrompt);
-  if (await triggerTextIsHumanWritten(trigger)) dispatchCtx.givenAddresses.add(userMessage);
+  if (mayFetch && await triggerTextIsHumanWritten(trigger)) dispatchCtx.givenAddresses.add(userMessage);
 
   const recentCount = Math.min(Math.max(Number(cfg.recentMessages) || 0, 0), RECENT_MESSAGES_MAX);
   if (recentCount > 0) {
@@ -1806,6 +1877,13 @@ export async function runAgent(
         await run.save();
 
         turnIndex += 1;
+        // A hosted agent's greeting is one post. Given another round, the
+        // model posted the greeting's last line as a second message (QA walk
+        // 4, 2026-10-16), so its first-contact run ends at its first post.
+        if (hostedNative && triggerType === 'first_contact' && postedViaTool) {
+          run.status = run.status === 'running' ? 'succeeded' : run.status;
+          break;
+        }
         continue; // run another LLM turn so the model can react to tool output
       }
 

@@ -33,8 +33,9 @@ const FIRST_CONTACT_CUE =
 // The greeting's question invites a reply, and an agent that sees only its
 // mentions would never see a plain one. So that greeting says how to reach it.
 const mentionLineCue = (handle: string): string => (
-  ` After the question, add one more line, exactly: "(Mention me as @${handle} so I see your answer.)" `
-  + 'You only see messages that mention you, so without that line their answer would never reach you.'
+  ` End that same message, after the question, with one more line, exactly: "(Mention me as @${handle} `
+  + 'so I see your answer.)" It is part of the greeting: post one message, not two. You only see '
+  + 'messages that mention you, so without that line their answer would never reach you.'
 );
 const MENTION_HANDLE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 

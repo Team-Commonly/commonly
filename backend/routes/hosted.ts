@@ -371,7 +371,7 @@ router.get('/status', hostedRateLimit, auth, async (req: any, res: any) => {
       // and the runtime it needs is available (checked just above).
       const { provisionedAt } = readHostedConfig(installation);
       const { turnsPerDay } = await hostedRuntime.hostedCapsForOwner(getUserId(req));
-      const meter = await hostedRuntime.meterAllowsTurn(agentName, instanceId, turnsPerDay);
+      const meter = await hostedRuntime.meterAllowsTurn(agentName, instanceId, turnsPerDay, { countRuns: true });
       return res.json({
         agentName,
         instanceId,

@@ -543,6 +543,8 @@ describe('/api/hosted on the native engine', () => {
     expect(res.status).toBe(200);
     expect(res.body.runtime).toEqual({ engine: 'native', ready: true, provisionedAt: PROVISIONED.toISOString() });
     expect(res.body.meter).toMatchObject({ used: 3, cap: 200 });
+    // A native turn is a run: an event acked without one (a stand-down) is not a turn.
+    expect(mockHosted.meterAllowsTurn).toHaveBeenCalledWith('scout', 'default', expect.any(Number), { countRuns: true });
     expect(mockHosted.getAgentStatus).not.toHaveBeenCalled();
   });
 
