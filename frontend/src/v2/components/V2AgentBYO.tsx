@@ -155,6 +155,11 @@ const V2AgentBYO: React.FC = () => {
     return prefill.name ? 'byo' : null;
   });
   const [hosted, setHosted] = useState<{ agentName: string; podId: string; ready?: boolean } | null>(null);
+  // Walk 4 (2026-10-16): a stranger who arrived from a "Run it here" button
+  // read 130 words (31s) before reaching it. They already chose hosting, so
+  // the page shows only the act, where it lands and the limits; the full page
+  // is one click away.
+  const [compactHosted, setCompactHosted] = useState<boolean>(prefill.hosted);
   const [hostedState, setHostedState] = useState<'starting' | 'running' | 'slow'>('starting');
   // ADR-026 Phase 2: "on my computer" — install + placement request; the
   // daemon on the chosen machine adopts, provisions, and starts the agent.
@@ -178,6 +183,10 @@ const V2AgentBYO: React.FC = () => {
   const mode = chosenMode === 'hosted' && !hosting?.configured
     ? (choosingMode ? null : 'byo')
     : chosenMode ?? (choosingMode ? null : 'byo');
+  // Shown from first paint for a hosted link (no flash of the full page while
+  // availability loads); the act stays disabled until the instance says it can
+  // host, and an instance that cannot falls back to the full page.
+  const showCompactHosted = compactHosted && !personaCard && (mode === 'hosted' || !choicesKnown);
   // One lookup, two readers (TASK-163): the preview note and the placement
   // payload must name the SAME machine, so it is derived once here rather
   // than restated at each call site.
@@ -660,9 +669,9 @@ const V2AgentBYO: React.FC = () => {
 
   return (
     <V2FeaturePage
-      eyebrow={t('agentByo.eyebrow')}
-      title={t('agentByo.title')}
-      description={t('agentByo.description')}
+      eyebrow={showCompactHosted && !hosted ? t('agentByo.mode.onCommonly') : t('agentByo.eyebrow')}
+      title={showCompactHosted && !hosted ? t('agentByo.compact.title') : t('agentByo.title')}
+      description={showCompactHosted && !hosted ? t('agentByo.compact.lead') : t('agentByo.description')}
       showPodsSidebar={false}
     >
       <div className="v2-byo__layout">
@@ -678,7 +687,46 @@ const V2AgentBYO: React.FC = () => {
           </div>
         </div>
       )}
-      {!issued && !hosted && !placed && (
+      {showCompactHosted && !issued && !hosted && !placed && (
+        <div className="v2-byo__form" data-testid="byo-hosted-compact">
+          {/* Each line waits for its own data: no "joins  as" or "0 turns" on first paint. */}
+          {pods.some((p) => p._id === podId) && (
+            <p className="v2-byo__hint">
+              {t('agentByo.compact.joins', {
+                name: sanitizeAgentName(name) || DEFAULT_AGENT_NAME,
+                pod: pods.find((p) => p._id === podId)?.name || '',
+              })}
+              {' '}
+              <button type="button" className="v2-byo__link" onClick={() => setCompactHosted(false)}>
+                {t('agentByo.compact.change')}
+              </button>
+            </p>
+          )}
+          {error && <div className="v2-byo__error">{error}</div>}
+          <button
+            type="button"
+            onClick={submit}
+            disabled={submitting || !podId || mode !== 'hosted'}
+            className="v2-byo__submit"
+          >
+            {submitting ? t('agentByo.actions.starting') : t('agentByo.actions.runHere')}
+          </button>
+          {hosting?.configured && (
+            <p className="v2-byo__hint">
+              {t('agentByo.compact.limits', { agents: hosting.caps.agentsPerUser, turns: hosting.caps.turnsPerDay })}
+            </p>
+          )}
+          <button
+            type="button"
+            className="v2-byo__link"
+            data-testid="byo-other-ways"
+            onClick={() => setCompactHosted(false)}
+          >
+            {t('agentByo.compact.otherWays')}
+          </button>
+        </div>
+      )}
+      {!showCompactHosted && !issued && !hosted && !placed && (
         <div className="v2-byo__form">
           {(hosting?.configured || machines.length > 0) && (
             <>
@@ -942,7 +990,9 @@ const V2AgentBYO: React.FC = () => {
           <div className="v2-byo__cta-row">
             <button
               type="button"
-              onClick={() => navigate(`/v2/pods/${hosted.podId}`)}
+              // Walk 4: typing the agent's 32-character handle cost 9.6s. The
+              // pod opens with the composer already addressed to it.
+              onClick={() => navigate(`/v2/pods/${hosted.podId}`, { state: { composeDraft: `@${hosted.agentName} ` } })}
               className="v2-byo__submit"
             >
               {t('agentByo.actions.goToPod')}

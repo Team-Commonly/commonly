@@ -6,7 +6,9 @@
 // so nothing else in the pod (a join row, Scout's follow-ups, another member)
 // can take the offer away before it is seen.
 import React, { useState } from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  fireEvent, render, screen, waitFor, within,
+} from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
@@ -260,5 +262,86 @@ describe("V2Thread — a new pod's next steps", () => {
     ])], jest.fn(), { onOpenInvite: jest.fn() });
 
     expect(startsGroup()).toBeNull();
+  });
+});
+
+// Walk 4 (2026-10-16): two first-minute frictions on the hosted path.
+describe('Scout starts and the composer after a hosted agent goes live', () => {
+  const axios = jest.requireMock('axios').default;
+  const HOSTED = 'Run an agent here, nothing to install';
+  const welcomeWithHosted = {
+    ...welcome,
+    payload: {
+      kind: 'starts',
+      starts: [
+        { id: 'run-hosted', label: HOSTED, href: '/v2/agents/byo?pod=pod-1&mode=hosted' },
+        ...welcome.payload.starts,
+      ],
+    },
+  };
+  const agentStates = (agents) => {
+    axios.get.mockImplementation((url) => (typeof url === 'string' && url.endsWith('/agent-states')
+      ? Promise.resolve({ data: { agents } })
+      : Promise.resolve({ data: {} })));
+  };
+  afterEach(() => { axios.get.mockImplementation(() => Promise.resolve({ data: {} })); });
+
+  test('"Run an agent here" goes away once the viewer holds a hosted agent; the other starts stay', async () => {
+    agentStates([{ agentName: 'maya-agent', instanceId: 'default', state: 'reachable', isOwner: true, hosted: true }]);
+    renderThread([welcomeWithHosted]);
+    expect(await screen.findByRole('button', { name: CONNECT })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: HOSTED })).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: POD_START })).toBeInTheDocument();
+  });
+
+  test('it stays while the viewer holds none, including when someone else does', async () => {
+    agentStates([{ agentName: 'lee-agent', instanceId: 'default', state: 'reachable', isOwner: false, hosted: true }]);
+    renderThread([welcomeWithHosted]);
+    await waitFor(() => expect(axios.get)
+      .toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+    expect(await screen.findByRole('button', { name: HOSTED })).toBeInTheDocument();
+  });
+
+  // The real-browser walk caught what the test above could not: the pod
+  // arrives after the first render, and a hook placed after the `!pod` early
+  // return crashed the thread ("Rendered more hooks than during the previous
+  // render"). This renders the loading state first, then the pod.
+  test('the draft arrives when the pod loads after the first render, without a hooks crash', async () => {
+    const LateHarness = () => {
+      const [ready, setReady] = useState(false);
+      React.useEffect(() => { const id = setTimeout(() => setReady(true), 0); return () => clearTimeout(id); }, []);
+      const detail = {
+        pod: ready ? { _id: 'pod-1', name: 'My Workspace', type: 'chat', createdBy: 'u1' } : null,
+        members: [{ _id: 'u1', username: 'maya', isBot: false }],
+        messages: ready ? [welcome] : [],
+        agents: [],
+        sendMessage: jest.fn(),
+        loading: !ready,
+        error: null,
+        refresh: jest.fn(),
+      };
+      return <V2Thread detail={detail} />;
+    };
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={[{ pathname: '/v2/pods/pod-1', state: { composeDraft: '@maya-agent ' } }]}>
+          <LateHarness />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    const composer = await screen.findByPlaceholderText(/message my workspace/i);
+    await waitFor(() => expect(composer).toHaveValue('@maya-agent '));
+  });
+
+  test('a page that sends someone here can address the composer: the draft arrives, focused, once', async () => {
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={[{ pathname: '/v2/pods/pod-1', state: { composeDraft: '@maya-agent ' } }]}>
+          <Harness initial={[welcome]} sendSpy={jest.fn()} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    const composer = await screen.findByPlaceholderText(/message my workspace/i);
+    await waitFor(() => expect(composer).toHaveValue('@maya-agent '));
   });
 });

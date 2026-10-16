@@ -66,6 +66,8 @@ interface AgentStateRow {
   displayName?: string;
   state: AgentReachState;
   isOwner: boolean;
+  /** A Commonly-hosted agent; absent from an older backend. */
+  hosted?: boolean;
   fixCommand?: string;
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
@@ -341,12 +343,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // row, Scout's follow-ups or another agent posting must not take the offer
   // away before it is seen, and typing something else leaves it in place, so
   // "Connect an agent I already use" stays reachable at every width.
+  // #891 surface 1: agent reachability at the moment of composing a mention.
+  // Best-effort — a failed read renders nothing rather than something wrong,
+  // and 60s refresh keeps the states honest without hammering the endpoint.
+  // Declared here because the starts below read it too.
+  const [agentStates, setAgentStates] = useState<AgentStateRow[]>([]);
+  // Walk 4 (2026-10-16): "Run an agent here" stayed under the welcome after
+  // the agent was live, an offer the beta's one slot can no longer honour.
+  const viewerHoldsHostedAgent = agentStates.some((agent) => agent.isOwner && agent.hosted);
   const viewerId = currentUser?._id || null;
   const startsByMessageId = useMemo(() => {
     // A start that navigates must stay inside the app: an in-app /v2/ path
     // only, never a protocol-relative or absolute URL from a payload. A start
     // whose action this thread cannot perform is dropped rather than shown dead.
     const isUsableStart = (start: V2Start) => {
+      if (start.id === 'run-hosted' && viewerHoldsHostedAgent) return false;
       if (start.href !== undefined) return /^\/v2\/[^/\\]/.test(start.href);
       if (start.action !== undefined) return start.action === 'invite' && Boolean(onOpenInvite);
       return true;
@@ -364,12 +375,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       if (open.length > 0) byMessage.set(String(message.id), open);
     });
     return byMessage;
-  }, [messages, viewerId, onOpenInvite]);
+  }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent]);
 
-  // #891 surface 1: agent reachability at the moment of composing a mention.
-  // Best-effort — a failed read renders nothing rather than something wrong,
-  // and 60s refresh keeps the states honest without hammering the endpoint.
-  const [agentStates, setAgentStates] = useState<AgentStateRow[]>([]);
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
   const loadedMessageIdsRef = useRef<string[]>([]);
@@ -1241,6 +1248,30 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       <ArrowBackIcon fontSize="small" aria-hidden="true" />
     </button>
   ) : null;
+
+  // A page that sends someone here to talk to an agent can hand the composer
+  // its first words (Bring your own's "Go to your pod" passes "@<agent> ").
+  // Walk 4 (2026-10-16): typing the 32-character handle cost 9.6s. Read once
+  // per navigation, then dropped from history so a reload does not refill it.
+  // Declared above the `!pod` early return: every hook must run on every render.
+  const composeDraftKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const composeDraft = (location.state as { composeDraft?: unknown } | null)?.composeDraft;
+    if (!pod?._id || typeof composeDraft !== 'string' || !composeDraft.trim()) return;
+    if (composeDraftKeyRef.current === location.key) return;
+    composeDraftKeyRef.current = location.key;
+    const text = composeDraft.slice(0, 200);
+    setDraft(text);
+    requestAnimationFrame(() => {
+      const input = composerInputRef.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(text.length, text.length);
+    });
+    navigate(`${location.pathname}${location.search}${location.hash}`, { replace: true, state: null });
+    // The effect keys on the navigation and the pod arriving, nothing else.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key, pod?._id]);
 
   if (!pod) {
     return (

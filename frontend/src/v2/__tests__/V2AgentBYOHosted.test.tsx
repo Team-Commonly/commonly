@@ -6,7 +6,7 @@
 // token. When it cannot, the page is exactly the BYO page it was.
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
 
@@ -190,18 +190,66 @@ describe('V2AgentBYO — Run it here', () => {
     );
   };
 
-  test('a hosted offer link (?mode=hosted) opens on Run it here, one click from live', async () => {
+  // Walk 4 (2026-10-16): arriving from a "Run it here" button, a stranger read
+  // 130 words before reaching it. The link has already chosen hosting, so the
+  // page is just the act, where it lands and the limits.
+  test('a hosted offer link (?mode=hosted) opens the compact page, one click from live', async () => {
     mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
     axios.post.mockResolvedValue({ data: { ok: true } });
     renderAt('/v2/agents/byo?pod=p1&mode=hosted');
 
-    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'true'));
-    expect(screen.getByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'false');
-    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    const compact = await screen.findByTestId('byo-hosted-compact');
+    expect(screen.getByRole('heading', { name: 'Run an agent here' })).toBeInTheDocument();
+    await waitFor(() => expect(compact).toHaveTextContent('It joins Workspace as sam-agent.'));
+    await waitFor(() => expect(compact).toHaveTextContent('Beta: 1 hosted agent per account, 200 turns a day.'));
+    // None of the full page's choice and setup copy is in the way.
+    expect(screen.queryByTestId('byo-mode-hosted')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('byo-add-computer')).not.toBeInTheDocument();
 
+    const act = screen.getByRole('button', { name: /^run it here$/i });
+    await waitFor(() => expect(act).toBeEnabled());
+    fireEvent.click(act);
     await screen.findByTestId('byo-hosted-result');
     const installCall = axios.post.mock.calls.find(([url]) => url === '/api/registry/install');
     expect(installCall[1]).toMatchObject({ agentName: 'sam-agent', podId: 'p1', config: { runtime: { runtimeType: 'hosted' } } });
+    window.history.pushState({}, '', '/');
+  });
+
+  test('"Other ways to connect" opens the full page with Run it here still chosen', async () => {
+    mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
+    renderAt('/v2/agents/byo?pod=p1&mode=hosted');
+
+    fireEvent.click(await screen.findByTestId('byo-other-ways'));
+    expect(screen.queryByTestId('byo-hosted-compact')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Bring your own agent' })).toBeInTheDocument();
+    expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'true');
+    window.history.pushState({}, '', '/');
+  });
+
+  // Walk 4: typing the agent's handle cost 9.6s. "Go to your pod" hands the
+  // composer "@<agent> " through navigation state.
+  test('Go to your pod opens the pod with the composer addressed to the new agent', async () => {
+    mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
+    axios.post.mockResolvedValue({ data: { provisioned: true, ready: true } });
+    let landed;
+    const Probe = () => { landed = useLocation(); return null; };
+    window.history.pushState({}, '', '/v2/agents/byo?pod=p1&mode=hosted');
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={['/v2/agents/byo?pod=p1&mode=hosted']}>
+          <Routes>
+            <Route path="/v2/agents/byo" element={<V2AgentBYO />} />
+            <Route path="/v2/pods/:podId" element={<Probe />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    const act = await screen.findByRole('button', { name: /^run it here$/i });
+    await waitFor(() => expect(act).toBeEnabled());
+    fireEvent.click(act);
+    fireEvent.click(await screen.findByRole('button', { name: /go to your pod/i }));
+    expect(landed.pathname).toBe('/v2/pods/p1');
+    expect(landed.state).toEqual({ composeDraft: '@sam-agent ' });
     window.history.pushState({}, '', '/');
   });
 
@@ -216,12 +264,13 @@ describe('V2AgentBYO — Run it here', () => {
     });
     renderAt('/v2/agents/byo?pod=p1&mode=hosted');
 
-    const podPicker = await screen.findByRole('combobox', { name: /install into pod/i });
-    await waitFor(() => expect(podPicker).toHaveValue('p1'));
-    expect(screen.queryByRole('button', { name: /^run it here$/i })).not.toBeInTheDocument();
+    // The compact page shows at once, with the act disabled until the
+    // instance answers that it can host.
+    expect(await screen.findByTestId('byo-hosted-compact')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^run it here$/i })).toBeDisabled();
 
     await act(async () => { answerAvailability({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 30 } } }); });
-    expect(await screen.findByRole('button', { name: /^run it here$/i })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: /^run it here$/i })).toBeEnabled());
     window.history.pushState({}, '', '/');
   });
 
