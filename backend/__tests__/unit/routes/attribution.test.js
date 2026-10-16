@@ -6,7 +6,7 @@ const request = require('supertest');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 const AttributionVisit = require('../../../models/AttributionVisit');
 const SystemSetting = require('../../../models/SystemSetting');
-const { clearCampaignRefsCache, CACHE_MS } = require('../../../services/attributionCampaignRefs');
+const { clearCampaignRefsCache, CACHE_MS, MAX_CAMPAIGN_REFS } = require('../../../services/attributionCampaignRefs');
 const router = require('../../../routes/attribution');
 
 const handler = (() => {
@@ -129,6 +129,53 @@ it('the list is read at most once a minute, then again', async () => {
   expect(read).toHaveBeenCalledTimes(2);
   read.mockRestore();
   now.mockRestore();
+});
+
+// sprint-review on #2283 (E6): a failed read must not pin the list to ['x'] for
+// a minute, or a Mongo blip would push every other campaign code into overflow.
+it('a failed list read is not cached: the next visit reads it again', async () => {
+  await listCampaigns(['x', 'li']);
+  await fillWithJunk(today());
+  const real = SystemSetting.findOne.bind(SystemSetting);
+  const read = jest.spyOn(SystemSetting, 'findOne')
+    .mockImplementationOnce(() => { throw new Error('mongo blip'); })
+    .mockImplementation((...args) => real(...args));
+
+  await send({ ref: 'li' });
+  await send({ ref: 'li' });
+
+  expect(read).toHaveBeenCalledTimes(2);
+  // The first visit fell back to ['x'] and overflowed; the second read the list.
+  expect((await rowFor(AttributionVisit.OTHER_REF)).count).toBe(1);
+  expect((await rowFor('li')).count).toBe(1);
+  read.mockRestore();
+});
+
+// sprint-review on #2283 (E7): campaign rows do not use up the day's 50 slots,
+// so the ceiling for ordinary refs stays 50 however long the list grows.
+it('campaign rows do not count against the daily cap', async () => {
+  await listCampaigns(['x', 'li']);
+  await AttributionVisit.insertMany([
+    { day: today(), ref: 'x', count: 1 },
+    { day: today(), ref: 'li', count: 1 },
+    ...Array.from(
+      { length: AttributionVisit.VISIT_REFS_PER_DAY - 1 },
+      (_v, i) => ({ day: today(), ref: `junk-${i}`, count: 1 }),
+    ),
+  ]);
+
+  await send({ ref: 'fiftieth' });
+
+  expect((await rowFor('fiftieth')).count).toBe(1);
+});
+
+it(`entries past ${MAX_CAMPAIGN_REFS} are ignored`, async () => {
+  await listCampaigns([...Array.from({ length: MAX_CAMPAIGN_REFS }, (_v, i) => `c-${i}`), 'late-code']);
+  await fillWithJunk(today());
+
+  await send({ ref: 'late-code' });
+
+  expect(await rowFor('late-code')).toBeNull();
 });
 
 it('an unreadable list means x', async () => {

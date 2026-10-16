@@ -15,6 +15,9 @@ const { cleanSignupRef } = require('../utils/signupRef');
 const ATTRIBUTION_REFS_KEY = 'attribution.refs';
 const DEFAULT_CAMPAIGN_REFS = ['x'];
 const CACHE_MS = 60 * 1000;
+// The whole list goes into the visit route's $nin, so it stays a list, not a
+// table (Cofounder on #2283). Entries past this are ignored.
+const MAX_CAMPAIGN_REFS = 500;
 
 let cached: { at: number; refs: Set<string> } | null = null;
 
@@ -23,7 +26,8 @@ const campaignRefs = async (): Promise<Set<string>> => {
   try {
     const row = await SystemSetting.findOne({ key: ATTRIBUTION_REFS_KEY }).lean() as { value?: unknown } | null;
     const entries: unknown[] = Array.isArray(row?.value) ? row?.value as unknown[] : [];
-    const listed = entries.map((entry) => cleanSignupRef(entry) as string | undefined)
+    const listed = entries.slice(0, MAX_CAMPAIGN_REFS)
+      .map((entry) => cleanSignupRef(entry) as string | undefined)
       .filter((ref): ref is string => Boolean(ref));
     const refs = new Set<string>(listed.length ? listed : DEFAULT_CAMPAIGN_REFS);
     cached = { at: Date.now(), refs };
@@ -36,7 +40,7 @@ const campaignRefs = async (): Promise<Set<string>> => {
 const clearCampaignRefsCache = (): void => { cached = null; };
 
 module.exports = {
-  ATTRIBUTION_REFS_KEY, CACHE_MS, campaignRefs, clearCampaignRefsCache,
+  ATTRIBUTION_REFS_KEY, CACHE_MS, MAX_CAMPAIGN_REFS, campaignRefs, clearCampaignRefsCache,
 };
 
 export {};
