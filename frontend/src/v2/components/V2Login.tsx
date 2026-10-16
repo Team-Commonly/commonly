@@ -4,9 +4,10 @@ import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import V2OAuthButtons from './V2OAuthButtons';
 import V2AuthBrand from './V2AuthBrand';
+import { pathOfLocation, safeNextPath } from '../utils/safeNextPath';
 
 interface LocationState {
-  from?: { pathname?: string };
+  from?: { pathname?: string; search?: string; hash?: string };
 }
 
 // Error codes the backend OAuth callback can bounce back with (as
@@ -32,22 +33,21 @@ const V2Login: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
+  // Where to land after sign-in, the same for password and OAuth: ?next= (the
+  // invite redirect), else the page ProtectedRoute sent them from, with its
+  // query and hash. A deep link like /v2/agents/byo?mode=hosted (the
+  // re-engagement email's one link) used to lose its query on the password
+  // path and everything on the OAuth path. Same-origin paths only.
+  const destination = safeNextPath(new URLSearchParams(location.search).get('next'))
+    || pathOfLocation((location.state as LocationState | null)?.from);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
     setSubmitting(true);
     try {
       await login(email.trim(), password);
-      // Resolve post-login destination. Priority: `?next=<url>` query
-      // param (used by /v2/invite/:token redirect when anonymous) →
-      // location.state.from (set by ProtectedRoute) → /v2 home. The
-      // query-string path is required so deep links survive a full page
-      // reload — location.state is lost on hard navigation.
-      const params = new URLSearchParams(location.search);
-      const next = params.get('next');
-      const fallback = (location.state as LocationState | null)?.from?.pathname || '/v2';
-      const dest = next && next.startsWith('/') ? next : fallback;
-      navigate(dest, { replace: true });
+      navigate(destination || '/v2', { replace: true });
     } catch (err) {
       const e1 = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
       setLocalError(e1.response?.data?.error || e1.response?.data?.msg || e1.message || t('auth.login.errors.failed'));
@@ -61,7 +61,6 @@ const V2Login: React.FC = () => {
   const oauthError = oauthErrorCode
     ? t(OAUTH_ERROR_KEYS[oauthErrorCode] || OAUTH_ERROR_KEYS.provider_error)
     : null;
-  const nextPath = params.get('next') || undefined;
 
   const errorMessage = localError || authError || oauthError;
 
@@ -112,7 +111,7 @@ const V2Login: React.FC = () => {
 
         {errorMessage && <div className="v2-login__error" role="alert">{errorMessage}</div>}
 
-        <V2OAuthButtons next={nextPath} />
+        <V2OAuthButtons next={destination || undefined} />
 
         <div className="v2-login__hint">
           {t('auth.login.newToCommonly')}

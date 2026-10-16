@@ -144,6 +144,23 @@ describe('V2OAuthComplete', () => {
     Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
   });
 
+  test('an off-site next (backslash, read as //) lands on /v2, not the other site', async () => {
+    axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
+    const replaceSpy = jest.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, origin: originalLocation.origin, replace: replaceSpy },
+    });
+
+    await act(async () => {
+      renderComplete(`?code=one-time&next=${encodeURIComponent('/\\evil.example/x')}`);
+    });
+
+    await waitFor(() => expect(replaceSpy).toHaveBeenCalledWith('/v2'));
+    Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+  });
+
   test('bounces to login with an error when the exchange fails', async () => {
     axios.post.mockRejectedValueOnce(new Error('bad code'));
     // The login page fetches providers on mount after the bounce.

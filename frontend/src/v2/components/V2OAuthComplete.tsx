@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import V2AuthBrand from './V2AuthBrand';
+import { safeNextPath } from '../utils/safeNextPath';
 import { useTranslation } from 'react-i18next';
 
 // Landing pad for the OAuth redirect chain. The backend callback hands us a
@@ -20,8 +21,7 @@ const V2OAuthComplete: React.FC = () => {
     fired.current = true;
 
     const code = searchParams.get('code') || '';
-    const nextParam = searchParams.get('next') || '/v2';
-    const next = nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/v2';
+    const next = safeNextPath(searchParams.get('next')) || '/v2';
 
     if (!code) {
       navigate('/v2/login?oauthError=exchange_failed', { replace: true });
