@@ -144,6 +144,8 @@ describe('nativeRuntimeService per-user daily ceiling (ADR-022 D5)', () => {
     expect(userQuery).toBeDefined();
     expect(userQuery.userId).toBe('user-42');
     expect(userQuery.startedAt.$gte).toBeInstanceOf(Date);
+    // A first-contact greeting fires once per person and agent; not a turn.
+    expect(userQuery.trigger).toEqual({ $ne: 'first_contact' });
     // The whole point: no per-install keys on the user query.
     expect(userQuery.agentName).toBeUndefined();
     expect(userQuery.instanceId).toBeUndefined();
