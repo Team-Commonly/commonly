@@ -1,7 +1,7 @@
 # Scratch check, never merged to main: does the Bring-your-own path for
 # Claude Code work on Windows PowerShell with a per-user npm prefix (no
-# admin)? Run 1 (published CLI 0.1.105) is in this branch's history; this
-# run installs #2288's CLI from its branch and probes the MCP server start.
+# admin)? Runs 1 and 2 are in this branch's history; run 3 measures the MCP
+# connection's first, cold start and a pre-installed variant.
 name: Windows BYO smoke (scratch)
 
 on:
@@ -24,13 +24,6 @@ jobs:
         with:
           sparse-checkout: .github/windows-byo-smoke
 
-      - name: Check out the CLI from the fix branch
-        uses: actions/checkout@v4
-        with:
-          ref: lily/cli-host-sandbox-preflight
-          path: fix
-          sparse-checkout: cli
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -42,36 +35,29 @@ jobs:
           npm config set prefix $prefix
           Add-Content -Path $env:GITHUB_PATH -Value $prefix
 
-      - name: Install the fix branch's CLI from its packed tarball
-        run: |
-          Push-Location fix\cli
-          $tgz = (npm pack --silent | Select-Object -Last 1)
-          Pop-Location
-          npm i -g (Join-Path 'fix\cli' $tgz) | Out-Host
-          commonly --version
-
       - name: Claude Code native installer (claude.exe)
         run: |
           irm https://claude.ai/install.ps1 | iex
           Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $env:USERPROFILE '.local\bin')
 
-      - name: Listener on native Windows with the fix (expect a stop with directions)
-        continue-on-error: true
-        run: .\.github\windows-byo-smoke\run-agent.ps1 -Label fix-native-exe -Seconds 20
-
-      - name: MCP server start, cmd /c npx (what Claude Code spawns)
-        continue-on-error: true
-        run: node .\.github\windows-byo-smoke\mcp-probe.mjs cmd.exe /c npx -y '@commonlyai/mcp'
-
-      - name: MCP server start, npx with no cmd /c (expect ENOENT)
-        continue-on-error: true
-        run: node .\.github\windows-byo-smoke\mcp-probe.mjs npx -y '@commonlyai/mcp'
-
-      - name: MCP through Claude Code, cmd /c npx, health check
+      - name: MCP, cold npx cache, the line as a person pastes it
         continue-on-error: true
         run: |
           $ErrorActionPreference = 'Continue'
-          claude mcp add commonly -e COMMONLY_API_URL=https://api.commonly.me -e COMMONLY_AGENT_TOKEN=cm_agent_windows_smoke_not_a_real_token -- cmd /c npx -y '@commonlyai/mcp'
-          claude mcp list
-          claude mcp list
+          claude mcp add commonly -e COMMONLY_API_URL=https://api.commonly.me -e COMMONLY_AGENT_TOKEN=cm_agent_windows_smoke_not_a_real_token -- cmd /c npx -y @commonlyai/mcp
+          $t = Measure-Command { claude mcp list | Out-Host }
+          Write-Output ("first health check took {0:N1}s" -f $t.TotalSeconds)
+          $t = Measure-Command { claude mcp list | Out-Host }
+          Write-Output ("second health check took {0:N1}s" -f $t.TotalSeconds)
+          claude mcp remove commonly
+
+      - name: MCP, installed first (npm i -g), then cmd /c commonly-mcp
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Continue'
+          npm i -g @commonlyai/mcp | Out-Host
+          Get-Command commonly-mcp -All | Format-Table CommandType, Source -AutoSize
+          claude mcp add commonly -e COMMONLY_API_URL=https://api.commonly.me -e COMMONLY_AGENT_TOKEN=cm_agent_windows_smoke_not_a_real_token -- cmd /c commonly-mcp
+          $t = Measure-Command { claude mcp list | Out-Host }
+          Write-Output ("health check took {0:N1}s" -f $t.TotalSeconds)
           claude mcp remove commonly
