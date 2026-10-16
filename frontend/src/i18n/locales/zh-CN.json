@@ -1278,7 +1278,7 @@
     "badge": "需要批准",
     "action": {
       "createPod": "创建一个名为“{{name}}”的 Pod（类型：{{type}}）",
-      "connectLocalAgent": "接入你自己的智能体，名为“{{name}}”",
+      "connectLocalAgent": "接入你自己的智能体“{{name}}”",
       "unknown": "执行“{{actionType}}”，参数：{{params}}"
     },
     "toolCall": {
@@ -1295,7 +1295,7 @@
     "approved": "✓ 已批准 — 已完成。",
     "approvedButFailed": "已批准，但执行失败：{{error}}",
     "approvedAgentJoinFailed": "已批准 — Pod 已创建，但 {{agent}} 未能加入。请打开该 Pod 重新添加智能体。",
-    "approvedSeatReady": "已批准。下一步：在终端里运行一条命令，下一页会给出。",
+    "approvedSeatReady": "已批准。下一步：把下一页给出的命令复制到终端里运行。",
     "declined": "已拒绝。",
     "expired": "已过期，未做出决定。",
     "openResult": "打开新 Pod",
@@ -1376,12 +1376,12 @@
   "agentByo": {
     "eyebrow": "你自己的智能体",
     "title": "接入你自己的智能体",
-    "description": "接入你已在用的 Claude Code 或 Codex，让它在你的 Pod 里回复你。在终端里运行一条命令，约 2 分钟。",
+    "description": "接入你已在用的 Claude Code 或 Codex，让它在你的 Pod 里回复你。只需在终端里运行一条命令，约2分钟完成。",
     "form": {
       "nameLabel": "智能体名称",
-      "nameHint": "小写字母、数字和连字符。它会用这个名字发言。",
-      "podLabel": "加入的 Pod",
-      "podHint": "它会加入这个 Pod，之后还可以加入更多 Pod。",
+      "nameHint": "仅支持小写字母、数字和连字符。它会用这个名字发言。",
+      "podLabel": "要加入的 Pod",
+      "podHint": "它会加入这个 Pod，之后你还可以把它加到更多 Pod。",
       "loadingPods": "正在加载 Pod…",
       "machineLabel": "电脑",
       "machineHint": "这台电脑上的守护进程会接管并启动该智能体。",
@@ -1389,7 +1389,7 @@
       "adapterDefault": "在这台电脑上自动检测",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",
-      "adapterHint": "选择那台电脑上由哪个 CLI 运行这个智能体。保持自动检测，就用已安装的那个。",
+      "adapterHint": "选择在那台电脑上用哪个 CLI 运行这个智能体。保持自动检测，就会用已安装的那个。",
       "modelLabel": "模型",
       "modelDefault": "适配器默认",
       "modelOpus": "Opus——推理最强",
@@ -1420,11 +1420,11 @@
       "fullWalkthrough": "完整教程"
     },
     "result": {
-      "heading": "你的接入命令：",
-      "keyOnce": "命令里有一个私密密钥，只显示这一次。弄丢了？回到这里再点一次“获取接入命令”，会生成新的。"
+      "heading": "你的接入命令，对应智能体",
+      "keyOnce": "命令里有一个密钥，只显示这一次。弄丢了？回到这里再点一次“获取接入命令”，会生成新的。"
     },
     "snippets": {
-      "runtimeToken": "单独的密钥",
+      "runtimeToken": "仅密钥",
       "claudeCode": "可选：让 Claude Code 在你自己的会话里使用这个 Pod",
       "cursor": "Cursor——添加到 ~/.cursor/mcp.json",
       "memory": "导入它的记忆（可选）",
@@ -1454,13 +1454,13 @@
     },
     "listen": {
       "title": "在终端里运行，并保持窗口开着",
-      "body": "有了它，{{name}} 才会回复你在 Pod 里的 @提及。",
-      "note": "终端窗口开着时，它会以 {{name}} 的身份回复。关掉窗口，{{name}} 被提及时就不会回应。",
+      "body": "有了它，{{name}} 才会在你的 Pod 里回复 @提及。",
+      "note": "终端窗口开着时，它会以 {{name}} 的身份回复。关掉窗口，{{name}} 被提及时就不会回复。",
       "waiting": "正在等待 {{name}} 接入…命令一接通，这里就会变绿。",
       "verified": "{{name}} 已在监听 —— @提及 会唤醒它。",
-      "stillWaiting": "仍未收到 {{name}} 的接入信号。请在你电脑的终端里运行上面的命令，本页会自动确认。",
-      "ctaWarning": "{{name}} 还没有在监听：上面的命令运行起来之前，它不会回复 @提及。",
-      "needs": "粘贴前请确认（Mac 或 Linux）：已装 Node 18+ 和 npm，并已安装且登录 {{tool}}。export 那几行只在当前终端窗口有效，所以四行要在同一个窗口里运行。",
+      "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
+      "ctaWarning": "{{name}} 尚未监听：上面的命令运行起来之前，它不会回复 @提及。",
+      "needs": "粘贴前请确认（Mac 或 Linux）：已安装 Node 18+（含 npm），{{tool}} 已安装并登录。export 那几行只对当前终端窗口有效，所以四行都要在同一个窗口里运行。",
       "toolClaude": "Claude Code",
       "toolCodex": "Codex CLI",
       "switchToCodex": "我用的是 Codex",
@@ -1475,7 +1475,7 @@
       "onCommonly": "在 Commonly 上",
       "yours": "你的电脑",
       "hostedMeta": "约10秒上线——无需终端与密钥",
-      "byoMeta": "在终端里运行一条命令",
+      "byoMeta": "只需一条终端命令",
       "machine": "在我的电脑上",
       "machineHint": "在你已添加的电脑上运行——你的文件、你的 CLI",
       "machineMeta": "需要那台电脑运行 Commonly 守护进程"
@@ -1485,7 +1485,7 @@
       "live": "{{name}} 已在 {{pod}} 上线。在那里 @ 它即可得到回复。",
       "starting": "正在启动 {{name}}…",
       "running": "{{name}} 已在监听。",
-      "slow": "{{name}} 尚未签到。可以先 @ 它，启动后会处理消息。",
+      "slow": "{{name}} 尚未接入。可以先 @ 它，启动后会处理消息。",
       "meter": "测试期限制：每天{{turns}}轮，每个账号一个托管智能体。",
       "statTurns": "轮 / 天",
       "statAgents": "托管智能体",
