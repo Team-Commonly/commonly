@@ -3,6 +3,7 @@ const User = require('../../../models/User');
 const Pod = require('../../../models/Pod');
 const Summary = require('../../../models/Summary');
 const { DailyDigestService } = require('../../../services/dailyDigestService');
+const ActivityService = require('../../../services/activityService');
 
 let serial = 0;
 const person = async (lastActive = new Date()) => {
@@ -37,31 +38,110 @@ beforeAll(setupMongoDb);
 afterAll(closeMongoDb);
 afterEach(clearMongoDb);
 
-test('digest reads current pod membership without subscribedPods and excludes another pod', async () => {
-  const member = await person();
-  const creator = await person();
-  const other = await person();
-  await podWithSummary(creator, 'Member Pod', { members: [member] });
-  await podWithSummary(other, 'Other Pod');
-  const service = new DailyDigestService();
-  jest.spyOn(service, 'generateDigestContent').mockImplementation(async (data) =>
-    Object.keys(data.byPod).join(', '));
-
-  const digest = await service.generateUserDailyDigest(member._id);
-
-  expect(member.subscribedPods).toHaveLength(0);
-  expect(digest.metadata.totalItems).toBe(1);
-  expect(digest.content).toContain('Member Pod');
-  expect(digest.content).not.toContain('Other Pod');
+// TASK-257 (stickiness Phase 2): the digest is "what your agents did while you
+// were away", built from the activity recap (which reads Pod.members itself),
+// never from chat summaries, and with no LLM step.
+const recap = (overrides = {}) => ({
+  pods: [{ id: 'p1', name: 'Payments API' }],
+  needsYou: [],
+  agents: [],
+  board: [],
+  ...overrides,
 });
 
-// Cofounder's condition on #2210, before any outside digest: the query used to
-// add every `posts` summary and every pod-less chat summary to EVERY digest,
-// whatever pods the recipient is in. Zero such rows existed on 10-16, so
-// nothing leaked, but one posts summary would have mailed one pod's activity
-// to non-members. A digest reads the recipient's own pods and nothing else.
-test("a digest never carries another pod's posts summary or a pod-less summary", async () => {
-  const member = await person();
+test('the digest is the recap: what waits on you, then agent work, then the board', async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    needsYou: [{ title: 'Rivet requests approval', podName: 'Payments API' }],
+    agents: [{
+      name: 'Rivet',
+      messageCount: 3,
+      recap: 'Posted 3 updates.',
+      updates: [
+        { podId: 'p1', podName: 'Payments API', content: 'Opened #41: retry the webhook on 502' },
+        { podId: 'p1', podName: 'Payments API', content: 'Ran the suite: green' },
+        { podId: 'p1', podName: 'Payments API', content: 'Picked up TASK-7' },
+      ],
+    }],
+    board: [{
+      taskId: 'TASK-7', title: 'Fix the refund rounding', status: 'done', podName: 'Payments API',
+    }],
+  }));
+
+  const digest = await new DailyDigestService().generateUserDailyDigest(member._id, { requireAway: true });
+
+  expect(spy).toHaveBeenCalledWith(member._id, { window: 'today' });
+  expect(digest.title).toBe('What your agents did while you were away');
+  expect(digest.metadata.totalItems).toBe(3);
+  expect(digest.content.split('\n')).toEqual([
+    '- Waiting on you: Rivet requests approval (Payments API)',
+    '- Rivet in Payments API: Opened #41: retry the webhook on 502 (+2 more)',
+    '- TASK-7 Fix the refund rounding is done (Payments API)',
+  ]);
+  spy.mockRestore();
+});
+
+// Dry run, 2026-10-16: every outside recipient's only line was a support
+// answer to someone else in Commonly HQ, the public pod every signup joins.
+test("a public pod's agent posts and board moves stay out; what waits on you stays in", async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const hq = await Pod.create({
+    name: 'Commonly HQ', createdBy: member._id, members: [member._id], publicRead: true,
+  });
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    needsYou: [{ title: 'Commonly Support mentioned you', podName: 'Commonly HQ', podId: String(hq._id) }],
+    agents: [{
+      name: 'Commonly Support',
+      messageCount: 1,
+      updates: [{ podId: String(hq._id), podName: 'Commonly HQ', content: "@someone-else Here's the path" }],
+    }],
+    board: [{
+      taskId: 'TASK-1', title: 'Public row', status: 'done', podId: String(hq._id), podName: 'Commonly HQ',
+    }],
+  }));
+
+  const digest = await new DailyDigestService().generateUserDailyDigest(member._id, { requireAway: true });
+
+  expect(digest.content.split('\n')).toEqual(['- Waiting on you: Commonly Support mentioned you (Commonly HQ)']);
+  spy.mockRestore();
+});
+
+test("Scout's welcome is not 'your agents' work': a recap of only Scout is an empty digest", async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    agents: [{ name: 'Scout', messageCount: 1, updates: [{ podName: 'My Workspace', content: "I'm Scout." }] }],
+  }));
+
+  const digest = await new DailyDigestService().generateUserDailyDigest(member._id, { requireAway: true });
+
+  expect(digest.metadata.totalItems).toBe(0);
+  spy.mockRestore();
+});
+
+test('the scheduled run skips someone active in the last 20 hours; an on-demand digest does not', async () => {
+  const member = await person(new Date());
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    board: [{
+      taskId: 'TASK-9', title: 'Ship it', status: 'done', podName: 'Payments API',
+    }],
+  }));
+  const service = new DailyDigestService();
+
+  const scheduled = await service.generateUserDailyDigest(member._id, { requireAway: true });
+  expect(scheduled.metadata.totalItems).toBe(0);
+  expect(spy).not.toHaveBeenCalled();
+
+  const onDemand = await service.generateUserDailyDigest(member._id);
+  expect(onDemand.metadata.totalItems).toBe(1);
+  expect(onDemand.title).toBe('What your agents did today');
+  spy.mockRestore();
+});
+
+// Cofounder's condition on #2210: no digest may carry another pod's activity.
+// Chat summaries are no longer an input at all, so another pod's summary (or
+// a pod-less one) cannot reach anyone's digest.
+test("a digest never carries another pod's summary: summaries are not an input", async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
   const outsider = await person();
   await podWithSummary(member, 'Member Pod');
   const elsewhere = await Pod.create({ name: 'Private Elsewhere', createdBy: outsider._id, members: [outsider._id] });
@@ -73,21 +153,13 @@ test("a digest never carries another pod's posts summary or a pod-less summary",
     timeRange: { start: new Date(Date.now() - 60000), end: new Date() },
     metadata: { totalItems: 1 },
   });
-  await Summary.create({
-    type: 'chats',
-    title: 'Pod-less chat summary',
-    content: '- Somewhere else',
-    timeRange: { start: new Date(Date.now() - 60000), end: new Date() },
-    metadata: { totalItems: 1 },
-  });
-  const service = new DailyDigestService();
-  jest.spyOn(service, 'generateDigestContent').mockImplementation(async (data) =>
-    Object.keys(data.byPod).join(', '));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap());
 
-  const digest = await service.generateUserDailyDigest(member._id);
+  const digest = await new DailyDigestService().generateUserDailyDigest(member._id, { requireAway: true });
 
-  expect(digest.metadata.totalItems).toBe(1);
-  expect(digest.content).toBe('Member Pod');
+  expect(digest.metadata.totalItems).toBe(0);
+  expect(digest.content).not.toMatch(/Private Elsewhere|Member Pod update/);
+  spy.mockRestore();
 });
 
 test('scheduler includes a member with recent pod work even after seven days away', async () => {
@@ -99,7 +171,7 @@ test('scheduler includes a member with recent pod work even after seven days awa
 
   const results = await service.generateAllDailyDigests();
 
-  expect(generate).toHaveBeenCalledWith(member._id);
+  expect(generate).toHaveBeenCalledWith(member._id, { requireAway: true });
   expect(results).toHaveLength(2);
 });
 

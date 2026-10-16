@@ -1,6 +1,7 @@
 // @ts-nocheck
 // LLM outages must be visible to callers. These services used to return generic prose
-// that looked generated even though the LLM request had failed.
+// that looked generated even though the LLM request had failed. (The daily
+// digest left this list on 2026-10-16: it no longer calls an LLM at all.)
 
 jest.mock('../../../models/Summary', () => ({}));
 jest.mock('../../../models/Post', () => ({ find: jest.fn() }));
@@ -8,16 +9,12 @@ jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn() } }));
 jest.mock('../../../models/Pod', () => ({}));
 jest.mock('../../../services/podAssetService', () => ({}));
 jest.mock('../../../models/User', () => ({}));
-jest.mock('../../../services/digestTemplateService', () => ({
-  createDigestPrompt: jest.fn(() => 'digest prompt'),
-}));
 jest.mock('../../../services/llmService', () => ({ generateText: jest.fn() }));
 
 const { generateText } = require('../../../services/llmService');
 const Post = require('../../../models/Post');
 const summarizerService = require('../../../services/summarizerService');
 const chatSummarizerService = require('../../../services/chatSummarizerService');
-const dailyDigestService = require('../../../services/dailyDigestService');
 
 describe('LLM summaries fail closed', () => {
   beforeEach(() => {
@@ -59,12 +56,5 @@ describe('LLM summaries fail closed', () => {
       'General',
       [{ content: 'A real message', username: 'lily' }],
     )).rejects.toThrow('Enhanced chat summary generation returned invalid JSON');
-  });
-
-  it('does not create a generic digest after an LLM failure', async () => {
-    generateText.mockRejectedValueOnce(new Error('LLM unavailable'));
-
-    await expect(dailyDigestService.generateDigestContent({}, { username: 'lily' }))
-      .rejects.toThrow('LLM unavailable');
   });
 });

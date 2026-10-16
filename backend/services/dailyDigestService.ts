@@ -5,55 +5,19 @@ const User = require('../models/User');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
-const DigestTemplateService = require('./digestTemplateService');
-// eslint-disable-next-line global-require
-const { generateText } = require('./llmService');
+const ActivityService = require('./activityService');
 
-interface SummaryAnalytics {
-  quotes?: Array<{ text: string; author: string; reactions?: number }>;
-  insights?: Array<{ impact?: string; [key: string]: unknown }>;
-  timeline?: Array<{ timestamp: string; description: string }>;
-  atmosphere?: {
-    overall_sentiment?: string;
-    energy_level?: string;
-  };
-}
-
-interface SummaryDoc {
-  podId?: { name?: string; type?: string } | null;
-  type?: string;
-  content?: string;
-  metadata?: {
-    totalItems?: number;
-    topUsers?: string[];
-    topTags?: string[];
-    podName?: string;
-  };
-  analytics?: SummaryAnalytics;
-}
-
-interface PodData {
-  podType: string;
-  summaries: SummaryDoc[];
-  totalMessages: number;
-  quotes: Array<{ text: string; author: string; reactions?: number }>;
-  insights: Array<{ impact?: string; [key: string]: unknown }>;
-}
-
-interface OrganizedData {
-  byPod: Record<string, PodData>;
-  timeline: Array<{ timestamp: string; description: string }>;
-}
-
-interface CrossConversationInsights {
-  topUsers: string[];
-  topTags: string[];
-  bestQuotes: Array<{ text: string; author: string; reactions?: number }>;
-  keyInsights: Array<{ impact?: string; [key: string]: unknown }>;
-  timeline: Array<{ timestamp: string; description: string }>;
-  overallAtmosphere: Record<string, unknown>;
-  participationOverview: Record<string, unknown>;
-}
+/**
+ * The daily digest is "what your agents did while you were away" (stickiness
+ * Phase 2, TASK-257; Growth spec 2026-10-15). It is built from the activity
+ * recap, the same read the Activity page shows, never from chat summaries:
+ * what is waiting on the person, what each of their agents posted, and what
+ * moved on the board, in the person's own pods only.
+ *
+ * Every line states something that happened, so there is no LLM step: the
+ * previous version asked a model to narrate chat summaries, and it could only
+ * ever be as true as the narration.
+ */
 
 interface EmptyDigestResult {
   title: string;
@@ -68,11 +32,81 @@ interface DigestResult {
   error?: string;
 }
 
-export class DailyDigestService {
-  async generateUserDailyDigest(userId: unknown): Promise<unknown> {
-    try {
-      console.log(`Generating daily digest for user ${userId}`);
+interface RecapLike {
+  pods?: Array<{ id: string; name: string }>;
+  needsYou?: Array<{ title?: string; podName?: string }>;
+  agents?: Array<{
+    name?: string;
+    recap?: string;
+    messageCount?: number;
+    updates?: Array<{ podId?: string | null; podName?: string; content?: string }>;
+  }>;
+  board?: Array<{ taskId?: string; title?: string; status?: string; podId?: string; podName?: string }>;
+}
 
+/** Someone active this recently has seen it in the app; the email would repeat it. */
+export const DIGEST_AWAY_MS = 20 * 60 * 60 * 1000;
+const MAX_NEEDS_YOU = 3;
+const MAX_AGENTS = 5;
+const MAX_BOARD = 5;
+const LINE_MAX = 200;
+
+// Scout is the guide, not one of "your agents": its welcome would otherwise
+// make every new account's first digest say an agent did something.
+const isGuide = (name: unknown): boolean => /^scout(\b|-)/i.test(String(name || '').trim());
+
+const oneLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, LINE_MAX);
+
+export class DailyDigestService {
+  /**
+   * The digest's lines, most important first: what is waiting on the person,
+   * then each agent's latest work, then board changes. Empty means nothing
+   * happened that the person needs to hear about.
+   */
+  static recapLines(recap: RecapLike | null | undefined, publicPodIds: Set<string> = new Set()): string[] {
+    if (!recap) return [];
+    const lines: string[] = [];
+    // A public pod (Commonly HQ, which every signup joins) is not "your
+    // agents": its agent posts and board moves are someone else's work. The
+    // dry run on 2026-10-16 found every outside recipient's only line was a
+    // support answer to another person in HQ. What waits on YOU stays, wherever.
+    const inPrivatePod = (podId: unknown) => !podId || !publicPodIds.has(String(podId));
+    (recap.needsYou || []).slice(0, MAX_NEEDS_YOU).forEach((item) => {
+      const title = oneLine(item.title);
+      if (title) lines.push(`Waiting on you: ${title}${item.podName ? ` (${oneLine(item.podName)})` : ''}`);
+    });
+    (recap.agents || [])
+      .filter((agent) => !isGuide(agent.name))
+      .map((agent) => ({ agent, updates: (agent.updates || []).filter((update) => inPrivatePod(update.podId)) }))
+      .filter(({ updates }) => updates.length > 0)
+      .slice(0, MAX_AGENTS)
+      .forEach(({ agent, updates }) => {
+        const name = oneLine(agent.name) || 'An agent';
+        const [latest] = updates;
+        // Counted from the updates kept, so a public pod's posts never inflate it.
+        const more = updates.length > 1 ? ` (+${updates.length - 1} more)` : '';
+        lines.push(`${name} in ${oneLine(latest.podName) || 'a pod'}: ${oneLine(latest.content)}${more}`);
+      });
+    (recap.board || []).filter((task) => inPrivatePod(task.podId)).slice(0, MAX_BOARD).forEach((task) => {
+      const title = oneLine(task.title);
+      if (!title) return;
+      const id = task.taskId ? `${task.taskId} ` : '';
+      const pod = task.podName ? ` (${oneLine(task.podName)})` : '';
+      lines.push(`${id}${title} is ${oneLine(task.status) || 'updated'}${pod}`);
+    });
+    return lines;
+  }
+
+  /**
+   * One person's digest for the last 24 hours. The scheduled run passes
+   * requireAway, so someone active in the last DIGEST_AWAY_MS gets an empty
+   * digest (they have seen it in the app); an on-demand generation does not.
+   */
+  async generateUserDailyDigest(
+    userId: unknown,
+    { requireAway = false }: { requireAway?: boolean } = {},
+  ): Promise<unknown> {
+    try {
       const user = await User.findById(userId).lean() as Record<string, unknown> | null;
       if (!user) {
         throw new Error(`User ${userId} not found`);
@@ -80,24 +114,20 @@ export class DailyDigestService {
 
       const endTime = new Date();
       const startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000);
+      const lastActive = user.lastActive ? new Date(user.lastActive as string).getTime() : 0;
+      const away = !lastActive || endTime.getTime() - lastActive >= DIGEST_AWAY_MS;
 
-      // Pod.members is the current access relationship; current pod joins do
-      // not populate the legacy User.subscribedPods field.
-      const pods = await Pod.find({ members: userId }).select('_id').lean() as Array<{ _id: unknown }>;
-      const podIds = pods.map((pod) => pod._id);
+      // The recap reads current pod membership itself (Pod.members).
+      const recap: RecapLike | null = (requireAway && !away)
+        ? null
+        : await ActivityService.getRecap(userId, { window: 'today' });
+      const publicPods = recap
+        ? await Pod.find({ members: userId, publicRead: true }).select('_id').lean() as Array<{ _id: unknown }>
+        : [];
+      const lines = DailyDigestService.recapLines(recap, new Set(publicPods.map((pod) => String(pod._id))));
+      const podCount = recap?.pods?.length || 0;
 
-      // The recipient's own pods and nothing else. The query used to add every
-      // `posts` summary and every pod-less chat summary to every digest, so one
-      // posts summary would have mailed a pod's activity to its non-members.
-      const summaries = await Summary.find({
-        podId: { $in: podIds },
-        createdAt: { $gte: startTime, $lte: endTime },
-      })
-        .populate('podId', 'name type')
-        .sort({ createdAt: 1 })
-        .lean() as SummaryDoc[];
-
-      if (summaries.length === 0) {
+      if (lines.length === 0) {
         const emptyData = DailyDigestService.createEmptyDigest(
           user as { username: string },
           startTime,
@@ -112,220 +142,31 @@ export class DailyDigestService {
             totalItems: 0,
             topTags: [],
             topUsers: [],
-            subscribedPods: podIds.length,
+            subscribedPods: podCount,
             userId: String(userId),
           },
           analytics: emptyData.analytics,
         });
       }
 
-      const organizedData = DailyDigestService.organizeSummariesForDigest(summaries);
-      const digestContent = await this.generateDigestContent(organizedData, user as { username: string });
-      const insights = DailyDigestService.extractCrossConversationInsights(summaries);
-
-      const digestSummary = await Summary.create({
+      return Summary.create({
         type: 'daily-digest',
-        title: `Daily Digest for ${user.username} - ${endTime.toDateString()}`,
-        content: digestContent,
+        title: requireAway ? 'What your agents did while you were away' : 'What your agents did today',
+        content: lines.map((line) => `- ${line}`).join('\n'),
         timeRange: { start: startTime, end: endTime },
         metadata: {
-          totalItems: summaries.length,
-          topTags: insights.topTags,
-          topUsers: insights.topUsers,
-          subscribedPods: podIds.length,
+          totalItems: lines.length,
+          topTags: [],
+          topUsers: [],
+          subscribedPods: podCount,
           userId: String(userId),
         },
-        analytics: {
-          timeline: insights.timeline,
-          quotes: insights.bestQuotes,
-          insights: insights.keyInsights,
-          atmosphere: insights.overallAtmosphere,
-          participation: insights.participationOverview,
-        },
+        analytics: DailyDigestService.createEmptyDigest(user as { username: string }, startTime, endTime).analytics,
       });
-
-      console.log(`✓ Generated daily digest for ${user.username}`);
-      return digestSummary;
     } catch (error) {
       console.error(`Error generating daily digest for user ${userId}:`, error);
       throw error;
     }
-  }
-
-  static organizeSummariesForDigest(summaries: SummaryDoc[]): OrganizedData {
-    const byPod: Record<string, PodData> = {};
-    const timeline: Array<{ timestamp: string; description: string }> = [];
-
-    summaries.forEach((summary) => {
-      const podName = (summary.podId as { name?: string } | null)?.name || 'General';
-      const podType = (summary.podId as { type?: string } | null)?.type || summary.type || 'general';
-
-      if (!byPod[podName]) {
-        byPod[podName] = {
-          podType,
-          summaries: [],
-          totalMessages: 0,
-          quotes: [],
-          insights: [],
-        };
-      }
-
-      byPod[podName].summaries.push(summary);
-      byPod[podName].totalMessages += summary.metadata?.totalItems || 0;
-
-      if (summary.analytics) {
-        byPod[podName].quotes.push(...(summary.analytics.quotes || []));
-        byPod[podName].insights.push(...(summary.analytics.insights || []));
-        timeline.push(...(summary.analytics.timeline || []));
-      }
-    });
-
-    return {
-      byPod,
-      timeline: timeline.sort(
-        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-      ),
-    };
-  }
-
-  async generateDigestContent(organizedData: OrganizedData, user: { username: string }): Promise<string> {
-    const prompt = DigestTemplateService.createDigestPrompt(organizedData, user);
-
-    try {
-      return await generateText(prompt, { temperature: 0.4 }) as string;
-    } catch (error) {
-      console.error('Error generating digest content with AI:', error);
-      throw error;
-    }
-  }
-
-  static createDigestPrompt(organizedData: OrganizedData, user: { username: string }): string {
-    const { byPod, timeline } = organizedData;
-
-    let podSummaries = '';
-    Object.entries(byPod).forEach(([podName, data]) => {
-      podSummaries += `\n## ${podName} (${data.podType})\n`;
-      podSummaries += `Messages: ${data.totalMessages}\n`;
-      data.summaries.forEach((summary) => {
-        podSummaries += `- ${summary.content}\n`;
-      });
-
-      if (data.quotes.length > 0) {
-        podSummaries += 'Notable quotes:\n';
-        data.quotes.slice(0, 3).forEach((quote) => {
-          podSummaries += `  "${quote.text}" - ${quote.author}\n`;
-        });
-      }
-    });
-
-    return `Create a personalized daily digest newsletter for ${user.username}.
-You are writing a friendly, engaging daily summary that feels like a thoughtful friend catching them up on what happened in their communities.
-
-Community Activity Summary:
-${podSummaries}
-
-Timeline of Events:
-${timeline
-    .slice(0, 10)
-    .map((event) => `${event.timestamp}: ${event.description}`)
-    .join('\n')}
-
-Create a well-structured daily digest that includes:
-
-1. **Opening**: Warm, personalized greeting
-2. **Highlights**: Top 3-5 most interesting developments
-3. **Community Pulse**: Overall mood and energy across their subscribed communities
-4. **Notable Moments**: Best quotes, insights, or funny moments
-5. **Looking Ahead**: Any ongoing discussions or trends to watch
-
-Make it engaging, informative, and personal. Use markdown formatting for structure. Keep it concise but comprehensive - aim for a 2-3 minute read.`;
-  }
-
-  static extractCrossConversationInsights(summaries: SummaryDoc[]): CrossConversationInsights {
-    const allQuotes: Array<{ text: string; author: string; reactions?: number }> = [];
-    const allInsights: Array<{ impact?: string; [key: string]: unknown }> = [];
-    const allTimeline: Array<{ timestamp: string; description: string }> = [];
-    const allUsers: string[] = [];
-    const allTags: string[] = [];
-
-    let totalMessages = 0;
-    const sentimentScores: number[] = [];
-    const energyLevels: number[] = [];
-
-    summaries.forEach((summary) => {
-      totalMessages += summary.metadata?.totalItems || 0;
-
-      if (summary.metadata?.topUsers) {
-        allUsers.push(...summary.metadata.topUsers);
-      }
-
-      if (summary.metadata?.topTags) {
-        allTags.push(...summary.metadata.topTags);
-      }
-
-      if (summary.analytics) {
-        allQuotes.push(...(summary.analytics.quotes || []));
-        allInsights.push(...(summary.analytics.insights || []));
-        allTimeline.push(...(summary.analytics.timeline || []));
-
-        if (summary.analytics.atmosphere) {
-          const atm = summary.analytics.atmosphere;
-          sentimentScores.push(DailyDigestService.sentimentToScore(atm.overall_sentiment));
-          energyLevels.push(DailyDigestService.energyToScore(atm.energy_level));
-        }
-      }
-    });
-
-    const topUsers = DailyDigestService.getTopItems(allUsers, 5);
-    const topTags = DailyDigestService.getTopItems(allTags, 8);
-    const bestQuotes = allQuotes
-      .sort((a, b) => (b.reactions || 0) - (a.reactions || 0))
-      .slice(0, 5);
-
-    const impactScore: Record<string, number> = { high: 3, medium: 2, low: 1 };
-    const keyInsights = allInsights
-      .sort((a, b) => (impactScore[String(b.impact || '')] || 0) - (impactScore[String(a.impact || '')] || 0))
-      .slice(0, 8);
-
-    const timeline = allTimeline
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 10);
-
-    const engagementQuality = (() => {
-      if (totalMessages > 100) return 'intense';
-      if (totalMessages > 50) return 'deep';
-      if (totalMessages > 20) return 'moderate';
-      return 'superficial';
-    })();
-
-    return {
-      topUsers,
-      topTags,
-      bestQuotes,
-      keyInsights,
-      timeline,
-      overallAtmosphere: {
-        overall_sentiment: DailyDigestService.scoreToSentiment(DailyDigestService.average(sentimentScores)),
-        energy_level: DailyDigestService.scoreToEnergy(DailyDigestService.average(energyLevels)),
-        engagement_quality: engagementQuality,
-        community_cohesion: Math.min(topUsers.length / 10, 1),
-        topics_diversity: Math.min(topTags.length / 15, 1),
-        dominant_emotions: ['engagement', 'community'],
-      },
-      participationOverview: {
-        most_active_users: topUsers.slice(0, 5).map((u) => ({
-          username: u,
-          message_count: 0,
-          engagement_score: 0.8,
-          role: 'contributor',
-        })),
-        engagement_patterns: {
-          peak_hours: [],
-          discussion_length_avg: summaries.length ? totalMessages / summaries.length : 0,
-          response_time_avg: 5,
-        },
-      },
-    };
   }
 
   static createEmptyDigest(user: { username: string }, startTime: Date, endTime: Date): EmptyDigestResult {
@@ -374,7 +215,7 @@ This might be a great time to start a new conversation or share something intere
         createdAt: { $gte: startTime },
       });
       // Public-read pods include every signup; their activity is not a reason
-      // to wake every stale account for an LLM-generated digest.
+      // to wake every stale account.
       const recentMemberIds = await Pod.distinct('members', {
         _id: { $in: recentPodIds },
         publicRead: { $ne: true },
@@ -393,7 +234,7 @@ This might be a great time to start a new conversation or share something intere
       const results = await Promise.allSettled(
         activeUsers.map(async (user) => {
           try {
-            const digest = await this.generateUserDailyDigest(user._id);
+            const digest = await this.generateUserDailyDigest(user._id, { requireAway: true });
             return { userId: user._id, success: true, digest };
           } catch (error) {
             console.error(`Failed to generate digest for user ${user._id}:`, error);
@@ -412,58 +253,12 @@ This might be a great time to start a new conversation or share something intere
     }
   }
 
-  static getTopItems(items: string[], limit: number): string[] {
-    const counts: Record<string, number> = {};
-    items.forEach((item) => {
-      counts[item] = (counts[item] || 0) + 1;
-    });
-    return Object.entries(counts)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, limit)
-      .map(([item]) => item);
-  }
-
-  static sentimentToScore(sentiment?: string): number {
-    const scores: Record<string, number> = {
-      very_negative: 1, negative: 2, neutral: 3, positive: 4, very_positive: 5,
-    };
-    return scores[sentiment || ''] || 3;
-  }
-
-  static energyToScore(energy?: string): number {
-    const scores: Record<string, number> = {
-      very_low: 1, low: 2, medium: 3, high: 4, very_high: 5,
-    };
-    return scores[energy || ''] || 3;
-  }
-
-  static scoreToSentiment(score: number): string {
-    if (score >= 4.5) return 'very_positive';
-    if (score >= 3.5) return 'positive';
-    if (score >= 2.5) return 'neutral';
-    if (score >= 1.5) return 'negative';
-    return 'very_negative';
-  }
-
-  static scoreToEnergy(score: number): string {
-    if (score >= 4.5) return 'very_high';
-    if (score >= 3.5) return 'high';
-    if (score >= 2.5) return 'medium';
-    if (score >= 1.5) return 'low';
-    return 'very_low';
-  }
-
-  static average(arr: number[]): number {
-    return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 3;
-  }
-
   static getTimeOfDayGreeting(): string {
     const hour = new Date().getHours();
     if (hour < 12) return 'morning';
     if (hour < 17) return 'afternoon';
     return 'evening';
   }
-
 }
 
 export default new DailyDigestService();
