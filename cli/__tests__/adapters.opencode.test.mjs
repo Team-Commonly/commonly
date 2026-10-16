@@ -1261,6 +1261,46 @@ describe('opencode adapter — spawn()', () => {
     });
   });
 
+  // TASK-273: on 2026-10-15 a public seat whose MCP did not start narrated the
+  // failure ("The commonly MCP server failed to connect…") and the run loop
+  // posted it to a stranger. A public seat with a cold MCP now refuses the turn
+  // before the model runs, so there is nothing to post.
+  test('a public seat whose MCP has no host-prepared build refuses before the model runs', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const seatRoot = join(root, 'opencode-state');
+      const keyFile = join(root, 'provider-key');
+      const home = join(root, 'mcp-home');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(home);
+      await writeFile(join(home, '.warm.lock'), 'warming\n');
+      await writeFile(keyFile, 'cold-mcp-provider-key');
+      await chmod(keyFile, 0o600);
+      const spawn = makeSpawnImpl();
+      let wrapped = false;
+      await withProcessEnv('COMMONLY_MCP_HOME', home, async () => {
+        await expect(opencode.spawn('hi', {
+          cwd: workspace,
+          env: { PATH: process.env.PATH },
+          environment: {
+            model: 'deepseek-v4-flash',
+            provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
+            sandbox: { trust: 'public', mode: 'read-only' },
+            mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
+          },
+          agentName: 'cold-mcp-agent',
+          _opencodeHomeRoot: seatRoot,
+          _binaryPath: '/usr/local/bin/opencode',
+          _platform: 'darwin',
+          _spawnImpl: spawn.impl,
+          _wrapArgvWithSeatbelt: (argv) => { wrapped = true; return argv; },
+        })).rejects.toMatchObject({ code: 'public_mcp_unavailable' });
+      });
+      expect(spawn.calls).toHaveLength(0);
+      expect(wrapped).toBe(false);
+    });
+  });
+
   test('a public Linux spawn derives bwrap without binding operator auth.json', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');

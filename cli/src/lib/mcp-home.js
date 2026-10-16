@@ -52,7 +52,24 @@ import { MCP_PACKAGE, exactVersion, parseVersion } from './mcp-server-version.js
 
 /** The env override, so tests (and an operator) can point the home elsewhere. */
 export const MCP_HOME_ENV = 'COMMONLY_MCP_HOME';
-export const PUBLIC_MCP_UNAVAILABLE_NOTICE = 'Commonly runtime notice: An MCP server was not started this turn because no host-prepared executable was ready. Do not claim to have used its tools.';
+/**
+ * TASK-273: a public seat whose MCP server has no host-prepared build does not
+ * run the turn. Spawning without its tools left the model nothing to do but
+ * narrate the failure, and the run loop posted that narration to a stranger
+ * (Commonly HQ, 2026-10-15: "The commonly MCP server failed to connect… check
+ * the MCP server config"). Refusing before the model call posts nothing: the
+ * turn fails, the event stays unacked and is retried once the warm finishes,
+ * and the seat log names the reason. Every adapter raises this one error.
+ */
+export const PUBLIC_MCP_UNAVAILABLE_CODE = 'public_mcp_unavailable';
+export const publicMcpUnavailableError = (names) => {
+  const error = new Error(
+    `public seat refused this turn: MCP server ${names.join(', ')} has no host-prepared build yet, `
+    + 'so the model was not run and nothing was posted',
+  );
+  error.code = PUBLIC_MCP_UNAVAILABLE_CODE;
+  return error;
+};
 
 export const WARM_LOCK_NAME = '.warm.lock';
 export const REGISTRY_CACHE_NAME = '.registry.json';

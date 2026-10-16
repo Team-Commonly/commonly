@@ -241,7 +241,10 @@ test('an explicit MCP server reaches --mcp-config alongside --safe-mode', async 
   });
 });
 
-test('a public cold MCP is omitted from Qwen config and the turn is told', async () => {
+// TASK-273: a public seat whose MCP did not start used to run with a notice,
+// and the model narrated the failure to a stranger (2026-10-15). It now
+// refuses the turn before Qwen runs.
+test('a public cold MCP refuses the turn before Qwen runs', async () => {
   await withSeat(async (ctx, root) => {
     const home = join(root, 'mcp-home');
     await mkdir(home);
@@ -249,23 +252,16 @@ test('a public cold MCP is omitted from Qwen config and the turn is told', async
     const prior = process.env.COMMONLY_MCP_HOME;
     process.env.COMMONLY_MCP_HOME = home;
     try {
-      let observed;
-      await qwen.spawn('hello', {
+      let spawned = false;
+      await expect(qwen.spawn('hello', {
         ...ctx,
         environment: {
           ...ctx.environment,
           mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
         },
-        _spawnImpl: (_cmd, args) => {
-          observed = {
-            args,
-            config: JSON.parse(readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8')),
-          };
-          return fakeChild();
-        },
-      });
-      expect(observed.config.mcpServers.commonly).toBeUndefined();
-      expect(observed.args[observed.args.indexOf('-p') + 1]).toContain('An MCP server was not started');
+        _spawnImpl: () => { spawned = true; return fakeChild(); },
+      })).rejects.toMatchObject({ code: 'public_mcp_unavailable' });
+      expect(spawned).toBe(false);
     } finally {
       if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
       else process.env.COMMONLY_MCP_HOME = prior;

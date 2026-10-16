@@ -60,7 +60,7 @@ import {
 import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_NOTICE, selectedMcpVersionDir } from '../mcp-home.js';
+import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -609,6 +609,7 @@ export default {
         credentialFile: credential?.path || null,
         publicSeat: sandbox?.trust === 'public',
       });
+      if (mcp.unavailableMcp.length) throw publicMcpUnavailableError(mcp.unavailableMcp);
       // A derived record stores `trust: 'public'` and no mode (the block is
       // platform-independent; see cli/src/lib/default-environment.js). Codex's
       // mode only selects read vs write access — its permission profiles run on
@@ -628,8 +629,7 @@ export default {
         : null;
       const args = buildArgs({
         sessionId: ctx.sessionId || null,
-        prompt: mcp.unavailableMcp.length
-          ? `${fullPrompt}\n\n${PUBLIC_MCP_UNAVAILABLE_NOTICE}` : fullPrompt,
+        prompt: fullPrompt,
         outputFile,
         mcpFlags: mcp.flags,
         mcpReadDirectories: mcp.mcpReadDirectories,
