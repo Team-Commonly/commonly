@@ -345,14 +345,37 @@ describe('proposeAction — decider derivation', () => {
       reservedAgentNameRefusal.mockResolvedValue(null);
     });
 
-    test('at the 40-character limit the suffix survives, so the candidates stay distinct', async () => {
+    // QA BYO walk 2 (2026-10-16): the username "eng-smoke-byo2-470105" was cut
+    // to "...-47010" and joined to the whole proposed name: 37 characters,
+    // the last word of the command people paste, wrapping it at 1440.
+    test('a long username keeps its leading whole words, and the name says the tool', async () => {
+      userLookup({ ...HUMANS, [HUMAN_INSTALLER]: { _id: HUMAN_INSTALLER, isBot: false, username: 'eng-smoke-byo2-470105' } });
+      held(['eng-smoke-claude']);
+      const result = await propose({ actionType: 'connect_local_agent', params: { name: 'eng-smoke-claude' }, summary: 'Connect' });
+      const suggested = result.error.match(/such as "([^"]+)"/)[1];
+      expect(suggested).toBe('eng-smoke-claude-2');
+      expect(suggested).not.toMatch(/47010/);
+    });
+
+    test('a long first word and a long proposed name still give a short name, and the counter survives', async () => {
       userLookup({ ...HUMANS, [HUMAN_INSTALLER]: { _id: HUMAN_INSTALLER, isBot: false, username: 'abcdefghijklmnopqrst' } });
-      const base = 'abcdefghijklmnopqrst-uvwxyzabcdefghijk';
-      held(['uvwxyzabcdefghijklmnop'], { ownerHolds: [base.slice(0, 37)] });
+      held(['uvwxyzabcdefghijklmnop'], { ownerHolds: ['abcdefghijkl-uvwxyzabcdef'] });
       const result = await propose({ actionType: 'connect_local_agent', params: { name: 'uvwxyzabcdefghijklmnop' }, summary: 'Connect' });
       const suggested = result.error.match(/such as "([^"]+)"/)[1];
-      expect(suggested).toBe(`${base.slice(0, 37)}-2`);
-      expect(suggested.length).toBeLessThanOrEqual(40);
+      expect(suggested).toBe('abcdefghijkl-uvwxyzabcdef-2');
+      expect(suggested.length).toBeLessThanOrEqual(27);
+    });
+
+    test('when every counter is taken, a three-hex tail still gives a name', async () => {
+      held(['my-claude', 'sam-lee-claude', 'sam-lee-claude-2', 'sam-lee-claude-3', 'sam-lee-claude-4', 'sam-lee-claude-5']);
+      const result = await propose({ actionType: 'connect_local_agent', params: { name: 'my-claude' }, summary: 'Connect' });
+      expect(result.error).toMatch(/such as "sam-lee-claude-[0-9a-f]{3}", which is free/);
+    });
+
+    test('a Codex proposal is named for Codex', async () => {
+      held(['my-codex']);
+      const result = await propose({ actionType: 'connect_local_agent', params: { name: 'my-codex' }, summary: 'Connect' });
+      expect(result.error).toContain('such as "sam-lee-codex", which is free');
     });
 
     test('with no owner record at all, the refusal still stands, without a suggestion', async () => {

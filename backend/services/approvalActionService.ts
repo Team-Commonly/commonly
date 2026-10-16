@@ -183,8 +183,30 @@ const nameSlug = (value: unknown): string => String(value || '')
   .toLowerCase()
   .replace(/[^a-z0-9]+/g, '-')
   // The line above collapses every run to one '-', so trimming one is enough.
-  .replace(/^-|-$/g, '')
-  .slice(0, 20);
+  .replace(/^-|-$/g, '');
+
+// The leading words of a slug that fit in `max` characters, cut at a dash so a
+// word is never chopped (QA BYO walk 2: a 20-character slice turned the
+// username "eng-smoke-byo2-470105" into "...-47010"). A first word longer than
+// `max` is the only one cut.
+const leadingWords = (slug: string, max: number): string => {
+  const words = slug.split('-').filter(Boolean);
+  let out = '';
+  for (const word of words) {
+    const next = out ? `${out}-${word}` : word;
+    if (next.length > max) break;
+    out = next;
+  }
+  return out || slug.slice(0, max);
+};
+
+// What the seat runs, in one word, from the name the agent proposed: the CLI
+// when it names one, otherwise its first words.
+const toolWord = (requestedName: string): string => {
+  if (/claude/.test(requestedName)) return 'claude';
+  if (/codex/.test(requestedName)) return 'codex';
+  return leadingWords(nameSlug(requestedName.replace(/^(my|your-name|your)-/, '').replace(/-code$/, '')), 12) || 'agent';
+};
 
 /**
  * A free seat name built from the owner's username, offered when a proposed
@@ -198,12 +220,20 @@ const suggestLocalAgentName = async (requestedName: string, ownerUserId: unknown
   if (!owner) return null;
   // A username with no ASCII letters or digits (e.g. '中文') slugs to nothing;
   // fall back to the account id so a refusal always carries a working name.
-  const who = nameSlug(owner.username) || `user-${String(ownerUserId).slice(-6).toLowerCase()}`;
-  const what = nameSlug(requestedName.replace(/^(my|your-name|your)-/, '').replace(/-code$/, '')) || 'agent';
-  // Cap the base before the suffix, so "-2"…"-5" survive the 40-character limit.
-  const base = `${who}-${what}`.slice(0, 37).replace(/-$/, '');
-  for (let i = 0; i < 5; i += 1) {
-    const candidate = `${base}${i ? `-${i + 1}` : ''}`;
+  // Short on purpose: the name is the last word of the command the person
+  // pastes, and repeats on the page (QA BYO walk 2 got a 37-character one).
+  // "<first words of the username, at most 12>-<claude|codex|first words>",
+  // then a counter only when that is taken: at most 12 + 1 + 12 + 2 = 27.
+  const who = leadingWords(nameSlug(owner.username), 12) || `user-${String(ownerUserId).slice(-6).toLowerCase()}`;
+  const what = toolWord(nameSlug(requestedName));
+  const base = `${who}-${what}`;
+  // A short name collides more often than the long one did, so after the
+  // counters come two random three-hex tails (at most 25 + 4 = 29 characters).
+  const tail = () => randomUUID().replace(/-/g, '').slice(0, 3);
+  const candidates = [
+    base, `${base}-2`, `${base}-3`, `${base}-4`, `${base}-5`, `${base}-${tail()}`, `${base}-${tail()}`,
+  ];
+  for (const candidate of candidates) {
     // "Free" means nobody holds it, the owner included: an existing seat of
     // theirs would make the new card reuse that identity instead of a new one.
     if (LOCAL_AGENT_NAME_RE.test(candidate)
