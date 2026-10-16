@@ -251,6 +251,40 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       expect(savedRun.webSearches).toBe(3);
     });
 
+    // GTM's test (2026-10-16): asked to watch six competitors, a hosted agent
+    // ran out of lookups part way and never said so. The prompt now states the
+    // limits the turn enforces, and what to do when a request needs more.
+    test('the prompt states the lookups a reply allows, as the turn enforces them, and how to hand over the rest', async () => {
+      mockSearchConfigured = true;
+      const links = ['a', 'b', 'c', 'd'].map((page) => `https://example.com/${page}`);
+      mockGetPage.mockImplementation(async (url) => ({
+        ok: true, status: 200, contentType: 'text/html', text: 'A page.', truncated: false, url,
+      }));
+      axios.post.mockResolvedValueOnce(toolCalls(
+        ...['a', 'b', 'c', 'd'].map((query, i) => call(`s${i}`, 'commonly_web_search', { query })),
+        ...links.map((url, i) => call(`f${i}`, 'commonly_fetch_url', { url })),
+      ));
+
+      await runAgent(hostedInstall(), {
+        ...mention, payload: { ...mention.payload, content: `@maya-agent compare ${links.join(' ')}` },
+      });
+
+      const searches = mockSearchWeb.mock.calls.length;
+      const pages = mockGetPage.mock.calls.length;
+      expect([searches, pages]).toEqual([3, 3]);
+      const prompt = systemPromptIn(0);
+      expect(prompt).toContain(`Each reply can make at most ${searches} web searches and read at most ${pages} pages.`);
+      expect(prompt).toMatch(/When a request needs more lookups than that, do the most important ones, say plainly what is left, and offer to continue in your next message\./);
+    });
+
+    test('without a search key, the stated limit is page reads alone', async () => {
+      await runAgent(hostedInstall(), mention);
+
+      const prompt = systemPromptIn(0);
+      expect(prompt).toMatch(/Each reply can read at most 3 pages\. When a request needs more lookups than that/);
+      expect(prompt).not.toMatch(/web searches/);
+    });
+
     test('a hosted code run goes through the turn sandbox, whose seconds are recorded for the spend alarm', async () => {
       mockSandboxConfigured = true;
       mockSandboxClose.mockResolvedValue(7);

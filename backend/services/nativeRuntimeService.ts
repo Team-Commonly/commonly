@@ -1299,7 +1299,11 @@ export async function runAgent(
       };
     }
   }
-  const cfg = hostedNative ? normalizeConfig(hostedNativeRunConfig(installation, hostedTurnsPerDay)) : installedCfg;
+  const cfg = hostedNative
+    ? normalizeConfig(hostedNativeRunConfig(installation, hostedTurnsPerDay, {
+      searches: MAX_WEB_SEARCHES_PER_TURN, pages: MAX_WEB_FETCHES_PER_TURN,
+    }))
+    : installedCfg;
 
   const podId = String(installation.podId);
   const agentName = String(installation.agentName || '').toLowerCase();

@@ -185,6 +185,12 @@ export interface HostedNativeAbilities {
   runCode: boolean;
 }
 
+/** The lookups one hosted reply may make, as the native runtime enforces them. */
+export interface HostedTurnLookups {
+  searches: number;
+  pages: number;
+}
+
 const orList = (items: string[]): string => (
   items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`
 );
@@ -196,12 +202,22 @@ export const hostedNativeSystemPrompt = (
   displayName: string,
   about?: string,
   abilities: HostedNativeAbilities = { webSearch: false, runCode: false },
+  lookups?: HostedTurnLookups,
 ): string => {
   const persona = about && about.trim() ? ` ${about.trim()}` : '';
+  // GTM's test (2026-10-16): asked to watch six competitors, the agent ran
+  // out of lookups part way and did not say so. The numbers are the ones the
+  // runtime enforces; it passes them in.
+  const lookupLimit = lookups
+    ? `Each reply can ${abilities.webSearch ? `make at most ${lookups.searches} web searches and ` : ''}`
+      + `read at most ${lookups.pages} pages. When a request needs more lookups than that, do the most `
+      + 'important ones, say plainly what is left, and offer to continue in your next message.'
+    : '';
   const uses = [
     'Read a link someone shared with commonly_fetch_url.',
     abilities.webSearch ? 'Use commonly_web_search for anything current or outside the pod.' : '',
     abilities.runCode ? 'Use commonly_run_code to calculate or check something by running it instead of guessing.' : '',
+    lookupLimit,
   ].filter(Boolean);
   const missing = [
     abilities.runCode ? '' : 'running code',
@@ -247,7 +263,11 @@ export const hostedNativeSystemPrompt = (
  * installs can carry those fields because only entitled operators make them.
  * The model is left unset so the runtime's default applies.
  */
-export const hostedNativeRunConfig = (installation: any, turnsPerDay: number): Record<string, unknown> => {
+export const hostedNativeRunConfig = (
+  installation: any,
+  turnsPerDay: number,
+  lookups: HostedTurnLookups,
+): Record<string, unknown> => {
   const hosted = readHostedConfig(installation);
   const displayName = String(installation?.displayName || installation?.agentName || 'Commonly Agent');
   const about = typeof hosted.about === 'string' ? hosted.about : undefined;
@@ -257,7 +277,7 @@ export const hostedNativeRunConfig = (installation: any, turnsPerDay: number): R
     systemPrompt: hostedNativeSystemPrompt(displayName, about, {
       webSearch: isSearchConfigured(),
       runCode: isSandboxConfigured(),
-    }),
+    }, lookups),
     tools: [...HOSTED_NATIVE_TOOLS],
     recentMessages: HOSTED_NATIVE_RECENT_MESSAGES,
     // The owner's plan line (TASK-268: 30 free, 200 pro), enforced through the
