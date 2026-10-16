@@ -160,7 +160,9 @@ export const hostedNativeDecline = (eventType: string, turnsPerDay: number): str
  * still offers each only where this instance holds its key, and bounds it per
  * turn: 3 searches (nativeRuntimeService), and 5 code runs in one sandbox that
  * lives at most 3 minutes (turnSandboxService). Both are recorded on the
- * AgentRun and priced into the per-user spend alarm.
+ * AgentRun and priced into the per-user spend alarm. Reading a page
+ * (commonly_fetch_url) needs no key and opens only a link the turn was given
+ * (webAddressProvenance); reading the board (commonly_list_tasks) is in-pod.
  */
 export const HOSTED_NATIVE_TOOLS: readonly string[] = [
   'commonly_read_context',
@@ -168,8 +170,10 @@ export const HOSTED_NATIVE_TOOLS: readonly string[] = [
   'commonly_write_memory',
   'commonly_post_message',
   'commonly_create_task',
+  'commonly_list_tasks',
   'commonly_web_search',
   'commonly_run_code',
+  'commonly_fetch_url',
 ];
 
 /** Recent messages a hosted turn sees, as Scout does. */
@@ -187,8 +191,7 @@ const orList = (items: string[]): string => (
 
 // The prompt names a tool only when the turn can be offered it, so an
 // instance without a search or sandbox key never tells its agent it can
-// search or run code. Opening a link stays on the "say so" list until a fetch
-// tool exists (TASK-267b).
+// search or run code.
 export const hostedNativeSystemPrompt = (
   displayName: string,
   about?: string,
@@ -196,22 +199,34 @@ export const hostedNativeSystemPrompt = (
 ): string => {
   const persona = about && about.trim() ? ` ${about.trim()}` : '';
   const uses = [
+    'Read a link someone shared with commonly_fetch_url.',
     abilities.webSearch ? 'Use commonly_web_search for anything current or outside the pod.' : '',
     abilities.runCode ? 'Use commonly_run_code to calculate or check something by running it instead of guessing.' : '',
   ].filter(Boolean);
   const missing = [
     abilities.runCode ? '' : 'running code',
     abilities.webSearch ? '' : 'searching the web',
-    'opening a link someone shares',
+    'opening an attached file',
   ].filter(Boolean);
   return (
     `You are ${displayName}, a hosted agent on Commonly. Commonly runs you for the person who `
     + `set you up, in a shared pod with humans and other agents.${persona}\n`
     + '\n'
     + 'Reply to the message you were mentioned in by calling commonly_post_message once: concise, '
-    + 'useful, and addressed to the pod. Use commonly_read_context when the mention alone is not '
+    + 'useful, and addressed to the pod. '
+    // Every QA-walk answer opened with "@asker" (2026-10-16). #2258 stops an
+    // agent's answer to the person who asked from opening a "needs you" item;
+    // this line keeps the reply itself clean, and keeps an @-mention meaning
+    // "please act" for anyone else it names.
+    + 'Do not @-mention the person you are answering: the reply already reaches them. '
+    + '@-mention someone only when you need them to do something. Use commonly_read_context '
+    + 'when the mention alone is not '
     + 'enough. Keep durable facts with commonly_write_memory, and track work with '
-    + `commonly_create_task.${uses.length ? ` ${uses.join(' ')}` : ''} If no reply is genuinely `
+    + 'commonly_create_task; check the board with commonly_list_tasks before saying what is or is '
+    // QA walk 2026-10-16: asked to summarize the pod, a hosted agent also
+    // searched the web and ran code, and the reply took 19 s instead of 7.
+    + 'not on it. Answer a question about this pod from the pod itself; reach for the tools below '
+    + `only when the answer needs something outside it. ${uses.join(' ')} If no reply is genuinely `
     + 'needed, do not post.\n'
     + '\n'
     + 'Only claim what you actually did. If a task needs a tool you do not have (for example, '

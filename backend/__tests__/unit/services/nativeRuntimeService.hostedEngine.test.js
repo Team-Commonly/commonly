@@ -26,7 +26,7 @@ jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments
 let mockOwnerPro = false;
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) })),
-  findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: mockOwnerPro } }) }) })),
+  findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: mockOwnerPro }, isBot: false }) }) })),
 }));
 
 jest.mock('../../../services/agentTypingService', () => ({
@@ -77,6 +77,21 @@ jest.mock('../../../services/turnSandboxService', () => ({
   TurnSandbox: jest.fn().mockImplementation(() => ({ run: mockSandboxRun, close: mockSandboxClose })),
 }));
 
+// Reading a page: the guard is a spy here (outboundUrlGuard.fetch.test.js proves it).
+const mockGetPage = jest.fn();
+jest.mock('../../../services/outboundUrlGuard', () => ({
+  ...jest.requireActual('../../../services/outboundUrlGuard'),
+  getFromPublicAddress: (...args) => mockGetPage(...args),
+}));
+const mockTaskRows = jest.fn();
+const mockTaskCount = jest.fn();
+jest.mock('../../../models/Task', () => ({
+  find: jest.fn(() => ({
+    sort: () => ({ limit: () => ({ select: () => ({ lean: () => mockTaskRows() }) }) }),
+  })),
+  countDocuments: (...args) => mockTaskCount(...args),
+}));
+
 jest.mock('../../../models/Message', () => {
   const chain = {
     sort: () => chain, limit: () => chain, select: () => chain, populate: () => chain, lean: () => Promise.resolve([]),
@@ -101,10 +116,16 @@ const hostedInstall = (hosted = { engine: 'native', provisionedAt: new Date(), a
   config: { runtime: { runtimeType: 'hosted' }, hosted, ...extra },
 });
 
-const mention = { type: 'chat.mention', eventId: '507f1f77bcf86cd799439012', payload: { content: '@maya-agent what did we decide?' } };
+// One pod message the owner (a known human) wrote.
+const mention = {
+  type: 'chat.mention',
+  eventId: '507f1f77bcf86cd799439012',
+  payload: { content: '@maya-agent what did we decide?', userId: '507f1f77bcf86cd799439099', messageId: 'msg-1' },
+};
 
 const BASE_TOOLS = [
-  'commonly_create_task', 'commonly_post_message', 'commonly_read_context', 'commonly_read_memory', 'commonly_write_memory',
+  'commonly_create_task', 'commonly_fetch_url', 'commonly_list_tasks', 'commonly_post_message', 'commonly_read_context',
+  'commonly_read_memory', 'commonly_write_memory',
 ];
 const call = (id, name, args) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } });
 const toolCalls = (...calls) => ({
@@ -190,7 +211,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       const prompt = systemPromptIn(0);
       expect(prompt).toMatch(/Use commonly_web_search for anything current/);
       expect(prompt).toMatch(/Use commonly_run_code to calculate/);
-      expect(prompt).toMatch(/for example, opening a link someone shares\)/);
+      expect(prompt).toMatch(/for example, opening an attached file\)/);
     });
 
     test('an instance with neither key offers neither, and the prompt does not claim them', async () => {
@@ -199,7 +220,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       expect(offeredIn(0)).toEqual(BASE_TOOLS);
       const prompt = systemPromptIn(0);
       expect(prompt).not.toMatch(/commonly_web_search|commonly_run_code/);
-      expect(prompt).toMatch(/for example, running code, searching the web or opening a link someone shares\)/);
+      expect(prompt).toMatch(/for example, running code, searching the web or opening an attached file\)/);
     });
 
     test('with one key, only that tool is offered and named', async () => {
@@ -211,7 +232,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       const prompt = systemPromptIn(0);
       expect(prompt).toMatch(/Use commonly_web_search/);
       expect(prompt).not.toMatch(/commonly_run_code/);
-      expect(prompt).toMatch(/for example, running code or opening a link someone shares\)/);
+      expect(prompt).toMatch(/for example, running code or opening an attached file\)/);
     });
 
     test('a hosted turn stops at three searches and records them for the spend alarm', async () => {
@@ -249,6 +270,75 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       await runAgent(install, mention);
 
       expect(offeredIn(0)).toEqual(BASE_TOOLS);
+    });
+  });
+
+  // The QA walk of 2026-10-16: a hosted agent could not open a shared link,
+  // said the board was empty when it held three tasks, and claimed file tools
+  // the kernel's frame had named but the turn never had.
+  describe('reading a link, reading the board, and a frame that names only its tools', () => {
+    const toolMessages = (callIndex) => axios.post.mock.calls[callIndex][1].messages.filter((m) => m.role === 'tool');
+    const userMessageIn = (callIndex) => axios.post.mock.calls[callIndex][1].messages.find((m) => m.role === 'user').content;
+
+    test('ask d: the README is read from the repo link the person gave; a composed README address is refused', async () => {
+      const repo = 'https://github.com/Team-Commonly/commonly';
+      mockGetPage.mockResolvedValue({
+        ok: true, status: 200, contentType: 'text/html', text: 'README What is Commonly? …', truncated: false, url: repo,
+      });
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_fetch_url', {
+          url: 'https://raw.githubusercontent.com/Team-Commonly/commonly/main/README.md',
+        })))
+        .mockResolvedValueOnce(toolCalls(call('c2', 'commonly_fetch_url', { url: repo })));
+
+      await runAgent(hostedInstall(), {
+        ...mention, payload: { ...mention.payload, content: '@maya-agent Read the README of github.com/Team-Commonly/commonly' },
+      });
+
+      expect(mockGetPage.mock.calls).toEqual([[repo]]);
+      expect(toolMessages(2)[0].content).toMatch(/does not appear in this conversation/);
+      expect(toolMessages(2)[1].content).toMatch(/What is Commonly\?/);
+      // The refused attempt sent nothing, so it does not spend one of the three.
+      expect(savedRun.webFetches).toBe(1);
+    });
+
+    test('the board is read, not guessed', async () => {
+      mockTaskRows.mockResolvedValue([{ taskId: 'TASK-1', title: 'Say hello to the pod', status: 'pending', assignee: null }]);
+      mockTaskCount.mockResolvedValue(3);
+      axios.post.mockResolvedValueOnce(toolCalls(call('c1', 'commonly_list_tasks', {})));
+
+      await runAgent(hostedInstall(), mention);
+
+      const Task = require('../../../models/Task');
+      expect(Task.find).toHaveBeenCalledWith({ podId: POD, status: { $in: ['pending', 'claimed', 'blocked'] } });
+      const listed = JSON.parse(toolMessages(1)[0].content);
+      expect(listed).toEqual({
+        status: 'open', total: 3, tasks: [{ taskId: 'TASK-1', title: 'Say hello to the pod', status: 'pending', assignee: null }],
+      });
+      expect(systemPromptIn(0)).toMatch(/check the board with commonly_list_tasks before saying what is or is not on it/);
+      // QA walk: a pod summary also searched the web and ran code (19 s).
+      expect(systemPromptIn(0)).toMatch(/Answer a question about this pod from the pod itself; reach for the tools below only when/);
+      // QA walk: an answer opening "@asker" filed every reply as "needs you".
+      expect(systemPromptIn(0)).toMatch(/Do not @-mention the person you are answering/);
+      expect(systemPromptIn(0)).toMatch(/@-mention someone only when you need them to do something/);
+    });
+
+    test('a kernel-framed mention reaches the model naming only tools the turn has', async () => {
+      const content = [
+        '[Pod context: this conversation is in pod `p`. When attaching files, call commonly_attach_file({ podId: "p" }). '
+          + 'When reading files call commonly_read_file({ podId: "p", fileName }). Post with your token file.]',
+        '[Trigger: this turn was raised by **sam**. If it is not recent, call commonly_get_messages before you reply.]',
+        '[Collaboration: consult a coding specialist. Call commonly_dm_agent({ agentName: "codex" }).]',
+        '[Reply mechanics: post your reply by calling commonly_post_message({ podId: "p" }).]',
+      ].join('\n');
+
+      await runAgent(hostedInstall(), { ...mention, payload: { ...mention.payload, content: `${content}\n\n@maya-agent what can you do?` } });
+
+      const sent = userMessageIn(0);
+      expect(sent).not.toMatch(/commonly_attach_file|commonly_read_file|commonly_dm_agent|commonly_get_messages|codex|token file/);
+      expect(sent).toMatch(/You cannot open or attach files here/);
+      expect(sent).toMatch(/call commonly_read_context before you reply/);
+      expect(sent).toMatch(/\n\n@maya-agent what can you do\?$/);
     });
   });
 
