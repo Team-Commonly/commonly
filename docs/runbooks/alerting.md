@@ -97,16 +97,32 @@ key, or a new key was referenced before it existed in Secret Manager.
 
 ### Pod pending
 
-Run `kubectl describe pod`; the Events say which predicate failed. On this
-cluster, look for these three causes:
+Run `kubectl describe pod`; the Events say which predicate failed. The
+cluster has three pools ([ADR-015](../adr/ADR-015-spot-pool-for-stateless-workloads.md)):
+
+| pool | taint | runs |
+|---|---|---|
+| dev-pool | `pool=dev:NoSchedule` | backend, redis, LiteLLM, commonly-bot, cloudflared, the ingress controller: each with a `pool: dev` selector and the matching toleration |
+| spot-pool | `workload-tier=spot:NoSchedule` | frontend, the stranger journey, the backup Jobs |
+| default-pool (e2-medium) | none | the system pods: kube-dns, metrics-server, ESO, kube-state-metrics |
+
+Look for these causes:
 
 - The spot node was reclaimed and the pool is waiting for capacity.
-- A node pool lost its `pool=dev` label on node replacement. GKE restores
-  labels and taints only from the pool's own config.
+- A pool's label or taint went missing on node replacement. GKE restores
+  labels and taints only from the pool's own config, and both are set there
+  since 2026-10-16; before that, dev-pool's taint existed on its node only and
+  was lost on 10-05.
 - The node is out of memory requests. dev-pool autoscales 1–3.
-
-dev-pool runs the cluster's system pods (kube-dns, metrics-server, ESO), so
-do not put a NoSchedule taint on it.
+- A system pod (kube-dns, konnectivity-agent) is waiting for default-pool to
+  grow. One e2-medium allocates about 940m CPU, and the system pods request
+  about 750m. When dev-pool's node is replaced, the kube-dns replica and
+  konnectivity agents it carried cannot return to it, since they have no
+  `pool=dev` toleration, and need about 300m more, so default-pool adds a
+  second node (it autoscales 1–2). A minute or two of Pending during that
+  scale-up is expected; the other kube-dns replica and node-local-dns keep
+  resolving. Pending for longer means the autoscaler is blocked: read
+  `kubectl get events -n kube-system`.
 
 ### Restarts
 
