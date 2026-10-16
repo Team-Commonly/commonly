@@ -6402,7 +6402,10 @@ body.modern-ui.v2-canvas {
   font: 500 14px/20px var(--v2-font-mono);
   color: var(--v2-on-ink);
   white-space: pre-wrap;
-  word-break: break-all;
+  /* Wrap at spaces, and inside a word only when one word cannot fit (the
+     key, a URL). break-all split the Windows PowerShell line as "common /
+     ly-mcp" at 1440 (browser check on #2289), which misleads anyone typing it. */
+  overflow-wrap: anywhere;
 }
 /* ADR-026 D1: one-paste computer setup, shown only while no machine exists. */
 .v2-byo__add-computer {
