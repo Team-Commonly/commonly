@@ -9,6 +9,7 @@ jest.mock('jsonwebtoken', () => ({}));
 const User = require('../../../models/User');
 const Summary = require('../../../models/Summary');
 const digestEmailService = require('../../../services/digestEmailService');
+const SystemSetting = require('../../../models/SystemSetting');
 const {
   setupMongoDb,
   closeMongoDb,
@@ -188,6 +189,37 @@ describe('digestEmailService', () => {
     releaseSmtp({ data: { data: { succeeded: 1 } } });
     await sending;
     expect((await User.findById(user._id)).lastDigestSent).toBeInstanceOf(Date);
+  });
+
+  // The stop switch (2026-10-16): one system_settings row stops every send,
+  // with no deploy. No row means on.
+  it('sends nothing when the sending switch is off, and sends again when it is on', async () => {
+    const user = await createUser();
+    const digest = await createDigest(user);
+    await SystemSetting.create({ key: digestEmailService.DIGEST_SENDING_KEY, value: { enabled: false } });
+
+    await expect(digestEmailService.sendDigestEmails([runEntry(digest)]))
+      .resolves.toEqual(expect.objectContaining({ disabled: true, sent: 0 }));
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect((await Summary.findById(digest._id)).metadata.emailedAt).toBeUndefined();
+
+    await SystemSetting.updateOne(
+      { key: digestEmailService.DIGEST_SENDING_KEY },
+      { $set: { value: { enabled: true } } },
+    );
+    await expect(digestEmailService.sendDigestEmails([runEntry(digest)]))
+      .resolves.toEqual(expect.objectContaining({ disabled: false, sent: 1 }));
+  });
+
+  it('sends nothing when the switch cannot be read', async () => {
+    const user = await createUser();
+    const digest = await createDigest(user);
+    const read = jest.spyOn(SystemSetting, 'findOne').mockImplementation(() => { throw new Error('mongo down'); });
+
+    await expect(digestEmailService.sendDigestEmails([runEntry(digest)]))
+      .resolves.toEqual(expect.objectContaining({ disabled: true, sent: 0 }));
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    read.mockRestore();
   });
 
   it('logs once and skips the entire run when SMTP is unconfigured', async () => {
