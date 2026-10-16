@@ -127,6 +127,17 @@ describe('nativeRuntimeService daily run cap (D4)', () => {
     expect(AgentRun.create).toHaveBeenCalledTimes(1);
   });
 
+  // QA walk 2026-10-16: the greeting a hosted agent posts when first added
+  // cost 1 of the owner's 30 turns. It fires once per person and agent, so it
+  // is not counted.
+  test('the count leaves out first-contact greetings', async () => {
+    AgentRun.countDocuments.mockResolvedValue(0);
+    await runAgent(installation(), mentionTrigger);
+    const [query] = AgentRun.countDocuments.mock.calls[0];
+    expect(query.trigger).toEqual({ $ne: 'first_contact' });
+    expect(query.startedAt.$gte).toBeInstanceOf(Date);
+  });
+
   test('no cap configured: the counter is never consulted', async () => {
     await runAgent(installation({ dailyRunCap: undefined }), mentionTrigger);
     expect(AgentRun.countDocuments).not.toHaveBeenCalled();

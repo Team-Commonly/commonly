@@ -762,23 +762,44 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
 
+    // The mention handle is the instanceId (what the UI dropdown inserts),
+    // NOT the registry agentName — a BYO user is told their agent's *name*
+    // is e.g. "sam-agent" but the way to mention it is "@scout". Said in the
+    // intro, or in a hosted agent's own greeting, so nobody has to guess (GH
+    // smoke finding 2026-07-05).
+    const handle = normalizedInstanceId && normalizedInstanceId !== 'default'
+      ? normalizedInstanceId
+      : safeAgentName;
+    // A hosted agent on the native engine answers its first contact in the
+    // same minute, in its own voice. Its greeting is then the one post the
+    // room gets: the template intro beside it was a second post before anyone
+    // had spoken (QA walk, 2026-10-16). It sees only its mentions, so the
+    // greeting carries the handle the intro would have.
+    const greetsItself = HostedEngine.hostedRunsNative(installation);
+
     // First contact belongs to the durable human↔agent relationship, not the
     // replaceable installation row. Best-effort by design: neither a marker
     // write nor event enqueue failure may turn a successful install into 500.
-    void FirstContactService.maybeFireFirstContact({
-      agentName: agent.agentName,
-      instanceId: normalizedInstanceId,
-      podId,
-      installedByUserId: userId,
-      installerIsAgent: installerUser?.isBot === true,
-    }).catch((firstContactError: unknown) => {
+    // Awaited (one upsert, one enqueue) so the intro below knows whether the
+    // agent's own greeting is coming.
+    let firstContactFired = false;
+    try {
+      firstContactFired = await FirstContactService.maybeFireFirstContact({
+        agentName: agent.agentName,
+        instanceId: normalizedInstanceId,
+        podId,
+        installedByUserId: userId,
+        installerIsAgent: installerUser?.isBot === true,
+        ...(greetsItself ? { mentionHandle: handle } : {}),
+      });
+    } catch (firstContactError: unknown) {
       console.warn('[first-contact] trigger failed after install', {
         agent: agent.agentName,
         instance: normalizedInstanceId,
         pod: String(podId),
         error: (firstContactError as Error).message,
       });
-    });
+    }
 
     await AgentRegistry.incrementInstalls(agentName);
 
@@ -811,7 +832,8 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       const introWorthy = podDoc
         && podDoc.type !== 'dm'
         && podDoc.type !== 'agent-room'
-        && (podDoc.members?.length || 0) >= 2;
+        && (podDoc.members?.length || 0) >= 2
+        && !(greetsItself && firstContactFired);
       if (introWorthy) {
         // Task #62 follow-up: the intro post passes `displayName` to
         // AgentMessageService.postMessage, which forwards it to
@@ -839,13 +861,6 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         const isMeaninglessBlurb = !blurb
           || normalizedBlurb === displayName.toLowerCase()
           || normalizedBlurb === agent.agentName.toLowerCase();
-        // The mention handle is the instanceId (what the UI dropdown inserts),
-        // NOT the registry agentName — a BYO user is told their agent's *name*
-        // is e.g. "sam-agent" but the way to mention it is "@scout". Say it in
-        // the intro so nobody has to guess (GH smoke finding 2026-07-05).
-        const handle = normalizedInstanceId && normalizedInstanceId !== 'default'
-          ? normalizedInstanceId
-          : safeAgentName;
         // Honesty gate (2026-08-14). This intro used to promise "Mention me
         // with @handle when you need me" UNCONDITIONALLY — posted server-side
         // the moment the seat is created, which for a BYO seat is before any

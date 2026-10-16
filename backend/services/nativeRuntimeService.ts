@@ -933,6 +933,13 @@ export async function runAgent(
     installation.displayName || agentName,
   );
 
+  // A first-contact greeting is not one of the person's turns: it fires once
+  // per person and agent (AgentFirstContact), before they have asked anything,
+  // so neither count below spends it (QA walk, 2026-10-16: the greeting cost 1
+  // of 30). It is still checked against both, and still priced by the spend
+  // alarm.
+  const UNMETERED_TRIGGER = 'first_contact';
+
   // D4 cost ceiling: per-installation daily run cap, enforced before any
   // claim or model work. The Guide runs on a paid model in every new user's
   // workspace — bounded by construction, not by hope. Count failure fails
@@ -949,6 +956,7 @@ export async function runAgent(
         agentName,
         instanceId,
         startedAt: { $gte: dayStart },
+        trigger: { $ne: UNMETERED_TRIGGER },
       });
       if (runsToday >= dailyRunCap) {
         console.warn(
@@ -997,6 +1005,7 @@ export async function runAgent(
         const userRunsToday = await AgentRunModel.countDocuments({
           userId: installedBy,
           startedAt: { $gte: dayStart },
+          trigger: { $ne: UNMETERED_TRIGGER },
         });
         if (userRunsToday >= userCeiling) {
           console.warn(

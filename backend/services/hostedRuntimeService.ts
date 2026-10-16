@@ -143,12 +143,15 @@ const utcDayStart = (now = new Date()): Date => new Date(Date.UTC(
   now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
 ));
 
+// The greeting an agent posts when first added is not one of the owner's
+// turns (it fires once per person and agent), so the meter does not count it.
 export const turnsToday = async (agentName: string, instanceId: string): Promise<number> => (
   AgentEvent.countDocuments({
     agentName: String(agentName).toLowerCase(),
     instanceId: instanceId || 'default',
     status: 'acked',
     deliveredAt: { $gte: utcDayStart() },
+    type: { $ne: 'first_contact' },
   })
 );
 

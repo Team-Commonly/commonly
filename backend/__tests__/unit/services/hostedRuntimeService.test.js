@@ -103,6 +103,8 @@ describe('hostedRuntimeService', () => {
       expect(meter).toMatchObject({ allowed: true, used: 1, cap: 2 });
       const filter = mockEventCount.mock.calls[0][0];
       expect(filter).toMatchObject({ agentName: 'scout', instanceId: 'default', status: 'acked' });
+      // The greeting posted when the agent is first added is not one of the owner's turns.
+      expect(filter.type).toEqual({ $ne: 'first_contact' });
       expect(filter.createdAt).toBeUndefined();
       expect(filter.deliveredAt.$gte.toISOString()).toMatch(/T00:00:00\.000Z$/);
       expect(new Date(meter.resetsAt).getTime() - filter.deliveredAt.$gte.getTime()).toBe(24 * 3600 * 1000);
