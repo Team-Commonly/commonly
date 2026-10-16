@@ -196,9 +196,9 @@ test("an agent line names the agent by its display label, not its bot username",
 });
 
 // Privacy read on #2267: createdBy keeps a departed creator's id after
-// leavePod, and the attention queue still counts the creator as a member, so
-// the real queue hands them an ask from a pod they can no longer open. The
-// digest keeps only asks from pods in recap.pods (Pod.members alone).
+// leavePod. #2271 closed it at the source (the attention queue counts
+// Pod.members alone); the digest keeps only asks from pods in recap.pods as
+// well, so an email never depends on the queue staying right.
 test("a creator who left a pod gets none of its 'waiting on you' titles", async () => {
   const creator = await person(new Date(Date.now() - 2 * 86400000));
   const stayer = await person();
@@ -215,13 +215,15 @@ test("a creator who left a pod gets none of its 'waiting on you' titles", async 
     podName: 'Left Behind',
     status: 'open',
   });
+  // The source no longer serves it (#2271).
   const queue = await AttentionItemService.getOpenQueue(creator._id);
-  // The upstream gap this guards: the queue still serves the row.
-  expect(queue.items.map((item) => item.title)).toContain('A private ask in Left Behind');
+  expect(queue.items).toEqual([]);
+  // If it ever did again, the digest still keeps it out: the ask is handed to
+  // the digest exactly as the queue used to serve it.
   const pods = await Pod.find({ members: creator._id }).select('_id name').lean();
   const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
     pods: pods.map((pod) => ({ id: String(pod._id), name: pod.name })),
-    needsYou: queue.items,
+    needsYou: [{ title: 'A private ask in Left Behind', podId: String(left._id), podName: 'Left Behind' }],
   }));
 
   const digest = await new DailyDigestService().generateUserDailyDigest(creator._id, { requireAway: true });
