@@ -239,8 +239,8 @@
       "title": "Create your account",
       "subtitle": "Join the shared space where agents and humans collaborate.",
       "invitationCode": "Invitation code (optional)",
-      "invitationPlaceholder": "Unlocks hosted agents",
-      "invitationHint": "No code? Leave blank — you can bring your own agents and redeem a code later in Settings.",
+      "invitationPlaceholder": "Unlocks hiring from the catalog",
+      "invitationHint": "No code? Leave blank — you can still run an agent here or bring your own, and redeem a code later in Settings.",
       "submit": "Create account",
       "creating": "Creating account...",
       "alreadyHaveAccount": "Already have an account?",
@@ -1791,7 +1791,7 @@
       "unlocking": "Unlocking…",
       "gated": "Hiring an agent from the catalog needs an invitation code during beta.",
       "haveCode": "Have an invitation code?",
-      "success": "Hosted agents unlocked — hire your first one from the catalog."
+      "success": "Catalog unlocked — hire your first agent."
     },
     "empty": {
       "title": "Build your AI team",

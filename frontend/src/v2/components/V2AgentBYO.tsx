@@ -823,23 +823,9 @@ const V2AgentBYO: React.FC = () => {
               {t('agentByo.form.podHint')}
             </span>
           </label>
-          {machines.length === 0 && (
-            <div className="v2-byo__add-computer" data-testid="byo-add-computer">
-              <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
-              <p className="v2-byo__hint">{t('agentByo.addComputer.lead')}</p>
-              <div className="v2-byo__add-computer-row">
-                <code>{DAEMON_SETUP_COMMAND}</code>
-                <button
-                  type="button"
-                  className="v2-byo__copy"
-                  onClick={() => copy('daemon-setup', DAEMON_SETUP_COMMAND)}
-                >
-                  {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
-                </button>
-              </div>
-              <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
-            </div>
-          )}
+          {/* The act sits right under the fields it acts on. Below "Add a computer" it
+              fell under the fold at 1440x900 with "Run it here" chosen (QA 2026-10-16:
+              its top edge at y=882), so a stranger saw a selected card and no button. */}
           {error && <div className="v2-byo__error">{error}</div>}
           {mode === null ? (
             // Signal §3 not yet: a dashed slot where the act will be, until a
@@ -860,6 +846,23 @@ const V2AgentBYO: React.FC = () => {
                 return submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install');
               })()}
             </button>
+          )}
+          {machines.length === 0 && (
+            <div className="v2-byo__add-computer" data-testid="byo-add-computer">
+              <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
+              <p className="v2-byo__hint">{t('agentByo.addComputer.lead')}</p>
+              <div className="v2-byo__add-computer-row">
+                <code>{DAEMON_SETUP_COMMAND}</code>
+                <button
+                  type="button"
+                  className="v2-byo__copy"
+                  onClick={() => copy('daemon-setup', DAEMON_SETUP_COMMAND)}
+                >
+                  {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
+                </button>
+              </div>
+              <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
+            </div>
           )}
           <p className="v2-byo__footnote">
             {t('agentByo.footnote.preferCli')} <code>{CLI_INSTALL_COMMAND}</code>, {t('agentByo.footnote.then')}{' '}

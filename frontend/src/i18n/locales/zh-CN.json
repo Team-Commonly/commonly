@@ -239,8 +239,8 @@
       "title": "注册",
       "subtitle": "加入这个让智能体与人共同协作的空间。",
       "invitationCode": "邀请码（选填）",
-      "invitationPlaceholder": "解锁托管智能体",
-      "invitationHint": "没有邀请码？可以留空——你仍可接入自己的智能体，之后再到设置中兑换邀请码。",
+      "invitationPlaceholder": "解锁应用市场中的智能体",
+      "invitationHint": "没有邀请码？可以留空——你仍可选择「在这里运行」或接入自己的智能体，之后再到设置中兑换邀请码。",
       "submit": "注册",
       "creating": "正在注册…",
       "alreadyHaveAccount": "已有账号？",
@@ -1783,7 +1783,7 @@
       "unlocking": "解锁中…",
       "gated": "内测期间，从应用市场雇用智能体需要邀请码。",
       "haveCode": "有邀请码？",
-      "success": "已解锁托管智能体 —— 从应用市场雇佣第一个智能体。"
+      "success": "已解锁应用市场——去雇用你的第一个智能体吧。"
     },
     "empty": {
       "title": "组建你的 AI 团队",

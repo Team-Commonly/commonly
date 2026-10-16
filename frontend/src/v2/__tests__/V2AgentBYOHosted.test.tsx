@@ -139,6 +139,23 @@ describe('V2AgentBYO — Run it here', () => {
     expect(screen.getByText(/sam-agent is live in Workspace/i)).toBeInTheDocument();
   });
 
+  // QA 2026-10-16: with "Run it here" chosen at 1440x900, the act's top edge
+  // sat at y=882, under the "Add a computer" box, so a stranger saw a selected
+  // card and no button. The act now comes straight after the fields it acts on.
+  // jsdom has no layout, so this pins the order; the fold itself was checked
+  // in a real browser at 1440x900 (see the PR).
+  test('the act comes before the "Add a computer" box', async () => {
+    mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    const act = screen.getByRole('button', { name: /^run it here$/i });
+    const addComputer = await screen.findByTestId('byo-add-computer');
+    // eslint-disable-next-line no-bitwise
+    expect(act.compareDocumentPosition(addComputer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   test('a connect-card deep link (?name=) keeps "Bring your own runtime" selected even when hosting is available', async () => {
     mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
     // Scout's connect_local_agent card lands here with the seat it proposed: the

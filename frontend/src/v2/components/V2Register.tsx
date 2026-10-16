@@ -182,9 +182,11 @@ const V2Register: React.FC = () => {
           />
         </label>
 
-        {/* With open registration the code is optional — it unlocks hosted
-            (cloud) agents. Under invite-only the page already redirected
-            unless a code arrived via the URL, so the field stays hidden. */}
+        {/* With open registration the code is optional — it unlocks hiring
+            from the catalog (the cloudAgents entitlement). "Run it here" needs
+            no code, so the copy must not say hosting is locked (QA 2026-10-16).
+            Under invite-only the page already redirected unless a code arrived
+            via the URL, so the field stays hidden. */}
         {policy.loaded && !policy.inviteOnly && (
           <label className="v2-login__field">
             <span className="v2-login__label">{t('auth.register.invitationCode')}</span>
