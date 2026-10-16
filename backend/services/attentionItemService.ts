@@ -14,6 +14,8 @@ const PGMessage = require('../models/pg/Message');
 const Task = require('../models/Task');
 // eslint-disable-next-line global-require
 const { ESCALATION_MARKERS } = require('./connectorRelayPolicy');
+// eslint-disable-next-line global-require
+const { humansAnsweredBy } = require('./agentAnswerService');
 
 type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task';
 type Kind = 'mention' | 'approval' | 'decision' | 'handoff';
@@ -87,12 +89,11 @@ const resolveAuthorName = async (authorId: unknown): Promise<string> => {
  * the message and its @mention stay. Before this, almost every agent-mention
  * row was bulk-acknowledged or left open, and well under 1% was answered.
  *
- * An answer is a post by an agent that holds a live claim on a message that
- * person wrote in this pod (native turns claim the message that woke them and
- * carry no reply edge), or that explicitly replies to one. Asks still reach
- * them: decisions and approvals have their own writers, and an answer that
- * carries an escalation marker ([BLOCKED] ...) is not treated as an answer.
- * Any failure reads as "answering nobody": an extra row beats a lost ask.
+ * Who counts as answered is agentAnswerService's rule, shared with the
+ * onboarding checklist. Asks still reach them: decisions and approvals have
+ * their own writers, and an answer that carries an escalation marker
+ * ([BLOCKED] ...) is not treated as an answer. Any failure reads as
+ * "answering nobody": an extra row beats a lost ask.
  */
 const peopleThisAgentIsAnswering = async (
   message: any,
@@ -100,31 +101,20 @@ const peopleThisAgentIsAnswering = async (
   content: string,
   podId: unknown,
 ): Promise<Set<string>> => {
-  const answered = new Set<string>();
-  if (!authorId || ESCALATION_MARKERS.test(content)) return answered;
+  if (!authorId || ESCALATION_MARKERS.test(content)) return new Set<string>();
   try {
     const author = await User.findById(authorId).select('isBot username botMetadata').lean();
-    if (!author?.isBot) return answered;
-    // eslint-disable-next-line global-require
-    const MessageClaimService = require('./messageClaimService');
-    const claimed: string[] = await MessageClaimService.liveClaimsHeldBy({
-      podId: String(podId),
+    if (!author?.isBot) return new Set<string>();
+    return await humansAnsweredBy({
+      podId,
       agentName: String(author.botMetadata?.agentName || author.username || ''),
       instanceId: String(author.botMetadata?.instanceId || 'default'),
-    });
-    const replyTo = message?.reply_to_message_id ?? message?.replyToMessageId;
-    const sourceIds = [...new Set([...claimed, ...(replyTo ? [String(replyTo)] : [])])]
-      .filter((id) => /^\d{1,10}$/.test(id));
-    const sources = await Promise.all(sourceIds.map((id) => PGMessage.findById(id)));
-    sources.forEach((source: any) => {
-      const sourceAuthor = source?.userId?._id ?? source?.userId;
-      if (sourceAuthor) answered.add(String(sourceAuthor));
+      replyToMessageId: message?.reply_to_message_id ?? message?.replyToMessageId,
     });
   } catch (error) {
-    // Nothing is added before the last await, so a failure leaves the set empty.
     console.warn('[attention] answer check failed; recording the mention:', (error as Error).message);
+    return new Set<string>();
   }
-  return answered;
 };
 
 export const recordMentionedUsers = async (message: any, options: MentionOptions = {}): Promise<void> => {

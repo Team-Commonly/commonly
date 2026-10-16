@@ -92,6 +92,10 @@ jest.mock('../../../services/threadRootResolver', () => {
 jest.mock('../../../services/installable/eventHandlers', () => ({
   dispatch: (...args) => mockDispatch(...args),
 }));
+const mockFirstTask = jest.fn();
+jest.mock('../../../services/starterTaskService', () => ({
+  completeFirstTaskOnAnswer: (...args) => mockFirstTask(...args),
+}));
 
 const POD = '6a0da39bae757028b39f87a6';
 let emitted;
@@ -265,6 +269,25 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
     });
   });
 
+  // QA walk 3: "Give your agent its first task" completes on the first answer
+  // an agent gives the workspace owner. Every landed agent post offers it to
+  // the starter-task check, which decides; a refused post never does.
+  it('offers each landed post to the first-task check, with the reply edge', async () => {
+    await AgentMessageService.postMessage({
+      agentName: 'lee-agent',
+      instanceId: 'default',
+      podId: POD,
+      content: 'Done: the build is green.',
+      displayName: 'Lee Agent',
+      replyToMessageId: '57577',
+    });
+    expect(mockFirstTask).toHaveBeenCalledTimes(1);
+    expect(mockFirstTask).toHaveBeenCalledWith({
+      podId: POD, agentName: 'lee-agent', instanceId: 'default', replyToMessageId: '57577', agentLabel: 'Lee Agent',
+      content: 'Done: the build is green.',
+    });
+  });
+
   it('a ThreadRootError propagates — never swallowed into the Mongo fallback', async () => {
     threadRootResolver.resolveThreadRoot.mockRejectedValue(
       new threadRootResolver.ThreadRootError('root is in another pod', 'thread_root_other_pod'),
@@ -292,5 +315,7 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
       content: 'in-thread continuation',
       threadRootId: '57577',
     })).rejects.toThrow('threadRootId posts require the PostgreSQL message store');
+    // Nothing landed, so nothing is offered to the first-task check.
+    expect(mockFirstTask).not.toHaveBeenCalled();
   });
 });
