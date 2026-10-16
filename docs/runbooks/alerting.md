@@ -61,6 +61,38 @@ or the origin is down: check the `cloudflared` and `ingress-nginx` pods in
 is down. If a deploy just ran, `helm history commonly-dev -n commonly-dev`
 gives the rollback target.
 
+### A short burst of Cloudflare 502s
+
+Seconds of `502: Bad gateway` from `commonly.me`, then recovery. The page is
+Cloudflare's, not nginx's: nginx never answered the request, so the
+[Ingress 5xx](#ingress-5xx) counter does not see it, and an uptime check one
+minute apart rarely does. Two causes have been measured:
+
+- **An ingress controller roll.** With one replica, the 2026-10-16 04:12Z roll
+  gave every client about 8 s of 502s, starting ~14 s after the new pod
+  started. Since then the controller runs two replicas with a PDB
+  (minAvailable 1), and going from one to two did not restart the live pod.
+  Both replicas share the one dev-pool node, so losing that node is still an
+  outage.
+- **A dead cloudflared QUIC connection.** cloudflared logs
+  `failed to accept QUIC stream: timeout: no recent network activity`, then
+  re-registers the connection. On 2026-10-15 06:06Z one such connection, on
+  one of the two replicas, was enough for every client to get 502s for about
+  17 s, and they began before cloudflared declared the timeout. Most of these
+  timeouts cause no visible error; why some do is not yet known.
+
+To tell them apart, line up the burst against
+`kubectl get pods -n ingress-nginx` start times and the cloudflared logs for
+the same minute.
+
+**Measure a change to the request path at the consumer, not with a probe.** A
+probe loop cannot see a gap shorter than its interval: on 10-16 a 21 s loop
+landed either side of the 8 s burst and reported zero failures. The wrapper
+seats poll the API every few seconds and log every 5xx, so for the minutes
+around a change, run
+`grep -h -E 'HTTP 50[0-9]: commonly.me' ~/.commonly/logs/*.log` on the host
+that runs them.
+
 ### Signup or runtime auth
 
 Two uptime checks probe the paths a stranger and an agent hit first:
@@ -102,7 +134,7 @@ cluster has three pools ([ADR-015](../adr/ADR-015-spot-pool-for-stateless-worklo
 
 | pool | taint | runs |
 |---|---|---|
-| dev-pool | `pool=dev:NoSchedule` | backend, redis, LiteLLM, commonly-bot, cloudflared, the ingress controller: each with a `pool: dev` selector and the matching toleration |
+| dev-pool | `pool=dev:NoSchedule` | backend, redis, LiteLLM, commonly-bot, cloudflared, the ingress controller (2 replicas): each with a `pool: dev` selector and the matching toleration |
 | spot-pool | `workload-tier=spot:NoSchedule` | frontend, the stranger journey, the backup Jobs |
 | default-pool (e2-medium) | none | the system pods: kube-dns, metrics-server, ESO, kube-state-metrics |
 
