@@ -9,6 +9,18 @@ import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const AttributionVisit = require('../models/AttributionVisit');
+
+const { VISIT_REFS_PER_DAY, OTHER_REF } = AttributionVisit;
+
+// A ref already counted today keeps its row; a new one gets a row only while the
+// day has fewer than VISIT_REFS_PER_DAY, so a script inventing codes fills one
+// 'other' row instead of the table. Two first visits racing past the cap can add
+// one row each; the cap is a bound on growth, not an exact count.
+const bucketFor = async (day: string, ref: string): Promise<string> => {
+  if (await AttributionVisit.exists({ day, ref })) return ref;
+  const refsToday = await AttributionVisit.countDocuments({ day, ref: { $ne: OTHER_REF } });
+  return refsToday < VISIT_REFS_PER_DAY ? ref : OTHER_REF;
+};
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { cleanSignupRef } = require('../utils/signupRef');
 
@@ -27,8 +39,9 @@ router.post('/attribution/visit', visitRateLimit, async (req: any, res: any) => 
   const ref = cleanSignupRef(req.body?.ref);
   if (!ref) return res.status(204).end();
   try {
+    const day = new Date().toISOString().slice(0, 10);
     await AttributionVisit.updateOne(
-      { day: new Date().toISOString().slice(0, 10), ref },
+      { day, ref: await bucketFor(day, ref) },
       { $inc: { count: 1 } },
       { upsert: true },
     );

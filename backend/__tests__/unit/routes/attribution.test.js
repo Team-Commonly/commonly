@@ -15,7 +15,10 @@ const send = async (body) => {
   return res;
 };
 
-beforeAll(setupMongoDb);
+beforeAll(async () => {
+  await setupMongoDb();
+  await AttributionVisit.syncIndexes();
+});
 afterAll(closeMongoDb);
 afterEach(clearMongoDb);
 
@@ -28,6 +31,30 @@ it('counts each arrival for the ref on today', async () => {
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({ day: new Date().toISOString().slice(0, 10), ref: 'x', count: 2 });
   expect(Object.keys(rows[0]).sort()).toEqual(['__v', '_id', 'count', 'createdAt', 'day', 'ref', 'updatedAt']);
+});
+
+// Cofounder on #2281: the table is bounded. A day holds at most
+// VISIT_REFS_PER_DAY distinct refs; a new ref past that counts as 'other', and a
+// ref already counted that day keeps its own row.
+it('past the daily ref cap, a new ref counts as other; a known one keeps its row', async () => {
+  const day = new Date().toISOString().slice(0, 10);
+  await AttributionVisit.insertMany(Array.from({ length: AttributionVisit.VISIT_REFS_PER_DAY }, (_v, i) => ({
+    day, ref: `seed-${i}`, count: 1,
+  })));
+
+  await send({ ref: 'brand-new' });
+  await send({ ref: 'another-new' });
+  await send({ ref: 'seed-3' });
+
+  expect(await AttributionVisit.exists({ day, ref: 'brand-new' })).toBeNull();
+  expect((await AttributionVisit.findOne({ day, ref: AttributionVisit.OTHER_REF }).lean()).count).toBe(2);
+  expect((await AttributionVisit.findOne({ day, ref: 'seed-3' }).lean()).count).toBe(2);
+});
+
+it('drops a day row 180 days after it was first written', async () => {
+  const indexes = await AttributionVisit.collection.indexes();
+  const ttl = indexes.find((index) => index.key && index.key.createdAt === 1);
+  expect(ttl && ttl.expireAfterSeconds).toBe(180 * 24 * 60 * 60);
 });
 
 it('ignores a ref that is not a short plain code', async () => {
