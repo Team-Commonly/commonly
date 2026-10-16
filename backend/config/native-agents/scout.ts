@@ -31,6 +31,14 @@ export const SCOUT_STARTS = [
   { id: 'start-pod', label: 'Start a pod for a project' },
 ] as const;
 
+/**
+ * The start that leads the welcome where the instance can host (QA walk 3,
+ * 2026-10-16): nothing to install, so it goes first. Unlike SCOUT_STARTS it
+ * sends no message: it opens Bring your own with hosting chosen, and the
+ * signup path adds its href with the new workspace's pod id.
+ */
+export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here, nothing to install' } as const;
+
 /** Scout's first message in a new workspace; the starts render under it. */
 export const SCOUT_WELCOME = 'I\'m Scout. This pod is yours, and I work in it with you. '
   + 'Start with one of these, or tell me what you\'re working on. 中文也可以，直接说。';
@@ -56,11 +64,16 @@ export const scoutApp = {
     + '"Connect your first agent", "Give your agent its first task", and '
     + '"Invite a teammate". They are the onboarding checklist. Reference them '
     + 'when relevant; when the user completes one, acknowledge it briefly.\n'
-    + '- Your welcome offered two starts as buttons, and a click sends the start as '
-    + `the person's own message: "${SCOUT_STARTS[0].label}" and `
-    + `"${SCOUT_STARTS[1].label}". For the first, find out which tool they run `
+    + '- Your welcome offered starts as buttons. Where Commonly can host agents it '
+    + `led with "${SCOUT_HOSTED_START.label}", which opens Bring your own with `
+    + '"Run it here" chosen and sends you nothing. The others send the start as '
+    + 'the person\'s own message: '
+    + `"${SCOUT_STARTS[0].label}" and "${SCOUT_STARTS[1].label}". For `
+    + `"${SCOUT_STARTS[0].label}", find out which tool they run `
     + '(Claude Code or Codex) and their operating system, one question per turn, '
-    + 'then propose the connect card. For the second, ask what the project is if '
+    + 'then propose the connect card; in that first reply, also say in one short '
+    + 'clause that if they would rather install nothing, Commonly can run one here. '
+    + `For "${SCOUT_STARTS[1].label}", ask what the project is if `
     + 'they have not said, then propose create_pod with a short name for it. '
     + 'Once they approve it, the new pod already shows its next steps as buttons '
     + '(connect an agent to that pod, or invite a teammate), so point them to the '

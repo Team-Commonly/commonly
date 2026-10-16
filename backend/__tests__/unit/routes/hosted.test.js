@@ -281,6 +281,8 @@ describe('/api/hosted', () => {
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'Scout', instanceId: 'Demo' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ provisioned: true, agentName: 'scout', instanceId: 'demo', podId: 'pod-1' });
+    // A Durable Object worker is not live until it polls, so provision does not say ready.
+    expect(res.body.ready).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain('cm_agent_secret');
     expect(mockUserFindOne).toHaveBeenCalledWith({ username: 'scout-demo', isBot: true });
     expect(mockIssueToken).toHaveBeenCalledWith(
@@ -469,7 +471,8 @@ describe('/api/hosted on the native engine', () => {
     mockFindOne.mockResolvedValue(installation);
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ provisioned: true, engine: 'native', agentName: 'scout' });
+    // Live from provision: the page shows it running without a status round trip.
+    expect(res.body).toMatchObject({ provisioned: true, ready: true, engine: 'native', agentName: 'scout' });
     expect(mockRevokeRuntimeTokens).toHaveBeenCalledTimes(1);
     expect(mockIssueToken).not.toHaveBeenCalled();
     expect(mockHosted.provisionAgent).not.toHaveBeenCalled();
