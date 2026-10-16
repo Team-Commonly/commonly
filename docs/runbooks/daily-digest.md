@@ -11,7 +11,10 @@ digest off.
 
 Sending is controlled by one `system_settings` row. A missing row means
 sending is **on**. Flipping it needs no deploy and no restart, and survives
-later deploys. Generation still runs; only the send stops.
+later deploys. Generation still runs; only the send stops. The row is read
+before the run and again before each recipient, so flipping it also stops a
+run that is already sending: whoever was already emailed stays emailed, and
+nobody after the flip is.
 
 ```bash
 # OFF
@@ -27,8 +30,10 @@ m.connect(process.env.MONGO_URI).then(async () => {
 ```
 
 To turn it back on, run the same command with `enabled: true`, or delete the
-row. If the row can't be read, nothing is sent: the switch fails closed. The
-run logs `Digest email delivery skipped: switched off (digest.sending).`
+row. If the row can't be read, nothing is sent: the switch fails closed. A run
+logs `Digest email delivery skipped: switched off (digest.sending).` when it
+starts switched off, and `Digest email delivery stopped mid-run: ...` when the
+switch is flipped while it's sending.
 
 ## Before a change to digest content ships
 
