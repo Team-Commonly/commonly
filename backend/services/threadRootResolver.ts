@@ -38,19 +38,16 @@ export class ThreadRootError extends Error {
 }
 
 /**
- * Returns the thread root to store, or null for a message that starts no
- * thread. Throws ThreadRootError for caller-fixable problems.
- *
- * Validation is deliberately about the ROOT, not the poster: whether they may
- * write here is the pod membership question, already answered upstream.
- */
-/**
  * A reply's target must be a message in the reply's own pod. Nothing checked
  * it when no threadRootId was sent: a reply in one pod could name a message in
  * another, join that pod's thread, and show that message's text and author as
  * its preview to everyone who can read the first pod (Cofounder's security
  * read, 2026-10-16, TASK-278). Every write path calls this before it writes,
  * and the INSERT in models/pg/Message re-checks it.
+ *
+ * A missing target and one in another pod answer with the same code, so the
+ * reply cannot be used to learn which message ids exist elsewhere. Which one
+ * it was goes to the log.
  */
 export async function assertReplyTargetInPod({
   podId,
@@ -65,14 +62,20 @@ export async function assertReplyTargetInPod({
     throw new ThreadRootError('reply_target_invalid', 'replyToMessageId must be a positive integer');
   }
   const { rows } = await (pool as PgPool).query('SELECT pod_id FROM messages WHERE id = $1::int', [parentId]);
-  if (!rows[0]) {
-    throw new ThreadRootError('reply_target_not_found', `message ${parentId} does not exist`);
-  }
-  if (String(rows[0].pod_id) !== String(podId)) {
-    throw new ThreadRootError('reply_target_wrong_pod', `message ${parentId} is in another pod`);
+  const reason = !rows[0] ? 'not found' : String(rows[0].pod_id) !== String(podId) ? 'in another pod' : null;
+  if (reason) {
+    console.warn('[thread-root] reply target refused:', parentId, reason);
+    throw new ThreadRootError('reply_target_unavailable', 'the message being replied to is not in this pod');
   }
 }
 
+/**
+ * Returns the thread root to store, or null for a message that starts no
+ * thread. Throws ThreadRootError for caller-fixable problems.
+ *
+ * Validation is deliberately about the ROOT, not the poster: whether they may
+ * write here is the pod membership question, already answered upstream.
+ */
 export async function resolveThreadRoot({
   podId,
   replyToMessageId,

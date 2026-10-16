@@ -239,22 +239,24 @@ describe('a reply must target a message in its own pod', () => {
   });
 
   test.each([
-    ['in another pod', 300, 'reply_target_wrong_pod'],
-    ['that does not exist', 999, 'reply_target_not_found'],
+    ['in another pod', 300, 'reply_target_unavailable'],
+    // The same code as another pod's message: a reply must not reveal which
+    // ids exist elsewhere.
+    ['that does not exist', 999, 'reply_target_unavailable'],
     ['that is not an id', 'abc', 'reply_target_invalid'],
   ])('a target %s is refused with %s', async (_label, replyToMessageId, code) => {
     expect(await codeOf(assertReplyTargetInPod({ podId: POD, replyToMessageId }))).toBe(code);
   });
 
   test('the resolver no longer derives a root from another pod\'s message', async () => {
-    expect(await codeOf(resolveThreadRoot({ podId: POD, replyToMessageId: 300 }))).toBe('reply_target_wrong_pod');
+    expect(await codeOf(resolveThreadRoot({ podId: POD, replyToMessageId: 300 }))).toBe('reply_target_unavailable');
   });
 
   test('the INSERT refuses a cross-pod reply, so a path that skips the check writes nothing', async () => {
     const before = (await mockPool.query("SELECT count(*)::int AS n FROM messages WHERE content = 'cross-pod-reply'")).rows[0].n;
     const err = await PGMessageTop.create(POD, 'u', 'cross-pod-reply', 'text', '300').catch((e) => e);
     expect(err).toBeInstanceOf(ThreadRootError);
-    expect(err.code).toBe('reply_target_wrong_pod');
+    expect(err.code).toBe('reply_target_unavailable');
     const after = (await mockPool.query("SELECT count(*)::int AS n FROM messages WHERE content = 'cross-pod-reply'")).rows[0].n;
     expect(after).toBe(before);
   });

@@ -309,12 +309,12 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
   // the write, and the refusal propagates instead of falling into Mongo.
   it('refuses a reply whose target is in another pod, before anything is written', async () => {
     threadRootResolver.assertReplyTargetInPod.mockRejectedValueOnce(
-      new threadRootResolver.ThreadRootError('message 500 is in another pod', 'reply_target_wrong_pod'),
+      new threadRootResolver.ThreadRootError('the message being replied to is not in this pod', 'reply_target_unavailable'),
     );
 
     await expect(AgentMessageService.postMessage({
       agentName: 'sprint-review', instanceId: 'default', podId: POD, content: 'a reply', replyToMessageId: '500',
-    })).rejects.toMatchObject({ name: 'ThreadRootError', code: 'reply_target_wrong_pod' });
+    })).rejects.toMatchObject({ name: 'ThreadRootError', code: 'reply_target_unavailable' });
 
     expect(threadRootResolver.assertReplyTargetInPod).toHaveBeenCalledWith({ podId: POD, replyToMessageId: '500' });
     expect(PGMessage.create).not.toHaveBeenCalled();

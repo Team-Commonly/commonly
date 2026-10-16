@@ -44,6 +44,7 @@ let pool;
 // has an FK to it. The first run of this suite failed on exactly that, which
 // is the point: a regex over the SQL cannot discover a foreign key.
 const POD = 'aaaaaaaaaaaaaaaaaaaaaa01';
+const OTHER_POD = 'aaaaaaaaaaaaaaaaaaaaaa02';
 const USER = 'bbbbbbbbbbbbbbbbbbbbbb01';
 
 const connect = () => new Pool({
@@ -59,10 +60,13 @@ const seed = async () => {
   await pool.query(
     `INSERT INTO users (_id, username) VALUES ($1,'tester') ON CONFLICT (_id) DO NOTHING`, [USER],
   );
-  await pool.query(
-    `INSERT INTO pods (id, name, type, created_by) VALUES ($1,'threading','chat',$2)
-     ON CONFLICT (id) DO NOTHING`, [POD, USER],
-  );
+  for (const podId of [POD, OTHER_POD]) {
+    // eslint-disable-next-line no-await-in-loop
+    await pool.query(
+      `INSERT INTO pods (id, name, type, created_by) VALUES ($1,'threading','chat',$2)
+       ON CONFLICT (id) DO NOTHING`, [podId, USER],
+    );
+  }
 };
 
 const insert = (content, replyTo = null) => PGMessage.create(POD, USER, content, 'text', replyTo);
@@ -83,7 +87,7 @@ d('thread_root_id derivation, executed', () => {
     if (pool) await pool.end();
     await closeMongoDb();
   });
-  beforeEach(async () => { await pool.query('DELETE FROM messages WHERE pod_id = $1', [POD]); });
+  beforeEach(async () => { await pool.query('DELETE FROM messages WHERE pod_id = ANY($1)', [[POD, OTHER_POD]]); });
 
   test('a root has no thread_root_id — NULL, not self-referential', async () => {
     const root = await insert('the root');
@@ -173,6 +177,44 @@ d('thread_root_id derivation, executed', () => {
     expect(ra.thread_root_id).not.toBe(rb.thread_root_id);
   });
 
+  // TASK-278, executed (Cofounder's HOLD on #2272): the INSERT's same-pod
+  // guard first shipped as `$1 IN (SELECT …)`, which pg-mem accepted and real
+  // Postgres refused for EVERY write with 42P08 (inconsistent types deduced
+  // for parameter $1). These cases are the ones that would have shown it, and
+  // they only mean something here.
+  describe('the INSERT writes a reply only when its target is in the pod', () => {
+    const countIn = async (podId) => Number((await pool.query(
+      'SELECT count(*)::int AS n FROM messages WHERE pod_id = $1', [podId],
+    )).rows[0].n);
+
+    test('a plain post is written', async () => {
+      const row = await insert('a plain post');
+      expect(row.id).toBeTruthy();
+      expect(await countIn(POD)).toBe(1);
+    });
+
+    test('a same-pod reply is written and derives its root', async () => {
+      const root = await insert('a root');
+      const reply = await insert('a reply', root.id);
+      expect(reply.thread_root_id).toBe(root.id);
+      expect(await countIn(POD)).toBe(2);
+    });
+
+    test('a cross-pod reply writes nothing and is refused', async () => {
+      const elsewhere = await PGMessage.create(OTHER_POD, USER, 'elsewhere', 'text', null);
+      await expect(insert('a cross-pod reply', elsewhere.id))
+        .rejects.toMatchObject({ name: 'ThreadRootError', code: 'reply_target_unavailable' });
+      expect(await countIn(POD)).toBe(0);
+    });
+
+    test('a root named in another pod writes nothing either', async () => {
+      const elsewhere = await PGMessage.create(OTHER_POD, USER, 'elsewhere', 'text', null);
+      await expect(PGMessage.create(POD, USER, 'aimed elsewhere', 'text', null, null, elsewhere.id))
+        .rejects.toMatchObject({ name: 'ThreadRootError', code: 'reply_target_unavailable' });
+      expect(await countIn(POD)).toBe(0);
+    });
+  });
+
   test('a reply to a missing parent is REJECTED, not silently rooted at NULL', async () => {
     // Corrects the backfill script's own comment. It says orphaned chains
     // "stay NULL by design", implying a bad edge can be written and later
@@ -189,8 +231,14 @@ d('thread_root_id derivation, executed', () => {
     // Must fail for the RIGHT reason. The suite's first run "passed" this
     // assertion because pod_id's FK rejected every insert — a control that
     // shares the failure mode proves nothing.
+    //
+    // Since TASK-278 the INSERT's same-pod guard refuses it first, so the FK
+    // is now the second line rather than the first. Same outcome: no row.
     await expect(insert('reply to nothing', 999999))
-      .rejects.toThrow(/messages_reply_to_message_id_fkey|violates foreign key/);
+      .rejects.toMatchObject({ name: 'ThreadRootError', code: 'reply_target_unavailable' });
+    expect(Number((await pool.query(
+      "SELECT count(*)::int AS n FROM messages WHERE content = 'reply to nothing'",
+    )).rows[0].n)).toBe(0);
     // Positive control: the same call with a REAL parent succeeds, so the
     // rejection above is about the missing parent and nothing else.
     const root = await insert('a real root');

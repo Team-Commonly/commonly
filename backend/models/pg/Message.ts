@@ -148,8 +148,10 @@ class Message {
                   FROM messages parent
                  WHERE parent.id = $5::int)
              )::int
-       WHERE $5::int IS NULL
-          OR $1 IN (SELECT target.pod_id FROM messages target WHERE target.id = $5::int)
+       WHERE ($5::int IS NULL
+              OR $1::varchar IN (SELECT target.pod_id FROM messages target WHERE target.id = $5::int))
+         AND ($7::int IS NULL
+              OR $1::varchar IN (SELECT named.pod_id FROM messages named WHERE named.id = $7::int))
       RETURNING *
     `;
     try {
@@ -158,18 +160,18 @@ class Message {
         payload == null ? null : JSON.stringify(payload),
         resolvedThreadRootId ?? null,
       ]);
+      // No row: the reply target or the named root is not in this pod
+      // (services/threadRootResolver). Callers check first; this is the
+      // backstop for a path that does not, and for a message deleted in between.
+      if (!result.rows[0]) {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { ThreadRootError } = require('../../services/threadRootResolver');
+        throw new ThreadRootError('reply_target_unavailable', 'the message being replied to is not in this pod');
+      }
       await (pool as PgPool).query(
         'UPDATE pods SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',
         [podId],
       );
-      // No row: the reply target is not in this pod (services/threadRootResolver
-      // assertReplyTargetInPod). Callers check first; this is the backstop for
-      // a path that does not, and for a target deleted in between.
-      if (!result.rows[0]) {
-        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-        const { ThreadRootError } = require('../../services/threadRootResolver');
-        throw new ThreadRootError('reply_target_wrong_pod', `message ${replyToMessageId} is not in this pod`);
-      }
       const row = result.rows[0] as unknown as MessageRow;
       // eslint-disable-next-line global-require
       const {

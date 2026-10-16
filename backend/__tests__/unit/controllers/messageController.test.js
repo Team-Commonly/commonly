@@ -171,8 +171,8 @@ describe('messageController', () => {
     // reply's pod, or this pod's preview shows another pod's message.
     it('refuses a reply whose target is in another pod, before anything is written', async () => {
       Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
-      const err = Object.assign(new Error('message 500 is in another pod'), {
-        name: 'ThreadRootError', code: 'reply_target_wrong_pod',
+      const err = Object.assign(new Error('the message being replied to is not in this pod'), {
+        name: 'ThreadRootError', code: 'reply_target_unavailable',
       });
       assertReplyTargetInPod.mockRejectedValueOnce(err);
       const req = { params: { podId: 'p1' }, body: { content: 'a reply', replyToMessageId: '500' }, user: { id: 'u1' } };
@@ -182,7 +182,9 @@ describe('messageController', () => {
 
       expect(assertReplyTargetInPod).toHaveBeenCalledWith({ podId: 'p1', replyToMessageId: '500' });
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({ error: 'message 500 is in another pod', code: 'reply_target_wrong_pod' });
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'the message being replied to is not in this pod', code: 'reply_target_unavailable',
+      });
       expect(PGMessage.create).not.toHaveBeenCalled();
       expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
     });
