@@ -4,6 +4,29 @@ const Summary = require('../models/Summary');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const { sendEmail } = require('./emailService');
+// eslint-disable-next-line global-require
+const SystemSetting = require('../models/SystemSetting');
+
+/**
+ * The switch that stops digest SENDING in seconds, with no deploy and no
+ * restart: a system_settings row { key: 'digest.sending', value: { enabled:
+ * false } }. No row means on. Generation still runs; only the send stops.
+ * docs/runbooks/daily-digest.md has the one-line flip. Earned 2026-10-16,
+ * when the only fallback for a bad run was "land a fix before 06:00Z".
+ */
+export const DIGEST_SENDING_KEY = 'digest.sending';
+
+// Unreadable means do not send: for email to people, the switch fails closed.
+const digestSendingEnabled = async (): Promise<boolean> => {
+  try {
+    const row = await SystemSetting.findOne({ key: DIGEST_SENDING_KEY })
+      .lean() as { value?: { enabled?: unknown } } | null;
+    return row?.value?.enabled !== false;
+  } catch (error) {
+    console.warn('Digest email delivery skipped: the sending switch could not be read:', (error as Error).message);
+    return false;
+  }
+};
 
 interface DigestRunResult {
   success?: boolean;
@@ -38,6 +61,7 @@ export interface DigestEmailResult {
   skipped: number;
   failed: number;
   unconfigured: boolean;
+  disabled: boolean;
 }
 
 const primaryUrl = (raw: string | undefined, fallback: string): string => {
@@ -103,7 +127,14 @@ export class DigestEmailService {
       skipped: 0,
       failed: 0,
       unconfigured: false,
+      disabled: false,
     };
+
+    if (!await digestSendingEnabled()) {
+      console.warn(`Digest email delivery skipped: switched off (${DIGEST_SENDING_KEY}).`);
+      result.disabled = true;
+      return result;
+    }
 
     if (!process.env.SMTP2GO_API_KEY || !process.env.SMTP2GO_FROM_EMAIL) {
       console.warn('Digest email delivery skipped: SMTP2GO is not configured.');

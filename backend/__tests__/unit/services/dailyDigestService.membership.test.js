@@ -155,6 +155,39 @@ test("Scout's welcome is not 'your agents' work'; the person's own agent named S
   spy.mockRestore();
 });
 
+// Live dry run, 2026-10-16: the only email due was a stranger's seeded
+// onboarding checklist, created in the window and never touched.
+test('a task created and never touched is not news; one that moved is', async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    board: [
+      {
+        taskId: 'TASK-002',
+        title: 'Give your agent its first task',
+        status: 'pending',
+        podId: 'p1',
+        podName: 'My Workspace',
+        lastUpdate: null,
+      },
+      {
+        taskId: 'TASK-8', title: 'Draft the launch note', status: 'pending', podId: 'p1', podName: 'My Workspace',
+        lastUpdate: { text: 'Outline posted', author: 'rivet' },
+      },
+      {
+        taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'My Workspace', lastUpdate: null,
+      },
+    ],
+  }));
+
+  const digest = await new DailyDigestService().generateUserDailyDigest(member._id, { requireAway: true });
+
+  expect(digest.content.split('\n')).toEqual([
+    '- TASK-8 Draft the launch note is pending (My Workspace)',
+    '- TASK-9 Ship it is done (My Workspace)',
+  ]);
+  spy.mockRestore();
+});
+
 // sprint-review on #2267: the feed builds an update's podId from a pod lookup
 // (activity.pod?.id || null). A line with no pod has unknown provenance and
 // could be a public pod's, so it is withheld rather than mailed.

@@ -44,7 +44,9 @@ interface RecapLike {
     messageCount?: number;
     updates?: Array<{ podId?: string | null; podName?: string; content?: string }>;
   }>;
-  board?: Array<{ taskId?: string; title?: string; status?: string; podId?: string; podName?: string }>;
+  board?: Array<{
+    taskId?: string; title?: string; status?: string; podId?: string; podName?: string; lastUpdate?: unknown;
+  }>;
 }
 
 /** Someone active this recently has seen it in the app; the email would repeat it. */
@@ -116,7 +118,15 @@ export class DailyDigestService {
         const more = updates.length > 1 ? ` (+${updates.length - 1} more)` : '';
         lines.push(`${name} in ${oneLine(latest.podName) || 'a pod'}: ${oneLine(latest.content)}${more}`);
       });
-    (recap.board || []).filter((task) => inPrivatePod(task.podId)).slice(0, MAX_BOARD).forEach((task) => {
+    // A board line says a task moved. A row created in the window and never
+    // touched (pending, no update note) has not: the dry run on 2026-10-16
+    // found the only email due was a stranger's seeded onboarding checklist,
+    // three "is pending" rows no agent had done anything to.
+    const moved = (task: { status?: string; lastUpdate?: unknown }) => (
+      String(task.status || '') !== 'pending' || Boolean(task.lastUpdate)
+    );
+    const boardRows = (recap.board || []).filter((task) => inPrivatePod(task.podId) && moved(task));
+    boardRows.slice(0, MAX_BOARD).forEach((task) => {
       const title = oneLine(task.title);
       if (!title) return;
       const id = task.taskId ? `${task.taskId} ` : '';
