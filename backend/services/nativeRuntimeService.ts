@@ -36,7 +36,7 @@ import { podIsBridged } from './outsiderGrantPodEligibility';
 import { isSandboxConfigured, TurnSandbox } from './turnSandboxService';
 import { isSearchConfigured, searchWeb } from './webSearchService';
 import { getFromPublicAddress, isOutboundUrlRefused } from './outboundUrlGuard';
-import { addressWasGiven } from './webAddressProvenance';
+import { GivenAddresses } from './webAddressProvenance';
 import { untrustedConnectorMarker } from './brokerResultMarker';
 import {
   engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline, hostedNativeRunConfig, hostedRunsNative,
@@ -413,6 +413,9 @@ const IN_POD_NATIVE_TOOLS = new Set(['commonly_read_context', 'commonly_post_mes
 const WEB_LOOKUP_TOOLS: ReadonlySet<string> = new Set(['commonly_web_search', 'commonly_fetch_url']);
 const WEB_TAINTED_TOOLS: ReadonlySet<string> = new Set([...IN_POD_NATIVE_TOOLS, ...WEB_LOOKUP_TOOLS]);
 const MAX_WEB_SEARCHES_PER_TURN = 3;
+// Load-bearing beyond cost: a page can offer many addresses, and which one a
+// steered model opens leaks about log2(N) bits a fetch (webAddressProvenance).
+// This cap is what bounds that channel.
 const MAX_WEB_FETCHES_PER_TURN = 3;
 // What a page puts in front of the model. The guard reads up to 1 MB; a turn
 // re-sends its context on every model round, so the model sees the start.
@@ -466,13 +469,16 @@ interface DispatchContext {
   /** Page reads this turn has sent (TASK-267b). */
   webFetches?: number;
   /**
-   * Text the turn was given, never written by the model: the prompt, the
-   * message it answers, other authors' pod messages, search results and pages
-   * read. commonly_fetch_url opens only an address written here.
+   * The addresses written in text the turn was given, never by the model: the
+   * prompt, the message it answers, other authors' pod messages, search
+   * results and pages read. commonly_fetch_url opens only one of these.
    */
-  givenText?: string[];
-  /** The author names the agent's own pod messages carry, lowercased. */
-  ownAuthorNames?: ReadonlySet<string>;
+  givenAddresses: GivenAddresses;
+  /**
+   * The author names the agent's own pod messages carry, lowercased. Required:
+   * without it, nothing would be recognised as the agent's own words.
+   */
+  ownAuthorNames: ReadonlySet<string>;
 }
 
 // The names the agent's own pod messages carry: the chat mirror shows a bot's
@@ -491,9 +497,9 @@ export const ownAuthorNamesFor = (agentName: string, instanceId: string, display
 
 const byOtherAuthors = (
   messages: Array<{ author?: string; content?: string }>,
-  ownNames: ReadonlySet<string> | undefined,
+  ownNames: ReadonlySet<string>,
 ): string[] => messages
-  .filter((message) => !(ownNames || new Set()).has(String(message.author || '').trim().toLowerCase()))
+  .filter((message) => !ownNames.has(String(message.author || '').trim().toLowerCase()))
   .map((message) => String(message.content || ''));
 
 interface DispatchResult {
@@ -536,7 +542,7 @@ async function dispatchTool(
         const recent = await fetchRecentPodMessages(String(ctx.podId), limit);
         const messages = recent.map(({ author, content, createdAt }) => ({ author, content, createdAt }));
         // Other authors' messages may give commonly_fetch_url an address.
-        ctx.givenText = [...(ctx.givenText || []), ...byOtherAuthors(recent, ctx.ownAuthorNames)];
+        byOtherAuthors(recent, ctx.ownAuthorNames).forEach((text) => ctx.givenAddresses.add(text));
         return { content: { messages } };
       }
 
@@ -727,7 +733,7 @@ async function dispatchTool(
         // Taint before the results reach the model: from here the turn narrows.
         ctx.webTainted = true;
         // A result's address may be read next.
-        ctx.givenText = [...(ctx.givenText || []), JSON.stringify(outcome.results)];
+        ctx.givenAddresses.add(JSON.stringify(outcome.results));
         return {
           content: { results: outcome.results },
           untrustedSourceTitle: 'a web search',
@@ -747,7 +753,7 @@ async function dispatchTool(
         }
         const url = String(args.url ?? '').trim();
         // Checked before anything is sent: an address the model wrote is never requested.
-        if (!addressWasGiven(url, ctx.givenText || [])) return refuse(WEB_FETCH_NOT_GIVEN_REFUSAL);
+        if (!ctx.givenAddresses.has(url)) return refuse(WEB_FETCH_NOT_GIVEN_REFUSAL);
         ctx.webFetches = (ctx.webFetches || 0) + 1;
         // A given http or scheme-less link is opened over https; the guard refuses anything else.
         const httpsUrl = /^https?:\/\//i.test(url) ? url.replace(/^http:/i, 'https:') : `https://${url}`;
@@ -764,7 +770,7 @@ async function dispatchTool(
         const cut = page.text.length > MAX_FETCHED_TEXT_CHARS;
         const text = cut ? page.text.slice(0, MAX_FETCHED_TEXT_CHARS) : page.text;
         // A link on this page may be read next.
-        ctx.givenText = [...(ctx.givenText || []), text];
+        ctx.givenAddresses.add(text);
         const truncated = page.truncated || cut;
         return {
           content: {
@@ -1358,6 +1364,7 @@ export async function runAgent(
     displayName,
     installationConfig: cfg,
     ownAuthorNames: ownAuthorNamesFor(agentName, instanceId, displayName),
+    givenAddresses: new GivenAddresses(),
   };
 
   // Read whenever a web lookup could matter: before each model call of a turn
@@ -1399,7 +1406,8 @@ export async function runAgent(
   const model = String(cfg.model || DEFAULT_MODEL);
   // TASK-267b: what commonly_fetch_url may open starts as the prompt and the
   // message this turn answers, before any recent messages are added.
-  const givenText = [systemPrompt, userMessage];
+  dispatchCtx.givenAddresses.add(systemPrompt);
+  dispatchCtx.givenAddresses.add(userMessage);
 
   const recentCount = Math.min(Math.max(Number(cfg.recentMessages) || 0, 0), RECENT_MESSAGES_MAX);
   if (recentCount > 0) {
@@ -1411,7 +1419,7 @@ export async function runAgent(
       if (block) userMessage = `${block}\n\n${userMessage}`;
       // Other authors' messages only: the agent's own earlier posts are its
       // own words, and an address it wrote must not become one it may open.
-      givenText.push(...byOtherAuthors(recent, dispatchCtx.ownAuthorNames));
+      byOtherAuthors(recent, dispatchCtx.ownAuthorNames).forEach((text) => dispatchCtx.givenAddresses.add(text));
     } catch (error) {
       console.warn(
         '[native-runtime] recent pod messages unavailable; turn continues without them:',
@@ -1424,7 +1432,6 @@ export async function runAgent(
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userMessage },
   ];
-  dispatchCtx.givenText = givenText;
 
   run.status = 'running';
   await run.save();
@@ -1753,6 +1760,7 @@ export async function runAgent(
     run.webSearches = dispatchCtx.webSearches;
   }
   // TASK-267b: page reads cost nothing per request; counted for the record.
+  // The spend alarm does not read this field.
   if (dispatchCtx.webFetches) {
     run.webFetches = dispatchCtx.webFetches;
   }

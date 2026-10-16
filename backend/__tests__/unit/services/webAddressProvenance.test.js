@@ -12,7 +12,9 @@
  *  - finding addresses is linear in the text
  */
 
-const { addressKey, addressesIn, addressWasGiven } = require('../../../services/webAddressProvenance');
+const {
+  addressKey, addressesIn, addressWasGiven, GivenAddresses,
+} = require('../../../services/webAddressProvenance');
 
 describe('webAddressProvenance', () => {
   describe('addressWasGiven', () => {
@@ -79,5 +81,53 @@ describe('webAddressProvenance', () => {
     const started = Date.now();
     addressesIn(hostile);
     expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  // sprint-review on #2249: an anchored `+$` trim backtracks quadratically on
+  // a long run that is NOT at the end (728 ms for one 40k token, 7.2 s a turn
+  // at the real caps). The trims must stay linear and keep their meaning.
+  describe('trims are linear and keep their meaning', () => {
+    test.each([
+      ['punctuation', `a.${'!'.repeat(40_000)}x`],
+      ['slashes', `example.com/${'/'.repeat(40_000)}x`],
+      ['mixed', `example.com/${'.,;/'.repeat(10_000)}x`],
+    ])('a 40k non-terminal run of %s', (_label, token) => {
+      const started = process.hrtime.bigint();
+      addressKey(token);
+      addressesIn(`see ${token} and ${token}`);
+      expect(Number(process.hrtime.bigint() - started) / 1e6).toBeLessThan(50);
+    });
+
+    test('a long trailing run of punctuation or slashes still trims away', () => {
+      expect(addressWasGiven('https://example.com/a', [`at https://example.com/a${'.'.repeat(20)}`])).toBe(true);
+      expect(addressWasGiven('https://example.com/a', [`https://example.com/a${'/'.repeat(20)}`])).toBe(true);
+      expect(addressKey(`https://example.com/a${'!?.'.repeat(10)}`)).toBe('example.com/a');
+    });
+
+    test('a host longer than a DNS name is not an address', () => {
+      expect(addressKey(`${'a'.repeat(250)}.com/x`)).toBeNull();
+      expect(addressKey(`${'a'.repeat(60)}.com/x`)).toBe(`${'a'.repeat(60)}.com/x`);
+    });
+  });
+
+  describe('GivenAddresses', () => {
+    test('opens only what was added, in the same comparable form', () => {
+      const given = new GivenAddresses();
+      given.add('Read github.com/acme/widget please');
+
+      expect(given.has('https://github.com/acme/widget/')).toBe(true);
+      expect(given.has('https://github.com/acme/widget?d=x')).toBe(false);
+      expect(given.has('')).toBe(false);
+    });
+
+    test('each text is scanned once: refused attempts against three hostile pages cost no rescan', () => {
+      const given = new GivenAddresses();
+      const page = Array.from({ length: 400 }, (_, i) => `https://h${i}.example/p${'!'.repeat(50)}x`).join(' ');
+      [page, page, page].forEach((text) => given.add(text));
+
+      const started = process.hrtime.bigint();
+      for (let i = 0; i < 1000; i += 1) given.has(`https://attacker.example/c?d=${i}`);
+      expect(Number(process.hrtime.bigint() - started) / 1e6).toBeLessThan(50);
+    });
   });
 });
