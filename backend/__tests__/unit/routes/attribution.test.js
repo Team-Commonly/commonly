@@ -1,6 +1,8 @@
 // POST /api/attribution/visit counts one first-touch arrival per ref per UTC
 // day, keeps nothing about the visitor, and ignores anything that is not a
 // short plain code.
+const express = require('express');
+const request = require('supertest');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 const AttributionVisit = require('../../../models/AttributionVisit');
 const router = require('../../../routes/attribution');
@@ -55,6 +57,24 @@ it('drops a day row 180 days after it was first written', async () => {
   const indexes = await AttributionVisit.collection.indexes();
   const ttl = indexes.find((index) => index.key && index.key.createdAt === 1);
   expect(ttl && ttl.expireAfterSeconds).toBe(180 * 24 * 60 * 60);
+});
+
+// sprint-review on #2281 (S8): the limiter is the only bound on how fast a
+// caller writes, and deleting it left every other test green.
+it('the endpoint is rate-limited: the eleventh visit in a minute is refused', async () => {
+  const app = express();
+  app.use(express.json());
+  app.use('/api', router);
+  const codes = [];
+  for (let i = 0; i < 11; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const res = await request(app).post('/api/attribution/visit')
+      .set('cf-connecting-ip', '203.0.113.7')
+      .send({ ref: 'x' });
+    codes.push(res.status);
+  }
+  expect(codes.slice(0, 10)).toEqual(Array(10).fill(204));
+  expect(codes[10]).toBe(429);
 });
 
 it('ignores a ref that is not a short plain code', async () => {

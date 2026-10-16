@@ -10,11 +10,14 @@
  * just means "no ref".
  */
 const KEY = 'commonly.firstTouchRef';
+// The same rule as backend/utils/signupRef.ts (SIGNUP_REF_PATTERN,
+// RESERVED_REFS); change both together. The backend is the gate.
 const REF_PATTERN = /^[a-z0-9_-]{1,32}$/;
+const RESERVED_REFS = new Set(['__proto__', 'constructor', 'prototype']);
 
 export const cleanRef = (raw: unknown): string | null => {
   const ref = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
-  return REF_PATTERN.test(ref) ? ref : null;
+  return REF_PATTERN.test(ref) && !RESERVED_REFS.has(ref) ? ref : null;
 };
 
 /** Keeps the first valid ?ref= this browser arrives with. Returns it only when this call kept it. */
