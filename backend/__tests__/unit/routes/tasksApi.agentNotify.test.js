@@ -36,9 +36,17 @@ jest.mock('../../../models/Pod', () => ({
 }));
 
 const mockFindOneAndUpdate = jest.fn();
+// `findOne` carries the lease-guard read now (AX 61 / TASK-138), so it has to
+// answer the query chain the route actually uses. `null` is the honest answer for
+// this suite's fixtures: there is no row to inspect, so the guard lets the write
+// through exactly as it did before it existed. A bare `jest.fn()` returned
+// `undefined` and turned an agent PATCH into a 500.
+const mockFindOne = jest.fn(() => ({
+  select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(null) })),
+}));
 jest.mock('../../../models/Task', () => ({
   findOneAndUpdate: (...args) => mockFindOneAndUpdate(...args),
-  findOne: jest.fn(),
+  findOne: (...args) => mockFindOne(...args),
   find: jest.fn(),
 }));
 
