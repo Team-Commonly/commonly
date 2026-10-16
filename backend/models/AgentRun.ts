@@ -83,6 +83,8 @@ export interface IAgentRun extends Document {
   sandboxSeconds?: number;
   /** Web search requests the turn sent (TASK-267a); absent when it searched nothing. */
   webSearches?: number;
+  /** Web pages the turn requested (TASK-267b); absent when it read none. */
+  webFetches?: number;
   startedAt: Date;
   completedAt?: Date;
   errorKind?: AgentRunErrorKind;
@@ -140,6 +142,7 @@ const AgentRunSchema = new Schema<IAgentRun>(
     totalTokens: { type: Number, default: 0 },
     sandboxSeconds: { type: Number },
     webSearches: { type: Number },
+    webFetches: { type: Number },
     startedAt: { type: Date, default: Date.now },
     completedAt: { type: Date },
     errorKind: {
