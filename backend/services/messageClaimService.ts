@@ -20,6 +20,12 @@
  * The kernel NEVER refuses an unclaimed post (D3). This service only answers
  * "who holds the lease?" — enforcement is the driver's job, and only for
  * drivers we ship. "Forgot to claim" must not become "agent is silent".
+ *
+ * The table is not a history. A completed claim's row is deleted on release;
+ * a declined or refused one, and a lapsed lease, about an hour later
+ * (HANDOFF_HISTORY_RETENTION_SECONDS, pruned on claim traffic). Who claimed a
+ * message cannot be read back from here after the fact; the agent events and
+ * runtime logs are the record.
  */
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
