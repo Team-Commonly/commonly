@@ -365,6 +365,29 @@ describe('the digest hour', () => {
   });
 });
 
+// Cofounder on #2286: two real hourly runs within 20 hours never digest the
+// same person twice, here when their zone is captured between the runs and
+// makes the second run their hour too.
+test('two scheduled runs within 20 hours never digest the same person twice', async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    board: [{
+      taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API',
+    }],
+  }));
+  const service = new DailyDigestService();
+  const sixUtc = digestHourUtc();
+  const eightUtc = new Date(sixUtc.getTime() + 2 * 60 * 60 * 1000);
+
+  await service.generateAllDailyDigests({ at: sixUtc });
+  await User.updateOne({ _id: member._id }, { $set: { timezone: 'UTC' } });
+  expect(DailyDigestService.dueAt({ timezone: 'UTC' }, eightUtc)).toBe(true);
+  await service.generateAllDailyDigests({ at: eightUtc });
+
+  expect(await Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) })).toBe(1);
+  spy.mockRestore();
+});
+
 test('scheduler includes a member with recent pod work even after seven days away', async () => {
   const member = await person(new Date(Date.now() - 10 * 86400000));
   const creator = await person(new Date(Date.now() - 10 * 86400000));
