@@ -6290,6 +6290,17 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-muted);
   font-size: 14px;
 }
+.v2-root button.v2-byo__link {
+  /* A text action beside or under a line of copy ("Change", "Other ways to
+     connect"): the v2-team__link shape, so it reads as a link, not a button. */
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 13px/20px var(--v2-font);
+  cursor: pointer;
+  align-self: flex-start;
+}
 .v2-root button.v2-byo__secondary {
   align-self: flex-start;
   padding: 10px 18px;

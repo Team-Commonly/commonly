@@ -1457,6 +1457,14 @@
       "after": "Then reload this page — an “On my computer” option appears, and adding agents to that machine never needs a terminal again.",
       "copy": "Copy",
       "copied": "Copied"
+    },
+    "compact": {
+      "title": "Run an agent here",
+      "lead": "Commonly runs it for you. Nothing to install, and it is live a few seconds after you press the button.",
+      "joins": "It joins {{pod}} as {{name}}.",
+      "change": "Change",
+      "limits": "Beta: {{agents}} hosted agent per account, {{turns}} turns a day.",
+      "otherWays": "Other ways to connect"
     }
   },
   "compare": {

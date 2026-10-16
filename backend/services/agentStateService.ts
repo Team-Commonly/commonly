@@ -49,6 +49,8 @@ export interface AgentStateRow {
   state: AgentReachState;
   lastUsedAt: string | null;
   isOwner: boolean;
+  /** A Commonly-hosted agent ("Run it here"); the beta allows one per account. */
+  hosted: boolean;
   fixCommand?: string;
 }
 
@@ -108,6 +110,8 @@ export function deriveAgentState(
     state,
     lastUsedAt: lastUsedAt ? lastUsedAt.toISOString() : null,
     isOwner,
+    // The shell hides Scout's "Run it here" start once the viewer holds one.
+    hosted: runtimeType === 'hosted',
     ...(isOwner && needsFix ? { fixCommand: `commonly agent run ${agentName}` } : {}),
   };
 }

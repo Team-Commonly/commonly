@@ -122,6 +122,20 @@ describe('deriveAgentState', () => {
     expect(stopped.state).not.toBe('reachable');
   });
 
+  // Walk 4 (2026-10-16): the shell hides Scout's "Run an agent here" start
+  // once the viewer holds a hosted agent, so the row says which agents are hosted.
+  test('marks a hosted install as hosted, and no other runtime class', () => {
+    const hosted = deriveAgentState({
+      agentName: 'lee-agent', instanceId: 'default', installedBy: 'u1',
+      config: { runtime: { runtimeType: 'hosted' } },
+    }, [], 'u1', NOW);
+    expect(hosted).toMatchObject({ hosted: true, isOwner: true });
+    const others = [{ runtimeType: 'native' }, { runtimeType: 'webhook', host: 'byo' }, { runtimeType: 'moltbot' }, {}];
+    for (const runtime of others) {
+      expect(deriveAgentState({ agentName: 'x', config: { runtime } }, [], 'u1', NOW).hosted).toBe(false);
+    }
+  });
+
   test('a push webhook (webhookUrl set) is reachable regardless of token use', () => {
     const row = deriveAgentState(
       byoInstall({ config: { runtime: { runtimeType: 'webhook', host: 'byo', webhookUrl: 'https://x.example/cap' } } }),
