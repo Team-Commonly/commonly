@@ -251,4 +251,59 @@ describe('nativeRuntimeService claim-before-act (ADR-018 D3)', () => {
     await runAgent(installation, { type: 'heartbeat', eventId: 'evt-2', payload: {} });
     expect(MessageClaimService.claim).not.toHaveBeenCalled();
   });
+
+  // Walk 5 (2026-10-16): beaten to the claim, the addressed agent answered in
+  // 13 s and TASK-002 never completed, because the answer was credited only
+  // through a live claim. Every post the turn makes now names the message it
+  // answers, taken from the event.
+  describe('every post names the message the turn answers', () => {
+    const withPostTool = { ...installation, config: { ...installation.config, tools: ['commonly_post_message'] } };
+    const postCall = (args) => ({
+      status: 200,
+      headers: {},
+      data: {
+        choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'commonly_post_message', arguments: JSON.stringify(args) } }] } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      },
+    });
+    const done = {
+      status: 200, headers: {}, data: { choices: [{ message: { role: 'assistant', content: 'NO_REPLY' } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } },
+    };
+
+    test('beaten to the claim, the tool post still carries the trigger id; the model cannot set it', async () => {
+      MessageClaimService.claim.mockResolvedValue({ claimed: false, claimedBy: 'scout', instanceId: 'scout-1' });
+      mockHolderEvent.mockResolvedValue(null);
+      axios.post.mockResolvedValueOnce(postCall({ content: 'Here is the answer.', answeringMessageId: 'msg-999' })).mockResolvedValueOnce(done);
+
+      await runAgent(withPostTool, mentionTrigger);
+
+      expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+        content: 'Here is the answer.', answeringMessageId: 'msg-77',
+      }));
+    });
+
+    test('the text fallback post carries it too', async () => {
+      axios.post.mockResolvedValueOnce({
+        status: 200, headers: {}, data: { choices: [{ message: { role: 'assistant', content: 'Plain answer.' } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } },
+      });
+
+      await runAgent(installation, mentionTrigger);
+
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+        content: 'Plain answer.', metadata: expect.objectContaining({ fallback: true }), answeringMessageId: 'msg-77',
+      }));
+    });
+
+    test('a turn no message woke answers no message', async () => {
+      axios.post.mockResolvedValueOnce({
+        status: 200, headers: {}, data: { choices: [{ message: { role: 'assistant', content: 'Heartbeat note.' } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } },
+      });
+
+      await runAgent(installation, { type: 'heartbeat', eventId: 'evt-3', payload: {} });
+
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({ content: 'Heartbeat note.' }));
+      expect(AgentMessageService.postMessage.mock.calls[0][0].answeringMessageId).toBeUndefined();
+    });
+  });
 });
