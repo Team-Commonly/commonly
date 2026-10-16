@@ -228,6 +228,34 @@ describe('digestEmailService', () => {
     expect(mockSendEmail).toHaveBeenCalledTimes(1);
   });
 
+  // sprint-review on #2277: the per-recipient read sits BEFORE the send, so a
+  // flip between the run's first read and the first send stops that email too.
+  it('a flip before the first send stops even the first email', async () => {
+    const user = await createUser();
+    const digest = await createDigest(user);
+    const read = jest.spyOn(SystemSetting, 'findOne')
+      .mockImplementationOnce(() => ({ lean: async () => null }))
+      .mockImplementationOnce(() => ({ lean: async () => ({ value: { enabled: false } }) }));
+
+    await expect(digestEmailService.sendDigestEmails([runEntry(digest)]))
+      .resolves.toEqual(expect.objectContaining({ sent: 0, disabled: true }));
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    read.mockRestore();
+  });
+
+  // ...and an unreadable switch mid-run is a read blip, not a flip: the switch
+  // was on at the start, and a summary skipped here is never retried.
+  it('a read error mid-run does not stop the rest of the run', async () => {
+    const digests = [await createDigest(await createUser()), await createDigest(await createUser())];
+    const read = jest.spyOn(SystemSetting, 'findOne')
+      .mockImplementationOnce(() => ({ lean: async () => null }))
+      .mockImplementation(() => { throw new Error('mongo blip'); });
+
+    await expect(digestEmailService.sendDigestEmails(digests.map(runEntry)))
+      .resolves.toEqual(expect.objectContaining({ sent: 2, disabled: false }));
+    read.mockRestore();
+  });
+
   it('sends nothing when the switch cannot be read', async () => {
     const user = await createUser();
     const digest = await createDigest(user);

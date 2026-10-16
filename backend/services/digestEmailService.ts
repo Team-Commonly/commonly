@@ -18,15 +18,20 @@ const SystemSetting = require('../models/SystemSetting');
  */
 export const DIGEST_SENDING_KEY = 'digest.sending';
 
-// Unreadable means do not send: for email to people, the switch fails closed.
-const digestSendingEnabled = async (): Promise<boolean> => {
+// 'unknown' is a read that failed, which is not the same as a flip: at the
+// start of a run it means do not send (for email to people the switch fails
+// closed), but mid-run the switch is already known to have been on, so only a
+// definite 'off' stops the run. A summary skipped by a stop is never retried
+// (each run sends only its own), so a read blip must not forfeit the rest.
+type DigestSendingState = 'on' | 'off' | 'unknown';
+const digestSendingState = async (): Promise<DigestSendingState> => {
   try {
     const row = await SystemSetting.findOne({ key: DIGEST_SENDING_KEY })
       .lean() as { value?: { enabled?: unknown } } | null;
-    return row?.value?.enabled !== false;
+    return row?.value?.enabled === false ? 'off' : 'on';
   } catch (error) {
-    console.warn('Digest email delivery skipped: the sending switch could not be read:', (error as Error).message);
-    return false;
+    console.warn('Digest email: the sending switch could not be read:', (error as Error).message);
+    return 'unknown';
   }
 };
 
@@ -132,8 +137,11 @@ export class DigestEmailService {
       disabled: false,
     };
 
-    if (!await digestSendingEnabled()) {
-      console.warn(`Digest email delivery skipped: switched off (${DIGEST_SENDING_KEY}).`);
+    const atStart = await digestSendingState();
+    if (atStart !== 'on') {
+      console.warn(atStart === 'off'
+        ? `Digest email delivery skipped: switched off (${DIGEST_SENDING_KEY}).`
+        : `Digest email delivery skipped: the sending switch is unreadable (${DIGEST_SENDING_KEY}).`);
       result.disabled = true;
       return result;
     }
@@ -161,7 +169,7 @@ export class DigestEmailService {
       // Read again per recipient (sprint-review on #2275): the switch is for an
       // incident, and an incident is often a run that is already sending.
       // eslint-disable-next-line no-await-in-loop
-      if (!await digestSendingEnabled()) {
+      if (await digestSendingState() === 'off') {
         console.warn(`Digest email delivery stopped mid-run: switched off (${DIGEST_SENDING_KEY}).`);
         result.disabled = true;
         break;

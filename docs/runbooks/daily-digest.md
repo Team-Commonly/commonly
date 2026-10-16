@@ -30,7 +30,10 @@ m.connect(process.env.MONGO_URI).then(async () => {
 ```
 
 To turn it back on, run the same command with `enabled: true`, or delete the
-row. If the row can't be read, nothing is sent: the switch fails closed. A run
+row. If the row can't be read when a run starts, nothing is sent: the switch
+fails closed. A read error partway through a run that started switched on is
+treated as a blip, not a flip, so it doesn't stop the run; only a definite
+`enabled: false` does. A run
 logs `Digest email delivery skipped: switched off (digest.sending).` when it
 starts switched off, and `Digest email delivery stopped mid-run: ...` when the
 switch is flipped while it's sending.
