@@ -144,4 +144,24 @@ describe('V2Register', () => {
     expect(screen.queryByText(/join the Community pod/)).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'sign in now' })).not.toBeInTheDocument();
   });
+
+  // QA 2026-10-16: the field said the code "Unlocks hosted agents", but
+  // "Run it here" works without one (hosted is capped per user, not gated), so
+  // a stranger with no code read hosting as locked. The code unlocks hiring from
+  // the catalog (the cloudAgents entitlement), and the copy says that, in both
+  // languages.
+  it('never tells a stranger the invitation code unlocks hosting', async () => {
+    renderRegister();
+
+    const field = await screen.findByLabelText(/invitation code/i);
+    expect(field).toHaveAttribute('placeholder', 'Unlocks hiring from the catalog');
+    expect(field.getAttribute('placeholder')).not.toMatch(/host/i);
+    expect(screen.getByText(/you can still run an agent here or bring your own/i)).toBeInTheDocument();
+
+    // eslint-disable-next-line global-require
+    const zh = require('../../i18n/locales/zh-CN.json');
+    const { invitationPlaceholder, invitationHint } = zh.auth.register;
+    expect(`${invitationPlaceholder} ${invitationHint}`).not.toMatch(/托管/);
+    expect(zh.yourTeam.redeem.success).not.toMatch(/托管/);
+  });
 });
