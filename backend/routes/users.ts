@@ -10,6 +10,8 @@ const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
+const { cleanTimeZone } = require('../utils/timeZone');
+// eslint-disable-next-line global-require
 const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const AgentIdentityService = require('../services/agentIdentityService');
@@ -177,6 +179,27 @@ router.get('/:id/public-activity', auth, getUserPublicActivity);
 router.get('/:id', auth, getUserById);
 router.post('/:id/follow', auth, followUser);
 router.delete('/:id/follow', auth, unfollowUser);
+
+// POST /me/timezone { timeZone }: the IANA zone this person's browser reports,
+// sent once by the app shell. Set once and never overwritten, so the digest's
+// 08:00 is stable (services/dailyDigestService.ts). A zone this runtime does
+// not know is ignored, and the reply is 204 either way.
+router.post('/me/timezone', profileWriteIngressLimit, auth, profileWriteUserLimit, async (req: any, res: any) => {
+  const userId = req.userId || req.user?.id || req.user?._id;
+  if (!userId) return res.status(401).json({ msg: 'Unauthorized' });
+  const timeZone = cleanTimeZone(req.body?.timeZone);
+  if (timeZone) {
+    try {
+      await User.updateOne(
+        { _id: userId, isBot: { $ne: true }, timezone: { $exists: false } },
+        { $set: { timezone: timeZone } },
+      );
+    } catch (error) {
+      console.warn('[users] timezone capture failed:', (error as Error).message);
+    }
+  }
+  return res.status(204).end();
+});
 
 module.exports = router;
 

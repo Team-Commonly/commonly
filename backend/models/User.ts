@@ -189,6 +189,9 @@ export interface IUser extends Document {
   digestUnsubscribeToken?: string;
   lastActive: Date;
   lastDigestSent?: Date;
+  // IANA zone the browser reported, set once (routes/users.ts POST
+  // /me/timezone); the daily digest goes out at 08:00 there.
+  timezone?: string;
   /**
    * First-session milestones: write-once timestamps, set at most once per
    * person and never overwritten (services/onboardingMarks.ts).
@@ -417,6 +420,7 @@ const userSchema = new Schema<IUser>({
     signupRef: { type: String },
   },
   lastDigestSent: { type: Date },
+  timezone: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
 

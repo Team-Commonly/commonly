@@ -8,6 +8,8 @@ const Pod = require('../models/Pod');
 const ActivityService = require('./activityService');
 // eslint-disable-next-line global-require
 const { resolveAgentDisplayLabel } = require('./agentIdentityService');
+// eslint-disable-next-line global-require
+const { cleanTimeZone, localHour } = require('../utils/timeZone');
 
 /**
  * The daily digest is "what your agents did while you were away" (stickiness
@@ -51,6 +53,14 @@ interface RecapLike {
 
 /** Someone active this recently has seen it in the app; the email would repeat it. */
 export const DIGEST_AWAY_MS = 20 * 60 * 60 * 1000;
+// Phase 2b (TASK-257): the scheduler runs every hour, and each run takes the
+// people for whom it is 08:00 now. A known zone (User.timezone) means 08:00
+// there; an unknown or unusable one means 06:00 UTC, the one send time before.
+export const DIGEST_LOCAL_HOUR = 8;
+export const DIGEST_DEFAULT_UTC_HOUR = 6;
+// Anyone with a digest from the last 20 hours is skipped, so a zone captured
+// mid-day, or a run repeated after a restart, never sends twice in a day.
+const DIGEST_REPEAT_GUARD_MS = 20 * 60 * 60 * 1000;
 const MAX_NEEDS_YOU = 3;
 const MAX_AGENTS = 5;
 const MAX_BOARD = 5;
@@ -259,11 +269,17 @@ This might be a great time to start a new conversation or share something intere
     };
   }
 
-  async generateAllDailyDigests(): Promise<DigestResult[]> {
+  /** Whether it is the digest hour for this person at `at`. */
+  static dueAt(user: { timezone?: unknown }, at: Date): boolean {
+    const zone = cleanTimeZone(user.timezone);
+    return zone ? localHour(zone, at) === DIGEST_LOCAL_HOUR : at.getUTCHours() === DIGEST_DEFAULT_UTC_HOUR;
+  }
+
+  async generateAllDailyDigests({ at = new Date() }: { at?: Date } = {}): Promise<DigestResult[]> {
     try {
       console.log('Starting daily digest generation for all users...');
 
-      const startTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const startTime = new Date(at.getTime() - 24 * 60 * 60 * 1000);
       const recentPodIds = await Summary.distinct('podId', {
         type: { $in: ['posts', 'chats'] },
         podId: { $exists: true },
@@ -276,15 +292,21 @@ This might be a great time to start a new conversation or share something intere
         publicRead: { $ne: true },
       });
 
-      const activeUsers = await User.find({
+      const candidates = await User.find({
         isBot: { $ne: true },
         $or: [
-          { lastActive: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+          { lastActive: { $gte: new Date(at.getTime() - 7 * 24 * 60 * 60 * 1000) } },
           { _id: { $in: recentMemberIds } },
         ],
-      }).lean() as Array<{ _id: unknown; username?: string }>;
+      }).lean() as Array<{ _id: unknown; username?: string; timezone?: string }>;
+      const alreadyHave = new Set((await Summary.distinct('metadata.userId', {
+        type: 'daily-digest',
+        createdAt: { $gte: new Date(at.getTime() - DIGEST_REPEAT_GUARD_MS) },
+      })).map(String));
+      const activeUsers = candidates.filter((user) => DailyDigestService.dueAt(user, at)
+        && !alreadyHave.has(String(user._id)));
 
-      console.log(`Found ${activeUsers.length} active users for daily digest generation`);
+      console.log(`Found ${activeUsers.length} of ${candidates.length} active users due for a digest this hour`);
 
       const results = await Promise.allSettled(
         activeUsers.map(async (user) => {

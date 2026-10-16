@@ -29,6 +29,13 @@ const agentUser = async (username, botMetadata) => {
   });
 };
 
+// The scheduled run takes only the people for whom it is the digest hour; with
+// no zone on file that is 06:00 UTC. Today's 06:00 UTC, so the windows built
+// from Date.now() in these fixtures still hold.
+const digestHourUtc = () => { const at = new Date(); at.setUTCHours(6, 0, 0, 0); return at; };
+// 15:01 UTC is 08:01 in Los Angeles under daylight time (Mar-Nov) only.
+const localHourIsEight = (at) => require('../../../utils/timeZone').localHour('America/Los_Angeles', at) === 8;
+
 const podWithSummary = async (owner, name, options = {}) => {
   const pod = await Pod.create({
     name,
@@ -310,6 +317,77 @@ test("a digest never carries another pod's summary: summaries are not an input",
   spy.mockRestore();
 });
 
+// Phase 2b (TASK-257): the digest goes out at 08:00 in the person's own zone,
+// 06:00 UTC when it is unknown, and at most once in 20 hours.
+describe('the digest hour', () => {
+  it.each([
+    ['08:00 in a known zone', 'America/Los_Angeles', '2026-10-17T15:01:00Z', true],
+    ['another hour there', 'America/Los_Angeles', '2026-10-17T06:01:00Z', false],
+    ['a half-hour zone at 08:31', 'Asia/Kolkata', '2026-10-17T03:01:00Z', true],
+    ['06:00 UTC with no zone', undefined, '2026-10-17T06:01:00Z', true],
+    ['another hour with no zone', undefined, '2026-10-17T07:01:00Z', false],
+    ['an unusable zone falls back to 06:00 UTC', 'Mars/Phobos', '2026-10-17T06:01:00Z', true],
+  ])('%s', (_label, timezone, at, due) => {
+    expect(DailyDigestService.dueAt({ timezone }, new Date(at))).toBe(due);
+  });
+
+  it('a scheduled run takes only the people for whom it is the hour', async () => {
+    const la = await person(new Date(Date.now() - 2 * 86400000));
+    await User.updateOne({ _id: la._id }, { $set: { timezone: 'America/Los_Angeles' } });
+    const nozone = await person(new Date(Date.now() - 2 * 86400000));
+    const service = new DailyDigestService();
+    const generate = jest.spyOn(service, 'generateUserDailyDigest').mockResolvedValue({ _id: 'digest-1' });
+    const laEight = new Date(); laEight.setUTCHours(15, 1, 0, 0);
+
+    await service.generateAllDailyDigests({ at: laEight });
+
+    const called = generate.mock.calls.map(([id]) => String(id));
+    expect(laEight.getUTCHours() === 15 && localHourIsEight(laEight)).toBe(true);
+    expect(called).toContain(String(la._id));
+    expect(called).not.toContain(String(nozone._id));
+  });
+
+  it('nobody gets a second digest within 20 hours, even if their hour comes round again', async () => {
+    const member = await person(new Date(Date.now() - 2 * 86400000));
+    await Summary.create({
+      type: 'daily-digest',
+      title: 'earlier',
+      content: '- earlier',
+      timeRange: { start: new Date(Date.now() - 86400000), end: new Date() },
+      metadata: { totalItems: 1, userId: String(member._id) },
+    });
+    const service = new DailyDigestService();
+    const generate = jest.spyOn(service, 'generateUserDailyDigest').mockResolvedValue({ _id: 'digest-1' });
+
+    await service.generateAllDailyDigests({ at: digestHourUtc() });
+
+    expect(generate.mock.calls.map(([id]) => String(id))).not.toContain(String(member._id));
+  });
+});
+
+// Cofounder on #2286: two real hourly runs within 20 hours never digest the
+// same person twice, here when their zone is captured between the runs and
+// makes the second run their hour too.
+test('two scheduled runs within 20 hours never digest the same person twice', async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    board: [{
+      taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API',
+    }],
+  }));
+  const service = new DailyDigestService();
+  const sixUtc = digestHourUtc();
+  const eightUtc = new Date(sixUtc.getTime() + 2 * 60 * 60 * 1000);
+
+  await service.generateAllDailyDigests({ at: sixUtc });
+  await User.updateOne({ _id: member._id }, { $set: { timezone: 'UTC' } });
+  expect(DailyDigestService.dueAt({ timezone: 'UTC' }, eightUtc)).toBe(true);
+  await service.generateAllDailyDigests({ at: eightUtc });
+
+  expect(await Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) })).toBe(1);
+  spy.mockRestore();
+});
+
 test('scheduler includes a member with recent pod work even after seven days away', async () => {
   const member = await person(new Date(Date.now() - 10 * 86400000));
   const creator = await person(new Date(Date.now() - 10 * 86400000));
@@ -317,7 +395,7 @@ test('scheduler includes a member with recent pod work even after seven days awa
   const service = new DailyDigestService();
   const generate = jest.spyOn(service, 'generateUserDailyDigest').mockResolvedValue({ _id: 'digest-1' });
 
-  const results = await service.generateAllDailyDigests();
+  const results = await service.generateAllDailyDigests({ at: digestHourUtc() });
 
   expect(generate).toHaveBeenCalledWith(member._id, { requireAway: true });
   expect(results).toHaveLength(2);
@@ -329,7 +407,7 @@ test('scheduler does not wake a stale member for public-read pod activity', asyn
   const service = new DailyDigestService();
   const generate = jest.spyOn(service, 'generateUserDailyDigest').mockResolvedValue({ _id: 'digest-1' });
 
-  await service.generateAllDailyDigests();
+  await service.generateAllDailyDigests({ at: digestHourUtc() });
 
   expect(generate).not.toHaveBeenCalled();
 });
@@ -342,7 +420,7 @@ test('scheduler does not generate a digest for a bot', async () => {
   const service = new DailyDigestService();
   const generate = jest.spyOn(service, 'generateUserDailyDigest').mockResolvedValue({ _id: 'digest-1' });
 
-  await service.generateAllDailyDigests();
+  await service.generateAllDailyDigests({ at: digestHourUtc() });
 
   expect(generate).not.toHaveBeenCalled();
 });

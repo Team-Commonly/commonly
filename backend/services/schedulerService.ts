@@ -198,8 +198,12 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // Hourly, at minute 1: each run sends to the people for whom it is 08:00
+    // now (06:00 UTC when their zone is unknown), at most once a day
+    // (dailyDigestService). A minute past the hour still lands inside 08:00 in
+    // the half-hour zones (India's 08:30 at 03:01 UTC).
     const dailyDigestJob: CronJob = cron.schedule(
-      '0 6 * * *',
+      '1 * * * *',
       async () => {
         console.log('Running daily digest generation...');
         try {
