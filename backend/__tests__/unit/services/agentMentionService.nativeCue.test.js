@@ -143,10 +143,44 @@ describe('native cue from kernel-built mention content', () => {
     expect(wake).not.toMatch(/commonly_claim_message|must be claimed first/);
   });
 
+  // Cofounder's follow-up on #2261: dropping a frame whole also dropped its
+  // NO_REPLY guidance. A frame that teaches NO_REPLY loses only the sentences
+  // naming a tool native lacks.
+  test('a reworded wake frame whose cut misses keeps NO_REPLY and loses only the claim sentence', async () => {
+    const reworded = (await wakeOnMessage())
+      .replace(' If you do act, the message must be claimed first', ' If you act, claim the message first');
+    expect(reworded).toContain('If you act, claim the message first (commonly_claim_message)');
+
+    const cue = nativeCueFromKernel(reworded, 'pod-1', NATIVE_TOOL_NAMES);
+
+    expect(cue).toMatch(/\[Wake-on-message: .*return NO_REPLY as your ENTIRE reply.*\]/);
+    expect(cue).not.toMatch(/commonly_claim_message|claim the message first/);
+  });
+
+  test('an agent-DM frame that teaches NO_REPLY and names a tool native lacks keeps NO_REPLY', () => {
+    const dmFrame = '[1:1 agent-DM with @peer (Peer) — talk directly to them, not a broadcast room. '
+      + 'Reply only when your message materially advances the work; return NO_REPLY when the exchange '
+      + 'reaches a natural conclusion. Open a side channel with commonly_open_dm if you need one.]';
+    const cue = nativeCueFromKernel(`${dmFrame}\n\nare we done?`, 'pod-1', NATIVE_TOOL_NAMES);
+
+    expect(cue).toBe('[1:1 agent-DM with @peer (Peer) — talk directly to them, not a broadcast room. '
+      + 'Reply only when your message materially advances the work; return NO_REPLY when the exchange '
+      + 'reaches a natural conclusion.]\n\nare we done?');
+  });
+
+  test('the native pod frame never shows the upload syntax, which an agent repeats verbatim', async () => {
+    const cue = nativeCueFromKernel(await referenceWake(), 'pod-1', NATIVE_TOOL_NAMES);
+    expect(cue).not.toMatch(/\[\[upload/);
+  });
+
   test('a frame that still names a tool native lacks is dropped, not shown', () => {
     const content = '[Trigger: raised by **alice**.]\n[Some new cue: call commonly_brand_new_tool.]\n\nhi';
     const cue = nativeCueFromKernel(content, 'pod-1', NATIVE_TOOL_NAMES);
     expect(cue).toBe('[Trigger: raised by **alice**.]\n\nhi');
+    // Without NO_REPLY to keep, a frame goes whole, even when only one of its
+    // sentences names the tool: its remaining guidance was written around it.
+    const twoSentences = '[Other cue: be brief. Then call commonly_brand_new_tool.]\n\nhi';
+    expect(nativeCueFromKernel(twoSentences, 'pod-1', NATIVE_TOOL_NAMES)).toBe('hi');
   });
 
   test('content that is not kernel-framed passes through unchanged', () => {
