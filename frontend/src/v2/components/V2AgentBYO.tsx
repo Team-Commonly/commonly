@@ -98,6 +98,9 @@ const V2AgentBYO: React.FC = () => {
       pod: (params.get('pod') || '').replace(/[^a-f0-9]/gi, ''),
       name: sanitizeAgentName(params.get('name') || ''),
       persona: sanitizeAgentName(params.get('persona') || ''),
+      // ?mode=hosted comes from Scout's "Run it here" button: the person
+      // already asked Commonly to host their agent.
+      hosted: params.get('mode') === 'hosted',
     };
   })();
   // Sam (2026-09-01): persona deep links carry context into this otherwise
@@ -144,8 +147,13 @@ const V2AgentBYO: React.FC = () => {
   // hosting. A ?name= deep link comes from Scout's connect_local_agent card:
   // the person asked to connect THEIR OWN agent (e.g. Claude Code), so it
   // starts on "Bring your own runtime" (Growth's walk, 2026-10-14: one click
-  // gave a hosted agent named after their Claude Code).
-  const [chosenMode, setMode] = useState<'hosted' | 'byo' | 'machine' | null>(prefill.name ? 'byo' : null);
+  // gave a hosted agent named after their Claude Code). A ?mode=hosted link
+  // comes from Scout's hosted offer, where the person asked to be hosted, so
+  // it starts on "Run it here".
+  const [chosenMode, setMode] = useState<'hosted' | 'byo' | 'machine' | null>(() => {
+    if (prefill.hosted) return 'hosted';
+    return prefill.name ? 'byo' : null;
+  });
   const [hosted, setHosted] = useState<{ agentName: string; podId: string } | null>(null);
   const [hostedState, setHostedState] = useState<'starting' | 'running' | 'slow'>('starting');
   // ADR-026 Phase 2: "on my computer" — install + placement request; the
@@ -165,7 +173,11 @@ const V2AgentBYO: React.FC = () => {
   // are in, a hosting reply that never arrived well-formed reads as "cannot
   // host", and the machines list as empty.
   const choosingMode = !choicesKnown || Boolean(hosting?.configured) || machines.length > 0;
-  const mode = chosenMode ?? (choosingMode ? null : 'byo');
+  // "Run it here" counts only once the instance says it can host: a hosted
+  // link must not arm a hosted install before, or without, that answer.
+  const mode = chosenMode === 'hosted' && !hosting?.configured
+    ? (choosingMode ? null : 'byo')
+    : chosenMode ?? (choosingMode ? null : 'byo');
   // One lookup, two readers (TASK-163): the preview note and the placement
   // payload must name the SAME machine, so it is derived once here rather
   // than restated at each call site.

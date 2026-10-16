@@ -22,7 +22,7 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const User = require('../models/User');
 const AgentIdentityService = require('../services/agentIdentityService');
 const hostedRuntime = require('../services/hostedRuntimeService');
-const { isNativeRuntimeAvailable } = require('../services/nativeRuntimeService');
+const { hostedEngineAvailable, isNativeRuntimeAvailable } = require('../services/nativeRuntimeService');
 const {
   HOSTED_ENGINE_NATIVE,
   engineForNewHostedInstall,
@@ -145,11 +145,10 @@ const resolveOwnedHostedInstallation = async (req: any, source: Record<string, a
 
 /**
  * Whether an engine can run turns on this instance: the native engine needs
- * LiteLLM, the Durable Object needs the worker (services/hostedEngine.ts).
+ * LiteLLM, the Durable Object needs the worker. One rule, shared with Scout's
+ * hosted offer (nativeRuntimeService.hostedEngineAvailable).
  */
-const engineAvailable = (engine: string): boolean => (
-  engine === HOSTED_ENGINE_NATIVE ? isNativeRuntimeAvailable() : hostedRuntime.isConfigured()
-);
+const engineAvailable = (engine: string): boolean => hostedEngineAvailable(engine);
 
 /**
  * Refuses before any database read when no engine can run on this instance.

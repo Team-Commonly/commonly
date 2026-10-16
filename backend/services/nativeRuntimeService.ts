@@ -36,8 +36,12 @@ import { podIsBridged } from './outsiderGrantPodEligibility';
 import { isSandboxConfigured, TurnSandbox } from './turnSandboxService';
 import { isSearchConfigured, searchWeb } from './webSearchService';
 import { untrustedConnectorMarker } from './brokerResultMarker';
-import { hostedNativeDecline, hostedNativeRunConfig, hostedRunsNative } from './hostedEngine';
-import { hostedCapsForOwner, ownerIsPro } from './hostedRuntimeService';
+import {
+  engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline, hostedNativeRunConfig, hostedRunsNative,
+} from './hostedEngine';
+import {
+  hostedCaps, hostedCapsForOwner, isConfigured as hostedWorkerConfigured, listHostedInstallationsForUser, ownerIsPro,
+} from './hostedRuntimeService';
 
 // --- public surface --------------------------------------------------------
 
@@ -119,6 +123,25 @@ function resolveLiteLLM(): { baseUrl: string; apiKey: string } | null {
 export function isNativeRuntimeAvailable(): boolean {
   return resolveLiteLLM() !== null;
 }
+
+/**
+ * Whether a hosted agent on `engine` can run on this instance. The hosted
+ * routes and Scout's hosted offer both ask, so the offer never shows a button
+ * the page would refuse.
+ */
+export function hostedEngineAvailable(engine: string = engineForNewHostedInstall()): boolean {
+  return engine === HOSTED_ENGINE_NATIVE ? isNativeRuntimeAvailable() : hostedWorkerConfigured();
+}
+
+// What the hosted offer's tool description tells the model. Read from the cap
+// source when this module loads, so no prompt holds its own copy of a limit
+// (Scout quoted 200 turns a day after the free line became 30, #2237).
+const HOSTED_FREE_CAPS = hostedCaps();
+const HOSTED_PRO_CAPS = hostedCaps({ pro: true });
+export const HOSTED_LIMITS_LINE = `${HOSTED_FREE_CAPS.agentsPerUser} hosted `
+  + `agent${HOSTED_FREE_CAPS.agentsPerUser === 1 ? '' : 's'} per account and `
+  + `${HOSTED_FREE_CAPS.turnsPerDay} turns a day (${HOSTED_PRO_CAPS.turnsPerDay} on Pro)`;
+export const HOSTED_OFFER_LABEL = 'Run it here';
 
 // --- tool schema (OpenAI function-calling format) -------------------------
 //
@@ -264,6 +287,32 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'commonly_offer_hosted_agent',
+      description:
+        'Answer someone who wants Commonly to run an agent for them: nothing to install, no '
+        + 'machine of their own, or on Windows. Posts your content to the pod with a '
+        + `"${HOSTED_OFFER_LABEL}" button that opens Bring your own with hosting already chosen; `
+        + 'one more click there and their agent is live in a few seconds. Open to every '
+        + 'signed-in account during beta, no invitation code needed. The current limits are '
+        + `${HOSTED_LIMITS_LINE}; quote these, never a number from memory. The content is your `
+        + 'whole reply: do not post another message about it. If they already have a hosted '
+        + 'agent, or this instance cannot host, nothing is posted and the result says why; '
+        + 'tell them in your own words.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: {
+            type: 'string',
+            description: 'Your reply, in the person\'s language. The button follows it.',
+          },
+        },
+        required: ['content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'commonly_run_code',
       description:
         'Run a short Python or JavaScript program in a fresh, isolated sandbox and get back '
@@ -304,12 +353,14 @@ export const TOOLS = [
 ] as const;
 
 // Tools an install gets only by declaring them: proposing an approval,
-// running code (TASK-266), which also needs a sandbox key on the instance, and
-// web search (TASK-267a), which needs a search key.
+// offering hosting (Scout's), running code (TASK-266), which also needs a
+// sandbox key on the instance, and web search (TASK-267a), which needs a
+// search key.
 const OPT_IN_TOOLS: ReadonlySet<string> = new Set([
-  'commonly_propose_action', 'commonly_run_code', 'commonly_web_search',
+  'commonly_propose_action', 'commonly_offer_hosted_agent', 'commonly_run_code', 'commonly_web_search',
 ]);
 const toolAvailable = (name: string): boolean => {
+  if (name === 'commonly_offer_hosted_agent') return hostedEngineAvailable();
   if (name === 'commonly_run_code') return isSandboxConfigured();
   if (name === 'commonly_web_search') return isSearchConfigured();
   return true;
@@ -466,6 +517,50 @@ async function dispatchTool(
           metadata: { source: 'native-runtime' },
           // Web results are in this turn: the post stays in the pod and never
           // reaches a channel relay, whatever bridges exist when it is stored.
+          noOutboundRelay: Boolean(ctx.webTainted),
+        });
+        return { content: { ok: true, posted: true, result } };
+      }
+
+      case 'commonly_offer_hosted_agent': {
+        // The answer and its button in one message. The button is composed
+        // here, never by the model: an in-app path to Bring your own aimed at
+        // this pod with hosting chosen (V2AgentBYO reads ?mode=hosted).
+        const content = String(args.content || '').trim();
+        if (!content) {
+          return { content: { ok: false, error: 'content is required' }, error: 'missing_content' };
+        }
+        // The person Scout serves is whoever installed it. If they already
+        // hold the beta's hosted agents, a button would only lead to the
+        // install route's 403, so say who holds the slot instead.
+        const { agentsPerUser } = hostedCaps();
+        const held = ctx.installation?.installedBy
+          ? await listHostedInstallationsForUser(ctx.installation.installedBy)
+          : [];
+        if (held.length >= agentsPerUser) {
+          return {
+            content: {
+              ok: false,
+              error: `They already have ${held.length} hosted agent${held.length === 1 ? '' : 's'}, `
+                + `the most the beta allows (${agentsPerUser}). Mention it to use it, or remove it on `
+                + 'the Agents page to host a different one.',
+              hostedAgents: held.map((h) => h.agentName),
+            },
+            error: 'hosted_cap_reached',
+          };
+        }
+        const href = `/v2/agents/byo?pod=${encodeURIComponent(String(ctx.podId))}&mode=hosted`;
+        const AgentMessageService = require('./agentMessageService');
+        const result = await AgentMessageService.postMessage({
+          agentName: ctx.agentName,
+          instanceId: ctx.instanceId,
+          podId: ctx.podId,
+          content,
+          messageType: 'text',
+          displayName: ctx.displayName,
+          installationConfig: ctx.installationConfig,
+          metadata: { source: 'native-runtime' },
+          payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED_OFFER_LABEL, href }] },
           noOutboundRelay: Boolean(ctx.webTainted),
         });
         return { content: { ok: true, posted: true, result } };
@@ -1440,6 +1535,14 @@ export async function runAgent(
           // special case exists for).
           if (toolName === 'commonly_propose_action' && !result.error) {
             postedViaTool = true;
+          }
+          // The hosted offer posts the model's own reply with its button, so
+          // the same holds: the fallback must not post the narration twice.
+          if (toolName === 'commonly_offer_hosted_agent' && !result.error) {
+            postedViaTool = true;
+            finalMessage = typeof (parsedArgs as any)?.content === 'string'
+              ? String((parsedArgs as any).content)
+              : undefined;
           }
           messages.push({
             role: 'tool',

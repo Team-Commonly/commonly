@@ -159,6 +159,65 @@ describe('V2AgentBYO — Run it here', () => {
     window.history.pushState({}, '', '/');
   });
 
+  // Scout's hosted offer links here with ?mode=hosted: the person asked
+  // Commonly to host their agent, so the page opens on "Run it here" and its
+  // act is the next click (QA 2026-10-16: the hand-off was text only).
+  const renderAt = (url) => {
+    window.history.pushState({}, '', url);
+    return render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={[url]}>
+          <V2AgentBYO />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+  };
+
+  test('a hosted offer link (?mode=hosted) opens on Run it here, one click from live', async () => {
+    mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
+    axios.post.mockResolvedValue({ data: { ok: true } });
+    renderAt('/v2/agents/byo?pod=p1&mode=hosted');
+
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.getByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+
+    await screen.findByTestId('byo-hosted-result');
+    const installCall = axios.post.mock.calls.find(([url]) => url === '/api/registry/install');
+    expect(installCall[1]).toMatchObject({ agentName: 'sam-agent', podId: 'p1', config: { runtime: { runtimeType: 'hosted' } } });
+    window.history.pushState({}, '', '/');
+  });
+
+  test('a hosted offer link offers no act until the instance says it can host', async () => {
+    let answerAvailability;
+    axios.get.mockImplementation((url) => {
+      if (url.startsWith('/api/hosted/availability')) {
+        return new Promise((resolve) => { answerAvailability = resolve; });
+      }
+      if (url === '/api/pods') return Promise.resolve({ data: pods });
+      return Promise.resolve({ data: {} });
+    });
+    renderAt('/v2/agents/byo?pod=p1&mode=hosted');
+
+    const podPicker = await screen.findByRole('combobox', { name: /install into pod/i });
+    await waitFor(() => expect(podPicker).toHaveValue('p1'));
+    expect(screen.queryByRole('button', { name: /^run it here$/i })).not.toBeInTheDocument();
+
+    await act(async () => { answerAvailability({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 30 } } }); });
+    expect(await screen.findByRole('button', { name: /^run it here$/i })).toBeEnabled();
+    window.history.pushState({}, '', '/');
+  });
+
+  test('a hosted offer link on an instance that cannot host is the plain BYO page', async () => {
+    mockGet({ configured: false });
+    renderAt('/v2/agents/byo?pod=p1&mode=hosted');
+
+    expect(await screen.findByRole('button', { name: /install \+ generate token/i })).toBeEnabled();
+    expect(screen.queryByTestId('byo-mode-hosted')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^run it here$/i })).not.toBeInTheDocument();
+    window.history.pushState({}, '', '/');
+  });
+
   test('a persona hire sends the persona\'s card sentence as the seat description (#1649)', async () => {
     mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
     axios.post.mockResolvedValue({ data: { ok: true } });
