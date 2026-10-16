@@ -230,6 +230,31 @@ describe('a provider content refusal', () => {
     expect(run.scheduled[0].delayMs).toBe(5000);
   });
 
+  // #782: after a non-refusal failure the loop stops; it does not launch the
+  // rest of the batch into the same outage. The item after the failing one is
+  // never spawned alone, and both stay unacked.
+  test('isolation stops at the first non-refusal failure: a later item is not spawned into the same outage', async () => {
+    const third = normalEvent({
+      _id: 'evt-third',
+      payload: { content: '@rhea docs gate: #2251, typo fix', messageId: '78197', username: 'growth-ops' },
+    });
+    const spawn = jest.fn(async (prompt) => {
+      if (prompt.includes('169.254.169.254')) throw refusal();
+      throw new Error('runtime unavailable');
+    });
+    const run = setup({ events: [poisonEvent(), normalEvent(), third], spawn });
+    await drainMicrotasks();
+    run.handle.stop();
+
+    // The composite turn, the refused item alone, the failing item alone, and nothing more.
+    expect(spawn).toHaveBeenCalledTimes(3);
+    expect(spawn.mock.calls.slice(1).some(([prompt]) => prompt.includes('#2251'))).toBe(false);
+    expect(run.acks()).toEqual([{ id: 'evt-poison', result: REFUSED_ACK('vera') }]);
+    const retries = run.errors.filter((e) => e.code === 'agent_spawn_retry_scheduled');
+    expect(retries).toHaveLength(1);
+    expect(retries[0].message).toContain('2 events remain unacked');
+  });
+
   test('an ordinary runtime failure is still retried and never acked (unchanged)', async () => {
     const spawn = jest.fn(async () => { throw new Error('runtime unavailable'); });
     const run = setup({ events: [normalEvent()], spawn });
