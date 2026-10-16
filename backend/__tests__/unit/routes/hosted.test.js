@@ -25,6 +25,12 @@ const mockHosted = {
   },
 };
 
+// The route's limiter (30 a minute, module-level) is passed through here: this
+// file makes more requests than one minute's budget, and a shared bucket made
+// unrelated arms 429 on a full-file run (sprint-review on #2256). The limiter
+// and its key are tested on their own in hosted.rateLimit.test.js.
+jest.mock('express-rate-limit', () => ({ __esModule: true, default: () => (_req, _res, next) => next() }));
+
 jest.mock('../../../middleware/auth', () => (req, _res, next) => {
   req.user = { id: 'owner-1' };
   next();
@@ -86,12 +92,6 @@ const app = express();
 app.use(express.json());
 app.use('/api/hosted', hostedRouter);
 
-// The route's limiter (30 a minute) is module-level and shared by this file;
-// the migration arms use their own key so they do not spend the others' budget.
-// The auth middleware is mocked, so the header is read only by the limiter.
-let armSeq = 0;
-const asMigrationArm = (req) => { armSeq += 1; return req.set('Authorization', `Bearer migration-arm-${armSeq}`); };
-
 let installationSeq = 0;
 const makeInstallation = (overrides = {}) => {
   installationSeq += 1;
@@ -107,6 +107,18 @@ const makeInstallation = (overrides = {}) => {
   mockStore.set(installation._id, installation);
   return installation;
 };
+
+
+// Pins the pass-through above: if the limiter mock stopped applying (an import
+// change), this file's later arms would start to 429 again on a full run.
+it('this suite runs without the rate limiter: 35 requests in a row are never 429', async () => {
+  const statuses = [];
+  for (let i = 0; i < 35; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    statuses.push((await request(app).get('/api/hosted/availability')).status);
+  }
+  expect(statuses.filter((status) => status === 429)).toEqual([]);
+});
 
 describe('/api/hosted', () => {
   beforeEach(() => {
@@ -366,7 +378,7 @@ describe('/api/hosted', () => {
       });
       mockHosted.deprovisionAgent.mockResolvedValue({ deprovisioned: true });
 
-      const res = await asMigrationArm(request(app).post('/api/hosted/provision')).send({ agentName: 'scout' });
+      const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('hosted_engine_migrated');
@@ -377,7 +389,7 @@ describe('/api/hosted', () => {
       expect(JSON.stringify(res.body)).not.toContain('cm_agent_secret');
 
       // The next provision finds the native record and mints nothing.
-      const again = await asMigrationArm(request(app).post('/api/hosted/provision')).send({ agentName: 'scout' });
+      const again = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
       expect(again.status).toBe(200);
       expect(again.body.engine).toBe('native');
       expect(mockIssueToken).toHaveBeenCalledTimes(1);
@@ -395,7 +407,7 @@ describe('/api/hosted', () => {
       mockHosted.deprovisionAgent.mockRejectedValue(new Error('worker unreachable'));
       jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const res = await asMigrationArm(request(app).post('/api/hosted/provision')).send({ agentName: 'scout' });
+      const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
 
       expect(res.status).toBe(409);
       expect(mockRevokeRuntimeTokens).toHaveBeenCalledTimes(2);
@@ -410,7 +422,7 @@ describe('/api/hosted', () => {
         return { deprovisioned: true };
       });
 
-      const res = await asMigrationArm(request(app).post('/api/hosted/deprovision')).send({ agentName: 'scout' });
+      const res = await request(app).post('/api/hosted/deprovision').send({ agentName: 'scout' });
 
       expect(res.status).toBe(200);
       expect(installation.config.get('hosted')).toEqual(MIGRATED);
@@ -495,15 +507,11 @@ describe('/api/hosted on the native engine', () => {
   });
 
   it('names the agent on the card by its display name first', async () => {
-    // Its own rate-limit bucket: the limiter keys on Authorization (auth is
-    // mocked), and this file's other requests already sit at its 30-a-minute
-    // ceiling, so two more from the shared key 429 a later test.
-    const ownBucket = { Authorization: 'Bearer hosted-label-test' };
     mockUserFindOne.mockResolvedValue({
       _id: 'bot-1', username: 'scout', agentRuntimeTokens: [], botMetadata: { displayName: 'Research Scout' },
     });
     mockFindOne.mockResolvedValue(nativeInstallation());
-    await request(app).post('/api/hosted/provision').set(ownBucket).send({ agentName: 'scout' });
+    await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
     expect(mockCompleteConnectAgent.mock.calls[0][0].agentLabel).toBe('Research Scout');
 
     mockCompleteConnectAgent.mockClear();
@@ -512,7 +520,7 @@ describe('/api/hosted on the native engine', () => {
       displayName: 'Lab Notes',
       config: new Map([['runtime', { runtimeType: 'hosted' }], ['hosted', { engine: 'native', provisionedAt: PROVISIONED }]]),
     }));
-    await request(app).post('/api/hosted/provision').set(ownBucket).send({ agentName: 'scout' });
+    await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
     expect(mockCompleteConnectAgent.mock.calls[0][0].agentLabel).toBe('Lab Notes');
   });
 
@@ -571,7 +579,7 @@ describe('/api/hosted on the native engine', () => {
       return read;
     });
 
-    const res = await asMigrationArm(request(app).post(`/api/hosted/${route}`)).send({ agentName: 'scout' });
+    const res = await request(app).post(`/api/hosted/${route}`).send({ agentName: 'scout' });
 
     expect(res.status).toBe(200);
     const hosted = installation.config.get('hosted');
