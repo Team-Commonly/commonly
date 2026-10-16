@@ -153,7 +153,7 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
       podId: POD, replyToMessageId: null, threadRootId: '57577',
     });
     expect(PGMessage.create).toHaveBeenCalledWith(
-      POD, 'agent-user-1', 'in-thread continuation', 'text', null, null, 57577,
+      POD, 'agent-user-1', 'in-thread continuation', 'text', null, null, 57577, undefined,
     );
     const msg = emitted.find((e) => e.event === 'newMessage');
     expect(msg.payload.thread_root_id).toBe('57577');
@@ -169,7 +169,7 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
 
     expect(threadRootResolver.resolveThreadRoot).not.toHaveBeenCalled();
     expect(PGMessage.create).toHaveBeenCalledWith(
-      POD, 'agent-user-1', 'plain broadcast', 'text', null, null, null,
+      POD, 'agent-user-1', 'plain broadcast', 'text', null, null, null, undefined,
     );
   });
 
@@ -197,7 +197,7 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
     });
 
     expect(PGMessage.create).toHaveBeenCalledWith(
-      POD, 'agent-user-1', content, 'text', null, null, null,
+      POD, 'agent-user-1', content, 'text', null, null, null, undefined,
     );
     expect(mockDispatch).toHaveBeenCalledWith('chat.message', expect.objectContaining({
       podId: POD,
@@ -286,6 +286,26 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
       podId: POD, agentName: 'lee-agent', instanceId: 'default', replyToMessageId: '57577', agentLabel: 'Lee Agent',
       content: 'Done: the build is green.',
     });
+  });
+
+  // Since #2269 an agent a person addressed answers even when another agent won
+  // the claim, so it holds none. The native run names the message it is
+  // answering; it reaches both answer readers and is never a reply edge.
+  it('hands answeringMessageId to the write and the first-task check, never as a reply edge', async () => {
+    await AgentMessageService.postMessage({
+      agentName: 'lee-agent',
+      instanceId: 'default',
+      podId: POD,
+      content: 'Here is the summary.',
+      displayName: 'Lee Agent',
+      answeringMessageId: '78385',
+    });
+    expect(PGMessage.create).toHaveBeenCalledWith(
+      POD, 'agent-user-1', 'Here is the summary.', 'text', null, null, null, '78385',
+    );
+    expect(mockFirstTask).toHaveBeenCalledWith(expect.objectContaining({
+      replyToMessageId: null, answeringMessageId: '78385',
+    }));
   });
 
   it('a ThreadRootError propagates — never swallowed into the Mongo fallback', async () => {

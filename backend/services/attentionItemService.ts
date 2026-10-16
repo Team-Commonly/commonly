@@ -106,6 +106,8 @@ const peopleThisAgentIsAnswering = async (
       agentName: String(author.botMetadata?.agentName || author.username || ''),
       instanceId: String(author.botMetadata?.instanceId || 'default'),
       replyToMessageId: message?.reply_to_message_id ?? message?.replyToMessageId,
+      // Carried from the post, never stored on the row (agentAnswerService).
+      answeringMessageId: message?.answeringMessageId,
     });
   } catch (error) {
     console.warn('[attention] answer check failed; recording the mention:', (error as Error).message);

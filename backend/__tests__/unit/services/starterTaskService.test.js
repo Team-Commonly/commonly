@@ -129,6 +129,12 @@ describe('completeFirstTaskOnAnswer', () => {
     expect(mockEmitTaskUpdated).toHaveBeenCalledWith(POD_A, expect.objectContaining({ taskId: 'TASK-002' }), 'updated');
   });
 
+  test("forwards the run's answeringMessageId to the answer rule", async () => {
+    await answer({ answeringMessageId: '78385' });
+    expect(mockAnswered).toHaveBeenCalledWith(expect.objectContaining({ answeringMessageId: '78385' }));
+    expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+
   test('a post that answers someone else, or nobody, leaves it open', async () => {
     mockAnswered.mockResolvedValue(new Set(['dddddddddddddddddddddddd']));
     await answer();

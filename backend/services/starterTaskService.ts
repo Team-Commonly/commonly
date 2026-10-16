@@ -86,12 +86,13 @@ export const completeConnectAgentStarterTask = async ({
  * check comes first, so a pod with no open card costs one indexed read.
  */
 export const completeFirstTaskOnAnswer = async ({
-  podId, agentName, instanceId, replyToMessageId, agentLabel, content = '',
+  podId, agentName, instanceId, replyToMessageId, answeringMessageId, agentLabel, content = '',
 }: {
   podId: string;
   agentName: string;
   instanceId?: string;
   replyToMessageId?: unknown;
+  answeringMessageId?: unknown;
   agentLabel: string;
   content?: string;
 }): Promise<void> => {
@@ -108,7 +109,7 @@ export const completeFirstTaskOnAnswer = async ({
     const owner = pod?.createdBy ? String(pod.createdBy) : '';
     if (!owner) return;
     const answered = await humansAnsweredBy({
-      podId, agentName, instanceId, replyToMessageId,
+      podId, agentName, instanceId, replyToMessageId, answeringMessageId,
     });
     if (!answered.has(owner)) return;
     await completeStarterTask(

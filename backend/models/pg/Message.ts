@@ -104,6 +104,9 @@ class Message {
     // reply edge, which is the pre-existing behaviour and what the backfill
     // and explicit replies rely on.
     resolvedThreadRootId: number | null = null,
+    // The message the posting run is answering (agentAnswerService), handed to
+    // the attention writer and never stored: not a column, not a reply edge.
+    answeringMessageId: string | null = null,
   ): Promise<MessageRow> {
     console.log('Creating message with params:', {
       podId, userId, content, messageType, podIdType: typeof podId,
@@ -166,7 +169,9 @@ class Message {
         recordMentionedUsers,
         resolveMentionAttentionForReply,
       } = require('../../services/attentionItemService');
-      await recordMentionedUsers({ ...row, podId, userId, content, threadRootId: resolvedThreadRootId });
+      await recordMentionedUsers({
+        ...row, podId, userId, content, threadRootId: resolvedThreadRootId, answeringMessageId,
+      });
       await resolveMentionAttentionForReply({
         podId,
         recipientUserId: userId,

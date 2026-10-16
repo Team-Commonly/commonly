@@ -556,9 +556,10 @@ describe('an agent answering the person who asked', () => {
     mockUserFind.mockReturnValue(chain(members));
     mockUserFindById.mockReturnValue(chain(scoutBot));
     mockLiveClaims.mockResolvedValue(['900']);
-    mockPgMessageFindById.mockImplementation(async (id) => (
-      id === '900' ? { id: 900, userId: { _id: 'lee', username: 'lee' } } : null
-    ));
+    mockPgMessageFindById.mockImplementation(async (id) => ({
+      900: { id: 900, pod_id: POD, userId: { _id: 'lee', username: 'lee' } },
+      950: { id: 950, pod_id: 'pod-elsewhere', userId: { _id: 'lee', username: 'lee' } },
+    })[id] || null);
   });
 
   const recipients = () => mockUpdateOne.mock.calls.map(([filter]) => filter.recipientUserId);
@@ -581,6 +582,21 @@ describe('an agent answering the person who asked', () => {
     mockLiveClaims.mockResolvedValue([]);
     await answer('@lee here you go.', { reply_to_message_id: 900 });
     expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  // QA walk 5 (2026-10-16): since #2269 an agent a person addressed answers even
+  // when another agent won the claim, so it holds none. The native run names
+  // the message it is answering, and that answers its author.
+  it('an addressed agent that lost the claim answers them: no row', async () => {
+    mockLiveClaims.mockResolvedValue([]);
+    await answer('@lee here is the summary.', { answeringMessageId: '900' });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it("a run's trigger from another pod answers nobody here", async () => {
+    mockLiveClaims.mockResolvedValue([]);
+    await answer('@lee here is the summary.', { answeringMessageId: '950' });
+    expect(recipients()).toEqual(['lee']);
   });
 
   it('a lapsed claim, or an unprompted ping, still opens their row', async () => {
