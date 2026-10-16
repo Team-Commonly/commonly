@@ -49,7 +49,7 @@ describe('attentionItemService', () => {
   });
 
   it('materializes a mention only for mentioned human members other than the author', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }, { userId: 'bot' }] }));
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: ['sam', 'bot'] }));
     mockUserFind.mockReturnValue(chain([
       { _id: 'owner', username: 'owner', isBot: false },
       { _id: 'sam', username: 'Sam', isBot: false },
@@ -64,7 +64,7 @@ describe('attentionItemService', () => {
   });
 
   it('names the author from the User row when the message carries only user_id (PG rows)', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: ['sam'] }));
     mockUserFind.mockReturnValue(chain([
       { _id: 'owner', username: 'owner', isBot: false },
       { _id: 'sam', username: 'Sam', isBot: false },
@@ -86,7 +86,7 @@ describe('attentionItemService', () => {
   });
 
   it('does not re-materialize a legacy-acknowledged mention during backfill', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: ['sam'] }));
     mockUserFind.mockReturnValue(chain([
       { _id: 'owner', username: 'owner', isBot: false },
       { _id: 'sam', username: 'Sam', isBot: false },
@@ -101,7 +101,7 @@ describe('attentionItemService', () => {
   });
 
   it('does not resurrect a resolved attention row when its source write is retried', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: ['sam'] }));
     mockUserFind.mockReturnValue(chain([
       { _id: 'owner', username: 'owner', isBot: false },
       { _id: 'sam', username: 'Sam', isBot: false },
@@ -134,7 +134,7 @@ describe('attentionItemService', () => {
   // writers (author username, runtime agentName, nothing on decisions), so the
   // Your Team ring keys on the principal's id instead. Each writer is pinned.
   it('a mention carries its author id as actorUserId', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: ['sam'] }));
     mockUserFind.mockReturnValue(chain([
       { _id: 'owner', username: 'owner', isBot: false },
       { _id: 'sam', username: 'Sam', isBot: false },
@@ -151,7 +151,7 @@ describe('attentionItemService', () => {
   });
 
   it('a decision carries the agent user id as actorUserId (it has no actorName at all)', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: [] }));
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: ['sam'] }));
     mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
     mockUpdateOne.mockResolvedValue({ matchedCount: 0, upsertedCount: 1 });
 
@@ -163,7 +163,7 @@ describe('attentionItemService', () => {
   });
 
   it('an approval carries the requester id as actorUserId when the source has one', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: [] }));
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: ['sam'] }));
     mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
     mockUpdateOne.mockResolvedValue({ matchedCount: 0, upsertedCount: 1 });
 
@@ -178,7 +178,7 @@ describe('attentionItemService', () => {
       { _id: 'attention-1', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'decision', source: { type: 'decision_request', id: 'd-1' }, title: 'Which?', actorUserId: { toString: () => 'kai-user' }, createdAt: new Date() },
       { _id: 'attention-2', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'mention', source: { type: 'message', id: '41' }, title: 'Mention', createdAt: new Date() },
     ] }) });
-    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: '507f191e810c19729de860ea', members: [] }]));
+    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: '507f191e810c19729de860ea', members: ['507f191e810c19729de860ea'] }]));
 
     const queue = await AttentionItemService.getOpenQueue('507f191e810c19729de860ea');
     expect(queue.items.find((item) => item.id === 'd-1').actorUserId).toBe('kai-user');
@@ -191,7 +191,7 @@ describe('attentionItemService', () => {
       { _id: 'attention-9', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'approval', source: { type: 'approval_action', id: 'appr-1' }, title: 'Scout requests approval', createdAt: new Date() },
       { _id: 'attention-8', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'approval', source: { type: 'approval', id: 'act-1' }, title: 'Access', createdAt: new Date() },
     ] }) });
-    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: '507f191e810c19729de860ea', members: [] }]));
+    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: '507f191e810c19729de860ea', members: ['507f191e810c19729de860ea'] }]));
 
     const queue = await AttentionItemService.getOpenQueue('507f191e810c19729de860ea');
     expect(queue.items.find((item) => item.id === 'appr-1')).toMatchObject({ kind: 'approval', sourceType: 'approval_action' });
@@ -204,7 +204,7 @@ describe('attentionItemService', () => {
       { _id: 'attention-2', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-2', kind: 'approval', source: { type: 'approval', id: 'a-1' }, title: 'Old access', createdAt: new Date() },
     ] }) });
     mockPodFind.mockReturnValue(chain([
-      { _id: 'pod-1', name: 'Current', createdBy: '507f191e810c19729de860ea', members: [] },
+      { _id: 'pod-1', name: 'Current', createdBy: '507f191e810c19729de860ea', members: ['507f191e810c19729de860ea'] },
       { _id: 'pod-2', name: 'Removed', createdBy: 'someone-else', members: [] },
     ]));
 
@@ -217,6 +217,19 @@ describe('attentionItemService', () => {
     );
   });
 
+  it('serves a creator who has left the pod none of its rows', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [
+      { _id: 'attention-1', recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'mention', source: { type: 'message', id: '41' }, title: 'A private ask', createdAt: new Date() },
+    ] }) });
+    mockPodFind.mockReturnValue(chain([
+      { _id: 'pod-1', name: 'Left behind', createdBy: '507f191e810c19729de860ea', members: ['someone-else'] },
+    ]));
+
+    const queue = await AttentionItemService.getOpenQueue('507f191e810c19729de860ea');
+
+    expect(queue.items).toEqual([]);
+  });
+
   it('hides a mention when the same message already has a decision row — in any state, not only open', async () => {
     const recipient = '507f191e810c19729de860ea';
     const mention = { _id: 'attention-m', recipientUserId: recipient, podId: 'pod-1', kind: 'mention', source: { type: 'message', id: 'msg-1' }, messageId: 'msg-1', title: 'Ada mentioned you', createdAt: new Date('2026-09-01T00:00:00Z') };
@@ -226,7 +239,7 @@ describe('attentionItemService', () => {
     mockFind.mockImplementation((query) => (query.kind === 'decision'
       ? chain([{ _id: 'attention-d', podId: 'pod-1', messageId: 'msg-1', status: decisionState }])
       : { sort: () => ({ lean: async () => open }) }));
-    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: recipient, members: [] }]));
+    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: recipient, members: [recipient] }]));
 
     const both = await AttentionItemService.getOpenQueue(recipient);
     expect(both.items).toEqual([expect.objectContaining({ attentionItemId: 'attention-d', kind: 'decision' })]);
@@ -264,8 +277,8 @@ describe('attentionItemService', () => {
     ];
     mockFind.mockReturnValue({ sort: () => ({ lean: async () => rows }) });
     mockPodFind.mockReturnValue(chain([
-      { _id: 'pod-1', name: 'Decisions', createdBy: recipient, members: [] },
-      { _id: 'pod-2', name: 'Mentions', createdBy: recipient, members: [] },
+      { _id: 'pod-1', name: 'Decisions', createdBy: recipient, members: [recipient] },
+      { _id: 'pod-2', name: 'Mentions', createdBy: recipient, members: [recipient] },
     ]));
 
     const queue = await AttentionItemService.getOpenQueue(recipient, { limit: 12 });
@@ -374,7 +387,7 @@ describe('attentionItemService', () => {
   });
 
   it('materializes an agent action proposal as an approval ask for its owner only, keyed as approval_action (#1650)', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: ['sam'] }));
     mockUserFind.mockReturnValue(chain([
       { _id: 'owner', username: 'owner', isBot: false },
       { _id: 'sam', username: 'Sam', isBot: false },
@@ -399,7 +412,7 @@ describe('attentionItemService', () => {
   });
 
   it('an action proposal whose owner has left the pod projects nothing — no dead row for nobody (#1652)', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: [{ userId: 'sam' }] }));
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: ['sam'] }));
     mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
 
     await AttentionItemService.recordActionApproval({ _id: 'appr-2', podId: 'pod-1', ownerUserId: 'gone', agentName: 'scout', summary: 'May I?' }, 'Scout');
@@ -408,7 +421,7 @@ describe('attentionItemService', () => {
   });
 
   it('materializes a blocked board row once for each current human recipient', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: ['owner', 'sam'] }));
     mockUserFind.mockReturnValue(chain([
       { _id: 'owner', username: 'owner', isBot: false },
       { _id: 'sam', username: 'Sam', isBot: false },
@@ -423,6 +436,29 @@ describe('attentionItemService', () => {
     expect(mockUpdateOne).toHaveBeenCalledWith(
       expect.objectContaining({ 'source.type': 'task', 'source.id': 'task-1:update-1' }),
       expect.objectContaining({ $setOnInsert: expect.objectContaining({ kind: 'handoff', title: 'Choose a deploy shape' }) }),
+      { upsert: true },
+    );
+  });
+
+  // createdBy keeps a departed creator's id after leavePod. Membership is
+  // Pod.members alone (isListedPodMember), so the creator who left gets no
+  // row from the pod they can no longer open.
+  it('materializes no row for a creator who has left the pod', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: ['sam'] }));
+    mockUserFind.mockReturnValue(chain([
+      { _id: 'owner', username: 'owner', isBot: false },
+      { _id: 'sam', username: 'Sam', isBot: false },
+    ]));
+
+    await AttentionItemService.recordTaskAttention({
+      _id: 'task-1', podId: 'pod-1', taskId: 'TASK-1', status: 'blocked',
+      title: 'Choose a deploy shape', updates: [{ _id: 'update-1', text: 'Blocked on an upstream choice.' }],
+    }, { includeBlocked: true });
+
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: 'sam' }),
+      expect.any(Object),
       { upsert: true },
     );
   });
@@ -516,7 +552,7 @@ describe('an agent answering the person who asked', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUpdateOne.mockResolvedValue({ modifiedCount: 1 });
-    mockPodFindById.mockReturnValue(chain({ _id: POD, name: 'My Workspace', createdBy: 'lee', members: members.map((m) => ({ userId: m._id })) }));
+    mockPodFindById.mockReturnValue(chain({ _id: POD, name: 'My Workspace', createdBy: 'lee', members: members.map((m) => m._id) }));
     mockUserFind.mockReturnValue(chain(members));
     mockUserFindById.mockReturnValue(chain(scoutBot));
     mockLiveClaims.mockResolvedValue(['900']);
