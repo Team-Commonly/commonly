@@ -99,3 +99,21 @@ describe('server.ts mounts them only under the flag', () => {
     expect(src).not.toMatch(/NODE_ENV === 'development'\)\s*\{[^}]*app\.use\('\/api\/(dev|test)/);
   });
 });
+
+describe('only the dev compose file opts in', () => {
+  const read = (name) => require('fs').readFileSync(require('path').join(__dirname, '../../../../', name), 'utf8');
+  const setsFlag = (text) => /^\s*-?\s*COMMONLY_ENABLE_DEV_ROUTES\s*[:=]\s*["']?true/m.test(text);
+
+  test('docker-compose.dev.yml (dev.sh) sets it', () => {
+    expect(setsFlag(read('docker-compose.dev.yml'))).toBe(true);
+  });
+
+  test.each(['docker-compose.yml', 'docker-compose.local.yml'])('%s (a deployment path) never does', (name) => {
+    expect(read(name)).not.toMatch(/COMMONLY_ENABLE_DEV_ROUTES/);
+  });
+
+  test('the scripts still read the files this assumes', () => {
+    expect(read('dev.sh')).toMatch(/COMPOSE_FILE="docker-compose\.dev\.yml"/);
+    expect(read('prod.sh')).toMatch(/COMPOSE_FILE="docker-compose\.yml"/);
+  });
+});

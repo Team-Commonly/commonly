@@ -70,6 +70,9 @@ services:
     environment:
       # Application settings
       - NODE_ENV=development
+      # Mounts /api/dev and /api/test/bot (backend/config/devRoutes). dev.sh
+      # only: docker-compose.yml is what prod.sh runs, and must never set it.
+      - COMMONLY_ENABLE_DEV_ROUTES=true
       - PORT=5000
       
       # Database settings

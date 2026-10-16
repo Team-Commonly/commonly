@@ -5,7 +5,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import * as TestUtils from 'react-dom/test-utils';
 import { MemoryRouter } from 'react-router-dom';
-import ApiDevPage from './ApiDevPage';
+import ApiDevPage, { DEV_ROUTES_OFF, devRouteErrorMessage } from './ApiDevPage';
 
 // Mock the useAppContext hook
 jest.mock('../context/AppContext', () => ({
@@ -124,4 +124,17 @@ test('gives the endpoint path its own line instead of squeezing or clipping it (
   // The rule targets the flex Box by class, so the class has to be on it.
   const tsx = fs.readFileSync(path.join(__dirname, 'ApiDevPage.tsx'), 'utf8');
   expect(tsx).toContain('className="api-dev-accordion-row"');
+});
+
+// The dev panels' routes exist only where the backend opts in
+// (COMMONLY_ENABLE_DEV_ROUTES); a deployed instance answers 404.
+test('says the dev routes are off rather than showing a bare 404', () => {
+  expect(devRouteErrorMessage({ response: { status: 404, data: { error: 'Not found' } } })).toBe(DEV_ROUTES_OFF);
+  expect(devRouteErrorMessage({ response: { status: 403, data: { error: 'Access denied' } } })).toBe('Access denied');
+  expect(devRouteErrorMessage({ message: 'Network Error' })).toBe('Network Error');
+});
+
+test('labels both dev panels with the opt-in', async () => {
+  await renderApiDevPage();
+  expect(container.textContent.split('COMMONLY_ENABLE_DEV_ROUTES=true (local docker-compose.dev.yml)').length - 1).toBe(2);
 });

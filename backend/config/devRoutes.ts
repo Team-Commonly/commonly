@@ -1,7 +1,7 @@
 /**
  * Dev tooling routes (/api/dev, /api/test/bot) exist only where an operator
- * opts in with COMMONLY_ENABLE_DEV_ROUTES=true. Local docker-compose sets it;
- * nothing deployed does.
+ * opts in with COMMONLY_ENABLE_DEV_ROUTES=true. docker-compose.dev.yml (dev.sh)
+ * sets it; docker-compose.yml (prod.sh) and the Helm chart never do.
  *
  * Never gate these on NODE_ENV: a deployed instance can run with
  * NODE_ENV=development, and these routes write agent events with
