@@ -187,6 +187,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   // jsdom cannot see either; sprint-review deleted all three rules and every
   // other test stayed green.
   test('BYO "Other ways" is a spaced disclosure with a link-like summary, and the needs line reads as body', () => {
+    // The mechanism, not just the decoration (sprint-review on #2290): gap and
+    // flex-direction do nothing without display: flex, so pinning gap alone
+    // passed on a rule that had silently reverted to block flow.
+    expect(ruleBody(v2, '.v2-root .v2-byo__more')).toContain('display: flex');
+    expect(ruleBody(v2, '.v2-root .v2-byo__more')).toContain('flex-direction: column');
     expect(ruleBody(v2, '.v2-root .v2-byo__more')).toContain('gap: 12px');
     expect(ruleBody(v2, '.v2-root .v2-byo__more > summary')).toContain('cursor: pointer');
     expect(ruleBody(v2, '.v2-root .v2-byo__more > summary')).toContain('color: var(--v2-accent-text)');
