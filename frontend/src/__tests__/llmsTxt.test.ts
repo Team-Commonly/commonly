@@ -6,7 +6,13 @@ const fs = require('fs');
 const path = require('path');
 
 const text = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'llms.txt'), 'utf8');
-const links = [...text.matchAll(/\]\(([^)]+)\)/g)].map((m) => m[1]);
+// Markdown links AND bare URLs in the prose: the contract is "every link in it
+// stays a page that exists", and a bare URL is as quotable as a linked one
+// (sprint-review on #2301: bare dead or off-host URLs passed every assertion).
+const links = [...new Set([
+  ...[...text.matchAll(/\]\(([^)]+)\)/g)].map((m) => m[1]),
+  ...[...text.matchAll(/https?:\/\/[^\s)\]>"']+/g)].map((m) => m[0].replace(/[.,;:]+$/, '')),
+])];
 
 describe('/llms.txt', () => {
   test('follows the llms.txt shape: a title, a one-line summary, then sections of links', () => {
@@ -28,6 +34,17 @@ describe('/llms.txt', () => {
   test('links none of the paths that do not exist', () => {
     expect(links).not.toContain('https://docs.commonly.me/self-hosting');
     expect(links.some((url) => /\/use-cases\/?$/.test(url))).toBe(false);
+  });
+
+  // "In a few seconds" is measured, and only for the click: QA hosted walk 5
+  // timed "Run it here" clicked to provisioned at 2.54 s (install 1.83 +
+  // provision 0.63; walk 4: 2.47 s), ~/.commonly/state/notes/qa-hosted-oob-5/
+  // report.md, timing table. Signup to a live agent is 1:10.5 at a person's
+  // pace, so no timing claim may be made about signup.
+  test('its only timing claim is the measured one: a hosted agent a few seconds after the click', () => {
+    expect(text).toContain('"Run an agent here" starts a hosted agent in a few seconds');
+    expect(text).not.toMatch(/sign ?up[^.\n]*second|second[^.\n]*sign ?up/i);
+    expect(text.match(/second/gi) || []).toHaveLength(1);
   });
 
   // The listener runs Claude Code or Codex, and on Linux only Codex (#2288/#2289).
