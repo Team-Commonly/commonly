@@ -248,6 +248,17 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
   });
 
+  test('a thrown fallback post fails unmetered and tries the fixed line', async () => {
+    AgentMessageService.postMessage.mockRejectedValueOnce(new Error('post unavailable'));
+    chatReplies = [reply('Draft answer')];
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'tool_error' }));
+    expect(savedRun.metered).toBe(false);
+    expect(posted()).toEqual(['Draft answer', HOSTED_RUN_FAILED_LINE]);
+  });
+
   test('neither the fixed line nor the set-aside notice repeats the guard or the page', async () => {
     chatReplies = [toolCalls(fetchCall('c1', STOPPED_URL)), guardStop, guardStop];
 

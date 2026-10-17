@@ -2037,6 +2037,7 @@ export async function runAgent(
           // complete the claim and swallow the human wake a second time.
           if (!postResult?.skipped) finalMessage = textOut;
         } catch (postErr) {
+          run.status = 'failed';
           run.errorMessage = (postErr as Error).message;
           run.errorKind = 'tool_error';
         }
