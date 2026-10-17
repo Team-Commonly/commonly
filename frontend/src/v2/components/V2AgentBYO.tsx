@@ -24,11 +24,8 @@ import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PERSONA_CARDS } from '../agents/personaCatalogData';
+import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
 
-const DEFAULT_SCOPES = [
-  'context:read', 'summaries:read', 'messages:write', 'messages:read',
-  'posts:write', 'posts:read', 'memory:read', 'memory:write',
-];
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
 const DEFAULT_POD_TYPE = 'chat';
 // @latest matters: `agent run` learned to bootstrap from these env vars in
@@ -428,7 +425,7 @@ const V2AgentBYO: React.FC = () => {
         await api.post('/api/registry/install', {
           agentName: cleanName,
           podId,
-          scopes: DEFAULT_SCOPES,
+          scopes: DEFAULT_INSTALL_SCOPES,
           config: { runtime: { runtimeType: 'hosted' }, ...(personaCard ? { persona: personaCard.key } : {}) },
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
@@ -471,7 +468,7 @@ const V2AgentBYO: React.FC = () => {
         await api.post('/api/registry/install', {
           agentName: cleanName,
           podId,
-          scopes: DEFAULT_SCOPES,
+          scopes: DEFAULT_INSTALL_SCOPES,
           config: {
             runtime: {
               runtimeType: 'wrapper',
@@ -532,7 +529,7 @@ const V2AgentBYO: React.FC = () => {
         await api.post('/api/registry/install', {
           agentName: cleanName,
           podId,
-          scopes: DEFAULT_SCOPES,
+          scopes: DEFAULT_INSTALL_SCOPES,
           config: { runtime: { runtimeType: 'webhook' }, ...(personaCard ? { persona: personaCard.key } : {}) },
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.

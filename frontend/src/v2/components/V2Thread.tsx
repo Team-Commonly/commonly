@@ -26,6 +26,7 @@ import type { V2InviteTab } from './V2InviteModal';
 
 import { useV2ThreadState } from '../hooks/useV2ThreadState';
 import { useV2ThreadMentions } from '../hooks/useV2ThreadMentions';
+import { useWelcomeHostedStart, WELCOME_HOSTED_ACTION } from '../hooks/useWelcomeHostedStart';
 import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
 import {
@@ -348,10 +349,24 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // and 60s refresh keeps the states honest without hammering the endpoint.
   // Declared here because the starts below read it too.
   const [agentStates, setAgentStates] = useState<AgentStateRow[]>([]);
+  // Bumped to read agent states again at once, e.g. when a hosted agent the
+  // welcome started has just gone live.
+  const [agentStatesReload, setAgentStatesReload] = useState(0);
+  const viewerId = currentUser?._id || null;
+  // The welcome's "Run an agent here" runs in place only for the person whose
+  // workspace this is (TASK-290). The server already drops its action on any
+  // other reader's copy; this keeps a live-pushed copy honest too. Anyone
+  // else gets its link, which opens Bring your own.
+  // createdBy is populated on GET /api/pods/:id and a bare id elsewhere.
+  const podCreator = pod?.createdBy as { _id?: string } | string | undefined;
+  const podCreatorId = typeof podCreator === 'string' ? podCreator : podCreator?._id;
+  const viewerOwnsPod = Boolean(viewerId) && String(podCreatorId || '') === String(viewerId);
+  const onHostedLive = useCallback(() => setAgentStatesReload((n) => n + 1), []);
+  const hostedStart = useWelcomeHostedStart(api, { onLive: onHostedLive, onOpenPage: navigate });
   // Walk 4 (2026-10-16): "Run an agent here" stayed under the welcome after
   // the agent was live, an offer the beta's one slot can no longer honour.
-  const viewerHoldsHostedAgent = agentStates.some((agent) => agent.isOwner && agent.hosted);
-  const viewerId = currentUser?._id || null;
+  const viewerHoldsHostedAgent = hostedStart.state?.status === 'live'
+    || agentStates.some((agent) => agent.isOwner && agent.hosted);
   const startsByMessageId = useMemo(() => {
     // A start that navigates must stay inside the app: an in-app /v2/ path
     // only, never a protocol-relative or absolute URL from a payload. A start
@@ -475,7 +490,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     load();
     const timer = setInterval(load, 60_000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [pod?._id, api]);
+  }, [pod?._id, api, agentStatesReload]);
 
   // Lookup by every handle a mention could use: instanceId (what the
   // dropdown inserts for non-default instances) and agentName.
@@ -1636,12 +1651,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             onReply={isReadOnly ? undefined : aimAtMessage}
             onThread={isReadOnly ? undefined : aimAtMessageThread}
             startsByMessageId={isReadOnly ? undefined : startsByMessageId}
-            onStart={isReadOnly ? undefined : (start) => {
+            onStart={isReadOnly ? undefined : (start, messageId) => {
+              if (start.action === WELCOME_HOSTED_ACTION && viewerOwnsPod) {
+                void hostedStart.run(messageId, start);
+                return;
+              }
               if (start.href) { navigate(start.href); return; }
               if (start.action === 'invite') { onOpenInvite?.(PEOPLE_INVITE_TAB); return; }
               void handleSend(start.label);
             }}
             startsDisabled={sending}
+            hostedStart={hostedStart.state}
             onQuoteNavigate={onQuoteNavigate}
             onDecisionRuled={handleDecisionRuled}
             onAimAtThread={aimAtThread}

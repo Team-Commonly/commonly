@@ -34,8 +34,9 @@ export const SCOUT_STARTS = [
 /**
  * The start that leads the welcome where the instance can host (QA walk 3,
  * 2026-10-16): nothing to install, so it goes first. Unlike SCOUT_STARTS it
- * sends no message: it opens Bring your own with hosting chosen, and the
- * signup path adds its href with the new workspace's pod id.
+ * sends no message: on the person's own welcome a click starts a hosted agent
+ * in place (TASK-290, services/welcomeHostedStart.ts); anywhere else its href,
+ * added by the signup path, opens Bring your own with hosting chosen.
  */
 export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here, nothing to install' } as const;
 

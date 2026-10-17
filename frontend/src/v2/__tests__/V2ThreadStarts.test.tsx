@@ -86,7 +86,9 @@ const message = (id, userId, username, content, minute, extra = {}) => ({
   ...extra,
 });
 
-const Harness = ({ initial, sendSpy, onOpenInvite = undefined }) => {
+const OWN_POD = { _id: 'pod-1', name: 'My Workspace', type: 'chat', createdBy: 'u1' };
+
+const Harness = ({ initial, sendSpy, onOpenInvite = undefined, pod = OWN_POD }) => {
   const [messages, setMessages] = useState(initial);
   const sendMessage = async (...args) => {
     sendSpy(...args);
@@ -95,7 +97,7 @@ const Harness = ({ initial, sendSpy, onOpenInvite = undefined }) => {
     return sent;
   };
   const detail = {
-    pod: { _id: 'pod-1', name: 'My Workspace', type: 'chat', createdBy: 'u1' },
+    pod,
     members: [{ _id: 'u1', username: 'maya', isBot: false }],
     messages,
     agents: [{ agentName: 'scout', instanceId: 'u1a2b3c4d5e', displayName: 'Scout', status: 'active' }],
@@ -112,11 +114,11 @@ const LocationProbe = () => {
   return <output data-testid="location">{`${location.pathname}${location.search}`}</output>;
 };
 
-const renderThread = (initial, sendSpy = jest.fn(), { onOpenInvite = undefined } = {}) => {
+const renderThread = (initial, sendSpy = jest.fn(), { onOpenInvite = undefined, pod = OWN_POD } = {}) => {
   render(
     <AuthContext.Provider value={authValue}>
       <MemoryRouter>
-        <Harness initial={initial} sendSpy={sendSpy} onOpenInvite={onOpenInvite} />
+        <Harness initial={initial} sendSpy={sendSpy} onOpenInvite={onOpenInvite} pod={pod} />
         <LocationProbe />
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -343,5 +345,148 @@ describe('Scout starts and the composer after a hosted agent goes live', () => {
     );
     const composer = await screen.findByPlaceholderText(/message my workspace/i);
     await waitFor(() => expect(composer).toHaveValue('@maya-agent '));
+  });
+});
+
+// TASK-290: on the person's own welcome, "Run an agent here" starts a hosted
+// agent in place. The click is the consent; there is no page between. Which
+// welcome may run it is the server's call (services/welcomeHostedStart.ts);
+// these pin the thread's half: only the pod's creator runs it, a repeat click
+// gets the same agent, and anything refused falls back to the link.
+describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-290)', () => {
+  const axios = jest.requireMock('axios').default;
+  const HOSTED = 'Run an agent here, nothing to install';
+  const HREF = '/v2/agents/byo?pod=pod-1&mode=hosted';
+  const welcomeRunsHere = {
+    ...welcome,
+    payload: {
+      kind: 'starts',
+      starts: [
+        {
+          id: 'run-hosted', label: HOSTED, href: HREF, action: 'run-hosted', caps: { agentsPerUser: 1, turnsPerDay: 30 },
+        },
+        ...welcome.payload.starts,
+      ],
+    },
+  };
+  const PLAN = { podId: 'pod-1', existing: null, agentName: 'maya-agent' };
+  const HELD = { podId: 'pod-1', existing: { agentName: 'maya-agent', instanceId: 'default', podId: 'pod-1' }, agentName: null };
+  const calls = (url) => axios.post.mock.calls.filter(([called]) => called === url);
+  // Answers by URL, consumed in order; { reject } answers with an error.
+  const answer = (routes) => {
+    axios.post.mockImplementation((url) => {
+      const next = (routes[url] || []).shift();
+      if (!next) return Promise.resolve({ data: {} });
+      return next.reject ? Promise.reject(next.reject) : Promise.resolve({ data: next });
+    });
+  };
+  const refusal = (status, data) => ({ reject: { response: { status, data } } });
+
+  beforeEach(() => { axios.post.mockClear(); });
+  afterEach(() => { axios.post.mockImplementation(() => Promise.resolve({ data: {} })); });
+
+  test('the beta limits sit under the button, and describe it', () => {
+    renderThread([welcomeRunsHere]);
+    expect(screen.getByRole('button', { name: HOSTED }))
+      .toHaveAccessibleDescription('Beta: 1 hosted agent per account, 30 turns a day.');
+  });
+
+  test('one click installs and starts the agent in this pod, sends nothing, and the start goes away', async () => {
+    answer({
+      '/api/hosted/welcome-start': [PLAN],
+      '/api/registry/install': [{ success: true }],
+      '/api/hosted/provision': [{ ready: true }],
+    });
+    const sendSpy = renderThread([welcomeRunsHere]);
+    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    expect(await screen.findByRole('button', { name: 'Starting…' })).toBeDisabled();
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Run an agent here|Starting/ })).not.toBeInTheDocument());
+
+    expect(calls('/api/hosted/welcome-start').map(([, body]) => body)).toEqual([{ messageId: 'welcome' }]);
+    expect(calls('/api/registry/install')).toHaveLength(1);
+    expect(calls('/api/registry/install')[0][1]).toMatchObject({
+      agentName: 'maya-agent', podId: 'pod-1', config: { runtime: { runtimeType: 'hosted' } },
+    });
+    expect(calls('/api/hosted/provision').map(([, body]) => body)).toEqual([{ agentName: 'maya-agent' }]);
+    expect(sendSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
+    expect(screen.getByRole('button', { name: CONNECT })).toBeInTheDocument();
+  });
+
+  test('a double click starts one agent', async () => {
+    answer({
+      '/api/hosted/welcome-start': [PLAN],
+      '/api/registry/install': [{ success: true }],
+      '/api/hosted/provision': [{ ready: true }],
+    });
+    renderThread([welcomeRunsHere]);
+    const button = screen.getByRole('button', { name: HOSTED });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => expect(calls('/api/hosted/provision')).toHaveLength(1));
+    expect(calls('/api/hosted/welcome-start')).toHaveLength(1);
+    expect(calls('/api/registry/install')).toHaveLength(1);
+  });
+
+  test.each([
+    ['the existing install', refusal(400, { error: 'Agent already installed in this pod' })],
+    ['the cap', refusal(403, { code: 'hosted_cap_reached', cap: 1 })],
+  ])('when another tab got there first, %s answers with that agent: this click starts it, with no error', async (_label, installAnswer) => {
+    answer({
+      '/api/hosted/welcome-start': [PLAN, HELD],
+      '/api/registry/install': [installAnswer],
+      '/api/hosted/provision': [{ ready: true }],
+    });
+    renderThread([welcomeRunsHere]);
+    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Run an agent here|Starting/ })).not.toBeInTheDocument());
+    expect(calls('/api/registry/install')).toHaveLength(1);
+    expect(calls('/api/hosted/provision').map(([, body]) => body)).toEqual([{ agentName: 'maya-agent', instanceId: 'default' }]);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  test('a person who did not create the pod gets the link, and nothing is started', () => {
+    renderThread([welcomeRunsHere], jest.fn(), { pod: { ...OWN_POD, createdBy: { _id: 'u2' } } });
+    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    expect(screen.getByTestId('location')).toHaveTextContent(HREF);
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('the owner is recognised from a populated creator too', async () => {
+    answer({ '/api/hosted/welcome-start': [refusal(503, { code: 'hosted_runtime_unconfigured' })] });
+    renderThread([welcomeRunsHere], jest.fn(), { pod: { ...OWN_POD, createdBy: { _id: 'u1', username: 'maya' } } });
+    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    await waitFor(() => expect(calls('/api/hosted/welcome-start')).toHaveLength(1));
+  });
+
+  test('a start the server will not run here opens the page instead', async () => {
+    answer({ '/api/hosted/welcome-start': [refusal(403, { code: 'not_welcome_start' })] });
+    renderThread([welcomeRunsHere]);
+    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(HREF));
+    expect(calls('/api/registry/install')).toHaveLength(0);
+  });
+
+  test('a name the install refuses opens the page, where a name can be chosen', async () => {
+    answer({
+      '/api/hosted/welcome-start': [PLAN, PLAN],
+      '/api/registry/install': [refusal(409, { code: 'agent_name_taken', error: 'taken' })],
+    });
+    renderThread([welcomeRunsHere]);
+    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(HREF));
+    expect(calls('/api/hosted/provision')).toHaveLength(0);
+  });
+
+  test('a failure says why under the button, and the button can be pressed again', async () => {
+    answer({
+      '/api/hosted/welcome-start': [PLAN, PLAN],
+      '/api/registry/install': [refusal(503, { code: 'hosted_runtime_unconfigured' })],
+    });
+    renderThread([welcomeRunsHere]);
+    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    expect(await screen.findByRole('alert')).toHaveTextContent("Hosting isn't available on this instance yet.");
+    expect(screen.getByRole('button', { name: HOSTED })).toBeEnabled();
+    expect(calls('/api/hosted/provision')).toHaveLength(0);
   });
 });

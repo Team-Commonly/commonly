@@ -1998,6 +1998,19 @@ body.modern-ui.v2-canvas {
   cursor: default;
 }
 
+/* A line that belongs to the start above it: the hosted start's beta limits,
+   or why it could not start. Same slot and size as the delivery hint. */
+.v2-chat__start-note {
+  margin: -2px 0 2px;
+  color: var(--v2-text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.v2-chat__start-note--error {
+  color: var(--v2-danger);
+}
+
 @media (max-width: 760px) {
   /* The row's single act is a touch target on a phone: full width of the row,
      44 tall. This must override the MINIMUM, not a height — a `height` here
