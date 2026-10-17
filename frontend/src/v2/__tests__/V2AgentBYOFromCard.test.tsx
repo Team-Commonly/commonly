@@ -115,6 +115,34 @@ describe('BYO from an approved connect card', () => {
     expect((pre.textContent || '').split('\n')[3]).toBe('commonly agent run lee-codex --adapter codex');
   });
 
+  // sprint-review on #2293: ?adapter= is a URL parameter anyone can type or
+  // send, and the page puts it into the command a person pastes into their
+  // shell. Only a listed tool may get there; anything else is Claude Code.
+  const commandFor = async (adapter, beforeClick = () => {}) => {
+    renderAt(`/v2/agents/byo?pod=bbb222&name=sam-claude&from=card&adapter=${encodeURIComponent(adapter)}`);
+    await screen.findByTestId('byo-card-compact');
+    beforeClick();
+    const act = await screen.findByRole('button', { name: /get my connect command/i });
+    await waitFor(() => expect(act).toBeEnabled());
+    fireEvent.click(act);
+    await screen.findByTestId('byo-listen');
+    return Array.from(document.querySelectorAll('.v2-byo__pre'))
+      .find((el) => /commonly agent run /.test(el.textContent || '')).textContent || '';
+  };
+
+  test('an unlisted ?adapter= is Claude Code', async () => {
+    const command = await commandFor('cursor', () => {
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Connect your Claude Code');
+    });
+    expect(command.split('\n')[3]).toBe('commonly agent run sam-claude --adapter claude');
+  });
+
+  test('an ?adapter= carrying shell syntax never reaches the command', async () => {
+    const command = await commandFor('codex;id');
+    expect(command.split('\n')[3]).toBe('commonly agent run sam-claude --adapter claude');
+    expect(command).not.toContain(';');
+  });
+
   test('"Change" opens the full page with the card\'s choices still made', async () => {
     renderAt(CARD);
     const compact = await screen.findByTestId('byo-card-compact');
