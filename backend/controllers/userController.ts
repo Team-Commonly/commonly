@@ -109,6 +109,15 @@ exports.updateProfile = async (req: any, res: any) => {
   try {
     const { username, displayName, bio, profilePicture } = req.body;
 
+    // The username is set when the account is made. This route edits the
+    // profile around it: name, bio and picture.
+    if (username !== undefined) {
+      return res.status(400).json({
+        error: 'The username can\'t be changed here.',
+        code: 'username_not_editable',
+      });
+    }
+
     if (displayName !== undefined) {
       if (!isValidAccountLabel(displayName)) {
         return res.status(400).json({ error: 'Name must be between 1 and 80 characters.' });
@@ -133,7 +142,6 @@ exports.updateProfile = async (req: any, res: any) => {
 
     // Build user object
     const userFields: any = {};
-    if (username) userFields.username = username;
     if (displayName !== undefined) userFields.displayName = displayName.trim();
     if (bio) userFields.bio = bio;
     if (profilePicture !== undefined) {
