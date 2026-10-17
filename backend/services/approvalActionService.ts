@@ -221,7 +221,7 @@ const toolWord = (requestedName: string): string => {
  * "my-claude" works once on the whole instance. The proposing agent gets a
  * concrete name that will work instead of guessing again (2026-10-14).
  */
-const suggestLocalAgentName = async (requestedName: string, ownerUserId: unknown): Promise<string | null> => {
+export const suggestLocalAgentName = async (requestedName: string, ownerUserId: unknown): Promise<string | null> => {
   const owner = await User.findById(ownerUserId) as { username?: string } | null;
   if (!owner) return null;
   // A username with no ASCII letters or digits (e.g. '中文') slugs to nothing;

@@ -9,7 +9,7 @@ jest.mock('../../../models/User', () => ({
 }));
 
 const {
-  markPodOpened, markStartPicked, markByoOpened, resetOnboardingMarksForTest,
+  markPodOpened, markStartPicked, markByoOpened, markWelcomeHostedStart, resetOnboardingMarksForTest,
 } = require('../../../services/onboardingMarks');
 
 const flush = () => new Promise((r) => setImmediate(r));
@@ -106,6 +106,23 @@ describe('markStartPicked', () => {
     markPodOpened('u1', { createdBy: 'u1' });
     markStartPicked('u1', { createdBy: 'u1' }, 'Start a pod for a project');
     expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+  });
+
+  // TASK-290: the welcome's hosted start sends no message, so the hosted route
+  // records it once the server has checked the click (services/welcomeHostedStart).
+  test('the welcome hosted start records run-hosted as the first start, under the same write-once rule', () => {
+    markWelcomeHostedStart('u1');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    const [filter, update] = mockUpdateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: 'u1', isBot: { $ne: true }, 'onboarding.firstStartAt': { $exists: false } });
+    expect(update.$set['onboarding.firstStartId']).toBe('run-hosted');
+    expect(update.$set['onboarding.firstStartAt']).toBeInstanceOf(Date);
+
+    // One first start per person, whichever start it was.
+    markStartPicked('u1', { createdBy: 'u1' }, 'Start a pod for a project');
+    markWelcomeHostedStart('u1');
+    markWelcomeHostedStart('');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
   });
 });
 
