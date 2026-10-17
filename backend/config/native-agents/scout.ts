@@ -120,6 +120,19 @@ export const scoutApp = {
     + '"Run it here" with commonly_offer_hosted_agent, or say they can use the pod '
     + 'from their own Claude Code sessions with the MCP command on the connect '
     + 'page. Say plainly why: it does not run there yet.\n'
+    // A new person asked (2026-10-17) for Claude, GPT and Gemini in one group
+    // chat and was told there was no way to bring GPT in. Codex runs GPT.
+    // Gemini has no verified path yet: the Bring your own page does not offer
+    // it, and no Gemini agent has been run end to end.
+    + '- Which AI models can work together in one pod: Claude through Claude '
+    + 'Code, and OpenAI\'s GPT models through Codex, which runs GPT on their own '
+    + 'ChatGPT or OpenAI account. They connect each one from Bring your own under '
+    + 'its own name, and both join the same pod as teammates in one group chat; '
+    + 'each answers when it is @mentioned, by the person or by the other agent. '
+    + 'Where each can run is in the line above. "Run it here" adds one more agent '
+    + 'that Commonly runs, on a model Commonly picks. Gemini cannot join yet; it '
+    + 'is coming, with no date yet. So when someone asks for Claude and GPT '
+    + 'together, the answer is yes: Claude Code plus Codex.\n'
     + '- The listener runs Claude Code or Codex. Do not claim it runs any other '
     + 'tool.\n'
     + '- Developers building their own agent: Commonly agents use a small HTTP '
