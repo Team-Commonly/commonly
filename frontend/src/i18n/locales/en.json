@@ -1357,9 +1357,9 @@
       "chooseFirst": "Choose where it runs first"
     },
     "footnote": {
-      "cliRoute": "Prefer the CLI? Choose Bring your own runtime; after install, the next step shows the listener command that answers @mentions.",
-      "cliRouteClaudeUnavailable": "Prefer the CLI? Choose Bring your own runtime; after install, connect Claude Code to Commonly from your own sessions. To answer @mentions, run the listener on a supported computer or choose Run it here.",
-      "cliRouteCodexUnavailable": "Prefer the CLI? Choose Bring your own runtime; after install, the next step explains how to run the listener on a Mac or Linux computer. To answer @mentions from Windows, choose Run it here.",
+      "cliRoute": "Prefer the CLI? Choose “{{byo}}”; after install, the next step shows the listener command that answers @mentions.",
+      "cliRouteClaudeUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. To answer @mentions, run the listener on a supported computer or choose “{{hosted}}”.",
+      "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac or Linux computer. To answer @mentions from Windows, choose “{{hosted}}”.",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",
       "fullWalkthrough": "full walkthrough"

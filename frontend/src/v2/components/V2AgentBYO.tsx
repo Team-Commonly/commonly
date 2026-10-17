@@ -1049,7 +1049,10 @@ const V2AgentBYO: React.FC = () => {
           <p className="v2-byo__footnote">
             {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
               : listenAdapter === 'claude' ? 'agentByo.footnote.cliRouteClaudeUnavailable'
-                : 'agentByo.footnote.cliRouteCodexUnavailable')}{' '}
+                : 'agentByo.footnote.cliRouteCodexUnavailable', {
+              byo: t('agentByo.mode.byo'),
+              hosted: t('agentByo.mode.hosted'),
+            })}{' '}
             {t('agentByo.footnote.notSure')}{' '}
             <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
             {' · '}
