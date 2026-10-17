@@ -18,11 +18,11 @@ const {
 
 let sequence = 0;
 
-const createUser = async ({ verified = true, dailyDigest } = {}) => {
+const createUser = async ({ verified = true, dailyDigest, email } = {}) => {
   sequence += 1;
   const values = {
     username: `digest-user-${sequence}`,
-    email: `digest-${sequence}@example.com`,
+    email: email || `digest-${sequence}@example.com`,
     password: 'Password123!',
     verified,
   };
@@ -68,6 +68,31 @@ describe('digestEmailService', () => {
   afterEach(async () => {
     await clearMongoDb();
     jest.clearAllMocks();
+  });
+
+  // The first real run (2026-10-17 06:01Z) emailed a verified operator account on
+  // a reserved .invalid domain. The digest record stays; only the email is skipped.
+  it('skips a verified address on a reserved domain, keeps the digest, and still sends to an ordinary one', async () => {
+    const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
+    const reserved = await createUser({ email: `ops-${sequence + 1}@ops.commonly.invalid` });
+    const ordinary = await createUser({ email: `person-${sequence + 1}@gmail.com` });
+    const reservedDigest = await createDigest(reserved);
+    const ordinaryDigest = await createDigest(ordinary);
+
+    const result = await digestEmailService.sendDigestEmails([runEntry(reservedDigest), runEntry(ordinaryDigest)]);
+
+    expect(result).toEqual(expect.objectContaining({ eligible: 2, sent: 1, skipped: 1, failed: 0 }));
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    expect(mockSendEmail.mock.calls[0][0].to).toBe(ordinary.email);
+    expect(await Summary.findById(reservedDigest._id)).not.toBeNull();
+    expect((await Summary.findById(reservedDigest._id)).metadata.emailedAt).toBeUndefined();
+    expect((await User.findById(reserved._id)).lastDigestSent).toBeUndefined();
+    // One line per skip, naming the user and never the address.
+    const skipLogs = infoSpy.mock.calls.filter(([msg]) => /reserved domain/.test(String(msg)));
+    expect(skipLogs).toHaveLength(1);
+    expect(JSON.stringify(skipLogs[0])).toContain(String(reserved._id));
+    expect(JSON.stringify(skipLogs[0])).not.toContain('commonly.invalid');
+    infoSpy.mockRestore();
   });
 
   it('emails a non-empty digest to a verified default-on user and stamps it', async () => {
