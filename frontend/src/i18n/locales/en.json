@@ -201,7 +201,6 @@
   },
   "auth": {
     "fields": {
-      "username": "Username",
       "email": "Email",
       "password": "Password"
     },

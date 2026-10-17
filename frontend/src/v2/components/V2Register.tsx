@@ -32,7 +32,6 @@ const V2Register: React.FC = () => {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [invitationCode, setInvitationCode] = useState(searchParams.get('invite') || '');
@@ -67,8 +66,8 @@ const V2Register: React.FC = () => {
     setError(null);
     setSubmitting(true);
     try {
+      // No username: the server derives the handle from the email (TASK-290 A).
       const res = await axios.post('/api/auth/register', {
-        username: username.trim(),
         email: email.trim(),
         password,
         invitationCode: invitationCode.trim(),
@@ -150,18 +149,6 @@ const V2Register: React.FC = () => {
         <p className="v2-login__subtitle">
           {t('auth.register.subtitle')}
         </p>
-
-        <label className="v2-login__field">
-          <span className="v2-login__label">{t('auth.fields.username')}</span>
-          <input
-            className="v2-login__input"
-            type="text"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
-        </label>
 
         <label className="v2-login__field">
           <span className="v2-login__label">{t('auth.fields.email')}</span>

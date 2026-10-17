@@ -9,6 +9,7 @@ const { sendEmail } = require('../services/emailService');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
 const { cleanSignupRef } = require('../utils/signupRef');
+const { deriveUsernameFromEmail } = require('../services/derivedUsername');
 
 // The first-touch ref a signup arrived with (?ref=x), stored once on the new
 // account. Anything that is not a short plain code is dropped, not refused.
@@ -395,12 +396,20 @@ exports.register = async (req: any, res: any) => {
     } = req.body;
 
     const normalizedEmail = normalizeEmail(email);
-    const normalizedUsername = String(username || '').trim();
+    const typedUsername = String(username || '').trim();
     const rawPassword = String(password || '');
 
-    if (!normalizedUsername || !normalizedEmail || !rawPassword) {
-      return res.status(400).json({ error: 'Username, email, and password are required.' });
+    if (!normalizedEmail || !rawPassword) {
+      return res.status(400).json({ error: 'Email and password are required.' });
     }
+
+    // The register page asks only for an email and a password (TASK-290 A), so
+    // the handle comes from the email. A client that sends a username keeps it,
+    // with every check below as before.
+    const usernameDerived = !typedUsername;
+    const normalizedUsername = usernameDerived
+      ? await deriveUsernameFromEmail(normalizedEmail)
+      : typedUsername;
 
     // Reserved for agents (TASK-133 b). A row that takes an agent's derived name
     // or its address IS the row an install would adopt, and registration is the
@@ -492,7 +501,15 @@ exports.register = async (req: any, res: any) => {
     });
 
     // Save user to database
-    await user.save();
+    try {
+      await user.save();
+    } catch (saveErr: any) {
+      // A derived name another signup took in the meantime: derive again
+      // rather than tell someone who typed no username that theirs is taken.
+      if (!usernameDerived || saveErr?.code !== 11000 || !saveErr.keyPattern?.username) throw saveErr;
+      user.username = await deriveUsernameFromEmail(normalizedEmail);
+      await user.save();
+    }
 
     await createDefaultWorkspacePod(user._id);
 

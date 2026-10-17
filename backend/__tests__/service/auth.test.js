@@ -74,6 +74,19 @@ describe('Auth Routes Integration Tests', () => {
       expect(typeof user.verified).toBe('boolean');
     });
 
+    // TASK-290 A: the register page sends no username; the handle comes from
+    // the email, and the signup gets its workspace like any other.
+    it('registers without a username, deriving one from the email', async () => {
+      await request(app)
+        .post('/api/auth/register')
+        .send({ email: 'Ada.Lovelace@example.com', password: 'Password123!' })
+        .expect(201);
+
+      const user = await User.findOne({ email: 'ada.lovelace@example.com' });
+      expect(user.username).toBe('ada-lovelace');
+      expect(await Pod.countDocuments({ createdBy: user._id })).toBe(1);
+    });
+
     it('creates a default private workspace pod owned by the new user', async () => {
       const userData = {
         username: 'workspaceowner',
@@ -184,18 +197,9 @@ describe('Auth Routes Integration Tests', () => {
       expect(response.body.error).toContain('Username already exists');
     });
 
+    // A missing username is no longer one of them: it is derived (TASK-290 A,
+    // the test above).
     it('should validate required fields', async () => {
-      // Missing username
-      const missingUsername = {
-        email: 'test@example.com',
-        password: 'Password123!',
-      };
-
-      await request(app)
-        .post('/api/auth/register')
-        .send(missingUsername)
-        .expect(400);
-
       // Missing email
       const missingEmail = {
         username: 'testuser',
