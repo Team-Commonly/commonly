@@ -22,6 +22,35 @@ describe('emailService', () => {
     process.env = originalEnv;
   });
 
+  // Every QA walk registers an @ops.commonly.invalid account, and its
+  // verification email bounced against the sender's reputation.
+  it('skips a reserved-domain recipient without throwing, sends nothing, and logs without the address', async () => {
+    process.env.SMTP2GO_API_KEY = 'smtp-key';
+    const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
+
+    const result = await sendEmail({
+      to: 'walk-123@ops.commonly.invalid',
+      subject: 'Verify Your Email - Commonly',
+      textBody: 'Plain text',
+      htmlBody: '<p>Plain text</p>',
+    });
+
+    expect(result).toEqual({ skipped: 'reserved_domain', data: { skipped: 'reserved_domain' } });
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(infoSpy.mock.calls[0])).not.toContain('commonly.invalid');
+    infoSpy.mockRestore();
+  });
+
+  it('skips a reserved-domain recipient even when email is not configured: it could never deliver', async () => {
+    const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
+    await expect(sendEmail({
+      to: 'a@x.test', subject: 'Hello', textBody: 'Plain text', htmlBody: '<p>Plain text</p>',
+    })).resolves.toEqual(expect.objectContaining({ skipped: 'reserved_domain' }));
+    expect(axios.post).not.toHaveBeenCalled();
+    infoSpy.mockRestore();
+  });
+
   it('throws a typed error without an SMTP2GO API key and makes no network call', async () => {
     await expect(sendEmail({
       to: 'person@example.com',
