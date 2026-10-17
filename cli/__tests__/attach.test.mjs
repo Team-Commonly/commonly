@@ -758,14 +758,17 @@ describe('bootstrapAgentRecordFromEnv', () => {
     })).rejects.toMatchObject({ code: NO_AGENT_CLI_CODE });
   });
 
-  test('a saved seat predates the default sandbox only when it has the Connect-page shape and nothing enforced', () => {
+  test('a saved seat lacks the default sandbox when it has no workspace and its environment enforces none, or is absent', () => {
     const saved = (overrides) => ({ adapter: 'claude', workspacePath: null, environment: { mcp: [] }, ...overrides });
     expect(savedSeatLacksDefaultSandbox(saved())).toBe(true);
     expect(savedSeatLacksDefaultSandbox(saved({ environment: { mcp: [], sandbox: { trust: 'public' } } }))).toBe(false);
     expect(savedSeatLacksDefaultSandbox(saved({ environment: { mcp: [], sandbox: { mode: 'workspace' } } }))).toBe(false);
     expect(savedSeatLacksDefaultSandbox(saved({ workspacePath: '/work/seat' }))).toBe(false);
     expect(savedSeatLacksDefaultSandbox(saved({ adapter: 'pi' }))).toBe(false);
-    expect(savedSeatLacksDefaultSandbox(saved({ environment: null }))).toBe(false);
+    // Attached without an environment file: it runs unconfined too (TASK-288).
+    expect(savedSeatLacksDefaultSandbox(saved({ environment: null }))).toBe(true);
+    expect(savedSeatLacksDefaultSandbox(saved({ environment: undefined }))).toBe(true);
+    expect(savedSeatLacksDefaultSandbox(saved({ adapter: 'pi', environment: null }))).toBe(false);
   });
 
   test('OpenCode is not selected by automatic bootstrap detection', async () => {

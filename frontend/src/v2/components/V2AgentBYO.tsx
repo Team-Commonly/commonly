@@ -92,6 +92,11 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
   { os: 'linux', labelKey: 'agentByo.listen.osLinux' },
   { os: 'windows', labelKey: 'agentByo.listen.osWindows' },
 ];
+// Windows with Codex is stricter here than in the CLI on purpose: the CLI's
+// host check leaves Codex alone (it confines with its own profiles, not
+// Seatbelt or bubblewrap), but this page's command is bash `export` lines,
+// which PowerShell cannot run, and Codex on native Windows is unmeasured.
+// Not drift: the page only offers what it has seen work.
 const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex'): boolean => (
   os === 'mac' || (os === 'linux' && adapter === 'codex')
 );

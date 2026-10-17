@@ -36,6 +36,37 @@ describe('detectBwrap', () => {
   });
 });
 
+// `bwrap --version` alone passed on an Ubuntu 24.04 host whose AppArmor then
+// refused every sandbox (ubuntu run 38982219348). The probe starts one.
+describe('detectBwrap namespace probe', () => {
+  const ok = { status: 0, stdout: 'bubblewrap 0.9.0', stderr: '' };
+  const linux = (results) => {
+    const calls = [];
+    const spawn = (cmd, args) => { calls.push([cmd, ...args]); return results.shift(); };
+    return { spawn, calls };
+  };
+
+  test('installed and able to start a namespace: available', () => {
+    const { spawn, calls } = linux([ok, ok]);
+    expect(detectBwrap({ spawn, platform: 'linux' })).toEqual({ available: true, path: 'bwrap' });
+    expect(calls[1]).toEqual(['bwrap', '--unshare-all', '--ro-bind', '/', '/', 'true']);
+  });
+
+  test('installed but refused a namespace: not available, with the reason and the AppArmor note', () => {
+    const { spawn } = linux([ok, { status: 1, stdout: '', stderr: 'bwrap: setting up uid map: Permission denied\n' }]);
+    const res = detectBwrap({ spawn, platform: 'linux' });
+    expect(res.available).toBe(false);
+    expect(res.error).toMatch(/^bubblewrap is installed but cannot start a sandbox on this machine \(bwrap: setting up uid map: Permission denied\)\./);
+    expect(res.error).toMatch(/AppArmor restricts the unprivileged user namespaces/);
+  });
+
+  test('not installed: the install line, and no probe', () => {
+    const { spawn, calls } = linux([{ status: null, error: Object.assign(new Error('spawn bwrap ENOENT'), { code: 'ENOENT' }) }]);
+    expect(detectBwrap({ spawn, platform: 'linux' }).error).toMatch(/^bwrap not found on PATH\. Install bubblewrap/);
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe('wrapArgvWithBwrap', () => {
   itLinux('uses an adapter-owned per-spawn HOME when supplied', () => {
     const argv = wrapArgvWithBwrap(['qwen', '-p', 'hi'], {}, {
