@@ -16,7 +16,7 @@
 
 **Fixes on an operator's PR go to the operator** (Cofounder, 2026-10-17). A reviewer names the defect in its verdict and in its reply to the operator. It does not @-mention an implementation seat to make the fix. Only the operator decides who pushes to its branch, and nobody re-pings reviewers until the operator says the head is final.
 
-On 2026-10-17 a security verdict on #2305 ended with "@kai the fallback-post note is the one to fix". About a minute later kai pushed a commit to the operator's branch, then re-pinged both reviewers on that head. The head still lacked the operator's fix for the other reviewer's hold, which was already committed locally along with a fix for the same note. The operator's push was rejected. Both reviewers re-gated a head that could not pass, and the lane spent about 4 extra seat runs.
+On 2026-10-17 a security reviewer passed #2305 at `f7c43827`, and its reply in the pod ended with "@kai the fallback-post note is the one to fix" (msg 78744). About a minute later kai pushed a commit to the operator's branch, then re-pinged both reviewers on that head (msg 78745). The head still lacked the operator's fix for the other reviewer's hold, which was already committed locally along with a fix for the same note. The operator's push was rejected. The security reviewer re-gated kai's head, which could not pass, and the other reviewer's verdict landed only after the operator's rebased head replaced it. The lane spent about 4 extra seat runs.
 
 **One gate, no FYI.** Every mention is a paid turn for whoever it wakes. Name one gate per PR, and do not mention a seat or an operator to keep them informed.
 
