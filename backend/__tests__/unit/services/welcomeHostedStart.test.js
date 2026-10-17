@@ -113,14 +113,15 @@ describe('(1) the action renders only on the owner\'s own welcome', () => {
   });
 
   test('drops it when the pod\'s Scout was installed by someone other than its creator', async () => {
-    const theirPod = await createTestPod(Pod, member._id, { name: 'Bob\'s pod', members: [member._id, owner._id] });
-    await installScout(theirPod._id, owner._id, 'uada');
+    const theirPod = await createTestPod(Pod, owner._id, { name: 'Another workspace', members: [owner._id, member._id] });
+    await installScout(theirPod._id, member._id, 'ubob');
     const [out] = await gateWelcomeHostedActions(
-      [message({ pod_id: String(theirPod._id) })],
+      [message({ pod_id: String(theirPod._id), user_id: String(otherScout._id) })],
       theirPod._id,
       owner._id,
     );
     expect(hostedActionOf(out)).toBeUndefined();
+    expect(out.payload.starts[0].caps).toBeUndefined();
   });
 
   test('a page with no hosted action passes through untouched', async () => {
