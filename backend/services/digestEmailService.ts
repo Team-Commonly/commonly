@@ -1,3 +1,4 @@
+import { isReservedEmailDomain } from '../utils/reservedEmailDomain';
 // eslint-disable-next-line global-require
 const Summary = require('../models/Summary');
 // eslint-disable-next-line global-require
@@ -186,6 +187,16 @@ export class DigestEmailService {
         if (!user?.email || user.verified !== true || user.isBot === true
           || user.emailPreferences?.dailyDigest === false) {
           result.skipped += 1;
+          continue;
+        }
+        // Reserved domains (.invalid, .test, .example, .localhost) never deliver,
+        // and some of those accounts are verified. The digest record stays; only
+        // the email is skipped, before any token is minted or the send claimed.
+        if (isReservedEmailDomain(user.email)) {
+          result.skipped += 1;
+          console.info('Digest email skipped: the address is on a reserved domain and cannot be delivered.', {
+            userId: String(user._id),
+          });
           continue;
         }
 
