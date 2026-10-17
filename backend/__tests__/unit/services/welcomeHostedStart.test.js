@@ -85,6 +85,7 @@ describe('(1) the action renders only on the owner\'s own welcome', () => {
   test('keeps it on the welcome the owner\'s own Scout posted in the pod they created', async () => {
     const [out] = await gateWelcomeHostedActions([message()], pod._id, owner._id);
     expect(hostedActionOf(out)).toBe('run-hosted');
+    expect(out.payload.starts[0].caps).toEqual({ agentsPerUser: 1, turnsPerDay: 30 });
   });
 
   test('drops it, keeping the link, when anyone else posted the same payload', async () => {
@@ -99,7 +100,7 @@ describe('(1) the action renders only on the owner\'s own welcome', () => {
       const start = m.payload.starts.find((s) => s.id === 'run-hosted');
       expect(start.action).toBeUndefined();
       expect(start.href).toBe(HREF);
-      expect(start.caps).toEqual({ agentsPerUser: 1, turnsPerDay: 30 });
+      expect(start.caps).toBeUndefined();
     });
     // The page's own objects are not modified.
     expect(hostedActionOf(page[0])).toBe('run-hosted');
@@ -108,6 +109,7 @@ describe('(1) the action renders only on the owner\'s own welcome', () => {
   test('drops it for a reader who did not create the pod, even on the real welcome', async () => {
     const [out] = await gateWelcomeHostedActions([message()], pod._id, member._id);
     expect(hostedActionOf(out)).toBeUndefined();
+    expect(out.payload.starts[0].caps).toBeUndefined();
   });
 
   test('drops it when the pod\'s Scout was installed by someone other than its creator', async () => {

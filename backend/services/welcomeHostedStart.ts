@@ -82,9 +82,9 @@ export const workspaceScoutUserId = async (podId: unknown, userId: unknown): Pro
 
 /**
  * Read-side gate for a page of pod messages. A hosted start keeps its action
- * only on this viewer's own welcome; anywhere else the action is dropped and
- * the start keeps its link. Pages with no such start pass through untouched
- * and cost no lookup.
+ * only on this viewer's own welcome; anywhere else the action and owner plan
+ * caps are dropped and the start keeps its link. Pages with no such start pass
+ * through untouched and cost no lookup.
  */
 export const gateWelcomeHostedActions = async <T extends MessageLike>(
   messages: T[],
@@ -99,7 +99,7 @@ export const gateWelcomeHostedActions = async <T extends MessageLike>(
     const payload = message.payload as Record<string, unknown>;
     const starts = (startsOf(payload) || []).map((start) => {
       if (!isHostedAction(start)) return start;
-      const { action: _action, ...rest } = start;
+      const { action: _action, caps: _caps, ...rest } = start;
       return rest;
     });
     return { ...message, payload: { ...payload, starts } };
