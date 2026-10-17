@@ -19,7 +19,10 @@ export const isReservedEmailDomain = (email: unknown): boolean => {
   const address = String(email || '').trim().toLowerCase();
   const at = address.lastIndexOf('@');
   if (at < 0) return false;
-  const labels = address.slice(at + 1).replace(/\.$/, '').split('.');
+  // Any run of trailing dots and any stray whitespace go first (sprint-review on
+  // #2298): `a@invalid..` and `a@ invalid` must not fail open. Registration
+  // does not validate the address's format, so such a row can be stored.
+  const labels = address.slice(at + 1).replace(/\.+$/, '').split('.').map((label) => label.trim());
   return RESERVED_TOP_LEVEL_DOMAINS.has(labels[labels.length - 1]);
 };
 

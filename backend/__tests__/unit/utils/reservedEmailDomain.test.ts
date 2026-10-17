@@ -11,6 +11,10 @@ describe('isReservedEmailDomain', () => {
     'a@localhost',
     'A@OPS.COMMONLY.INVALID',
     'a@ops.commonly.invalid.',
+    // sprint-review on #2298: these failed open with a single-dot strip.
+    'a@invalid..',
+    'a@ops.commonly.invalid..',
+    'a@ invalid',
   ])('%s is reserved', (email) => {
     expect(isReservedEmailDomain(email)).toBe(true);
   });
