@@ -1403,7 +1403,7 @@
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
-      "needs": "Needs Node 18+ with npm and {{tool}} signed in. Run all four lines in one Terminal window.",
+      "needs": "Needs Node 18+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
       "osLabel": "Setting up on:",
       "osLinux": "Linux",
       "osMac": "Mac",
