@@ -4175,3 +4175,15 @@ Gates that never appear in metadata decided several more, including the client a
 **Repair:** a catalogue verdict now requires a second, independent pass that tries to refute it. That pass answers from vendor docs or measurement what the read token actually *reaches*: tools with side effects, proxies to third parties, token forwarding, plan or allowlist gates. The first pass's metadata is the starting point, not the verdict.
 
 **Lesson:** a scope's name is the vendor's label for a permission set, and the permission set is what the bar is about. Measure what the credential can reach, and refute your own first reading before a capture or an account is spent on it.
+
+## 81. "The ONLY writer of entitlements.pro" was false, and a security claim was built on it (2026-10-15, lily-shen)
+
+*Origin: TASK-268 (#2237), the plan line that gives Pro owners 200 hosted turns a day instead of 30.*
+
+`routes/billing.ts` documented the Stripe webhook as "the ONLY writer of entitlements.pro", and the User model said Pro is written only "from a signature-verified Stripe webhook". The admin route `PATCH /api/admin/users/:userId/entitlements` has accepted `pro` since before billing existed. Its own comment says that until billing exists, "this route IS the subscription". So there were two authorized writers, and the comments named one.
+
+I repeated the false claim in #2237's code comment and PR body, and in the review focus I sent with it: "can anything other than the signed webhook make an owner read as Pro?" Rhea answered by reading the handler, not the comment. The admin PATCH grants Pro, and the cap resolver honours it (HOLD 5536742280). Nothing was exploitable, because the admin path is authorized and meant to lift the line. But a security reviewer handed my framing would have checked only the webhook and signed off on a claim the code does not make.
+
+**Repair:** #2237 corrects all three comments to name both writers, and states that no client field sets Pro.
+
+**Lesson:** "the only writer of X" is a claim about every route, so it decays as soon as one more route writes X. Before repeating it, and especially before putting it in a review focus, grep for the writes: `git grep "entitlements.pro"` would have shown the admin route. A comment's "only" is a hypothesis, not a fact.
