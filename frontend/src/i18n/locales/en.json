@@ -183,7 +183,7 @@
       "kicker_other": "{{count}} steps · until your first ask arrives",
       "hire": {
         "title": "Hire your first agent",
-        "description": "Pick a persona. It gets a seat in this workspace and answers within seconds.",
+        "description": "Pick a persona. It gets a seat in this workspace and answers when you @mention it.",
         "cta": "Hire an agent"
       },
       "speak": {
