@@ -51,7 +51,9 @@ import {
   ADAPTERS_WITH_GRANT_BROKER,
   ADAPTERS_WITH_DEFAULT_SANDBOX,
   defaultMcpServers,
+  seatBaseline,
   withDefaultMcpServer,
+  withDefaultSandbox,
 } from '../lib/default-environment.js';
 import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import {
@@ -63,6 +65,8 @@ import { claimReleaseFor, ackResultFor } from '../lib/claim-outcome.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
+import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
+import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
 import {
@@ -148,6 +152,19 @@ export const deleteAgentToken = (name) => {
 // OpenCode is opt-in: unlike the established wrappers it must not be selected
 // just because its binary happens to be installed on the operator's machine.
 export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
+export const NO_AGENT_CLI_CODE = 'no_agent_cli';
+
+/**
+ * A saved Connect-page seat from before bootstrap applied the default sandbox:
+ * an adapter that takes one, no workspace, and an environment with nothing
+ * enforced. Such a record is told how to pick the default up; it is not
+ * rewritten here (Cofounder, 2026-10-16: none were found outside our own tests).
+ */
+export const savedSeatLacksDefaultSandbox = (record) => Boolean(record)
+  && ADAPTERS_WITH_DEFAULT_SANDBOX.has(record.adapter)
+  && !record.workspacePath
+  && record.environment !== null && typeof record.environment === 'object'
+  && withDefaultSandbox(record.environment) !== record.environment;
 
 /** Return the adapter binding resolved for this exact installation by the server. */
 export const runtimeAdapterForInstallation = ({ installations, podId, instanceId } = {}) => {
@@ -319,16 +336,26 @@ export const bootstrapAgentRecordFromEnv = async ({
       throw new Error(`Adapter '${adapterOverride}' not found on PATH.`);
     }
   } else {
+    const missing = [];
     for (const candidate of BOOTSTRAP_ADAPTER_DETECT_ORDER) {
       const adapter = adapterRegistry.getAdapter(candidate);
       // eslint-disable-next-line no-await-in-loop
       if (adapter && await adapter.detect()) { adapterName = candidate; break; }
+      missing.push(candidate);
     }
     if (!adapterName) {
-      throw new Error(
+      const err = new Error(
         `No supported agent CLI found on PATH (looked for: ${BOOTSTRAP_ADAPTER_DETECT_ORDER.join(', ')}). `
         + 'Install one, or pass --adapter <name>.',
       );
+      err.code = NO_AGENT_CLI_CODE;
+      throw err;
+    }
+    // The page's command names the person's own CLI; running a different one
+    // without saying so is how a Claude Code user ended up with a Codex agent.
+    if (missing.length > 0) {
+      log(`${missing.join(', ')} not found on PATH, so this agent runs with ${adapterName}. `
+        + 'To choose, pass --adapter <name>.');
     }
   }
 
@@ -356,7 +383,9 @@ export const bootstrapAgentRecordFromEnv = async ({
     instanceUrl,
     runtimeToken,
     adapter: adapterName,
-    environment: buildDefaultEnvironment(adapterName),
+    // The daemon's baseline for a seat nobody wrote a spec for, sandbox
+    // included: this record is derived from nothing the person declared.
+    environment: seatBaseline(buildDefaultEnvironment(adapterName), adapterName, { sandbox: true }),
     workspacePath: null,
   };
 };
@@ -3046,6 +3075,7 @@ Docs:
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .action(async (name, opts) => {
       let record = loadAgentToken(name);
+      let bootstrapped = false;
       if (!record) {
         // First run on this machine: the BYO connect page hands out env vars,
         // not a token file — bootstrap the record from them (#913).
@@ -3057,12 +3087,14 @@ Docs:
           });
         } catch (err) {
           console.error(`${stamp()} [${name}] ${err.message}`);
+          // A Claude Code installed with npm is a .cmd shim Node cannot spawn,
+          // so on Windows this is usually "installed but not runnable here".
+          if (err.code === NO_AGENT_CLI_CODE && process.platform === 'win32') {
+            console.error(windowsSandboxMessage('claude'));
+          }
           process.exit(1);
         }
-        if (record) {
-          saveAgentToken(record.agentName, record);
-          console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
-        } else {
+        if (!record) {
           console.error(
             `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
             + ` (shown on the Connect your own agent page) and re-run, or:`
@@ -3070,6 +3102,24 @@ Docs:
           );
           process.exit(1);
         }
+        bootstrapped = true;
+      }
+
+      // Every turn of a seat this host cannot confine would fail, so say so
+      // once, before a token file is written or a poll is made.
+      const hostRefusal = hostSandboxRefusal({ environment: record.environment, adapterName: record.adapter });
+      if (hostRefusal) {
+        console.error(`${stamp()} [${name}] ${hostRefusal}`);
+        process.exit(1);
+      }
+      if (bootstrapped) {
+        saveAgentToken(record.agentName, record);
+        console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
+      } else if (savedSeatLacksDefaultSandbox(record)) {
+        console.warn(
+          `${stamp()} [${name}] this agent's saved settings predate the default sandbox. To pick it up, reconnect: `
+          + `commonly agent detach ${name} --force, then run a fresh command from the Connect page.`,
+        );
       }
 
       const adapterRequest = checkRunAdapterRequest({
@@ -3117,6 +3167,11 @@ Docs:
       // Unstamped, it took `ps -o lstart` to establish when nine seats came
       // back on 2026-08-18, and that only worked because the processes were
       // still alive — after the next restart that route is gone too.
+      await prepareMcpBeforeFirstPoll({
+        environment: record.environment,
+        log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+      });
+
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
       console.log(`${stamp()} [${name}] foreground mode; to background and keep it across logins, run: commonly daemon install`);
 

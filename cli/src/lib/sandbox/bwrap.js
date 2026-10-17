@@ -31,7 +31,10 @@ const expandHome = (p) => {
   return p;
 };
 
-const MACOS_MESSAGE = 'bwrap is Linux-only; use sandbox.mode: none in Phase 1 or wait for sandbox-exec adapter';
+// Never advise `sandbox.mode: none` here: a public seat refuses it, and the
+// mechanisms that do exist are named instead.
+const MACOS_MESSAGE = 'bwrap is Linux-only. On macOS a public seat runs under Seatbelt '
+  + '(sandbox.mode workspace or read-only); Windows has no supported sandbox yet, so use WSL 2.';
 
 const DEFAULT_RO_BINDS = [
   '/etc/ssl/certs',
@@ -53,7 +56,8 @@ export const detectBwrap = () => {
     if (res.error || res.status !== 0) {
       return {
         available: false,
-        error: 'bwrap not found on PATH. Install bubblewrap: `apt install bubblewrap` (Debian/Ubuntu) or `dnf install bubblewrap` (Fedora).',
+        error: 'bwrap not found on PATH. Install bubblewrap: `sudo apt install bubblewrap` (Debian/Ubuntu, WSL), '
+          + '`sudo dnf install bubblewrap` (Fedora) or `sudo pacman -S bubblewrap` (Arch).',
       };
     }
     return { available: true, path: 'bwrap' };
