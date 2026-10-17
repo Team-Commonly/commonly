@@ -163,10 +163,77 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(extra).not.toContain(STOPPED_TEXT);
     expect(extra).toContain(CLEAN_TEXT);
     expect(extra).toMatch(/This result was set aside/);
-    // No lookups in the extra round.
-    expect(offeredIn(chatBodies[2])).not.toContain('commonly_fetch_url');
+    // The extra round is offered a post and nothing else.
+    expect(offeredIn(chatBodies[2])).toEqual(['commonly_post_message']);
     expect(offeredIn(chatBodies[0])).toContain('commonly_fetch_url');
+    expect(chatBodies).toHaveLength(3);
     expect(posted()).toEqual(['Here is the changelog. I could not use the blog page.']);
+  });
+
+  // Rhea on #2305: the extra round is one model call, not the rest of the budget.
+  describe('the extra round is one model call', () => {
+    const neverAsked = reply('A later round.');
+
+    test('a reply posted through the tool ends the run, with one post', async () => {
+      chatReplies = [
+        toolCalls(fetchCall('c1', STOPPED_URL)),
+        guardStop,
+        toolCalls(call('c2', 'commonly_post_message', { podId: POD, content: 'Recovered once.' })),
+        neverAsked,
+      ];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      expect(chatBodies).toHaveLength(3);
+      expect(posted()).toEqual(['Recovered once.']);
+      expect(savedRun.metered).toBeUndefined();
+    });
+
+    test('two posts in that call publish one', async () => {
+      chatReplies = [
+        toolCalls(fetchCall('c1', STOPPED_URL)),
+        guardStop,
+        toolCalls(
+          call('c2', 'commonly_post_message', { podId: POD, content: 'Recovered once.' }),
+          call('c3', 'commonly_post_message', { podId: POD, content: 'Recovered twice.' }),
+        ),
+        neverAsked,
+      ];
+
+      await runAgent(hostedInstall(), mention);
+
+      expect(chatBodies).toHaveLength(3);
+      expect(posted()).toEqual(['Recovered once.']);
+    });
+
+    test('a lookup asked for in that call is refused and the run ends with the fixed line', async () => {
+      chatReplies = [
+        toolCalls(fetchCall('c1', STOPPED_URL)),
+        guardStop,
+        toolCalls(fetchCall('c2', CLEAN_URL)),
+        neverAsked,
+      ];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
+      expect(chatBodies).toHaveLength(3);
+      expect(mockGetPage.mock.calls).toEqual([[STOPPED_URL]]);
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(savedRun.metered).toBe(false);
+    });
+
+    test('a declined reply in that call ends the run without the fixed line', async () => {
+      AgentMessageService.postMessage.mockResolvedValue({ skipped: true });
+      chatReplies = [toolCalls(fetchCall('c1', STOPPED_URL)), guardStop, reply('NO_REPLY'), neverAsked];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      expect(chatBodies).toHaveLength(3);
+      expect(posted()).toEqual(['NO_REPLY']);
+    });
   });
 
   test('drops every round after the one that brought the stopped text in', async () => {

@@ -44,8 +44,10 @@ read.
   checked on its own through LiteLLM's `/guardrails/apply_guardrail`, which
   calls no model. The result the guard stops is replaced with a fixed
   set-aside notice, every round after the one that brought it in is dropped,
-  and the model gets one more round with no lookups. If the check cannot be
-  made, every web result from the first web round on is set aside instead.
+  and the model gets one more call, offered only a post. That call ends the
+  run: one reply at most, and anything other than a reply or a declined turn
+  is a failure. If the check cannot be made, every web result from the first
+  web round on is set aside instead.
 - If the turn still ends failed with nothing posted, and someone was waiting
   on it (a mention), the agent posts one fixed line. A declined turn
   (`NO_REPLY`, a silent group-pod turn) ends succeeded and never posts it.

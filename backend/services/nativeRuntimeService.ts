@@ -109,6 +109,7 @@ const GUARD_CHECK_TIMEOUT_MS = 10_000;
 // turn's one extra round. It names no rule and repeats nothing from the result.
 const WEB_SET_ASIDE_NOTICE = 'This result was set aside: a content filter stopped it, and its text is no longer '
   + 'in this conversation. Answer with what you have, and tell the person which page or search you could not use.';
+const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
 // What a hosted agent posts when a turn someone was waiting on ends on a guard
 // stop or an error with nothing posted. Fixed text, so it carries nothing the
 // turn read.
@@ -1787,11 +1788,13 @@ export async function runAgent(
       // (TASK-267a): only in-pod read and post, and searching, remain.
       const webTainted = Boolean(dispatchCtx.webTainted);
       const podBridged = mayLookUp ? await podBridgedNow() : false;
-      const lookupsOff = webSetAside;
+      // The round after a set-aside is the recovery round: one model call,
+      // offered only a post, and the run ends after it whatever it did.
+      const recoveryRound = webSetAside;
       const offeredTools = [
         ...toolsForConfig(cfg, inPodOnly, { webTainted, podBridged })
-          .filter((tool) => !lookupsOff || !WEB_LOOKUP_TOOLS.has(tool.function.name)),
-        ...(webTainted ? [] : broker.tools),
+          .filter((tool) => !recoveryRound || tool.function.name === 'commonly_post_message'),
+        ...(webTainted || recoveryRound ? [] : broker.tools),
       ];
       offeredToolNames = new Set(offeredTools.map((tool: any) => String(tool?.function?.name || '')));
       try {
@@ -1941,9 +1944,13 @@ export async function runAgent(
           // naming the grant; any other tool not offered this turn is refused here.
           const narrowedAway = Boolean(dispatchCtx.inPodOnly) && !IN_POD_NATIVE_TOOLS.has(toolName);
           const notOffered = `${toolName || 'That tool'} is not available to you in this turn.`;
-          const result: DispatchResult = offeredToolNames.has(toolName) || narrowedAway || webTaintedAway
-            ? await dispatchTool(toolName, parsedArgs, dispatchCtx)
-            : { content: { ok: false, error: notOffered }, error: notOffered };
+          // The recovery round posts at most one reply.
+          const replied = recoveryRound && postedViaTool ? RECOVERY_REPLIED_REFUSAL : '';
+          let result: DispatchResult;
+          if (replied) result = { content: { ok: false, error: replied }, error: replied };
+          else if (offeredToolNames.has(toolName) || narrowedAway || webTaintedAway) {
+            result = await dispatchTool(toolName, parsedArgs, dispatchCtx);
+          } else result = { content: { ok: false, error: notOffered }, error: notOffered };
           const elapsed = Date.now() - toolStart;
           turn.toolCalls.push({
             name: toolName,
@@ -1991,6 +1998,18 @@ export async function runAgent(
         await run.save();
 
         turnIndex += 1;
+        // The recovery round ends the run: answered (or declined through a
+        // post) is a success, anything else could not finish.
+        if (recoveryRound) {
+          if (postedViaTool) {
+            run.status = run.status === 'running' ? 'succeeded' : run.status;
+          } else {
+            run.status = 'failed';
+            run.errorKind = 'guardrail_blocked';
+            run.errorMessage = 'Request blocked by a content guardrail (prompt-injection / moderation).';
+          }
+          break;
+        }
         // A hosted agent's greeting is one post. Given another round, the
         // model posted the greeting's last line as a second message (QA walk
         // 4, 2026-10-16), so its first-contact run ends at its first post.
