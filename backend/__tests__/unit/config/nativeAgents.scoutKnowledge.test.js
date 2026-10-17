@@ -61,8 +61,10 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/OpenAI's GPT models through Codex/);
     expect(prompt).toMatch(/both join the same pod as teammates in one group chat/);
     expect(prompt).toMatch(/the answer is yes: Claude Code plus Codex/);
-    expect(prompt).toMatch(/Gemini cannot join yet; it is coming, with no date yet/);
+    expect(prompt).toMatch(/Gemini can't join yet; do not say when or whether it will/);
     expect(prompt).not.toMatch(/Gemini (through|via|with|on) /);
+    // Nothing on the board backs a Gemini promise.
+    expect(prompt).not.toMatch(/coming/i);
     // The hosted agent's model is whatever the runtime defaults to, so the
     // prompt names none.
     expect(prompt).not.toMatch(/deepseek/i);
