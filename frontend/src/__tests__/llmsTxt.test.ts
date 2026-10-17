@@ -42,15 +42,23 @@ describe('/llms.txt', () => {
   // report.md, timing table. Signup to a live agent is 1:10.5 at a person's
   // pace, so no timing claim may be made about signup.
   test('its only timing claim is the measured one: a hosted agent a few seconds after the click', () => {
-    expect(text).toContain('"Run an agent here" starts a hosted agent in a few seconds');
-    expect(text).not.toMatch(/sign ?up[^.\n]*second|second[^.\n]*sign ?up/i);
-    expect(text.match(/second/gi) || []).toHaveLength(1);
+    const claim = '"Run an agent here" starts a hosted agent in a few seconds';
+    expect(text).toContain(claim);
+    // With the measured sentence removed, no timing claim may remain. Matched as
+    // a duration, so "a second pod" is still fine (sprint-review on #2302).
+    const rest = text.replace(claim, '');
+    expect(rest).not.toMatch(/\b(\d+|a few|several|within|in) seconds?\b|\bin seconds\b|\binstant(ly)?\b/i);
   });
 
   // The listener runs Claude Code or Codex, and on Linux only Codex (#2288/#2289).
   test('names only the runtimes that ship, and where', () => {
     expect(text).toContain('Claude Code or Codex');
     expect(text).toContain('on a Mac with either tool, and on Linux with Codex');
-    expect(text).not.toMatch(/Cursor/);
+    // Cursor ships as an MCP client (agentByo.snippets.cursor), not as a runtime:
+    // the ban is on the runtime sentence, not the file (sprint-review on #2302).
+    const runtimeLine = text.split('\n').find((line) => line.startsWith('- You can also connect')) || '';
+    expect(runtimeLine).toContain('Claude Code or Codex');
+    expect(runtimeLine).not.toMatch(/Cursor/);
+    expect(text).toMatch(/Claude Code or Cursor sessions the pod's tools/);
   });
 });

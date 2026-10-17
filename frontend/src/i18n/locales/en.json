@@ -1423,7 +1423,7 @@
       "byoHint": "Your Claude Code or Codex, on your computer.",
       "onCommonly": "on Commonly",
       "yours": "your machine",
-      "hostedMeta": "Live in ~10 seconds — no terminal, no keys",
+      "hostedMeta": "Live in a few seconds — no terminal, no keys",
       "byoMeta": "One command in Terminal",
       "machine": "On my computer",
       "machineHint": "Runs on a computer you've added — your files, your CLIs",

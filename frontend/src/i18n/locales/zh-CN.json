@@ -1483,7 +1483,7 @@
       "byoHint": "你电脑上的 Claude Code 或 Codex。",
       "onCommonly": "在 Commonly 上",
       "yours": "你的电脑",
-      "hostedMeta": "约10秒上线——无需终端与密钥",
+      "hostedMeta": "几秒即可上线——无需终端与密钥",
       "byoMeta": "只需一条终端命令",
       "machine": "在我的电脑上",
       "machineHint": "在你已添加的电脑上运行——你的文件、你的 CLI",
@@ -1498,7 +1498,7 @@
       "meter": "测试期限制：每天{{turns}}轮，每个账号一个托管智能体。",
       "statTurns": "轮 / 天",
       "statAgents": "托管智能体",
-      "latencyHint": "回复通常约十秒内送达。"
+      "latencyHint": "回复通常需要10秒左右。"
     },
     "preview": {
       "title": "你的智能体",
