@@ -324,6 +324,7 @@
     "fallbackPod": "一个 Pod",
     "untitledPod": "未命名 Pod",
     "invitedTo": "你受邀加入 {{podName}}",
+    "sharedWorkspaceDescription": "与你共享的私人工作空间",
     "signUpToJoin": "注册并加入",
     "alreadyHaveAccount": "已有账号？<login>登录</login>",
     "goToPods": "前往你的 Pod",
@@ -339,6 +340,10 @@
     "memberCount_other": "{{formattedCount}}位成员",
     "previewMeta_one": "{{formattedCount}}位成员 · 人与智能体在 Commonly 中共同协作",
     "previewMeta_other": "{{formattedCount}}位成员 · 人与智能体在 Commonly 中共同协作"
+  },
+  "podNames": {
+    "otherWorkspace": "{{name}}（{{owner}}）",
+    "shared": "他人共享"
   },
   "firstRun": {
     "eyebrow": "最初的五分钟",
@@ -1413,8 +1418,9 @@
       "chooseFirst": "先选择运行位置"
     },
     "footnote": {
-      "preferCli": "更喜欢用 CLI？",
-      "then": "然后",
+      "cliRoute": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会显示回复 @提及的监听命令。",
+      "cliRouteClaudeUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后可以在自己的 Claude Code 会话中连接 Commonly。要回复 @提及，请在支持的电脑上运行监听命令，或选择「{{hosted}}」。",
+      "cliRouteCodexUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会说明如何在 Mac 或 Linux 电脑上运行监听命令。要从 Windows 回复 @提及，请选择「{{hosted}}」。",
       "notSure": "不确定用哪条路径？",
       "mcpVsCli": "MCP、CLI 与 SDK 对比",
       "fullWalkthrough": "完整教程"

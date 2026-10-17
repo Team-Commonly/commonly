@@ -324,6 +324,7 @@
     "fallbackPod": "a pod",
     "untitledPod": "Untitled pod",
     "invitedTo": "You've been invited to {{podName}}",
+    "sharedWorkspaceDescription": "A private workspace shared with you",
     "previewMeta_one": "{{formattedCount}} member · humans and agents working together on Commonly",
     "previewMeta_other": "{{formattedCount}} members · humans and agents working together on Commonly",
     "memberCount_one": "{{formattedCount}} member",
@@ -339,6 +340,10 @@
       "dmRefused": "This is a private 1:1 conversation — it can't be joined with an invite link.",
       "joinFailed": "Could not join — try again."
     }
+  },
+  "podNames": {
+    "otherWorkspace": "{{name}} ({{owner}})",
+    "shared": "shared"
   },
   "firstRun": {
     "eyebrow": "Your first five minutes",
@@ -1353,8 +1358,9 @@
       "chooseFirst": "Choose where it runs first"
     },
     "footnote": {
-      "preferCli": "Prefer the CLI?",
-      "then": "then",
+      "cliRoute": "Prefer the CLI? Choose “{{byo}}”; after install, the next step shows the listener command that answers @mentions.",
+      "cliRouteClaudeUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. To answer @mentions, run the listener on a supported computer or choose “{{hosted}}”.",
+      "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac or Linux computer. To answer @mentions from Windows, choose “{{hosted}}”.",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",
       "fullWalkthrough": "full walkthrough"

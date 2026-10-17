@@ -200,7 +200,7 @@ router.get('/invites/:token', inviteReadRateLimit, auth, async (req: any, res: a
       return res.status(404).json({ msg: 'Invite invalid or expired' });
     }
     const pod = await Pod.findById(invite.podId)
-      .select('_id name description type members createdAt')
+      .select('_id name description type members createdBy createdAt')
       .lean();
     if (!pod) return res.status(404).json({ msg: 'Pod no longer exists' });
     const alreadyMember = (pod.members || []).some(
@@ -216,6 +216,9 @@ router.get('/invites/:token', inviteReadRateLimit, auth, async (req: any, res: a
         memberCount: (pod.members || []).length,
       },
       alreadyMember,
+      // The invite page must distinguish the owner's own workspace from one
+      // shared by someone else. Keep the owner ID private; send only this fact.
+      isOwner: String(pod.createdBy || '') === String(userId),
       expiresAt: invite.expiresAt,
     });
   } catch (err: any) {

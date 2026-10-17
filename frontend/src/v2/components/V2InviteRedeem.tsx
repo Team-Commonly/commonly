@@ -23,6 +23,7 @@ interface InviteResolveResponse {
   token: string;
   pod: InvitePodInfo;
   alreadyMember?: boolean;
+  isOwner?: boolean;
   expiresAt?: string | null;
 }
 
@@ -182,7 +183,12 @@ const V2InviteRedeem: React.FC = () => {
         <V2Avatar name={podName} size="lg" />
         <div className="v2-invite-card__title">{podName}</div>
         {pod.description && (
-          <div className="v2-invite-card__description">{pod.description}</div>
+          <div className="v2-invite-card__description">
+            {/* Invite resolution sends the ownership fact, not the creator ID.
+                Keep the owner's original description while correcting it for guests. */}
+            {invite.isOwner === false && pod.name === 'My Workspace' && pod.description === 'Your private workspace'
+              ? t('inviteRedeem.sharedWorkspaceDescription') : pod.description}
+          </div>
         )}
         <div className="v2-invite-card__meta">
           {t('inviteRedeem.memberCount', {
