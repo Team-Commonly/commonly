@@ -374,11 +374,39 @@ describe('approved connect_local_agent execution — the seat, never the token',
     );
     expect(resolved.executionResult).toEqual(expect.objectContaining({
       agentName: 'sams-claude',
-      connectPath: '/v2/agents/byo?pod=pod-1&name=sams-claude',
+      connectPath: '/v2/agents/byo?pod=pod-1&name=sams-claude&from=card',
     }));
     // D1: the executor never mints or returns a credential — the token step
     // stays a human-in-browser act on the connect page.
     expect(JSON.stringify(resolved.executionResult)).not.toMatch(/token/i);
+  });
+
+  // QA BYO walk 2: the page re-asked what the card had settled. from=card says
+  // the person chose; adapter says which tool, when the proposer asked.
+  test('the connect path names the tool the proposer was told, and nothing else it was given', async () => {
+    const row = seatRow({ params: { name: 'lee-codex', adapter: 'codex' } });
+    mockApprovalFindById.mockResolvedValue(row);
+    const resolved = seatRow({ status: 'resolved', decision: 'approved', params: row.params });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+    mockInstallFindOne.mockResolvedValue(null);
+    mockRegistryGetByName.mockResolvedValue(null);
+    mockRegistryCreate.mockResolvedValue({ latestVersion: '1.0.0' });
+    mockInstallUpsert.mockResolvedValue({});
+    await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+    expect(resolved.executionResult.connectPath).toBe('/v2/agents/byo?pod=pod-1&name=lee-codex&from=card&adapter=codex');
+  });
+
+  test('an adapter outside the list never reaches the connect path', async () => {
+    const row = seatRow({ params: { name: 'lee-codex', adapter: 'codex&mode=hosted' } });
+    mockApprovalFindById.mockResolvedValue(row);
+    const resolved = seatRow({ status: 'resolved', decision: 'approved', params: row.params });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+    mockInstallFindOne.mockResolvedValue(null);
+    mockRegistryGetByName.mockResolvedValue(null);
+    mockRegistryCreate.mockResolvedValue({ latestVersion: '1.0.0' });
+    mockInstallUpsert.mockResolvedValue({});
+    await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+    expect(resolved.executionResult.connectPath).toBe('/v2/agents/byo?pod=pod-1&name=lee-codex&from=card');
   });
 
   test('an existing install by the same owner is success (identity continuity), not failure', async () => {

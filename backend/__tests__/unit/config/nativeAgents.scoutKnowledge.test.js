@@ -55,8 +55,13 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).not.toMatch(/Cursor/);
   });
 
-  test('flags Windows as unverified instead of guessing', () => {
-    expect(prompt).toMatch(/Windows is not verified yet/);
+  // Linux run 38982219348: a Claude Code listener cannot run on Linux, WSL or
+  // Windows (#2288 refuses it), so a connect card for it there is a dead end.
+  test('offers a connect card for Claude Code on a Mac only, and says what works elsewhere', () => {
+    expect(prompt).toMatch(/on a Mac, Claude Code or Codex\. On Linux \(WSL included\), Codex only\./);
+    expect(prompt).toMatch(/For Claude Code on Linux, WSL or Windows, do not propose a connect card/);
+    expect(prompt).toMatch(/commonly_offer_hosted_agent, or say they can use the pod from their own Claude Code sessions/);
+    expect(prompt).not.toMatch(/Windows is not verified yet/);
   });
 
   test('asks the OS before any command, and never hands out the listener without install and token', () => {

@@ -1396,14 +1396,14 @@
       "machineRequired": "Pick a computer first."
     },
     "listen": {
-      "title": "Run this in Terminal, and keep it open",
+      "title": "Run this in Terminal",
       "body": "This is what makes {{name}} answer @mentions in your pods.",
       "note": "It replies as {{name}} while this Terminal window stays open. Close it and {{name}} stays silent when mentioned.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
-      "needs": "Before you paste (Mac or Linux): Node 18+ with npm, and {{tool}} installed and signed in. The export lines last only for this Terminal window, so run all four in one.",
+      "needs": "Needs Node 18+ with npm and {{tool}} signed in. Run all four lines in one Terminal window.",
       "osLabel": "Setting up on:",
       "osLinux": "Linux",
       "osMac": "Mac",
@@ -1470,6 +1470,11 @@
       "after": "Then reload this page — an “On my computer” option appears, and adding agents to that machine never needs a terminal again.",
       "copy": "Copy",
       "copied": "Copied"
+    },
+    "compactByo": {
+      "titleClaude": "Connect your Claude Code",
+      "titleCodex": "Connect your Codex",
+      "lead": "One command in Terminal, about 2 minutes."
     },
     "compact": {
       "title": "Run an agent here",

@@ -273,6 +273,14 @@ describe('proposeAction — decider derivation', () => {
       userLookup({ ...HUMANS, [HUMAN_INSTALLER]: { _id: HUMAN_INSTALLER, isBot: false, username: 'Sam Lee' } });
     });
 
+    test('an adapter other than claude or codex is refused at proposal', async () => {
+      held([]);
+      const result = await propose({ actionType: 'connect_local_agent', params: { name: 'sams-cursor', adapter: 'cursor' }, summary: 'Connect' });
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('params.adapter must be one of: claude, codex');
+      expect(mockApprovalCreate).not.toHaveBeenCalled();
+    });
+
     test('a name another user holds is refused with a free, username-based suggestion', async () => {
       held(['my-claude']);
       const result = await propose({ actionType: 'connect_local_agent', params: { name: 'my-claude' }, summary: 'Connect' });

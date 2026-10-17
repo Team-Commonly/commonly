@@ -128,6 +128,11 @@ const V2AgentBYO: React.FC = () => {
       // ?mode=hosted comes from Scout's "Run it here" button: the person
       // already asked Commonly to host their agent.
       hosted: params.get('mode') === 'hosted',
+      // ?from=card comes from an approved connect card: the person already
+      // chose their own agent, its name and its pod. ?adapter= is the tool
+      // they told the proposer they run.
+      fromCard: params.get('from') === 'card',
+      adapter: ((a): 'claude' | 'codex' | null => (a === 'claude' || a === 'codex' ? a : null))(params.get('adapter')),
     };
   })();
   // Sam (2026-09-01): persona deep links carry context into this otherwise
@@ -157,7 +162,7 @@ const V2AgentBYO: React.FC = () => {
   // Which CLI the listener runs. Pinned in the command (`--adapter`), so a Mac
   // without Claude Code says so instead of quietly starting Codex (QA BYO
   // walk 1, 2026-10-16). Claude Code by default: it is what most people use.
-  const [listenAdapter, setListenAdapter] = useState<'claude' | 'codex'>('claude');
+  const [listenAdapter, setListenAdapter] = useState<'claude' | 'codex'>(prefill.adapter || 'claude');
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
@@ -195,6 +200,12 @@ const V2AgentBYO: React.FC = () => {
   // the page shows only the act, where it lands and the limits; the full page
   // is one click away.
   const [compactHosted, setCompactHosted] = useState<boolean>(prefill.hosted);
+  // QA BYO walk 2 (2026-10-16): from an approved card the page still asked
+  // where it should run and showed the name and pod fields: 127 words before
+  // the button, most of them re-asking what the card settled. From a card the
+  // page shows the act and where it lands; the full page is one click away.
+  // The key is still minted by the click, never on load: the click is consent.
+  const [compactByo, setCompactByo] = useState<boolean>(prefill.fromCard && Boolean(prefill.name));
   const [hostedState, setHostedState] = useState<'starting' | 'running' | 'slow'>('starting');
   // ADR-026 Phase 2: "on my computer" — install + placement request; the
   // daemon on the chosen machine adopts, provisions, and starts the agent.
@@ -222,6 +233,10 @@ const V2AgentBYO: React.FC = () => {
   // availability loads); the act stays disabled until the instance says it can
   // host, and an instance that cannot falls back to the full page.
   const showCompactHosted = compactHosted && !personaCard && (mode === 'hosted' || !choicesKnown);
+  // Compact only where the command exists (#2289): "One command in Terminal"
+  // must not open onto a page that shows no command. Elsewhere the full page
+  // says why and what works instead.
+  const showCompactByo = compactByo && listenerAvailable && !showCompactHosted && !personaCard && mode === 'byo';
   // One lookup, two readers (TASK-163): the preview note and the placement
   // payload must name the SAME machine, so it is derived once here rather
   // than restated at each call site.
@@ -711,9 +726,25 @@ const V2AgentBYO: React.FC = () => {
 
   return (
     <V2FeaturePage
-      eyebrow={showCompactHosted && !hosted ? t('agentByo.mode.onCommonly') : t('agentByo.eyebrow')}
-      title={showCompactHosted && !hosted ? t('agentByo.compact.title') : t('agentByo.title')}
-      description={showCompactHosted && !hosted ? t('agentByo.compact.lead') : t('agentByo.description')}
+      eyebrow={(() => {
+        if (issued) return undefined;
+        return showCompactHosted && !hosted ? t('agentByo.mode.onCommonly') : t('agentByo.eyebrow');
+      })()}
+      title={(() => {
+        if (showCompactHosted && !hosted) return t('agentByo.compact.title');
+        if (showCompactByo && !issued) {
+          return listenAdapter === 'codex' ? t('agentByo.compactByo.titleCodex') : t('agentByo.compactByo.titleClaude');
+        }
+        return t('agentByo.title');
+      })()}
+      // Once the command is shown, the page's lead is behind the person: what
+      // sits above the copy is only what the paste needs (QA BYO walk 2).
+      description={(() => {
+        if (issued) return undefined;
+        if (showCompactHosted && !hosted) return t('agentByo.compact.lead');
+        if (showCompactByo) return t('agentByo.compactByo.lead');
+        return t('agentByo.description');
+      })()}
       showPodsSidebar={false}
     >
       <div className="v2-byo__layout">
@@ -768,7 +799,43 @@ const V2AgentBYO: React.FC = () => {
           </button>
         </div>
       )}
-      {!showCompactHosted && !issued && !hosted && !placed && (
+      {showCompactByo && !issued && !hosted && !placed && (
+        <div className="v2-byo__form" data-testid="byo-card-compact">
+          {pods.some((p) => p._id === podId) && (
+            <p className="v2-byo__hint">
+              {t('agentByo.compact.joins', {
+                name: sanitizeAgentName(name) || DEFAULT_AGENT_NAME,
+                pod: pods.find((p) => p._id === podId)?.name || '',
+              })}
+              {' '}
+              <button type="button" className="v2-byo__link" onClick={() => setCompactByo(false)}>
+                {t('agentByo.compact.change')}
+              </button>
+            </p>
+          )}
+          {error && <div className="v2-byo__error">{error}</div>}
+          {/* Enabled once the pod list confirms the pod: a link's pod the person
+              cannot install into is replaced by their own, and that is the line
+              above the button, so the click never lands somewhere unshown. */}
+          <button
+            type="button"
+            onClick={submit}
+            disabled={submitting || !pods.some((p) => p._id === podId)}
+            className="v2-byo__submit"
+          >
+            {submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install')}
+          </button>
+          <button
+            type="button"
+            className="v2-byo__link"
+            data-testid="byo-card-other-ways"
+            onClick={() => setCompactByo(false)}
+          >
+            {t('agentByo.compact.otherWays')}
+          </button>
+        </div>
+      )}
+      {!showCompactHosted && !showCompactByo && !issued && !hosted && !placed && (
         <div className="v2-byo__form">
           {(hosting?.configured || machines.length > 0) && (
             <>
@@ -1059,10 +1126,12 @@ const V2AgentBYO: React.FC = () => {
       {issued && (
         <div className="v2-byo__result">
           <h2>{t('agentByo.result.heading')} <code>{issued.agentName}</code></h2>
-          <p>{t('agentByo.result.keyOnce')}</p>
 
           {/*
-            The listener comes FIRST, right under the token: it is the step that
+            Above the copy sits only what the paste needs: where, what it needs,
+            the command (QA BYO walk 2: 112 words down to the box). What it
+            does, the key-once line and the waiting state come after it.
+            The listener comes FIRST, right under the heading: it is the step that
             makes the agent answer @mentions here. The MCP snippets below only let
             the user CALL Commonly from their editor. Users finished this flow, saw
             the agent in Your Team, mentioned it, and got silence; 4 of 6 mentions
@@ -1073,7 +1142,6 @@ const V2AgentBYO: React.FC = () => {
             <div className="v2-byo__snippet-head">
               <span>{t('agentByo.listen.title')}</span>
             </div>
-            <p className="v2-byo__listen-body">{t('agentByo.listen.body', { name: issued.agentName })}</p>
             {/* Everything a stranger needs BEFORE the paste, in one place (QA
                 BYO walk 1 found none of it on the page). One block, so other
                 systems can add their own line beside it. */}
@@ -1135,11 +1203,15 @@ const V2AgentBYO: React.FC = () => {
               </p>
             )}
             {listenerAvailable && (
-              <p className="v2-byo__listen-note">
-                {t('agentByo.listen.note', { name: issued.agentName })}
-              </p>
+              <>
+                <p className="v2-byo__listen-note">
+                  {t('agentByo.listen.note', { name: issued.agentName })}
+                </p>
+                <p className="v2-byo__listen-body">{t('agentByo.listen.body', { name: issued.agentName })}</p>
+              </>
             )}
           </div>
+          <p data-testid="byo-key-once">{t('agentByo.result.keyOnce')}</p>
 
           {listenAdapter === 'claude' && (
             <div className="v2-byo__snippet" data-testid="byo-mcp-claude">

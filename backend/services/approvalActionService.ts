@@ -35,6 +35,9 @@ const KNOWN_ACTION_TYPES = new Set<ApprovalActionType>(['create_pod', 'connect_l
 // scoped @publisher/ names for local seats). Mirrors the BYO page's
 // sanitizeAgentName output alphabet.
 const LOCAL_AGENT_NAME_RE = /^[a-z0-9-]{2,40}$/;
+// What the person runs, as the CLI's --adapter names it. The proposer asked,
+// so the connect page opens on that tool's command instead of guessing.
+const LOCAL_AGENT_ADAPTERS = new Set(['claude', 'codex']);
 
 // Scopes the BYO connect page grants a self-serve seat (V2AgentBYO
 // DEFAULT_SCOPES) — the approved seat must be interchangeable with a
@@ -137,6 +140,9 @@ const validateParams = (actionType: ApprovalActionType, params: Record<string, u
     if (!name) return 'params.name is required for connect_local_agent';
     if (!LOCAL_AGENT_NAME_RE.test(name)) {
       return 'params.name must be 2-40 chars of lowercase letters, digits, and dashes';
+    }
+    if (params.adapter !== undefined && !LOCAL_AGENT_ADAPTERS.has(String(params.adapter))) {
+      return `params.adapter must be one of: ${Array.from(LOCAL_AGENT_ADAPTERS).join(', ')}`;
     }
     return null;
   }
@@ -916,8 +922,9 @@ const executeAction = async (row: IApprovalAction): Promise<unknown> => {
  * page implements.
  */
 const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> => {
-  const params = (row.params || {}) as { name?: string };
+  const params = (row.params || {}) as { name?: string; adapter?: string };
   const agentName = String(params.name || '').trim().toLowerCase();
+  const adapter = LOCAL_AGENT_ADAPTERS.has(String(params.adapter)) ? String(params.adapter) : '';
   if (!LOCAL_AGENT_NAME_RE.test(agentName)) throw new Error('invalid agent name');
   // Re-checked at execution: a name can become reserved between propose and approve.
   const reserved = await reservedAgentNameRefusal(agentName);
@@ -933,7 +940,11 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
   // creating either the ephemeral registry row or the webhook installation.
   await assertAgentRuntimeMayJoinPod(row.podId, 'webhook');
 
-  const connectPath = `/v2/agents/byo?pod=${encodeURIComponent(String(row.podId))}&name=${encodeURIComponent(agentName)}`;
+  // from=card: the person already chose to connect their own agent, under
+  // this name, into this pod, so the page asks none of that again (QA BYO
+  // walk 2: 127 words before the button, most of them re-asking it).
+  const connectPath = `/v2/agents/byo?pod=${encodeURIComponent(String(row.podId))}`
+    + `&name=${encodeURIComponent(agentName)}&from=card${adapter ? `&adapter=${adapter}` : ''}`;
 
   const existing = await AgentInstallation.findOne({
     agentName,
