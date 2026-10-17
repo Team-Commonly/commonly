@@ -415,18 +415,17 @@ export const buildSeatbeltProfile = ({
     `(allow network-outbound (remote tcp "localhost:${port}"))`
   )).join('\n');
   const claudeRuntimeRules = allowClaudeRuntimeAccess ? (() => {
-    const claudeTmp = `/private/tmp/claude-${typeof process.getuid === 'function' ? process.getuid() : '0'}`;
-    const userKeychains = join(homedir(), 'Library', 'Keychains');
+    // Claude's temp root is the seat's own: the adapter sets CLAUDE_CODE_TMPDIR
+    // under statePath, which the state rule above already admits. The
+    // uid-wide /private/tmp/claude-<uid> holds every other Claude session's
+    // temp files on the machine, so it is not admitted.
+    // Claude's security helper needs the encrypted login-keychain database and
+    // this non-secret locale file: that one file, not the Keychains folder.
+    const loginKeychain = join(homedir(), 'Library', 'Keychains', 'login.keychain-db');
     const textEncoding = join(homedir(), '.CFUserTextEncoding');
     return [
-      // Native Claude uses a uid-scoped /private/tmp directory. Admit that
-      // exact runtime directory; every sibling remains denied by default.
-      `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(claudeTmp)}"))`,
-      `(allow file-read* file-test-existence file-write* ${literal(claudeTmp)} ${subpath(claudeTmp)})`,
-      // Claude's security helper needs the encrypted login-keychain database
-      // and this non-secret locale file. Other wrappers do not get this access.
-      `(allow file-read* file-test-existence ${subpath(userKeychains)} ${literal(textEncoding)})`,
-      `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(userKeychains)}"))`,
+      `(allow file-read* file-test-existence ${literal(loginKeychain)} ${literal(textEncoding)})`,
+      `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(loginKeychain)}"))`,
     ];
   })() : [];
 

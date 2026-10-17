@@ -147,14 +147,15 @@ describe('macOS Seatbelt profile', () => {
     })).toThrow(/valid TCP ports/);
   });
 
-  test('Claude-only Keychain and temp access are granted only on request', () => {
+  test('Claude gets the login-keychain file on request, and never the shared Claude temp root', () => {
+    const keychains = join(homedir(), 'Library', 'Keychains');
+    const claudeTmp = `/private/tmp/claude-${typeof process.getuid === 'function' ? process.getuid() : '0'}`;
     const profile = buildSeatbeltProfile({
       workspacePath: workspace,
       executablePath: '/usr/bin/true',
       statePath: state,
     });
-    const claudeTmp = `/private/tmp/claude-${typeof process.getuid === 'function' ? process.getuid() : '0'}`;
-    expect(profile).not.toContain(join(homedir(), 'Library', 'Keychains'));
+    expect(profile).not.toContain(keychains);
     expect(profile).not.toContain(claudeTmp);
 
     const claudeProfile = buildSeatbeltProfile({
@@ -163,8 +164,12 @@ describe('macOS Seatbelt profile', () => {
       statePath: state,
       allowClaudeRuntimeAccess: true,
     });
-    expect(claudeProfile).toContain(join(homedir(), 'Library', 'Keychains'));
-    expect(claudeProfile).toContain(claudeTmp);
+    // The one database Claude's login reads, not the folder of keychains.
+    expect(claudeProfile).toContain(`(literal "${join(keychains, 'login.keychain-db')}")`);
+    expect(claudeProfile).not.toContain(`(subpath "${keychains}")`);
+    // Every Claude session on the machine keeps its temp files under this
+    // root; the seat uses its own (CLAUDE_CODE_TMPDIR under statePath).
+    expect(claudeProfile).not.toContain(claudeTmp);
   });
 
   test('admits user preferences only through a domain filter', () => {
