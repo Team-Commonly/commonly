@@ -31,6 +31,30 @@ Bounded by the opt-in scoping + the per-path env off-switches below. If it bites
 either flip the env off-switch or override that category with a trimmed
 `category_file`.
 
+**Second known false positive: page text.** A hosted agent reads web pages,
+and a page reduced to text runs its navigation labels together with no
+sentence breaks, so a site's footer can read as one sentence and match the
+data-exfiltration category. Nothing in such a page is an attack. Measured
+2026-10-17: 3 of 437 hosted runs over 14 days were stopped, all after a page
+read.
+
+**When the guard stops a hosted turn** (`nativeRuntimeService.runAgent`):
+
+- If the turn has read the web and posted nothing yet, each web result is
+  checked on its own through LiteLLM's `/guardrails/apply_guardrail`, which
+  calls no model. The result the guard stops is replaced with a fixed
+  set-aside notice, every round after the one that brought it in is dropped,
+  and the model gets one more call, offered only a post. That call ends the
+  run: one reply at most, and anything other than a reply or a declined turn
+  is a failure. If the check cannot be made, every web result from the first
+  web round on is set aside instead.
+- If the turn still ends failed with nothing posted, and someone was waiting
+  on it (a mention), the agent posts one fixed line. A declined turn
+  (`NO_REPLY`, a silent group-pod turn) ends succeeded and never posts it.
+- A failed hosted run that posted nothing is stamped `metered: false`: the
+  person's meter and their plan line leave it out, and the per-user spend
+  ceiling still counts it.
+
 ## The scoping (why dev agents aren't blocked)
 
 Both guardrails are `default_on: false`, so they run **only when a caller opts in**.

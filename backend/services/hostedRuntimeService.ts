@@ -160,7 +160,8 @@ export const turnsToday = async (agentName: string, instanceId: string): Promise
 // model is actually called. The event count above also counts an event that
 // was acked without a run, such as an addressed turn that stood down to a
 // peer's claim (QA walk 4, 2026-10-16: the ask got no answer and still showed
-// as a used turn). The greeting is left out here too.
+// as a used turn). The greeting is left out here too, and so is a run that
+// failed and posted nothing (`metered: false`): the person got no answer.
 export const nativeTurnsToday = async (agentName: string, instanceId: string): Promise<number> => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const AgentRun = require('../models/AgentRun');
@@ -169,6 +170,7 @@ export const nativeTurnsToday = async (agentName: string, instanceId: string): P
     instanceId: instanceId || 'default',
     startedAt: { $gte: utcDayStart() },
     trigger: { $ne: 'first_contact' },
+    metered: { $ne: false },
   });
 };
 
