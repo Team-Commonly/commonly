@@ -469,6 +469,19 @@ describe('hosted-mcp connect: callback', () => {
     expect(update.$set['config.grantedScope']).toBe('read');
   });
 
+  it('records an explicit empty scope response without inventing requested scopes', async () => {
+    // GitHub App user tokens can report scope="" even when offline_access
+    // was requested. The callback must preserve what the vendor returned.
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'access-1', scope: '' }),
+    });
+    const res = await callback();
+    expect(outcome(res).hostedMcp).toBe('connected');
+    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    expect(update.$set['config.grantedScope']).toBe('');
+  });
+
   it('exchanges a pre-registered callback with instance credentials while retaining PKCE', async () => {
     const originalEntry = { ...FIXTURE_ENTRY };
     const originalId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
