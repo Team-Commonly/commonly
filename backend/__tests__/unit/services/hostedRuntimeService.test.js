@@ -113,6 +113,8 @@ describe('hostedRuntimeService', () => {
       const filter = mockRunCount.mock.calls[0][0];
       expect(filter).toMatchObject({ agentName: 'scout', instanceId: 'default', trigger: { $ne: 'first_contact' } });
       expect(filter.startedAt.$gte.toISOString()).toMatch(/T00:00:00\.000Z$/);
+      // A run that failed and posted nothing is not one of the person's turns.
+      expect(filter.metered).toEqual({ $ne: false });
     });
 
     it('meters acked events by ACK time (deliveredAt) since the UTC day start and reports the reset', async () => {
