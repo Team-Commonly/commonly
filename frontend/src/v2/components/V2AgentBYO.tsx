@@ -737,7 +737,10 @@ const V2AgentBYO: React.FC = () => {
       })()}
       title={(() => {
         if (showCompactHosted && !hosted) return t('agentByo.compact.title');
-        if (showCompactByo && !issued) {
+        // The command page keeps the tool's name (QA BYO walk 3: it reverted to
+        // "Bring your own agent" after the click). A persona hire keeps the
+        // page's own title: what it names is the persona, not the tool.
+        if ((showCompactByo || issued) && !personaCard) {
           return listenAdapter === 'codex' ? t('agentByo.compactByo.titleCodex') : t('agentByo.compactByo.titleClaude');
         }
         return t('agentByo.title');

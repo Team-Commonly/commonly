@@ -215,6 +215,30 @@ describe('the compact page opens only where the command exists', () => {
 });
 
 describe('the command page puts only what the paste needs above the copy', () => {
+  // QA BYO walk 3: the line lost WHY all four run in one window. Someone who
+  // pastes the exports, opens a new tab and runs the last line gets an auth
+  // error, because an export lasts only in its own window.
+  test('the needs line says why all four lines run in one window', async () => {
+    renderAt(CARD);
+    const act = await screen.findByRole('button', { name: /get my connect command/i });
+    await waitFor(() => expect(act).toBeEnabled());
+    fireEvent.click(act);
+    expect(await screen.findByTestId('byo-listen-needs')).toHaveTextContent(/the exports last only there/);
+  });
+
+  // QA BYO walk 3: after the click the header went back to "Bring your own
+  // agent", so the page stopped naming what it was connecting.
+  test('the command page keeps the tool in its title, and follows the switch', async () => {
+    renderAt(CARD);
+    const act = await screen.findByRole('button', { name: /get my connect command/i });
+    await waitFor(() => expect(act).toBeEnabled());
+    fireEvent.click(act);
+    await screen.findByTestId('byo-listen');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Connect your Claude Code');
+    fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Connect your Codex');
+  });
+
   test('the key-once line and what the command does come after the command', async () => {
     renderAt(CARD);
     const act = await screen.findByRole('button', { name: /get my connect command/i });
