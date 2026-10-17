@@ -87,6 +87,9 @@ describe('digestEmailService', () => {
     expect(await Summary.findById(reservedDigest._id)).not.toBeNull();
     expect((await Summary.findById(reservedDigest._id)).metadata.emailedAt).toBeUndefined();
     expect((await User.findById(reserved._id)).lastDigestSent).toBeUndefined();
+    // Skipped before an unsubscribe token is minted for an address that can never
+    // receive it (sprint-review on #2298: moving the guard below the mint stayed green).
+    expect((await User.findById(reserved._id).select('+digestUnsubscribeToken')).digestUnsubscribeToken).toBeUndefined();
     // One line per skip, naming the user and never the address.
     const skipLogs = infoSpy.mock.calls.filter(([msg]) => /reserved domain/.test(String(msg)));
     expect(skipLogs).toHaveLength(1);
