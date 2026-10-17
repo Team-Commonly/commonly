@@ -5,16 +5,16 @@ const uniqueTag = () => `e2e${Date.now()}`;
 test.describe('Authentication', () => {
   test('register form renders correctly', async ({ page }) => {
     await page.goto('/v2/register');
-    await expect(page.getByLabel('Username')).toBeVisible();
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByLabel('Password')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Create account' })).toBeVisible();
+    // TASK-290 A: no username field; the server derives one from the email.
+    await expect(page.getByLabel('Username')).toHaveCount(0);
   });
 
   test('register new user enters the starter workspace', async ({ page }) => {
     const tag = uniqueTag();
     await page.goto('/v2/register');
-    await page.getByLabel('Username').fill(`user_${tag}`);
     await page.getByLabel('Email').fill(`${tag}@commonly.test`);
     await page.getByLabel('Password').fill('TestPass123!');
     await page.getByRole('button', { name: 'Create account' }).click();
