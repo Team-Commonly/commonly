@@ -1731,10 +1731,13 @@ export async function runAgent(
   const webResults: Array<{ round: number; index: number }> = [];
   const roundEnds: number[] = [];
   let webSetAside = false;
-  const setAsideStoppedWebResult = async (): Promise<number> => {
+  // Returns how many results were set aside, and how many web results the
+  // turn lost in all (those plus the ones in the dropped rounds).
+  const setAsideStoppedWebResult = async (): Promise<{ setAside: number; removed: number }> => {
     const stops = await textsTheGuardStops(litellm, webResults.map(({ index }) => String(messages[index].content)));
     // The guard stopped on something else, the pod's text or the request.
-    if (stops && !stops.includes(true)) return 0;
+    if (stops && !stops.includes(true)) return { setAside: 0, removed: 0 };
+    const before = webResults.length;
     const firstRound = stops ? webResults[stops.indexOf(true)].round : webResults[0].round;
     const aside = webResults.filter((result, i) => result.round === firstRound && (!stops || stops[i]));
     messages.length = roundEnds[firstRound];
@@ -1745,7 +1748,7 @@ export async function runAgent(
     const kept = webResults.filter((result) => result.round < firstRound
       || (result.round === firstRound && !aside.includes(result)));
     webResults.splice(0, webResults.length, ...kept);
-    return aside.length;
+    return { setAside: aside.length, removed: before - kept.length };
   };
 
   try {
@@ -1835,10 +1838,10 @@ export async function runAgent(
           if (GUARDRAIL_REJECTION.test(bodyText)) {
             // Once a turn, and never after a post: the person already has that answer.
             if (!webSetAside && !postedViaTool && webResults.length > 0) {
-              const setAside = await setAsideStoppedWebResult();
+              const { setAside, removed } = await setAsideStoppedWebResult();
               if (setAside > 0) {
                 webSetAside = true;
-                run.webSetAside = setAside;
+                run.webSetAside = removed;
                 continue;
               }
             }
@@ -2056,6 +2059,8 @@ export async function runAgent(
           // complete the claim and swallow the human wake a second time.
           if (!postResult?.skipped) finalMessage = textOut;
         } catch (postErr) {
+          // The reply did not reach the pod, so the run did not answer: it
+          // fails, and a hosted one gets the fixed handling below (vera on #2305).
           run.status = 'failed';
           run.errorMessage = (postErr as Error).message;
           run.errorKind = 'tool_error';

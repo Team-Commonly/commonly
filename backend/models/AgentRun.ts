@@ -85,7 +85,10 @@ export interface IAgentRun extends Document {
   webSearches?: number;
   /** Web pages the turn requested (TASK-267b); absent when it read none. */
   webFetches?: number;
-  /** Web results set aside after the guard stopped the turn on them; absent when none were. */
+  /**
+   * Web results the turn lost after the guard stopped it: the ones set aside
+   * plus the ones in the rounds dropped after them. Absent when none were.
+   */
   webSetAside?: number;
   /**
    * False when the person's turn meter leaves this run out: a hosted run that

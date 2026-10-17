@@ -253,6 +253,8 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(text).not.toContain(LATER_TEXT);
     expect(extra.flatMap((m) => m.tool_calls || []).map((tc) => tc.id)).toEqual(['c1']);
     expect(extra.filter((m) => m.role === 'tool').map((m) => m.tool_call_id)).toEqual(['c1']);
+    // The stopped page and the one read after it.
+    expect(savedRun.webSetAside).toBe(2);
   });
 
   test('when the check cannot be made, every web result from the first web round on is set aside', async () => {
