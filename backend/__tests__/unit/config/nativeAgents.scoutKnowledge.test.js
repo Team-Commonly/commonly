@@ -55,6 +55,21 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).not.toMatch(/Cursor/);
   });
 
+  // 2026-10-17: a new person asked for Claude, GPT and Gemini in one group chat
+  // and heard that there was no way to bring GPT in.
+  test('names Codex as the GPT path into a shared pod, and offers no Gemini path yet', () => {
+    expect(prompt).toMatch(/OpenAI's GPT models through Codex/);
+    expect(prompt).toMatch(/both join the same pod as teammates in one group chat/);
+    expect(prompt).toMatch(/the answer is yes: Claude Code plus Codex/);
+    expect(prompt).toMatch(/Gemini can't join yet; do not say when or whether it will/);
+    expect(prompt).not.toMatch(/Gemini (through|via|with|on) /);
+    // Nothing on the board backs a Gemini promise.
+    expect(prompt).not.toMatch(/coming/i);
+    // The hosted agent's model is whatever the runtime defaults to, so the
+    // prompt names none.
+    expect(prompt).not.toMatch(/deepseek/i);
+  });
+
   // Linux run 38982219348: a Claude Code listener cannot run on Linux, WSL or
   // Windows (#2288 refuses it), so a connect card for it there is a dead end.
   test('offers a connect card for Claude Code on a Mac only, and says what works elsewhere', () => {
