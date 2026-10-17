@@ -1,5 +1,5 @@
 // @ts-nocheck
-// The CLI footnote must lead people to the listener shown after install.
+// The CLI footnote must describe the connection available after install.
 // `agent init` scaffolds a Python webhook and does not connect Claude/Codex.
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -57,7 +57,15 @@ const renderPage = () => render(
 );
 
 describe('V2AgentBYO footnote', () => {
+  const realUserAgent = window.navigator.userAgent;
+  const setUserAgent = (value) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
+  afterEach(() => {
+    setUserAgent(realUserAgent);
+    window.history.replaceState({}, '', '/');
+  });
+
   test('names the runtime mode leading to the listener, even from Run it here', async () => {
+    setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)');
     renderPage();
     const footnote = await screen.findByText(/Prefer the CLI\?/);
     expect(footnote).toHaveTextContent('Choose Bring your own runtime; after install');
@@ -66,5 +74,24 @@ describe('V2AgentBYO footnote', () => {
 
     fireEvent.click(await screen.findByTestId('byo-mode-hosted'));
     expect(footnote).toHaveTextContent('Choose Bring your own runtime; after install');
+  });
+
+  test('on Windows, Claude Code guidance names the MCP path without promising a listener command', async () => {
+    setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+    renderPage();
+    const footnote = await screen.findByText(/Prefer the CLI\?/);
+    expect(footnote).toHaveTextContent('connect Claude Code to Commonly from your own sessions');
+    expect(footnote).toHaveTextContent('run the listener on a supported computer or choose Run it here');
+    expect(footnote).not.toHaveTextContent('the next step shows the listener command');
+  });
+
+  test('on Windows, Codex guidance points to Mac/Linux or hosting', async () => {
+    setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+    window.history.replaceState({}, '', '/?adapter=codex');
+    renderPage();
+    const footnote = await screen.findByText(/Prefer the CLI\?/);
+    expect(footnote).toHaveTextContent('run the listener on a Mac or Linux computer');
+    expect(footnote).toHaveTextContent('To answer @mentions from Windows, choose Run it here');
+    expect(footnote).not.toHaveTextContent('the next step shows the listener command');
   });
 });
