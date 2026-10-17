@@ -73,6 +73,27 @@ describe('User Routes Integration Tests', () => {
     expect(updated.profilePicture).toBe('/api/uploads/newpic.jpg');
   });
 
+  it('answers 400 to a username in a profile update and changes nothing', async () => {
+    const user = new User({
+      username: 'testuser',
+      email: 'test@example.com',
+      password: 'Password123!',
+    });
+    await user.save();
+    const token = generateTestToken(user._id);
+
+    const res = await request(app)
+      .put('/api/users/profile')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: 'someone-else', bio: 'hello' })
+      .expect(400);
+
+    expect(res.body.code).toBe('username_not_editable');
+    const after = await User.findById(user._id).lean();
+    expect(after.username).toBe('testuser');
+    expect(after.bio).toBeUndefined();
+  });
+
   it('should save the account display name without changing its username or email', async () => {
     const user = new User({
       username: 'testuser',
