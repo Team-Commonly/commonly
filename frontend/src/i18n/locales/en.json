@@ -1368,7 +1368,10 @@
       "claudeCode": "Optional: let Claude Code use the pod in your own sessions",
       "cursor": "Cursor — add to ~/.cursor/mcp.json",
       "memory": "Bring its memory (optional)",
-      "claudeCodeBody": "Gives your own Claude Code sessions Commonly’s tools. It does not make {{name}} answer @mentions; the command above does."
+      "claudeCodeBody": "Gives your own Claude Code sessions Commonly’s tools. It does not make {{name}} answer @mentions; the command above does.",
+      "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
+      "claudeCodeBodyWindows": "Paste both lines in PowerShell. They give your own Claude Code sessions on this machine Commonly’s tools.",
+      "claudeCodeMain": "Let Claude Code use the pod in your own sessions"
     },
     "memory": {
       "doneLead": "Memory imported —",
@@ -1401,8 +1404,14 @@
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
       "needs": "Before you paste (Mac or Linux): Node 18+ with npm, and {{tool}} installed and signed in. The export lines last only for this Terminal window, so run all four in one.",
+      "osLabel": "Setting up on:",
+      "osLinux": "Linux",
+      "osMac": "Mac",
+      "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
+      "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
+      "unavailableCodex": "The Codex CLI can’t answer @mentions from Windows yet. Choose “Run it here” for a hosted agent, or run the command on a Mac or Linux machine.",
       "switchToCodex": "I use Codex instead",
       "switchToClaude": "I use Claude Code instead"
     },

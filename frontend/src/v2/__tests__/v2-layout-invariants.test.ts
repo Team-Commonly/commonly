@@ -4535,3 +4535,17 @@ describe('TASK-167 row E — the closing CTA and the footer onto Signal', () => 
     expect(phone).not.toContain('.v2-landing__footer { gap: 24px; }');
   });
 });
+
+describe('BYO command boxes wrap at spaces', () => {
+  // break-all split the Windows PowerShell line as "common / ly-mcp" at 1440
+  // (browser check on #2289). overflow-wrap still breaks a word that cannot
+  // fit (the key, a URL), so a 390 screen never clips; it just stops
+  // splitting words that could have moved to the next line whole.
+  const v2 = read('../v2.css');
+  test('the command box breaks inside a word only when the word cannot fit', () => {
+    const rule = ruleBody(v2, '.v2-byo__pre');
+    expect(rule).toContain('white-space: pre-wrap');
+    expect(rule).toContain('overflow-wrap: anywhere');
+    expect(rule).not.toContain('word-break: break-all');
+  });
+});

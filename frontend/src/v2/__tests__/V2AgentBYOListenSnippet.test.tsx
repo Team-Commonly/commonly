@@ -125,4 +125,83 @@ describe('BYO listener snippet', () => {
     // No line in the snippet is a bare comment.
     expect(lines.filter((l) => l.trimStart().startsWith('#'))).toHaveLength(0);
   });
+
+  // Where the listener runs: Mac with either CLI, Linux with Codex. Claude Code
+  // under Linux's sandbox could not start (ubuntu run 38982219348) and native
+  // Windows has none; there the page says so and offers MCP and hosted. The
+  // Windows MCP command is PowerShell lines through cmd /c (windows-latest).
+  describe('where the listener runs', () => {
+    const realUserAgent = window.navigator.userAgent;
+    const setUserAgent = (value) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
+    afterEach(() => setUserAgent(realUserAgent));
+    const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+    const LINUX = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+    const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)';
+    const listener = () => Array.from(document.querySelectorAll('.v2-byo__pre'))
+      .find((el) => /commonly agent run /.test(el.textContent || ''));
+    const mcpBox = () => screen.getByTestId('byo-mcp-claude').querySelector('.v2-byo__pre').textContent || '';
+
+    test('a Mac browser starts on Mac with the listener command', async () => {
+      setUserAgent(MAC);
+      await issueToken();
+      expect(screen.getByTestId('byo-setup-os-mac')).toHaveAttribute('aria-pressed', 'true');
+      expect(listener()).toBeDefined();
+      expect(screen.getByTestId('byo-listen-needs')).toBeInTheDocument();
+      expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
+    });
+
+    test('Windows: no listener command, the reason and both ways forward, and the PowerShell MCP lines', async () => {
+      setUserAgent(WINDOWS);
+      await issueToken();
+      expect(screen.getByTestId('byo-setup-os-windows')).toHaveAttribute('aria-pressed', 'true');
+      expect(listener()).toBeUndefined();
+      expect(screen.queryByTestId('byo-listen-waiting')).toBeNull();
+      expect(screen.queryByTestId('byo-cta-warning')).toBeNull();
+      const notice = screen.getByTestId('byo-listen-unavailable');
+      expect(notice).toHaveTextContent(/Claude Code can’t answer @mentions from Windows yet/);
+      expect(notice).toHaveTextContent(/with the command below, or choose “Run it here”/);
+      expect(notice).not.toHaveTextContent(/WSL/);
+      expect(mcpBox().split('\n')).toEqual([
+        'npm i -g @commonlyai/mcp',
+        expect.stringMatching(/^claude mcp add commonly -e COMMONLY_API_URL=\S+ -e COMMONLY_AGENT_TOKEN=cm_agent_test_token -- cmd \/c commonly-mcp$/),
+      ]);
+      expect(screen.getByTestId('byo-mcp-claude')).toHaveTextContent(/Paste both lines in PowerShell/);
+      // Here it is the way in: no "Optional", and no "command above" to point at.
+      expect(screen.getByTestId('byo-mcp-claude')).toHaveTextContent(/^Let Claude Code use the pod in your own sessions/);
+      expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above/);
+    });
+
+    test('Linux with Claude Code: no listener command, and the bash MCP command; with Codex the listener is back', async () => {
+      setUserAgent(LINUX);
+      await issueToken();
+      expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
+      expect(listener()).toBeUndefined();
+      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/from Linux yet/);
+      expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
+      expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above|Optional/);
+      fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
+      expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI installed and signed in/);
+    });
+
+    test('Codex on Windows says so, and offers hosted or another machine', async () => {
+      setUserAgent(WINDOWS);
+      await issueToken();
+      fireEvent.click(screen.getByTestId('byo-listen-adapter-switch'));
+      expect(listener()).toBeUndefined();
+      expect(screen.getByTestId('byo-listen-unavailable'))
+        .toHaveTextContent(/The Codex CLI can’t answer @mentions from Windows yet\. Choose “Run it here”/);
+      expect(screen.queryByTestId('byo-mcp-claude')).toBeNull();
+    });
+
+    test('the switch overrides the browser: Windows to Mac brings the listener back', async () => {
+      setUserAgent(WINDOWS);
+      await issueToken();
+      fireEvent.click(screen.getByTestId('byo-setup-os-mac'));
+      expect(screen.getByTestId('byo-setup-os-mac')).toHaveAttribute('aria-pressed', 'true');
+      expect(listener()).toBeDefined();
+      expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
+      expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
+    });
+  });
 });

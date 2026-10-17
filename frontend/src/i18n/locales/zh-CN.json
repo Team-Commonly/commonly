@@ -1428,7 +1428,10 @@
       "claudeCode": "可选：让 Claude Code 在你自己的会话里使用这个 Pod",
       "cursor": "Cursor——添加到 ~/.cursor/mcp.json",
       "memory": "导入它的记忆（可选）",
-      "claudeCodeBody": "为你自己的 Claude Code 会话加上 Commonly 的工具。它不会让 {{name}} 回复 @提及，上面那条命令才会。"
+      "claudeCodeBody": "为你自己的 Claude Code 会话加上 Commonly 的工具。它不会让 {{name}} 回复 @提及，上面那条命令才会。",
+      "claudeCodeBodyOwn": "为你自己的 Claude Code 会话加上 Commonly 的工具。",
+      "claudeCodeBodyWindows": "两行都粘贴到 PowerShell 里运行。这样你在这台电脑上的 Claude Code 会话就能用上 Commonly 的工具。",
+      "claudeCodeMain": "让 Claude Code 在你自己的会话里使用这个 Pod"
     },
     "memory": {
       "doneLead": "记忆已导入——",
@@ -1461,7 +1464,13 @@
       "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
       "ctaWarning": "{{name}} 尚未监听：上面的命令运行起来之前，它不会回复 @提及。",
       "needs": "粘贴前请确认（Mac 或 Linux）：已安装 Node 18+（含 npm），{{tool}} 已安装并登录。export 那几行只对当前终端窗口有效，所以四行都要在同一个窗口里运行。",
+      "osLabel": "你的系统：",
+      "osLinux": "Linux",
+      "osMac": "Mac",
+      "osWindows": "Windows",
       "toolClaude": "Claude Code",
+      "unavailableClaude": "Claude Code 在 {{os}} 上暂时不能回复 @提及：Commonly 要把它放进沙箱里运行，而 Commonly 用的沙箱在 {{os}} 上还做不到。你可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择“在这里运行”，改用托管智能体。",
+      "unavailableCodex": "Codex CLI 在 Windows 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 或 Linux 机器上运行这条命令。",
       "toolCodex": "Codex CLI",
       "switchToCodex": "我用的是 Codex",
       "switchToClaude": "我用的是 Claude Code"
