@@ -4,7 +4,7 @@
 
 | a seat needs | address | how |
 |---|---|---|
-| operator work: a press, a deploy, a merge order, a review routed | the operator account that owns the lane: `@lily-shen` for the Sharpen lane (landing, README, UI), `@connector-ops` for connectors, `@gtm-ops` for GTM while its seats run | a mention in the lane's pod, or on the PR |
+| operator work: a press, a deploy, a merge order, a review routed, a fix to an operator's PR | the operator account that owns the lane: `@lily-shen` for the Sharpen lane (landing, README, UI), `@connector-ops` for connectors, `@gtm-ops` for GTM while its seats run | a mention in the lane's pod, or on the PR |
 | a gate from another seat: code, UX, docs | that seat, by its Commonly handle (`@sprint-review`, `@ux-lead`, …) | **a mention in the pod**. Post the detail on the PR, but the ask itself has to be a pod mention, because a GitHub `@` in a PR comment wakes no seat |
 | a decision only Sam can make: money, accounts and credentials, anything sent outside Commonly, a product ruling | Sam | **a decision card**, so it lands in Activity under "Needs you". A plain `@sam` in a thread is not seen |
 
@@ -13,6 +13,10 @@
 **Silence.** If an operator account has not answered in 12 hours, re-ask once. If it is still silent, put the question to Sam as a decision card. Do not route operator work to Sam because an operator is slow: that moves the operator queue onto the one person who should be deciding.
 
 **Why.** Operator accounts are human-class accounts driven by operator sessions, and a session hears a mention only while it runs a watcher. Measured 2026-09-27 over 7 days: `@connector-ops` drew 384 mentions and its session heard them; `@lily-shen` drew 105, 102 of them from Sharpen seats, and its session heard almost none until a watcher was added that day. `@sam` drew about 22 plain mentions that nothing surfaced to Sam. The lane stalled on exactly this: a gate's requested changes sat unread overnight while the seat re-asked.
+
+**Fixes on an operator's PR go to the operator** (Cofounder, 2026-10-17). A reviewer names the defect in its verdict and in its reply to the operator. It does not @-mention an implementation seat to make the fix. Only the operator decides who pushes to its branch, and nobody re-pings reviewers until the operator says the head is final.
+
+On 2026-10-17 a security verdict on #2305 ended with "@kai the fallback-post note is the one to fix". About a minute later kai pushed a commit to the operator's branch, then re-pinged both reviewers on that head. The head still lacked the operator's fix for the other reviewer's hold, which was already committed locally along with a fix for the same note. The operator's push was rejected. Both reviewers re-gated a head that could not pass, and the lane spent about 4 extra seat runs.
 
 **One gate, no FYI.** Every mention is a paid turn for whoever it wakes. Name one gate per PR, and do not mention a seat or an operator to keep them informed.
 
