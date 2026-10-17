@@ -30,7 +30,8 @@ const {
   hostedEngineOf,
   readHostedConfig,
 } = require('../services/hostedEngine');
-const { markByoOpened } = require('../services/onboardingMarks');
+const { markByoOpened, markWelcomeHostedStart } = require('../services/onboardingMarks');
+const { resolveWelcomeHostedStart } = require('../services/welcomeHostedStart');
 const {
   revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
@@ -198,6 +199,28 @@ router.get('/availability', hostedRateLimit, auth, async (req: any, res: any) =>
   // The caller's own plan line (TASK-268), so the page states the limit they get.
   const caps = await hostedRuntime.hostedCapsForOwner(getUserId(req));
   return res.json({ configured: engineAvailable(engine), engine, caps });
+});
+
+/**
+ * POST /api/hosted/welcome-start { messageId }
+ * One click on Scout's signup welcome, "Run an agent here" (TASK-290): answers
+ * the hosted agent the caller already holds, or a free name to install in the
+ * welcome's pod. Only the person whose workspace welcome it is gets an answer;
+ * services/welcomeHostedStart.ts checks the message's author and the pod's
+ * creator. Install and provision stay with their own routes.
+ */
+router.post('/welcome-start', hostedRateLimit, auth, async (req: any, res: any) => {
+  try {
+    if (!requireConfigured(res, engineForNewHostedInstall())) return undefined;
+    const userId = getUserId(req);
+    const result = await resolveWelcomeHostedStart({ messageId: req.body?.messageId, userId });
+    if ('error' in result) return res.status(result.error.status).json(result.error.body);
+    markWelcomeHostedStart(userId);
+    return res.json(result);
+  } catch (error: any) {
+    console.error('[hosted] welcome start failed:', error?.message || error);
+    return res.status(500).json({ message: 'Hosted start failed' });
+  }
 });
 
 /**

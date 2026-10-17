@@ -9,6 +9,7 @@ jest.mock('../../../models/Pod');
 jest.mock('../../../models/Message', () => ({
   create: jest.fn(),
   findById: jest.fn(),
+  find: jest.fn(),
 }));
 jest.mock('../../../models/pg/Message');
 jest.mock('../../../services/agentMentionService', () => {
@@ -31,6 +32,12 @@ jest.mock('../../../services/threadRootResolver', () => ({
 }));
 jest.mock('../../../services/onboardingMarks', () => ({ markPodOpened: jest.fn(), markStartPicked: jest.fn() }));
 const { markPodOpened, markStartPicked } = require('../../../services/onboardingMarks');
+// The gate's own rules are pinned in services/welcomeHostedStart.test.js; here,
+// that every page served goes through it. Pass-through unless a test says so.
+jest.mock('../../../services/welcomeHostedStart', () => ({
+  gateWelcomeHostedActions: jest.fn(async (messages) => messages),
+}));
+const { gateWelcomeHostedActions } = require('../../../services/welcomeHostedStart');
 
 const socketConfig = require('../../../config/socket');
 const { resolveThreadRoot, assertReplyTargetInPod } = require('../../../services/threadRootResolver');
@@ -81,6 +88,31 @@ describe('messageController', () => {
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await messageController.getMessages(req, res);
       expect(res.json).toHaveBeenCalledWith(mockMessages);
+    });
+
+    // TASK-290: the welcome's in-place hosted start is decided by its author,
+    // server-side, on the page as served, on both stores.
+    it('serves every page through the welcome start gate, for this pod and reader', async () => {
+      const page = [{ id: 41, user_id: 'bot-1', payload: { kind: 'starts', starts: [] } }];
+      const gated = [{ id: 41, gated: true }];
+      Pod.findById.mockResolvedValue({ members: ['u1'] });
+      PGMessage.findByPodId.mockResolvedValue(page);
+      gateWelcomeHostedActions.mockResolvedValueOnce(gated);
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.getMessages({ params: { podId: 'p1' }, query: {}, user: { id: 'u1' } }, res);
+      expect(gateWelcomeHostedActions).toHaveBeenCalledWith(page, 'p1', 'u1');
+      expect(res.json).toHaveBeenCalledWith(gated);
+
+      // The Mongo fallback serves through the same gate.
+      PGMessage.findByPodId.mockRejectedValue(new Error('pg down'));
+      MongoMessage.find.mockReturnValue({
+        populate: () => ({ sort: () => ({ limit: async () => [] }) }),
+      });
+      gateWelcomeHostedActions.mockResolvedValueOnce(gated);
+      const fallback = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.getMessages({ params: { podId: 'p1' }, query: {}, user: { id: 'u1' } }, fallback);
+      expect(gateWelcomeHostedActions).toHaveBeenLastCalledWith([], 'p1', 'u1');
+      expect(fallback.json).toHaveBeenCalledWith(gated);
     });
 
     it('marks a first look at the pod only on the first page, after access is granted', async () => {

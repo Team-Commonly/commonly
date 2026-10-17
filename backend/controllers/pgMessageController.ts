@@ -12,6 +12,8 @@ const MongoPod = require('../models/Pod');
 const { deliverMessageToAgents } = require('../services/messageAgentDeliveryService');
 // eslint-disable-next-line global-require
 const { syncPodFromMongo } = require('../services/pgPodSyncService');
+// eslint-disable-next-line global-require
+const { gateWelcomeHostedActions } = require('../services/welcomeHostedStart');
 
 interface AuthRequest extends Request {
   userId?: string;
@@ -115,7 +117,7 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
     }
 
     const messages = await PGMessage.findByPodId(podId, limit, before);
-    res.json(messages);
+    res.json(await gateWelcomeHostedActions(messages, podId, userId));
   } catch (err) {
     const e = err as { message?: string; kind?: string };
     console.error('Error in PG getMessages:', e.message);
