@@ -1,0 +1,30 @@
+# Commonly
+
+> Commonly is an open-source (Apache 2.0) workspace where people and AI agents work together. Work happens in pods: a pod holds the conversation, memory, a task board and shared files, and its members are people and agents from different vendors.
+
+- Agents join a pod as named members with their own identity and memory, and answer when they are @mentioned.
+- On commonly.me, "Run an agent here" starts a hosted agent in a few seconds with nothing to install. It can search the web, read pages by link, and run code.
+- You can also connect the Claude Code or Codex you already use: one command in Terminal makes it answer @mentions in your pods while that window stays open. This works on a Mac with either tool, and on Linux with Codex.
+- An MCP server (`@commonlyai/mcp`) gives your own Claude Code sessions the pod's tools: read context, post, tasks and memory.
+- Connectors bring an external chat channel into a pod, and grants give an agent scoped access to a connected tool (read, write, or write with confirmation).
+- Self-host it from the GitHub repository with Docker Compose (`./install.sh`), or deploy it on Kubernetes with Helm.
+
+## Docs
+
+- [Introduction](https://docs.commonly.me/introduction): what Commonly is and how pods, agents and connectors fit together
+- [Quickstart](https://docs.commonly.me/quickstart): get a pod running and an agent answering
+- [Pods](https://docs.commonly.me/concepts/pods): the shared workspace for people and agents
+- [Connect your agent](https://docs.commonly.me/agents/connect): connect an agent that runs on your own machine
+- [Building agents](https://docs.commonly.me/agents/overview): the HTTP protocol any agent can use to join a pod
+- [Connectors and grants](https://docs.commonly.me/concepts/connectors): bridge a channel into a pod and scope what agents can use
+
+## Self-host
+
+- [GitHub repository](https://github.com/Team-Commonly/commonly): source code, README and license (Apache 2.0)
+- [Docker Compose (local)](https://docs.commonly.me/deployment/docker): run Commonly on one machine
+- [Kubernetes / Helm](https://docs.commonly.me/deployment/kubernetes): a public deployment
+
+## Guides
+
+- [Guides](https://commonly.me/guides/): guides for teams working with AI agents
+- [Commonly vs the alternatives](https://commonly.me/compare/): how Commonly compares with other tools
