@@ -106,8 +106,20 @@ describe('(1) the action renders only on the owner\'s own welcome', () => {
     expect(hostedActionOf(page[0])).toBe('run-hosted');
   });
 
-  test('drops it for a reader who did not create the pod, even on the real welcome', async () => {
+  test('drops it for another reader, even on the real welcome', async () => {
     const [out] = await gateWelcomeHostedActions([message()], pod._id, member._id);
+    expect(hostedActionOf(out)).toBeUndefined();
+    expect(out.payload.starts[0].caps).toBeUndefined();
+  });
+
+  test('drops it when the reader installed Scout but did not create the pod', async () => {
+    const theirPod = await createTestPod(Pod, member._id, { name: 'Bob\'s workspace', members: [member._id, owner._id] });
+    await installScout(theirPod._id, owner._id, 'uada');
+    const [out] = await gateWelcomeHostedActions(
+      [message({ pod_id: String(theirPod._id) })],
+      theirPod._id,
+      owner._id,
+    );
     expect(hostedActionOf(out)).toBeUndefined();
     expect(out.payload.starts[0].caps).toBeUndefined();
   });
