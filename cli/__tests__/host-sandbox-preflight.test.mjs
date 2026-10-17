@@ -206,7 +206,7 @@ describe('agent run on a host that cannot confine the seat', () => {
 });
 
 describe('a saved seat from before the default sandbox', () => {
-  test('starts with one line saying how to pick the default up', async () => {
+  test('starts with one line saying how to pick the default up, and its record is left byte for byte', async () => {
     saveAgentToken('byo-old', {
       agentName: 'byo-old',
       podId: 'pod-1',
@@ -216,6 +216,8 @@ describe('a saved seat from before the default sandbox', () => {
       workspacePath: null,
       environment: { mcp: [{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] }] },
     });
+    const recordPath = path.join(homeTmpDir, '.commonly', 'tokens', 'byo-old.json');
+    const before = fs.readFileSync(recordPath);
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     jest.spyOn(console, 'log').mockImplementation(() => {});
     // Past the warning the run would poll; stop it at its first client.
@@ -226,8 +228,11 @@ describe('a saved seat from before the default sandbox', () => {
       registerAgent(program);
       await expect(program.parseAsync(['agent', 'run', 'byo-old'], { from: 'user' })).rejects.toThrow('reached the poll loop');
       const warned = warnSpy.mock.calls.map((call) => call.join(' ')).join('\n');
-      expect(warned).toContain("[byo-old] this agent's saved settings predate the default sandbox");
-      expect(warned).toContain('commonly agent detach byo-old --force, then run a fresh command from the Connect page');
+      expect(warned).toContain("[byo-old] this agent's saved settings declare no sandbox, so it runs without one");
+      expect(warned).toContain('commonly agent detach byo-old --force, then either run a fresh command from the Connect page');
+      expect(warned).toContain('or attach it again with an environment file that sets sandbox.trust: public');
+      // The warning only tells; it does not rewrite the operator's record (vera on #2288).
+      expect(fs.readFileSync(recordPath).equals(before)).toBe(true);
     } finally {
       warnSpy.mockRestore();
       console.log.mockRestore();

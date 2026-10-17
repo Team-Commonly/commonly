@@ -155,16 +155,19 @@ export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex', 'pi'];
 export const NO_AGENT_CLI_CODE = 'no_agent_cli';
 
 /**
- * A saved Connect-page seat from before bootstrap applied the default sandbox:
- * an adapter that takes one, no workspace, and an environment with nothing
- * enforced. Such a record is told how to pick the default up; it is not
- * rewritten here (Cofounder, 2026-10-16: none were found outside our own tests).
+ * A saved seat with no enforced sandbox: an adapter that takes one, no
+ * workspace, and an environment that is absent or enforces nothing (a record
+ * from before bootstrap applied the default, or one attached without an
+ * environment file). Such a record is told how to pick the default up; it is
+ * not rewritten here (Cofounder, 2026-10-16: none were found outside our own
+ * tests).
  */
 export const savedSeatLacksDefaultSandbox = (record) => Boolean(record)
   && ADAPTERS_WITH_DEFAULT_SANDBOX.has(record.adapter)
   && !record.workspacePath
-  && record.environment !== null && typeof record.environment === 'object'
-  && withDefaultSandbox(record.environment) !== record.environment;
+  && (record.environment === null || record.environment === undefined
+    || (typeof record.environment === 'object' && !Array.isArray(record.environment)
+      && withDefaultSandbox(record.environment) !== record.environment));
 
 /** Return the adapter binding resolved for this exact installation by the server. */
 export const runtimeAdapterForInstallation = ({ installations, podId, instanceId } = {}) => {
@@ -3117,8 +3120,9 @@ Docs:
         console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
       } else if (savedSeatLacksDefaultSandbox(record)) {
         console.warn(
-          `${stamp()} [${name}] this agent's saved settings predate the default sandbox. To pick it up, reconnect: `
-          + `commonly agent detach ${name} --force, then run a fresh command from the Connect page.`,
+          `${stamp()} [${name}] this agent's saved settings declare no sandbox, so it runs without one. `
+          + `To give it the default: commonly agent detach ${name} --force, then either run a fresh command `
+          + 'from the Connect page, or attach it again with an environment file that sets sandbox.trust: public.',
         );
       }
 

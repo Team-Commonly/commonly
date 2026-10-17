@@ -141,6 +141,17 @@ describe('BYO listener snippet', () => {
       .find((el) => /commonly agent run /.test(el.textContent || ''));
     const mcpBox = () => screen.getByTestId('byo-mcp-claude').querySelector('.v2-byo__pre').textContent || '';
 
+    // jsdom puts its host's process.platform in the user agent, lower case. On
+    // a Linux CI host that reads "(linux)", which must not flip the page; only
+    // a browser's own spellings (X11, Linux x86_64, CrOS) mean Linux. Pinned
+    // here so it holds on any host (sprint-review on #2289).
+    test('jsdom\'s lower-case "(linux)" user agent is not a Linux browser: the page starts on Mac', async () => {
+      setUserAgent('Mozilla/5.0 (linux) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/20.0.3');
+      await issueToken();
+      expect(screen.getByTestId('byo-setup-os-mac')).toHaveAttribute('aria-pressed', 'true');
+      expect(listener()).toBeDefined();
+    });
+
     test('a Mac browser starts on Mac with the listener command', async () => {
       setUserAgent(MAC);
       await issueToken();

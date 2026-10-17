@@ -47,17 +47,32 @@ const DEFAULT_RO_BINDS = [
   '/lib64',
 ];
 
-export const detectBwrap = () => {
-  if (process.platform !== 'linux') {
+// `bwrap --version` only proves the binary is there. On Ubuntu 24.04 and later
+// AppArmor restricts unprivileged user namespaces, so bwrap is installed and
+// every sandbox it starts fails (`setting up uid map: Permission denied`,
+// ubuntu run 38982219348). Starting one empty namespace is the real check.
+const NAMESPACE_PROBE = ['--unshare-all', '--ro-bind', '/', '/', 'true'];
+
+export const detectBwrap = ({ spawn = spawnSync, platform = process.platform } = {}) => {
+  if (platform !== 'linux') {
     return { available: false, error: MACOS_MESSAGE };
   }
   try {
-    const res = spawnSync('bwrap', ['--version'], { encoding: 'utf8' });
+    const res = spawn('bwrap', ['--version'], { encoding: 'utf8' });
     if (res.error || res.status !== 0) {
       return {
         available: false,
         error: 'bwrap not found on PATH. Install bubblewrap: `sudo apt install bubblewrap` (Debian/Ubuntu, WSL), '
           + '`sudo dnf install bubblewrap` (Fedora) or `sudo pacman -S bubblewrap` (Arch).',
+      };
+    }
+    const probe = spawn('bwrap', NAMESPACE_PROBE, { encoding: 'utf8', timeout: 10_000 });
+    if (probe.error || probe.status !== 0) {
+      const reason = (probe.stderr || probe.error?.message || `exit ${probe.status}`).trim().split('\n').pop();
+      return {
+        available: false,
+        error: `bubblewrap is installed but cannot start a sandbox on this machine (${reason}). `
+          + 'On Ubuntu 24.04 and later, AppArmor restricts the unprivileged user namespaces it needs.',
       };
     }
     return { available: true, path: 'bwrap' };

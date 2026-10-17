@@ -9,16 +9,21 @@
  * the pod saw nothing.
  *
  * Only the adapters that run inside these mechanisms are checked. Codex
- * confines with its own permission profiles (mode.js), and pi refuses a
- * declared sandbox itself (default-environment.js).
+ * confines with its own permission profiles (mode.js). pi is a scope boundary,
+ * not a gap in this check: it refuses a declared sandbox itself, so a
+ * Connect-page pi seat is saved without one and runs unconfined
+ * (default-environment.js, ADAPTERS_WITH_DEFAULT_SANDBOX); confining pi
+ * belongs to pi's own sandbox work.
  */
 
 import { normalizeSandboxTrust } from '../environment.js';
-import { resolvePublicSandboxMode } from './mode.js';
+import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from './mode.js';
 import { detectBwrap as defaultDetectBwrap } from './bwrap.js';
 import { detectSeatbelt as defaultDetectSeatbelt } from './seatbelt.js';
 
-const SEATBELT_MODES = new Set(['workspace', 'read-only']);
+// The Seatbelt modes come from mode.js, as grant-broker-guard's do, so a mode
+// added there is not silently missing here.
+const SEATBELT_MODES = PUBLIC_SANDBOX_MODES;
 
 const ADAPTER_LABELS = { claude: 'Claude Code', opencode: 'OpenCode', qwen: 'Qwen Code' };
 
