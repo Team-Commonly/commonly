@@ -39,7 +39,7 @@ macTest('narrowed profile refuses system Keychains listing and legacy file opens
     '-p', narrowedProfile(), process.execPath, '-e', code,
   ], { cwd: workspace, encoding: 'utf8', timeout: 10_000 });
   expect(result.error).toBeUndefined();
-  expect(result.status).toBe(0);
+  expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' });
   expect(result.stdout.trim().split('\n')).toEqual(['EPERM', 'EPERM', 'EPERM']);
 });
 
@@ -54,10 +54,20 @@ disposableRunnerTest('system-trusted local TLS still works without direct Keycha
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     const port = server.address().port;
+    const curlArgs = ['--fail', '--silent', '--show-error', `https://127.0.0.1:${port}/`];
+    const control = await new Promise((resolve, reject) => {
+      const child = spawn('/usr/bin/curl', curlArgs);
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => { stdout += chunk; });
+      child.stderr.on('data', (chunk) => { stderr += chunk; });
+      child.on('error', reject);
+      child.on('close', (status) => resolve({ status, stdout, stderr }));
+    });
+    expect(control).toEqual({ status: 0, stdout: 'tls-ok', stderr: '' });
     const result = await new Promise((resolve, reject) => {
       const child = spawn('/usr/bin/sandbox-exec', [
-        '-p', narrowedProfile(), '/usr/bin/curl', '--fail', '--silent', '--show-error',
-        `https://127.0.0.1:${port}/`,
+        '-p', narrowedProfile(), '/usr/bin/curl', ...curlArgs,
       ], { cwd: workspace });
       let stdout = '';
       let stderr = '';
