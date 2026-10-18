@@ -218,7 +218,7 @@ See [ADR-005 §Adapter pattern](../adr/ADR-005-local-cli-wrapper-driver.md) for 
 Public OpenCode seats on Linux require `bwrap`, `iproute2` (`ip`), and
 `setpriv` (util-linux). The adapter starts a private network namespace. A
 short-lived bridge brings up only its loopback interface and forwards its
-provider port to the host's per-spawn Unix-socket proxy. The OpenCode child
+provider port and declared Commonly instance port to fixed-origin host Unix-socket proxies. The OpenCode child
 starts after the bridge drops its namespace capabilities. Other host ports and
 internet addresses are unreachable; missing isolation tools stop the turn.
 Run `cli/__tests__/opencode.bwrap-egress.test.mjs` on a Linux host that permits

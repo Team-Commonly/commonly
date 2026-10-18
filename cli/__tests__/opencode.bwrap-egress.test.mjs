@@ -6,9 +6,11 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { detectBwrap, wrapArgvWithBwrap } from '../src/lib/sandbox/bwrap.js';
 import { startProviderProxy } from '../src/lib/provider-proxy.js';
+import { startInstanceProxy } from '../src/lib/instance-proxy.js';
 
 const LOOPBACK_BRIDGE = fileURLToPath(new URL('../src/lib/sandbox/opencode-loopback.mjs', import.meta.url));
 const PORT = 8765;
+const INSTANCE_PORT = 8766;
 const run = (cmd, args) => new Promise((resolve, reject) => {
   const child = spawn(cmd, args, { timeout: 15_000 });
   let stdout = '';
@@ -34,6 +36,7 @@ test('public bwrap reaches its provider proxy but refuses other host and interne
   const keyFile = join(privateRoot, 'key');
   const tokenFile = join(proxyDir, 'token');
   const socketPath = join(proxyDir, 'proxy.sock');
+  const instanceSocketPath = join(proxyDir, 'instance.sock');
   const childFile = join(workspace, 'probe.mjs');
   await Promise.all([mkdir(workspace), mkdir(proxyDir)]);
   await writeFile(keyFile, 'upstream-key', { mode: 0o600 });
@@ -45,14 +48,26 @@ test('public bwrap reaches its provider proxy but refuses other host and interne
   });
   const unrelated = createServer((_req, res) => res.writeHead(200).end('wrong-port'));
   let proxy;
+  let instanceProxy;
+  const instance = createServer((req, res) => {
+    if (req.url === '/api/agents/runtime/pods/pod-1/context'
+      && req.headers.authorization === 'Bearer seat-token') res.writeHead(200).end('context');
+    else res.writeHead(403).end();
+  });
   try {
     const upstreamPort = await listen(upstream);
     const unrelatedPort = await listen(unrelated);
+    const instancePort = await listen(instance);
     proxy = await startProviderProxy({
       provider: { baseURL: `http://127.0.0.1:${upstreamPort}/v1` },
       keyFile, tokenFile, socketPath, isolatedPort: PORT,
     });
     expect((await stat(socketPath)).mode & 0o777).toBe(0o600);
+    instanceProxy = await startInstanceProxy({
+      instanceUrl: `http://127.0.0.1:${instancePort}`,
+      socketPath: instanceSocketPath,
+    });
+    expect((await stat(instanceSocketPath)).mode & 0o777).toBe(0o600);
     await writeFile(childFile, `
       import { readFileSync } from 'fs';
       import { get } from 'http';
@@ -73,13 +88,16 @@ test('public bwrap reaches its provider proxy but refuses other host and interne
         conn.on('error', () => resolve(true));
       });
       const allowed = await request(${PORT}, '/v1/models', { authorization: 'Bearer ' + token });
+      const context = await request(${INSTANCE_PORT}, '/api/agents/runtime/pods/pod-1/context',
+        { authorization: 'Bearer seat-token' });
       const otherHostPort = await request(${unrelatedPort}, '/');
       const netAdminDropped = spawnSync('ip', ['link', 'set', 'lo', 'down']).status !== 0;
       const capabilitiesDropped = /^CapEff:\\s*0+$/m.test(readFileSync('/proc/self/status', 'utf8'));
-      process.stdout.write(JSON.stringify({ allowed, otherHostPort, internet, netAdminDropped, capabilitiesDropped }));
+      process.stdout.write(JSON.stringify({ allowed, context, otherHostPort, internet, netAdminDropped, capabilitiesDropped }));
     `);
     const argv = wrapArgvWithBwrap([
       process.execPath, LOOPBACK_BRIDGE, socketPath, String(PORT),
+      instanceSocketPath, String(INSTANCE_PORT),
       process.execPath, childFile, tokenFile,
     ], { sandbox: { network: { policy: 'restricted' } } }, {
       workspacePath: workspace,
@@ -90,12 +108,13 @@ test('public bwrap reaches its provider proxy but refuses other host and interne
     const result = await run(argv[0], argv.slice(1));
     expect(result).toMatchObject({ code: 0, stderr: '' });
     expect(JSON.parse(result.stdout)).toEqual({
-      allowed: 200, otherHostPort: 0, internet: true,
+      allowed: 200, context: 200, otherHostPort: 0, internet: true,
       netAdminDropped: true, capabilitiesDropped: true,
     });
   } finally {
     await proxy?.close();
-    await Promise.all([close(upstream), close(unrelated)]);
+    await instanceProxy?.close();
+    await Promise.all([close(upstream), close(unrelated), close(instance)]);
     await rm(root, { recursive: true, force: true });
     await rm(privateRoot, { recursive: true, force: true });
   }
