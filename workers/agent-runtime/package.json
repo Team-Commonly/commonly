@@ -17,7 +17,12 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260828.1",
     "typescript": "^5.5.0",
-    "vitest": "^3.2.7",
+    "vitest": "^4.1.12",
     "wrangler": "^4.0.0"
+  },
+  "overrides": {
+    "sharp": "^0.35.5",
+    "source-map-js": "^1.2.2",
+    "undici": "^7.29.1"
   }
 }
