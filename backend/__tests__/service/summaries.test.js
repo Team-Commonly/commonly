@@ -148,7 +148,8 @@ describe('Summaries Routes Integration Tests', () => {
       },
     });
 
-    // Overall summaries (without podId)
+    // Overall summaries (without podId). A pod-less posts summary is served
+    // only when it was built from feed posts, which its writer stamps.
     await Summary.create({
       type: 'posts',
       title: 'Community Posts Overview',
@@ -159,6 +160,7 @@ describe('Summaries Routes Integration Tests', () => {
         totalItems: 25,
         topTags: ['technology', 'lifestyle', 'discussion'],
         topUsers: ['poster1', 'poster2'],
+        source: 'feed-posts',
       },
     });
 
@@ -197,10 +199,11 @@ describe('Summaries Routes Integration Tests', () => {
         'title',
         'Community Posts Overview',
       );
-      expect(response.body.chats).toHaveProperty(
-        'title',
-        'Overall Chat Activity',
-      );
+      // The pod-less 'Overall Chat Activity' summary is not served; the latest
+      // chats summary is one of the caller's own pods'.
+      expect(response.body.chats.podId).toBeTruthy();
+      expect(['Gaming Session', 'Study Session Summary', 'Active Chat Discussion'])
+        .toContain(response.body.chats.title);
     });
 
     test('should return 401 without authentication', async () => {
