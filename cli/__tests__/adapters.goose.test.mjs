@@ -67,13 +67,21 @@ test('private Goose turn isolates its home, takes Commonly MCP through a token f
   expect(existsSync(launched.options.env.HOME)).toBe(false);
 });
 
-test.each([
-  { trust: 'public' }, { trust: 'internal' }, { mode: 'workspace' }, { mode: 'bwrap' },
-])('refuses unsupported trust or confinement before spawning: %j', async (sandbox) => {
+test.each(['public', 'internal'])('refuses %s trust at the adapter gate before spawning', async (trust) => {
   const ctx = baseCtx();
-  ctx.environment.sandbox = sandbox;
+  ctx.environment.sandbox = { trust };
   const spawnImpl = jest.fn();
-  await expect(goose.spawn('hello', { ...ctx, _spawnImpl: spawnImpl })).rejects.toThrow();
+  await expect(goose.spawn('hello', { ...ctx, _spawnImpl: spawnImpl }))
+    .rejects.toThrow(/public-trust seats are not supported/);
+  expect(spawnImpl).not.toHaveBeenCalled();
+});
+
+test.each(['workspace', 'bwrap'])('refuses %s confinement before spawning', async (mode) => {
+  const ctx = baseCtx();
+  ctx.environment.sandbox = { mode };
+  const spawnImpl = jest.fn();
+  await expect(goose.spawn('hello', { ...ctx, _spawnImpl: spawnImpl }))
+    .rejects.toThrow(/cannot be enforced by Goose/);
   expect(spawnImpl).not.toHaveBeenCalled();
 });
 
