@@ -11,6 +11,7 @@ export const startInstanceProxy = async ({ instanceUrl, socketPath }) => {
     throw new Error('Commonly instance proxy requires a bare http(s) origin');
   }
   const transport = target.protocol === 'https:' ? httpsRequest : httpRequest;
+  const upstreams = new Set();
   const server = createServer((incoming, outgoing) => {
     const path = incoming.url || '';
     if (!path.startsWith('/') || path.startsWith('//')
@@ -31,7 +32,11 @@ export const startInstanceProxy = async ({ instanceUrl, socketPath }) => {
       outgoing.writeHead(response.statusCode || 502, response.headers);
       response.pipe(outgoing);
     });
+    upstreams.add(upstream);
+    upstream.on('close', () => upstreams.delete(upstream));
+    outgoing.on('close', () => upstream.destroy());
     upstream.on('error', () => {
+      if (outgoing.destroyed) return;
       if (!outgoing.headersSent) outgoing.writeHead(502);
       outgoing.end();
     });
@@ -48,7 +53,10 @@ export const startInstanceProxy = async ({ instanceUrl, socketPath }) => {
   return {
     socketPath,
     close: async () => {
-      await new Promise((resolve) => server.close(resolve));
+      const closed = new Promise((resolve) => server.close(resolve));
+      for (const upstream of upstreams) upstream.destroy();
+      server.closeAllConnections();
+      await closed;
       await unlink(socketPath).catch((err) => { if (err.code !== 'ENOENT') throw err; });
     },
   };
