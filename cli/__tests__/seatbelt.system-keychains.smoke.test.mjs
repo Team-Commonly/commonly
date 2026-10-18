@@ -1,0 +1,73 @@
+import { spawn, spawnSync } from 'child_process';
+import { createServer } from 'https';
+import {
+  mkdirSync, mkdtempSync, readFileSync, rmSync,
+} from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
+import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
+
+const macTest = process.platform === 'darwin' ? test : test.skip;
+const root = process.platform === 'darwin'
+  ? mkdtempSync(join(homedir(), '.commonly-keychain-smoke-')) : null;
+const workspace = root && join(root, 'workspace');
+const state = root && join(root, 'state');
+if (root) {
+  mkdirSync(workspace);
+  mkdirSync(state);
+}
+afterAll(() => { if (root) rmSync(root, { recursive: true, force: true }); });
+
+// Measure the proposed deletion against a real Seatbelt profile before the
+// production baseline changes. Do not install a root on an operator machine.
+const narrowedProfile = () => buildSeatbeltProfile({
+  workspacePath: workspace, executablePath: process.execPath, statePath: state,
+}).replace('  (subpath "/Library/Keychains")\n', '');
+
+macTest('narrowed profile refuses system Keychains listing and legacy file opens', () => {
+  const code = `const fs = require('fs');
+    const paths = ['/Library/Keychains', '/Library/Keychains/System.keychain',
+      '/Library/Keychains/apsd.keychain'];
+    for (const path of paths) {
+      try {
+        if (path.endsWith('/Keychains')) fs.readdirSync(path);
+        else fs.closeSync(fs.openSync(path, 'r'));
+        console.log('ALLOWED');
+      } catch (error) { console.log(error.code); }
+    }`;
+  const result = spawnSync('/usr/bin/sandbox-exec', [
+    '-p', narrowedProfile(), process.execPath, '-e', code,
+  ], { cwd: workspace, encoding: 'utf8', timeout: 10_000 });
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(0);
+  expect(result.stdout.trim().split('\n')).toEqual(['EPERM', 'EPERM', 'EPERM']);
+});
+
+const disposableRunnerTest = process.platform === 'darwin'
+  && process.env.COMMONLY_DISPOSABLE_SYSTEM_ROOT_CERT
+  && process.env.COMMONLY_DISPOSABLE_SYSTEM_ROOT_KEY ? test : test.skip;
+
+disposableRunnerTest('system-trusted local TLS still works without direct Keychains reads', async () => {
+  const certificate = readFileSync(process.env.COMMONLY_DISPOSABLE_SYSTEM_ROOT_CERT);
+  const key = readFileSync(process.env.COMMONLY_DISPOSABLE_SYSTEM_ROOT_KEY);
+  const server = createServer({ cert: certificate, key }, (_req, response) => response.end('tls-ok'));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const port = server.address().port;
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn('/usr/bin/sandbox-exec', [
+        '-p', narrowedProfile(), '/usr/bin/curl', '--fail', '--silent', '--show-error',
+        `https://127.0.0.1:${port}/`,
+      ], { cwd: workspace });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => { stdout += chunk; });
+      child.stderr.on('data', (chunk) => { stderr += chunk; });
+      child.on('error', reject);
+      child.on('close', (status) => resolve({ status, stdout, stderr }));
+    });
+    expect(result).toEqual({ status: 0, stdout: 'tls-ok', stderr: '' });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}, 15_000);
