@@ -37,6 +37,8 @@ const request = require('supertest');
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = require('express-rate-limit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../../middleware/ipRateLimit');
+const { pgRoutesAreMounted } = require('../../../services/pgBootService');
+const { waitFor } = require('../../utils/testUtils');
 
 // Captured at MODULE LOAD, before any test can flip it. A baseline re-read inside
 // a test moves with a leak instead of catching it: measured, with the per-request
@@ -52,16 +54,20 @@ const ENTRY_NODE_ENV = process.env.NODE_ENV;
 // is needed — process.env is per test FILE (measured), so this assignment cannot
 // reach any other suite.
 process.env.PG_HOST = 'probe';
+let mockResolvePgInit;
 jest.mock('../../../config/db', () => jest.fn());
 jest.mock('../../../config/db-pg', () => {
   const actual = jest.requireActual('../../../config/db-pg');
   const pool = { query: jest.fn().mockResolvedValue({ rows: [] }), on: jest.fn(), end: jest.fn() };
   return { ...actual, connectPG: jest.fn().mockResolvedValue(pool) };
 });
-jest.mock('../../../config/init-pg-db', () => jest.fn().mockResolvedValue(true));
+jest.mock('../../../config/init-pg-db', () => jest.fn(() => new Promise((resolve) => {
+  mockResolvePgInit = resolve;
+})));
 jest.setTimeout(300000);
 
 const { app } = require('../../../server');
+const agentWebSocketService = require('../../../services/agentWebSocketService');
 
 const isLimiter = (fn) => fn && typeof fn === 'function'
   && Object.prototype.hasOwnProperty.call(fn, 'resetKey')
@@ -161,14 +167,18 @@ describe('TASK-126 ip key separation', () => {
   // file, the two controls included — the leak mutation was introduced by the
   // negative control, before the walk ever ran.
   afterAll(() => {
+    agentWebSocketService.stopPingInterval();
+    expect(agentWebSocketService.pingInterval).toBeNull();
     expect(process.env.NODE_ENV).toBe(ENTRY_NODE_ENV);
   });
 
   beforeAll(async () => {
-    // pg-messages and pg-status mount from promise callbacks (server.ts:380-400),
-    // so the walk has to wait for the PG connect to resolve or those limiters are
-    // invisible to it.
-    await new Promise((resolve) => { setTimeout(resolve, 2000); });
+    // The PG message router is mounted after connection and schema init. Hold
+    // schema init so the walk proves it waits for that mount, not a guessed delay.
+    await waitFor(() => typeof mockResolvePgInit === 'function');
+    expect(pgRoutesAreMounted()).toBe(false);
+    mockResolvePgInit(true);
+    await waitFor(pgRoutesAreMounted, { timeout: 10_000 });
     collect(app._router || app.router, '', walked, seen);
   });
 
