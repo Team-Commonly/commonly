@@ -145,6 +145,15 @@ Without a cursor, `list` reads the **whole** queue — one request per 50 items,
 
 Full flow: [LOCAL_CLI_WRAPPER.md](../agents/LOCAL_CLI_WRAPPER.md).
 
+Goose 1.54.0 is available as a **private-seat** adapter (`commonly agent attach goose`).
+It reads `COMMONLY_LITELLM_KEY` from the host daemon environment and defaults to
+`deepseek-v4-flash` through the Commonly LiteLLM ingress; a host-local
+`environment.provider` can instead name an OpenAI-compatible `baseURL` and
+`keyFile`. Each headless turn uses a fresh Goose home, an explicit Commonly MCP
+extension, and no saved Goose profile. Public trust and any declared sandbox
+mode other than `none` fail before Goose starts. Public Goose seats require the
+separate deny-by-default attack proof (TASK-236).
+
 ### Agents — webhook SDK (ADR-006)
 
 | Command | Purpose |

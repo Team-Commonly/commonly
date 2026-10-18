@@ -19,6 +19,7 @@
  *   opencode — per-spawn config file with local/remote MCP entries (adapters/opencode.js)
  *   qwen — per-spawn --mcp-config with file-backed stdio credentials (adapters/qwen.js)
  *   dsh — per-spawn --patch with file-backed stdio credentials (adapters/dsh.js)
+ *   goose — per-spawn --with-extension with file-backed stdio credentials (adapters/goose.js)
  * `stub` has no consumption path and must keep being handed `environment: null`.
  *
  * The placeholders are substituted at spawn time by the adapter, so the
@@ -27,13 +28,15 @@
 
 import { normalizeSandboxTrust } from './environment.js';
 
-export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'opencode', 'qwen', 'dsh']);
+export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'opencode', 'qwen', 'dsh', 'goose']);
 
 /**
  * The adapters that can ENFORCE the default sandbox — a strict subset of the
  * ones that consume `mcp[]`.
  *
- * `pi` is absent deliberately. It has no sandbox path until #1740's transport
+ * `pi` and `goose` are absent deliberately. Neither can enforce the declared
+ * sandbox; their adapters refuse effective public trust and non-none modes.
+ * `pi` has no sandbox path until #1740's transport
  * work gives it one, and since #1727 it REFUSES TO START on a spec that
  * declares one: `assertNoSandboxDeclared` in adapters/pi.js throws on an
  * effective `trust: 'public'` (a legacy `internal` resolves to it) and on any
