@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'child_process';
 import { createServer } from 'https';
 import {
-  mkdirSync, mkdtempSync, readFileSync, rmSync,
+  mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
 } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -15,14 +15,16 @@ const state = root && join(root, 'state');
 if (root) {
   mkdirSync(workspace);
   mkdirSync(state);
+  writeFileSync(join(workspace, 'openssl.cnf'), '');
 }
 afterAll(() => { if (root) rmSync(root, { recursive: true, force: true }); });
 
-// Measure the proposed deletion against a real Seatbelt profile before the
+// Measure the narrow literal against a real Seatbelt profile before the
 // production baseline changes. Do not install a root on an operator machine.
 const narrowedProfile = () => buildSeatbeltProfile({
   workspacePath: workspace, executablePath: process.execPath, statePath: state,
-}).replace('  (subpath "/Library/Keychains")\n', '');
+}).replace('  (subpath "/Library/Keychains")\n',
+  '  (literal "/Library/Keychains/System.keychain")\n');
 
 macTest('narrowed profile refuses system Keychains listing and legacy file opens', () => {
   const code = `const fs = require('fs');
@@ -37,10 +39,13 @@ macTest('narrowed profile refuses system Keychains listing and legacy file opens
     }`;
   const result = spawnSync('/usr/bin/sandbox-exec', [
     '-p', narrowedProfile(), process.execPath, '-e', code,
-  ], { cwd: workspace, encoding: 'utf8', timeout: 10_000 });
+  ], {
+    cwd: workspace, encoding: 'utf8', timeout: 10_000,
+    env: { ...process.env, OPENSSL_CONF: join(workspace, 'openssl.cnf') },
+  });
   expect(result.error).toBeUndefined();
   expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' });
-  expect(result.stdout.trim().split('\n')).toEqual(['EPERM', 'EPERM', 'EPERM']);
+  expect(result.stdout.trim().split('\n')).toEqual(['EPERM', 'ALLOWED', 'EPERM']);
 });
 
 const disposableRunnerTest = process.platform === 'darwin'
