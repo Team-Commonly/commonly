@@ -45,7 +45,8 @@ const PLATFORM_BASELINE = String.raw`
     (path "/dev/null")
     (vnode-type CHARACTER-DEVICE)))
 
-; Loader + standard system resources.
+; Loader + standard system resources. Some Node builds read this one macOS
+; OpenSSL config file before the CLI entrypoint runs.
 (allow file-read* file-test-existence
   (subpath "/Library/Apple")
   (subpath "/Library/Filesystems/NetFSPlugins")
@@ -54,6 +55,7 @@ const PLATFORM_BASELINE = String.raw`
   (subpath "/private/var/db/timezone")
   (subpath "/usr/lib")
   (subpath "/usr/share")
+  (literal "/System/Library/OpenSSL/openssl.cnf")
   (subpath "/Library/Preferences")
   (subpath "/var/db")
   (subpath "/private/var/db"))
