@@ -17,12 +17,12 @@ permissions:
 
 jobs:
   isolated-egress:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Exercise provider and Commonly MCP in a disposable namespace
         run: |
-          docker run --rm --privileged \
+          docker run --rm --privileged --security-opt apparmor=unconfined \
             --mount "type=bind,src=$PWD,dst=/source,readonly" node:22 bash -lc '
               set -euo pipefail
               apt-get update -qq
@@ -33,6 +33,6 @@ jobs:
               npm ci --prefix /work/cli --silent
               npm ci --prefix /work/commonly-mcp --silent
               chown -R node:node /work
-              su node -s /bin/bash -c "cd /work/cli && node --experimental-vm-modules node_modules/.bin/jest __tests__/opencode.bwrap-egress.test.mjs --runInBand"
+              su node -s /bin/bash -c "cd /work/cli && COMMONLY_REQUIRE_BWRAP_SMOKE=1 node --experimental-vm-modules node_modules/.bin/jest __tests__/opencode.bwrap-egress.test.mjs --runInBand"
               su node -s /bin/bash -c "node /work/scripts/verify-opencode-bwrap-mcp.mjs"
             '

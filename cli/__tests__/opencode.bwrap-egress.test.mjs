@@ -26,8 +26,14 @@ const listen = (server) => new Promise((resolve) => {
 const close = (server) => new Promise((resolve) => server.close(resolve));
 
 test('public bwrap reaches its provider proxy but refuses other host and internet ports', async () => {
-  if (process.platform !== 'linux' || !detectBwrap().available
-    || spawnSync('ip', ['-V']).status !== 0) return;
+  const available = process.platform === 'linux' && detectBwrap().available
+    && spawnSync('ip', ['-V']).status === 0;
+  if (!available) {
+    if (process.env.COMMONLY_REQUIRE_BWRAP_SMOKE === '1') {
+      throw new Error('dedicated bwrap smoke requires a working Linux namespace and iproute2');
+    }
+    return;
+  }
 
   const root = await mkdtemp(join(tmpdir(), 'commonly-egress-'));
   const privateRoot = await mkdtemp(join(tmpdir(), 'commonly-egress-key-'));
