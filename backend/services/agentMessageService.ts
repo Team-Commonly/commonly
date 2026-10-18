@@ -179,8 +179,8 @@ interface PostMessageOptions {
   installationConfig?: unknown;
   // Server-set, never model-set: the post must not leave Commonly through a
   // channel relay (Telegram, Slack). A native turn that has read web results
-  // sets it (TASK-267a, Rhea on #2244), and the relay dispatcher refuses such
-  // a message whatever bridges exist by the time it is stored.
+  // or called a granted tool sets it (TASK-267a/#2244, TASK-234), and the relay
+  // dispatcher refuses such a message whatever bridges exist when it is stored.
   noOutboundRelay?: boolean;
   // Server-set, never model-set: the message the posting run is answering,
   // the native runtime's trigger. Read by the answer rule (agentAnswerService)

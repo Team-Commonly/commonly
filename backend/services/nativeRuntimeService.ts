@@ -519,6 +519,11 @@ const WEB_FETCH_NOT_GIVEN_REFUSAL = 'That address does not appear in this conver
   + 'or a page you already read.';
 const WEB_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat, so a turn that has read the web '
   + 'cannot post in it.';
+const BROKER_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat, so a turn that called a granted tool '
+  + 'cannot post in it.';
+const POSTING_NATIVE_TOOLS: ReadonlySet<string> = new Set([
+  'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_propose_action',
+]);
 
 export const toolsForConfig = (
   cfg: { tools?: unknown } | null | undefined,
@@ -549,6 +554,8 @@ interface DispatchContext {
   sandbox?: TurnSandbox;
   /** Set when a web search has returned in this turn (TASK-267a). */
   webTainted?: boolean;
+  /** A granted tool has returned in this turn; affects outbound posts only. */
+  brokerCallSeen?: boolean;
   /** Whether the pod is bridged to an external chat, read just before dispatch. */
   podBridged?: boolean;
   /** Search requests this turn has sent. */
@@ -646,8 +653,12 @@ async function dispatchTool(
       error: 'web_tainted_tool_denied',
     };
   }
-  if (ctx.webTainted && ctx.podBridged && name === 'commonly_post_message') {
-    return { content: { ok: false, error: WEB_TAINTED_BRIDGED_REFUSAL }, error: 'web_tainted_bridged_post_denied' };
+  if ((ctx.webTainted || ctx.brokerCallSeen) && ctx.podBridged && POSTING_NATIVE_TOOLS.has(name)) {
+    const refusal = ctx.webTainted ? WEB_TAINTED_BRIDGED_REFUSAL : BROKER_TAINTED_BRIDGED_REFUSAL;
+    return {
+      content: { ok: false, error: refusal },
+      error: ctx.webTainted ? 'web_tainted_bridged_post_denied' : 'broker_tainted_bridged_post_denied',
+    };
   }
   const args = (rawArgs && typeof rawArgs === 'object' ? rawArgs : {}) as Record<string, any>;
 
@@ -709,9 +720,9 @@ async function dispatchTool(
           displayName: ctx.displayName,
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime' },
-          // Web results are in this turn: the post stays in the pod and never
-          // reaches a channel relay, whatever bridges exist when it is stored.
-          noOutboundRelay: Boolean(ctx.webTainted),
+          // External results seen this turn stay in the pod even if a channel
+          // bridge appears between this check and message storage.
+          noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
         });
         return { content: { ok: true, posted: true, result } };
@@ -756,7 +767,7 @@ async function dispatchTool(
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime' },
           payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED_OFFER_LABEL, href }] },
-          noOutboundRelay: Boolean(ctx.webTainted),
+          noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
         });
         return { content: { ok: true, posted: true, result } };
@@ -810,6 +821,7 @@ async function dispatchTool(
             ? args.params : {}) as Record<string, unknown>,
           summary: String(args.summary || ''),
           installationConfig: ctx.installationConfig,
+          noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
         });
         if (!result.ok) {
           return { content: { ok: false, error: result.error }, error: 'propose_failed' };
@@ -1924,6 +1936,9 @@ export async function runAgent(
           });
           const elapsed = Date.now() - toolStart;
           if (brokerCall) {
+            // A bridge can appear after this call. Keep its result inside the
+            // pod on every later post without narrowing the turn's tools.
+            dispatchCtx.brokerCallSeen = true;
             // A broker call records its callId and outcome and nothing else:
             // the ToolCall row the broker writes is the trail for what was
             // asked and returned, and an `AgentRun` must not become a second
@@ -1946,8 +1961,9 @@ export async function runAgent(
           // Re-read the policy before dispatch; a stale model call is refused.
           dispatchCtx.inPodOnly = await inPodOnlyNow();
           // A bridge can be added mid-turn: re-read it before a lookup, and
-          // before any post once the web is in the turn.
-          if (WEB_LOOKUP_TOOLS.has(toolName) || (dispatchCtx.webTainted && toolName === 'commonly_post_message')) {
+          // before every later post after a web or broker result.
+          if (WEB_LOOKUP_TOOLS.has(toolName)
+            || ((dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && POSTING_NATIVE_TOOLS.has(toolName))) {
             dispatchCtx.podBridged = await podBridgedNow();
           }
           // A tool the narrowing removed goes to dispatchTool, which refuses it
@@ -2036,12 +2052,13 @@ export async function runAgent(
       run.totalTokens += Number(usage.total_tokens || 0);
 
       const textOut = typeof msg.content === 'string' ? msg.content.trim() : '';
-      // The fallback post is a post like any other: after a search, not into a
-      // bridged pod (Rhea on #2244).
-      const fallbackBlocked = Boolean(textOut && !postedViaTool && dispatchCtx.webTainted && await podBridgedNow());
+      // The fallback post is a post like any other: after an external result,
+      // re-read the bridge before letting it through (Rhea on #2244).
+      const fallbackBlocked = Boolean(textOut && !postedViaTool
+        && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow());
       if (fallbackBlocked) {
         run.errorKind = 'guardrail_blocked';
-        run.errorMessage = WEB_TAINTED_BRIDGED_REFUSAL;
+        run.errorMessage = dispatchCtx.webTainted ? WEB_TAINTED_BRIDGED_REFUSAL : BROKER_TAINTED_BRIDGED_REFUSAL;
       }
       if (textOut && !postedViaTool && !fallbackBlocked) {
         // Fallback: the LLM wrote content WITHOUT calling commonly_post_message.
@@ -2057,7 +2074,7 @@ export async function runAgent(
             displayName,
             installationConfig: cfg,
             metadata: { source: 'native-runtime', fallback: true },
-            noOutboundRelay: Boolean(dispatchCtx.webTainted),
+            noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
             answeringMessageId: dispatchCtx.answeringMessageId,
           });
           // The message service suppresses a bare NO_REPLY (and other

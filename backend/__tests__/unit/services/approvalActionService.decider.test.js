@@ -138,6 +138,18 @@ describe('proposeAction — decider derivation', () => {
     );
   });
 
+  test('a native broker-marked proposal suppresses outbound relay on its card', async () => {
+    podLookup(HUMAN_POD_CREATOR);
+    installLookup({ installedBy: HUMAN_INSTALLER });
+
+    const result = await propose({ noOutboundRelay: true });
+
+    expect(result.ok).toBe(true);
+    expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
+      messageType: 'card', noOutboundRelay: true,
+    }));
+  });
+
   test('a proposal whose card never posted is moot and is NOT projected — no phantom ask', async () => {
     podLookup(HUMAN_POD_CREATOR);
     installLookup({ installedBy: null });
