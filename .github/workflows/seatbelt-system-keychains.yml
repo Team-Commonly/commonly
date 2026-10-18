@@ -26,7 +26,6 @@ jobs:
       - name: Exercise system Keychains denials and real adapter turns
         env:
           COMMONLY_OPENCODE_SMOKE_BINARY: ${{ runner.temp }}/opencode-smoke/node_modules/.bin/opencode
-          OPENSSL_CONF: /dev/null
         run: |
           cd cli
           node --experimental-vm-modules node_modules/.bin/jest \
