@@ -38,6 +38,7 @@ const moltbotProviderRoutes = require('./routes/providers/moltbot');
 const activityRoutes = require('./routes/activity');
 const marketplaceRoutes = require('./routes/marketplace');
 const marketplaceApiRoutes = require('./routes/marketplace-api');
+const { refuseDollarKeys } = require('./middleware/refuseDollarKeys');
 const gatewayRoutes = require('./routes/gateways');
 const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
@@ -225,6 +226,10 @@ app.use('/api/webhooks/telegram', express.json());
 
 // JSON parsing for all other routes
 app.use(express.json());
+
+// Refuse `$`-prefixed keys in every query string and body, after every
+// parser above and before any route (middleware/refuseDollarKeys.ts).
+app.use(refuseDollarKeys);
 
 // Routes
 app.use('/api/auth', authRoutes);
