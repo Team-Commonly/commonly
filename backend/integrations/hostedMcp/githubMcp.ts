@@ -6,7 +6,9 @@
  *
  * The credential is a separate, public GitHub App with read-only repository
  * permissions. GitHub App user tokens use the app's permissions rather than
- * OAuth scopes; offline_access asks GitHub for a refresh token only.
+ * OAuth scopes; offline_access asks GitHub for a refresh token only. The App's
+ * client id and secret are optional instance configuration. Until registration
+ * supplies both, the catalogue reports not_configured and offers no Connect.
  */
 import type { HostedMcpEntry, HostedMcpPinnedTool } from '../../services/hostedMcpEntryService';
 import pin from './githubMcpSchemas.json';

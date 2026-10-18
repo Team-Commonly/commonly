@@ -3,11 +3,11 @@
  * names derived from its id (`hostedMcpClientConfigKeys`). Those names reach
  * the backend only if the helm chart maps them from `api-keys`, and `api-keys`
  * carries them only if the ExternalSecret references their Secret Manager keys.
- * Nothing else holds the three layers together: an entry added without its
- * wiring reads `not_configured` in production while every other test stays
- * green (review-checklist rule 7, a phantom cross-layer contract). This pins
- * the chain for every pre-registered entry, so the next one cannot ship
- * half-wired.
+ * Nothing else holds the three layers together (review-checklist rule 7).
+ * GitHub is deliberately pending TASK-225's separate GitHub App registration:
+ * its two env values have no deployment mapping yet, so it must stay unavailable.
+ * Once that App and its Secret Manager values exist, remove the pending case
+ * and wire both values like the other pre-registered entries.
  */
 const fs = require('fs');
 const path = require('path');
@@ -47,9 +47,17 @@ test('api-keys defaults the SM key prefix to commonly-dev-', () => {
 // A non-empty table even when the list empties, so the guard above is what
 // fails, by name, rather than jest refusing an empty `.each` at load time
 // (#2111). The placeholder id is mapped nowhere, so its arms fail too.
-const wiringTable = preRegistered.length
-  ? preRegistered.map((entry) => [entry.id])
+const wiredEntries = preRegistered.filter((entry) => entry.id !== 'github-mcp');
+const wiringTable = wiredEntries.length
+  ? wiredEntries.map((entry) => [entry.id])
   : [['no-pre-registered-entry']];
+
+test('the pending GitHub App has no deployment mapping until its registration is complete', () => {
+  expect(preRegistered.map((entry) => entry.id)).toContain('github-mcp');
+  const { clientId, clientSecret } = hostedMcpClientConfigKeys('github-mcp');
+  expect(apiKeysKeyForEnv(clientId)).toBeNull();
+  expect(apiKeysKeyForEnv(clientSecret)).toBeNull();
+});
 
 describe.each(wiringTable)('%s client wiring', (entryId) => {
   const { clientId, clientSecret } = hostedMcpClientConfigKeys(entryId);
