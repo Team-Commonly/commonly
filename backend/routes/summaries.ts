@@ -17,6 +17,8 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const dailyDigestService = require('../services/dailyDigestService');
 // eslint-disable-next-line global-require
+const { isFeedOnlySummary } = require('../services/summaryScope');
+// eslint-disable-next-line global-require
 const { rateLimit } = require('express-rate-limit');
 // eslint-disable-next-line global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
@@ -113,7 +115,7 @@ const isGlobalAdminUser = async (userId: unknown): Promise<boolean> => {
 // of Summary docs, keep only:
 //   - pod-scoped summaries whose pod the caller can view,
 //   - the caller's own daily-digest summaries,
-//   - global summaries (no podId, not a digest — e.g. all-posts).
+//   - pod-less summaries built only from feed posts (services/summaryScope.ts).
 const filterSummariesToViewable = async (
   userId: unknown,
   summaries: unknown[],
@@ -134,7 +136,7 @@ const filterSummariesToViewable = async (
   return list.filter((s) => {
     if (s.podId) return allowed.has(String(s.podId));
     if (s.type === 'daily-digest') return String(s.metadata?.userId || '') === String(userId);
-    return true;
+    return isFeedOnlySummary(s);
   });
 };
 
@@ -155,7 +157,7 @@ router.get('/latest', summariesReadRateLimit, auth, async (req: AuthReq, res: Re
   try {
     const userId = req.userId || req.user?.id;
     const [postSummaries, chatSummaries] = await Promise.all([SummarizerService.getRecentSummaries('posts', 1), SummarizerService.getRecentSummaries('chats', 20)]);
-    let posts = postSummaries[0] || null;
+    let posts = (await filterSummariesToViewable(userId, postSummaries))[0] || null;
     if (!posts) {
       try { posts = await summarizerService.summarizeAllPosts(); } catch (allPostsError) {
         console.warn('Failed to build on-demand all-posts summary:', (allPostsError as Error).message);
