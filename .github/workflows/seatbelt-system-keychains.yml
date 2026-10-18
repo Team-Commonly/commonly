@@ -62,6 +62,8 @@ jobs:
             -days 1 -sha256 -extfile "$cert_dir/leaf.cnf" -extensions v3_req
           sudo security add-trusted-cert -d -r trustRoot \
             -k /Library/Keychains/System.keychain "$cert_dir/root.pem"
+          /usr/bin/curl --version | head -2
+          security verify-cert -c "$cert_dir/leaf.pem" -p ssl -s 127.0.0.1 || true
           export COMMONLY_DISPOSABLE_SYSTEM_ROOT_CERT="$cert_dir/leaf.pem"
           export COMMONLY_DISPOSABLE_SYSTEM_ROOT_KEY="$cert_dir/leaf.key"
           cd cli
