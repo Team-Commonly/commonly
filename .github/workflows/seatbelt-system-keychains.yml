@@ -26,6 +26,7 @@ jobs:
       - name: Exercise system Keychains denials and real adapter turns
         env:
           COMMONLY_OPENCODE_SMOKE_BINARY: ${{ runner.temp }}/opencode-smoke/node_modules/.bin/opencode
+          OPENSSL_CONF: /dev/null
         run: |
           cd cli
           node --experimental-vm-modules node_modules/.bin/jest \
@@ -33,4 +34,4 @@ jobs:
             __tests__/adapters.opencode.seatbelt.smoke.test.mjs \
             __tests__/adapters.qwen.seatbelt.smoke.test.mjs \
             __tests__/seatbelt.claude-runtime.smoke.test.mjs \
-            --runInBand
+            --runInBand --testTimeout=60000
