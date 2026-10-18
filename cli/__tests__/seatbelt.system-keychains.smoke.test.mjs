@@ -70,9 +70,9 @@ disposableRunnerTest('system-trusted local TLS still works without direct Keycha
       child.on('close', (status) => resolve({ status, stdout, stderr }));
     });
     expect(control).toEqual({ status: 0, stdout: 'tls-ok', stderr: '' });
-    const result = await new Promise((resolve, reject) => {
+    const sandboxCurl = (profile) => new Promise((resolve, reject) => {
       const child = spawn('/usr/bin/sandbox-exec', [
-        '-p', narrowedProfile(), '/usr/bin/curl', ...curlArgs,
+        '-p', profile, '/usr/bin/curl', ...curlArgs,
       ], { cwd: workspace });
       let stdout = '';
       let stderr = '';
@@ -81,6 +81,11 @@ disposableRunnerTest('system-trusted local TLS still works without direct Keycha
       child.on('error', reject);
       child.on('close', (status) => resolve({ status, stdout, stderr }));
     });
+    const broad = await sandboxCurl(buildSeatbeltProfile({
+      workspacePath: workspace, executablePath: process.execPath, statePath: state,
+    }));
+    expect(broad).toEqual({ status: 0, stdout: 'tls-ok', stderr: '' });
+    const result = await sandboxCurl(narrowedProfile());
     expect(result).toEqual({ status: 0, stdout: 'tls-ok', stderr: '' });
   } finally {
     await new Promise((resolve) => server.close(resolve));

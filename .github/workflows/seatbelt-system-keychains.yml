@@ -69,3 +69,10 @@ jobs:
           cd cli
           node --experimental-vm-modules node_modules/.bin/jest \
             __tests__/seatbelt.system-keychains.smoke.test.mjs --runInBand
+      - name: Show Keychains sandbox denials
+        if: failure()
+        shell: bash
+        run: |
+          sudo log show --last 5m --style compact \
+            --predicate 'eventMessage CONTAINS[c] "Keychains"' 2>/dev/null \
+            | tail -80 || true
