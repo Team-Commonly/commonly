@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  system-root:
+  adapter-turns:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -21,58 +21,16 @@ jobs:
           cache: npm
           cache-dependency-path: cli/package-lock.json
       - run: npm ci --prefix cli
-      - name: Trust a disposable root and exercise the narrowed profile
-        shell: bash
+      - name: Install tested OpenCode for a disposable adapter turn
+        run: npm install --prefix "$RUNNER_TEMP/opencode-smoke" opencode-ai@1.19.0
+      - name: Exercise system Keychains denials and real adapter turns
+        env:
+          COMMONLY_OPENCODE_SMOKE_BINARY: ${{ runner.temp }}/opencode-smoke/node_modules/.bin/opencode
         run: |
-          set -euo pipefail
-          cert_dir="$(mktemp -d)"
-          cat > "$cert_dir/root.cnf" <<'CONF'
-          [req]
-          distinguished_name = dn
-          x509_extensions = v3_ca
-          prompt = no
-          [dn]
-          CN = Commonly disposable Seatbelt root
-          [v3_ca]
-          basicConstraints = critical,CA:TRUE
-          keyUsage = critical,keyCertSign,cRLSign
-          subjectKeyIdentifier = hash
-          CONF
-          cat > "$cert_dir/leaf.cnf" <<'CONF'
-          [req]
-          distinguished_name = dn
-          req_extensions = v3_req
-          prompt = no
-          [dn]
-          CN = 127.0.0.1
-          [v3_req]
-          basicConstraints = critical,CA:FALSE
-          keyUsage = critical,digitalSignature,keyEncipherment
-          extendedKeyUsage = serverAuth
-          subjectAltName = @alt_names
-          [alt_names]
-          IP.1 = 127.0.0.1
-          CONF
-          openssl req -new -x509 -nodes -newkey rsa:2048 -sha256 -days 1 \
-            -keyout "$cert_dir/root.key" -out "$cert_dir/root.pem" -config "$cert_dir/root.cnf"
-          openssl req -new -nodes -newkey rsa:2048 -sha256 \
-            -keyout "$cert_dir/leaf.key" -out "$cert_dir/leaf.csr" -config "$cert_dir/leaf.cnf"
-          openssl x509 -req -in "$cert_dir/leaf.csr" -CA "$cert_dir/root.pem" \
-            -CAkey "$cert_dir/root.key" -CAcreateserial -out "$cert_dir/leaf.pem" \
-            -days 1 -sha256 -extfile "$cert_dir/leaf.cnf" -extensions v3_req
-          sudo security add-trusted-cert -d -r trustRoot \
-            -k /Library/Keychains/System.keychain "$cert_dir/root.pem"
-          /usr/bin/curl --version | head -2
-          security verify-cert -c "$cert_dir/leaf.pem" -p ssl -s 127.0.0.1 || true
-          export COMMONLY_DISPOSABLE_SYSTEM_ROOT_CERT="$cert_dir/leaf.pem"
-          export COMMONLY_DISPOSABLE_SYSTEM_ROOT_KEY="$cert_dir/leaf.key"
           cd cli
           node --experimental-vm-modules node_modules/.bin/jest \
-            __tests__/seatbelt.system-keychains.smoke.test.mjs --runInBand
-      - name: Show Keychains sandbox denials
-        if: failure()
-        shell: bash
-        run: |
-          sudo log show --last 5m --style compact \
-            --predicate 'eventMessage CONTAINS[c] "Keychains"' 2>/dev/null \
-            | tail -80 || true
+            __tests__/seatbelt.system-keychains.smoke.test.mjs \
+            __tests__/adapters.opencode.seatbelt.smoke.test.mjs \
+            __tests__/adapters.qwen.seatbelt.smoke.test.mjs \
+            __tests__/seatbelt.claude-runtime.smoke.test.mjs \
+            --runInBand

@@ -55,7 +55,6 @@ const PLATFORM_BASELINE = String.raw`
   (subpath "/usr/lib")
   (subpath "/usr/share")
   (subpath "/Library/Preferences")
-  (subpath "/Library/Keychains")
   (subpath "/var/db")
   (subpath "/private/var/db"))
 (allow file-read* file-test-existence
