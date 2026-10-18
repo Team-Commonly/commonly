@@ -111,13 +111,15 @@ describe('summaries routes - pod visibility gates', () => {
   });
 
   describe('GET / (recent summaries)', () => {
-    it('drops private-pod summaries and other users\' digests, keeps own + global', async () => {
+    it('keeps viewable-pod summaries, own digests and feed-only summaries; drops the rest', async () => {
       mockGetRecentSummaries.mockResolvedValue([
         { _id: 's1', type: 'chats', podId: 'p1', content: 'mine' },
         { _id: 's2', type: 'chats', podId: 'p2', content: 'private' },
         { _id: 's3', type: 'daily-digest', metadata: { userId: 'user1' }, content: 'my digest' },
         { _id: 's4', type: 'daily-digest', metadata: { userId: 'other' }, content: 'their digest' },
-        { _id: 's5', type: 'posts', content: 'global' },
+        { _id: 's5', type: 'posts', content: 'unstamped' },
+        { _id: 's6', type: 'posts', metadata: { source: 'feed-posts' }, content: 'feed' },
+        { _id: 's7', type: 'chats', content: 'pod-less chats' },
       ]);
       Pod.find.mockReturnValue(leanChain([
         { _id: 'p1', members: ['user1'], type: 'chat' },
@@ -127,7 +129,28 @@ describe('summaries routes - pod visibility gates', () => {
 
       const res = await request(app).get('/api/summaries/').expect(200);
 
-      expect(res.body.map((s) => s._id)).toEqual(['s1', 's3', 's5']);
+      expect(res.body.map((s) => s._id)).toEqual(['s1', 's3', 's6']);
+    });
+  });
+
+  describe('GET /latest', () => {
+    const summarizer = require('../../../services/summarizerService');
+
+    it('serves a feed-only posts summary', async () => {
+      mockGetRecentSummaries.mockImplementation(async (type) => (type === 'posts'
+        ? [{ _id: 'p-feed', type: 'posts', metadata: { source: 'feed-posts' } }] : []));
+      const res = await request(app).get('/api/summaries/latest').expect(200);
+      expect(res.body.posts && res.body.posts._id).toBe('p-feed');
+      expect(summarizer.summarizeAllPosts).not.toHaveBeenCalled();
+    });
+
+    it('does not serve an unstamped pod-less posts summary; falls back to the feed summary', async () => {
+      mockGetRecentSummaries.mockImplementation(async (type) => (type === 'posts'
+        ? [{ _id: 'p-old', type: 'posts', metadata: {} }] : []));
+      summarizer.summarizeAllPosts.mockResolvedValueOnce({ title: 'feed', metadata: { totalItems: 0 } });
+      const res = await request(app).get('/api/summaries/latest').expect(200);
+      expect(res.body.posts).toEqual({ title: 'feed', metadata: { totalItems: 0 } });
+      expect(summarizer.summarizeAllPosts).toHaveBeenCalledTimes(1);
     });
   });
 

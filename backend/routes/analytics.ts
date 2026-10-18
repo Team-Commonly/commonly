@@ -6,6 +6,10 @@ const Summary = require('../models/Summary');
 const KeywordExtractionService = require('../services/keywordExtractionService');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
+// eslint-disable-next-line global-require
+const adminAuth = require('../middleware/adminAuth');
+// eslint-disable-next-line global-require
+const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 
 interface AuthReq {
   user?: { id: string };
@@ -18,7 +22,18 @@ interface Res {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
-router.get('/keywords', auth, async (req: AuthReq, res: Res) => {
+// Instance-wide analytics over every pod's summaries: an instance
+// administrator's view, so the whole router is admin-only. The limiter runs
+// first because adminAuth reads the caller's User row on every request
+// (the same order as routes/providers/moltbot.ts).
+const analyticsAdminLimit = platformIpRateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  label: '60 analytics calls per 15 minutes per IP',
+});
+router.use(analyticsAdminLimit, auth, adminAuth);
+
+router.get('/keywords', async (req: AuthReq, res: Res) => {
   try {
     const { timeRange = '24h', podId, maxKeywords = '20' } = req.query || {};
     const userId = req.user?.id;
@@ -49,7 +64,7 @@ router.get('/keywords', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/topics', auth, async (req: AuthReq, res: Res) => {
+router.get('/topics', async (req: AuthReq, res: Res) => {
   try {
     const { timeRange = '24h', clustered = 'true' } = req.query || {};
     const userId = req.user?.id;
@@ -70,7 +85,7 @@ router.get('/topics', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/activity', auth, async (req: AuthReq, res: Res) => {
+router.get('/activity', async (req: AuthReq, res: Res) => {
   try {
     const { timeRange = '7d', type = 'hourly' } = req.query || {};
     const userId = req.user?.id;
@@ -87,7 +102,7 @@ router.get('/activity', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/users', auth, async (req: AuthReq, res: Res) => {
+router.get('/users', async (req: AuthReq, res: Res) => {
   try {
     const { timeRange = '7d' } = req.query || {};
     const userId = req.user?.id;
@@ -103,7 +118,7 @@ router.get('/users', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/trending', auth, async (req: AuthReq, res: Res) => {
+router.get('/trending', async (req: AuthReq, res: Res) => {
   try {
     const { period = 'week' } = req.query || {};
     const userId = req.user?.id;
@@ -126,7 +141,7 @@ router.get('/trending', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/summary', auth, async (req: AuthReq, res: Res) => {
+router.get('/summary', async (req: AuthReq, res: Res) => {
   try {
     const { timeRange = '24h' } = req.query || {};
     const userId = req.user?.id;

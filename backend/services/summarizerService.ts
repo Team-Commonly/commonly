@@ -6,6 +6,8 @@ const Summary = require('../models/Summary');
 const Post = require('../models/Post');
 // eslint-disable-next-line global-require
 const { generateText } = require('./llmService');
+// eslint-disable-next-line global-require
+const { FEED_POSTS_SOURCE } = require('./summaryScope');
 
 // Add fetch polyfill for Node.js
 if (!(global as Record<string, unknown>).fetch) {
@@ -128,7 +130,10 @@ Focus on what people are actually talking about rather than just activity levels
       const endTime = new Date();
       const startTime = new Date(endTime.getTime() - 60 * 60 * 1000);
 
+      // Feed posts only (podId null), the same set summarizeAllPosts reads.
+      // A pod's own posts belong to that pod's summaries (summaryScope.ts).
       const posts = await Post.find({
+        podId: null,
         createdAt: { $gte: startTime, $lte: endTime },
       })
         .populate('userId', 'username')
@@ -169,7 +174,7 @@ Focus on what people are actually talking about rather than just activity levels
         title,
         content: summaryText,
         timeRange: { start: startTime, end: endTime },
-        metadata: { totalItems: posts.length, topTags, topUsers },
+        metadata: { totalItems: posts.length, topTags, topUsers, source: FEED_POSTS_SOURCE },
       });
     } catch (error) {
       console.error('Error summarizing posts:', error);
@@ -252,7 +257,7 @@ Focus on what people are actually talking about rather than just activity levels
         start: new Date(Date.now() - 60 * 60 * 1000),
         end: new Date(),
       },
-      metadata: { totalItems: 0, topTags: [] },
+      metadata: { totalItems: 0, topTags: [], ...(type === 'posts' ? { source: FEED_POSTS_SOURCE } : {}) },
     });
   }
 
