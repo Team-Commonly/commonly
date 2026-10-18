@@ -9,6 +9,7 @@ const multer = require('multer');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 // eslint-disable-next-line global-require
 const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod } = require('../controllers/podController');
 // eslint-disable-next-line global-require
@@ -220,7 +221,7 @@ const deriveLinkName = (rawUrl: string): string => {
   }
 };
 
-router.post('/external-link', auth, upload.single('qrCode'), async (req: AuthReq, res: Res) => {
+router.post('/external-link', auth, upload.single('qrCode'), refuseDollarKeys, async (req: AuthReq, res: Res) => {
   try {
     const { podId, name: rawName, type: rawType, url } = (req.body || {}) as { podId?: string; name?: string; type?: string; url?: string };
     if (!podId) return res.status(400).json({ message: 'Missing podId' });
