@@ -9,7 +9,7 @@ on:
       - 'cli/src/lib/sandbox/opencode-loopback.mjs'
       - 'cli/__tests__/opencode.bwrap-egress.test.mjs'
       - 'cli/__tests__/instance-proxy.test.mjs'
-      - 'cli/__tests__/fixtures/opencode-mcp-probe.mjs'
+      - 'scripts/fixtures/opencode-mcp-probe.mjs'
       - 'scripts/verify-opencode-bwrap-mcp.mjs'
       - '.github/workflows/opencode-bwrap-egress.yml'
 

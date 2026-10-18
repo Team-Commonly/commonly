@@ -20,7 +20,7 @@ await writeFile(join(mcpHome, 'current'), '0.3.13\n');
 await writeFile(join(mcpHome, '.warm.lock'), 'probe');
 process.env.COMMONLY_MCP_HOME = mcpHome;
 const binary = join(workspace, 'opencode');
-await cp(join(repo, 'cli/__tests__/fixtures/opencode-mcp-probe.mjs'), binary);
+await cp(join(repo, 'scripts/fixtures/opencode-mcp-probe.mjs'), binary);
 await chmod(binary, 0o755);
 const keyFile = join(root, 'key');
 await writeFile(keyFile, 'fake-provider-key', { mode: 0o600 });
