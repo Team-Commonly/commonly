@@ -334,6 +334,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(meta).toContain('padding-right: 32px');
   });
 
+  test('pod search shortcut hint hides on narrow and touch-only screens', () => {
+    const hideHint = mediaAt(v2, '@media (max-width: 760px), (hover: none) and (pointer: coarse) {');
+    expect(hideHint).not.toBe('');
+    expect(ruleBody(v2, '.v2-pods__search-kbd', { within: hideHint })).toContain('display: none');
+    expect(v2).not.toContain('.v2-pods__search-kbd::before');
+  });
+
   test('the selected pod keeps the sidebar’s one cobalt block treatment', () => {
     const selected = selectorRuleBody(v2, '.v2-root button.v2-pods__row--selected');
     expect(selected).toContain('background: var(--v2-accent)');
