@@ -22,7 +22,7 @@ const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
-const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-01.json');
+const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-19.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -743,8 +743,8 @@ describe('the shipped catalogue cannot land half-wired', () => {
     const capture = NOTION_CAPTURE;
     expect(entry.resource).toBe(capture.server);
     expect(entry.client).toBe('cimd');
-    expect(entry.scopes).toEqual([capture.tokenShape.scope]);
-    expect(entry.tools).toHaveLength(26);
+    expect(entry.scopes).toEqual([capture.tokenShape.grantedScope]);
+    expect(entry.tools).toHaveLength(24);
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
     for (const tool of entry.tools) {
       const source = measured.get(tool.upstreamName);
@@ -767,6 +767,8 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(names).not.toContain('notion-send-message-to-session');
     expect(names).not.toContain('notion-search-sessions');
     expect(names).not.toContain('notion-upload-skill');
+    expect(names).not.toContain('notion-ai-search');
+    expect(names).not.toContain('notion-get-tool-access');
     expect(entryToolProjections(entry).find((tool) => tool.name === 'notion.notion_move_pages'))
       .toMatchObject({ requiredWriteMode: 'write-with-confirm', irreversible: true });
   });

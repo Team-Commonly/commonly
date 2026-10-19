@@ -1,12 +1,12 @@
 /**
- * Notion hosted MCP entry (TASK-240). Schemas and annotations were transcribed
- * from connector-ops's consenting tools/list capture at 2026-10-01T11:18:41Z.
- * Re-pin against the 2026-10-19 capture before the review gate.
+ * Notion hosted MCP entry (TASK-240). Schemas and annotations are pinned from
+ * connector-ops's consenting 2026-10-19 tools/list capture.
  *
- * Notion's agent-session and skill tools are excluded: a Commonly grant should
- * act on pages and databases, not start or message a separate Notion agent.
- * Destructive operations and moves keep the irreversible floor in addition to
- * the hosted write-with-confirm mode.
+ * The 24-tool pin follows Wren's PR-thread ruling: Notion workspace tools only.
+ * Agent-session, skill-transfer, attachment, connected-source search, and
+ * tool-access catalogue calls are excluded. create-pages and update-page can
+ * still mark a page as a skill via is_skill, with member approval.
+ * Destructive writes and moves keep the irreversible floor.
  */
 import type { HostedMcpEntry, HostedMcpPinnedTool } from '../../services/hostedMcpEntryService';
 
@@ -95,7 +95,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                 additionalProperties: false,
               },
               created_by_user_ids: {
-                description: "Optional filter to only produce search results created by the Notion users that have the specified user IDs.",
+                description: "Optional filter to only produce search results created by the Notion users that have the specified user IDs. Use \"me\" for the connected user.",
                 maxItems: 100,
                 type: "array",
                 items: {
@@ -103,7 +103,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                 },
               },
               edited_by_user_ids: {
-                description: "Optional filter to only produce search results edited by the Notion users that have the specified user IDs. Available on the Business plan.",
+                description: "Optional filter to only produce search results edited by the Notion users that have the specified user IDs. Use \"me\" for the connected user. Available on the Business plan.",
                 maxItems: 100,
                 type: "array",
                 items: {
@@ -183,173 +183,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: true, destructiveHint: false },
-    ),
-    pin(
-      "notion-ai-search",
-      "Search connected Notion content with Notion AI.",
-      'read',
-      {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            description: "Exact keywords, a page title, a project name, or a concise natural-language question. Keywords are valid; a question is not required. Preserve distinctive names and identifiers. Prefer one topic per call, ideally under 50 words. Provide a non-empty query unless intentionally browsing Notion with filters or a non-relevance sort.",
-          },
-          query_type: {
-            description: "Omit or use \"internal\" for content search. Use \"user\" to look up a workspace user by name or email.",
-            type: "string",
-            enum: [
-              "internal",
-              "user",
-            ],
-          },
-          data_source_url: {
-            description: "Optionally restrict search to a data source URL returned in a <data-source> tag. Omit when searching the whole workspace.",
-            type: "string",
-          },
-          page_url: {
-            description: "Optionally restrict search to a page and its descendants. Accepts a Notion page URL or ID. Omit when searching the whole workspace.",
-            type: "string",
-          },
-          teamspace_id: {
-            description: "Optionally restrict search to a teamspace ID.",
-            type: "string",
-          },
-          filters: {
-            description: "Optional exact filters for Notion pages and databases. Supplying an effective filter selects Notion-only workspace search so the filter is enforced exactly. Omit for unified search across Notion and connected sources. Keep filter fields nested here. Some filters require Business access.",
-            type: "object",
-            properties: {
-              created_date_range: {
-                description: "Optional filter to only produce search results created within the specified date range.",
-                type: "object",
-                properties: {
-                  start_date: {
-                    description: "The start date of the date range as an ISO 8601 date string, if any.",
-                    type: "string",
-                    format: "date",
-                    pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                  },
-                  end_date: {
-                    description: "The end date of the date range as an ISO 8601 date string, if any.",
-                    type: "string",
-                    format: "date",
-                    pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                  },
-                },
-                additionalProperties: false,
-              },
-              created_by_user_ids: {
-                description: "Optional filter to only produce search results created by the Notion users that have the specified user IDs.",
-                maxItems: 100,
-                type: "array",
-                items: {
-                  type: "string",
-                },
-              },
-              edited_by_user_ids: {
-                description: "Optional filter to only produce search results edited by the Notion users that have the specified user IDs. Available on the Business plan.",
-                maxItems: 100,
-                type: "array",
-                items: {
-                  type: "string",
-                },
-              },
-              last_edited_date_range: {
-                description: "Optional filter to only produce search results last edited within the specified date range. Available on the Business plan.",
-                type: "object",
-                properties: {
-                  start_date: {
-                    description: "The start date of the date range as an ISO 8601 date string, if any.",
-                    type: "string",
-                    format: "date",
-                    pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                  },
-                  end_date: {
-                    description: "The end date of the date range as an ISO 8601 date string, if any.",
-                    type: "string",
-                    format: "date",
-                    pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                  },
-                },
-                additionalProperties: false,
-              },
-              teamspace_ids: {
-                description: "Optional filter to only produce search results inside one of the specified teamspaces. Selecting more than one teamspace is available on the Business plan; use teamspace_id for one teamspace on other plans.",
-                maxItems: 100,
-                type: "array",
-                items: {
-                  type: "string",
-                },
-              },
-              title_only: {
-                description: "When true, match the query only against page and database titles instead of page content. Available on the Business plan.",
-                type: "boolean",
-              },
-              content_status: {
-                description: "Which pages to include by status. Omit for the default live pages. Supplying this field, even with the default value, requires Business access.",
-                type: "string",
-                enum: [
-                  "all_with_archived",
-                  "all_without_archived",
-                  "verified_only",
-                  "archived_only",
-                ],
-              },
-            },
-            additionalProperties: false,
-          },
-          sort: {
-            description: "Omit for the default \"relevance\" ordering. \"last_edited\" and \"created\" select Notion-only workspace search and require Business access.",
-            type: "string",
-            enum: [
-              "relevance",
-              "last_edited",
-              "created",
-            ],
-          },
-          page_size: {
-            description: "Maximum number of results to return (default 10).",
-            type: "integer",
-            minimum: 1,
-            maximum: 50,
-          },
-          max_highlight_length: {
-            description: "Maximum result highlight length (default 200). Set to 0 to omit highlights.",
-            type: "integer",
-            minimum: 0,
-            maximum: 500,
-          },
-        },
-        required: [
-          "query",
-        ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
-        additionalProperties: false,
-      },
-      { readOnlyHint: true, destructiveHint: false },
-    ),
-    pin(
-      "notion-get-tool-access",
-      "Read current Notion tool availability and search restrictions.",
-      'read',
-      {
-        type: "object",
-        properties: {
-          tool_names: {
-            description: "Optional RunTool names to include, such as search and ai_search. Omit to return all tools visible to this connection. Unknown or unexposed names are omitted. An empty list returns an empty map.",
-            maxItems: 100,
-            type: "array",
-            items: {
-              type: "string",
-              minLength: 1,
-              maxLength: 100,
-            },
-          },
-        },
-        $schema: "https://json-schema.org/draft/2020-12/schema",
-        additionalProperties: false,
-      },
-      { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-fetch",
@@ -360,7 +194,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         properties: {
           id: {
             type: "string",
-            description: "The ID or URL of the Notion page, database, or data source to fetch. Supports notion.so URLs, Notion Sites URLs (*.notion.site), raw UUIDs, and data source URLs (collection://...). Pass a notion://docs/* URI to read that documentation resource. Also accepts an explicit saved view URL (view://...) from a database response. If a database block ID returns a validation error, use the collection:// URL from that error. Example: <example>notion://docs/enhanced-markdown-spec</example>.",
+            description: "The ID or URL of the Notion page, database, or data source to fetch. Supports notion.so URLs, Notion Sites URLs (*.notion.site), raw UUIDs, and data source URLs (collection://...). Pass \"memory\" to fetch the connected user's About page and memory database in this workspace without creating them. Pass a notion://docs/* URI to read that documentation resource. Also accepts an explicit saved view URL (view://...) from a database response. If a database block ID returns a validation error, use the collection:// URL from that error. Example: <example>notion://docs/enhanced-markdown-spec</example>.",
           },
           include_transcript: {
             description: "Whether to include meeting note transcripts. Defaults to false. When true, full transcripts are included; when false, a placeholder with the meeting note URL is shown instead.",
@@ -368,6 +202,10 @@ export const NOTION_ENTRY: HostedMcpEntry = {
           },
           include_discussions: {
             description: "Whether to include discussion/comment indicators in the page output. When true, adds a <page-discussions> summary with discussion count, preview snippets, and discussion:// URLs. Use with the get_comments tool to retrieve full discussion content. Defaults to false.",
+            type: "boolean",
+          },
+          include_file_urls: {
+            description: "Whether to return signed download URLs for uploaded files. Defaults to false. When false, page Markdown cites uploaded files by stable notion-file-block:// references and the response has no references map; call get_file_download_urls with the references when you need those files' contents. When true, the response's references map gives the signed URL for each reference.",
             type: "boolean",
           },
         },
@@ -378,6 +216,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-create-pages",
@@ -456,8 +295,15 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             ],
           },
           parent: {
-            description: "All pages in one call share this parent. Otherwise use a page (page_id), database page (database_id), or data source (data_source_id). A database_id cannot be used when the database has more than one data source; fetch it and use the right collection:// URL as data_source_id. If omitted, pages are private at the workspace level. When no destination is named, prefer explicit \"creation_mode\": \"draft\" over omitting the parent.",
+            description: "All pages in one call share this parent. Pass \"memory\" to save a personal memory; see notion://docs/memory. Otherwise use a page (page_id), database page (database_id), data source (data_source_id), or teamspace root (teamspace_id, from get_teams). Teamspace roots require a user-backed connection and permission to add top-level pages. A database_id cannot be used when the database has more than one data source; fetch it and use the right collection:// URL as data_source_id. If omitted, pages are private at the workspace level. When no destination is named, prefer explicit \"creation_mode\": \"draft\" over omitting the parent.",
             anyOf: [
+              {
+                type: "string",
+                enum: [
+                  "memory",
+                ],
+                description: "Always `memory`",
+              },
               {
                 type: "object",
                 properties: {
@@ -518,6 +364,19 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                 ],
                 additionalProperties: {},
               },
+              {
+                type: "object",
+                properties: {
+                  teamspace_id: {
+                    type: "string",
+                    description: "The ID of the teamspace in which to create top-level pages (with or without dashes).",
+                  },
+                },
+                required: [
+                  "teamspace_id",
+                ],
+                additionalProperties: false,
+              },
             ],
           },
           allow_async: {
@@ -532,6 +391,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-update-page",
@@ -627,7 +487,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             type: "string",
           },
           content_updates: {
-            description: "Required for \"update_content\" command. An array of search-and-replace operations, each with old_str (content to find) and new_str (replacement content).",
+            description: "Required for \"update_content\" command. An array of search-and-replace operations, each with old_str (content to find) and new_str (replacement content). Operations that match are applied, and each one that matches nothing is reported in \"warnings\". The call fails only when no operation that changes content matches.",
             maxItems: 100,
             type: "array",
             items: {
@@ -867,6 +727,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-create-database",
@@ -905,7 +766,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             type: "string",
           },
           schema: {
-            description: "SQL DDL CREATE TABLE statement defining the database schema. Cannot be combined with database_type. Column names must be double-quoted and type options use single quotes.\n\nProperty type syntax:\n- Simple: TITLE, RICH_TEXT, DATE, PEOPLE, CHECKBOX, URL, EMAIL, PHONE_NUMBER, STATUS, FILES\n- SELECT('opt':color, ...) / MULTI_SELECT('opt':color, ...)\n- NUMBER [FORMAT 'dollar'] / FORMULA('expression')\n- RELATION('ds') for a one-way relation\n- RELATION('ds', DUAL) for a two-way relation\n- RELATION('ds', DUAL 'Children') with a synced property name\n- RELATION('ds', DUAL 'Children' 'children') with a synced name and synced_id (for self-relations)\n- ROLLUP('rel_prop', 'target_prop', 'function')\n- UNIQUE_ID [PREFIX 'X'] / CREATED_TIME / LAST_EDITED_TIME\n- Any column: COMMENT 'description text' Colors: default, gray, brown, orange, yellow, green, blue, purple, pink, red.\n\n\nExamples:\n- Minimal: <example>CREATE TABLE (\"Name\" TITLE)</example>\n- With options: <example>CREATE TABLE (\"Name\" TITLE, \"Budget\" NUMBER FORMAT 'dollar', \"Tags\" MULTI_SELECT('eng':blue, 'design':pink), \"Task ID\" UNIQUE_ID PREFIX 'PRJ')</example>\n- Self-relations are a two-step flow: create the database, then use its data source ID with update_data_source to add paired properties such as RELATION('ds', DUAL 'Children' 'children').",
+            description: "SQL DDL CREATE TABLE statement defining the database schema. Cannot be combined with database_type. Column names must be double-quoted and type options use single quotes.\n\nProperty type syntax:\n- Simple: TITLE, RICH_TEXT, DATE, PEOPLE, CHECKBOX, URL, EMAIL, PHONE_NUMBER, FILES\n- SELECT('opt':color, ...) / MULTI_SELECT('opt':color, ...)\n- STATUS('Backlog':gray:to_do, 'Building':blue:in_progress, 'Shipped':green:complete); groups are to_do, in_progress, complete\n- NUMBER [FORMAT 'dollar'] / FORMULA('expression')\n- RELATION('ds') for a one-way relation\n- RELATION('ds', DUAL) for a two-way relation\n- RELATION('ds', DUAL 'Children') with a synced property name\n- RELATION('ds', DUAL 'Children' 'children') with a synced name and synced_id (for self-relations)\n- ROLLUP('rel_prop', 'target_prop', 'function')\n- UNIQUE_ID [PREFIX 'X'] / CREATED_TIME / LAST_EDITED_TIME\n- Any column: COMMENT 'description text' Colors: default, gray, brown, orange, yellow, green, blue, purple, pink, red.\n\n\nExamples:\n- Minimal: <example>CREATE TABLE (\"Name\" TITLE)</example>\n- With options: <example>CREATE TABLE (\"Name\" TITLE, \"Budget\" NUMBER FORMAT 'dollar', \"Tags\" MULTI_SELECT('eng':blue, 'design':pink), \"Task ID\" UNIQUE_ID PREFIX 'PRJ')</example>\n- Self-relations are a two-step flow: create the database, then use its data source ID with update_data_source to add paired properties such as RELATION('ds', DUAL 'Children' 'children').",
             type: "string",
           },
           database_type: {
@@ -922,6 +783,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-create-folder",
@@ -974,6 +836,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-update-folder",
@@ -1040,7 +903,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             description: "The data source to update. Accepts a collection:// URI from <data-source> tags, a bare UUID, or a database ID (only if the database has a single data source).",
           },
           statements: {
-            description: "Semicolon-separated SQL DDL statements to update the schema. Supports ADD COLUMN, DROP COLUMN, RENAME COLUMN, and ALTER COLUMN SET.\n\nProperty type syntax:\n- Simple: TITLE, RICH_TEXT, DATE, PEOPLE, CHECKBOX, URL, EMAIL, PHONE_NUMBER, STATUS, FILES\n- SELECT('opt':color, ...) / MULTI_SELECT('opt':color, ...)\n- NUMBER [FORMAT 'dollar'] / FORMULA('expression')\n- RELATION('ds') for a one-way relation\n- RELATION('ds', DUAL) for a two-way relation\n- RELATION('ds', DUAL 'Children') with a synced property name\n- RELATION('ds', DUAL 'Children' 'children') with a synced name and synced_id (for self-relations)\n- ROLLUP('rel_prop', 'target_prop', 'function')\n- UNIQUE_ID [PREFIX 'X'] / CREATED_TIME / LAST_EDITED_TIME\n- Any column: COMMENT 'description text' Colors: default, gray, brown, orange, yellow, green, blue, purple, pink, red.\n\n\nExamples:\n- <example>ADD COLUMN \"Priority\" SELECT('High':red, 'Medium':yellow, 'Low':green); ADD COLUMN \"Due Date\" DATE</example>\n- <example>RENAME COLUMN \"Status\" TO \"Project Status\"</example>\n- <example>DROP COLUMN \"Old Property\"</example>\n- For a self-relation, add both relation properties in one call with matching DUAL names and IDs, such as <example>ADD COLUMN \"Parent\" RELATION('ds', DUAL 'Children' 'children')</example>.",
+            description: "Semicolon-separated SQL DDL statements to update the schema. Supports ADD COLUMN, DROP COLUMN, RENAME COLUMN, and ALTER COLUMN SET.\n\nProperty type syntax:\n- Simple: TITLE, RICH_TEXT, DATE, PEOPLE, CHECKBOX, URL, EMAIL, PHONE_NUMBER, FILES\n- SELECT('opt':color, ...) / MULTI_SELECT('opt':color, ...)\n- STATUS('Backlog':gray:to_do, 'Building':blue:in_progress, 'Shipped':green:complete); groups are to_do, in_progress, complete\n- NUMBER [FORMAT 'dollar'] / FORMULA('expression')\n- RELATION('ds') for a one-way relation\n- RELATION('ds', DUAL) for a two-way relation\n- RELATION('ds', DUAL 'Children') with a synced property name\n- RELATION('ds', DUAL 'Children' 'children') with a synced name and synced_id (for self-relations)\n- ROLLUP('rel_prop', 'target_prop', 'function')\n- UNIQUE_ID [PREFIX 'X'] / CREATED_TIME / LAST_EDITED_TIME\n- Any column: COMMENT 'description text' Colors: default, gray, brown, orange, yellow, green, blue, purple, pink, red.\n\n\nExamples:\n- <example>ADD COLUMN \"Priority\" SELECT('High':red, 'Medium':yellow, 'Low':green); ADD COLUMN \"Due Date\" DATE</example>\n- <example>RENAME COLUMN \"Status\" TO \"Project Status\"</example>\n- <example>DROP COLUMN \"Old Property\"</example>\n- For a self-relation, add both relation properties in one call with matching DUAL names and IDs, such as <example>ADD COLUMN \"Parent\" RELATION('ds', DUAL 'Children' 'children')</example>.",
             type: "string",
           },
           title: {
@@ -1074,7 +937,6 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                           type: "string",
                           enum: [
                             "cover",
-                            "properties",
                             "editor",
                             "discussions",
                             "relations",
@@ -1087,6 +949,111 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                       },
                       required: [
                         "type",
+                      ],
+                      additionalProperties: false,
+                    },
+                    {
+                      type: "object",
+                      properties: {
+                        type: {
+                          type: "string",
+                          enum: [
+                            "properties",
+                          ],
+                          description: "The module type.",
+                        },
+                        properties: {
+                          description: "Properties in order. Unlisted properties follow in their current order and show. Don't list the title or properties placed elsewhere in the layout.",
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              property: {
+                                type: "string",
+                                description: "The property name.",
+                              },
+                              visibility: {
+                                description: "Defaults to show. Changes how pages look, not who can see the value.",
+                                type: "string",
+                                enum: [
+                                  "show",
+                                  "hide_if_empty",
+                                  "hide",
+                                ],
+                              },
+                            },
+                            required: [
+                              "property",
+                            ],
+                            additionalProperties: false,
+                          },
+                        },
+                      },
+                      required: [
+                        "type",
+                      ],
+                      additionalProperties: false,
+                    },
+                    {
+                      type: "object",
+                      properties: {
+                        type: {
+                          type: "string",
+                          enum: [
+                            "properties",
+                          ],
+                          description: "The module type.",
+                        },
+                        sections: {
+                          minItems: 1,
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              name: {
+                                type: "string",
+                                minLength: 1,
+                                description: "The section name.",
+                              },
+                              properties: {
+                                type: "array",
+                                items: {
+                                  type: "object",
+                                  properties: {
+                                    property: {
+                                      type: "string",
+                                      description: "The property name.",
+                                    },
+                                    visibility: {
+                                      description: "Defaults to show. Changes how pages look, not who can see the value.",
+                                      type: "string",
+                                      enum: [
+                                        "show",
+                                        "hide_if_empty",
+                                        "hide",
+                                      ],
+                                    },
+                                  },
+                                  required: [
+                                    "property",
+                                  ],
+                                  additionalProperties: false,
+                                },
+                                description: "Properties in this section, in order. Don't list the title or properties placed elsewhere in the layout.",
+                              },
+                            },
+                            required: [
+                              "name",
+                              "properties",
+                            ],
+                            additionalProperties: false,
+                          },
+                          description: "Named sections in order. Unlisted properties go in the last section and show.",
+                        },
+                      },
+                      required: [
+                        "type",
+                        "sections",
                       ],
                       additionalProperties: false,
                     },
@@ -1206,9 +1173,98 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                           ],
                           description: "The module type.",
                         },
+                        properties: {
+                          description: "Properties in order. Unlisted properties follow in their current order and show. Don't list the title or properties placed elsewhere in the layout.",
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              property: {
+                                type: "string",
+                                description: "The property name.",
+                              },
+                              visibility: {
+                                description: "Defaults to show. Changes how pages look, not who can see the value.",
+                                type: "string",
+                                enum: [
+                                  "show",
+                                  "hide_if_empty",
+                                  "hide",
+                                ],
+                              },
+                            },
+                            required: [
+                              "property",
+                            ],
+                            additionalProperties: false,
+                          },
+                        },
                       },
                       required: [
                         "type",
+                      ],
+                      additionalProperties: false,
+                    },
+                    {
+                      type: "object",
+                      properties: {
+                        type: {
+                          type: "string",
+                          enum: [
+                            "properties",
+                          ],
+                          description: "The module type.",
+                        },
+                        sections: {
+                          minItems: 1,
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              name: {
+                                type: "string",
+                                minLength: 1,
+                                description: "The section name.",
+                              },
+                              properties: {
+                                type: "array",
+                                items: {
+                                  type: "object",
+                                  properties: {
+                                    property: {
+                                      type: "string",
+                                      description: "The property name.",
+                                    },
+                                    visibility: {
+                                      description: "Defaults to show. Changes how pages look, not who can see the value.",
+                                      type: "string",
+                                      enum: [
+                                        "show",
+                                        "hide_if_empty",
+                                        "hide",
+                                      ],
+                                    },
+                                  },
+                                  required: [
+                                    "property",
+                                  ],
+                                  additionalProperties: false,
+                                },
+                                description: "Properties in this section, in order. Don't list the title or properties placed elsewhere in the layout.",
+                              },
+                            },
+                            required: [
+                              "name",
+                              "properties",
+                            ],
+                            additionalProperties: false,
+                          },
+                          description: "Named sections in order. Unlisted properties go in the last section and show.",
+                        },
+                      },
+                      required: [
+                        "type",
+                        "sections",
                       ],
                       additionalProperties: false,
                     },
@@ -1278,7 +1334,6 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                             type: {
                               type: "string",
                               enum: [
-                                "properties",
                                 "editor",
                                 "discussions",
                                 "relations",
@@ -1288,6 +1343,111 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                           },
                           required: [
                             "type",
+                          ],
+                          additionalProperties: false,
+                        },
+                        {
+                          type: "object",
+                          properties: {
+                            type: {
+                              type: "string",
+                              enum: [
+                                "properties",
+                              ],
+                              description: "The module type.",
+                            },
+                            properties: {
+                              description: "Properties in order. Unlisted properties follow in their current order and show. Don't list the title or properties placed elsewhere in the layout.",
+                              type: "array",
+                              items: {
+                                type: "object",
+                                properties: {
+                                  property: {
+                                    type: "string",
+                                    description: "The property name.",
+                                  },
+                                  visibility: {
+                                    description: "Defaults to show. Changes how pages look, not who can see the value.",
+                                    type: "string",
+                                    enum: [
+                                      "show",
+                                      "hide_if_empty",
+                                      "hide",
+                                    ],
+                                  },
+                                },
+                                required: [
+                                  "property",
+                                ],
+                                additionalProperties: false,
+                              },
+                            },
+                          },
+                          required: [
+                            "type",
+                          ],
+                          additionalProperties: false,
+                        },
+                        {
+                          type: "object",
+                          properties: {
+                            type: {
+                              type: "string",
+                              enum: [
+                                "properties",
+                              ],
+                              description: "The module type.",
+                            },
+                            sections: {
+                              minItems: 1,
+                              type: "array",
+                              items: {
+                                type: "object",
+                                properties: {
+                                  name: {
+                                    type: "string",
+                                    minLength: 1,
+                                    description: "The section name.",
+                                  },
+                                  properties: {
+                                    type: "array",
+                                    items: {
+                                      type: "object",
+                                      properties: {
+                                        property: {
+                                          type: "string",
+                                          description: "The property name.",
+                                        },
+                                        visibility: {
+                                          description: "Defaults to show. Changes how pages look, not who can see the value.",
+                                          type: "string",
+                                          enum: [
+                                            "show",
+                                            "hide_if_empty",
+                                            "hide",
+                                          ],
+                                        },
+                                      },
+                                      required: [
+                                        "property",
+                                      ],
+                                      additionalProperties: false,
+                                    },
+                                    description: "Properties in this section, in order. Don't list the title or properties placed elsewhere in the layout.",
+                                  },
+                                },
+                                required: [
+                                  "name",
+                                  "properties",
+                                ],
+                                additionalProperties: false,
+                              },
+                              description: "Named sections in order. Unlisted properties go in the last section and show.",
+                            },
+                          },
+                          required: [
+                            "type",
+                            "sections",
                           ],
                           additionalProperties: false,
                         },
@@ -1392,12 +1552,16 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             type: "string",
             description: "The ID of the page to comment on (with or without dashes).",
           },
+          reply_to_comment_id: {
+            description: "The ID of the comment to reply to.",
+            type: "string",
+          },
           discussion_id: {
             description: "The ID or URL of an existing discussion to reply to (e.g., discussion://pageId/blockId/discussionId).",
             type: "string",
           },
           selection_with_ellipsis: {
-            description: "Unique start and end snippet of the content to comment on. DO NOT provide the entire string. Instead, provide up to the first ~10 characters, an ellipsis, and then up to the last ~10 characters. Make sure you provide enough of the start and end snippet to uniquely identify the content. For example: \"# Section heading...last paragraph.\"",
+            description: "Unique content snippet: ~10 characters from each end, joined by \"...\". A match within one block's text gets an inline comment on that text; otherwise, comment on the block where the match starts. No match returns an error.",
             type: "string",
           },
           rich_text: {
@@ -1824,6 +1988,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-get-comments",
@@ -1856,6 +2021,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-get-async-task",
@@ -1877,6 +2043,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-get-teams",
@@ -1896,6 +2063,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-get-users",
@@ -1932,6 +2100,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-query-data-sources",
@@ -1941,7 +2110,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         type: "object",
         properties: {
           data: {
-            description: "Mode parameter reference and examples.\n\nSQL mode:\n- Checkbox values: use \"__YES__\" for checked, \"__NO__\" for unchecked\n\n\nRows mode: Return up to 100 rows with faithful rich-text property values and optional structured filters and sorts.\n\nExample:\n<example>{\"mode\":\"rows\",\"data_source_url\":\"collection://f336d0bc-b841-465b-8045-024475c079dd\",\"filter\":{\"type\":\"group\",\"operator\":\"and\",\"filters\":[{\"type\":\"property\",\"property\":\"Status\",\"propertyType\":\"select\",\"operator\":\"enum_is\",\"value\":{\"type\":\"exact\",\"value\":\"In Progress\"}}]},\"limit\":20}</example>\n\nExamples:\n- Simple SQL: <example>{\"data_source_urls\":[\"collection://f336d0bc-b841-465b-8045-024475c079dd\"],\"query\":\"SELECT * FROM [collection://f336d0bc-b841-465b-8045-024475c079dd] LIMIT 10\"}</example>\n- SQL parameters: <example>{\"mode\":\"sql\",\"data_source_urls\":[\"collection://abc123\"],\"query\":\"SELECT * FROM [collection://abc123] WHERE Status = ? AND Priority = ?\",\"params\":[\"In Progress\",\"High\"]}</example>\n- Checkbox query: <example>{\"data_source_urls\":[\"collection://def456\"],\"query\":\"SELECT * FROM [collection://def456] WHERE Completed = ?\",\"params\":[\"__YES__\"]}</example>\n\nView mode: Execute a specific database view's query with its filters and sorts. Omit \"is_archived\" or set it to false for non-archived rows. Set \"is_archived\": true to apply the view inside the archived partition. When the response has \"has_more\": true, pass its \"next_cursor\" as \"start_cursor\" in a follow-up view-mode request with the same \"is_archived\" value.\n\nExample:\n<example>{\"mode\":\"view\",\"view_url\":\"https://www.notion.so/workspace/Tasks-DB-abc123?v=def456\",\"is_archived\":false}</example>",
+            description: "Mode parameter reference and examples.\n\nSQL mode:\n- Use single quotes for SQL string values, such as `\"Status\" = 'Done'`. Use double quotes for table and column names. In SQL, `''` is an empty string.\n- Prefer `?` placeholders for values. For text values, the `params` array uses JSON strings, so `[\"\"]` passes an empty string and `[\"__YES__\"]` passes a checked checkbox value. Do not add SQL quote marks around a bound value.\n- Checkbox SQL values: `'__YES__'` means checked; `'__NO__'` means unchecked.\n\n\nRows mode: Return up to 100 rows with faithful rich-text property values and optional structured filters and sorts.\n\nExample:\n<example>{\"mode\":\"rows\",\"data_source_url\":\"collection://f336d0bc-b841-465b-8045-024475c079dd\",\"filter\":{\"type\":\"group\",\"operator\":\"and\",\"filters\":[{\"type\":\"property\",\"property\":\"Status\",\"propertyType\":\"select\",\"operator\":\"enum_is\",\"value\":{\"type\":\"exact\",\"value\":\"In Progress\"}}]},\"limit\":20}</example>\n\nExamples:\n- Simple SQL: <example>{\"data_source_urls\":[\"collection://f336d0bc-b841-465b-8045-024475c079dd\"],\"query\":\"SELECT * FROM [collection://f336d0bc-b841-465b-8045-024475c079dd] LIMIT 10\"}</example>\n- SQL parameters: <example>{\"mode\":\"sql\",\"data_source_urls\":[\"collection://abc123\"],\"query\":\"SELECT * FROM [collection://abc123] WHERE Status = ? AND Priority = ?\",\"params\":[\"In Progress\",\"High\"]}</example>\n- Checkbox query: <example>{\"data_source_urls\":[\"collection://def456\"],\"query\":\"SELECT * FROM [collection://def456] WHERE Completed = ?\",\"params\":[\"__YES__\"]}</example>\n\nView mode: Execute a specific database view's query with its filters and sorts. Omit \"is_archived\" or set it to false for non-archived rows. Set \"is_archived\": true to apply the view inside the archived partition. When the response has \"has_more\": true, pass its \"next_cursor\" as \"start_cursor\" in a follow-up view-mode request with the same \"is_archived\" value.\n\nExample:\n<example>{\"mode\":\"view\",\"view_url\":\"https://www.notion.so/workspace/Tasks-DB-abc123?v=def456\",\"is_archived\":false}</example>",
             anyOf: [
               {
                 type: "object",
@@ -1956,7 +2125,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                   },
                   query: {
                     type: "string",
-                    description: "Read-only SQLite query to execute against the data sources. Use a data source URL as the table name, e.g. SELECT * FROM \"collection://...\" WHERE .... Include every needed filter in WHERE (filters on views of the data source are not automatically applied). For time comparisons or ordering, normalize text timestamps with datetime(...) or date(...). SQL text values can omit rich-text mentions and formatting, and links can lose their destination. Use faithful rows mode or fetch the page before rewriting a rich-text property.",
+                    description: "Read-only SQLite query to execute against the data sources. Use a data source URL as the table name, e.g. SELECT * FROM \"collection://...\" WHERE .... Use only table and column names shown in the fetched `<sqlite-table>` definition; date properties use the expanded column names listed there, not the base name. Include every needed filter in WHERE (filters on views of the data source are not automatically applied). For time comparisons or ordering, normalize text timestamps with datetime(...) or date(...). SQL text values can omit rich-text mentions and formatting, and links can lose their destination. Use faithful rows mode or fetch the page before rewriting a rich-text property.",
                   },
                   mode: {
                     description: "Optional mode parameter. Defaults to 'sql' if not specified. SQL mode does not accept is_archived; that parameter belongs only to view mode.",
@@ -6909,6 +7078,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-query-multiple-data-sources",
@@ -6919,7 +7089,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         properties: {
           query: {
             type: "string",
-            description: "Read-only SQLite query to execute against the data sources. Use a data source URL as the table name, e.g. SELECT * FROM \"collection://...\" WHERE .... Include every needed filter in WHERE (filters on views of the data source are not automatically applied). For time comparisons or ordering, normalize text timestamps with datetime(...) or date(...). SQL text values can omit rich-text mentions and formatting, and links can lose their destination. Use faithful rows mode or fetch the page before rewriting a rich-text property.",
+            description: "Read-only SQLite query to execute against the data sources. Use a data source URL as the table name, e.g. SELECT * FROM \"collection://...\" WHERE .... Use only table and column names shown in the fetched `<sqlite-table>` definition; date properties use the expanded column names listed there, not the base name. Include every needed filter in WHERE (filters on views of the data source are not automatically applied). For time comparisons or ordering, normalize text timestamps with datetime(...) or date(...). SQL text values can omit rich-text mentions and formatting, and links can lose their destination. Use faithful rows mode or fetch the page before rewriting a rich-text property.",
           },
           data_source_urls: {
             description: "Notion data source URLs whose SQLite tables are available to the query; each data source is exposed as a table named by its URL. Obtain them from the fetch tool, in the format: collection://f336d0bc-b841-465b-8045-024475c079dd",
@@ -6967,6 +7137,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: false,
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-query-meeting-notes",
@@ -8042,6 +8213,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-list-private-pages",
@@ -8063,6 +8235,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: false,
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-list-shared-pages",
@@ -8084,6 +8257,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: false,
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-list-favorite-pages",
@@ -8105,6 +8279,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: false,
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-list-recent-pages",
@@ -8126,6 +8301,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: false,
       },
       { readOnlyHint: true, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-create-view",
@@ -8167,7 +8343,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             type: "string",
           },
           configure: {
-            description: "View configuration DSL directives and examples:\n- FILTER \"Property\" = \"value\" — filter rows. Relation values must be a page URL or UUID; person values must be a user URI (user://<user_id>), user UUID, or \"me\". Names are not supported for either.\n- QUICK FILTER \"Property\" — add a quick filter to the view's filter bar with no criteria; add a condition to preselect one (QUICK FILTER \"Status\" = \"Done\")\n- SORT BY \"Property\" ASC — sort rows\n- GROUP BY \"Property\" — group by property (required for board views)\n- CALENDAR BY \"Property\" — date property (required for calendar views)\n- TIMELINE BY \"Start\" TO \"End\" — date range (required for timeline views)\n- MAP BY \"Property\" — location property (required for map views)\n- CHART column|bar|line|donut|number — chart type with optional AGGREGATE, COLOR, HEIGHT, SORT, STACK BY, CAPTION\n- FORM CLOSE|OPEN — close/open form submissions\n- FORM ANONYMOUS true|false — toggle anonymous submissions\n- FORM PERMISSIONS none|reader|editor — set submission permissions\n- SHOW \"Prop1\", \"Prop2\" — set visible properties\n- COVER \"Property\" — cover image property\n\n\n<example>SHOW \"Name\", \"Status\", \"Due Date\"</example>\n<example>GROUP BY \"Status\"</example>\n<example>FILTER \"Status\" = \"In Progress\"; SORT BY \"Due Date\" ASC</example>\n<example>CALENDAR BY \"Due Date\"</example>\n<example>TIMELINE BY \"Start\" TO \"End\"</example>\n<example>FILTER \"Company\" = \"Acme\"</example>",
+            description: "View configuration DSL directives and examples:\n- FILTER \"Property\" = \"value\" — filter rows. Relation values must be a page URL or UUID; person values must be a user URI (user://<user_id>), user UUID, or \"me\". Names are not supported for either.\n- QUICK FILTER \"Property\" — add a quick filter to the view's filter bar with no criteria; add a condition to preselect one (QUICK FILTER \"Status\" = \"Done\")\n- SORT BY \"Property\" ASC — sort rows\n- GROUP BY \"Property\" [BY OPTION | BY GROUP] [SHOW EMPTY | HIDE EMPTY] — group by property (required for board views)\n- SUB GROUP BY \"Property\" [BY OPTION | BY GROUP] [SHOW EMPTY | HIDE EMPTY] — add board sub-grouping\n- CARD LAYOUT default | compact — set board or gallery card layout\n- CALENDAR BY \"Property\" — date property (required for calendar views)\n- TIMELINE BY \"Start\" TO \"End\" — date range (required for timeline views)\n- MAP BY \"Property\" — location property (required for map views)\n- CHART column|bar|line|donut|number — chart type with optional AGGREGATE, COLOR, HEIGHT, SORT, STACK BY, CAPTION\n- FORM CLOSE|OPEN — close/open form submissions\n- FORM ANONYMOUS true|false — toggle anonymous submissions\n- FORM PERMISSIONS none|reader|editor — set submission permissions\n- SHOW \"Prop1\", \"Prop2\" — set visible properties\n- COVER \"Property\" — cover image property\n\n\n<example>SHOW \"Name\", \"Status\", \"Due Date\"</example>\n<example>GROUP BY \"Status\" BY GROUP SHOW EMPTY; SUB GROUP BY \"Priority\"; CARD LAYOUT compact</example>\n<example>FILTER \"Status\" = \"In Progress\"; SORT BY \"Due Date\" ASC</example>\n<example>CALENDAR BY \"Due Date\"</example>\n<example>TIMELINE BY \"Start\" TO \"End\"</example>\n<example>FILTER \"Company\" = \"Acme\"</example>",
             type: "string",
           },
         },
@@ -8180,6 +8356,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
+      false,
     ),
     pin(
       "notion-update-view",
@@ -8197,7 +8374,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             type: "string",
           },
           configure: {
-            description: "View configuration DSL string. Supports FILTER, QUICK FILTER, SORT BY, GROUP BY, CALENDAR BY, TIMELINE BY, MAP BY, CHART, FORM, SHOW, HIDE, COVER, WRAP CELLS, FREEZE COLUMNS, and CLEAR directives.",
+            description: "View configuration DSL string. Supports FILTER, QUICK FILTER, SORT BY, GROUP BY, SUB GROUP BY, CARD LAYOUT, CALENDAR BY, TIMELINE BY, MAP BY, CHART, FORM, SHOW, HIDE, COVER, WRAP CELLS, FREEZE COLUMNS, and CLEAR directives.",
             type: "string",
           },
         },
@@ -8208,6 +8385,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
+      false,
     ),
   ],
 };
