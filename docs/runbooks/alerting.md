@@ -14,9 +14,9 @@ project identifier:
 
 | File | Holds |
 |---|---|
-| `uptime-checks.json` | `commonly.me` and `api.commonly.me/api/health`, every 60 s from 3 US regions |
+| `uptime-checks.json` | `commonly.me`, `api.commonly.me/api/health`, signup policy and agent runtime auth every 60 s, and the `www.commonly.me` redirect every 5 min, from 3 US regions |
 | `log-metrics.json` | log-based counters: ingress 5xx, ESO reconcile errors, Job/CronJob Warning events |
-| `alert-policies.json` | 10 policies, 10 conditions, each linking a section below |
+| `alert-policies.json` | one condition per policy, each linking a section below (`apply-alerting.py --check` prints the count) |
 
 Apply or re-apply (idempotent; matches on name, never duplicates):
 
@@ -60,6 +60,20 @@ or the origin is down: check the `cloudflared` and `ingress-nginx` pods in
 `ingress-nginx`. A plain 5xx from the app means the backend or frontend pod
 is down. If a deploy just ran, `helm history commonly-dev -n commonly-dev`
 gives the rollback target.
+
+### www redirect
+
+`https://www.commonly.me/` stopped answering 301 from 2+ of 3 regions for 10
+minutes. The redirect is a Cloudflare Single Redirect rule, "www to apex"
+(Rules → Redirect Rules): `https://www.commonly.me/*` → `https://commonly.me/${1}`,
+301, path and query kept. `www` is not routed to the cluster, so nothing in
+Kubernetes serves it; without the rule, Cloudflare answers 525.
+
+Check: `curl -sI 'https://www.commonly.me/v2/pods?x=1'` must show `HTTP/2 301`
+and `location: https://commonly.me/v2/pods?x=1`. A 525 or a 200 means the
+rule is disabled or gone: re-create it in the Cloudflare dashboard. The uptime
+check sees only the status (it does not follow redirects or read headers);
+the operator's shell smoke checks the `location` too.
 
 ### A short burst of Cloudflare 502s
 
