@@ -22,6 +22,7 @@ const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
+const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-01.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -564,15 +565,15 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
 });
 
 describe('the shipped catalogue cannot land half-wired', () => {
-  test('ships Linear, Google Calendar, Atlassian, then Airtable, and lookup names the requested entry', () => {
+  test('ships the hosted-MCP catalogue and lookup names the requested entry', () => {
     // The catalogue is the one place that says what an instance offers before
     // any member has connected anything. Its ordering follows the build plan.
-    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar', 'atlassian', 'airtable']);
+    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar', 'atlassian', 'airtable', 'notion']);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(catalogue, 'linear').title).toBe('Linear');
     expect(findHostedMcpEntry(catalogue, 'atlassian')).toBeUndefined();
-    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'notion')).toBeUndefined();
+    expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'linear').title).toBe('Linear');
     expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'google-calendar').title).toBe('Google Calendar');
   });
@@ -735,6 +736,39 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
     expect(capture.tools).toHaveLength(46);
+  });
+
+  test('the Notion pin contains captured workspace tools and excludes Notion agent sessions', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'notion');
+    const capture = NOTION_CAPTURE;
+    expect(entry.resource).toBe(capture.server);
+    expect(entry.client).toBe('cimd');
+    expect(entry.scopes).toEqual([capture.tokenShape.scope]);
+    expect(entry.tools).toHaveLength(26);
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const source = measured.get(tool.upstreamName);
+      expect(source).toBeDefined();
+      expect(tool.name).toBe(tool.upstreamName.replace(/-/g, '_'));
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(source.inputSchema));
+      expect(tool.annotations).toMatchObject({
+        readOnlyHint: source.annotations.readOnlyHint,
+        destructiveHint: source.annotations.destructiveHint,
+      });
+      expect(tool.class).toBe(source.annotations.readOnlyHint ? 'read' : 'write');
+      expect(Boolean(tool.irreversible)).toBe(Boolean(source.annotations.destructiveHint)
+        || tool.upstreamName === 'notion-move-pages');
+    }
+    const names = entry.tools.map((tool) => tool.upstreamName);
+    expect(names).toContain('notion-create-pages');
+    expect(names).toContain('notion-create-comment');
+    expect(names).toContain('notion-query-data-sources');
+    expect(names).not.toContain('notion-spawn-session');
+    expect(names).not.toContain('notion-send-message-to-session');
+    expect(names).not.toContain('notion-search-sessions');
+    expect(names).not.toContain('notion-upload-skill');
+    expect(entryToolProjections(entry).find((tool) => tool.name === 'notion.notion_move_pages'))
+      .toMatchObject({ requiredWriteMode: 'write-with-confirm', irreversible: true });
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {

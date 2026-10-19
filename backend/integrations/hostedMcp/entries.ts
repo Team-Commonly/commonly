@@ -16,8 +16,11 @@ import { AIRTABLE_ENTRY } from './airtable';
 import { ATLASSIAN_ENTRY } from './atlassian';
 import { GOOGLE_CALENDAR_ENTRY } from './googleCalendar';
 import { LINEAR_ENTRY } from './linear';
+import { NOTION_ENTRY } from './notion';
 
-export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [LINEAR_ENTRY, GOOGLE_CALENDAR_ENTRY, ATLASSIAN_ENTRY, AIRTABLE_ENTRY];
+export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [
+  LINEAR_ENTRY, GOOGLE_CALENDAR_ENTRY, ATLASSIAN_ENTRY, AIRTABLE_ENTRY, NOTION_ENTRY,
+];
 
 /**
  * Seven entry-local defects that would otherwise be silent, checked at module
