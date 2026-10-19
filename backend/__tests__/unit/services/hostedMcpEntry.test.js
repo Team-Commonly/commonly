@@ -658,7 +658,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     });
   });
 
-  test('the Atlassian pin is six named reads and six named writes under snake_case names', () => {
+  test('the Atlassian pin is six named reads and five named writes under snake_case names', () => {
     // The 2026-10-19 capture includes Jira and Confluence write scopes.
     // Broad discover/execute dispatchers stay out even under those scopes.
     const capture = ATLASSIAN_CAPTURE;
@@ -674,12 +674,12 @@ describe('the shipped catalogue cannot land half-wired', () => {
     const pinnedUpstream = [
       'getAccessibleAtlassianResources', 'atlassianUserInfo', 'getConfluenceContent',
       'searchConfluence', 'getJiraIssue', 'searchJiraIssuesUsingJql',
-      'createConfluenceContent', 'updateConfluenceContent', 'createJiraIssue',
+      'updateConfluenceContent', 'createJiraIssue',
       'editJiraIssue', 'transitionJiraIssue', 'addOrEditJiraIssueComment',
     ];
     expect(entry.tools.map((tool) => tool.upstreamName)).toEqual(pinnedUpstream);
     expect(capture.tools.map((tool) => tool.name).filter((name) => !pinnedUpstream.includes(name)).sort())
-      .toEqual(['discover', 'executeDestructive', 'executeRead', 'executeWrite']);
+      .toEqual(['createConfluenceContent', 'discover', 'executeDestructive', 'executeRead', 'executeWrite']);
 
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
     for (const tool of entry.tools) {
@@ -694,9 +694,12 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
-    expect(entry.tools.filter((tool) => tool.class === 'write')).toHaveLength(6);
+    expect(entry.tools.filter((tool) => tool.class === 'write')).toHaveLength(5);
     expect(entryToolProjections(entry).filter((tool) => tool.requiredWriteMode === 'write-with-confirm'))
-      .toHaveLength(6);
+      .toHaveLength(5);
+    expect(entry.tools.find((tool) => tool.upstreamName === 'addOrEditJiraIssueComment').irreversible).toBe(true);
+    expect(entryToolProjections(entry).find((tool) => tool.name === 'atlassian.add_or_edit_jira_issue_comment'))
+      .toMatchObject({ irreversible: true, requiredWriteMode: 'write-with-confirm' });
     expect(capture.tools).toHaveLength(16);
   });
 

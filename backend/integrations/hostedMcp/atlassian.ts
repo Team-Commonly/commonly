@@ -3,9 +3,13 @@
  * pinned from connector-ops's consenting 2026-10-19 tools/list capture under
  * exactly the read, search, and write scopes below.
  *
- * The six reads and six named writers are product-scoped. Broad discover and
+ * Six reads and five named writers are pinned. Each writer acts on one Jira
+ * issue or Confluence item, or creates one Jira issue. Broad discover and
  * execute* dispatchers stay excluded because their operation reach changes
- * independently of the pin. Each named write parks for member approval.
+ * independently of the pin. createConfluenceContent is excluded because its
+ * free-form contentType can enable external synced folders without schema
+ * drift. Each named write parks for member approval. Jira comment edits are
+ * irreversible because Jira keeps no history of the previous comment body.
  * CamelCase vendor names use snake_case local names.
  *
  * Atlassian does not offer openid, so reconnect subject continuity is not
@@ -38,15 +42,17 @@ const writeTool = (
   upstreamName: string,
   description: string,
   inputSchema: Record<string, unknown>,
+  irreversible = false,
 ): HostedMcpPinnedTool => ({
   name, upstreamName, description, class: 'write', inputSchema,
   annotations: { readOnlyHint: false, destructiveHint: false },
+  ...(irreversible ? { irreversible: true } : {}),
 });
 
 export const ATLASSIAN_ENTRY: HostedMcpEntry = {
   id: 'atlassian',
   title: 'Atlassian',
-  description: 'Jira issues and Confluence pages in your Atlassian site.',
+  description: 'Jira issues and Confluence content in your Atlassian site.',
   connectNotice: `Before connecting, ask your Atlassian admin to allow ${hostedMcpApiBase()}/** in MCP server domains.`,
   resource: 'https://mcp.atlassian.com/v2/mcp',
   issuer: 'https://auth.atlassian.com/VCeDsk8ZHncYF1g234fKtc4lNipbBhu3',
@@ -93,7 +99,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
     readTool(
       "get_confluence_content",
       "getConfluenceContent",
-      "Read one Confluence page or blog post by id or URL.",
+      "Read one Confluence page, blog post, live doc, comment, whiteboard, embed, database or folder by id or URL.",
       {
         type: "object",
         properties: {
@@ -336,66 +342,9 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
       },
     ),
     writeTool(
-      "create_confluence_content",
-      "createConfluenceContent",
-      "Create a Confluence page or blog post.",
-      {
-        type: "object",
-        properties: {
-          cloudId: {
-            type: "string",
-            description: "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field.",
-          },
-          parent: {
-            type: "object",
-            additionalProperties: {},
-            description: "Parent destination for the new content.\n\nUse { \"spaceId\": \"<numeric-space-id>\" } to create at the homepage / sidebar root.\nUse { \"spaceId\": \"<numeric-space-id>\", \"parentContentId\": \"<numeric-content-id>\" }\nto create under an existing content item.\nUse { \"parentContentId\": \"<numeric-content-id>\" } when the parent content ID\nshould be resolved to its space before creation.\nUse { \"parentContentUrl\": \"<confluence-content-url>\" } when the parent\ncontent URL should be resolved before creation.\n\nSupported parentContentUrl paths include /pages/{id}, /blog/{id},\n/whiteboard/{id}, /database/{id}, and /folder/{id}.\n\nIf the destination is described only by space key or title, resolve it first\nto one of the supported parent shapes above.\n",
-          },
-          contentType: {
-            type: "string",
-            description: "Type of content to create. One of: page, live_doc, blogpost, whiteboard,\ndatabase, embed, smart_link, folder, slide.\n",
-          },
-          title: {
-            type: "string",
-            description: "Title for the new content. 1-255 characters.",
-          },
-          body: {
-            type: "object",
-            additionalProperties: {},
-            description: "Before composing this body, follow the space-instruction decision rule in the tool\ndescription. Reuse known instruction state and do not repeat the space lookup per write.\nBody content. For whiteboard and database it is technically optional, but only omit it\nwhen the user explicitly asked for an empty/blank board or database. Never omit body as a\nfallback because you could not load the authoring guidance — load it first via\ngetContentFormatGuide through the generic operation runner (execute) as\nname=getContentFormatGuide, inputs={toolName} (createConfluencePage /\ncreateConfluenceWhiteboard / createConfluenceDatabase), then build a real body.\nA blank whiteboard\n(no shapes, stickies, connectors, or layout) is almost never the intended result.\nFor doc types (page, live_doc, blogpost): format is html or markdown, value is the content string.\nMarkdown is for simple text; use HTML when richer structure would improve the document.\nFor embed and smart_link: format must be url, value must be the URL to embed (e.g. https://example.com/design).\nFor whiteboard: format must be svg and value must be the complete initial SVG document with root width, height, and viewBox.\nFor database: format must be csv and value must be the complete initial CSV payload.\nFor a synced (Smart) Folder (contentType=folder): format must be url and value must be the\nhttps URL of the external Google Drive, OneDrive, or SharePoint folder to sync from.\nRequires the confluence_smart_folders_milestone_1 experiment; otherwise the create\nreturns FEATURE_NOT_ENABLED.\nDo not pass patches, edit envelopes, or context on create.\nOmit for a plain folder (no sync source) and for slide.\n",
-          },
-          draft: {
-            type: "boolean",
-            description: "If true, create the content as a draft instead of publishing it. Only\nsupported when contentType is page or blogpost.\n",
-          },
-          private: {
-            type: "boolean",
-            description: "If true, the created content is private to the caller: only the\ncreator has view and edit access. Supported for page, live_doc,\nblogpost, whiteboard, database, and folder, including creation at the\nhomepage / sidebar root. Private creation is not supported for embed, smart_link, or slide.\nThis sets General access to VIEW_RESTRICTED and gives the creator one\nSpecific access grant, update (Can edit), which already includes\nread/view. Do not add a separate read grant for the creator.\nOmit or pass false for default visibility.\n",
-          },
-          contentWidth: {
-            type: "string",
-            enum: [
-              "narrow",
-              "wide",
-              "max",
-            ],
-            description: "Optional page width for doc types only: page, live_doc, and blogpost.\nOmit unless the user explicitly requests a width; omission creates a\nnarrow page. Do not infer wide or max from body content or layout.\nAccepted values are narrow, wide, and max.\nNon-doc content types do not support this field.\n",
-          },
-        },
-        required: [
-          "cloudId",
-          "parent",
-          "contentType",
-          "title",
-        ],
-        additionalProperties: false,
-        $schema: "http://json-schema.org/draft-07/schema#",
-      },
-    ),
-    writeTool(
       "update_confluence_content",
       "updateConfluenceContent",
-      "Update Confluence content by id or URL.",
+      "Update a Confluence page, live doc, blog post, whiteboard or database by id or URL; ownerId can hand a page to another account.",
       {
         type: "object",
         properties: {
@@ -696,7 +645,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
     writeTool(
       "add_or_edit_jira_issue_comment",
       "addOrEditJiraIssueComment",
-      "Add or edit a comment on a Jira issue.",
+      "Add or edit a Jira issue comment. On a Jira Service Management request, it is customer-visible unless jsmCommentType is internalNote; group or role restrictions do not make it internal. Editing replaces the whole comment body, and Jira keeps no earlier version.",
       {
         type: "object",
         properties: {
@@ -768,6 +717,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
         additionalProperties: false,
         $schema: "http://json-schema.org/draft-07/schema#",
       },
+      true,
     ),
   ],
 };
