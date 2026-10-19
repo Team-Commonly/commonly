@@ -97,7 +97,8 @@ describe('V2Composer send button', () => {
     const meta = header.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)');
     expect(meta).toHaveTextContent('2 members');
     expect(meta).toHaveTextContent('1 agent');
-    expect(header.querySelector('.v2-pod-header__meta--compact')).toHaveTextContent('2 · 1 agents');
+    expect(header.querySelector('.v2-pod-header__meta--compact')).toHaveTextContent('2 · 1 agent');
+    expect(view.getByRole('group', { name: '2 members, 1 agent' })).toBeInTheDocument();
     expect(view.container.querySelector('.v2-thread__working')).toBeNull();
   });
 

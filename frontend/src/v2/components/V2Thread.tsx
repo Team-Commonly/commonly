@@ -1564,9 +1564,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // Header meta (direction C): members · agents · board N open · bound
   // channels. The agents-working count left the header for the inspector.
   const humanMemberCount = (members || []).filter((member) => !member?.isBot).length;
+  const memberCountText = t('podChat.header.members', { count: humanMemberCount });
+  const agentCountText = t('podChat.header.agents', { count: agents.length });
   const metaParts: React.ReactNode[] = [
-    <span key="members">{t('podChat.header.members', { count: humanMemberCount })}</span>,
-    <span key="agents">{t('podChat.header.agents', { count: agents.length })}</span>,
+    <span key="members">{memberCountText}</span>,
+    <span key="agents">{agentCountText}</span>,
   ];
   if (headerMeta.boardOpen !== null) {
     metaParts.push(
@@ -1591,8 +1593,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 {pod.description && <p>{pod.description}</p>}
               </div>
             </div>
-            <span className="v2-pod-header__meta v2-pod-header__meta--compact" aria-hidden="true">
-              {t('podChat.header.compactMeta', { members: humanMemberCount, count: agents.length })}
+            <span
+              className="v2-pod-header__meta v2-pod-header__meta--compact"
+              role="group"
+              aria-label={t('podChat.header.compactMetaAccessible', { members: memberCountText, agents: agentCountText })}
+            >
+              <span aria-hidden="true">{t('podChat.header.compactMeta', { members: humanMemberCount, agents: agentCountText })}</span>
             </span>
             <span className="v2-pod-header__meta">
               {metaParts.map((part, index) => (
