@@ -136,7 +136,10 @@ backend:
     # agentWorkSweepDisabled: "true"
 
 frontend:
-  replicaCount: 1
+  # Two replicas on two spot nodes: a reclaim takes one, and the other keeps
+  # serving while the replacement waits for a node (2026-10-19: a single
+  # replica was down ~40 s at 15:19Z and ~5 s at 15:29Z).
+  replicaCount: 2
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-frontend
     tag: "20260412125218"
@@ -149,6 +152,21 @@ frontend:
       operator: "Equal"
       value: "spot"
       effect: "NoSchedule"
+  # Never two replicas on one node, so the autoscaler keeps a second spot node.
+  # With the spot pool capped at 2 nodes a surge pod has nowhere to go, so a
+  # rollout replaces one replica at a time instead.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: frontend
+          topologyKey: kubernetes.io/hostname
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
 
 mongodb:
   enabled: false

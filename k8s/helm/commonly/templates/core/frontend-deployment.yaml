@@ -8,6 +8,10 @@ metadata:
     {{- include "commonly.frontend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.frontend.replicaCount }}
+  {{- with .Values.frontend.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "commonly.frontend.selectorLabels" . | nindent 6 }}
@@ -44,5 +48,9 @@ spec:
       {{- if and .Values.frontend.tolerations (gt (len .Values.frontend.tolerations) 0) }}
       tolerations:
         {{- toYaml .Values.frontend.tolerations | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
 {{- end }}
