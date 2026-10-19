@@ -268,7 +268,8 @@ class Journey:
         # path gains parameters as the page does (#2293 added from and adapter),
         # and an exact match turned that into eleven false failures.
         parts = urllib.parse.urlsplit(path)
-        pairs = urllib.parse.parse_qsl(parts.query)
+        # Blank values kept: `?pod=&pod=<ours>` repeats a key whose first value the page reads as ''.
+        pairs = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
         query = dict(pairs)
         want = {'pod': self.pod, 'name': self.seat, 'from': 'card'}
         card_adapter = ((self.card.get('payload') or {}).get('params') or {}).get('adapter')
