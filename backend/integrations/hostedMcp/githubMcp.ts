@@ -4,11 +4,12 @@
  * (the upstream tool snapshots), not from a live account. A consenting
  * account's first tools/list remains the drift check before this is offered.
  *
- * The credential is a separate, public GitHub App with read-only repository
- * permissions. GitHub App user tokens use the app's permissions rather than
- * OAuth scopes; offline_access asks GitHub for a refresh token only. The App's
- * client id and secret are optional instance configuration. Until registration
- * supplies both, the catalogue reports not_configured and offers no Connect.
+ * The credential is a separate, public GitHub App. GitHub App user tokens use
+ * the app's permissions rather than OAuth scopes; offline_access asks GitHub
+ * for a refresh token only. This entry pins only reads; any write tool must be
+ * pinned separately with owner confirmation. The App's client id and secret
+ * are optional instance configuration. Until registration supplies both, the
+ * catalogue reports not_configured and offers no Connect.
  */
 import type { HostedMcpEntry, HostedMcpPinnedTool } from '../../services/hostedMcpEntryService';
 import pin from './githubMcpSchemas.json';
