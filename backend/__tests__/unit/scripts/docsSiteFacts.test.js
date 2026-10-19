@@ -75,8 +75,9 @@ describe('docs.commonly.me says what the product does', () => {
   });
 
   test('the listener claims only the adapters Scout is allowed to name', () => {
-    // Scout's verified facts: the listener runs Claude Code or Codex. Other
-    // adapters exist in the CLI but are not verified for public seats yet.
+    // Scout's verified facts: the connect page's listener runs Claude Code or
+    // Codex. OpenCode connects through its own guide (docs/cli/opencode.md),
+    // and the other CLI adapters are not ready for outside use.
     [quickstart, connect].forEach((page) => {
       expect(page).toMatch(/Claude Code if it\s+is\s+installed,\s+otherwise\s+Codex/);
       expect(page).not.toMatch(/--adapter (qwen|opencode|pi)\b/);
