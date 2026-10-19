@@ -6,7 +6,14 @@
  * Agent-session, skill-transfer, attachment, connected-source search, and
  * tool-access catalogue calls are excluded. create-pages and update-page can
  * still mark a page as a skill via is_skill, with member approval.
- * Destructive writes and moves keep the irreversible floor.
+ * Destructive writes, moves, and update-view keep the irreversible floor;
+ * update-view can clear shared filters and sorts without a view-specific undo.
+ * The 22 tools added since the 10-01 capture remain excluded: eight Calendar
+ * tools reach connected accounts outside Notion; get/update-enabled-skills
+ * lead into skill transfer or change instructions available to other agents;
+ * memory-search, get-file-download-urls, delete/restore-pages and databases,
+ * comment mutations and reactions, get-groups, list-page-backlinks, and
+ * get-self are not needed for this entry. A new tool joins only by ruling.
  */
 import type { HostedMcpEntry, HostedMcpPinnedTool } from '../../services/hostedMcpEntryService';
 
@@ -187,7 +194,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
     ),
     pin(
       "notion-fetch",
-      "Read one Notion page, database, data source or saved view.",
+      "Read one Notion page, database, data source or saved view, or the connected user's memory with id: memory. include_file_urls can return short-lived signed URLs for files on that record.",
       'read',
       {
         type: "object",
@@ -220,7 +227,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
     ),
     pin(
       "notion-create-pages",
-      "Create pages in the connected Notion workspace.",
+      "Create pages in the connected Notion workspace, including top-level teamspace pages. parent: memory saves a memory that the member's connected agents can read in later sessions.",
       'write',
       {
         type: "object",
@@ -8305,7 +8312,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
     ),
     pin(
       "notion-create-view",
-      "Create a view on a Notion database.",
+      "Create a view on a Notion database. A form view can open or close submissions, allow anonymous responses, and set whether respondents can view or edit their responses.",
       'write',
       {
         type: "object",
@@ -8360,7 +8367,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
     ),
     pin(
       "notion-update-view",
-      "Update a Notion database view.",
+      "Update a Notion database view, replacing shared settings. Form settings can open or close submissions, allow anonymous responses, and control whether respondents can view or edit their responses; CLEAR can remove filters, sorts and grouping.",
       'write',
       {
         type: "object",
@@ -8385,7 +8392,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
-      false,
+      true,
     ),
   ],
 };

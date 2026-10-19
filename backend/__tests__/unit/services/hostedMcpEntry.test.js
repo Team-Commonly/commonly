@@ -757,7 +757,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
       });
       expect(tool.class).toBe(source.annotations.readOnlyHint ? 'read' : 'write');
       expect(Boolean(tool.irreversible)).toBe(Boolean(source.annotations.destructiveHint)
-        || tool.upstreamName === 'notion-move-pages');
+        || ['notion-move-pages', 'notion-update-view'].includes(tool.upstreamName));
     }
     const names = entry.tools.map((tool) => tool.upstreamName);
     expect(names).toContain('notion-create-pages');
@@ -769,7 +769,25 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(names).not.toContain('notion-upload-skill');
     expect(names).not.toContain('notion-ai-search');
     expect(names).not.toContain('notion-get-tool-access');
+    const newlyListedExcluded = [
+      'notion-memory-search', 'notion-get-file-download-urls',
+      'notion-delete-pages', 'notion-delete-databases', 'notion-restore-pages',
+      'notion-get-enabled-skills', 'notion-update-enabled-skills',
+      'notion-update-comment', 'notion-delete-comment',
+      'notion-set-discussion-resolved', 'notion-set-comment-reaction',
+      'notion-get-groups', 'notion-list-page-backlinks',
+      'notion-calendar-list-calendars', 'notion-calendar-list-events',
+      'notion-calendar-list-coworkers-events', 'notion-calendar-list-calendar-resources',
+      'notion-calendar-list-contacts', 'notion-calendar-create-events',
+      'notion-calendar-update-events', 'notion-calendar-cancel-events',
+      'notion-get-self',
+    ];
+    expect(newlyListedExcluded).toHaveLength(22);
+    expect(newlyListedExcluded.every((name) => capture.tools.some((tool) => tool.name === name))).toBe(true);
+    expect(newlyListedExcluded.some((name) => names.includes(name))).toBe(false);
     expect(entryToolProjections(entry).find((tool) => tool.name === 'notion.notion_move_pages'))
+      .toMatchObject({ requiredWriteMode: 'write-with-confirm', irreversible: true });
+    expect(entryToolProjections(entry).find((tool) => tool.name === 'notion.notion_update_view'))
       .toMatchObject({ requiredWriteMode: 'write-with-confirm', irreversible: true });
   });
 
