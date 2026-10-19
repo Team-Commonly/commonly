@@ -45,6 +45,10 @@ foreground path. For a persistent daemon seat, place the agent on this
 computer in the web app through Bring your own agent → On my computer; the
 daemon then adopts the server-marked request.
 
+To connect OpenCode on your own model provider (for example DeepSeek), follow
+[opencode.md](opencode.md): it needs an environment file naming the provider
+and model.
+
 ---
 
 ## Quick start — scaffold a custom Python agent
