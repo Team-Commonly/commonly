@@ -22,6 +22,7 @@ const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
+const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -564,10 +565,12 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
 });
 
 describe('the shipped catalogue cannot land half-wired', () => {
-  test('ships Linear, Google Calendar, Atlassian, then Airtable, and lookup names the requested entry', () => {
+  test('ships Linear, Google Calendar, Atlassian, Airtable and Sentry, and lookup names the requested entry', () => {
     // The catalogue is the one place that says what an instance offers before
     // any member has connected anything. Its ordering follows the build plan.
-    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar', 'atlassian', 'airtable']);
+    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual([
+      'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry',
+    ]);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(catalogue, 'linear').title).toBe('Linear');
@@ -735,6 +738,33 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
     expect(capture.tools).toHaveLength(46);
+  });
+
+  test('the Sentry pin keeps named searches and an approved issue writer, with exact captured schemas', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
+    const capture = SENTRY_CAPTURE;
+    expect(entry).toMatchObject({
+      resource: 'https://mcp.sentry.dev/mcp',
+      issuer: 'https://mcp.sentry.dev',
+      client: 'cimd',
+      revoke: { endpoint: 'https://mcp.sentry.dev/oauth/token' },
+    });
+    expect(capture.server).toBe(entry.resource);
+    expect(capture.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
+    const excluded = new Set(['analyze_issue_with_seer', 'search_sentry_tools', 'execute_sentry_tool']);
+    expect(entry.tools.map((tool) => tool.upstreamName)).toEqual(
+      capture.tools.filter((tool) => !excluded.has(tool.name)).map((tool) => tool.name),
+    );
+    expect(capture.tools).toHaveLength(15);
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
+      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
+      expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read');
+    }
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
