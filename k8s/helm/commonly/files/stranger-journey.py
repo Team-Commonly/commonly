@@ -10,7 +10,9 @@ counts as a real signup (every Growth funnel script drops `*.invalid`).
   3. welcome     Scout greets with the structural 'starts' payload (#2194)
   4. answer      Scout replies to Hamza's day-2 question (verbatim, 2026-09-12)
   5. card        a connect_local_agent approval card within the step's budget
-  6. approve     resolving it returns the BYO connect path for this pod and name
+  6. approve     resolving it returns the BYO connect path for this pod and name,
+                 marked as coming from the card (and carrying the card's adapter,
+                 if it names one). Extra query params are allowed.
   7. byo         the calls the BYO page makes on load succeed for that path, and
                  the seat is listed in the pod (the rendered page itself is not
                  checked here; that needs a browser)
@@ -37,6 +39,7 @@ import secrets
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 API = os.environ.get('JOURNEY_API', 'https://api.commonly.me').rstrip('/')
@@ -261,10 +264,19 @@ class Journey:
             raise StepFailed(f'resolve returned {status}')
         result = ((data or {}).get('approval') or {}).get('executionResult') or {}
         path = result.get('connectPath') or ''
-        expected = f'/v2/agents/byo?pod={self.pod}&name={self.seat}'
-        if path != expected:
-            raise StepFailed(f'connectPath was {path!r}, expected {expected!r}')
-        return {}
+        # Compare the parameters the BYO page reads, not the whole string: the
+        # path gains parameters as the page does (#2293 added from and adapter),
+        # and an exact match turned that into eleven false failures.
+        parts = urllib.parse.urlsplit(path)
+        query = dict(urllib.parse.parse_qsl(parts.query))
+        want = {'pod': self.pod, 'name': self.seat, 'from': 'card'}
+        card_adapter = ((self.card.get('payload') or {}).get('params') or {}).get('adapter')
+        if 'adapter' in query:
+            want['adapter'] = card_adapter
+        wrong = {key: query.get(key) for key, value in want.items() if query.get(key) != value}
+        if parts.path != '/v2/agents/byo' or wrong:
+            raise StepFailed(f'connectPath was {path!r}, expected /v2/agents/byo with {want}')
+        return {'adapter': query.get('adapter')}
 
     def byo(self):
         # The page keeps ?pod= only if the pod is one of yours and not a DM or
