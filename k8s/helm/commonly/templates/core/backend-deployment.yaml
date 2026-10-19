@@ -446,6 +446,21 @@ spec:
               key: google-calendar-client-secret
               optional: true
 
+        # GitHub hosted-MCP uses its own pre-registered App, separate from the
+        # sign-in app and room-grant broker. Missing keys leave it unavailable.
+        - name: GITHUB_MCP_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: github-mcp-client-id
+              optional: true
+        - name: GITHUB_MCP_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: github-mcp-client-secret
+              optional: true
+
         # Slack installable OAuth and per-workspace token encryption. Every
         # reference is optional so instances that have not enabled Slack's
         # OAuth ExternalSecret entries continue to start normally.

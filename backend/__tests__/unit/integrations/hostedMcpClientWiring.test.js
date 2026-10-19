@@ -4,10 +4,8 @@
  * the backend only if the helm chart maps them from `api-keys`, and `api-keys`
  * carries them only if the ExternalSecret references their Secret Manager keys.
  * Nothing else holds the three layers together (review-checklist rule 7).
- * GitHub is deliberately pending TASK-225's separate GitHub App registration:
- * its two env values have no deployment mapping yet, so it must stay unavailable.
- * Once that App and its Secret Manager values exist, remove the pending case
- * and wire both values like the other pre-registered entries.
+ * GitHub's App is still pending registration. Its ExternalSecret entries are
+ * gated off until both remote values exist, and both backend refs are optional.
  */
 const fs = require('fs');
 const path = require('path');
@@ -17,6 +15,8 @@ const { hostedMcpClientConfigKeys } = require('../../../services/hostedMcpIntake
 const chart = path.join(__dirname, '../../../../k8s/helm/commonly');
 const deployment = fs.readFileSync(path.join(chart, 'templates/core/backend-deployment.yaml'), 'utf8');
 const apiKeys = fs.readFileSync(path.join(chart, 'templates/secrets/api-keys.yaml'), 'utf8');
+const values = fs.readFileSync(path.join(chart, 'values.yaml'), 'utf8');
+const devValues = fs.readFileSync(path.join(chart, 'values-dev.yaml'), 'utf8');
 
 // `- name: ENV` mapped from api-keys, optional so an instance with the entry's
 // flag off still starts. Returns the api-keys key, or null when unmapped.
@@ -47,16 +47,15 @@ test('api-keys defaults the SM key prefix to commonly-dev-', () => {
 // A non-empty table even when the list empties, so the guard above is what
 // fails, by name, rather than jest refusing an empty `.each` at load time
 // (#2111). The placeholder id is mapped nowhere, so its arms fail too.
-const wiredEntries = preRegistered.filter((entry) => entry.id !== 'github-mcp');
-const wiringTable = wiredEntries.length
-  ? wiredEntries.map((entry) => [entry.id])
+const wiringTable = preRegistered.length
+  ? preRegistered.map((entry) => [entry.id])
   : [['no-pre-registered-entry']];
 
-test('the pending GitHub App has no deployment mapping until its registration is complete', () => {
+test('the pending GitHub App cannot request missing Secret Manager keys by default', () => {
   expect(preRegistered.map((entry) => entry.id)).toContain('github-mcp');
-  const { clientId, clientSecret } = hostedMcpClientConfigKeys('github-mcp');
-  expect(apiKeysKeyForEnv(clientId)).toBeNull();
-  expect(apiKeysKeyForEnv(clientSecret)).toBeNull();
+  expect(values).toMatch(/hostedMcp:\n(?:.|\n)*?githubMcp:\n\s+enabled: false/);
+  expect(devValues).toMatch(/hostedMcp:\n(?:.|\n)*?githubMcp:\n\s+enabled: false/);
+  expect(apiKeys).toMatch(/{{- if \.Values\.hostedMcp\.githubMcp\.enabled }}[\s\S]*?secretKey: github-mcp-client-id[\s\S]*?secretKey: github-mcp-client-secret[\s\S]*?{{- end }}/);
 });
 
 describe.each(wiringTable)('%s client wiring', (entryId) => {
