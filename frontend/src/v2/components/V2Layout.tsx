@@ -139,8 +139,8 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   // Back from a pod on the phone returns to the list page.
   const backToPods = useCallback(() => navigate('/v2'), [navigate]);
 
-  // Every opened pod is remembered twice: the last one for the next automatic
-  // desktop selection, and the visit log that orders the sidebar's Recent.
+  // Remember the last pod for the next automatic desktop selection, and keep
+  // the local visit log. Sidebar Recent is ordered by message time.
   useEffect(() => {
     if (!paramPodId) return;
     writeLastPodId(paramPodId);

@@ -191,15 +191,47 @@ describe('V2PodsSidebar — direction C', () => {
     expect(humanImage).toHaveAttribute('src', paperAvatarFor('sam-id'));
   });
 
-  test('Recent is ordered by my last visit, not by the last message; the time column stays the last message', () => {
-    localStorage.setItem(POD_VISITS_KEY, JSON.stringify({ files: NOW - 1000, study: NOW - 2000 }));
+  test('Recent and search use message order even when the other pod was visited last', () => {
+    localStorage.setItem(POD_VISITS_KEY, JSON.stringify({ sprint: NOW - 500, files: NOW - 1000, sharpen: NOW - 2000 }));
     renderSidebar(fleet, null);
     const rows = within(section('Recent')).getAllByRole('button').filter((b) => b.className.includes('v2-pods__row')).map((row) => row.textContent);
-    expect(rows[0]).toContain('File access test');
-    expect(rows[0]).toContain('2mo');
-    expect(rows[1]).toContain('Study — agents lit');
-    expect(rows[1]).toContain('2w');
-    expect(rows[2]).toContain('Sharpen');
+    expect(rows[0]).toContain('Sharpen');
+    expect(rows[0]).toContain('9m');
+    expect(rows).not.toEqual(expect.arrayContaining([expect.stringContaining('File access test')]));
+
+    const input = screen.getByRole('searchbox', { name: 'Search pods' });
+    fireEvent.change(input, { target: { value: 'rewire' } });
+    expect(screen.getAllByRole('button', { name: /rewire/i }).filter((b) => b.className.includes('v2-pods__row')).map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Rewire Live Demo'),
+      expect.stringContaining('Rewire Demo Sprint'),
+    ]);
+  });
+
+  test('an empty pod sorts and displays its creation time, never its fresh update time', () => {
+    const messagePod = pod('message', 'Order with message', 'team', [human('me')], {
+      lastMessage: { content: 'x', createdAt: hoursAgo(24), username: 'me' },
+    });
+    const emptyPod = pod('empty', 'Order empty', 'team', [human('me')], {
+      lastMessage: null,
+      createdAt: hoursAgo(24 * 35),
+      updatedAt: hoursAgo(0.1),
+    });
+    localStorage.setItem(POD_VISITS_KEY, JSON.stringify({ empty: NOW - 1000 }));
+    renderSidebar([emptyPod, messagePod], null);
+    const rows = within(section('Recent')).getAllByRole('button').filter((b) => b.className.includes('v2-pods__row'));
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Order with message'),
+      expect.stringContaining('Order empty'),
+    ]);
+    expect(within(rows[0]).getByText('1d')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('1mo')).toBeInTheDocument();
+    expect(within(rows[1]).queryByText('6m')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search pods' }), { target: { value: 'Order' } });
+    expect(screen.getAllByRole('button', { name: /^Order/ }).filter((b) => b.className.includes('v2-pods__row')).map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Order with message'),
+      expect.stringContaining('Order empty'),
+    ]);
   });
 
   test('Everything unfolds into kinds with counts, each closed, and remembers its open state for the session', () => {
@@ -219,7 +251,7 @@ describe('V2PodsSidebar — direction C', () => {
     expect(JSON.parse(sessionStorage.getItem('v2:pods.kindsOpen'))).toEqual(['team']);
   });
 
-  test('search flattens to matches in last-touched order, Esc clears, no match says so', () => {
+  test('search flattens to matches in message order, Esc clears, no match says so', () => {
     renderSidebar(fleet);
     const input = screen.getByRole('searchbox', { name: 'Search pods' });
     fireEvent.change(input, { target: { value: 'rewire' } });
@@ -299,7 +331,14 @@ describe('V2PodsSidebar — direction C', () => {
   });
 
   test('recentPods excludes pinned pods and caps at the limit', () => {
-    const rows = recentPods(fleet, new Set(['sharpen']), {}, 3);
+    const rows = recentPods(fleet, new Set(['sharpen']), 3);
     expect(rows.map((p) => p._id)).toEqual(['connectors', 'hq', 'rewire']);
+  });
+
+  test('equal message times have a stable order regardless of API order', () => {
+    const a = pod('a', 'A', 'team', [human('me')]);
+    const b = pod('b', 'B', 'team', [human('me')]);
+    expect(recentPods([b, a], new Set()).map((p) => p._id)).toEqual(['a', 'b']);
+    expect(recentPods([a, b], new Set()).map((p) => p._id)).toEqual(['a', 'b']);
   });
 });

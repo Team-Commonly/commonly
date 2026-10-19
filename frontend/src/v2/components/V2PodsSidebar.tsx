@@ -8,7 +8,7 @@ import { UseV2PodsResult, V2Pod, V2PodMember, useV2Pods } from '../hooks/useV2Po
 import { useV2Pinned } from '../hooks/useV2Pinned';
 import { useAuth } from '../../context/AuthContext';
 import {
-  RECENT_LIMIT, podInitials, readPodVisits, relativeTime,
+  RECENT_LIMIT, podInitials, relativeTime,
 } from '../lib/podRecency';
 
 interface V2PodsSidebarProps {
@@ -111,7 +111,7 @@ const writeOpenKinds = (kinds: Set<PodKind>) => {
 };
 
 export const podMessageTime = (pod: V2Pod): number => {
-  const value = pod.lastMessage?.createdAt || pod.updatedAt || pod.createdAt;
+  const value = pod.lastMessage?.createdAt || pod.createdAt;
   const timestamp = value ? new Date(value).getTime() : 0;
   return Number.isNaN(timestamp) ? 0 : timestamp;
 };
@@ -141,7 +141,7 @@ export const podKind = (pod: V2Pod): PodKind | null => {
 };
 
 // Everything: every pod the person is in, grouped by kind, each group sorted by
-// last touched. Pinned pods appear here too; the fold is the full inventory.
+// last message (or creation for an empty pod). Pinned pods appear here too.
 export const groupPodsByKind = (pods: V2Pod[]): Array<{ kind: PodKind; pods: V2Pod[] }> => {
   const groups = new Map<PodKind, V2Pod[]>();
   POD_KIND_ORDER.forEach((kind) => groups.set(kind, []));
@@ -155,23 +155,19 @@ export const groupPodsByKind = (pods: V2Pod[]): Array<{ kind: PodKind; pods: V2P
 };
 
 export const sortByMessageTime = (pods: V2Pod[]): V2Pod[] => (
-  [...pods].sort((left, right) => podMessageTime(right) - podMessageTime(left))
+  [...pods].sort((left, right) => (
+    podMessageTime(right) - podMessageTime(left) || left._id.localeCompare(right._id)
+  ))
 );
 
-// Recent = the pods I opened last (visit log), falling back to last-message
-// time for pods never opened on this device. Pinned pods are excluded because
-// they already sit above Recent.
+// Recent uses the same message order on every device. Pinned pods are excluded
+// because they already sit above Recent.
 export const recentPods = (
   pods: V2Pod[],
   pinnedPodIds: Set<string>,
-  visits: Record<string, number>,
   limit: number = RECENT_LIMIT,
 ): V2Pod[] => {
-  const touched = (pod: V2Pod) => visits[pod._id] || podMessageTime(pod);
-  return pods
-    .filter((pod) => !pinnedPodIds.has(pod._id))
-    .sort((left, right) => touched(right) - touched(left))
-    .slice(0, limit);
+  return sortByMessageTime(pods.filter((pod) => !pinnedPodIds.has(pod._id))).slice(0, limit);
 };
 
 const directMemberFor = (pod: V2Pod, currentUserId?: string): V2PodMember | undefined => (
@@ -201,7 +197,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   } = podsState || ownPodsState;
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState('');
-  const [visits, setVisits] = useState<Record<string, number>>(() => readPodVisits());
   const [everythingOpen, setEverythingOpen] = useState<boolean>(() => readSessionFlag(EVERYTHING_OPEN_KEY));
   const [openKinds, setOpenKinds] = useState<Set<PodKind>>(() => readOpenKinds());
   const [closedSections, setClosedSections] = useState<Set<string>>(() => readClosedSections());
@@ -218,12 +213,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   useEffect(() => {
     if (createReturnToConnectors) setShowCreate(true);
   }, [createReturnToConnectors]);
-
-  // The visit log is written by the layout when a pod opens; re-read it here so
-  // Recent reorders without a reload.
-  useEffect(() => {
-    setVisits(readPodVisits());
-  }, [selectedPodId]);
 
   // Every row's time is a DATUM from the last /api/pods; the minute tick only
   // recomputes the label, so a tab left open keeps ageing a frozen timestamp and
@@ -268,16 +257,13 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     () => sortByMessageTime(listablePods.filter((pod) => pinned.has(pod._id))),
     [listablePods, pinned],
   );
-  const recent = useMemo(() => recentPods(listablePods, pinned, visits), [listablePods, pinned, visits]);
+  const recent = useMemo(() => recentPods(listablePods, pinned), [listablePods, pinned]);
   const everything = useMemo(() => groupPodsByKind(listablePods), [listablePods]);
   const searching = query.trim().length > 0;
   const matches = useMemo(() => {
     if (!searching) return [];
-    const touched = (pod: V2Pod) => visits[pod._id] || podMessageTime(pod);
-    return listablePods
-      .filter((pod) => matchesQuery(pod, query))
-      .sort((left, right) => touched(right) - touched(left));
-  }, [listablePods, query, searching, visits]);
+    return sortByMessageTime(listablePods.filter((pod) => matchesQuery(pod, query)));
+  }, [listablePods, query, searching]);
 
   const selectPod = useCallback((podId: string) => {
     navigate(`/v2/pods/${podId}`);

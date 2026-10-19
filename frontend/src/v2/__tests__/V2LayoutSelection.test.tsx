@@ -228,7 +228,7 @@ describe('V2Layout default pod selection', () => {
     await waitFor(() => expect(screen.getByTestId('current-path').textContent).toBe('/v2'));
   });
 
-  test('opening a pod records it in the visit log that orders the sidebar’s Recent', () => {
+  test('opening a pod records a local visit', () => {
     render(
       <MemoryRouter initialEntries={['/v2/pods/workspace']}>
         <Routes>
