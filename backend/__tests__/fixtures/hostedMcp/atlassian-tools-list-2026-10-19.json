@@ -1,0 +1,1014 @@
+{
+  "server": "https://mcp.atlassian.com/v2/mcp",
+  "capturedAt": "2026-10-19T07:13:31.504Z",
+  "scopeRequested": "read:me read:account offline_access read:jira:agent-interface write:jira:agent-interface search:jira:agent-interface read:confluence:agent-interface write:confluence:agent-interface search:confluence:agent-interface",
+  "tokenShape": {
+    "keys": [
+      "access_token",
+      "expires_in",
+      "issuer",
+      "refresh_token",
+      "scope",
+      "token_type"
+    ],
+    "tokenType": "Bearer",
+    "grantedScope": "offline_access read:account read:confluence:agent-interface read:jira:agent-interface read:me search:confluence:agent-interface search:jira:agent-interface write:confluence:agent-interface write:jira:agent-interface",
+    "expiresIn": 28800,
+    "hasRefreshToken": true
+  },
+  "toolCount": 16,
+  "tools": [
+    {
+      "name": "getAccessibleAtlassianResources",
+      "description": "Returns the cloudId(s) available to the current user",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get accessible Atlassian resources",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "atlassianUserInfo",
+      "description": "Returns the accountId of the current user",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get Atlassian user info",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getConfluenceContent",
+      "description": "REQUIRED: Supply at least one content locator: content_id or content_url.\nRead any Confluence content (page, blog, live doc, comment, whiteboard, embed, database, folder).\n",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "content_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when content_url is omitted. Numeric Confluence content ID, or a\nConfluence tiny link key (the encoded part\nfrom /wiki/x/ URLs, e.g. 4_sXAQ). Recognized Confluence content URLs are also\naccepted and converted to the content ID, but prefer content_url for URLs.\nOne of content_id or content_url is required.\n"
+          },
+          "content_url": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Required when content_id is omitted. Full URL of the Confluence content.\nSupported: pages/live docs\n(/pages/{id}), blog URLs (/blog/{id}), whiteboards\n(/whiteboard/{id}), databases (/database/{id}), folders (/folder/{id}),\nembeds (/embed/{id}), and TinyUrl (/wiki/x/{key}). Prefer this for URLs copied from Confluence.\nOne of content_id or content_url is required.\n"
+          },
+          "detail": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "ai_summary",
+              "outline",
+              "full"
+            ],
+            "description": "Response shape for document-style reads. summary = title + excerpt + counts\n(default, cheap). ai_summary = the generated AI summary when available, otherwise\nnull; it does not fall back to the standard excerpt. outline = heading tree (cheap,\nfor navigation). full = body in the requested format (use when intending to edit).\nNon-document content such as whiteboards, databases, folders, and embeds does not support detail;\ncontent_format is a separate representation selector for\nformats such as whiteboard svg/png, database csv, or embed url.\n"
+          },
+          "content_format": {
+            "type": "string",
+            "enum": [
+              "html",
+              "markdown",
+              "url",
+              "svg",
+              "png",
+              "csv"
+            ],
+            "description": "Body format. Doc types: html (default) or markdown. Document HTML can contain\nsupported macro wrappers instead of content displayed in Confluence web. When\nvisible macro content is required, use resolveConfluenceContentMacros with the\nreturned numeric content ID and all=true; use discover if its full contract is\nneeded. Whiteboards support only svg and png: use svg to inspect content or\nprepare edits, or png for a screenshot. Never use html or markdown for a\nwhiteboard. PNG is read-only and returns a short-lived presigned URL in\nbody.value, not the image content. Databases: csv.\nURL-backed content such as embeds: url. For an embed or Smart Link, including a\nSmart Folder child, explicitly request content_format=url and omit detail to read\nthe destination URL in body.value. Then follow retrievalGuidance to read the target.\nOmitting content_format preserves the existing envelope-only embed read.\n"
+          },
+          "draft": {
+            "type": "boolean",
+            "description": "If true, read the draft version instead of current. Only supported for\npages and blog posts.\n"
+          }
+        },
+        "required": [
+          "cloudId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get Confluence content",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "createConfluenceContent",
+      "description": "Create a new Confluence page, blog post, live doc, whiteboard, database,\nembed, smart link, or folder.\n\nBefore choosing body.format or authoring a body, call getContentFormatGuide through execute with\nname=getContentFormatGuide and inputs={toolName}. Use createConfluencePage\nfor pages, blog posts, and live docs; createConfluenceWhiteboard for\nwhiteboards; or createConfluenceDatabase for databases.\n\nSpace instructions describe how to author content in a Confluence space.\nApply relevant guidance to the content you create or update. Follow this\ndecision rule:\n1. Before authoring, call getConfluenceSpace for the target space unless\n   getConfluenceContent returned metadata.hasSpaceInstructions=false for\n   content in that space. If getConfluenceSpace already returned for the\n   same cloudId and space during the current task, reuse its\n   spaceInstructions and do not call it again.\n2. When the value is true or unknown and instructions have not been\n   loaded, you must call getConfluenceSpace once before authoring through\n   execute with name=getConfluenceSpace, top-level cloudId, and\n   inputs={spaceIdOrKey}.\n3. Apply any returned spaceInstructions. If a successful response omits\n   them, no instructions are configured; author with defaults and do not\n   block.\n\nAfter a successful getConfluenceSpace call, do not make a separate\ngetConfluenceSpaceInstructions call.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "parent": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Parent destination for the new content.\n\nUse { \"spaceId\": \"<numeric-space-id>\" } to create at the homepage / sidebar root.\nUse { \"spaceId\": \"<numeric-space-id>\", \"parentContentId\": \"<numeric-content-id>\" }\nto create under an existing content item.\nUse { \"parentContentId\": \"<numeric-content-id>\" } when the parent content ID\nshould be resolved to its space before creation.\nUse { \"parentContentUrl\": \"<confluence-content-url>\" } when the parent\ncontent URL should be resolved before creation.\n\nSupported parentContentUrl paths include /pages/{id}, /blog/{id},\n/whiteboard/{id}, /database/{id}, and /folder/{id}.\n\nIf the destination is described only by space key or title, resolve it first\nto one of the supported parent shapes above.\n"
+          },
+          "contentType": {
+            "type": "string",
+            "description": "Type of content to create. One of: page, live_doc, blogpost, whiteboard,\ndatabase, embed, smart_link, folder, slide.\n"
+          },
+          "title": {
+            "type": "string",
+            "description": "Title for the new content. 1-255 characters."
+          },
+          "body": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Before composing this body, follow the space-instruction decision rule in the tool\ndescription. Reuse known instruction state and do not repeat the space lookup per write.\nBody content. For whiteboard and database it is technically optional, but only omit it\nwhen the user explicitly asked for an empty/blank board or database. Never omit body as a\nfallback because you could not load the authoring guidance — load it first via\ngetContentFormatGuide through the generic operation runner (execute) as\nname=getContentFormatGuide, inputs={toolName} (createConfluencePage /\ncreateConfluenceWhiteboard / createConfluenceDatabase), then build a real body.\nA blank whiteboard\n(no shapes, stickies, connectors, or layout) is almost never the intended result.\nFor doc types (page, live_doc, blogpost): format is html or markdown, value is the content string.\nMarkdown is for simple text; use HTML when richer structure would improve the document.\nFor embed and smart_link: format must be url, value must be the URL to embed (e.g. https://example.com/design).\nFor whiteboard: format must be svg and value must be the complete initial SVG document with root width, height, and viewBox.\nFor database: format must be csv and value must be the complete initial CSV payload.\nFor a synced (Smart) Folder (contentType=folder): format must be url and value must be the\nhttps URL of the external Google Drive, OneDrive, or SharePoint folder to sync from.\nRequires the confluence_smart_folders_milestone_1 experiment; otherwise the create\nreturns FEATURE_NOT_ENABLED.\nDo not pass patches, edit envelopes, or context on create.\nOmit for a plain folder (no sync source) and for slide.\n"
+          },
+          "draft": {
+            "type": "boolean",
+            "description": "If true, create the content as a draft instead of publishing it. Only\nsupported when contentType is page or blogpost.\n"
+          },
+          "private": {
+            "type": "boolean",
+            "description": "If true, the created content is private to the caller: only the\ncreator has view and edit access. Supported for page, live_doc,\nblogpost, whiteboard, database, and folder, including creation at the\nhomepage / sidebar root. Private creation is not supported for embed, smart_link, or slide.\nThis sets General access to VIEW_RESTRICTED and gives the creator one\nSpecific access grant, update (Can edit), which already includes\nread/view. Do not add a separate read grant for the creator.\nOmit or pass false for default visibility.\n"
+          },
+          "contentWidth": {
+            "type": "string",
+            "enum": [
+              "narrow",
+              "wide",
+              "max"
+            ],
+            "description": "Optional page width for doc types only: page, live_doc, and blogpost.\nOmit unless the user explicitly requests a width; omission creates a\nnarrow page. Do not infer wide or max from body content or layout.\nAccepted values are narrow, wide, and max.\nNon-doc content types do not support this field.\n"
+          }
+        },
+        "required": [
+          "cloudId",
+          "parent",
+          "contentType",
+          "title"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Create Confluence content",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "updateConfluenceContent",
+      "description": "Update Confluence docs, whiteboards, or databases.\n\nBefore choosing body.format or authoring an edit, call getContentFormatGuide through execute with\nname=getContentFormatGuide and inputs={toolName}. Use updateConfluencePage\nfor pages, blog posts, and live docs; updateConfluenceWhiteboard for\nwhiteboards; or updateConfluenceDatabase for databases.\n\nSpace instructions describe how to author content in a Confluence space.\nApply relevant guidance to the content you create or update. Follow this\ndecision rule:\n1. Before authoring, call getConfluenceSpace for the target space unless\n   getConfluenceContent returned metadata.hasSpaceInstructions=false for\n   content in that space. If getConfluenceSpace already returned for the\n   same cloudId and space during the current task, reuse its\n   spaceInstructions and do not call it again.\n2. When the value is true or unknown and instructions have not been\n   loaded, you must call getConfluenceSpace once before authoring through\n   execute with name=getConfluenceSpace, top-level cloudId, and\n   inputs={spaceIdOrKey}.\n3. Apply any returned spaceInstructions. If a successful response omits\n   them, no instructions are configured; author with defaults and do not\n   block.\n\nAfter a successful getConfluenceSpace call, do not make a separate\ngetConfluenceSpaceInstructions call.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "contentId": {
+            "type": "string",
+            "description": "Numeric Confluence content ID. One of contentId or contentUrl is required.\n"
+          },
+          "contentUrl": {
+            "type": "string",
+            "description": "Full URL of the Confluence content. One of contentId or contentUrl is required.\nClear Confluence URLs for pages/live docs (/pages/{id}), blogs\n(/blog/{id}), whiteboards (/whiteboard/{id}), databases\n(/database/{id}), and folders (/folder/{id}) are normalized to their\nnumeric content ID before the update is sent, so URLs copied from the\nproduct should work directly.\n"
+          },
+          "snapshotToken": {
+            "type": "string",
+            "description": "Opaque token from a prior getConfluenceContent response. Required for doc-type\nupdates that mutate page/blog/live_doc content or contentWidth. Not used for whiteboard svg or\ndatabase csv object updates.\n"
+          },
+          "title": {
+            "type": "string",
+            "description": "New title for the content. 1-255 characters. Omit to keep existing title."
+          },
+          "body": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Before composing this body, follow the space-instruction decision rule in the tool\ndescription. Reuse known instruction state and do not repeat the space lookup per write.\nBody update object with format and value. Doc types accept format html or\nmarkdown. Markdown is for simple text; when richer structure would improve the\ndocument, re-read it as HTML and preserve existing rich content in the HTML update.\nWhiteboards accept format svg and should include\ncontext.content with the current SVG when applying a patch. Databases\naccept format csv and should include context.content with the current\nCSV when applying an edit envelope. Put the raw patch/envelope directly in\nvalue; do not wrap it in an extra JSON object or {\"content\": \"...\"}\nwrapper. For whiteboards, value is a patch, not a full SVG replacement.\nFor databases, value is an edit envelope, not a create payload. Mutually\nexclusive with edits.\n"
+          },
+          "edits": {
+            "type": "array",
+            "items": {},
+            "description": "Granular edit operations. Array of tool-call objects, each with name\n(replaceNode, insertNodeAfter, insertNodeBefore, deleteNode, removeNodes,\nmoveNode, appendNodeToEnd, setAttrs), localId, value, and arguments.\nMutually exclusive with body.\n"
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "If true, validate and preview the result without persisting. For edits,\nreturns the resulting HTML. For body replacement, echoes the input.\n"
+          },
+          "draft": {
+            "type": "boolean",
+            "description": "If true, update the draft version instead of current. Only supported\nfor page and blogpost doc edits.\n"
+          },
+          "versionMessage": {
+            "type": "string",
+            "description": "Optional version comment/message for the content update."
+          },
+          "minorEdit": {
+            "type": "boolean",
+            "description": "Whether to mark the new content version as a minor edit."
+          },
+          "ownerId": {
+            "type": "string",
+            "description": "Atlassian account ID of the new owner to transfer page ownership to. Optional.\nThis is an account ID (e.g. 5b10ac8d82e05b22cc7d4ef5), never an email/username\nor a content ID. The new owner must already have edit permission.\n"
+          },
+          "contentWidth": {
+            "type": "string",
+            "enum": [
+              "narrow",
+              "wide",
+              "max"
+            ],
+            "description": "Optional page width for doc types only: page, live_doc, and blogpost.\nAccepted values are narrow, wide, and max. The default width is narrow.\nOmit to keep the existing content width unchanged.\nA width-only update is valid and requires snapshotToken, but does not\nrequire title, body, or edits.\nNon-doc content types do not support this field.\n"
+          }
+        },
+        "required": [
+          "cloudId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Update Confluence content",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "searchConfluence",
+      "description": "Search Confluence content with CQL",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "cql": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "CQL query string (max 4096 chars). Examples:\n`type = page AND space = \"DEV\"`,\n`title ~ \"onboarding\" AND lastmodified > \"2025-01-01\"`,\n`creator = currentUser() AND type IN (page, blogpost) ORDER BY lastmodified DESC`.\n"
+          },
+          "cqlcontext": {
+            "type": "string",
+            "description": "JSON-encoded execution context, e.g. {\"spaceKey\":\"DEV\"}. Restricts the search to the supplied scope."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated list of content properties to expand on each result.\nCommon values: `space`, `version`, `body.view`, `metadata.labels`,\n`ancestors`. Use sparingly to avoid large responses.\n"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Max number of results to return per page (1-100). Defaults to 25."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque pagination cursor returned by a previous call. Omit to start from the first page."
+          }
+        },
+        "required": [
+          "cloudId",
+          "cql"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Search Confluence content",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "getJiraIssue",
+      "description": "Get a Jira or JSM issue by key or ID. Use for one known issue; use searchJiraIssuesUsingJql to find or list many issues. Reports how many comments an issue has, not the comments themselves — for those use listJiraIssueComments. View \"evidence\" also returns the issue's links to other issues.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue key (PROJ-123), numeric ID, or a Jira issue URL"
+          },
+          "fields": {
+            "type": "array",
+            "items": {},
+            "description": "Custom Jira field IDs to fetch (e.g. [\"customfield_10010\", \"customfield_10020\"]). Overrides the view's fetch strategy. For custom fields in normal use, prefer view: \"evidence\", which fetches and maps them automatically. Use [\"*all\"] to fetch every field (expensive — prefer view: \"full\" instead).\n"
+          },
+          "includeEditableFields": {
+            "type": "boolean",
+            "description": "When true, also return compact metadata for fields the authenticated user can edit on this issue, including type, allowed values, and operations. Omit unless preparing an edit: this makes an extra Jira REST call.\n"
+          },
+          "fieldsByKeys": {
+            "type": "boolean",
+            "description": "When true, each entry in `fields` is interpreted as a Jira field key (e.g. \"summary\", \"description\") instead of a field id. Matches the Jira REST `fieldsByKeys` query parameter. Ignored when `fields` is omitted (default field list uses ids).\n"
+          },
+          "expand": {
+            "type": "string",
+            "description": "Additional Jira expand tokens (comma-separated), e.g. \"renderedFields,changelog\". Merged with any expand the server adds for custom-field mapping (e.g. \"names\"); duplicate tokens removed. Note \"changelog\" here returns only the newest page, sorted newest-first, and it accepts startAt/maxResults then ignores them — so it cannot be paged and reports a longer history as complete. Use listJiraIssueChangelogs to read all of it (oldest-first); do not mix their orderings.\n"
+          },
+          "properties": {
+            "type": "array",
+            "items": {},
+            "description": "Issue entity property keys to return (Jira `properties` query param, repeated per key). Omit unless you rely on app-specific issue properties.\n"
+          },
+          "failFast": {
+            "type": "boolean",
+            "description": "When true, forwards Jira's `failFast` query flag for this GET. Omit for Jira default behavior.\n"
+          },
+          "responseContentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "html"
+            ],
+            "description": "Format for rich-text bodies — description and environment, plus any comment bodies the view returns. Defaults to markdown. Set html to receive HTML, which is lossless, so you can pass it straight back to editJiraIssue/addOrEditJiraIssueComment with contentFormat: html. Bodies holding anything markdown cannot represent — inline media, panels, expands, layouts, statuses, @mentions, dates, emoji — are returned as HTML automatically, because markdown would drop those nodes or turn them into literal text on write-back. An explicit markdown request is overridden for those bodies, with a warning saying so; appliedContentFormat in the response reports the format you actually got.\n"
+          },
+          "actionSource": {
+            "type": "string",
+            "enum": [
+              "jira_mcp_card",
+              "model_tool_call"
+            ],
+            "description": "Optional invocation attribution. Jira MCP cards set jira_mcp_card; omit for model/tool-loop calls."
+          },
+          "view": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "evidence",
+              "full"
+            ],
+            "description": "Output view preset. Default: \"compact\". Options: \"compact\", \"evidence\", \"full\". compact = minimal fields for scanning; evidence = decision-relevant detail; full = complete response."
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get Jira issue",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "searchJiraIssuesUsingJql",
+      "description": "Search for Jira issues using JQL, with an optional approximate count. Use view: \"evidence\" to fetch and map custom fields. Page with nextPageToken until isLast is true. For one known issue, use getJiraIssue. JQL only returns issues; inferring anything else from issue rows is silently incomplete. Use the purpose-built operation for sprints, boards, board config, field history, worklogs, releases, accountIds, issue types, projects and statuses.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "jql": {
+            "type": "string",
+            "description": "JQL query string e.g. \"project = PROJ AND status = 'In Progress'\". If the tool returns a repairHint, follow it and retry.\n"
+          },
+          "searchResultMode": {
+            "type": "string",
+            "enum": [
+              "issues",
+              "count",
+              "all"
+            ],
+            "description": "Default \"issues\". Never count for normal search or if nextPageToken used. If total for same query is known, reuse it. Use \"count\" only when no trusted count exists and either the user asks or a downstream step needs it. Use \"all\" only if both count and issues required.\n"
+          },
+          "maxResults": {
+            "type": "number",
+            "description": "Maximum results to return (default 50, max 100)"
+          },
+          "fields": {
+            "type": "array",
+            "items": {},
+            "description": "Fields per issue (e.g. [\"summary\", \"status\", \"customfield_10010\"]). customfield_* IDs are site-specific — discover the correct id for story points etc. on this Cloud site. Honoured exactly when supplied. Values map to issues[].fields.customFields (human labels), not raw customfield_* keys. The default \"compact\" view omits custom fields; use view: \"evidence\" for velocity/sprint JQL (fetches and maps all custom fields) or pass explicit customfield_* IDs.\n"
+          },
+          "nextPageToken": {
+            "type": "string",
+            "description": "Pagination token from a previous response to fetch the next page"
+          },
+          "responseContentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "html"
+            ],
+            "description": "Format for rich-text bodies (description, environment, comments) when the view returns them. Defaults to markdown; html is lossless for a later editJiraIssue. Issues holding anything markdown cannot represent (media, panels, expands, statuses, @mentions) are returned as HTML automatically, decided per issue. An explicit markdown request is overridden for those bodies, with a warning saying so; appliedContentFormat in the response reports the format you actually got.\n"
+          },
+          "actionSource": {
+            "type": "string",
+            "enum": [
+              "jira_mcp_card",
+              "model_tool_call"
+            ],
+            "description": "Optional invocation attribution. Jira MCP cards set jira_mcp_card; omit for model/tool-loop calls."
+          },
+          "view": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "evidence",
+              "full"
+            ],
+            "description": "Output view preset. Default: \"compact\". Options: \"compact\", \"evidence\", \"full\". compact = minimal fields for scanning; evidence = decision-relevant detail; full = complete response."
+          }
+        },
+        "required": [
+          "cloudId",
+          "jql"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Search Jira issues using JQL",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "createJiraIssue",
+      "description": "Create a new Jira issue. Custom fields go in additional_fields: keyed by field name, values are resolved automatically, so no field lookup is needed first (user fields take accountIds); keyed by customfield_* ID, pass the value in Jira's format. A rejected create returns a repairHint and names the field at fault where there is one, with its allowedValues when known, so retry from that. If sprint assignment fails, the response still has the new issue's key and sprintAssignment.assigned: false — do not create it again.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "projectKey": {
+            "type": "string",
+            "description": "Project key (e.g. PROJ)."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Issue summary / title."
+          },
+          "issueType": {
+            "type": "string",
+            "description": "Issue type name (e.g. Bug, Task, Story, Epic). Use listJiraProjectIssueTypesMetadata to list valid types for this project if unsure.\n"
+          },
+          "description": {
+            "type": "string",
+            "description": "Issue description in markdown, or HTML with contentFormat html. Converted to Jira ADF automatically."
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "html"
+            ],
+            "description": "Body format for description. Defaults to markdown; html adds panels, tables and status lozenges. For HTML body shapes, first get the format guide via the generic operation runner (execute) as name=getContentFormatGuide, inputs={toolName: \"createJiraIssue\"}. Inline media needs an existing issue: create first, then embed with editJiraIssue. When the HTML content-format feature is disabled the call is rejected rather than downgraded, because markdown would store the HTML tags as literal text.\n"
+          },
+          "priority": {
+            "type": "string",
+            "description": "Priority name (e.g. High, Medium, Low, Highest, Lowest)."
+          },
+          "assignee": {
+            "type": "string",
+            "description": "Account ID of the assignee. Resolve a name with listJiraIssueAssignableUsers, which returns only users who can be assigned in this project; lookupJiraAccountId resolves any user and does not check that."
+          },
+          "labels": {
+            "type": "array",
+            "items": {},
+            "description": "List of label strings (e.g. [\"bug\", \"needs-triage\"])."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Parent issue key for sub-tasks or child issues (e.g. PROJ-10)."
+          },
+          "additional_fields": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Additional Jira fields. Keys can be human-readable field names or raw customfield_* IDs. Values can be human-readable (resolved automatically) or already-correct Jira shapes. Examples:\n  {\"Story Points\": 8}                          ← number field by name\n  {\"Team\": \"Backend\"}                          ← option/select by name\n  {\"Reviewers\": [\"alice@acme.com\", \"bob@acme.com\"]}  ← multi-user by accountId\n  {\"Component Area\": \"Platform / Auth\"}        ← cascading select as \"Parent / Child\"\n  {\"customfield_10010\": 8}                     ← raw ID (no resolution needed, fastest)\n  {\"components\": [{\"name\": \"Backend\"}]}        ← system array field (raw shape)\n  {\"fixVersions\": [{\"name\": \"v2.0\"}]}          ← system array field (raw shape)\nOn error, the response includes allowedValues and a repairHint for self-correction.\n"
+          },
+          "assignToSprint": {
+            "type": "string",
+            "description": "Optional sprint assignment after the issue is created. Accepts a numeric sprint ID, an exact sprint name, or \"active\" to resolve an active sprint. Numeric sprint IDs assign directly and do not need board lookup. When omitted, createJiraIssue behaves exactly as before and does not make sprint calls.\n"
+          }
+        },
+        "required": [
+          "cloudId",
+          "projectKey",
+          "summary",
+          "issueType"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Create Jira issue",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "editJiraIssue",
+      "description": "Edit an existing Jira issue. Custom fields go in additional_fields: keyed by field name, values are resolved automatically (user fields take accountIds); keyed by customfield_* ID, pass the value in Jira's format. Every field is set, not appended: send the full list for labels, components and other multi-value fields. Change status or move to a sprint with transitionJiraIssue, and convert Task↔Sub-task with convertJiraIssueHierarchy. Empty description or environment with \"\". When editing a body that holds inline media, use contentFormat: html, or the media is dropped. Reorder on a board with rankBeforeIssue or rankAfterIssue; fields are saved first, so a failed reorder leaves the edit applied and returns ranking.ranked: false. The response shows only getJiraIssue's default fields, so other fields you set are not echoed back.\n",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue key (e.g. PROJ-123)."
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Jira fields payload to set, keyed by field name or customfield_* ID. To clear a field, pass explicit null (e.g. {\"resolution\": null}). Rich-text fields (description/environment) default to markdown; set contentFormat: html to author them in HTML. Editing a body that already contains inline media must use contentFormat: html — markdown drops it. For HTML body shapes (inline media, panels, tables), first get the format guide via the generic operation runner (execute) as name=getContentFormatGuide, inputs={toolName: \"editJiraIssue\"}.\n"
+          },
+          "additional_fields": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Additional Jira fields. Keys can be human-readable field names or raw customfield_* IDs. Values can be human-readable (resolved automatically) or already-correct Jira shapes. Examples:\n  {\"Story Points\": 8}                          ← number field by name\n  {\"Team\": \"Backend\"}                          ← option/select by name\n  {\"Reviewers\": [\"alice@acme.com\", \"bob@acme.com\"]}  ← multi-user by accountId\n  {\"Component Area\": \"Platform / Auth\"}        ← cascading select as \"Parent / Child\"\n  {\"customfield_10010\": 8}                     ← raw ID (no resolution needed, fastest)\n  {\"components\": [{\"name\": \"Backend\"}]}        ← system array field (raw shape)\n  {\"fixVersions\": [{\"name\": \"v2.0\"}]}          ← system array field (raw shape)\nOn error, the response includes allowedValues and a repairHint for self-correction.\n"
+          },
+          "inlineFileId": {
+            "type": "array",
+            "items": {},
+            "description": "Media file ID(s) from uploadAttachmentToJiraIssue to append inline to the description, e.g. [\"id1\",\"id2\"]. Requires contentFormat: html and a matching inlineFileCollection (paired by index). Appends at the end, keeping existing content; for exact placement, author the media node in the HTML description instead. A file already embedded in the body is rejected (would duplicate).\n"
+          },
+          "inlineFileCollection": {
+            "type": "array",
+            "items": {},
+            "description": "Media collection(s) from the upload step, paired to inlineFileId by index (a single value applies to all). Required whenever inlineFileId is set.\n"
+          },
+          "inlineFileName": {
+            "type": "array",
+            "items": {},
+            "description": "Optional file name(s) (from the upload step's fileName), paired to inlineFileId by index. Only selects the render shape: images render as a block image, other files as an inline chip. Omit to default to the image shape.\n"
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "html"
+            ],
+            "description": "Body format for rich-text fields (description/environment). Defaults to markdown. html preserves inline media across a read-modify-write; a body fetched as HTML can be written straight back (Jira resolves media collection/filename server-side and omits them on read — not data loss). Requires the HTML content-format feature; when it is disabled the call is rejected rather than downgraded, because markdown would store the HTML tags as literal text and drop the media.\n"
+          },
+          "responseContentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "html"
+            ],
+            "description": "Output format for rich-text fields in the returned issue. Defaults to markdown. Bodies markdown cannot represent (media, panels, expands, statuses, @mentions) are always returned as HTML, so a follow-up edit does not destroy them. An explicit markdown request is overridden for those bodies, with a warning saying so; appliedContentFormat in the response reports the format you actually got.\n"
+          },
+          "rankBeforeIssue": {
+            "type": "string",
+            "description": "Optional. Rank this issue immediately before the given issue key or ID (LexoRank relative anchor). Mutually exclusive with rankAfterIssue. When omitted, editJiraIssue does not make ranking calls.\n"
+          },
+          "rankAfterIssue": {
+            "type": "string",
+            "description": "Optional. Rank this issue immediately after the given issue key or ID (LexoRank relative anchor). Mutually exclusive with rankBeforeIssue. When omitted, editJiraIssue does not make ranking calls.\n"
+          },
+          "rankCustomFieldId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional. Numeric Rank field id for this rank call (e.g. 10020). Pass only when the user explicitly provides a Rank field id, or asks to reorder on a specific board's Rank field. For a named board, call getJiraBoardConfig first and use ranking.rankCustomFieldId. Do not invent or guess this id. Omit for ordinary reorders so Jira uses its default Rank field. Ignored unless rankBeforeIssue or rankAfterIssue is also set.\n"
+          },
+          "actionSource": {
+            "type": "string",
+            "enum": [
+              "jira_mcp_card",
+              "model_tool_call"
+            ],
+            "description": "Optional invocation attribution. Jira MCP cards set jira_mcp_card; omit for model/tool-loop calls."
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Edit Jira issue",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "transitionJiraIssue",
+      "description": "Move a Jira issue through its workflow and/or into a sprint or the backlog — at least one is required. Take transitionId from listJiraIssueTransitions; transitionName is the transition's own name, not the target status. Returns the status the issue actually landed in, so no read-back is needed. If the sprint/backlog move fails after the status change succeeds, the status change stays — retry the move alone, not the whole call.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue key like PROJ-123"
+          },
+          "transitionId": {
+            "type": "string",
+            "description": "Transition ID (get from listJiraIssueTransitions). Provide either transitionId or transitionName."
+          },
+          "transitionName": {
+            "type": "string",
+            "description": "Name of the transition itself, not the target status — the two often differ, so \"Done\" does not match a transition named \"Review->Done\". Provide either transitionId or transitionName."
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Optional Jira field values to apply during the workflow transition."
+          },
+          "update": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Optional Jira field update operations to apply during the workflow transition. A comment passed here may be dropped without error — the transition reports success and no comment is created. Use addOrEditJiraIssueComment instead."
+          },
+          "historyMetadata": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Optional issue history metadata to attach to the workflow transition."
+          },
+          "sprintId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Assign the issue into this sprint. Mutually exclusive with assignToBacklog."
+          },
+          "assignToBacklog": {
+            "type": "boolean",
+            "description": "Set true to assign the issue to the backlog, mutually exclusive with sprintId. Optionally use boardId to target a specific board's backlog."
+          },
+          "boardId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only used when assignToBacklog is true: targets this specific board's backlog (board IDs from listJiraBoards). Ignored otherwise."
+          },
+          "actionSource": {
+            "type": "string",
+            "enum": [
+              "jira_mcp_card",
+              "model_tool_call"
+            ],
+            "description": "Optional invocation attribution. Jira MCP cards set jira_mcp_card; omit for model/tool-loop calls."
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Transition Jira issue",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "addOrEditJiraIssueComment",
+      "description": "Add a comment to a Jira issue, or edit an existing one: omit commentId to add, or pass one from listJiraIssueComments to edit. Returns the commentId, needed to edit or delete it later. When no file was appended through inlineFileId, it also returns the echoed body and its format (appliedContentFormat).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "issueIdOrKey": {
+            "type": "string",
+            "description": "Issue key (e.g. PROJ-123) or a Jira issue URL"
+          },
+          "commentBody": {
+            "type": "string",
+            "description": "Comment text. Markdown by default; set contentFormat: html to pass HTML instead. Required unless adding a new comment purely to embed a file via inlineFileId. Editing replaces the whole comment body: pass the full intended text (fetch the current comment first to preserve it), or \"\" for media only. Editing a body that already contains inline media must use contentFormat: html — markdown drops it. For HTML body shapes (inline media, panels, tables), first get the format guide via the generic operation runner (execute) as name=getContentFormatGuide, inputs={toolName: \"addOrEditJiraIssueComment\"}.\n"
+          },
+          "contentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "html"
+            ],
+            "description": "Body format for commentBody. Defaults to markdown. html preserves inline media across a read-modify-write; a body fetched as HTML can be written straight back (Jira resolves media collection/filename server-side and omits them on read — not data loss). Requires the HTML content-format feature; when it is disabled the call is rejected rather than downgraded, because markdown would store the HTML tags as literal text and drop the media.\n"
+          },
+          "commentVisibility": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Restrict comment visibility to a Jira group or role. Shape: `{\"type\":\"group\"|\"role\",\"value\":\"<name>\"}`.\nRole and group names are site-specific, so do not reuse a name from another site.\nOn JSM this does not make a comment internal — a restricted comment stays customer-visible\n(`jsdPublic: true`). Use `jsmCommentType: \"internalNote\"` for that.\n"
+          },
+          "jsmCommentType": {
+            "type": "string",
+            "enum": [
+              "internalNote",
+              "publicComment"
+            ],
+            "description": "JSM comment type. Use internalNote for an internal note or publicComment for a customer-visible comment. Applies when adding or editing a JSM comment. Omit for existing Jira behavior.\n"
+          },
+          "commentId": {
+            "type": "string",
+            "description": "ID of an existing comment to edit. When omitted, a new comment is added."
+          },
+          "inlineFileId": {
+            "type": "array",
+            "items": {},
+            "description": "Media file ID(s) from uploadAttachmentToJiraIssue to append inline to the comment, e.g. [\"id1\",\"id2\"]. Requires contentFormat: html and a matching inlineFileCollection (paired by index). Appends at the end; for exact placement, author the media node in the HTML commentBody instead. A file already embedded in the body is rejected (would duplicate).\n"
+          },
+          "inlineFileCollection": {
+            "type": "array",
+            "items": {},
+            "description": "Media collection(s) from the upload step, paired to inlineFileId by index (a single value applies to all). Required whenever inlineFileId is set.\n"
+          },
+          "inlineFileName": {
+            "type": "array",
+            "items": {},
+            "description": "Optional file name(s) (from the upload step's fileName), paired to inlineFileId by index. Only selects the render shape: images render as a block image, other files as an inline chip. Omit to default to the image shape.\n"
+          },
+          "responseContentFormat": {
+            "type": "string",
+            "enum": [
+              "markdown",
+              "html"
+            ],
+            "description": "Format of the echoed comment body. Defaults to the format written, so an html write reads back as html. Bodies markdown cannot represent (media, panels, statuses, @mentions) are always echoed as HTML so a follow-up edit does not destroy them. An explicit markdown request is overridden for those bodies, with a warning saying so; appliedContentFormat in the response reports the format you actually got.\n"
+          }
+        },
+        "required": [
+          "cloudId",
+          "issueIdOrKey"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Add or edit Jira issue comment",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "discover",
+      "description": "Find Atlassian operations that are not already in your tool list. Searches ~319 operations across Jira, Confluence, Compass, Bitbucket, Focus, Goals, Projects, Loom, Talent, Teams, Capacity-planning, Assets, Artifacts, Insights. Returns up to 5 matches with the exact name and inputs needed to call the matching execute-family tool (executeRead, executeWrite, or executeDestructive), then a briefer name-and-summary list of further matches — re-query with narrower terms to get one of those in full. Read all 5 before choosing. Only use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name — when unsure, call discover first.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What you want to do, as a verb plus the object and, if you know it, the product: \"transition a jira issue\", \"list confluence spaces\", \"get pull request comments\". Naming the product scopes the searchAsk for one thing per call; for a goal spanning two products, call discover once per product. If nothing fits, re-query using the product's own noun (issue, page, space, repository, sprint) rather than a synonym."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Discover Atlassian Operations",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "executeRead",
+      "description": "Run a read-only Atlassian operation by name across all Atlassian products.\nOnly use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name — when unsure, call discover first.\nCopy input names exactly from the operation’s discover result or tool schema. After an input validation error, correct the inputs using the error guidance before retrying; if the input contract is missing, call discover for that operation first.\nIf the user provides a Jira/Confluence URL, pass it directly as cloudId — no need to call getAccessibleAtlassianResources.\nPass all inputs as a flat object — the server routes each to the right location (path, query, or body) automatically.\nUse responseFields for field filtering, e.g. [\"key\",\"fields.summary\",\"fields.status.name\"].\nUse view to select a named output preset (e.g. \"compact\", \"evidence\", \"full\") when the operation supports views.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Operation name to run. Only use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name — when unsure, call discover first."
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Flat input object — pass all parameters here. The server routes each to path, query, or body automatically."
+          },
+          "responseFields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "maxItems": 50,
+            "description": "Dot-notation fields to return, e.g. [\"key\",\"fields.summary\"]. Filters response."
+          },
+          "view": {
+            "type": "string",
+            "description": "Named output view preset (e.g. \"compact\", \"evidence\", \"full\"). Only applies when the operation declares views. Overridden by responseFields if both are supplied."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Execute Read-Only Atlassian Operation",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "executeWrite",
+      "description": "Run a write Atlassian operation by name (creates or updates data, non-destructive) across all Atlassian products.\nOnly use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name — when unsure, call discover first.\nCopy input names exactly from the operation’s discover result or tool schema. After an input validation error, correct the inputs using the error guidance before retrying; if the input contract is missing, call discover for that operation first.\nIf the user provides a Jira/Confluence URL, pass it directly as cloudId — no need to call getAccessibleAtlassianResources.\nPass all inputs as a flat object — the server routes each to the right location (path, query, or body) automatically.\nUse responseFields for field filtering, e.g. [\"key\",\"fields.summary\",\"fields.status.name\"].\nUse view to select a named output preset (e.g. \"compact\", \"evidence\", \"full\") when the operation supports views.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Operation name to run. Only use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name — when unsure, call discover first."
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Flat input object — pass all parameters here. The server routes each to path, query, or body automatically."
+          },
+          "responseFields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "maxItems": 50,
+            "description": "Dot-notation fields to return, e.g. [\"key\",\"fields.summary\"]. Filters response."
+          },
+          "view": {
+            "type": "string",
+            "description": "Named output view preset (e.g. \"compact\", \"evidence\", \"full\"). Only applies when the operation declares views. Overridden by responseFields if both are supplied."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Execute Write Atlassian Operation",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "executeDestructive",
+      "description": "Run a destructive Atlassian operation by name (deletes or irreversibly changes data) across all Atlassian products.\nOnly use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name — when unsure, call discover first.\nCopy input names exactly from the operation’s discover result or tool schema. After an input validation error, correct the inputs using the error guidance before retrying; if the input contract is missing, call discover for that operation first.\nIf the user provides a Jira/Confluence URL, pass it directly as cloudId — no need to call getAccessibleAtlassianResources.\nPass all inputs as a flat object — the server routes each to the right location (path, query, or body) automatically.\nUse responseFields for field filtering, e.g. [\"key\",\"fields.summary\",\"fields.status.name\"].\nUse view to select a named output preset (e.g. \"compact\", \"evidence\", \"full\") when the operation supports views.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string",
+            "description": "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Operation name to run. Only use an operation name from discover results or one already in your tool list; never guess, assume, or invent a name — when unsure, call discover first."
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Flat input object — pass all parameters here. The server routes each to path, query, or body automatically."
+          },
+          "responseFields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "maxItems": 50,
+            "description": "Dot-notation fields to return, e.g. [\"key\",\"fields.summary\"]. Filters response."
+          },
+          "view": {
+            "type": "string",
+            "description": "Named output view preset (e.g. \"compact\", \"evidence\", \"full\"). Only applies when the operation declares views. Overridden by responseFields if both are supplied."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Execute Destructive Atlassian Operation",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ]
+}

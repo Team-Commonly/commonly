@@ -20,7 +20,7 @@ const GOOGLE_CALENDAR_CAPTURE = require('../../fixtures/hostedMcp/google-calenda
 // second (2026-10-14) is the one it is pinned to now, after five schemas drifted.
 const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
-const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
+const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
@@ -658,23 +658,24 @@ describe('the shipped catalogue cannot land half-wired', () => {
     });
   });
 
-  test('the Atlassian pin is the six named reads of its measured list, under snake_case names', () => {
-    // Capture taken by connector-ops on 2026-10-09 with read and search scopes
-    // only. Wren 76760: pin a read only if it is named, product-scoped and
-    // carries no credential or foreign payload. So the by-name dispatcher
-    // (executeRead) and its catalogue (discover) stay out even though both are
-    // annotated read-only, and the two writers stay out by class.
+  test('the Atlassian pin is six named reads and six named writes under snake_case names', () => {
+    // The 2026-10-19 capture includes Jira and Confluence write scopes.
+    // Broad discover/execute dispatchers stay out even under those scopes.
     const capture = ATLASSIAN_CAPTURE;
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'atlassian');
     expect(entry.client).toBe('cimd');
     expect(capture.server).toBe(entry.resource);
-    expect(capture.requestedScope.split(' ').sort()).toEqual([...entry.scopes].sort());
-    expect(entry.scopes.some((scope) => scope.startsWith('write:'))).toBe(false);
+    expect(capture.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
+    expect(entry.scopes.filter((scope) => scope.startsWith('write:'))).toEqual([
+      'write:jira:agent-interface', 'write:confluence:agent-interface',
+    ]);
     expect(entry.revoke.endpoint).toBe('https://auth.atlassian.com/oauth/revoke');
 
     const pinnedUpstream = [
       'getAccessibleAtlassianResources', 'atlassianUserInfo', 'getConfluenceContent',
       'searchConfluence', 'getJiraIssue', 'searchJiraIssuesUsingJql',
+      'createConfluenceContent', 'updateConfluenceContent', 'createJiraIssue',
+      'editJiraIssue', 'transitionJiraIssue', 'addOrEditJiraIssueComment',
     ];
     expect(entry.tools.map((tool) => tool.upstreamName)).toEqual(pinnedUpstream);
     expect(capture.tools.map((tool) => tool.name).filter((name) => !pinnedUpstream.includes(name)).sort())
@@ -688,13 +689,29 @@ describe('the shipped catalogue cannot land half-wired', () => {
       // from the vendor's; calls and drift use upstreamName.
       expect(tool.name).toMatch(/^[a-z0-9_]+$/);
       expect(tool.name).not.toBe(tool.upstreamName);
-      expect(tool.class).toBe('read');
+      expect(tool.class).toBe(found.annotations.readOnlyHint ? 'read' : 'write');
       expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
-      expect(tool.annotations?.readOnlyHint).toBe(true);
-      expect(found.annotations.readOnlyHint).toBe(true);
+      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
-    expect(capture.tools).toHaveLength(10);
+    expect(entry.tools.filter((tool) => tool.class === 'write')).toHaveLength(6);
+    expect(entryToolProjections(entry).filter((tool) => tool.requiredWriteMode === 'write-with-confirm'))
+      .toHaveLength(6);
+    expect(capture.tools).toHaveLength(16);
+  });
+
+  test('the Atlassian domain notice uses this instance\'s public API origin', () => {
+    const before = process.env.PUBLIC_API_URL;
+    try {
+      process.env.PUBLIC_API_URL = 'https://api.self-host.example/';
+      jest.isolateModules(() => {
+        const { ATLASSIAN_ENTRY } = require('../../../integrations/hostedMcp/atlassian');
+        expect(ATLASSIAN_ENTRY.connectNotice).toContain('https://api.self-host.example/**');
+      });
+    } finally {
+      if (before === undefined) delete process.env.PUBLIC_API_URL;
+      else process.env.PUBLIC_API_URL = before;
+    }
   });
 
   test('the Airtable pin is every measured read minus three credential- or payload-bearing ones', () => {
