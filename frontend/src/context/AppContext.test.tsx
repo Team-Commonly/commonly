@@ -4,6 +4,10 @@ import ReactDOM from 'react-dom/client';
 import TestUtils from 'react-dom/test-utils';
 import { AppProvider, useAppContext } from './AppContext';
 
+jest.mock('./AuthContext', () => ({
+  useAuth: () => ({ currentUser: null, loading: false }),
+}));
+
 jest.mock('axios', () => ({ get: jest.fn(), post: jest.fn(), put: jest.fn() }));
 
 const TestComponent = () => {

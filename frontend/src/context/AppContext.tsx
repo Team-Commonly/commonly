@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { useAuth } from './AuthContext';
 
 interface Post {
   _id: string;
@@ -16,7 +17,6 @@ interface User {
 
 interface AppContextValue {
   currentUser: User | null;
-  setCurrentUser: React.Dispatch<React.SetStateAction<User | null>>;
   posts: Post[];
   setPosts: React.Dispatch<React.SetStateAction<Post[]>>;
   loading: boolean;
@@ -35,10 +35,10 @@ interface AppProviderProps {
 }
 
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // AuthProvider already owns this request and wraps AppProvider in App.tsx.
+  const { currentUser, loading: userLoading } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
-  const [userLoading, setUserLoading] = useState(true);
   const [postsLoading, setPostsLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -61,25 +61,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const removePost = useCallback((postId: string) => {
     setPosts((currentPosts) => currentPosts.filter((post) => post._id !== postId));
   }, []);
-
-  useEffect(() => {
-    const fetchCurrentUser = async () => {
-      setUserLoading(true);
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) { setUserLoading(false); return; }
-        const response = await axios.get<User>('/api/auth/user', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setCurrentUser(response.data);
-      } catch (error) {
-        console.error('Error fetching current user:', error);
-      } finally {
-        setUserLoading(false);
-      }
-    };
-    fetchCurrentUser();
-  }, [refreshTrigger]);
 
   useEffect(() => {
     const fetchPosts = async () => {
@@ -107,7 +88,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     <AppContext.Provider
       value={{
         currentUser,
-        setCurrentUser,
         posts,
         setPosts,
         loading,

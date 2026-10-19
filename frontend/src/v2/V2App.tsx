@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useMatch, useParams } from 'react-router-dom';
 import V2Layout from './components/V2Layout';
 import V2FeaturePage from './components/V2FeaturePage';
 import { useAuth } from '../context/AuthContext';
@@ -118,23 +118,34 @@ const V2RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   return <V2AuthenticatedShell>{children}</V2AuthenticatedShell>;
 };
 
-// Index gate at `/v2`. Logged-out visitors see the public landing (the front
-// door); authenticated users drop straight into the app shell. Deep routes
-// stay behind V2RequireAuth (the `*` branch below), so an unauthenticated
-// deep link still bounces through /v2/login?next=… and lands where it meant to.
-const V2Home: React.FC = () => {
+// One gate owns both `/v2` and `/v2/pods/:podId`, so auto-selection changes
+// the URL without remounting the shell. Other deep routes stay behind
+// V2RequireAuth (the `*` branch below).
+const V2PodShellGate: React.FC = () => {
   const { isAuthenticated, loading } = useAuth();
+  const location = useLocation();
+  const podRoute = useMatch('/v2/pods/:podId');
 
   if (loading) {
     return <V2Boot />;
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return location.pathname === '/v2' || location.pathname === '/v2/'
+      ? <Navigate to="/" replace />
+      : <Navigate to="/v2/login" state={{ from: location }} replace />;
   }
 
-  return <V2AuthenticatedShell><V2Layout selectionMode="auto" /></V2AuthenticatedShell>;
+  // Reject legacy pod-type paths before mounting V2Layout, which otherwise
+  // remembers the type name as the last selected pod.
+  if (podRoute?.params.podId && podTypeRoutes.has(podRoute.params.podId)) {
+    return <Navigate to="/v2" replace />;
+  }
+
+  return <V2AuthenticatedShell><V2Layout /></V2AuthenticatedShell>;
 };
+
+const podTypeRoutes = new Set(['chat', 'study', 'games', 'gaming', 'agent-admin', 'agent-room']);
 
 const V2UseCaseRedirect: React.FC = () => {
   const { useCaseId } = useParams<{ useCaseId: string }>();
@@ -165,15 +176,6 @@ const V2LegacyChatRedirect: React.FC = () => {
   return <Navigate to={podId ? `/v2/pods/chat/${podId}` : '/v2'} replace />;
 };
 
-const V2PodIdRoute: React.FC = () => {
-  const { podId } = useParams<{ podId: string }>();
-  const podTypeRoutes = new Set(['chat', 'study', 'games', 'gaming', 'agent-admin', 'agent-room']);
-  if (podId && podTypeRoutes.has(podId)) {
-    return <Navigate to="/v2" replace />;
-  }
-  return <V2Layout selectionMode="param" />;
-};
-
 const V2App: React.FC = () => {
   // The daily digest's 08:00 is the person's own (TASK-257 Phase 2b).
   useTimeZoneCapture();
@@ -199,7 +201,10 @@ const V2App: React.FC = () => {
       <V2ErrorBoundary>
         <React.Suspense fallback={<V2Boot />}>
         <Routes>
-          <Route index element={<V2Home />} />
+          <Route element={<V2PodShellGate />}>
+            <Route index element={null} />
+            <Route path="pods/:podId" element={null} />
+          </Route>
           <Route path="landing" element={<Navigate to="/" replace />} />
           {/* Public read-only agent profile — the "meet the agent" identity card.
               Singular /v2/agent/... so it never collides with the authed plural
@@ -231,7 +236,6 @@ const V2App: React.FC = () => {
             element={(
               <V2RequireAuth>
                 <Routes>
-                <Route path="/" element={<V2Layout selectionMode="auto" />} />
                 {/* Board must precede the param routes: the static "board"
                     segment outranks both pods/:podId and pods/:podType/:roomId
                     in v6 matching, but keeping it first makes intent legible. */}
@@ -246,7 +250,6 @@ const V2App: React.FC = () => {
                     false,
                   )}
                 />
-                <Route path="pods/:podId" element={<V2PodIdRoute />} />
                 <Route
                   path="pods/:podType/:roomId"
                   element={feature(

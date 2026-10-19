@@ -201,7 +201,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { pinned, toggle: togglePin } = useV2Pinned();
-  const ownPodsState = useV2Pods();
+  const ownPodsState = useV2Pods(!podsState);
   const {
     pods, loading, error, createPod, refresh: refreshPods,
   } = podsState || ownPodsState;

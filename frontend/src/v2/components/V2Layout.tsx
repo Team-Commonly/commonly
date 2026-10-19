@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useMatch, useNavigate } from 'react-router-dom';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import V2Thread from './V2Thread';
@@ -70,7 +70,9 @@ const createdAtTime = (createdAt?: string): number => {
 };
 
 const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
-  const { podId: paramPodId } = useParams<{ podId: string }>();
+  // This layout is shared by the index and pod routes. Read the URL directly:
+  // parent route params do not include a matched child's :podId.
+  const paramPodId = useMatch('/v2/pods/:podId')?.params.podId;
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
