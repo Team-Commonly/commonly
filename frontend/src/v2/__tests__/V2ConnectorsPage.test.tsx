@@ -744,13 +744,13 @@ describe('V2ConnectorsPage', () => {
     }], [hostedLinearCatalogEntry()]);
     renderPage();
 
-    const reviewLink = await screen.findByRole('link', { name: 'Open Linear account settings' });
+    const reviewLink = await screen.findByRole('link', { name: "Open Linear's connected apps" });
     expect(reviewLink).toHaveAttribute('href', revokePage);
     expect(reviewLink).toHaveAttribute('target', '_blank');
     expect(reviewLink).toHaveAttribute('rel', 'noopener noreferrer');
     const notice = screen.getByRole('status');
     expect(notice).toHaveTextContent(
-      "Your previous Linear authorization may still be active. Disconnect drops Commonly's local token; it may stay active at Linear until expiry or revocation.",
+      'Your previous Linear account may still have Commonly connected. Switch to it on Linear, then remove Commonly there.',
     );
     expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
     expect(window.location.search).toBe('');
@@ -772,17 +772,41 @@ describe('V2ConnectorsPage', () => {
     try {
       renderPage();
 
-      const reviewLink = await screen.findByRole('link', { name: '打开 Linear 账号设置' });
+      const reviewLink = await screen.findByRole('link', { name: '打开 Linear 的已连接应用' });
       expect(reviewLink).toHaveAttribute('href', revokePage);
       const notice = screen.getByRole('status');
       expect(notice).toHaveTextContent(
-        '你之前的 Linear 授权可能仍然有效。断开连接会删除 Commonly 本地保存的令牌；该令牌在 Linear 处可能仍有效，直到过期或被撤销。',
+        '你之前的 Linear 账号可能仍保留对 Commonly 的授权。请在 Linear 切换到那个账号，再在那里移除 Commonly。',
       );
       expect(notice.closest('.v2-connector-row')).toHaveTextContent('Linear');
       expect(window.location.search).toBe('');
     } finally {
       await act(async () => { await i18n.changeLanguage('en'); });
     }
+  });
+
+  it('warns that removing Supabase authorization disconnects everyone in the organization', async () => {
+    const revokePage = 'https://supabase.com/dashboard/org/_/apps';
+    window.history.replaceState(
+      {},
+      '',
+      `/v2/connectors?hostedMcp=connected&entryId=supabase&revokeAt=${encodeURIComponent(revokePage)}`,
+    );
+    mockGets([{
+      _id: 'i-supabase', type: 'hosted-mcp', status: 'connected',
+      config: { entryId: 'supabase', revokePage },
+    }], [{
+      ...hostedLinearCatalogEntry('i-supabase'),
+      installableId: 'supabase', label: 'Supabase', entryId: 'supabase',
+    }]);
+    renderPage();
+
+    const reviewLink = await screen.findByRole('link', { name: 'Open Supabase Authorized apps' });
+    expect(reviewLink).toHaveAttribute('href', revokePage);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Removing Commonly under Authorized apps disconnects everyone who connected that organization.',
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent('remove Commonly there');
   });
 
   it('does not turn a callback query into a provider link unless it matches the row', async () => {
@@ -800,7 +824,7 @@ describe('V2ConnectorsPage', () => {
     const linearDescription = await screen.findByText('Read Linear issues and projects.');
     expect(linearDescription.closest('.v2-connector-row')).toBeInTheDocument();
     await waitFor(() => expect(window.location.search).toBe(''));
-    expect(screen.queryByRole('link', { name: 'Open Linear account settings' })).toBeNull();
+    expect(screen.queryByRole('link', { name: "Open Linear's connected apps" })).toBeNull();
   });
 
   it('shows the error reconnect action and retains the separate removal action', async () => {

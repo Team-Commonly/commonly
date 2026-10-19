@@ -738,22 +738,24 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(capture.tools).toHaveLength(46);
   });
 
-  test('the Supabase pin follows the consenting capture and excludes spend-bearing tools', () => {
+  test('the Supabase pin follows the capture and excludes spend, code, and credential tools', () => {
     const capture = SUPABASE_CAPTURE;
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'supabase');
     expect(entry.client).toBe('dcr');
     expect(entry.resource).toBe(capture.server);
     expect([...entry.scopes].sort()).toEqual(capture.scopeRequested.split(' ').sort());
     expect(entry.revoke.endpoint).toBeUndefined();
+    expect(entry.revoke.page).toBe('https://supabase.com/dashboard/org/_/apps');
     expect(capture.tokenShape.grantedScope).toBeNull();
     expect(capture.tokenShape.hasRefreshToken).toBe(true);
 
     const excluded = [
       'get_cost', 'confirm_cost', 'create_project', 'pause_project',
       'restore_project', 'deploy_edge_function', 'create_branch',
+      'execute_sql', 'apply_migration', 'query_logs', 'search_docs', 'get_publishable_keys',
     ];
     expect(capture.tools).toHaveLength(29);
-    expect(entry.tools).toHaveLength(22);
+    expect(entry.tools).toHaveLength(17);
     expect(capture.tools.filter((tool) => !entry.tools.some((pin) => pin.upstreamName === tool.name))
       .map((tool) => tool.name).sort()).toEqual(excluded.sort());
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
@@ -765,8 +767,18 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations.destructiveHint).toBe(found.annotations.destructiveHint);
       expect(tool.class).toBe(found.annotations.readOnlyHint ? 'read' : 'write');
     }
-    expect(entry.tools.find((tool) => tool.name === 'apply_migration').class).toBe('write');
-    expect(entry.tools.find((tool) => tool.name === 'execute_sql').class).toBe('write');
+    const branchWrites = ['delete_branch', 'merge_branch', 'reset_branch', 'rebase_branch'];
+    expect(entry.tools.filter((tool) => tool.class === 'write').map((tool) => tool.name).sort())
+      .toEqual([...branchWrites].sort());
+    for (const name of branchWrites) {
+      const tool = entry.tools.find((pin) => pin.name === name);
+      expect(tool.annotations.destructiveHint).toBe(true);
+      expect(tool.irreversible).toBe(true);
+    }
+    expect(entry.tools.find((tool) => tool.name === 'merge_branch').description)
+      .toContain('migrations and Edge Functions to production');
+    expect(entry.tools.find((tool) => tool.name === 'reset_branch').description)
+      .toContain('untracked data and schema changes');
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {

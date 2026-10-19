@@ -1,23 +1,25 @@
 /**
  * Supabase hosted-MCP entry (TASK-242). Its OAuth server requires the full
- * scope set for the MCP proxy, including writes. The eventual pin excludes
- * tools that can incur charges and classifies database mutations as `write`.
+ * scope set for the MCP proxy, including writes. The pin excludes
+ * spend-bearing tools, caller-directed SQL/GraphQL, and credential reads.
  *
  * Resource and authorization-server metadata were fetched from Supabase on
  * 2026-10-19. Pins come from connector-ops's consenting tools/list capture
  * at 2026-10-19T07:03:03Z, with schemas copied unchanged for drift checks.
  * Project creation, pause/restore, branch creation and cost-confirmation
  * tools are excluded because approval cards do not authorize spending.
- * Edge Function deployment is also excluded: publishing code can create
- * metered execution traffic.
+ * Edge Function deployment is excluded because it runs caller-supplied code.
+ * execute_sql, apply_migration, and query_logs accept caller-directed SQL;
+ * search_docs accepts caller-directed GraphQL; get_publishable_keys returns
+ * credentials that would bypass the broker after retrieval.
  */
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 
 export const SUPABASE_ENTRY: HostedMcpEntry = {
   id: 'supabase',
   title: 'Supabase',
-  description: 'Projects, database, functions and storage. Disconnect drops the token locally; '
-    + 'Supabase may keep it active until expiry.',
+  description: 'Projects, database schema, Edge Functions and branches. Disconnect deletes '
+    + "Commonly's tokens; Commonly stays authorized in the organization until someone removes it under OAuth Apps.",
   resource: 'https://mcp.supabase.com/mcp',
   issuer: 'https://api.supabase.com',
   client: 'dcr',
@@ -36,31 +38,10 @@ export const SUPABASE_ENTRY: HostedMcpEntry = {
     'storage:read',
     'storage:write',
   ],
-  // Supabase advertises no revocation endpoint. This is an account page, not
+  // Supabase advertises no revocation endpoint. This is an organization page, not
   // an endpoint to which Commonly sends a token.
-  revoke: { page: 'https://supabase.com/dashboard/account' },
+  revoke: { page: 'https://supabase.com/dashboard/org/_/apps' },
   tools: [
-    {
-      name: 'search_docs',
-      upstreamName: 'search_docs',
-      description: "Search the Supabase documentation.",
-      class: 'read',
-      inputSchema: {
-        type: "object",
-        properties: {
-          graphql_query: {
-            type: "string",
-            description: "GraphQL query string",
-          },
-        },
-        required: [
-          "graphql_query",
-        ],
-        $schema: "http://json-schema.org/draft-07/schema#",
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: true, destructiveHint: false },
-    },
     {
       name: 'list_organizations',
       upstreamName: 'list_organizations',
@@ -207,99 +188,6 @@ export const SUPABASE_ENTRY: HostedMcpEntry = {
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     {
-      name: 'apply_migration',
-      upstreamName: 'apply_migration',
-      description: "Apply a database migration after member approval.",
-      class: 'write',
-      inputSchema: {
-        type: "object",
-        properties: {
-          project_id: {
-            type: "string",
-          },
-          name: {
-            type: "string",
-            description: "The name of the migration in snake_case",
-          },
-          query: {
-            type: "string",
-            description: "The SQL query to apply",
-          },
-        },
-        required: [
-          "project_id",
-          "name",
-          "query",
-        ],
-        $schema: "http://json-schema.org/draft-07/schema#",
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, destructiveHint: true },
-    },
-    {
-      name: 'execute_sql',
-      upstreamName: 'execute_sql',
-      description: "Execute SQL in a Supabase database after member approval.",
-      class: 'write',
-      inputSchema: {
-        type: "object",
-        properties: {
-          project_id: {
-            type: "string",
-          },
-          query: {
-            type: "string",
-            description: "The SQL query to execute",
-          },
-        },
-        required: [
-          "project_id",
-          "query",
-        ],
-        $schema: "http://json-schema.org/draft-07/schema#",
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, destructiveHint: true },
-    },
-    {
-      name: 'query_logs',
-      upstreamName: 'query_logs',
-      description: "Query a Supabase project’s logs.",
-      class: 'read',
-      inputSchema: {
-        type: "object",
-        properties: {
-          project_id: {
-            type: "string",
-          },
-          sql: {
-            type: "string",
-            minLength: 1,
-            description: "A read-only ClickHouse SQL query to run against the project's unified logs stream. Logs are exposed through a `logs` table; filter by `source` (common values include 'edge_logs', 'postgres_logs', and 'function_edge_logs', but this list is not exhaustive — run `select distinct source from logs` to discover the sources available for this project) and read nested fields via `log_attributes['<key>']`.",
-          },
-          iso_timestamp_start: {
-            description: "The start of the log window as an ISO 8601 timestamp, including a UTC \"Z\" suffix or explicit offset. Defaults to 24 hours before the end of the window. The API caps the requested range at 24 hours.",
-            type: "string",
-            format: "date-time",
-            pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-          },
-          iso_timestamp_end: {
-            description: "The end of the log window as an ISO 8601 timestamp, including a UTC \"Z\" suffix or explicit offset. Defaults to the current time. The API caps the requested range at 24 hours.",
-            type: "string",
-            format: "date-time",
-            pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-          },
-        },
-        required: [
-          "project_id",
-          "sql",
-        ],
-        $schema: "http://json-schema.org/draft-07/schema#",
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: true, destructiveHint: false },
-    },
-    {
       name: 'get_advisors',
       upstreamName: 'get_advisors',
       description: "Read security and performance advisors.",
@@ -332,26 +220,6 @@ export const SUPABASE_ENTRY: HostedMcpEntry = {
       name: 'get_project_url',
       upstreamName: 'get_project_url',
       description: "Read a project API URL.",
-      class: 'read',
-      inputSchema: {
-        type: "object",
-        properties: {
-          project_id: {
-            type: "string",
-          },
-        },
-        required: [
-          "project_id",
-        ],
-        $schema: "http://json-schema.org/draft-07/schema#",
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: true, destructiveHint: false },
-    },
-    {
-      name: 'get_publishable_keys',
-      upstreamName: 'get_publishable_keys',
-      description: "Read a project’s publishable API keys.",
       class: 'read',
       inputSchema: {
         type: "object",
@@ -476,7 +344,8 @@ export const SUPABASE_ENTRY: HostedMcpEntry = {
     {
       name: 'merge_branch',
       upstreamName: 'merge_branch',
-      description: "Merge a development branch after member approval.",
+      description: "Apply the branch's migrations and Edge Functions to production after member approval; "
+        + 'approval covers branch content as it stands at execution.',
       class: 'write',
       irreversible: true,
       inputSchema: {
@@ -497,7 +366,8 @@ export const SUPABASE_ENTRY: HostedMcpEntry = {
     {
       name: 'reset_branch',
       upstreamName: 'reset_branch',
-      description: "Reset a development branch after member approval.",
+      description: 'Reset a development branch after member approval; '
+        + 'untracked data and schema changes on the branch are lost.',
       class: 'write',
       irreversible: true,
       inputSchema: {
@@ -524,6 +394,7 @@ export const SUPABASE_ENTRY: HostedMcpEntry = {
       upstreamName: 'rebase_branch',
       description: "Rebase a development branch after member approval.",
       class: 'write',
+      irreversible: true,
       inputSchema: {
         type: "object",
         properties: {

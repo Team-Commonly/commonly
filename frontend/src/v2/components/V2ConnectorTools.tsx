@@ -288,15 +288,18 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   );
   const renderManualRevokeNotice = (entry: ToolCatalogEntry | null) => {
     if (!manualRevokeNotice || !noticeMatchesEntry(entry)) return null;
+    const context = manualRevokeNotice.entryId === 'supabase' ? 'supabase' : undefined;
     return (
       <p className="v2-connector-row__refusal" role="status">
         {t('connectors.hostedMcpManualRevoke', {
-          defaultValue: 'Your previous {{provider}} authorization may still be active. Disconnect drops Commonly\'s local token; it may stay active at {{provider}} until expiry or revocation.',
+          defaultValue: 'Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.',
+          context,
           provider: manualRevokeNotice.provider,
         })}{' '}
         <a href={manualRevokeNotice.revokePage} target="_blank" rel="noopener noreferrer">
           {t('connectors.hostedMcpReviewAuthorization', {
-            defaultValue: "Open {{provider}} account settings",
+            defaultValue: "Open {{provider}}'s connected apps",
+            context,
             provider: manualRevokeNotice.provider,
           })}
         </a>
