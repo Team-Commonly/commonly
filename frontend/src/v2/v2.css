@@ -1051,26 +1051,33 @@ body.modern-ui.v2-canvas {
   gap: 8px;
 }
 
-.v2-pods__create-cancel,
-.v2-pods__create-submit {
+.v2-root button.v2-pods__create-cancel,
+.v2-root button.v2-pods__create-submit {
   padding: 6px 9px;
   border-radius: var(--v2-radius-sm);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
-.v2-pods__create-cancel {
+.v2-root button.v2-pods__create-cancel {
   color: var(--v2-text-tertiary);
 }
 
-.v2-pods__create-submit {
+.v2-root button.v2-pods__create-submit {
   background: var(--v2-ink);
   color: #fff;
 }
 
-.v2-pods__create-submit:disabled {
+.v2-root button.v2-pods__create-submit:disabled {
   background: var(--v2-border-strong);
   cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .v2-root button.v2-pods__create-cancel,
+  .v2-root button.v2-pods__create-submit {
+    min-height: 40px;
+  }
 }
 
 .v2-pods__filters {

@@ -341,6 +341,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-pods__search-kbd::before');
   });
 
+  test('pod create actions beat the button reset and keep phone-sized targets', () => {
+    const shared = selectorRuleBody(v2, '.v2-root button.v2-pods__create-cancel,');
+    const cancel = ruleBody(v2, '.v2-root button.v2-pods__create-cancel');
+    const submit = lastRuleBody(v2, '.v2-root button.v2-pods__create-submit');
+    const disabled = ruleBody(v2, '.v2-root button.v2-pods__create-submit:disabled');
+    const phone = blockContaining(v2, '@media (max-width: 760px)', '.v2-root button.v2-pods__create-cancel,');
+
+    expect(shared).toContain('padding: 6px 9px');
+    expect(shared).toContain('font-size: 12px');
+    expect(cancel).toContain('color: var(--v2-text-tertiary)');
+    expect(submit).toContain('background: var(--v2-ink)');
+    expect(submit).toContain('color: #fff');
+    expect(disabled).toContain('background: var(--v2-border-strong)');
+    expect(phone).not.toBe('');
+    expect(ruleBody(v2, '.v2-root button.v2-pods__create-submit', { within: phone })).toContain('min-height: 40px');
+  });
+
   test('the selected pod keeps the sidebar’s one cobalt block treatment', () => {
     const selected = selectorRuleBody(v2, '.v2-root button.v2-pods__row--selected');
     expect(selected).toContain('background: var(--v2-accent)');
