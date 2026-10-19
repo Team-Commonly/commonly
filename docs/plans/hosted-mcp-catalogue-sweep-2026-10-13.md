@@ -2,6 +2,8 @@
 
 *This is evidence for the next catalogue rulings. It sits next to `hosted-mcp-connection-scope.md`, the plan, and `integration-readiness-matrix.md`, the live state. No vendor account or consent was used. Every verdict comes from public metadata and vendor documentation. Every first-pass "fit" or "conditional" was re-measured by an independent refuting pass; first-pass "no" and "unreachable" verdicts were not.*
 
+*2026-10-19: Sam lifted the bar this sweep measured against (the plan's §3, amended that day). An entry's credential may now write, and each write parks for the member who owns it. So a verdict that rests only on the lack of a read-only scope no longer excludes an app, and the measurements here stand as evidence of each app's registration, scopes and refresh. Wave 1 is chosen by what our users use, not from this table (the plan's §10, step 8).*
+
 ## Method
 
 - **Population.** 61 apps were measured on 2026-10-13 (PostHog, Intercom and Salesforce were measured twice and are merged into one row each). The three vendors from the 2026-10-09 order (Canva, Miro, ClickUp) are a separate population: their "fit" came from that earlier order, and they went through the same refuting pass on 2026-10-14. The table has 64 rows.
