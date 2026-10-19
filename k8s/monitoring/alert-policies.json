@@ -403,5 +403,34 @@
         }
       }
     ]
+  },
+  {
+    "displayName": "commonly-dev: www.commonly.me stopped redirecting to the apex",
+    "severity": "WARNING",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "https://www.commonly.me/ has not answered 301 from two or more regions for 10 minutes, so a person who types www gets an error page or the wrong site. Runbook: docs/runbooks/alerting.md#www-redirect"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "uptime check failing from 2+ regions",
+        "conditionThreshold": {
+          "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND metric.labels.check_id=\"{{uptime:www-redirect}}\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "300s",
+              "perSeriesAligner": "ALIGN_NEXT_OLDER",
+              "crossSeriesReducer": "REDUCE_COUNT_FALSE",
+              "groupByFields": ["resource.label.host"]
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 1,
+          "duration": "600s",
+          "trigger": { "count": 1 }
+        }
+      }
+    ]
   }
 ]

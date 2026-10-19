@@ -65,5 +65,21 @@
     "period": "60s",
     "timeout": "10s",
     "selectedRegions": ["USA_OREGON", "USA_IOWA", "USA_VIRGINIA"]
+  },
+  {
+    "key": "www-redirect",
+    "displayName": "www.commonly.me redirect",
+    "monitoredResource": { "type": "uptime_url", "labels": { "host": "www.commonly.me" } },
+    "httpCheck": {
+      "path": "/",
+      "port": 443,
+      "useSsl": true,
+      "validateSsl": true,
+      "requestMethod": "GET",
+      "acceptedResponseStatusCodes": [{ "statusValue": 301 }]
+    },
+    "period": "300s",
+    "timeout": "10s",
+    "selectedRegions": ["USA_OREGON", "USA_IOWA", "USA_VIRGINIA"]
   }
 ]
