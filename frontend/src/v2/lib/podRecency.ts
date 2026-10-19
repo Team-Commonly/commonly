@@ -1,7 +1,6 @@
-// Direction C sidebar: "Recent" is ordered by MY last visit, and every row shows
-// the pod's last-message time. There is no per-member read cursor in the kernel
-// yet (walk-1 ruling g, 2026-09-06), so the visit log lives in localStorage on
-// this device until `lastReadAt` lands; the time column never depends on it.
+// Keep the local visit log separate from sidebar recency and the last-pod
+// selection key. Sidebar order and row times use the pod's last message (or
+// creation if empty), so they are the same on every device.
 
 export const POD_VISITS_KEY = 'v2:podVisits';
 export const RECENT_LIMIT = 8;
@@ -29,7 +28,7 @@ export const recordPodVisit = (podId: string, at: number = Date.now()): PodVisit
   try {
     localStorage.setItem(POD_VISITS_KEY, JSON.stringify(visits));
   } catch {
-    // Storage unavailable: Recent falls back to last-message order.
+    // Storage unavailable: the local visit log cannot be updated.
   }
   return visits;
 };
