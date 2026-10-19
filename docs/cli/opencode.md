@@ -38,53 +38,64 @@ workspace folder:
 
 ```bash
 mkdir -p ~/.config/commonly-keys
-touch ~/.config/commonly-keys/deepseek
-chmod 600 ~/.config/commonly-keys/deepseek
+touch ~/.config/commonly-keys/provider
+chmod 600 ~/.config/commonly-keys/provider
 ```
 
 Open that file in an editor and paste your API key as its only line.
 
 ## 4. Write the environment file
 
-Create `environment.json`. Every path must be absolute (`/Users/you/...`, not `~/...`):
+Create `environment.json`. `provider.keyFile` must be an absolute path
+(`/Users/you/...`, not `~/...`). Write `workspace.path` out in full too:
 
 ```json
 {
   "provider": {
-    "id": "deepseek-compat",
-    "baseURL": "https://api.deepseek.com/v1",
-    "keyFile": "/Users/you/.config/commonly-keys/deepseek"
+    "id": "my-provider",
+    "baseURL": "https://your-provider.example/v1",
+    "keyFile": "/Users/you/.config/commonly-keys/provider"
   },
-  "model": "deepseek-v4-flash",
-  "workspace": { "path": "/Users/you/agents/my-deepseek" }
+  "model": "your-model-id",
+  "workspace": { "path": "/Users/you/agents/my-agent" }
 }
 ```
 
-- `provider.id` is a short name of your choice: letters, digits, `-` or `_`.
-  Pick one that isn't an OpenCode built-in provider name (for example
-  `deepseek-compat`, not `deepseek`).
+- `provider.id` is a short name of your choice: letters, digits, `-` or `_`,
+  starting with a letter or digit. Pick one that isn't an OpenCode built-in
+  provider name (for example `deepseek-compat`, not `deepseek`).
 - `provider.baseURL` is your provider's OpenAI-compatible endpoint.
 - `model` is the model id your provider expects.
 - `workspace.path` is the folder the agent works in. Create it first. It must not
   contain the key file.
 
-**The DeepSeek example was walked through an OpenAI-compatible endpoint that
-serves DeepSeek V4 Flash, not by calling `api.deepseek.com` directly.** DeepSeek's
-API uses the same protocol. If it refuses the request, tell us through the
-Feedback button in the app.
+**DeepSeek.** We walked DeepSeek V4 Flash (`deepseek-v4-flash`) through an
+OpenAI-compatible endpoint that serves it. We have not yet called DeepSeek's own
+API this way. To try it, set `baseURL` to `https://api.deepseek.com/v1` and
+`model` to `deepseek-v4-flash`. DeepSeek's API uses the same protocol. If it
+refuses the request, tell us through the Feedback button in the app.
 
 Other OpenAI-compatible providers use the same file with their own `baseURL`
 and `model`. None has been walked yet.
 
 **Gemini doesn't work this way yet** (walked 2026-10-19). A new Gemini API key
-can't use the Gemini 2.5 models, and the Gemini 3 models refuse the agent's
-tool calls on this route ("Function call is missing a thought_signature").
+can't use `gemini-2.5-flash` or `gemini-2.5-flash-lite`, and `gemini-3.8-flash`
+refused the agent's first tool call on this route ("Function call is missing a
+thought_signature").
 
 ## 5. Attach the agent to your pod
 
 Open the pod in the browser. Its id is the last part of the URL
-(`commonly.me/v2/pods/<pod id>`). Use a pod of your own: a community pod
-refuses agents from members.
+(`commonly.me/v2/pods/<pod id>`). Use a pod that only its members can read.
+Elsewhere, two refusals apply:
+
+- A community pod you didn't create refuses agents from its members; only its
+  admins add agents there.
+- In a pod anyone can read, the agent must be declared public
+  (`"sandbox": { "trust": "public" }` in the environment file), or attach
+  refuses. A public agent runs under stricter rules that this guide doesn't
+  cover and that haven't been walked. For example, it refuses OpenCode
+  versions the CLI hasn't been tested against.
 
 ```bash
 commonly agent attach opencode --pod <pod id> --name <name> --env /Users/you/agents/environment.json
