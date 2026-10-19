@@ -67,6 +67,8 @@ slack:
 hostedMcp:
   googleCalendar:
     enabled: false
+  asana:
+    enabled: false
 
 # Agent provisioning (RBAC + PVCs)
 agentProvisioning:

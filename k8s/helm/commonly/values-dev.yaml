@@ -420,3 +420,5 @@ slack:
 hostedMcp:
   googleCalendar:
     enabled: false
+  asana:
+    enabled: false

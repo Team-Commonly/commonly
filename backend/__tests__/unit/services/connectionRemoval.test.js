@@ -616,6 +616,36 @@ describe('revokeTokenAtVendor (RFC 7009)', () => {
     expect(revokeBody.get('client_secret')).toBeNull();
   });
 
+  it('Asana revoke sends client-secret Basic auth when its metadata omits revocation methods', async () => {
+    const { ASANA_ENTRY } = require('../../../integrations/hostedMcp/asana');
+    // Live AS metadata on 2026-10-19 advertises token methods but omits the
+    // revocation method list. RFC 8414 defaults the omitted list to Basic.
+    const metadata = {
+      issuer: ASANA_ENTRY.issuer,
+      authorization_endpoint: 'https://app.asana.com/-/oauth_authorize',
+      token_endpoint: 'https://app.asana.com/-/oauth_token',
+      revocation_endpoint: 'https://app.asana.com/-/oauth_revoke',
+      token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic'],
+    };
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => metadata })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) });
+    await revokeTokenAtVendor({
+      entry: ASANA_ENTRY,
+      clientId: 'asana-client',
+      clientSecret: 'asana-secret',
+      token: 'held-refresh-token',
+      tokenTypeHint: 'refresh_token',
+    }, fetchImpl);
+    const [url, init] = fetchImpl.mock.calls[1];
+    expect(url).toBe(ASANA_ENTRY.revoke.endpoint);
+    expect(init.headers.Authorization)
+      .toBe(`Basic ${Buffer.from('asana-client:asana-secret').toString('base64')}`);
+    const revokeBody = new URLSearchParams(init.body);
+    expect(revokeBody.get('token')).toBe('held-refresh-token');
+    expect(revokeBody.get('client_secret')).toBeNull();
+  });
+
   // Only a 2xx on a token we HOLD counts as revoked. `invalid_grant` used to be
   // counted, and it is the one answer that must not be: RFC 6749 §5.2 also
   // gives it for a token "issued to another client", and a `cimd` client id is

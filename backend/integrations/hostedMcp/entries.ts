@@ -13,11 +13,12 @@
  */
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 import { AIRTABLE_ENTRY } from './airtable';
+import { ASANA_ENTRY } from './asana';
 import { ATLASSIAN_ENTRY } from './atlassian';
 import { GOOGLE_CALENDAR_ENTRY } from './googleCalendar';
 import { LINEAR_ENTRY } from './linear';
 
-export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [LINEAR_ENTRY, GOOGLE_CALENDAR_ENTRY, ATLASSIAN_ENTRY, AIRTABLE_ENTRY];
+export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [LINEAR_ENTRY, GOOGLE_CALENDAR_ENTRY, ATLASSIAN_ENTRY, AIRTABLE_ENTRY, ASANA_ENTRY];
 
 /**
  * Seven entry-local defects that would otherwise be silent, checked at module
@@ -126,6 +127,14 @@ export const assertHostedMcpEntries = (
   const seenEntries = new Set<string>();
   const seenTools = new Set<string>();
   for (const entry of entries) {
+    if (entry.responseOnlyScopes !== undefined) {
+      const scopes = entry.responseOnlyScopes;
+      if (!Array.isArray(scopes) || scopes.length === 0
+        || scopes.some((scope) => typeof scope !== 'string' || !/^[a-zA-Z0-9:._/-]+$/.test(scope))
+        || new Set([...entry.scopes, ...scopes]).size !== entry.scopes.length + scopes.length) {
+        throw new Error(`hosted-mcp entry response-only scopes are invalid: ${entry.id}`);
+      }
+    }
     if (!/^[a-z0-9-]+$/.test(entry.id)) {
       throw new Error(`hosted-mcp entry id is not a usable tool namespace: ${entry.id}`);
     }

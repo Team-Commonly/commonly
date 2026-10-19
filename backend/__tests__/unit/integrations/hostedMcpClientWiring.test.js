@@ -49,8 +49,11 @@ describe.each(wiringTable)('%s client wiring', (entryId) => {
     (envName) => {
       const key = apiKeysKeyForEnv(envName);
       expect(key).not.toBeNull();
+      const remoteKey = entryId === 'asana'
+        ? `commonly-dev-asana-mcp-${key.slice('asana-'.length)}`
+        : `commonly-dev-${key}`;
       expect(apiKeys).toMatch(new RegExp(
-        `- secretKey: ${key}\\n\\s+remoteRef:\\n\\s+key: commonly-dev-${key}\\n`,
+        `- secretKey: ${key}\\n\\s+remoteRef:\\n\\s+key: ${remoteKey}\\n`,
       ));
     },
   );

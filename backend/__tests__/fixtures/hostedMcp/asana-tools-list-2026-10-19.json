@@ -1,0 +1,4206 @@
+{
+  "server": "https://mcp.asana.com/v2/mcp",
+  "capturedAt": "2026-10-19T07:15:23.899Z",
+  "scopeRequested": "default",
+  "grantedScope": "default identity",
+  "toolCount": 39,
+  "tools": [
+    {
+      "name": "get_workspace_agents",
+      "title": "List agents in workspace",
+      "description": "Returns a list of AI Teammate agents (automated agents, not human users) configured in a workspace. AI Teammates are Asana-specific automation agents — they are distinct from human coworkers, teammates, or workspace members. Do NOT use this tool when the user asks about people, users, teammates, or team members; use get_users or search_objects instead. If you have a name or description to search against, use search_objects with resource_type='agent' instead. Each agent record includes GID, name, resource_type, and resource_subtype. Use to discover available AI Teammate agents before fetching full details with get_agent. Supports pagination for workspaces with many agents.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "description": "Results per page (1-100).",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "description": "Pagination offset token from a previous response.",
+            "type": "string"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported. Available fields: gid, resource_type, resource_subtype, name.",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "List agents in workspace",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_agent",
+      "title": "Get agent",
+      "description": "Returns the full record for a single AI Teammate agent by GID. Includes name, description, behavior_guidance, workspace, and photo URLs. Use get_workspace_agents first to discover agent GIDs, then call this tool for full details.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent_gid": {
+            "type": "string",
+            "description": "Globally unique identifier for the agent."
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported. Available fields: gid, resource_type, resource_subtype, name, description, behavior_guidance, workspace, photo.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_gid"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get agent",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_attachments",
+      "title": "Get attachments for object",
+      "description": "List all attachments for a project, project brief, or task. By default, returns attachment names, IDs, and URLs (download_url, permanent_url, view_url). To expose other attachment fields use opt_fields. Use for accessing files attached to Asana objects. Supports pagination for objects with many attachments.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "parent": {
+            "type": "string",
+            "description": "The GID of the parent project, project_brief, or task to retrieve attachments for. Must be a GID for a project, project_brief, or task."
+          },
+          "limit": {
+            "description": "Results per page (1-100)",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "description": "Pagination offset token",
+            "type": "string"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get attachments for object",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "create_task_from_template",
+      "title": "Create task from template",
+      "description": "List a project's task templates or create a task from one. Provide project_id alone to return all templates without creating. To create, provide either task_template_id, or template_name with project_id. When given a name, this tool searches that project's task templates and creates only when one case-insensitive exact match exists. Task instantiation starts asynchronously. Tell the user it has started and may still be in progress, then ask what they want to do next.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_template_id": {
+            "description": "Globally unique identifier for the task template to instantiate. Provide this or template_name, but not both. Omit both to list every template in project_id without creating.",
+            "type": "string",
+            "minLength": 1
+          },
+          "template_name": {
+            "description": "Exact task template name to find within project_id. Matching ignores letter case. Provide this or task_template_id to create, or omit both to list every template in project_id.",
+            "type": "string",
+            "minLength": 1
+          },
+          "project_id": {
+            "description": "Globally unique identifier for the project whose task templates to search or list. Required when task_template_id is omitted.",
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "description": "Name for the created task. When omitted, the task uses the template name.",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Create task from template",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "create_project_from_template",
+      "title": "Create project from template",
+      "description": "Create a project from a project template. If the user provides a template name instead of a GID, first use search_objects with resource_type 'project_template' and query set to that name. If search_objects requires workspace_gid and the user did not specify a workspace, call get_me to discover their workspaces. Use the only workspace automatically. If there are multiple workspaces, ask the user to choose by name; never ask them for a workspace GID. If the user wants the project in the template's team, request team.gid from search_objects and pass it as team. Omitting team does not inherit the template's team and may create a teamless project. Project instantiation starts asynchronously. Tell the user it has started and may still be in progress. Use the returned new_project GID for follow-up work, such as adding tasks or editing the project, and ask what they want to do next.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_template_id": {
+            "type": "string",
+            "description": "Globally unique identifier for the project template. If the user provided a template name, resolve it with search_objects as described above."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the new project. Must contain a non-whitespace character."
+          },
+          "team": {
+            "description": "Globally unique identifier for the new project's team. Omitting this does not inherit the template's team and may create a teamless project. Pass the template's team GID explicitly when that placement is desired.",
+            "type": "string"
+          },
+          "privacy_setting": {
+            "description": "Privacy setting for the new project. private_to_team is deprecated; use POST /memberships to share a private project with a team after creation.",
+            "type": "string",
+            "enum": [
+              "public_to_workspace",
+              "private_to_team",
+              "private"
+            ]
+          },
+          "is_strict": {
+            "description": "When true, fail if a template date variable has no requested date. When false or omitted, use default dates for missing values.",
+            "type": "boolean"
+          },
+          "requested_dates": {
+            "description": "Mappings from template date variables to calendar dates.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "gid": {
+                  "type": "string",
+                  "description": "Globally unique identifier for the template's date variable."
+                },
+                "value": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                  "description": "Calendar date in YYYY-MM-DD format."
+                }
+              },
+              "required": [
+                "gid",
+                "value"
+              ]
+            }
+          },
+          "requested_roles": {
+            "description": "Mappings from template roles to user identifiers.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "gid": {
+                  "type": "string",
+                  "description": "Globally unique identifier for the template role."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "User identifier to assign to the role. Can be \"me\", an email address, or a user GID."
+                }
+              },
+              "required": [
+                "gid",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "project_template_id",
+          "name"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Create project from template",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_portfolio",
+      "title": "Get portfolio",
+      "description": "Get detailed portfolio data by ID including name, owner, and projects. Use after finding portfolio ID via search_objects. Returns complete portfolio configuration. Essential for understanding portfolio context and content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "portfolio_gid": {
+            "type": "string",
+            "description": "Globally unique identifier for the portfolio"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "portfolio_gid"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get portfolio",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_portfolios",
+      "title": "Get portfolios",
+      "description": "List portfolios in workspace owned by the current user. REQUIRES workspace parameter. Returns portfolio names and IDs for portfolios you own. Use for portfolio discovery and management. Supports pagination for workspaces with many portfolios.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "description": "Results per page (1-100)",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "description": "Pagination offset token",
+            "type": "string"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get portfolios",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_items_for_portfolio",
+      "title": "Get items for portfolio",
+      "description": "List projects, goals, and other items in a portfolio. Returns item names, IDs, and types. Use for portfolio content exploration and management. Supports pagination for portfolios with many items.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "portfolio_gid": {
+            "type": "string",
+            "description": "Globally unique identifier for the portfolio"
+          },
+          "limit": {
+            "description": "Results per page (1-100)",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "description": "Pagination offset token",
+            "type": "string"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "portfolio_gid"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get items for portfolio",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_project",
+      "title": "Get project",
+      "description": "Get detailed project data including name, description, owner, members, and current status. Also returns task counts (num_tasks, num_incomplete_tasks, num_completed_tasks) and optionally sections. A null task_counts or sections value means the data could not be retrieved and should not be interpreted as zero or empty.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Globally unique identifier for the project."
+          },
+          "include_sections": {
+            "default": false,
+            "description": "Set to true to include the project's sections (up to 50) in the response.",
+            "type": "boolean"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get project",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_project_internal",
+      "title": "[Internal] Get project",
+      "description": "DEPRECATED; DO NOT USE. This tool must exist so that it can be invoked programmatically by widget UI, but it should not be called directly by the model.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Globally unique identifier for the project."
+          },
+          "include_sections": {
+            "default": false,
+            "description": "Set to true to include the project's sections (up to 50) in the response.",
+            "type": "boolean"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          },
+          "widget_id": {
+            "type": "string",
+            "description": "ALWAYS USE A CONSTANT VALUE OF 'model-generated-widget-id' FOR THIS PARAMETER."
+          }
+        },
+        "required": [
+          "project_id",
+          "widget_id"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "[Internal] Get project",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "get_projects",
+      "title": "Get projects",
+      "description": "List projects in a workspace, optionally filtered by team. Returns project names, IDs, and task counts (num_tasks, num_incomplete_tasks, num_completed_tasks) by default. To expose other project fields, such as members or owner, use opt_fields. Prefer using search_objects with resource_type='project' for name-based searches instead of get_projects and filtering through the results. A null task_counts value means counts could not be retrieved and should not be interpreted as zero.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "team": {
+            "description": "When passed in, filters projects on team GID",
+            "type": "string"
+          },
+          "archived": {
+            "default": false,
+            "description": "Include archived projects.",
+            "type": "boolean"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "description": "Number of projects to return per page (1-100). Defaults to 20.",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "description": "Pagination offset token from the next_page field of a previous response. If omitted, returns the first page of results.",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get projects",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "create_project_status_update",
+      "title": "Create project status update",
+      "description": "Post a status update to a project or portfolio. Use for project health updates, milestone documentation, or blocker reporting. Returns created status with gid, parent, title, status_type, author, created_at, permalink_url. Exactly one of text or html_text must be provided (omit the other in the request).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "parent": {
+            "type": "string",
+            "description": "GID of the project or portfolio to post the status update to."
+          },
+          "title": {
+            "type": "string",
+            "description": "Status title"
+          },
+          "text": {
+            "description": "Plain-text status body. Exactly one of text or html_text must be provided.",
+            "type": "string"
+          },
+          "html_text": {
+            "description": "Exactly one of text or html_text must be provided. Allowed elements only: <body>, <strong>, <em>, <u>, <s>, <code>, <ol>, <ul>, <li>, <a>, <blockquote>, <pre>. Do not use <h1>, <h2>, <hr/>, or <img> here. Must be well-formed XML with a single root <body>...</body>. Only <a> may have custom attributes; any attribute on any other element is invalid. Do not use elements outside the allowed list (400). . <a> links: For <a> tags specifically, to make it easier to create @-mentions through the API, we only require that you provide the GID of the object you wish to reference. If you have access to that object, the API will automatically generate the appropriate href and other attributes for you. For example, to create a link to a task with GID \"123\", you can send the tag <a data-asana-gid=\"123\"/> which will then be expanded to <a href=\"https://app.asana.com/0/0/123/f\" data-asana-accessible=\"true\" data-asana-dynamic=\"true\" data-asana-type=\"task\" data-asana-gid=\"123\">Task Name</a>. You can also generate a link to a task in a specific project or tag by including a data-asana-project or data-asana-tag attribute in the <a> tag. All other attributes, as well as the contents of the tag, are ignored.\n\nTo keep the contents of your tag and make a custom vanity link, include the property data-asana-dynamic=\"false\" when setting the contents of the tag. You would send <a data-asana-gid=\"123\" data-asana-dynamic=\"false\">This is some custom text!</a> and receive <a data-asana-accessible=\"true\" data-asana-dynamic=\"false\" data-asana-type=\"task\" data-asana-gid=\"123\">This is some custom text!</a>\n\nIf you do not have access to the referenced object when you try to create a link, the API will not generate an href for you, but will instead look for an href you provide. This allows you to write back <a> tags unmodified even if you do not have access to the resource. If you do not have access to the referenced object and no href is provided, your request will be rejected with a 400 Bad Request error. Similarly, if you provide neither a GID nor a valid href, the request will be rejected with the same error.",
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "green",
+              "yellow",
+              "red",
+              "blue",
+              "complete"
+            ],
+            "description": "Status color: green (on track), yellow (at risk), red (off track), blue (on hold), complete"
+          }
+        },
+        "required": [
+          "parent",
+          "title",
+          "color"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Create project status update",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "create_project",
+      "title": "Create project",
+      "description": "Create a new project with optional sections and tasks in a single operation. Use this as the default whenever the user wants a project created or set up, including with sections and tasks. Do not choose create_project_preview unless the user explicitly asks to preview or confirm the plan before creation, or to delay creating the project until they approve. Optionally pass sections, each with a sectionName and an optional list of tasks (with name, assignee, due_on, etc.), to set up the full project structure at creation time. Tasks are nested within their sections and will be assigned to the corresponding section automatically. If a team is not provided, the new project will be associated with a default team. Returns the created project ID, permalink, and results for any sections and tasks created.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the project."
+          },
+          "team": {
+            "description": "Globally unique identifier for the team. If not provided, default team will be used.",
+            "type": "string"
+          },
+          "notes": {
+            "description": "Plain-text project description. Use html_notes for rich formatting or @-mentions.",
+            "type": "string"
+          },
+          "html_notes": {
+            "description": "HTML-formatted project description. Use notes for plain text. Allowed elements only: <body>, <strong>, <em>, <u>, <s>, <code>, <ol>, <ul>, <li>, <a>, <blockquote>, <pre>. Must be well-formed XML with a single root <body>...</body>. Only <a> may have custom attributes; any attribute on any other element is invalid. Do not use elements outside the allowed list (400). . <a> links: For <a> tags specifically, to make it easier to create @-mentions through the API, we only require that you provide the GID of the object you wish to reference. If you have access to that object, the API will automatically generate the appropriate href and other attributes for you. For example, to create a link to a task with GID \"123\", you can send the tag <a data-asana-gid=\"123\"/> which will then be expanded to <a href=\"https://app.asana.com/0/0/123/f\" data-asana-accessible=\"true\" data-asana-dynamic=\"true\" data-asana-type=\"task\" data-asana-gid=\"123\">Task Name</a>. You can also generate a link to a task in a specific project or tag by including a data-asana-project or data-asana-tag attribute in the <a> tag. All other attributes, as well as the contents of the tag, are ignored.\n\nTo keep the contents of your tag and make a custom vanity link, include the property data-asana-dynamic=\"false\" when setting the contents of the tag. You would send <a data-asana-gid=\"123\" data-asana-dynamic=\"false\">This is some custom text!</a> and receive <a data-asana-accessible=\"true\" data-asana-dynamic=\"false\" data-asana-type=\"task\" data-asana-gid=\"123\">This is some custom text!</a>\n\nIf you do not have access to the referenced object when you try to create a link, the API will not generate an href for you, but will instead look for an href you provide. This allows you to write back <a> tags unmodified even if you do not have access to the resource. If you do not have access to the referenced object and no href is provided, your request will be rejected with a 400 Bad Request error. Similarly, if you provide neither a GID nor a valid href, the request will be rejected with the same error.",
+            "type": "string"
+          },
+          "owner": {
+            "description": "User identifier for project owner. Can be \"me\", an email, or a user GID. Prefer using \"me\" for the current user rather than calling get_me to look up the GID of the current user.",
+            "type": "string"
+          },
+          "due_on": {
+            "description": "Date on which this project is due (YYYY-MM-DD).",
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "start_on": {
+            "description": "Date on which this project is started (YYYY-MM-DD).",
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "color": {
+            "description": "Color of the project (light-green, dark-green, light-blue, dark-blue, etc).",
+            "type": "string",
+            "enum": [
+              "dark-pink",
+              "dark-green",
+              "dark-blue",
+              "dark-red",
+              "dark-teal",
+              "dark-brown",
+              "dark-orange",
+              "dark-purple",
+              "dark-warm-gray",
+              "light-pink",
+              "light-green",
+              "light-blue",
+              "light-red",
+              "light-teal",
+              "light-brown",
+              "light-orange",
+              "light-purple",
+              "light-warm-gray",
+              "none"
+            ]
+          },
+          "privacy_setting": {
+            "description": "Privacy level for the project (public_to_workspace, private_to_team, private).",
+            "type": "string",
+            "enum": [
+              "public_to_workspace",
+              "private_to_team",
+              "private"
+            ]
+          },
+          "default_view": {
+            "description": "The default view of the project (list, board, calendar, timeline).",
+            "default": "list",
+            "type": "string",
+            "enum": [
+              "list",
+              "board",
+              "calendar",
+              "timeline"
+            ]
+          },
+          "default_access_level": {
+            "description": "The default access for users or teams who join or are added as members to the project.",
+            "type": "string",
+            "enum": [
+              "admin",
+              "editor",
+              "commenter",
+              "viewer"
+            ]
+          },
+          "custom_fields": {
+            "description": "Custom field: each key is a custom field GID; each value matches that field's type in the Asana API. Use option GIDs for dropdown fields, not display names. Some tools expect a nested object; others expect one JSON string containing the same map. Examples: {\"1200456789012345\":\"1200123456789012\"} (single-select); {\"1200456789012346\":12.5} (number); {\"1200456789012347\":\"Ship by Friday\"} (text); {\"1200456789012348\":[\"1200111111111111\",\"1200222222222222\"]} (multi-select); {\"1200456789012349\":{\"date\":\"2025-06-15\"}} or {\"1200456789012349\":{\"date_time\":\"2025-06-15T17:00:00.000Z\"}} (date).",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              ]
+            }
+          },
+          "members": {
+            "description": "Comma-separated user GIDs to add as project members. Example: \"123456,789012\".",
+            "type": "string"
+          },
+          "sections": {
+            "description": "Sections to create. Each section requires sectionName and may include tasks to create in that section. Use the nested task fields for descriptions, assignees, dates, followers, and custom-field values.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sectionName": {
+                  "type": "string",
+                  "description": "Name of the section"
+                },
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "Name of the task."
+                      },
+                      "parent": {
+                        "description": "Parent task GID to create this as a subtask.",
+                        "type": "string"
+                      },
+                      "html_notes": {
+                        "description": "HTML-formatted task description. Use notes for plain text. Allowed elements only: <body>, <strong>, <em>, <u>, <s>, <code>, <ol>, <ul>, <li>, <a>, <blockquote>, <pre>, <h1>, <h2>, <hr/>, <img>, <table>, <tr>, <td>. Tables use only <table>, <tr>, and <td>; <thead>, <tbody>, and <th> are invalid. For a header row, wrap the contents of each <td> in the first <tr> in <strong>. Must be well-formed XML with a single root <body>...</body>. Only <a> may have custom attributes; any attribute on any other element is invalid. Do not use elements outside the allowed list (400). . <a> links: For <a> tags specifically, to make it easier to create @-mentions through the API, we only require that you provide the GID of the object you wish to reference. If you have access to that object, the API will automatically generate the appropriate href and other attributes for you. For example, to create a link to a task with GID \"123\", you can send the tag <a data-asana-gid=\"123\"/> which will then be expanded to <a href=\"https://app.asana.com/0/0/123/f\" data-asana-accessible=\"true\" data-asana-dynamic=\"true\" data-asana-type=\"task\" data-asana-gid=\"123\">Task Name</a>. You can also generate a link to a task in a specific project or tag by including a data-asana-project or data-asana-tag attribute in the <a> tag. All other attributes, as well as the contents of the tag, are ignored.\n\nTo keep the contents of your tag and make a custom vanity link, include the property data-asana-dynamic=\"false\" when setting the contents of the tag. You would send <a data-asana-gid=\"123\" data-asana-dynamic=\"false\">This is some custom text!</a> and receive <a data-asana-accessible=\"true\" data-asana-dynamic=\"false\" data-asana-type=\"task\" data-asana-gid=\"123\">This is some custom text!</a>\n\nIf you do not have access to the referenced object when you try to create a link, the API will not generate an href for you, but will instead look for an href you provide. This allows you to write back <a> tags unmodified even if you do not have access to the resource. If you do not have access to the referenced object and no href is provided, your request will be rejected with a 400 Bad Request error. Similarly, if you provide neither a GID nor a valid href, the request will be rejected with the same error.",
+                        "type": "string"
+                      },
+                      "notes": {
+                        "description": "Plain-text task description. Use html_notes for rich formatting or @-mentions.",
+                        "type": "string"
+                      },
+                      "assignee": {
+                        "description": "User identifier for task assignment. If the assignee should be the currently authenticated user, use \"me\". Otherwise, use an email address or a user GID. When used without project_id, workspace is also required.",
+                        "type": "string"
+                      },
+                      "due_on": {
+                        "description": "Due date in ISO 8601 format (YYYY-MM-DD).",
+                        "type": "string",
+                        "format": "date",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                      },
+                      "due_at": {
+                        "description": "Due date and time in ISO 8601 format.",
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      "resource_subtype": {
+                        "default": "default_task",
+                        "description": "Task type (default_task, milestone, approval).",
+                        "type": "string",
+                        "enum": [
+                          "default_task",
+                          "milestone",
+                          "approval"
+                        ]
+                      },
+                      "completed": {
+                        "description": "True if the task is initially marked complete.",
+                        "type": "boolean"
+                      },
+                      "approval_status": {
+                        "description": "Approval status (pending, approved, rejected, changes_requested).",
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "approved",
+                          "rejected",
+                          "changes_requested"
+                        ]
+                      },
+                      "assignee_section": {
+                        "description": "Section GID to place task in the assignee's My Tasks list.",
+                        "type": "string"
+                      },
+                      "followers": {
+                        "description": "Comma-separated list of user identifiers. Can be \"me\", email addresses, or user GIDs.",
+                        "type": "string"
+                      },
+                      "start_on": {
+                        "description": "Start date in ISO 8601 format (YYYY-MM-DD).",
+                        "type": "string",
+                        "format": "date",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                      },
+                      "start_at": {
+                        "description": "Start date and time in ISO 8601 format.",
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      "custom_fields": {
+                        "description": "Custom field: each key is a custom field GID; each value matches that field's type in the Asana API. Use option GIDs for dropdown fields, not display names. Some tools expect a nested object; others expect one JSON string containing the same map. Examples: {\"1200456789012345\":\"1200123456789012\"} (single-select); {\"1200456789012346\":12.5} (number); {\"1200456789012347\":\"Ship by Friday\"} (text); {\"1200456789012348\":[\"1200111111111111\",\"1200222222222222\"]} (multi-select); {\"1200456789012349\":{\"date\":\"2025-06-15\"}} or {\"1200456789012349\":{\"date_time\":\"2025-06-15T17:00:00.000Z\"}} (date).",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "sectionName"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Create project",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "update_project",
+      "title": "Update project",
+      "description": "Update one existing project. Use get_project with include_sections=true first when changing sections or when the current project configuration is not already known. Supports project details, dates, ownership, appearance, access, archival, project custom-field values, sections, members, and custom-field settings for tasks in the project. Adding members, making the project public, and changing default access require explicit user confirmation. Call the tool without confirmation first to receive the exact effects, then retry with confirmation only after the user agrees. Returns whether every requested change succeeded and reports errors when a change fails. Some changes may still be applied when another requested change fails.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Globally unique identifier for the project to update."
+          },
+          "name": {
+            "description": "New project name.",
+            "type": "string"
+          },
+          "notes": {
+            "description": "Plain-text project description. Use html_notes for rich formatting or @-mentions.",
+            "type": "string"
+          },
+          "html_notes": {
+            "description": "HTML-formatted project description. Must be wrapped in <body></body> tags.",
+            "type": "string"
+          },
+          "owner": {
+            "description": "New project owner. Can be \"me\", an email, or a user GID. Use null to clear.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due_on": {
+            "description": "New due date (YYYY-MM-DD). Use null to clear.",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_on": {
+            "description": "New start date (YYYY-MM-DD). due_on must also be provided when changing start_on. Use null to clear.",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "color": {
+            "description": "New project color. Use null to clear.",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "dark-pink",
+                  "dark-green",
+                  "dark-blue",
+                  "dark-red",
+                  "dark-teal",
+                  "dark-brown",
+                  "dark-orange",
+                  "dark-purple",
+                  "dark-warm-gray",
+                  "light-pink",
+                  "light-green",
+                  "light-blue",
+                  "light-red",
+                  "light-teal",
+                  "light-brown",
+                  "light-orange",
+                  "light-purple",
+                  "light-warm-gray",
+                  "none"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "icon": {
+            "description": "New project icon. Use null to clear.",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "list",
+                  "board",
+                  "timeline",
+                  "calendar",
+                  "rocket",
+                  "people",
+                  "graph",
+                  "star",
+                  "bug",
+                  "light_bulb",
+                  "globe",
+                  "gear",
+                  "notebook",
+                  "computer",
+                  "check",
+                  "target",
+                  "html",
+                  "megaphone",
+                  "chat_bubbles",
+                  "briefcase",
+                  "page_layout",
+                  "mountain_flag",
+                  "puzzle",
+                  "presentation",
+                  "line_and_symbols",
+                  "speed_dial",
+                  "ribbon",
+                  "shoe",
+                  "shopping_basket",
+                  "map",
+                  "ticket",
+                  "coins"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_view": {
+            "description": "New default project view.",
+            "type": "string",
+            "enum": [
+              "list",
+              "board",
+              "calendar",
+              "timeline"
+            ]
+          },
+          "privacy_setting": {
+            "description": "New project privacy. Making the project public to the workspace requires explicit user confirmation.",
+            "type": "string",
+            "enum": [
+              "public_to_workspace",
+              "private_to_team",
+              "private"
+            ]
+          },
+          "default_access_level": {
+            "description": "New default access for members added to the project. Requires explicit user confirmation.",
+            "type": "string",
+            "enum": [
+              "admin",
+              "editor",
+              "commenter",
+              "viewer"
+            ]
+          },
+          "archived": {
+            "description": "Whether the project should be archived.",
+            "type": "boolean"
+          },
+          "set_custom_field_values": {
+            "description": "Custom-field values to set on the project itself. This does not make fields available on the project's tasks. Custom field: each key is a custom field GID; each value matches that field's type in the Asana API. Use option GIDs for dropdown fields, not display names. Some tools expect a nested object; others expect one JSON string containing the same map. Examples: {\"1200456789012345\":\"1200123456789012\"} (single-select); {\"1200456789012346\":12.5} (number); {\"1200456789012347\":\"Ship by Friday\"} (text); {\"1200456789012348\":[\"1200111111111111\",\"1200222222222222\"]} (multi-select); {\"1200456789012349\":{\"date\":\"2025-06-15\"}} or {\"1200456789012349\":{\"date_time\":\"2025-06-15T17:00:00.000Z\"}} (date).",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              ]
+            }
+          },
+          "add_sections": {
+            "description": "Sections to add to the project.",
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Name of the new section."
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "rename_sections": {
+            "description": "Existing sections to rename.",
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "section_id": {
+                  "type": "string",
+                  "description": "GID of the section to rename."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "New section name."
+                }
+              },
+              "required": [
+                "section_id",
+                "name"
+              ]
+            }
+          },
+          "remove_sections": {
+            "description": "Sections to delete. Asana only permits deleting empty sections that are not the project's last section; tasks are never deleted.",
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "GID of an existing section to delete."
+            }
+          },
+          "add_members": {
+            "description": "Users to add as project members after explicit user confirmation. They will gain access to the project and all tasks in it. Accepts \"me\", email addresses, or GIDs.",
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "remove_members": {
+            "description": "Users to remove from project membership. Accepts \"me\", email addresses, or GIDs.",
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "add_custom_fields": {
+            "description": "Existing custom fields to make available on tasks in this project. This does not set values on the project itself.",
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "custom_field": {
+                  "type": "string",
+                  "description": "GID of an existing custom field to add to the project."
+                },
+                "is_important": {
+                  "description": "Whether to show the field prominently in the project.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "custom_field"
+              ]
+            }
+          },
+          "remove_custom_fields": {
+            "description": "Custom fields to remove from this project's task field settings. Existing values remain on tasks but may become disabled.",
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "GID of an existing custom field to remove."
+            }
+          },
+          "confirm_sensitive_changes": {
+            "description": "Set to true only after the user explicitly confirms every sensitive effect returned by a prior update_project call. Never infer confirmation from the original update request.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Update project",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_status_overview",
+      "title": "Get status overview",
+      "description": "Get status overview and progress reports for initiatives/projects. Use this tool as a standalone when users ask for: status updates, status reports, project status, work overview, progress overview, initiative status, identified blockers, or any status-related queries. This tool searches projects and portfolios, extracts tasks and status updates, and returns aggregated project details, tasks, and status information. IMPORTANT: Call this tool directly with keywords - do NOT call other search tools first. This tool handles all searching and aggregation internally.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "string",
+            "description": "Keywords to search for projects. Can be a single keyword (e.g., 'asana') or multiple comma-separated keywords (e.g., 'asana, chatgpt, integration'). The tool searches each keyword separately and combines results from all matching projects (OR logic - matches any keyword)."
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in task data (e.g., 'name,notes,assignee,due_on,completed'). Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keywords"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get status overview",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "search_tasks",
+      "title": "Search tasks",
+      "description": "Premium accounts only. Advanced task search with full-text and complex filters. DEFAULT tool for searching tasks: Use by default any time the user asks to search for tasks. Searches task names, descriptions, and comments. Returns tasks with gid, name, assignee, due_on, completed. When the user uses possessive language like 'my' (e.g., 'my tasks', 'my overdue tasks', 'my high-priority tasks'), you MUST always set assignee_any='me', in addition to any other applicable filters. Unless the user explicitly asks for completed tasks or all tasks, always set completed=false to filter to incomplete tasks only. Use get_tasks for non-Premium workspaces.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "description": "Text to search for in task name or description.",
+            "type": "string"
+          },
+          "resource_subtype": {
+            "description": "Filters results by the task's resource_subtype (e.g., milestone).",
+            "type": "string",
+            "enum": [
+              "default_task",
+              "milestone",
+              "approval"
+            ]
+          },
+          "completed": {
+            "description": "Filter for completed or incomplete tasks.",
+            "type": "boolean"
+          },
+          "is_subtask": {
+            "description": "Filter to subtasks.",
+            "type": "boolean"
+          },
+          "assignee_any": {
+            "description": "Filter to tasks assigned to any of these users. Comma-separated list of user identifiers (\"me\", an email, or a user GID).",
+            "type": "string"
+          },
+          "followers_any": {
+            "description": "Filter to tasks followed by any of these users. Comma-separated list of user identifiers (\"me\", an email, or a user GID).",
+            "type": "string"
+          },
+          "created_by_any": {
+            "description": "Filter to tasks created by any of these users. Comma-separated list of user identifiers (\"me\", an email, or a user GID).",
+            "type": "string"
+          },
+          "projects_any": {
+            "description": "Filter to tasks in any of these projects. Comma-separated list of project GIDs.",
+            "type": "string"
+          },
+          "sections_any": {
+            "description": "Filter to tasks in any of these sections or columns. Comma-separated list of section GIDs.",
+            "type": "string"
+          },
+          "tags_any": {
+            "description": "Filter to tasks with any of these tags. Comma-separated list of tag GIDs.",
+            "type": "string"
+          },
+          "due_on_before": {
+            "description": "ISO 8601 date string for due date before filter.",
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "due_on_after": {
+            "description": "ISO 8601 date string for due date after filter.",
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "due_on": {
+            "description": "ISO 8601 date string for due date filter.",
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "created_on_before": {
+            "description": "ISO 8601 date string for creation date before filter.",
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "created_on_after": {
+            "description": "ISO 8601 date string for creation date after filter.",
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "created_at_before": {
+            "description": "ISO 8601 datetime string for creation datetime before filter.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "created_at_after": {
+            "description": "ISO 8601 datetime string for creation datetime after filter.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "completed_on_before": {
+            "description": "ISO 8601 date string for completion date before filter.",
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "completed_on_after": {
+            "description": "ISO 8601 date string for completion date after filter.",
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "completed_at_before": {
+            "description": "ISO 8601 datetime string for completion datetime before filter.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "completed_at_after": {
+            "description": "ISO 8601 datetime string for completion datetime after filter.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "modified_on_after": {
+            "description": "ISO 8601 date string for modified date after filter.",
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "modified_at_after": {
+            "description": "ISO 8601 datetime string for modified datetime after filter.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "sort_by": {
+            "default": "modified_at",
+            "description": "Field to sort by (e.g., 'due_date', 'created_at', 'completed_at', 'likes', 'modified_at'). Defaults to modified_at.",
+            "type": "string",
+            "enum": [
+              "due_date",
+              "created_at",
+              "completed_at",
+              "likes",
+              "modified_at"
+            ]
+          },
+          "sort_ascending": {
+            "default": false,
+            "description": "Sort in ascending order. Defaults to false.",
+            "type": "boolean"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          },
+          "custom_fields": {
+            "description": "JSON string of custom field filters for task search. Each key is a custom field GID followed by a search operator. Each value must be a string, number, or boolean only. Values become search query parameters, so nested objects and arrays are invalid. Use <gid>.value for an exact string or number match; for single-select fields, use the option GID as the value. Use <gid>.is_set with a boolean to test whether the field has any value. Other supported operators are not_value, starts_with, ends_with, contains, less_than, greater_than, before, and after. For compatibility, a bare GID defaults to value for strings and numbers or is_set for booleans. Examples: {\"4578152156.value\":\"1200123456789012\"}; {\"5678904321.greater_than\":42}; {\"1200999999999999.is_set\":true}.",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Maximum number of results to return (1-100). Default: 50.",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Search tasks",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_task",
+      "title": "Get task",
+      "description": "Get full task details by ID. Returns name, description, assignee, due dates, custom fields, projects, dependencies, followers, parent, memberships (project and section), and acknowledgements (hearts and likes). Essential before updating tasks. Use opt_fields for custom field values. Comments and subtasks are included by default. Set include_comments or include_subtasks to false to exclude them. The most recent comments are returned (up to comment_limit), in ascending chronological order so the thread reads oldest-to-newest. Required for understanding task context.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Globally unique identifier for the task."
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          },
+          "include_subtasks": {
+            "default": true,
+            "description": "Include subtasks of task",
+            "type": "boolean"
+          },
+          "include_comments": {
+            "default": true,
+            "description": "Include comments of task",
+            "type": "boolean"
+          },
+          "comment_limit": {
+            "default": 10,
+            "description": "Max comments to return (1-50). Default is 10.",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get task",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_task_stories",
+      "title": "Get task activity / stories",
+      "description": "Get the activity feed (stories) for one or many tasks. Reading more than one task? Pass all of them in task_ids (up to 50) in a single call rather than calling this tool once per task, which is dramatically slower. Use task_id for a single task. Returns every story by default, not just comments: comments plus system activity such as assignments, status/completion changes, due date changes, and added-to-project events. Narrow the result with resource_subtype='comment_added' for comments only, created_after to get just what is new, and sort_ascending=false with limit to read only the latest activity. To find recent comments across a project, list its tasks and pass them all as task_ids with resource_subtype='comment_added' and created_after set, rather than looping over get_task. Stories are oldest-first unless sort_ascending=false. limit applies per task and defaults to 20 when task_ids is used, and is reduced when task_ids is large so the total stays bounded -- the response summary reports the per-task limit actually used. With task_ids, an unset sort_ascending defaults to newest-first, since that read can never be paged further. With task_id, it defaults to newest-first only when created_after is also set and the result is bounded (an explicit limit, or offset alone -- continuing a page implicitly bounds it too) -- otherwise limit would cut to the oldest of the new stories instead of the newest. offset paginates a single task_id and cannot be combined with task_ids. With task_id the response is the stories array itself; with task_ids it is one entry per task, { task_id, stories }, or { task_id, error } for a task that could not be read. Use for auditing what happened on a task or summarizing its history.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "description": "Globally unique identifier for a single task. Use task_ids instead to read several tasks in one call.",
+            "type": "string"
+          },
+          "task_ids": {
+            "description": "Globally unique identifiers for up to 50 tasks, read in a single call. Prefer this over calling the tool once per task.",
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "limit": {
+            "description": "Results per page (1-100). Applies per task when task_ids is used.",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "description": "Pagination offset token. Only valid with task_id, not task_ids.",
+            "type": "string"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          },
+          "created_after": {
+            "description": "Only return stories created strictly after this ISO 8601 datetime. Applies to every story type; combine with resource_subtype='comment_added' for just the new comments.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "resource_subtype": {
+            "description": "Only return stories of this subtype. Omit to return the full activity feed. Note sticker reactions are comment stories too, so they come back as well and report resource_subtype='sticker_added' -- check each story's own resource_subtype if you need text comments only.",
+            "type": "string",
+            "enum": [
+              "comment_added"
+            ]
+          },
+          "sort_ascending": {
+            "description": "Creation-time order: true (the default) is oldest first, false is newest first. Pair false with limit to read only the latest activity.",
+            "type": "boolean"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get task activity / stories",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "create_tasks",
+      "title": "Create tasks",
+      "description": "Creates tasks immediately without visual preview or asking for confirmation. DEFAULT tool for task creation: Use by default any time the user asks to create any number of tasks. Do not use when the user explicitly opts in with visually previewing, reviewing, or confirming a task before creation, or when the user implies they want to check or verify before the task is saved. Requires default_project (for all tasks) or default_assignee for My Tasks. When the user indicates the task is for themselves — e.g. 'remind me', 'my', 'I need to', ALWAYS set assignee='me' (or default_assignee='me' when it applies to every task). If the user names a different assignee, use that person instead; resolve their GID with search_objects first. Each task can specify project_id, parent, section_id, assignee, notes, html_notes, due_on, start_on, followers, custom_fields; omitted fields use the defaults. Returns succeeded (created tasks), failed (with errors), and summary.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Name of the task."
+                },
+                "project_id": {
+                  "description": "Project GID for task creation. Required if not using parent or workspace+assignee.",
+                  "type": "string"
+                },
+                "parent": {
+                  "description": "Parent task GID to create this as a subtask.",
+                  "type": "string"
+                },
+                "html_notes": {
+                  "description": "HTML-formatted task description. Use notes for plain text. Allowed elements only: <body>, <strong>, <em>, <u>, <s>, <code>, <ol>, <ul>, <li>, <a>, <blockquote>, <pre>, <h1>, <h2>, <hr/>, <img>, <table>, <tr>, <td>. Tables use only <table>, <tr>, and <td>; <thead>, <tbody>, and <th> are invalid. For a header row, wrap the contents of each <td> in the first <tr> in <strong>. Must be well-formed XML with a single root <body>...</body>. Only <a> may have custom attributes; any attribute on any other element is invalid. Do not use elements outside the allowed list (400). . <a> links: For <a> tags specifically, to make it easier to create @-mentions through the API, we only require that you provide the GID of the object you wish to reference. If you have access to that object, the API will automatically generate the appropriate href and other attributes for you. For example, to create a link to a task with GID \"123\", you can send the tag <a data-asana-gid=\"123\"/> which will then be expanded to <a href=\"https://app.asana.com/0/0/123/f\" data-asana-accessible=\"true\" data-asana-dynamic=\"true\" data-asana-type=\"task\" data-asana-gid=\"123\">Task Name</a>. You can also generate a link to a task in a specific project or tag by including a data-asana-project or data-asana-tag attribute in the <a> tag. All other attributes, as well as the contents of the tag, are ignored.\n\nTo keep the contents of your tag and make a custom vanity link, include the property data-asana-dynamic=\"false\" when setting the contents of the tag. You would send <a data-asana-gid=\"123\" data-asana-dynamic=\"false\">This is some custom text!</a> and receive <a data-asana-accessible=\"true\" data-asana-dynamic=\"false\" data-asana-type=\"task\" data-asana-gid=\"123\">This is some custom text!</a>\n\nIf you do not have access to the referenced object when you try to create a link, the API will not generate an href for you, but will instead look for an href you provide. This allows you to write back <a> tags unmodified even if you do not have access to the resource. If you do not have access to the referenced object and no href is provided, your request will be rejected with a 400 Bad Request error. Similarly, if you provide neither a GID nor a valid href, the request will be rejected with the same error.",
+                  "type": "string"
+                },
+                "notes": {
+                  "description": "Plain-text task description. Use html_notes for rich formatting or @-mentions.",
+                  "type": "string"
+                },
+                "assignee": {
+                  "description": "User identifier for task assignment. If the assignee should be the currently authenticated user, use \"me\". Otherwise, use an email address or a user GID. When used without project_id, workspace is also required.",
+                  "type": "string"
+                },
+                "due_on": {
+                  "description": "Due date in ISO 8601 format (YYYY-MM-DD).",
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                },
+                "due_at": {
+                  "description": "Due date and time in ISO 8601 format.",
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                "resource_subtype": {
+                  "default": "default_task",
+                  "description": "Task type (default_task, milestone, approval).",
+                  "type": "string",
+                  "enum": [
+                    "default_task",
+                    "milestone",
+                    "approval"
+                  ]
+                },
+                "completed": {
+                  "description": "True if the task is initially marked complete.",
+                  "type": "boolean"
+                },
+                "approval_status": {
+                  "description": "Approval status (pending, approved, rejected, changes_requested).",
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "approved",
+                    "rejected",
+                    "changes_requested"
+                  ]
+                },
+                "section_id": {
+                  "description": "Section GID to place task in. Requires project_id to be provided.",
+                  "type": "string"
+                },
+                "assignee_section": {
+                  "description": "Section GID to place task in the assignee's My Tasks list.",
+                  "type": "string"
+                },
+                "followers": {
+                  "description": "Comma-separated list of user identifiers. Can be \"me\", email addresses, or user GIDs.",
+                  "type": "string"
+                },
+                "start_on": {
+                  "description": "Start date in ISO 8601 format (YYYY-MM-DD).",
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                },
+                "start_at": {
+                  "description": "Start date and time in ISO 8601 format.",
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                "custom_fields": {
+                  "description": "Custom field: each key is a custom field GID; each value matches that field's type in the Asana API. Use option GIDs for dropdown fields, not display names. Some tools expect a nested object; others expect one JSON string containing the same map. Examples: {\"1200456789012345\":\"1200123456789012\"} (single-select); {\"1200456789012346\":12.5} (number); {\"1200456789012347\":\"Ship by Friday\"} (text); {\"1200456789012348\":[\"1200111111111111\",\"1200222222222222\"]} (multi-select); {\"1200456789012349\":{\"date\":\"2025-06-15\"}} or {\"1200456789012349\":{\"date_time\":\"2025-06-15T17:00:00.000Z\"}} (date).",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            },
+            "description": "Array of task objects (1-50 tasks)."
+          },
+          "default_project": {
+            "description": "Default project GID for all tasks. Omit when each task has project_id or parent, or when creating in My Tasks (use workspace+default_assignee).",
+            "type": "string"
+          },
+          "default_assignee": {
+            "description": "Default assignee. Use \"me\" to assign the current authenticated user, an email, or a GID.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tasks"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Create tasks",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "update_tasks",
+      "title": "Update tasks",
+      "description": "Update one or more tasks in a single operation. Supports changing name, assignee, due_on, start_on, notes, html_notes, completed, parent, dependencies (add/remove), dependents (add/remove), followers (add/remove), and custom_fields. Returns succeeded (tasks where all updates applied), failed (at least one update failed; some updates may have succeeded), and summary. succeeded = all actions for that task succeeded; failed = partial or total failure, with errors array listing all failed actions for that task.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "task": {
+                  "type": "string",
+                  "description": "GID (Globally Unique Identifier) of the task to update."
+                },
+                "name": {
+                  "description": "New task name.",
+                  "type": "string"
+                },
+                "assignee": {
+                  "description": "User identifier to assign the task to. Can be \"me\", an email, or a user GID. Prefer using \"me\" for the current user rather than calling get_me to look up the GID of the current user. Use null to unassign.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "assignee_section": {
+                  "description": "Move the task to a specific section in the assignee's My Tasks by providing the section GID. Use null to clear.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "due_on": {
+                  "description": "New due date (YYYY-MM-DD). Use null to clear.",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "start_on": {
+                  "description": "New start date (YYYY-MM-DD). Use null to clear. Note: due_on must be present when setting or unsetting start_on.",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "notes": {
+                  "description": "Plain-text task description. Use html_notes for rich formatting or @-mentions.",
+                  "type": "string"
+                },
+                "html_notes": {
+                  "description": "HTML-formatted task description. Use notes for plain text. Allowed elements only: <body>, <strong>, <em>, <u>, <s>, <code>, <ol>, <ul>, <li>, <a>, <blockquote>, <pre>, <h1>, <h2>, <hr/>, <img>, <table>, <tr>, <td>. Tables use only <table>, <tr>, and <td>; <thead>, <tbody>, and <th> are invalid. For a header row, wrap the contents of each <td> in the first <tr> in <strong>. Must be well-formed XML with a single root <body>...</body>. Only <a> may have custom attributes; any attribute on any other element is invalid. Do not use elements outside the allowed list (400). . <a> links: For <a> tags specifically, to make it easier to create @-mentions through the API, we only require that you provide the GID of the object you wish to reference. If you have access to that object, the API will automatically generate the appropriate href and other attributes for you. For example, to create a link to a task with GID \"123\", you can send the tag <a data-asana-gid=\"123\"/> which will then be expanded to <a href=\"https://app.asana.com/0/0/123/f\" data-asana-accessible=\"true\" data-asana-dynamic=\"true\" data-asana-type=\"task\" data-asana-gid=\"123\">Task Name</a>. You can also generate a link to a task in a specific project or tag by including a data-asana-project or data-asana-tag attribute in the <a> tag. All other attributes, as well as the contents of the tag, are ignored.\n\nTo keep the contents of your tag and make a custom vanity link, include the property data-asana-dynamic=\"false\" when setting the contents of the tag. You would send <a data-asana-gid=\"123\" data-asana-dynamic=\"false\">This is some custom text!</a> and receive <a data-asana-accessible=\"true\" data-asana-dynamic=\"false\" data-asana-type=\"task\" data-asana-gid=\"123\">This is some custom text!</a>\n\nIf you do not have access to the referenced object when you try to create a link, the API will not generate an href for you, but will instead look for an href you provide. This allows you to write back <a> tags unmodified even if you do not have access to the resource. If you do not have access to the referenced object and no href is provided, your request will be rejected with a 400 Bad Request error. Similarly, if you provide neither a GID nor a valid href, the request will be rejected with the same error.",
+                  "type": "string"
+                },
+                "completed": {
+                  "description": "Mark complete or incomplete.",
+                  "type": "boolean"
+                },
+                "approval_status": {
+                  "description": "Set the approval status of approval-type tasks (resource_subtype: approval). Has no effect on non-approval tasks. Synced with completed: 'pending' sets completed to false; 'approved', 'rejected', or 'changes_requested' set completed to true. Conversely, setting completed to true automatically sets this to 'approved'.",
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "approved",
+                    "rejected",
+                    "changes_requested"
+                  ]
+                },
+                "parent": {
+                  "description": "New parent task (converts to subtask). Use null to convert to regular task.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "add_projects": {
+                  "description": "Projects to add the task to, with optional section placement.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "project_id": {
+                        "type": "string",
+                        "description": "The GID of the project to add the task to."
+                      },
+                      "section_id": {
+                        "description": "The GID of the section within the project to add the task to. If omitted or null, the task is added to the project without a specific section.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "project_id"
+                    ]
+                  }
+                },
+                "remove_projects": {
+                  "description": "Project GIDs to remove the task from.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "add_dependencies": {
+                  "description": "Task GIDs to add as dependencies.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "remove_dependencies": {
+                  "description": "Task GIDs to remove as dependencies.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "add_dependents": {
+                  "description": "Task GIDs to add as dependents.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "remove_dependents": {
+                  "description": "Task GIDs to remove as dependents.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "add_followers": {
+                  "description": "Followers to add (user GIDs or emails).",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "remove_followers": {
+                  "description": "Followers to remove (user GIDs or emails).",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "custom_fields": {
+                  "description": "Custom field: each key is a custom field GID; each value matches that field's type in the Asana API. Use option GIDs for dropdown fields, not display names. Some tools expect a nested object; others expect one JSON string containing the same map. Examples: {\"1200456789012345\":\"1200123456789012\"} (single-select); {\"1200456789012346\":12.5} (number); {\"1200456789012347\":\"Ship by Friday\"} (text); {\"1200456789012348\":[\"1200111111111111\",\"1200222222222222\"]} (multi-select); {\"1200456789012349\":{\"date\":\"2025-06-15\"}} or {\"1200456789012349\":{\"date_time\":\"2025-06-15T17:00:00.000Z\"}} (date).",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "task"
+              ]
+            },
+            "description": "Array of task update objects (1-50). Each object requires 'task' (the task GID) and one or more optional fields to update: name, assignee (null to unassign), assignee_section (section GID in assignee's My Tasks, null to clear), due_on (YYYY-MM-DD or null), start_on (YYYY-MM-DD or null; due_on must be present), notes, html_notes, completed, approval_status (pending/approved/rejected/changes_requested), parent (null to convert to top-level task), add/remove_dependencies, add/remove_dependents, add/remove_projects, add/remove_followers, and custom_fields. Example: [{\"task\": \"123\", \"name\": \"New name\", \"due_on\": \"2025-06-01\", \"completed\": true}]"
+          }
+        },
+        "required": [
+          "tasks"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Update tasks",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "add_comment",
+      "title": "Add comment",
+      "description": "Add a comment to a task. Use ONLY for human-authored discussion, feedback, questions, or additional context. Exactly one of text or html_text must be provided. Do NOT use for actions that are automatically logged (assignments, status changes, completion, field updates). Returns the created story with ID, content, author, and timestamp.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Globally unique identifier for the task."
+          },
+          "text": {
+            "description": "Plain-text comment body. Exactly one of text or html_text must be provided.",
+            "type": "string"
+          },
+          "html_text": {
+            "description": "Exactly one of text or html_text must be provided. Allowed elements only: <body>, <strong>, <em>, <u>, <s>, <code>, <ol>, <ul>, <li>, <a>, <blockquote>, <pre>. Do not use <h1>, <h2>, <hr/>, or <img> here. Must be well-formed XML with a single root <body>...</body>. Only <a> may have custom attributes; any attribute on any other element is invalid. Do not use elements outside the allowed list (400). . <a> links: For <a> tags specifically, to make it easier to create @-mentions through the API, we only require that you provide the GID of the object you wish to reference. If you have access to that object, the API will automatically generate the appropriate href and other attributes for you. For example, to create a link to a task with GID \"123\", you can send the tag <a data-asana-gid=\"123\"/> which will then be expanded to <a href=\"https://app.asana.com/0/0/123/f\" data-asana-accessible=\"true\" data-asana-dynamic=\"true\" data-asana-type=\"task\" data-asana-gid=\"123\">Task Name</a>. You can also generate a link to a task in a specific project or tag by including a data-asana-project or data-asana-tag attribute in the <a> tag. All other attributes, as well as the contents of the tag, are ignored.\n\nTo keep the contents of your tag and make a custom vanity link, include the property data-asana-dynamic=\"false\" when setting the contents of the tag. You would send <a data-asana-gid=\"123\" data-asana-dynamic=\"false\">This is some custom text!</a> and receive <a data-asana-accessible=\"true\" data-asana-dynamic=\"false\" data-asana-type=\"task\" data-asana-gid=\"123\">This is some custom text!</a>\n\nIf you do not have access to the referenced object when you try to create a link, the API will not generate an href for you, but will instead look for an href you provide. This allows you to write back <a> tags unmodified even if you do not have access to the resource. If you do not have access to the referenced object and no href is provided, your request will be rejected with a 400 Bad Request error. Similarly, if you provide neither a GID nor a valid href, the request will be rejected with the same error.",
+            "type": "string"
+          },
+          "is_pinned": {
+            "default": false,
+            "description": "Pinned comments stay at the top of the task's activity feed.",
+            "type": "boolean"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported. Returns gid,name,task,created_by,created_at,text,html_text,is_pinned by default.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Add comment",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_tasks",
+      "title": "Get tasks",
+      "description": "List tasks filtered by context (workspace/project/tag/section/user list). One context required. Supports assignee, date filters. Returns task names and IDs. Use for filtered task views and bulk operations. If the user's request includes words like 'preview', 'visual', 'visualize', or 'render' in reference to seeing their tasks, you MUST use search_tasks_preview instead of this tool, even if the request is scoped to a specific project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "description": "Globally unique identifier for the project.",
+            "type": "string"
+          },
+          "tag": {
+            "description": "The tag GID to retrieve tasks for",
+            "type": "string"
+          },
+          "section": {
+            "description": "Globally unique identifier for the section.",
+            "type": "string"
+          },
+          "user_task_list": {
+            "description": "Globally unique identifier for the user task list.",
+            "type": "string"
+          },
+          "assignee": {
+            "description": "User identifier to assign the task to. Can be \"me\", an email, or a user GID. Prefer using \"me\" for the current user rather than calling get_me to look up the GID of the current user.",
+            "type": "string"
+          },
+          "completed_since": {
+            "description": "Filter for tasks completed since this date in datetime format.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "modified_since": {
+            "description": "Filter for tasks modified since this date in datetime format.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Number of sections to return per page (1-100).",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "description": "Pagination offset token.",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get tasks",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_my_tasks",
+      "title": "Get my tasks",
+      "description": "Get the current user's tasks. Shortcut for common \"what's on my plate\" queries. Returns tasks assigned to the user. Use when the user asks about their tasks, workload, or what they need to do. If the user's request includes words like 'preview', 'visualization', or 'rendered view' in reference to seeing their tasks, you MUST use search_tasks_preview with assignee_any='me' instead. Do not use this to answer questions about project membership or ownership. Use get_me plus get_projects or search_objects instead.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "completed_since": {
+            "description": "Filter by completion. Use \"now\" for incomplete tasks only. Omit for all tasks. Use ISO datetime for tasks completed since a date.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Results per page (1-100). Default: 50.",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "description": "Pagination offset token from the next_page field of a previous response. If omitted, returns the first page of results.",
+            "type": "string"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported. Returns gid,name,assignee,due_on,completed by default.",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get my tasks",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "delete_task",
+      "title": "Delete task",
+      "description": "Delete task from Asana. Use with extreme caution as recovery is challenging. Deletes the task and any subtasks that are not also in another project. Returns success confirmation. Requires task ID. Essential for removing duplicate or obsolete tasks.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "Globally unique identifier for the task to delete."
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Delete task",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_teams",
+      "title": "Get teams",
+      "description": "List teams in workspace. Returns team names and GIDs. Optionally filter to only teams a specific user belongs to by providing a user GID. Use to discover teams for project context or check user team membership.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "description": "A user GID to filter teams to only those the user belongs to. When omitted, returns all teams in the workspace.",
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "description": "Number of teams to return per page (1-100). Defaults to 20.",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "description": "Pagination offset token from the next_page field of a previous response. If omitted, returns the first page of results.",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get teams",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "search_objects",
+      "title": "Search objects",
+      "description": "Quick search across Asana objects. ALWAYS use this FIRST before specialized search. Returns most relevant items based on recency and usage. Faster than dedicated search tools for finding specific items. Use query to search by name or description/role. More efficient than listing all objects and scanning manually. If the user provides a project template name, search with resource_type 'project_template'. If that search requires workspace_gid and the user did not specify a workspace, call get_me to discover their workspaces. Use the only workspace automatically. If there are multiple workspaces, ask the user to choose by name; never ask them for a workspace GID. If the user is not specific about which objects to search, use the following priority order: project + task > portfolio > goal + others (user, team, agent, actor, tag, custom_field).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          },
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "actor",
+              "agent",
+              "custom_field",
+              "goal",
+              "project",
+              "project_template",
+              "portfolio",
+              "tag",
+              "task",
+              "team",
+              "user"
+            ],
+            "description": "The type of resource to search for. Use 'user' for human workspace members. Use 'agent' for AI teammates (e.g. named assistants). Use 'actor' when searching for any entity that can be assigned work (humans + AI teammates)."
+          },
+          "query": {
+            "description": "The search query. Can be empty to get default results for the resource type.",
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of results to return. Default is 20 if parameter is empty. Minimum 1, maximum 100.",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "resource_type"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Search objects",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "search_objects_internal",
+      "title": "[Internal] Search objects",
+      "description": "DEPRECATED; DO NOT USE. This tool must exist so that it can be invoked programmatically by widget UI, but it should not be called directly by the model.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          },
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "actor",
+              "agent",
+              "custom_field",
+              "goal",
+              "project",
+              "project_template",
+              "portfolio",
+              "tag",
+              "task",
+              "team",
+              "user"
+            ],
+            "description": "The type of resource to search for. Use 'user' for human workspace members. Use 'agent' for AI teammates (e.g. named assistants). Use 'actor' when searching for any entity that can be assigned work (humans + AI teammates)."
+          },
+          "query": {
+            "description": "The search query. Can be empty to get default results for the resource type.",
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of results to return. Default is 20 if parameter is empty. Minimum 1, maximum 100.",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "widget_id": {
+            "type": "string",
+            "description": "ALWAYS USE A CONSTANT VALUE OF 'model-generated-widget-id' FOR THIS PARAMETER."
+          }
+        },
+        "required": [
+          "resource_type",
+          "widget_id"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "[Internal] Search objects",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "get_user",
+      "title": "Get user",
+      "description": "Get user details by ID, email, or \"me\". Returns name, email, workspaces. Use to find user IDs for task assignment. \"me\" returns authenticated user info. Essential before assigning tasks. When no user_id is provided, defaults to \"me\" (authenticated user) - equivalent to the former asana_get_user_info tool. Prefer using search_objects when searching for users/agents by name.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "description": "A string identifying a user. This can be 'me', an email, or the gid of a user. When omitted, defaults to 'me' (authenticated user).",
+            "type": "string"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported.",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get user",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_me",
+      "title": "Get me",
+      "description": "Get details of current authenticated user. Tools accept 'me' as a user identifier, so you rarely need to call this just to get the user's GID. Only call this when you need specific user details (e.g., name, email), when tools such as get_projects or search_objects require filtering results by user GID, or when tools do not accept 'me' as a user identifier.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get me",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_users",
+      "title": "Get users",
+      "description": "List users in a workspace, or list members of a specified team. Prefer using search_objects when searching for users/agents by name. Returns users sorted by name and does not support pagination. Requests that match more than 2,000 users fail. For paginated results, use the separate REST API GET /users with a workspace or team filter. See https://developers.asana.com/reference/getusers. That API sorts by user ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "team": {
+            "description": "Filter by team membership.",
+            "type": "string"
+          },
+          "opt_fields": {
+            "description": "Comma-separated list of optional fields to include in the response. Name each subfield explicitly as parent.child; wildcard and glob syntax such as parent.* is not supported. Returns gid,name,email by default.",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Get users",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "log_widget_event",
+      "title": "[Internal] Log event",
+      "description": "DEPRECATED; DO NOT USE. This tool must exist so that it can be invoked programmatically by widget UI, but it should not be called directly by the model.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "widget_id": {
+            "type": "string",
+            "description": "ALWAYS USE A CONSTANT VALUE OF 'model-generated-widget-id' FOR THIS PARAMETER."
+          },
+          "widget_type": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "extra_event_attributes_json": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "widget_id",
+          "widget_type",
+          "action"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "[Internal] Log event",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "create_task_preview_v4",
+      "title": "Preview task creation",
+      "description": "Generates a visual preview of a single task and asks for confirmation before creation. NON-DEFAULT tool for task creation: Use only when the user explicitly opts in with visually previewing, reviewing, or confirming a task before creation, or when the user implies they want to check or verify before the task is saved. Do not use when the user wants to create multiple tasks (2 or more) - use create_task or create_tasks instead. When the user's request implies a project, suggest a project via project_gid. When you set project_gid, it is preferable to also set section_gid when you can reasonably resolve a section (e.g. call get_project with include_sections true to list section GIDs for that project and match the user's intent); omit section_gid when the section is unknown, not specified, or irrelevant. When the user wants subtasks on the new task, pass a subtasks array (one level only; at most 5 subtasks; entries are not added to any project).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskName": {
+            "type": "string",
+            "description": "Name of the task."
+          },
+          "isComplete": {
+            "description": "Whether the task is completed. Defaults to false if not provided.",
+            "type": "boolean"
+          },
+          "startDate": {
+            "description": "Start date of the task in YYYY-MM-DD format, or null if the task has no start date. If the start date is provided, the due date must also be provided. If both the start date and due date are provided, the due date must be greater than or equal to the start date. Defaults to null if not provided.",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dueDate": {
+            "description": "Due date of the task in YYYY-MM-DD format, or null if the task has no due date. If both the start date and due date are provided, the due date must be greater than or equal to the start date. Defaults to null if not provided.",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assignee": {
+            "description": "Assignee of the task, or null if the task is unassigned. This can be \"me\", an email, or a user GID chosen among those found using asana_get_workspace_users. Defaults to null if not provided.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "description": "Task details as Markdown (not raw HTML), or null. Use real list lines (`- item` or `1. item`); avoid one line of middot bullets — they will not become lists. The preview rich-text supports headings **h1** and **h2**, marks **strong**, **em**, **u**, **s**, inline **code**, and lists **ul** / **ol** / **li** — use the same constructs in Markdown. The server normalizes Markdown to HTML for the preview and Asana `html_notes`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_gid": {
+            "description": "GID of an existing project to add the task to, or null. When you set this, it is preferable to also pass section_gid when you can resolve a section for that project (call get_project with include_sections true to list section GIDs for that project); omitting section_gid is fine when placement is unclear or irrelevant.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "section_gid": {
+            "description": "GID of an existing section to add the task to, or null. Project must also be set if section is provided, and the section must be in the project. Optional; omit when unknown or not specified. When project_gid is set, including section_gid is preferable if you can infer or look up a section (call get_project with include_sections true to list section GIDs for that project).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subtasks": {
+            "description": "Optional array of subtasks (one level only; subtasks are not added to any project). Limit to no more than 5 unless necessary. Each entry may include taskName (required), description, isComplete, startDate and dueDate (YYYY-MM-DD), and assignee (me, email, or user id).",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "taskName": {
+                  "type": "string",
+                  "description": "Name of the task."
+                },
+                "description": {
+                  "description": "Task details as Markdown (not raw HTML), or null. Use real list lines (`- item` or `1. item`); avoid one line of middot bullets — they will not become lists. The preview rich-text supports headings **h1** and **h2**, marks **strong**, **em**, **u**, **s**, inline **code**, and lists **ul** / **ol** / **li** — use the same constructs in Markdown. The server normalizes Markdown to HTML for the preview and Asana `html_notes`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "isComplete": {
+                  "description": "Whether the task is completed. Defaults to false if not provided.",
+                  "type": "boolean"
+                },
+                "startDate": {
+                  "description": "Start date of the task in YYYY-MM-DD format, or null if the task has no start date. If the start date is provided, the due date must also be provided. If both the start date and due date are provided, the due date must be greater than or equal to the start date. Defaults to null if not provided.",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "dueDate": {
+                  "description": "Due date of the task in YYYY-MM-DD format, or null if the task has no due date. If both the start date and due date are provided, the due date must be greater than or equal to the start date. Defaults to null if not provided.",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "assignee": {
+                  "description": "Assignee of the task, or null if the task is unassigned. This can be \"me\", an email, or a user GID chosen among those found using asana_get_workspace_users. Defaults to null if not provided.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "taskName"
+              ]
+            }
+          }
+        },
+        "required": [
+          "taskName"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Preview task creation",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "ui": {
+          "resourceUri": "ui://widget/task_preview.html"
+        },
+        "ui/resourceUri": "ui://widget/task_preview.html"
+      }
+    },
+    {
+      "name": "create_task_confirm",
+      "title": "[Internal] Create task",
+      "description": "DEPRECATED; DO NOT USE. This tool must exist so that it can be invoked programmatically by widget UI, but it should not be called directly by the model.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "widget_id": {
+            "type": "string",
+            "description": "ALWAYS USE A CONSTANT VALUE OF 'model-generated-widget-id' FOR THIS PARAMETER."
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "taskName": {
+            "type": "string"
+          },
+          "isComplete": {
+            "type": "boolean"
+          },
+          "startDate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dueDate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assignee": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "gid": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "photoUrl": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "gid",
+                  "name",
+                  "email"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "useRichTextTaskDescription": {
+            "type": "boolean"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "gid": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "icon": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "color": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "gid",
+                  "name"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "gid": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "gid",
+                  "name"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subtasks": {
+            "description": "Optional subtasks for the parent task (one level only; not added to any project). Limit to no more than 5 unless necessary.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "taskName": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "isComplete": {
+                  "type": "boolean"
+                },
+                "startDate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "dueDate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "assignee": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "gid": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "photoUrl": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "gid",
+                        "name",
+                        "email"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "taskName",
+                "description",
+                "isComplete",
+                "startDate",
+                "dueDate",
+                "assignee"
+              ]
+            }
+          }
+        },
+        "required": [
+          "widget_id",
+          "workspace",
+          "taskName",
+          "isComplete",
+          "startDate",
+          "dueDate",
+          "assignee",
+          "description"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "[Internal] Create task",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "save_task_changes_confirm",
+      "title": "[Internal] Save task changes",
+      "description": "DEPRECATED; DO NOT USE. This tool must exist so that it can be invoked programmatically by widget UI, but it should not be called directly by the model.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "widget_id": {
+            "type": "string",
+            "description": "ALWAYS USE A CONSTANT VALUE OF 'model-generated-widget-id' FOR THIS PARAMETER."
+          },
+          "taskGid": {
+            "type": "string"
+          },
+          "updatedNativeFields": {
+            "type": "object",
+            "properties": {
+              "taskName": {
+                "type": "string"
+              },
+              "isComplete": {
+                "type": "boolean"
+              },
+              "startDate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "dueDate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "assignee": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "gid": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "email": {
+                        "type": "string"
+                      },
+                      "photoUrl": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "gid",
+                      "name",
+                      "email"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "project": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "gid": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "icon": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "color": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "gid",
+                          "name"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "section": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "gid": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "gid",
+                          "name"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "previousProjectGid": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "updatedCustomFields": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "gid": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "gid",
+                "value"
+              ]
+            }
+          },
+          "updatedSubtasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "gid": {
+                  "type": "string"
+                },
+                "fields": {
+                  "type": "object",
+                  "properties": {
+                    "taskName": {
+                      "type": "string"
+                    },
+                    "isComplete": {
+                      "type": "boolean"
+                    },
+                    "startDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "dueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "assignee": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "gid": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": "string"
+                            },
+                            "photoUrl": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "gid",
+                            "name",
+                            "email"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              },
+              "required": [
+                "gid",
+                "fields"
+              ]
+            }
+          },
+          "newSubtasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "taskName": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "isComplete": {
+                  "type": "boolean"
+                },
+                "startDate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "dueDate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "assignee": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "gid": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "photoUrl": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "gid",
+                        "name",
+                        "email"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "taskName",
+                "description",
+                "isComplete",
+                "startDate",
+                "dueDate",
+                "assignee"
+              ]
+            }
+          },
+          "deletedSubtaskGids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "useRichTextTaskDescription": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "widget_id",
+          "taskGid"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "[Internal] Save task changes",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "search_tasks_preview",
+      "title": "Preview task search results",
+      "description": "Search for tasks in the workspace and render a preview of the results. Use this tool for all requests where the user explicitly opts in with rendering a preview or visual of the search results (e.g., 'show me a preview of my tasks', 'visualize my tasks', etc). All search filters are optional, but use at least one search filter to limit the results to a specific set of tasks. For example, use the 'completed' filter to show only completed tasks, 'projects_any' to show tasks in a specific project,  or when the user uses possessive language like 'my' (e.g., 'my tasks', 'my overdue tasks', 'my high-priority tasks'), you MUST always set assignee_any='me', in addition to any other applicable filters. Use the 'text' filter as a freeform search term to find tasks that match the specified text (exactly) in the task name or description. After calling this tool, do not summarize, list, or mention specific task names in your response.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "description": "Freeform text to search for in task names and descriptions.",
+            "type": "string"
+          },
+          "completed": {
+            "description": "Filter to either completed or incomplete tasks only. Leave blank to show both completed and incomplete tasks. Prefer filtering to incomplete tasks only, EXCEPT when the user specifically and EXPLICITLY asks for completed tasks only, or both completed and incomplete tasks.",
+            "type": "boolean"
+          },
+          "completed_on_before": {
+            "description": "Filter to tasks completed before the specified date. Date must be in YYYY-MM-DD format. Leave blank to show tasks completed before any date, including incomplete tasks.",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "completed_on_after": {
+            "description": "Filter to tasks completed after the specified date. Date must be in YYYY-MM-DD format. Leave blank to show tasks completed after any date, including incomplete tasks.",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "start_on_before": {
+            "description": "Filter to tasks with a start date before the specified date. Date must be in YYYY-MM-DD format. Leave blank to show tasks with a start date before any date, including tasks with no start date.",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "start_on_after": {
+            "description": "Filter to tasks with a start date after the specified date. Date must be in YYYY-MM-DD format. Leave blank to show tasks with a start date after any date, including tasks with no start date.",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "due_on_before": {
+            "description": "Filter to tasks due before the specified date. Date must be in YYYY-MM-DD format. Leave blank to show tasks due before any date, including tasks with no due date.",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "due_on_after": {
+            "description": "Filter to tasks due after the specified date. Date must be in YYYY-MM-DD format. Leave blank to show tasks due after any date, including tasks with no due date.",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "assignee_any": {
+            "description": "Filter to tasks with assignees matching any of the comma-separated list of user identifiers. User identifiers can be \"me\", an email, or a user GID chosen among those found using asana_get_workspace_users. For example, if the user specifies \"my tasks\", set assignee_any to \"me\". Leave blank to show tasks assigned to any user.",
+            "type": "string"
+          },
+          "created_on_before": {
+            "description": "Filter to tasks created before the specified date. Date must be in YYYY-MM-DD format. Leave blank to show tasks created before any date.",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "created_on_after": {
+            "description": "Filter to tasks created after the specified date. Date must be in YYYY-MM-DD format. Leave blank to show tasks created after any date.",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "created_by_any": {
+            "description": "Filter to tasks created by a user matching any of the comma-separated list of user identifiers. User identifiers can be \"me\", an email, or a user GID chosen among those found using asana_get_workspace_users. Leave blank to show tasks created by any user.",
+            "type": "string"
+          },
+          "followers_any": {
+            "description": "Filter to tasks followed by any of the comma-separated list of user identifiers. User identifiers can be \"me\", an email, or a user GID chosen among those found using asana_get_workspace_users. Leave blank to show tasks followed by any user.",
+            "type": "string"
+          },
+          "projects_any": {
+            "description": "Filter to tasks in any of the comma-separated list of project IDs (GIDs). Project IDs can be chosen among those found using asana_get_projects. Leave blank to show tasks in any project.",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Preview task search results",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "ui": {
+          "resourceUri": "ui://widget/search_tasks_preview.html"
+        },
+        "ui/resourceUri": "ui://widget/search_tasks_preview.html"
+      }
+    },
+    {
+      "name": "create_project_preview_v3",
+      "title": "Preview project creation",
+      "description": "Show a visual preview of a project structure before the project is created in Asana. Do not use this tool for ordinary creation requests—use create_project instead when the user asks to create, set up, or add a project (with or without sections and tasks). Call this tool only when the user explicitly asks to preview first, see the plan before creating, review or confirm before creating, or postpone creation until they approve. Tasks in `sections` may include optional `subtasks` arrays (one level only; limit to no more than 5 per task unless necessary).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "description": "Name of the project to create."
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sectionName": {
+                  "type": "string",
+                  "description": "Name of the section."
+                },
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taskName": {
+                        "type": "string",
+                        "description": "Name of the task."
+                      },
+                      "description": {
+                        "description": "Task details as Markdown (not raw HTML), or null. Use real list lines (`- item` or `1. item`); avoid one line of middot bullets — they will not become lists. The preview rich-text supports headings **h1** and **h2**, marks **strong**, **em**, **u**, **s**, inline **code**, and lists **ul** / **ol** / **li** — use the same constructs in Markdown. The server normalizes Markdown to HTML for the preview and Asana `html_notes`.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "isComplete": {
+                        "description": "Whether the task is completed. Defaults to false if not provided.",
+                        "type": "boolean"
+                      },
+                      "startDate": {
+                        "description": "Start date of the task in YYYY-MM-DD format, or null if the task has no start date. If the start date is provided, the due date must also be provided. If both the start date and due date are provided, the due date must be greater than or equal to the start date. Defaults to null if not provided.",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "dueDate": {
+                        "description": "Due date of the task in YYYY-MM-DD format, or null if the task has no due date. If both the start date and due date are provided, the due date must be greater than or equal to the start date. Defaults to null if not provided.",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "assignee": {
+                        "description": "Assignee of the task, or null if the task is unassigned. This can be \"me\", an email, or a user GID chosen among those found using asana_get_workspace_users. Defaults to null if not provided.",
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "priority": {
+                        "description": "Priority level of the task. Must be one of 'low', 'medium', 'high', or null. Defaults to null if not provided.",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "low",
+                              "medium",
+                              "high"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "subtasks": {
+                        "description": "Optional array of subtasks. Each may have taskName, description, isComplete, startDate, dueDate, and assignee (me, email, or user id). ",
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "taskName": {
+                              "type": "string",
+                              "description": "Name of the task."
+                            },
+                            "description": {
+                              "description": "Task details as Markdown (not raw HTML), or null. Use real list lines (`- item` or `1. item`); avoid one line of middot bullets — they will not become lists. The preview rich-text supports headings **h1** and **h2**, marks **strong**, **em**, **u**, **s**, inline **code**, and lists **ul** / **ol** / **li** — use the same constructs in Markdown. The server normalizes Markdown to HTML for the preview and Asana `html_notes`.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "isComplete": {
+                              "description": "Whether the task is completed. Defaults to false if not provided.",
+                              "type": "boolean"
+                            },
+                            "startDate": {
+                              "description": "Start date of the task in YYYY-MM-DD format, or null if the task has no start date. If the start date is provided, the due date must also be provided. If both the start date and due date are provided, the due date must be greater than or equal to the start date. Defaults to null if not provided.",
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "dueDate": {
+                              "description": "Due date of the task in YYYY-MM-DD format, or null if the task has no due date. If both the start date and due date are provided, the due date must be greater than or equal to the start date. Defaults to null if not provided.",
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "assignee": {
+                              "description": "Assignee of the task, or null if the task is unassigned. This can be \"me\", an email, or a user GID chosen among those found using asana_get_workspace_users. Defaults to null if not provided.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "taskName"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "taskName"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "sectionName",
+                "tasks"
+              ]
+            },
+            "description": "Users will give you a request to create a project with a certain purpose. Use your own knowledge of project management and the principles and guidance below to design the best project structure possible.\n\nJSON array of section objects. Each section must have:\n- sectionName (string): Name of the section.\n- tasks (array): Array of task objects.\n\nEach task object must have:\n- taskName (string): Name of the task.\n- description (string | null): Task details as Markdown (not raw HTML), or null. Use real list lines (`- item` or `1. item`); avoid one line of middot bullets — they will not become lists. The preview rich-text supports headings **h1** and **h2**, marks **strong**, **em**, **u**, **s**, inline **code**, and lists **ul** / **ol** / **li** — use the same constructs in Markdown. The server normalizes Markdown to HTML for the preview and Asana `html_notes`.\n- isComplete (boolean): Whether the task is completed. Defaults to false if not provided.\n- startDate (string | null): Start date of the task in YYYY-MM-DD format, or null if the task has no start date. If the start date is provided, the due date must also be provided. If both the start date and due date are provided, the due date must be greater than or equal to the start date. Defaults to null if not provided.\n- dueDate (string | null): Due date of the task in YYYY-MM-DD format, or null if the task has no due date. If both the start date and due date are provided, the due date must be greater than or equal to the start date. Defaults to null if not provided.\n- assignee (string | null): Assignee of the task, or null if the task is unassigned. This can be \"me\", an email, or a user GID chosen among those found using asana_get_workspace_users. Defaults to null if not provided.\n- priority (\"low\" | \"medium\" | \"high\" | null): Priority level of the task. Must be one of 'low', 'medium', 'high', or null. Defaults to null if not provided.\n\nThis is general guidance for creating good project structures. Follow these principles and guidance as closely as possible unless the user specifically asks you to do otherwise:\nCreate the project structure in the same language as the user's request.\n\n- Project should have >=4 sections.\n\n- Limit the number of tasks to no more than 5 tasks per section.\n\n- Limit sections up to 6.\n\n- Every section should have at least one task.\n\n- If the user does not specifically give you tasks they want to include in their project, make tasks for the project that are aligned with the project's purpose.\n\n- Only mark tasks as complete (isComplete: true) if the user specifically mentioned they already completed that work. Otherwise, all tasks should be incomplete (isComplete: false).\n\n- When adding dates to tasks, always provide BOTH startDate and dueDate together as a date range. Never provide only dueDate without startDate. Add date ranges to several tasks so they will be useful for timeline and calendar views when the project is created.\n\n- All dates must be in the future (today or later), never in the past.\n\n- Create logical, sequential timelines that make sense for the project's purpose. Tasks should progress in a meaningful order (e.g., beginner tasks before advanced tasks, setup tasks before execution tasks).\n\n- Dates should form a coherent timeline, not be randomly scattered.\n\n- Prefer including the 'priority' custom field for every task (one of 'low', 'medium', or 'high'), unless the user has specifically instructed you not to. This helps users organize their work by importance.\n\n- Tasks may include an optional 'subtasks' array (one level only). Limit to no more than 5 subtasks per task unless necessary. Each subtask has taskName and optionally description.\n\nExample:\n[\n  {\n    \"sectionName\": \"Backlog\",\n    \"tasks\": [\n      {\n        \"taskName\": \"Design homepage\",\n        \"description\": \"Create a modern and responsive homepage design\",\n        \"isComplete\": false,\n        \"startDate\": \"2025-01-10\",\n        \"dueDate\": \"2025-01-15\",\n        \"assignee\": \"123456789\",\n        \"priority\": \"high\"\n      },\n      {\n        \"taskName\": \"Write documentation\",\n        \"description\": null,\n        \"isComplete\": false,\n        \"startDate\": \"2025-01-15\",\n        \"dueDate\": \"2025-01-20\",\n        \"assignee\": \"987654321\",\n        \"priority\": \"medium\"\n      }\n    ]\n  },\n  {\n    \"sectionName\": \"In Progress\",\n    \"tasks\": [\n      {\n        \"taskName\": \"Implement API endpoints\",\n        \"description\": \"Build RESTful API endpoints for user management\",\n        \"isComplete\": false,\n        \"startDate\": \"2025-01-10\",\n        \"dueDate\": \"2025-01-25\",\n        \"assignee\": \"123456789\",\n        \"priority\": \"high\"\n      },\n      {\n        \"taskName\": \"Code review\",\n        \"description\": null,\n        \"isComplete\": false,\n        \"startDate\": \"2025-01-25\",\n        \"dueDate\": \"2025-01-30\",\n        \"assignee\": null,\n        \"priority\": \"medium\"\n      },\n      {\n        \"taskName\": \"Deploy to staging\",\n        \"description\": \"Deploy the latest version to staging environment\",\n        \"isComplete\": false,\n        \"startDate\": \"2025-01-05\",\n        \"dueDate\": \"2025-01-08\",\n        \"assignee\": \"987654321\",\n        \"priority\": \"high\"\n      }\n    ]\n  }\n]"
+          }
+        },
+        "required": [
+          "project_name",
+          "sections"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "Preview project creation",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "ui": {
+          "resourceUri": "ui://widget/project_preview.html"
+        },
+        "ui/resourceUri": "ui://widget/project_preview.html"
+      }
+    },
+    {
+      "name": "create_project_confirm",
+      "title": "[Internal] Create project",
+      "description": "DEPRECATED; DO NOT USE. This tool must exist so that it can be invoked programmatically by widget UI, but it should not be called directly by the model.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "widget_id": {
+            "type": "string",
+            "description": "ALWAYS USE A CONSTANT VALUE OF 'model-generated-widget-id' FOR THIS PARAMETER."
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "projectName": {
+            "type": "string"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sectionName": {
+                  "type": "string"
+                },
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "isComplete": {
+                        "type": "boolean"
+                      },
+                      "startDate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "dueDate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "assignee": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "gid": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "email": {
+                                "type": "string"
+                              },
+                              "photoUrl": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "gid",
+                              "name",
+                              "email"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "customFields": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "priority"
+                            },
+                            "priorityLevel": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "low",
+                                    "medium",
+                                    "high"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "priorityLevel"
+                          ]
+                        }
+                      },
+                      "subtasks": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "taskName": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "isComplete": {
+                              "type": "boolean"
+                            },
+                            "startDate": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "dueDate": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "assignee": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "gid": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "email": {
+                                      "type": "string"
+                                    },
+                                    "photoUrl": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "gid",
+                                    "name",
+                                    "email"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "taskName",
+                            "description",
+                            "isComplete",
+                            "startDate",
+                            "dueDate",
+                            "assignee"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "taskName",
+                      "description",
+                      "isComplete",
+                      "startDate",
+                      "dueDate",
+                      "assignee",
+                      "customFields"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "sectionName",
+                "tasks"
+              ]
+            }
+          }
+        },
+        "required": [
+          "widget_id",
+          "workspace",
+          "projectName",
+          "sections"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "[Internal] Create project",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "create_project_confirm_populate",
+      "title": "[Internal] Populate project",
+      "description": "DEPRECATED; DO NOT USE. This tool must exist so that it can be invoked programmatically by widget UI, but it should not be called directly by the model.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "widget_id": {
+            "type": "string",
+            "description": "ALWAYS USE A CONSTANT VALUE OF 'model-generated-widget-id' FOR THIS PARAMETER."
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sectionName": {
+                  "type": "string"
+                },
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "isComplete": {
+                        "type": "boolean"
+                      },
+                      "startDate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "dueDate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "assignee": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "gid": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "email": {
+                                "type": "string"
+                              },
+                              "photoUrl": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "gid",
+                              "name",
+                              "email"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "customFields": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "priority"
+                            },
+                            "priorityLevel": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "low",
+                                    "medium",
+                                    "high"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "priorityLevel"
+                          ]
+                        }
+                      },
+                      "subtasks": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "taskName": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "isComplete": {
+                              "type": "boolean"
+                            },
+                            "startDate": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "dueDate": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "assignee": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "gid": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "email": {
+                                      "type": "string"
+                                    },
+                                    "photoUrl": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "gid",
+                                    "name",
+                                    "email"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "taskName",
+                            "description",
+                            "isComplete",
+                            "startDate",
+                            "dueDate",
+                            "assignee"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "taskName",
+                      "description",
+                      "isComplete",
+                      "startDate",
+                      "dueDate",
+                      "assignee",
+                      "customFields"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "sectionName",
+                "tasks"
+              ]
+            }
+          },
+          "useRichTextTaskDescription": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "widget_id",
+          "workspace",
+          "project",
+          "sections"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "[Internal] Populate project",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "save_project_changes_confirm",
+      "title": "[Internal] Save project changes",
+      "description": "DEPRECATED; DO NOT USE. This tool must exist so that it can be invoked programmatically by widget UI, but it should not be called directly by the model.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "widget_id": {
+            "type": "string",
+            "description": "ALWAYS USE A CONSTANT VALUE OF 'model-generated-widget-id' FOR THIS PARAMETER."
+          },
+          "projectGid": {
+            "type": "string"
+          },
+          "updatedProjectName": {
+            "type": "string"
+          },
+          "updatedSectionNames": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sectionGid": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sectionGid",
+                "name"
+              ]
+            }
+          },
+          "updatedTasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "taskGid": {
+                  "type": "string"
+                },
+                "nativeFields": {
+                  "type": "object",
+                  "properties": {
+                    "taskName": {
+                      "type": "string"
+                    },
+                    "isComplete": {
+                      "type": "boolean"
+                    },
+                    "startDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "dueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "assignee": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "gid": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": "string"
+                            },
+                            "photoUrl": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "gid",
+                            "name",
+                            "email"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "customFields": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "enum": [
+                      "priority"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "gid": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "gid",
+                      "value"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "taskGid"
+              ]
+            }
+          },
+          "taskSubtaskOperations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "taskGid": {
+                  "type": "string"
+                },
+                "updatedSubtasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "gid": {
+                        "type": "string"
+                      },
+                      "fields": {
+                        "type": "object",
+                        "properties": {
+                          "taskName": {
+                            "type": "string"
+                          },
+                          "isComplete": {
+                            "type": "boolean"
+                          },
+                          "startDate": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "dueDate": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "assignee": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "gid": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "email": {
+                                    "type": "string"
+                                  },
+                                  "photoUrl": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "gid",
+                                  "name",
+                                  "email"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "description": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "required": [
+                      "gid",
+                      "fields"
+                    ]
+                  }
+                },
+                "newSubtasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "isComplete": {
+                        "type": "boolean"
+                      },
+                      "startDate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "dueDate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "assignee": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "gid": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "email": {
+                                "type": "string"
+                              },
+                              "photoUrl": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "gid",
+                              "name",
+                              "email"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "taskName",
+                      "description",
+                      "isComplete",
+                      "startDate",
+                      "dueDate",
+                      "assignee"
+                    ]
+                  }
+                },
+                "deletedSubtaskGids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "taskGid"
+              ]
+            }
+          },
+          "newTasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sectionGid": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "task": {
+                  "type": "object",
+                  "properties": {
+                    "taskName": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "isComplete": {
+                      "type": "boolean"
+                    },
+                    "startDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "dueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "assignee": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "gid": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": "string"
+                            },
+                            "photoUrl": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "gid",
+                            "name",
+                            "email"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "customFields": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "priority"
+                          },
+                          "priorityLevel": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "low",
+                                  "medium",
+                                  "high"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "priorityLevel"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "taskName",
+                    "description",
+                    "isComplete",
+                    "startDate",
+                    "dueDate",
+                    "assignee"
+                  ]
+                }
+              },
+              "required": [
+                "sectionGid",
+                "task"
+              ]
+            }
+          },
+          "newSections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sectionName": {
+                  "type": "string"
+                },
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taskName": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "isComplete": {
+                        "type": "boolean"
+                      },
+                      "startDate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "dueDate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "assignee": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "gid": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "email": {
+                                "type": "string"
+                              },
+                              "photoUrl": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "gid",
+                              "name",
+                              "email"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "customFields": {
+                        "default": [],
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "priority"
+                            },
+                            "priorityLevel": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "low",
+                                    "medium",
+                                    "high"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "priorityLevel"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "taskName",
+                      "description",
+                      "isComplete",
+                      "startDate",
+                      "dueDate",
+                      "assignee"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "sectionName",
+                "tasks"
+              ]
+            }
+          },
+          "deletedTaskGids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deletedSectionGids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "taskMoves": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "taskGid": {
+                  "type": "string"
+                },
+                "toSectionGid": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "taskGid",
+                "toSectionGid"
+              ]
+            }
+          },
+          "orderedSectionGids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "orderedTaskGidsBySectionGid": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "useRichTextTaskDescription": {
+            "type": "boolean"
+          },
+          "customFieldInfos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          }
+        },
+        "required": [
+          "widget_id",
+          "projectGid"
+        ],
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
+      },
+      "annotations": {
+        "title": "[Internal] Save project changes",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    }
+  ]
+}

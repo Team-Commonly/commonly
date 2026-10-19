@@ -473,7 +473,10 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
     ? parseScopeSet(grantedScope)
     : new Set<string>(entry.scopes);
   const requestedScopes: Set<string> = new Set<string>(entry.scopes);
-  const extraScopes: string[] = [...grantedScopes].filter((scope) => !requestedScopes.has(scope));
+  const acceptedScopes: Set<string> = new Set<string>([
+    ...requestedScopes, ...(entry.responseOnlyScopes ?? []),
+  ]);
+  const extraScopes: string[] = [...grantedScopes].filter((scope) => !acceptedScopes.has(scope));
   if (extraScopes.length) {
     // Keep vendor-controlled scope strings out of the browser URL and official
     // UI copy. JSON encoding keeps control characters inert in server logs.

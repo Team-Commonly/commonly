@@ -54,4 +54,13 @@ describe('platform glyph catalogue contract', () => {
     expect(svg?.querySelector('path')?.getAttribute('d')).toContain('M3.5 10h17');
     expect(svg?.querySelector('circle')).toBeNull();
   });
+
+  it('renders Asana with its mark instead of the unknown-platform dot', () => {
+    const { container } = render(React.createElement(PlatformGlyph, { type: 'asana' }));
+    const svg = container.querySelector('svg');
+    expect(svg).toHaveAttribute('width', '20');
+    expect(svg).toHaveAttribute('fill', 'currentColor');
+    expect(svg?.querySelector('path')?.getAttribute('d')).toContain('M18.78 12.653');
+    expect(svg?.querySelector('circle')).toBeNull();
+  });
 });

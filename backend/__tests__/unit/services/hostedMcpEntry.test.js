@@ -22,6 +22,7 @@ const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
+const ASANA_CAPTURE = require('../../fixtures/hostedMcp/asana-tools-list-2026-10-19.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -567,7 +568,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
   test('ships Linear, Google Calendar, Atlassian, then Airtable, and lookup names the requested entry', () => {
     // The catalogue is the one place that says what an instance offers before
     // any member has connected anything. Its ordering follows the build plan.
-    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar', 'atlassian', 'airtable']);
+    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar', 'atlassian', 'airtable', 'asana']);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(catalogue, 'linear').title).toBe('Linear');
@@ -735,6 +736,53 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
     expect(capture.tools).toHaveLength(46);
+  });
+
+  test('the Asana pin excludes internal widget confirmation tools and records measured safety claims', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'asana');
+    expect(entry).toMatchObject({
+      resource: ASANA_CAPTURE.server,
+      issuer: 'https://app.asana.com',
+      client: 'pre-registered',
+      scopes: ['default'],
+      responseOnlyScopes: ['identity'],
+      revoke: { endpoint: 'https://app.asana.com/-/oauth_revoke' },
+    });
+    expect(ASANA_CAPTURE.scopeRequested).toBe('default');
+    expect(ASANA_CAPTURE.grantedScope).toBe('default identity');
+    expect(ASANA_CAPTURE.toolCount).toBe(39);
+    expect(ASANA_CAPTURE.tools).toHaveLength(39);
+    expect(entry.tools).toHaveLength(17);
+    expect(entry.tools.filter((tool) => tool.class === 'write').map((tool) => tool.name).sort())
+      .toEqual(['add_comment', 'create_project', 'create_tasks', 'delete_task', 'update_project', 'update_tasks']);
+    expect(entry.tools.find((tool) => tool.name === 'search_objects').description)
+      .toMatch(/teams.*tags.*goals.*portfolios.*project templates.*custom fields.*AI Teammates/);
+    expect(entry.tools.find((tool) => tool.name === 'delete_task').description)
+      .toMatch(/subtasks unless.*another project/);
+    const measured = new Map(ASANA_CAPTURE.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      expect(tool.name).toBe(tool.upstreamName);
+      expect(tool.class).toBe(found.annotations.readOnlyHint ? 'read' : 'write');
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(tool.annotations).toEqual({
+        readOnlyHint: found.annotations.readOnlyHint,
+        destructiveHint: found.annotations.destructiveHint,
+      });
+      if (found.annotations.destructiveHint) expect(tool.irreversible).toBe(true);
+    }
+    expect(entry.tools.every((tool) => !tool.name.endsWith('_confirm'))).toBe(true);
+    expect(entry.tools.every((tool) => !measured.get(tool.name)._meta?.ui)).toBe(true);
+  });
+
+  test('response-only scopes must be a distinct, explicit entry-owned allowlist', () => {
+    expect(() => assertHostedMcpEntries([linear({ responseOnlyScopes: ['read'] })]))
+      .toThrow(/response-only scopes are invalid/);
+    expect(() => assertHostedMcpEntries([linear({ responseOnlyScopes: ['identity', 'identity'] })]))
+      .toThrow(/response-only scopes are invalid/);
+    expect(() => assertHostedMcpEntries([linear({ responseOnlyScopes: ['identity'] })]))
+      .not.toThrow();
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {

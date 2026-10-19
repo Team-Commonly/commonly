@@ -77,6 +77,8 @@ export interface HostedMcpEntry {
   /** The authorization server the protected-resource metadata names. */
   issuer: string;
   client: 'pre-registered' | 'cimd' | 'dcr';
+  /** Vendor-added token scopes accepted but never sent in the authorization request. */
+  responseOnlyScopes?: string[];
   scopes: string[];
   /** Only the vendor-specific authorization parameters supported by this code. */
   authorizationParams?: {

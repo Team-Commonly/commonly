@@ -80,6 +80,7 @@ const { HOSTED_MCP_ENTRIES: SHIPPED_ENTRIES } = jest.requireActual('../../../int
 const LINEAR_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
 const ATLASSIAN_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
 const AIRTABLE_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
+const ASANA_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/asana-tools-list-2026-10-19.json');
 const GOOGLE_CALENDAR_CAPTURE = require('../../fixtures/hostedMcp/google-calendar-tools-list-2026-10-01.json');
 
 const app = express();
@@ -358,6 +359,31 @@ describe('hosted-mcp connect: callback', () => {
     expect(outcome(res).hostedMcp).toBe('connected');
     const [, update] = Integration.findOneAndUpdate.mock.calls[1];
     expect(update.$set['config.grantedScope']).toBe('openid read');
+  });
+
+  it('records Asana\'s measured response-only identity scope without requesting it', async () => {
+    const originalScopes = FIXTURE_ENTRY.scopes;
+    FIXTURE_ENTRY.scopes = ['default'];
+    FIXTURE_ENTRY.responseOnlyScopes = ['identity'];
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'access-1',
+        refresh_token: 'refresh-1',
+        scope: ASANA_SCOPE_CAPTURE.grantedScope,
+      }),
+    });
+    try {
+      expect(ASANA_SCOPE_CAPTURE.scopeRequested).toBe('default');
+      expect(ASANA_SCOPE_CAPTURE.grantedScope).toBe('default identity');
+      const res = await callback();
+      expect(outcome(res).hostedMcp).toBe('connected');
+      const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+      expect(update.$set['config.grantedScope']).toBe('default identity');
+    } finally {
+      FIXTURE_ENTRY.scopes = originalScopes;
+      delete FIXTURE_ENTRY.responseOnlyScopes;
+    }
   });
 
   it('accepts Atlassian\'s captured reordered granted-scope list', async () => {
