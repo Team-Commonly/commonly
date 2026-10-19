@@ -131,6 +131,7 @@ const V2PodBoard: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { socket, connected, joinPod, leavePod } = useSocket();
+  const connectionRef = useRef({ podId: null as string | null, wasConnected: false, hasConnected: false });
 
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [podName, setPodName] = useState<string>('');
@@ -217,6 +218,18 @@ const V2PodBoard: React.FC = () => {
     setLoading(true);
     load();
   }, [load]);
+
+  useEffect(() => {
+    const state = connectionRef.current;
+    if (state.podId !== podId) {
+      connectionRef.current = { podId: podId || null, wasConnected: connected, hasConnected: connected };
+      return;
+    }
+    const reconnected = connected && !state.wasConnected && state.hasConnected;
+    state.wasConnected = connected;
+    if (connected) state.hasConnected = true;
+    if (reconnected && podId) load();
+  }, [podId, connected, load]);
 
   useEffect(() => {
     focusRequestRef.current += 1;

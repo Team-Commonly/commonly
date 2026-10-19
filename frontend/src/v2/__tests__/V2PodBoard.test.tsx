@@ -109,6 +109,39 @@ beforeEach(() => {
 });
 
 describe('V2PodBoard', () => {
+  test('reloads tasks missed while the socket was disconnected', async () => {
+    const socket = { on: jest.fn(), off: jest.fn() };
+    mockSocketValue = { socket, connected: true, joinPod: jest.fn(), leavePod: jest.fn() };
+    let taskReads = 0;
+    axios.get.mockImplementation((url) => {
+      if (url.startsWith('/api/v1/tasks/')) {
+        taskReads += 1;
+        return Promise.resolve({ data: { tasks: taskReads === 1 ? TASKS : [
+          ...TASKS, { taskId: 'TASK-003', title: 'Missed during outage', status: 'pending', updates: [] },
+        ] } });
+      }
+      if (url.endsWith('/focus')) return Promise.resolve({ data: FOCUS });
+      if (url.startsWith('/api/pods/')) return Promise.resolve({ data: { name: 'My Workspace' } });
+      return Promise.resolve({ data: {} });
+    });
+
+    const view = renderBoard();
+    await screen.findByRole('region', { name: 'Pending' });
+    expect(taskReads).toBe(1);
+
+    act(() => {
+      mockSocketValue = { ...mockSocketValue, connected: false };
+      view.rerender(boardTree());
+    });
+    act(() => {
+      mockSocketValue = { ...mockSocketValue, connected: true };
+      view.rerender(boardTree());
+    });
+
+    expect(await screen.findByText('Missed during outage')).toBeInTheDocument();
+    expect(taskReads).toBe(2);
+  });
+
   test('renders four canonical columns and places alias statuses in them', async () => {
     renderBoard();
 
