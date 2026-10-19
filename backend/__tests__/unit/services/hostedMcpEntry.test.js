@@ -785,6 +785,12 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(newlyListedExcluded).toHaveLength(22);
     expect(newlyListedExcluded.every((name) => capture.tools.some((tool) => tool.name === name))).toBe(true);
     expect(newlyListedExcluded.some((name) => names.includes(name))).toBe(false);
+    const descriptionOf = (name) => entry.tools.find((tool) => tool.upstreamName === name).description;
+    expect(descriptionOf('notion-fetch')).toContain('id: memory');
+    expect(descriptionOf('notion-fetch')).toContain('include_file_urls');
+    expect(descriptionOf('notion-create-pages')).toContain('parent: memory');
+    expect(descriptionOf('notion-create-view')).toContain('anonymous responses');
+    expect(descriptionOf('notion-update-view')).toContain('CLEAR can remove filters, sorts and grouping');
     expect(entryToolProjections(entry).find((tool) => tool.name === 'notion.notion_move_pages'))
       .toMatchObject({ requiredWriteMode: 'write-with-confirm', irreversible: true });
     expect(entryToolProjections(entry).find((tool) => tool.name === 'notion.notion_update_view'))
