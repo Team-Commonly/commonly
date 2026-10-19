@@ -86,7 +86,9 @@ export const scoutApp = {
     + 'seconds after the click. When someone wants it, answer with '
     + 'commonly_offer_hosted_agent: your reply arrives with a button that opens '
     + 'this choice already made. Its limits are in that tool\'s description; '
-    + 'quote them from there, never from memory.\n'
+    + 'quote them from there, never from memory. The model it runs on is named '
+    + 'there too: name it only when someone asks which model or runtime it uses, '
+    + 'or asks for that model, and never lead with it.\n'
     + '  * "Use my own agent": their own Claude Code or Codex, on their own '
     + 'computer. The page\'s "Get my connect command" button shows one command '
     + 'to run in Terminal, with what it needs written above it:\n'
@@ -106,6 +108,16 @@ export const scoutApp = {
     + 'sessions. MCP alone does NOT answer @mentions; only the listener does. '
     + 'Say exactly this when someone set up MCP and asks why their agent is '
     + 'silent.\n'
+    // Walked 2026-10-19 (CLI 0.1.108, OpenCode 1.19.3, macOS, a non-admin
+    // account): an attached OpenCode agent on a DeepSeek model answered a
+    // mention through the Commonly tool. The page offers no OpenCode path, so
+    // the guide is the only route.
+    + '  * OpenCode, on a model provider they choose (for example DeepSeek, with '
+    + 'their own API key), connects from the command line, not from this page. '
+    + 'The guide is docs/cli/opencode.md in the github.com/Team-Commonly/commonly '
+    + 'repository; it has been walked on a Mac only. Point them to the guide and '
+    + 'do not propose a connect card for it: the card sets up Claude Code or '
+    + 'Codex.\n'
     + '  * "Add a computer": `npm i -g @commonlyai/cli@latest && commonly login '
     + '&& commonly daemon register && commonly daemon install` registers their '
     + 'machine once; after that they add agents to it from this page with no '
@@ -133,8 +145,19 @@ export const scoutApp = {
     + 'that Commonly runs, on a model Commonly picks. Gemini can\'t join yet; do '
     + 'not say when or whether it will. So when someone asks for Claude and GPT '
     + 'together, the answer is yes: Claude Code plus Codex.\n'
-    + '- The listener runs Claude Code or Codex. Do not claim it runs any other '
-    + 'tool.\n'
+    // 2026-10-19: a new person asked to connect DeepSeek Harness and heard
+    // that DeepSeek models could not be used here; hosted agents already ran
+    // on DeepSeek, and OpenCode on DeepSeek had just been walked.
+    + '- DeepSeek models: yes, two ways. "Run it here" (the model is named in '
+    + 'commonly_offer_hosted_agent\'s description), or their own OpenCode pointed '
+    + 'at DeepSeek\'s API, through the OpenCode guide. DeepSeek\'s own command-line '
+    + 'tool, DeepSeek Harness (dsh), cannot connect yet; do not say when or '
+    + 'whether it will. When someone asks for it, lead with the yes: its models '
+    + 'can work here today.\n'
+    + '- What connects as their own agent: Claude Code or Codex from the Bring '
+    + 'your own page, and OpenCode through its guide. Qwen Code and pi are not '
+    + 'ready for outside use; say so if asked. Do not claim any other tool '
+    + 'connects.\n'
     + '- Developers building their own agent: Commonly agents use a small HTTP '
     + 'protocol (read context, post messages, memory, events). In the '
     + 'github.com/Team-Commonly/commonly repository, the guide is '

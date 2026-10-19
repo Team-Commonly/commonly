@@ -66,8 +66,25 @@ describe('Scout onboarding knowledge', () => {
     // Nothing on the board backs a Gemini promise.
     expect(prompt).not.toMatch(/coming/i);
     // The hosted agent's model is whatever the runtime defaults to, so the
-    // prompt names none.
-    expect(prompt).not.toMatch(/deepseek/i);
+    // prompt names none; the hosted offer's description carries it.
+    expect(prompt).not.toMatch(/v4[ -]?flash/i);
+  });
+
+  // 2026-10-19: a new person asked to connect DeepSeek Harness, heard that
+  // DeepSeek models could not be used here, and left within two minutes.
+  test('says yes to DeepSeek models and names both paths, without promising dsh', () => {
+    expect(prompt).toMatch(/DeepSeek models: yes, two ways\. "Run it here"/);
+    expect(prompt).toMatch(/their own OpenCode pointed at DeepSeek's API, through the OpenCode guide/);
+    expect(prompt).toMatch(/DeepSeek Harness \(dsh\), cannot connect yet; do not say when or whether it will/);
+    expect(prompt).toMatch(/lead with the yes: its models can work here today/);
+    expect(prompt).toMatch(/name it only when someone asks which model or runtime it uses/);
+  });
+
+  test('connects OpenCode through its guide, never through the connect card', () => {
+    expect(prompt).toMatch(/OpenCode, on a model provider they choose .* connects from the command line, not from this page/);
+    expect(prompt).toMatch(/do not propose a connect card for it: the card sets up Claude Code or Codex/);
+    expect(prompt).toMatch(/Qwen Code and pi are not ready for outside use/);
+    expect(prompt).toMatch(/Do not claim any other tool connects/);
   });
 
   // Linux run 38982219348: a Claude Code listener cannot run on Linux, WSL or
@@ -92,7 +109,7 @@ describe('Scout onboarding knowledge', () => {
 
   test('cites developer docs that exist in the repository', () => {
     const repo = path.resolve(__dirname, '../../../..');
-    for (const doc of ['docs/agents/BUILDING_AN_AGENT.md', 'docs/api/openapi.yaml']) {
+    for (const doc of ['docs/agents/BUILDING_AN_AGENT.md', 'docs/api/openapi.yaml', 'docs/cli/opencode.md']) {
       expect(prompt).toContain(doc);
       expect(fs.existsSync(path.join(repo, doc))).toBe(true);
     }
@@ -113,5 +130,38 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toContain('commonly_offer_hosted_agent');
     expect(scoutApp.tools).toContain('commonly_offer_hosted_agent');
     expect(prompt).toMatch(/with no invitation code/);
+  });
+});
+
+// The hosted model reaches Scout through the offer's description, built from
+// the same default a hosted turn runs on, so it follows the deployment the way
+// the limits line does (#2237) instead of drifting in a prompt.
+describe('the hosted offer names the model a hosted turn runs on', () => {
+  const offerDescription = (model) => {
+    const saved = process.env.LITELLM_CHAT_MODEL;
+    if (model === undefined) delete process.env.LITELLM_CHAT_MODEL;
+    else process.env.LITELLM_CHAT_MODEL = model;
+    let tools;
+    try {
+      jest.isolateModules(() => {
+        ({ TOOLS: tools } = require('../../../services/nativeRuntimeService'));
+      });
+    } finally {
+      if (saved === undefined) delete process.env.LITELLM_CHAT_MODEL;
+      else process.env.LITELLM_CHAT_MODEL = saved;
+    }
+    return tools.find((tool) => tool.function.name === 'commonly_offer_hosted_agent').function.description;
+  };
+
+  test('names DeepSeek V4 Flash for the default model, and says it cannot be changed', () => {
+    const description = offerDescription(undefined);
+    expect(description).toMatch(/A hosted agent runs on DeepSeek V4 Flash, and the person cannot choose another model today/);
+    expect(description).toMatch(/name the model only when they ask which model or runtime it uses/);
+  });
+
+  test('follows LITELLM_CHAT_MODEL when the deployment changes it', () => {
+    const description = offerDescription('some-other-model');
+    expect(description).toMatch(/A hosted agent runs on some-other-model,/);
+    expect(description).not.toMatch(/DeepSeek/);
   });
 });

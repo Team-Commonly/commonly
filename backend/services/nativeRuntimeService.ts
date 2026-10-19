@@ -145,6 +145,11 @@ export const HOSTED_LIMITS_LINE = `${HOSTED_FREE_CAPS.agentsPerUser} hosted `
   + `agent${HOSTED_FREE_CAPS.agentsPerUser === 1 ? '' : 's'} per account and `
   + `${HOSTED_FREE_CAPS.turnsPerDay} turns a day (${HOSTED_PRO_CAPS.turnsPerDay} on Pro)`;
 export const HOSTED_OFFER_LABEL = 'Run it here';
+// The model a hosted turn runs on. hostedNativeRunConfig leaves `model` unset,
+// so it is DEFAULT_MODEL. Named here for the same reason as the limits: Scout
+// answers "can I use DeepSeek?" from the deployment, not from its own copy.
+const MODEL_DISPLAY_NAMES: Record<string, string> = { 'deepseek-v4-flash': 'DeepSeek V4 Flash' };
+export const HOSTED_MODEL_NAME = MODEL_DISPLAY_NAMES[DEFAULT_MODEL] || DEFAULT_MODEL;
 
 // --- tool schema (OpenAI function-calling format) -------------------------
 //
@@ -319,7 +324,9 @@ export const TOOLS = [
         + `"${HOSTED_OFFER_LABEL}" button that opens Bring your own with hosting already chosen; `
         + 'one more click there and their agent is live in a few seconds. Open to every '
         + 'signed-in account during beta, no invitation code needed. The current limits are '
-        + `${HOSTED_LIMITS_LINE}; quote these, never a number from memory. The content is your `
+        + `${HOSTED_LIMITS_LINE}; quote these, never a number from memory. A hosted agent runs `
+        + `on ${HOSTED_MODEL_NAME}, and the person cannot choose another model today; name the `
+        + 'model only when they ask which model or runtime it uses. The content is your '
         + 'whole reply: do not post another message about it. If they already have a hosted '
         + 'agent, or this instance cannot host, nothing is posted and the result says why; '
         + 'tell them in your own words.',
