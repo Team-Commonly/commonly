@@ -445,9 +445,10 @@ hostedMcp:
     - sentry
   googleCalendar:
     enabled: false
-  # Commonly Connect App registration and Secret Manager values are pending.
+  # Commonly Connect App's client ID and secret each have an enabled version
+  # in Secret Manager (verified 2026-10-19). The backend refs remain optional.
   githubMcp:
-    enabled: false
+    enabled: true
 
 # The team's own accounts, left out of the "typed and got no reply" alert, come
 # from the secret store (INTERNAL_ACCOUNTS, #2373). The key exists, and on

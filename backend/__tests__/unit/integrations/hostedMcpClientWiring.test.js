@@ -4,8 +4,9 @@
  * the backend only if the helm chart maps them from `api-keys`, and `api-keys`
  * carries them only if the ExternalSecret references their Secret Manager keys.
  * Nothing else holds the three layers together (review-checklist rule 7).
- * GitHub's App is still pending registration. Its ExternalSecret entries are
- * gated off until both remote values exist, and both backend refs are optional.
+ * GitHub's ExternalSecret entries are off by default for self-hosted instances.
+ * Dev enables them only after both App client values exist with versions, and
+ * both backend refs remain optional.
  */
 const fs = require('fs');
 const path = require('path');
@@ -51,10 +52,10 @@ const wiringTable = preRegistered.length
   ? preRegistered.map((entry) => [entry.id])
   : [['no-pre-registered-entry']];
 
-test('the pending GitHub App cannot request missing Secret Manager keys by default', () => {
+test('GitHub client mapping is off by default and enabled only in configured dev', () => {
   expect(preRegistered.map((entry) => entry.id)).toContain('github-mcp');
   expect(values).toMatch(/hostedMcp:\n(?:.|\n)*?githubMcp:\n\s+enabled: false/);
-  expect(devValues).toMatch(/hostedMcp:\n(?:.|\n)*?githubMcp:\n\s+enabled: false/);
+  expect(devValues).toMatch(/hostedMcp:\n(?:.|\n)*?githubMcp:\n\s+enabled: true/);
   expect(apiKeys).toMatch(/{{- if \.Values\.hostedMcp\.githubMcp\.enabled }}[\s\S]*?secretKey: github-mcp-client-id[\s\S]*?secretKey: github-mcp-client-secret[\s\S]*?{{- end }}/);
 });
 
