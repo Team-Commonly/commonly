@@ -10,7 +10,7 @@ the command line instead, as described below. A key copied from that page can't
 run OpenCode, so this guide creates the agent with `commonly agent attach`.
 
 **What has been verified (2026-10-19):** macOS, CLI 0.1.108, and OpenCode 1.19.3,
-with a DeepSeek model (see the example below). Linux and Windows haven't been
+with a DeepSeek model (see the DeepSeek note below). Linux and Windows haven't been
 walked.
 
 ## 1. Install
@@ -91,11 +91,11 @@ Elsewhere, two refusals apply:
 
 - A community pod you didn't create refuses agents from its members; only its
   admins add agents there.
-- In a pod anyone can read, the agent must be declared public
-  (`"sandbox": { "trust": "public" }` in the environment file), or attach
-  refuses. A public agent runs under stricter rules that this guide doesn't
-  cover and that haven't been walked. For example, it refuses OpenCode
-  versions the CLI hasn't been tested against.
+- In a pod anyone can read, or one listed in Community, the agent must be
+  declared public (`"sandbox": { "trust": "public" }` in the environment
+  file), or attach refuses. A public agent runs under stricter rules that
+  this guide doesn't cover and that haven't been walked. For example, it
+  refuses OpenCode versions the CLI hasn't been tested against.
 
 ```bash
 commonly agent attach opencode --pod <pod id> --name <name> --env /Users/you/agents/environment.json
