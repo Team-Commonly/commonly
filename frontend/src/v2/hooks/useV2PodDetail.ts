@@ -197,6 +197,7 @@ export interface HistorySearchState {
 
 const REQUEST_TIMEOUT_MS = 8000;
 const SEND_TIMEOUT_MS = 20000;
+const RECONNECT_ERROR = 'Messages could not be refreshed after reconnect. Try reloading this pod.';
 // One page of history. The backend clamps `limit` to [1,200]; 50 matches the
 // showcase reader so both surfaces page at the same rate.
 const PAGE_SIZE = 50;
@@ -288,6 +289,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   // to the currently selected pod, so no previous room's messages can flash
   // under a new DM header.
   const activePodIdRef = useRef<string | null>(podId);
+  const connectionRef = useRef({ podId: null as string | null, wasConnected: false, hasConnected: false });
   const refreshSequenceRef = useRef(0);
   const messagesRef = useRef<V2Message[]>([]);
   const hasMoreRef = useRef(false);
@@ -329,7 +331,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     if (activePodIdRef.current === id) setPod(result);
   }, [api]);
 
-  const fetchMessages = useCallback(async (id: string) => {
+  const fetchMessages = useCallback(async (id: string, reconnect = false) => {
     try {
       const data = await api.get<V2Message[]>(
         `/api/messages/${id}?limit=${PAGE_SIZE}`,
@@ -338,14 +340,30 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       const list = Array.isArray(data) ? data : [];
       if (activePodIdRef.current !== id) return;
       const normalized = chronologicalMessages(list.map(normalizeMessage));
-      messagesRef.current = normalized;
-      setMessages(normalized);
+      if (reconnect) {
+        // A socket event (or a previously loaded history page) can arrive
+        // while the catch-up request is in flight. Keep those rows and dedupe.
+        setMessages((previous) => {
+          if (activePodIdRef.current !== id) return previous;
+          const merged = mergeMessagesById(normalized, previous);
+          messagesRef.current = merged;
+          return merged;
+        });
+      } else {
+        messagesRef.current = normalized;
+        setMessages(normalized);
+      }
       // This endpoint returns a bare array with no envelope, so end-of-history
       // is inferred: a short page means there is nothing older behind it.
-      hasMoreRef.current = list.length >= PAGE_SIZE;
-      setHasMore(hasMoreRef.current);
+      // A reconnect page starts at the newest message; its length cannot say
+      // whether older history remains behind the already loaded pages.
+      if (!reconnect) {
+        hasMoreRef.current = list.length >= PAGE_SIZE;
+        setHasMore(hasMoreRef.current);
+      }
     } catch (err) {
       const e = err as { response?: { status?: number } };
+      if (reconnect) throw err;
       if (e.response?.status === 404 && activePodIdRef.current === id) {
         messagesRef.current = [];
         hasMoreRef.current = false;
@@ -601,6 +619,27 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const state = connectionRef.current;
+    if (state.podId !== podId) {
+      connectionRef.current = { podId, wasConnected: connected, hasConnected: connected };
+      return;
+    }
+    const reconnected = connected && !state.wasConnected && state.hasConnected;
+    state.wasConnected = connected;
+    if (connected) state.hasConnected = true;
+    if (!reconnected || !podId) return;
+    fetchMessages(podId, true).then(() => {
+      if (activePodIdRef.current === podId) {
+        setError((current) => current === RECONNECT_ERROR ? null : current);
+      }
+    }).catch(() => {
+      if (activePodIdRef.current === podId) {
+        setError(RECONNECT_ERROR);
+      }
+    });
+  }, [podId, connected, fetchMessages]);
 
   useEffect(() => {
     if (!podId || !socket || !connected) return undefined;
