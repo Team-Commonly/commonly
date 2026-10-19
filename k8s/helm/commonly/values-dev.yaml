@@ -452,6 +452,9 @@ hostedMcp:
     - airtable
   googleCalendar:
     enabled: false
+  # Commonly Connect App registration and Secret Manager values are pending.
+  githubMcp:
+    enabled: false
 
 # The team's own accounts, left out of the "typed and got no reply" alert, come
 # from the secret store (INTERNAL_ACCOUNTS, #2373). The key exists, and on
