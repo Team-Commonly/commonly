@@ -740,14 +740,17 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(capture.tools).toHaveLength(46);
   });
 
-  test('the Sentry pin keeps named searches and an approved issue writer, with exact captured schemas', () => {
+  test('the Sentry pin restricts resource lookup to type and ID and parks its destructive writer', () => {
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
     const capture = SENTRY_CAPTURE;
     expect(entry).toMatchObject({
       resource: 'https://mcp.sentry.dev/mcp',
       issuer: 'https://mcp.sentry.dev',
       client: 'cimd',
-      revoke: { endpoint: 'https://mcp.sentry.dev/oauth/token' },
+      revoke: {
+        page: 'https://sentry.io/settings/account/authorizations/',
+        endpoint: 'https://mcp.sentry.dev/oauth/token',
+      },
     });
     expect(capture.server).toBe(entry.resource);
     expect(capture.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
@@ -757,10 +760,22 @@ describe('the shipped catalogue cannot land half-wired', () => {
     );
     expect(capture.tools).toHaveLength(15);
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    const resource = entry.tools.find((tool) => tool.name === 'get_sentry_resource');
+    expect(resource.inputSchema.properties.url).toBeUndefined();
+    expect(measured.get('get_sentry_resource').inputSchema.properties.url).toBeDefined();
+    expect(resource.inputSchema.properties.resourceType.enum).toEqual([
+      'issue', 'event', 'trace', 'ai_conversation', 'replay', 'monitor', 'snapshot', 'dashboard',
+    ]);
+    expect(resource.description).toContain('by type and ID');
+    expect(assessEntryTools(entry, capture.tools).find((tool) => tool.name === 'get_sentry_resource'))
+      .toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatibly') });
+    expect(entry.tools.find((tool) => tool.name === 'update_issue').irreversible).toBe(true);
     for (const tool of entry.tools) {
       const found = measured.get(tool.upstreamName);
       expect(found).toBeDefined();
-      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      if (tool.name !== 'get_sentry_resource') {
+        expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      }
       expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
       expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read');

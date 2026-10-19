@@ -5,9 +5,11 @@
  *
  * Resource and authorization-server metadata were fetched from mcp.sentry.dev
  * on 2026-10-19. The tool pin comes from connector-ops's consenting tools/list
- * capture at 2026-10-19T07:02:33Z, with schemas copied unchanged for drift
- * assessment. The by-name dispatcher and its catalogue are excluded because
- * they can reach operations outside this reviewed pin. Seer analysis is
+ * capture at 2026-10-19T07:02:33Z. The get_sentry_resource pin deliberately
+ * omits the vendor's optional `url`: that route can reach types outside the
+ * pinned enum, so its live schema always reports a compatible addition in
+ * the assessment log. The by-name dispatcher and its catalogue are excluded
+ * because they can reach operations outside this reviewed pin. Seer analysis is
  * excluded because it starts a vendor AI workflow.
  */
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
@@ -21,7 +23,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
   client: 'cimd',
   scopes: ['org:read', 'project:write', 'team:write', 'event:write', 'alerts:write'],
   revoke: {
-    page: 'https://sentry.io/settings/account/',
+    page: 'https://sentry.io/settings/account/authorizations/',
     endpoint: 'https://mcp.sentry.dev/oauth/token',
   },
   tools: [
@@ -123,6 +125,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
       upstreamName: 'update_issue',
       description: "Change a Sentry issue status or assignee, with an optional reason.",
       class: 'write',
+      irreversible: true,
       inputSchema: {
         type: "object",
         properties: {
@@ -990,16 +993,12 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
     {
       name: 'get_sentry_resource',
       upstreamName: 'get_sentry_resource',
-      description: "Read a Sentry issue, event, trace, replay or dashboard by URL or ID.",
+      description: 'Read a Sentry issue, event, trace, AI conversation, replay, '
+        + 'monitor, snapshot, or dashboard by type and ID.',
       class: 'read',
       inputSchema: {
         type: "object",
         properties: {
-          url: {
-            description: "Sentry URL. The resource type is auto-detected from the URL pattern.",
-            type: "string",
-            format: "uri",
-          },
           resourceType: {
             description: "Resource type. With a URL, can override a span-focused trace URL with `trace`. Use `monitor` with a monitor slug only when inspect monitor tools are available, `snapshot` with a snapshot artifact ID, or `dashboard` with a dashboard ID or exact title when inspect dashboard tools are available.",
             type: "string",
