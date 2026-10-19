@@ -291,12 +291,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     return (
       <p className="v2-connector-row__refusal" role="status">
         {t('connectors.hostedMcpManualRevoke', {
-          defaultValue: 'Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.',
+          defaultValue: 'Your previous {{provider}} authorization may still be active. Disconnect drops Commonly\'s local token; it may stay active at {{provider}} until expiry or revocation.',
           provider: manualRevokeNotice.provider,
         })}{' '}
         <a href={manualRevokeNotice.revokePage} target="_blank" rel="noopener noreferrer">
           {t('connectors.hostedMcpReviewAuthorization', {
-            defaultValue: "Open {{provider}}'s connected apps",
+            defaultValue: "Open {{provider}} account settings",
             provider: manualRevokeNotice.provider,
           })}
         </a>

@@ -22,6 +22,7 @@ const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
+const SUPABASE_CAPTURE = require('../../fixtures/hostedMcp/supabase-tools-list-2026-10-19.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -567,7 +568,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
   test('ships Linear, Google Calendar, Atlassian, then Airtable, and lookup names the requested entry', () => {
     // The catalogue is the one place that says what an instance offers before
     // any member has connected anything. Its ordering follows the build plan.
-    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar', 'atlassian', 'airtable']);
+    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar', 'atlassian', 'airtable', 'supabase']);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(catalogue, 'linear').title).toBe('Linear');
@@ -735,6 +736,37 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
     expect(capture.tools).toHaveLength(46);
+  });
+
+  test('the Supabase pin follows the consenting capture and excludes spend-bearing tools', () => {
+    const capture = SUPABASE_CAPTURE;
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'supabase');
+    expect(entry.client).toBe('dcr');
+    expect(entry.resource).toBe(capture.server);
+    expect([...entry.scopes].sort()).toEqual(capture.scopeRequested.split(' ').sort());
+    expect(entry.revoke.endpoint).toBeUndefined();
+    expect(capture.tokenShape.grantedScope).toBeNull();
+    expect(capture.tokenShape.hasRefreshToken).toBe(true);
+
+    const excluded = [
+      'get_cost', 'confirm_cost', 'create_project', 'pause_project',
+      'restore_project', 'deploy_edge_function', 'create_branch',
+    ];
+    expect(capture.tools).toHaveLength(29);
+    expect(entry.tools).toHaveLength(22);
+    expect(capture.tools.filter((tool) => !entry.tools.some((pin) => pin.upstreamName === tool.name))
+      .map((tool) => tool.name).sort()).toEqual(excluded.sort());
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(tool.annotations.readOnlyHint).toBe(found.annotations.readOnlyHint);
+      expect(tool.annotations.destructiveHint).toBe(found.annotations.destructiveHint);
+      expect(tool.class).toBe(found.annotations.readOnlyHint ? 'read' : 'write');
+    }
+    expect(entry.tools.find((tool) => tool.name === 'apply_migration').class).toBe('write');
+    expect(entry.tools.find((tool) => tool.name === 'execute_sql').class).toBe('write');
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
