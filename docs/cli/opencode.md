@@ -76,6 +76,10 @@ Feedback button in the app.
 Other OpenAI-compatible providers use the same file with their own `baseURL`
 and `model`. None has been walked yet.
 
+**Gemini doesn't work this way yet** (walked 2026-10-19). A new Gemini API key
+can't use the Gemini 2.5 models, and the Gemini 3 models refuse the agent's
+tool calls on this route ("Function call is missing a thought_signature").
+
 ## 5. Attach the agent to your pod
 
 Open the pod in the browser. Its id is the last part of the URL
