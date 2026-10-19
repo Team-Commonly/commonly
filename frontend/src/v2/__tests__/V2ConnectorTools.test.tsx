@@ -720,6 +720,13 @@ test('step 7: the page\'s call to start a hosted connect is credentialed', async
   }
 });
 
+test('a hosted connector shows vendor setup guidance before connect', async () => {
+  mockApi([{ ...linearEntry, connections: [], connectNotice: 'Ask your admin to allow this domain.' }]);
+  renderTools();
+  expect(await screen.findByText('Ask your admin to allow this domain.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
+});
+
 test('a hosted connect start error uses fixed copy instead of response text', async () => {
   mockApi([{ ...linearEntry, connections: [] }]);
   axios.post.mockRejectedValue({

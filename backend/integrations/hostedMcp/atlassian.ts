@@ -58,6 +58,8 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
   id: 'atlassian',
   title: 'Atlassian',
   description: 'Jira issues and Confluence pages in your Atlassian site.',
+  connectNotice: 'Before connecting, ask your Atlassian admin to allow '
+    + 'https://api.commonly.me/** in MCP server domains.',
   resource: 'https://mcp.atlassian.com/v2/mcp',
   issuer: 'https://auth.atlassian.com/VCeDsk8ZHncYF1g234fKtc4lNipbBhu3',
   // The authorization server advertises `client_id_metadata_document_supported:

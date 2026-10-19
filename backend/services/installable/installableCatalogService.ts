@@ -150,6 +150,7 @@ const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
       list: 'tools',
       label: row.name || row.installableId,
       description: row.description || '',
+      ...(hostedEntry?.connectNotice ? { connectNotice: hostedEntry.connectNotice } : {}),
       connectionType: meta.connectionType,
       ...(meta.entryId ? { entryId: meta.entryId } : {}),
       available: readiness.available,
