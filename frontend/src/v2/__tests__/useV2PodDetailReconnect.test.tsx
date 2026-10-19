@@ -84,6 +84,41 @@ describe('useV2PodDetail reconnect', () => {
     expect(new Set(result.current.messages.map((item) => item.id)).size).toBe(3);
   });
 
+  it('keeps a socket message the catch-up response does not contain', async () => {
+    let resolveReconnect;
+    const reconnectResponse = new Promise((resolve) => { resolveReconnect = resolve; });
+    let reads = 0;
+    mockApi.get.mockImplementation((url) => {
+      if (url === '/api/messages/pod-1?limit=50') {
+        reads += 1;
+        return reads === 1 ? Promise.resolve([message('before-outage', 0)]) : reconnectResponse;
+      }
+      if (url.includes('/agents')) return Promise.resolve({ agents: [] });
+      return Promise.resolve({ _id: 'pod-1', name: 'Pod', members: [] });
+    });
+
+    const { result, rerender } = renderHook(() => useV2PodDetail('pod-1'));
+    await waitFor(() => expect(result.current.initialLoadComplete).toBe(true));
+    expect(messageGets()).toHaveLength(1);
+
+    act(() => { mockConnected = false; rerender(); });
+    act(() => { mockConnected = true; rerender(); });
+    await waitFor(() => expect(messageGets()).toHaveLength(2));
+
+    const socketMessage = mockSocket.on.mock.calls
+      .filter(([event]) => event === 'newMessage')
+      .at(-1)[1];
+    act(() => { socketMessage(message('socket-only', 3)); });
+    await act(async () => {
+      resolveReconnect([message('before-outage', 0), message('missed-reply', 1)]);
+      await reconnectResponse;
+    });
+
+    expect(result.current.messages.map((item) => item.id)).toEqual([
+      'before-outage', 'missed-reply', 'socket-only',
+    ]);
+  });
+
   it('does not fetch twice when the socket connects for the first time', async () => {
     mockConnected = false;
     const { result, rerender } = renderHook(() => useV2PodDetail('pod-1'));

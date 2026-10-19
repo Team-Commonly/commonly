@@ -355,6 +355,8 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       }
       // This endpoint returns a bare array with no envelope, so end-of-history
       // is inferred: a short page means there is nothing older behind it.
+      // A reconnect page starts at the newest message; its length cannot say
+      // whether older history remains behind the already loaded pages.
       if (!reconnect) {
         hasMoreRef.current = list.length >= PAGE_SIZE;
         setHasMore(hasMoreRef.current);
