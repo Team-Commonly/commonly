@@ -69,11 +69,11 @@ Create `environment.json`. `provider.keyFile` must be an absolute path
 - `workspace.path` is the folder the agent works in. Create it first. It must not
   contain the key file.
 
-**DeepSeek.** We walked DeepSeek V4 Flash (`deepseek-v4-flash`) through an
-OpenAI-compatible endpoint that serves it. We have not yet called DeepSeek's own
-API this way. To try it, set `baseURL` to `https://api.deepseek.com/v1` and
-`model` to `deepseek-v4-flash`. DeepSeek's API uses the same protocol. If it
-refuses the request, tell us through the Feedback button in the app.
+**DeepSeek.** Set `baseURL` to `https://api.deepseek.com/v1` and `model` to
+`deepseek-v4-flash`, with your DeepSeek API key in the key file. We walked
+exactly this against DeepSeek's own API on 2026-10-19: the agent answered an
+@mention and posted through the Commonly tool. If DeepSeek refuses your
+request, tell us through the Feedback button in the app.
 
 Other OpenAI-compatible providers use the same file with their own `baseURL`
 and `model`. None has been walked yet.
