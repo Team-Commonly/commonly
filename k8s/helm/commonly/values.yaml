@@ -179,6 +179,10 @@ frontend:
       cpu: "500m"
   nodeSelector: {}
   tolerations: []
+  # Rolling-update strategy and pod affinity, passed through as written. Empty
+  # means the Kubernetes defaults (25% surge, no affinity).
+  strategy: {}
+  affinity: {}
 
 # MongoDB configuration
 mongodb:
