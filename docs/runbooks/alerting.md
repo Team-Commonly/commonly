@@ -63,17 +63,24 @@ gives the rollback target.
 
 ### www redirect
 
-`https://www.commonly.me/` stopped answering 301 from 2+ of 3 regions for 10
-minutes. The redirect is a Cloudflare Single Redirect rule, "www to apex"
+The policy "www.commonly.me no longer reaches the app": `https://www.commonly.me/`
+has not ended at the app from 2+ of 3 regions for 10 minutes. The redirect is a Cloudflare Single Redirect rule, "www to apex"
 (Rules → Redirect Rules): `https://www.commonly.me/*` → `https://commonly.me/${1}`,
 301, path and query kept. `www` is not routed to the cluster, so nothing in
 Kubernetes serves it; without the rule, Cloudflare answers 525.
 
 Check: `curl -sI 'https://www.commonly.me/v2/pods?x=1'` must show `HTTP/2 301`
 and `location: https://commonly.me/v2/pods?x=1`. A 525 or a 200 means the
-rule is disabled or gone: re-create it in the Cloudflare dashboard. The uptime
-check sees only the status (it does not follow redirects or read headers);
-the operator's shell smoke checks the `location` too.
+rule is disabled or gone: re-create it in the Cloudflare dashboard.
+
+**A GCP uptime check follows redirects.** A check that accepted only `301`
+failed from its first run on 2026-10-19: the checker reported the `200` of the
+page it was redirected to. So the check accepts a 2xx page containing
+`<div id="root">`, the mount point in `frontend/index.html`. That fails on a
+525 or on any other site, but it cannot tell a 301 from `www` serving the app
+directly, so it proves "www ends at the app", not "www redirects to the apex".
+The curl above is the only check of the 301 and its `location` (the operator's
+shell smoke runs the same check).
 
 ### A short burst of Cloudflare 502s
 

@@ -405,18 +405,18 @@
     ]
   },
   {
-    "displayName": "commonly-dev: www.commonly.me stopped redirecting to the apex",
+    "displayName": "commonly-dev: www.commonly.me no longer reaches the app",
     "severity": "WARNING",
     "documentation": {
       "mimeType": "text/markdown",
-      "content": "https://www.commonly.me/ has not answered 301 from two or more regions for 10 minutes, so a person who types www gets an error page or the wrong site. Runbook: docs/runbooks/alerting.md#www-redirect"
+      "content": "https://www.commonly.me/ has not ended at the app (a 2xx page holding its <div id=\"root\"> mount point, after any redirect) from two or more regions for 10 minutes, so a person who types www gets an error page or the wrong site. This does not check that www redirects to the apex; the runbook curl does. Runbook: docs/runbooks/alerting.md#www-redirect"
     },
     "combiner": "OR",
     "conditions": [
       {
         "displayName": "uptime check failing from 2+ regions",
         "conditionThreshold": {
-          "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND metric.labels.check_id=\"{{uptime:www-redirect}}\"",
+          "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND metric.labels.check_id=\"{{uptime:www-app}}\"",
           "aggregations": [
             {
               "alignmentPeriod": "300s",
