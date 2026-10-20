@@ -281,6 +281,50 @@ export const sweepResolvedMentionAttention = async ({ apply = false }: { apply?:
   return { scanned: rows.length, eligible, resolved, unavailable };
 };
 
+/**
+ * A thread reply is the only reply (Sam, 2026-09-06), so an agent's mention
+ * nobody answers in its thread stays open for good. Seats post status and gate
+ * notes that name a person, and the 2026-10-20 audit found one founder's queue
+ * holding 113 of them, the oldest five weeks old. After
+ * AGENT_MENTION_MISSED_DAYS without a reply, such a row leaves the needs-you
+ * queue as `missed`: resolved, never counted as acted on, kept in the store,
+ * and its message still in the pod.
+ *
+ * Only an agent's mention expires this way. A person's mention, a decision, an
+ * approval and a handoff stay until answered: the person waiting on them is
+ * real. A row with no recorded actor is left alone, since it can't be shown to
+ * be an agent's.
+ */
+export const AGENT_MENTION_MISSED_DAYS = 7;
+
+export const sweepMissedAgentMentions = async (
+  { now = new Date(), apply = true }: { now?: Date; apply?: boolean } = {},
+) => {
+  const cutoff = new Date(now.getTime() - AGENT_MENTION_MISSED_DAYS * 24 * 60 * 60 * 1000);
+  const rows = await AttentionItem.find({
+    kind: 'mention',
+    status: 'open',
+    actorUserId: { $exists: true, $ne: null },
+    $or: [
+      { sourceCreatedAt: { $lt: cutoff } },
+      { sourceCreatedAt: { $exists: false }, createdAt: { $lt: cutoff } },
+    ],
+  }).select('_id actorUserId').lean();
+  if (!rows.length) return { scanned: 0, eligible: 0, missed: 0 };
+  const actorIds = [...new Set((rows as any[]).map((row) => String(row.actorUserId || '')).filter(Boolean))];
+  const bots = await User.find({ _id: { $in: actorIds }, isBot: true }).select('_id').lean();
+  const botIds = new Set((bots as any[]).map((bot) => String(bot._id)));
+  const ids = (rows as any[]).filter((row) => botIds.has(String(row.actorUserId || ''))).map((row) => row._id);
+  if (!apply || !ids.length) return { scanned: rows.length, eligible: ids.length, missed: 0 };
+  // Still open at write time: a reply or an acknowledgement that lands during
+  // the sweep keeps its own resolution.
+  const result = await AttentionItem.updateMany(
+    { _id: { $in: ids }, kind: 'mention', status: 'open' },
+    { $set: { status: 'resolved', resolvedAt: now, resolvedBy: 'missed' } },
+  );
+  return { scanned: rows.length, eligible: ids.length, missed: Number(result.modifiedCount || 0) };
+};
+
 export const recordApproval = async (approval: any): Promise<void> => {
   try {
     const podId = approval?.podId;
@@ -697,6 +741,6 @@ export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boo
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };
