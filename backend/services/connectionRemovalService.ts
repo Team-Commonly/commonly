@@ -58,6 +58,7 @@ import {
 } from './hostedMcpIntakeService';
 import * as connectorSecrets from './connectorSecrets';
 import { upstreamFetch } from './upstreamFetch';
+import { hostedVendorFetch } from './hostedVendorFetch';
 import { dcrClientForRow, refuseDcrClient } from './hostedMcpDcrRegistry';
 
 export const HOSTED_MCP_TYPE = 'hosted-mcp';
@@ -166,7 +167,7 @@ export const revokeTokenAtVendor = async (input: {
   clientSecret?: string;
   token: string;
   tokenTypeHint: 'refresh_token' | 'access_token';
-}, fetchImpl: typeof fetch = fetch): Promise<void> => {
+}, fetchImpl: typeof fetch = hostedVendorFetch): Promise<void> => {
   const target = hostedMcpRevokeTarget(input.entry);
   if (!target?.endpoint) {
     throw new Error('provider revoke refused: entry names no RFC 7009 endpoint');

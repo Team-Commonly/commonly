@@ -2,6 +2,15 @@
 // so every arm here is about the DECISION the callback makes — which state it
 // will spend, what it does with a subject that changed, and what it leaves on
 // the row — rather than about Linear.
+// TASK-253: production vendor requests go through the outbound guard
+// (services/hostedVendorFetch). These arms stub the vendor at global.fetch, so
+// the guarded transport is mapped back to it, read at call time; the guard's
+// own rules are tested in outboundUrlGuard.vendorEndpoint.test.js.
+jest.mock('../../../services/hostedVendorFetch', () => ({
+  HOSTED_VENDOR_MAX_RESPONSE_BYTES: 4 * 1024 * 1024,
+  hostedVendorFetch: (...args) => global.fetch(...args),
+}));
+
 const FIXTURE_ENTRY = {
   id: 'linear',
   title: 'Linear',

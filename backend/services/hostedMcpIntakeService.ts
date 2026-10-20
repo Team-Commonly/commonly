@@ -26,6 +26,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import type { HostedMcpEntry } from './hostedMcpEntryService';
 import { upstreamFetch } from './upstreamFetch';
+import { hostedVendorFetch } from './hostedVendorFetch';
 
 /** Long enough for a person to finish a consent screen, short enough to be worthless afterwards. */
 export const HOSTED_MCP_PENDING_TTL_MS = 10 * 60 * 1000;
@@ -281,7 +282,7 @@ const authorizationServerMetadataUrl = (issuer: string): string => {
  */
 export const discoverAuthorizationServer = async (
   issuer: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = hostedVendorFetch,
 ): Promise<HostedMcpAuthorizationServer> => {
   const url = authorizationServerMetadataUrl(issuer);
   let response: Response;

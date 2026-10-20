@@ -9,6 +9,15 @@
 // leaves 'acct-old'; `null` clears it). So a payload arm reading
 // `providerSubject: undefined` looks exactly as green whether the write clears
 // the field or does nothing at all, which is how a stale subject survived here.
+// TASK-253: production vendor requests go through the outbound guard
+// (services/hostedVendorFetch). These arms stub the vendor at global.fetch, so
+// the guarded transport is mapped back to it, read at call time; the guard's
+// own rules are tested in outboundUrlGuard.vendorEndpoint.test.js.
+jest.mock('../../../services/hostedVendorFetch', () => ({
+  HOSTED_VENDOR_MAX_RESPONSE_BYTES: 4 * 1024 * 1024,
+  hostedVendorFetch: (...args) => global.fetch(...args),
+}));
+
 const express = require('express');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');

@@ -7,6 +7,7 @@ import {
   type HostedMcpClientConfiguration,
 } from './hostedMcpIntakeService';
 import { upstreamFetch } from './upstreamFetch';
+import { hostedVendorFetch } from './hostedVendorFetch';
 
 const currentFilter = (entry: HostedMcpEntry) => ({
   entryId: entry.id,
@@ -24,7 +25,7 @@ export const ensureDcrClient = async (
   entry: HostedMcpEntry,
   metadata: HostedMcpAuthorizationServer,
   redirectUri: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch = hostedVendorFetch,
 ): Promise<HostedMcpClientConfiguration> => {
   if (entry.client !== 'dcr') {
     throw new HostedMcpClientError('client_registration_unsupported', 'entry does not use DCR');

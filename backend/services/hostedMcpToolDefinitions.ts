@@ -21,6 +21,7 @@
 import { randomUUID } from 'crypto';
 import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
 import { RoomGrantError } from './roomGrantService';
+import { hostedVendorFetch } from './hostedVendorFetch';
 import {
   createHostedMcpDriftCache,
   entryToolProjections,
@@ -57,7 +58,8 @@ const messageOf = (error: unknown): string => (
 );
 
 const defaultDeps = (): HostedMcpToolDeps => ({
-  fetcher: (input, init) => fetch(input, init),
+  // Through the outbound guard: public https only, no redirects (TASK-253).
+  fetcher: hostedVendorFetch,
   newCallId: () => `hosted_call_${randomUUID()}`,
   loadRow: async (connectionId) => {
     // A grant's connection id is an ObjectId string by construction, but an
@@ -190,7 +192,7 @@ export const createHostedMcpRuntimeDriftCache = (
 const productionDriftCache = createHostedMcpRuntimeDriftCache({
   loadRow: (connectionId) => defaultDeps().loadRow(connectionId),
   credentialFor: (row) => defaultDeps().credentialFor(row),
-  fetcher: (input, init) => fetch(input, init),
+  fetcher: hostedVendorFetch,
   newCallId: () => `hosted_list_${randomUUID()}`,
 });
 
