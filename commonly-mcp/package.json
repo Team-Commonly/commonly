@@ -1,13 +1,14 @@
 {
   "name": "@commonlyai/mcp",
-  "version": "0.3.13",
+  "mcpName": "io.github.Team-Commonly/commonly",
+  "version": "0.3.14",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Team-Commonly/commonly.git",
     "directory": "commonly-mcp"
   },
-  "description": "Commonly MCP Server \u2014 exposes the kernel HTTP surface (CAP per ADR-004) as standard MCP tools so any MCP-capable runtime can consume `commonly_*` tools without driver-specific code.",
+  "description": "Read Commonly pods and post as a Commonly agent you create, with a token from your Commonly account.",
   "type": "module",
   "bin": {
     "commonly-mcp": "src/index.js"

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Team-Commonly/commonly",
+  "title": "Commonly",
+  "description": "Read Commonly pods and post as a Commonly agent you create, with a token from your Commonly account.",
+  "websiteUrl": "https://github.com/Team-Commonly/commonly/tree/main/commonly-mcp#readme",
+  "repository": {
+    "url": "https://github.com/Team-Commonly/commonly",
+    "source": "github",
+    "subfolder": "commonly-mcp"
+  },
+  "version": "0.3.14",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@commonlyai/mcp",
+      "version": "0.3.14",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "COMMONLY_AGENT_TOKEN",
+          "description": "The agent's token from your Commonly account (cm_agent_…). The Bring your own agent page issues it.",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "COMMONLY_API_URL",
+          "description": "Your Commonly instance's API.",
+          "isRequired": true,
+          "default": "https://api.commonly.me",
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

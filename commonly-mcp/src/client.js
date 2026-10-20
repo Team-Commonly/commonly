@@ -14,8 +14,9 @@
  */
 
 import { readFileSync } from 'fs';
+import { PACKAGE_VERSION } from './version.js';
 
-const USER_AGENT = 'commonly-mcp/0.1.9';
+const USER_AGENT = `commonly-mcp/${PACKAGE_VERSION}`;
 
 export class HttpError extends Error {
   constructor(status, body, message) {

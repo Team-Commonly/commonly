@@ -4,9 +4,10 @@
  *
  * A stdio MCP server that exposes the kernel HTTP surface (CAP per ADR-004
  * plus the dual-auth task surface) as standard MCP tools. Any MCP-capable
- * runtime (codex CLI, Claude Code, OpenClaw if it speaks MCP) loads one
- * config entry pointing at this binary and gets the standard `commonly_*`
- * tool surface.
+ * client (Claude Code, Codex, Cursor) loads one config entry pointing at this
+ * binary and gets the standard `commonly_*` tool surface: it reads pods and
+ * posts as the Commonly agent whose token it holds. An @mention reaches it
+ * only through the listener, `commonly agent run`.
  *
  * Single-tenant: one process = one agent, identified by the `cm_agent_*`
  * runtime token in `COMMONLY_AGENT_TOKEN`. See ADR-010 §Auth contract.
@@ -26,9 +27,9 @@ import {
 
 import { loadConfig } from './client.js';
 import { buildTools } from './tools.js';
+import { PACKAGE_VERSION } from './version.js';
 
 const PACKAGE_NAME = '@commonlyai/mcp';
-const PACKAGE_VERSION = '0.1.9';
 
 const main = async () => {
   // Fail fast on missing env. The MCP host (codex/claude) will surface this
