@@ -1082,6 +1082,48 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     expect(appended(calls[0].args)).toBeNull();
   });
 
+  // Vera on #2354: every arm above forces darwin, so dropping the bwrap
+  // branch's carry alone stayed green. Linux public seats are bwrap seats.
+  test('a public Linux (bwrap) seat carries the skill text inside the namespace', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const { impl, calls } = makeSpawnImpl();
+    await claude.spawn('hi', {
+      agentName: 'public-skill-test',
+      sessionId: null,
+      cwd,
+      env: { PATH: process.env.PATH },
+      environment: { sandbox: { trust: 'public' }, skills: { claude: [skillSrc] } },
+      _spawnImpl: impl,
+      _detectBwrap: () => ({ available: true, path: 'bwrap' }),
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].cmd).toBe('bwrap');
+    const inner = calls[0].args.slice(calls[0].args.indexOf('--') + 1);
+    expect(appended(inner)).toContain('## Skill: house-rules');
+    expect(inner).toContain('--disable-slash-commands');
+  });
+
+  // Linux caps one argv string at 128 KiB, so the inlined total is capped at
+  // 96 KiB: a skill that would cross it is skipped, and later ones still fit.
+  test('a skill over the 96 KiB total is skipped, and a later smaller one still inlines', async () => {
+    const big = path.join(path.dirname(skillSrc), 'big-skill');
+    fs.mkdirSync(big);
+    fs.writeFileSync(path.join(big, 'SKILL.md'), `---\nname: big-skill\n---\n\n${'x'.repeat(100 * 1024)}\n`, 'utf8');
+    const { impl, calls } = makeSpawnImpl();
+    await publicSpawn(impl, {
+      environment: {
+        sandbox: { mode: 'workspace', trust: 'public' },
+        skills: { claude: [big, skillSrc] },
+      },
+    });
+
+    const text = appended(calls[0].args);
+    expect(text).not.toContain('## Skill: big-skill');
+    expect(text).toContain('## Skill: house-rules');
+    expect(Buffer.byteLength(text, 'utf8')).toBeLessThan(128 * 1024);
+  });
+
   test('the fresh-session retry carries the same skill text', async () => {
     const calls = [];
     const impl = (cmd, args, opts) => {
