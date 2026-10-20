@@ -142,16 +142,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // Adopt a session token minted elsewhere (the OAuth code exchange) without
-  // reloading the page. The token effect above loads the user, and loading
-  // stays true until it has, so a caller can navigate in-app straight away:
-  // the route guards show the boot screen rather than the signed-out page.
-  const signInWithToken = (newToken: string): void => {
+  // reloading the page. The token effect above loads the user. Holding
+  // loading until it has is load-bearing: isAuthenticated is !!token, so
+  // without the hold a guarded page renders signed in with currentUser still
+  // null (anything reading currentUser._id would crash), not the signed-out
+  // page. The guards show the boot screen instead.
+  const signInWithToken = useCallback((newToken: string): void => {
     localStorage.setItem('token', newToken);
     if (newToken === token) return;
     setLoading(true);
     setError(null);
     setToken(newToken);
-  };
+  }, [token]);
 
   const logout = (): void => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);

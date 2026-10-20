@@ -9,14 +9,18 @@ import { useTranslation } from 'react-i18next';
 // Landing pad for the OAuth redirect chain. The backend callback hands us a
 // short-lived one-time code (never the JWT itself — it would end up in
 // browser history and server logs); we swap it for a session here, hand it to
-// AuthContext, and navigate in-app the way email sign-in does. A full-page
+// AuthContext, and, for a /v2 destination, navigate in-app the way email
+// sign-in does. A full-page
 // navigation here used to re-download and re-boot the whole app on the path
 // most new people take (OAuth is 93% of outside signups).
 const V2OAuthComplete: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { signInWithToken } = useAuth();
-  const fired = useRef(false); // StrictMode double-mount guard — the code is single-use
+  // The code is single-use: this guard keeps it to one exchange however often
+  // the effect runs (StrictMode's double mount, or signInWithToken's identity
+  // changing once the token lands).
+  const fired = useRef(false);
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -36,7 +40,13 @@ const V2OAuthComplete: React.FC = () => {
         const token = (res.data as { token?: string })?.token;
         if (!token) throw new Error('no token');
         signInWithToken(token);
-        navigate(next, { replace: true });
+        // In-app inside /v2, which stays mounted. Elsewhere (V1 routes, `/`)
+        // keep the full load: V2App's unmount would strip the v2-canvas body
+        // class that index.tsx only stamps at boot. `replace` (and
+        // location.replace) keeps the spent code out of history, so Back
+        // can't re-post it.
+        if (/^\/v2(?:[/?#]|$)/.test(next)) navigate(next, { replace: true });
+        else window.location.replace(next);
       })
       .catch(() => {
         navigate('/v2/login?oauthError=exchange_failed', { replace: true });

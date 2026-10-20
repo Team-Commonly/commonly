@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useNavigationType } from 'react-router-dom';
 import V2OAuthButtons from '../components/V2OAuthButtons';
 import V2OAuthComplete from '../components/V2OAuthComplete';
 import V2Login from '../components/V2Login';
@@ -126,14 +126,17 @@ describe('V2OAuthButtons', () => {
 });
 
 describe('V2OAuthComplete', () => {
+  // A destination that says how it was reached: REPLACE keeps the spent
+  // one-time code out of history, so Back can't re-post it.
+  const Dest = ({ label }) => <p>{`${label} ${useNavigationType()}`}</p>;
   const renderComplete = (search: string, auth = baseAuth) => render(
     <AuthContext.Provider value={auth}>
       <MemoryRouter initialEntries={[`/v2/oauth/complete${search}`]}>
         <Routes>
           <Route path="/v2/oauth/complete" element={<V2OAuthComplete />} />
           <Route path="/v2/login" element={<V2Login />} />
-          <Route path="/v2/pods/:podId" element={<p>pod page</p>} />
-          <Route path="/v2" element={<p>home</p>} />
+          <Route path="/v2/pods/:podId" element={<Dest label="pod page" />} />
+          <Route path="/v2" element={<Dest label="home" />} />
         </Routes>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -162,7 +165,7 @@ describe('V2OAuthComplete', () => {
       renderComplete('?code=one-time&next=/v2/pods/abc', { ...baseAuth, signInWithToken });
     });
 
-    expect(await screen.findByText('pod page')).toBeInTheDocument();
+    expect(await screen.findByText('pod page REPLACE')).toBeInTheDocument();
     expect(axios.post).toHaveBeenCalledWith('/api/auth/oauth/exchange', { code: 'one-time' });
     expect(signInWithToken).toHaveBeenCalledWith('session-jwt');
     expect(locationSpies.replace).not.toHaveBeenCalled();
@@ -176,8 +179,22 @@ describe('V2OAuthComplete', () => {
       renderComplete(`?code=one-time&next=${encodeURIComponent('/\\evil.example/x')}`);
     });
 
-    expect(await screen.findByText('home')).toBeInTheDocument();
+    expect(await screen.findByText('home REPLACE')).toBeInTheDocument();
     expect(locationSpies.replace).not.toHaveBeenCalled();
+  });
+
+  test('a destination outside /v2 keeps the full-page load, after the session is handed over', async () => {
+    // V2App unmounting would strip the v2-canvas body class that only the
+    // boot stamps, so these keep the load (sprint-review on #2360).
+    axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
+    const signInWithToken = jest.fn();
+
+    await act(async () => {
+      renderComplete('?code=one-time&next=/', { ...baseAuth, signInWithToken });
+    });
+
+    await waitFor(() => expect(locationSpies.replace).toHaveBeenCalledWith('/'));
+    expect(signInWithToken).toHaveBeenCalledWith('session-jwt');
   });
 
   test('with the real AuthProvider, the destination waits for the user and then renders signed in', async () => {
