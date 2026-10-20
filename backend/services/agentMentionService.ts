@@ -1046,9 +1046,10 @@ const resolveAdjacentReplyTarget = async ({
   userId: string;
   installations: Array<Record<string, unknown>>;
 }): Promise<{ target: MentionTarget; podType: string | null } | null> => {
-  // Cheapest checks first, so the common unrouted message costs at most one
-  // indexed read: no installed agent that adjacency could reach means no
-  // queries at all (the zero-opt-in fast path the wake tests pin).
+  // Cheapest checks first. With no installed agent adjacency could reach (no
+  // installs, or every install opted into D8), it reads nothing. Otherwise an
+  // unrouted human message costs one indexed read, and the pod and member
+  // lookups happen only when that read finds a recent agent post.
   const reachable = installations.filter((installation) => !wakeOnMessageEnabled(installation));
   if (reachable.length === 0) return null;
   const messageId = message?._id || message?.id;
@@ -1611,6 +1612,9 @@ const enqueueMentions = async ({
         const adjacent = await resolveAdjacentReplyTarget({
           podId, message, userId, installations,
         });
+        // welcomeWakeService reports woken agents by agentName alone, so this
+        // check is per agentName; two instances of one agent are not told
+        // apart here (sprint-review on #2359, carried).
         if (adjacent && !welcomeWoke.includes(adjacent.target.agentName.toLowerCase())) {
           const { target } = adjacent;
           await AgentEventService.enqueue({
@@ -1640,6 +1644,10 @@ const enqueueMentions = async ({
             },
           });
           implicitAdjacent.push(target.agentName);
+          // The adjacent agent is never a D8 opt-in (resolveAdjacentReplyTarget
+          // refuses those), so this exclusion only matters for duplicate
+          // installs sharing one identity. It is kept so no future widening of
+          // adjacency can deliver one message twice.
           adjacentKeys = new Set([
             `${target.agentName.toLowerCase()}:${(target.instanceId || 'default').toLowerCase()}`,
           ]);

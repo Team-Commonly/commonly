@@ -312,11 +312,14 @@ class Message {
   // follows an agent's answers that agent. Thread replies are not adjacent to
   // the room, so only top-level rows count, on either side.
   //
-  // `since` bounds the read to the rule's own window. messages has no
-  // (pod_id, id) index, so without it a busy pod's whole history is read and
-  // sorted; with it, the created_at range keeps the read to recent rows. The
-  // answer is the same: a previous message older than the window disqualifies
-  // the rule, and so does every message before it.
+  // `since` bounds the read to the rule's own window, and the answer is the
+  // same with or without it: a previous message older than the window
+  // disqualifies the rule, and so does every message before it. What the bound
+  // buys is the quiet pod. Without it the planner walks messages_pkey backwards
+  // from `beforeId`, which is free when this pod spoke recently but reads other
+  // pods' rows until it finds one of this pod's otherwise (measured on Postgres
+  // 16, 150k rows: 48.6 ms and 2,965 buffers, against 0.09 ms with the bound;
+  // the bound costs about 0.12 ms on a busy pod). sprint-review on #2359.
   static async findPreviousTopLevel(
     podId: string,
     beforeId: string,

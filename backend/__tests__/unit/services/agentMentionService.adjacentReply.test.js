@@ -118,12 +118,15 @@ const setup = ({
   PGMessage.findPreviousTopLevel.mockResolvedValue(previous);
 };
 
+// `...extra` goes first, so a `message` override merges into the default
+// message instead of replacing it (sprint-review on #2359: spread last, the
+// thread arm lost its id and returned before the thread guard was reached).
 const send = (content, extra = {}) => AgentMentionService.enqueueMentions({
+  ...extra,
   podId: 'pod-1',
   message: { content, id: '79500', createdAt: NOW, ...extra.message },
   userId: OWNER,
   username: 'owner',
-  ...extra,
 });
 
 const calls = (type) => AgentEventService.enqueue.mock.calls.map(([args]) => args).filter((a) => a.type === type);
@@ -176,6 +179,10 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
     setup({ previous });
     await send('hello?');
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    // Each of these is refused from the previous row alone: the only User
+    // lookup is the sender's own, never the previous author's.
+    expect(User.findById).toHaveBeenCalledTimes(1);
+    expect(Pod.findById).not.toHaveBeenCalled();
   });
 
   test('a previous message from an agent no longer installed here: nothing', async () => {
@@ -189,6 +196,15 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
     await send('in the thread', { message: { thread_root_id: 79400 } });
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     expect(PGMessage.findPreviousTopLevel).not.toHaveBeenCalled();
+  });
+
+  test('a message whose previous top-level row is a thread root is still adjacent to it', async () => {
+    // The greeting someone threaded on stays top-level (thread_root_id NULL on
+    // the root), so the rule still sees it; the query's own filter is what
+    // skips the replies inside that thread (checked on real Postgres).
+    setup();
+    await send('back in the room');
+    expect(calls('chat.mention').map((m) => m.agentName)).toEqual(['seat-a']);
   });
 
   test('a DM-shaped pod is left to the DM path', async () => {
