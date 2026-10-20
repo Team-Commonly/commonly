@@ -33,6 +33,7 @@ export interface IAttentionItem extends Document {
   // nobody answered in its thread for a week leaves the queue as `missed`:
   // resolved, never counted as acted on. Decision and approval actions have
   // source-specific writers and never become dismissible through this field.
+  // Growth's NEEDSYOU metric allowlists what counts as acted on; tell it when a value is added or a new kind starts writing one.
   resolvedBy?: 'replied' | 'acknowledged' | 'missed';
   createdAt: Date;
   updatedAt: Date;
