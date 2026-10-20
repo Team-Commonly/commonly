@@ -986,3 +986,122 @@ describe('claude adapter — ctx.environment', () => {
     expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
   });
 });
+
+// A public seat runs with `--disable-slash-commands` ("Disable all skills") and
+// `--setting-sources ''`, so the skill this adapter mounts never loaded there:
+// a Bring your own page seat said "I don't see a skill named commonly" on
+// 2026-10-19, and the same workspace with `--setting-sources project` found it.
+// The declared text now rides as an appended system prompt while both flags stay.
+describe('claude adapter — a public seat gets its declared skills as prompt text', () => {
+  let cwd;
+  let skillSrc;
+  let publicState;
+  const originalPlatform = process.platform;
+  const appended = (args) => {
+    const at = args.indexOf('--append-system-prompt');
+    return at === -1 ? null : args[at + 1];
+  };
+
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-skill-prompt-'));
+    publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    skillSrc = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-skill-src-')), 'house-rules');
+    fs.mkdirSync(skillSrc);
+    fs.writeFileSync(
+      path.join(skillSrc, 'SKILL.md'),
+      '---\nname: house-rules\ndescription: How to behave in a pod.\n---\n\n# Being a member\n\nOrient before you post.\n',
+      'utf8',
+    );
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    spawnSync.mockImplementation((cmd) => (
+      cmd === 'which' ? { status: 0, stdout: '/usr/bin/true\n' } : { status: 0, stdout: '' }
+    ));
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    spawnSync.mockReset();
+    for (const dir of [cwd, publicState, path.dirname(skillSrc)]) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const publicSpawn = (impl, extra = {}) => claude.spawn('hi', {
+    agentName: 'public-skill-test',
+    sessionId: null,
+    cwd,
+    env: { PATH: process.env.PATH },
+    environment: {
+      sandbox: { mode: 'workspace', trust: 'public' },
+      skills: { claude: [skillSrc] },
+    },
+    _publicClaudeState: publicState,
+    _spawnImpl: impl,
+    ...extra,
+  });
+
+  test('the skill body is appended, without its frontmatter, and skills stay disabled', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await publicSpawn(impl);
+
+    expect(calls).toHaveLength(1);
+    const { args } = calls[0];
+    const text = appended(args);
+    expect(text).toContain('## Skill: house-rules');
+    expect(text).toContain('# Being a member\n\nOrient before you post.');
+    expect(text).not.toContain('description: How to behave');
+    expect(args).toContain('--disable-slash-commands');
+    expect(args[args.indexOf('--setting-sources') + 1]).toBe('');
+  });
+
+  test('a private seat loads skills natively and gets no appended prompt', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await claude.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment: { skills: { claude: [skillSrc] } },
+      _spawnImpl: impl,
+    });
+
+    expect(appended(calls[0].args)).toBeNull();
+    expect(calls[0].args).not.toContain('--disable-slash-commands');
+  });
+
+  test('a public seat that declares no skills gets no appended prompt', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await publicSpawn(impl, {
+      environment: { sandbox: { mode: 'workspace', trust: 'public' } },
+    });
+
+    expect(appended(calls[0].args)).toBeNull();
+  });
+
+  test('a declared skill with no SKILL.md is skipped, not fatal', async () => {
+    fs.rmSync(path.join(skillSrc, 'SKILL.md'));
+    const { impl, calls } = makeSpawnImpl();
+    await publicSpawn(impl);
+
+    expect(calls).toHaveLength(1);
+    expect(appended(calls[0].args)).toBeNull();
+  });
+
+  test('the fresh-session retry carries the same skill text', async () => {
+    const calls = [];
+    const impl = (cmd, args, opts) => {
+      calls.push({ cmd, args, opts });
+      const proc = new EventEmitter();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.kill = jest.fn();
+      const first = calls.length === 1;
+      setTimeout(() => {
+        if (first) proc.stderr.emit('data', Buffer.from('Error: Session ID abc-123 is already in use.'));
+        else proc.stdout.emit('data', Buffer.from('recovered'));
+        proc.emit('close', first ? 1 : 0);
+      }, 0);
+      return proc;
+    };
+    await publicSpawn(impl, { sessionId: 'abc-123' });
+
+    expect(calls).toHaveLength(2);
+    expect(appended(calls[1].args)).toBe(appended(calls[0].args));
+    expect(appended(calls[1].args)).toContain('## Skill: house-rules');
+  });
+});
