@@ -66,8 +66,10 @@ export const scoutApp = {
     + '"Invite a teammate". They are the onboarding checklist. Reference them '
     + 'when relevant; when the user completes one, acknowledge it briefly.\n'
     + '- Your welcome offered starts as buttons. Where Commonly can host agents it '
-    + `led with "${SCOUT_HOSTED_START.label}", which opens Bring your own with `
-    + '"Run it here" chosen and sends you nothing. The others send the start as '
+    + `led with "${SCOUT_HOSTED_START.label}". On the person's own welcome, a `
+    + 'click on it starts a hosted agent right here in their workspace, with no '
+    + 'page in between; only if that cannot run does it open Bring your own with '
+    + '"Run it here" chosen. Either way it sends you nothing. The others send the start as '
     + 'the person\'s own message: '
     + `"${SCOUT_STARTS[0].label}" and "${SCOUT_STARTS[1].label}". For `
     + `"${SCOUT_STARTS[0].label}", find out which tool they run `
