@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../../context/AuthContext';
 import type { V2Agent } from './useV2PodDetail';
 import type { V2PodMember } from './useV2Pods';
 import type { V2ComposerMention, V2ComposerWarning } from '../components/V2Composer';
@@ -53,6 +54,8 @@ export const useV2ThreadMentions = ({
   inputRef,
 }: UseV2ThreadMentionsArgs) => {
   const { t } = useTranslation();
+  const { currentUser } = useAuth();
+  const selfUsername = (currentUser?.username || '').toLowerCase();
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionStart, setMentionStart] = useState(-1);
@@ -99,6 +102,10 @@ export const useV2ThreadMentions = ({
       const username = member.username || '';
       if (!username) return;
       const key = username.toLowerCase();
+      // Never offer the person their own handle. It was the first suggestion
+      // for any prefix of their name, so Enter mentioned themself and the
+      // agent they meant never woke (C14 rehearsal, 2026-10-20).
+      if (selfUsername && key === selfUsername) return;
       if (seen.has(key)) return;
       seen.add(key);
       const agent = agentByUsername.get(key);
@@ -128,7 +135,7 @@ export const useV2ThreadMentions = ({
       if (item) items.push(item);
     });
     return items;
-  }, [agentStateByHandle, agents, members, t]);
+  }, [agentStateByHandle, agents, members, selfUsername, t]);
 
   const warnings = useMemo<V2ComposerWarning[]>(() => {
     if (!draft.includes('@')) return [];
@@ -149,7 +156,20 @@ export const useV2ThreadMentions = ({
   const filteredMentions = useMemo(() => {
     if (!mentionOpen) return [];
     const query = mentionQuery.trim().toLowerCase();
-    return mentionableItems.filter((item) => item.labelLower.includes(query)).slice(0, 8);
+    // Prefix matches first, and agents before people among equals, so Enter
+    // lands on the agent the person is most likely addressing. Otherwise the
+    // pod's own order holds.
+    const prefix = (item: MentionItem) => (
+      (item.value || '').toLowerCase().startsWith(query) || item.label.toLowerCase().startsWith(query)
+    );
+    return mentionableItems
+      .map((item, order) => ({ item, order }))
+      .filter(({ item }) => item.labelLower.includes(query))
+      .sort((a, b) => (Number(prefix(b.item)) - Number(prefix(a.item)))
+        || (Number(b.item.isAgent) - Number(a.item.isAgent))
+        || (a.order - b.order))
+      .map(({ item }) => item)
+      .slice(0, 8);
   }, [mentionOpen, mentionQuery, mentionableItems]);
 
   const updateMentionState = useCallback((nextValue: string, cursorPosition: number | null) => {
