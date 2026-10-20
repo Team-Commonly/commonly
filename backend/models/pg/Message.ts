@@ -307,6 +307,30 @@ class Message {
     return result.rows.length > 0;
   }
 
+  // The top-level message just before `beforeId` in a pod, for adjacency
+  // addressing (ADR-018 D6.4): a person's unaddressed message that directly
+  // follows an agent's answers that agent. Thread replies are not adjacent to
+  // the room, so only top-level rows count, on either side.
+  //
+  // `since` bounds the read to the rule's own window. messages has no
+  // (pod_id, id) index, so without it a busy pod's whole history is read and
+  // sorted; with it, the created_at range keeps the read to recent rows. The
+  // answer is the same: a previous message older than the window disqualifies
+  // the rule, and so does every message before it.
+  static async findPreviousTopLevel(
+    podId: string,
+    beforeId: string,
+    since: Date,
+  ): Promise<{ id: number; user_id: string; created_at: Date; message_type: string } | null> {
+    const result = await (pool as PgPool).query(
+      `SELECT id, user_id, created_at, message_type FROM messages
+       WHERE pod_id = $1 AND id < $2::int AND thread_root_id IS NULL AND created_at > $3
+       ORDER BY id DESC LIMIT 1`,
+      [podId, beforeId, since],
+    );
+    return (result.rows[0] as { id: number; user_id: string; created_at: Date; message_type: string } | undefined) || null;
+  }
+
   // Has this user ever said anything in this pod? The Activity day-zero card's
   // "Say something to it" step closes on the caller's own act (#1648, ux-lead
   // 67071): a seat's install intro or heartbeat is not the human speaking, so

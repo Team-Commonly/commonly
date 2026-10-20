@@ -1017,6 +1017,96 @@ const wakeOnMessageEnabled = (installation: Record<string, unknown>): boolean =>
     ?.config?.wakeOnMessage?.enabled === true
 );
 
+// ── ADR-018 D6.4: adjacency is addressing, in a room with one person ───────
+//
+// A person answering the agent that just spoke to them addresses it, whether
+// or not they type its @name. Measured 2026-10-20: an outside signup's hosted
+// agent greeted them in their own new pod, ending on an invitation to reply;
+// they replied with no @name, and nothing heard it, because the install was
+// never opted into wake-on-message and nothing else routed the message.
+//
+// This is ADDRESSING, like the #703 reply edge, not an ambient wake: it reaches
+// exactly one agent, the author of the message directly before, and only when
+//   - the pod is not DM-shaped (enqueueDmEvent already routes those);
+//   - the sender is a human and the pod's ONLY human: in a room with a second
+//     person, an unaddressed line is as likely to be for them (that is the
+//     #963 lesson in ADR-020 D6's scope box, and D8 still governs everything
+//     ambient);
+//   - the previous top-level message is that agent's, is not a system notice,
+//     and is under ADJACENT_REPLY_WINDOW_MS old;
+//   - the agent is not opted into wake-on-message, because then it already
+//     hears every message and adjacency would deliver it twice.
+const ADJACENT_REPLY_WINDOW_MS = 30 * 60 * 1000;
+
+const resolveAdjacentReplyTarget = async ({
+  podId, message, userId, installations,
+}: {
+  podId: string;
+  message: EnqueueMentionsOptions['message'];
+  userId: string;
+  installations: Array<Record<string, unknown>>;
+}): Promise<{ target: MentionTarget; podType: string | null } | null> => {
+  // Cheapest checks first, so the common unrouted message costs at most one
+  // indexed read: no installed agent that adjacency could reach means no
+  // queries at all (the zero-opt-in fast path the wake tests pin).
+  const reachable = installations.filter((installation) => !wakeOnMessageEnabled(installation));
+  if (reachable.length === 0) return null;
+  const messageId = message?._id || message?.id;
+  if (!messageId) return null;
+  const threaded = (message as { thread_root_id?: unknown })?.thread_root_id
+    || (message as { threadRootId?: unknown })?.threadRootId
+    || message?.source === 'thread';
+  if (threaded) return null;
+
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const PGMessage = require('../models/pg/Message') as {
+    findPreviousTopLevel: (podId: string, beforeId: string, since: Date) => Promise<{
+      user_id?: unknown; created_at?: unknown; message_type?: unknown;
+    } | null>;
+  };
+  const sentAt = new Date((message?.createdAt || message?.created_at || Date.now()) as string | number | Date).getTime();
+  const previous = await PGMessage.findPreviousTopLevel(
+    String(podId),
+    String(messageId),
+    new Date(sentAt - ADJACENT_REPLY_WINDOW_MS),
+  );
+  if (!previous || previous.message_type === 'system') return null;
+  const previousAuthorId = normalizeUserId(previous.user_id);
+  if (!previousAuthorId || previousAuthorId === String(userId)) return null;
+  const previousAt = new Date(previous.created_at as string | number | Date).getTime();
+  if (!Number.isFinite(previousAt) || sentAt - previousAt > ADJACENT_REPLY_WINDOW_MS) return null;
+
+  const author = await User.findById(previousAuthorId)
+    .select('isBot botMetadata')
+    .lean() as SenderRow | null;
+  if (!author?.isBot) return null;
+  const agentName = author.botMetadata?.agentName?.toLowerCase();
+  const instanceId = (author.botMetadata?.instanceId || 'default').toLowerCase();
+  if (!agentName) return null;
+  const installation = reachable.find((candidate) => (
+    String(candidate.agentName || '').toLowerCase() === agentName
+    && String(candidate.instanceId || 'default').toLowerCase() === instanceId
+  ));
+  if (!installation) return null;
+
+  // Last, the room's shape: only a person alone with their agents is
+  // answering the one that just spoke.
+  const pod = await Pod.findById(podId).select('type members').lean() as { type?: string; members?: unknown[] } | null;
+  if (!pod || isAutoRoutedDmPod(pod.type)) return null;
+  const members = (pod.members || []).map((member) => String(member));
+  const memberRows = await User.find({ _id: { $in: members } }).select('isBot').lean() as Array<{ _id: unknown; isBot?: boolean }>;
+  const humans = memberRows.filter((row) => row && row.isBot !== true).map((row) => String(row._id));
+  if (humans.length !== 1 || humans[0] !== String(userId)) return null;
+
+  return {
+    target: {
+      agentName: String(installation.agentName || agentName),
+      instanceId: String(installation.instanceId || instanceId),
+    },
+    podType: pod.type || null,
+  };
+};
+
 /**
  * Board wakes (task-board deltas and the #1055 kernel found-work sweep) are a
  * SEPARATE subscription from ambient chat, and this predicate is the split.
@@ -1477,9 +1567,10 @@ const enqueueMentions = async ({
   // "@codex help" gets welcomed on their SECOND message. Bots never claim:
   // an agent's first post in a pod would otherwise seed a wake loop, the same
   // reasoning that gates the #703 implicit path on `isBot === false`.
+  let welcomeWoke: string[] = [];
   if (sender?.isBot === false) {
     try {
-      await maybeFireWelcomeWake({
+      const welcome = await maybeFireWelcomeWake({
         podId,
         userId,
         username,
@@ -1490,6 +1581,7 @@ const enqueueMentions = async ({
         isRouted,
         installations,
       });
+      welcomeWoke = ((welcome as { woke?: string[] } | undefined)?.woke || []).map((name) => String(name).toLowerCase());
     } catch (error) {
       // The message is already persisted; a welcome failure must never turn a
       // successful human send into a 500.
@@ -1508,10 +1600,61 @@ const enqueueMentions = async ({
     // asserting that a routed message never reaches ambient fan-out, which is
     // false. An early return bounds the code BELOW it, never a helper that a
     // later call site re-enters.
+    // ADR-018 D6.4: before the ambient fan-out, a person answering the agent
+    // that just spoke to them addresses it (see resolveAdjacentReplyTarget).
+    // One chat.mention, carrying the same "replies to YOUR message" frame the
+    // reply edge uses; that agent is then kept out of the ambient fan-out.
+    const implicitAdjacent: string[] = [];
+    let adjacentKeys: Set<string> | null = null;
+    if (sender?.isBot === false) {
+      try {
+        const adjacent = await resolveAdjacentReplyTarget({
+          podId, message, userId, installations,
+        });
+        if (adjacent && !welcomeWoke.includes(adjacent.target.agentName.toLowerCase())) {
+          const { target } = adjacent;
+          await AgentEventService.enqueue({
+            agentName: target.agentName,
+            instanceId: target.instanceId || 'default',
+            podId,
+            type: 'chat.mention',
+            payload: {
+              messageId: authorFrame.messageId,
+              content: `${REPLIES_TO_YOU_FRAME}\n${buildContentForTarget(
+                podId,
+                rawContent,
+                'chat.mention',
+                target.agentName,
+                isCollaborativePod(adjacent.podType, installations),
+                authorFrame,
+              )}`,
+              userId,
+              username,
+              mentions: rawMentions,
+              source,
+              messageType: message?.messageType || message?.message_type || 'text',
+              createdAt: message?.createdAt || message?.created_at || new Date(),
+              thread: message?.thread || null,
+              implicitReply: true,
+              adjacentReply: true,
+            },
+          });
+          implicitAdjacent.push(target.agentName);
+          adjacentKeys = new Set([
+            `${target.agentName.toLowerCase()}:${(target.instanceId || 'default').toLowerCase()}`,
+          ]);
+        }
+      } catch (error) {
+        // Best-effort, like every other routing step here: the message is
+        // already persisted, so a lookup failure must not become a 500.
+        console.warn('[adjacent-reply] routing failed:', (error as Error).message);
+      }
+    }
+
     let woken: string[] = [];
     try {
       woken = await enqueueWakeOnMessage({
-        podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: null, authorFrame, replyToMessageId,
+        podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: adjacentKeys, authorFrame, replyToMessageId,
       });
     } catch (error) {
       // The message is already persisted — a wake failure must never turn a
@@ -1519,7 +1662,7 @@ const enqueueMentions = async ({
       console.warn('[wake-on-message] fan-out failed:', (error as Error).message);
     }
     return {
-      enqueued: [], implicit: [], skipped: [], woken,
+      enqueued: [], implicit: implicitAdjacent, skipped: [], woken,
     };
   }
 

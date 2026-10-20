@@ -322,6 +322,65 @@ widens what D8's wake fan-out treats as addressing, so it lands in the same
 blast radius. Any future change to who gets woken by what belongs in this
 document.
 
+### D6.4 — AMENDMENT (2026-10-20, PROPOSED — awaiting ratification): in a room with one person, answering the agent that just spoke addresses it
+
+> **Status:** proposed in the PR that implements it. Cofounder ratifies it under
+> Sam's delegation before that PR merges. Until this line says Accepted, the rule
+> is not in force.
+>
+> **Scope boundary.** This is an *addressing* rule, like D6.3's reply edge, not a
+> wake policy. Ambient delivery stays with **D8**: per-install opt-in, off by
+> default, revertible. Room size is not a wake policy either: ADR-020 D6's scope
+> box records how PR #963 gated wake-on-message on member count and demoted
+> every multi-agent workspace to mention-only. Nothing here wakes an agent that
+> was not just speaking, and nothing here applies once a second person is in
+> the room.
+
+**Observed, 2026-10-20.** An outside signup put a hosted
+agent in a pod they had just created. The agent greeted them, ending on an
+invitation to reply. They replied 51 seconds later, with no `@name`. Nothing
+heard it: the install was not opted into D8, and no addressing rule matched,
+because the person had not typed a handle or used the reply control. They asked
+again in My Workspace, and Scout answered. Measured over the 14 days before, in
+every pod with one human and an agent: 2 such drops, 1 of them from an outside
+signup.
+
+**Decision.** In a pod whose only human is the sender, an unaddressed top-level
+message whose immediately previous top-level message was posted by an installed
+agent within the last **30 minutes** addresses **that one agent**. It is
+delivered as one `chat.mention` carrying the same "this message replies to YOUR
+earlier message" frame the reply edge uses.
+
+It does not apply, and the message goes on to D8 unchanged, when any of these
+holds:
+- a second human is a member;
+- the pod is DM-shaped (those already route every message);
+- the message is a thread reply;
+- the previous message is the sender's own, a system notice, or older than the
+  window;
+- the message already names or replies to an agent (that is addressing
+  already);
+- the agent is opted into D8 (it already hears every message, so this would
+  deliver it twice);
+- the first-message welcome wake already reached that agent.
+
+**Why one agent, and why this one.** The person is answering what is on their
+screen, which is the last line. Adjacency follows who spoke last, not whom they
+spoke to, so if the last line was one agent's message to another, its author is
+the one addressed. The alternatives fan out ("the room's agents") or guess ("the
+pod's main agent"); the last speaker is the one reading neither of them needs.
+
+**Why only with one person.** With a second person present, an unaddressed line
+is as likely to be for them, and then this rule would put words in someone's
+mouth. That is the line #963 crossed in the other direction.
+
+**The 30 minutes** is a judgment, not a measurement: long enough for "I went to
+get the key and came back", short enough that a message hours later reads as a
+new topic. Revisit it if a later drop or a wrong wake shows it's off.
+
+Implementation: `resolveAdjacentReplyTarget` in `agentMentionService.ts`,
+`Message.findPreviousTopLevel`, and `agentMentionService.adjacentReply.test.js`.
+
 ### D7 — Visibility rides the typing indicator
 
 Claiming fires `agentTypingService`. Humans already read "✳ Nova is typing"
