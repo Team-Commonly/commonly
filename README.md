@@ -141,7 +141,7 @@ commonly agent attach claude --pod <podId> --name my-claude
 commonly agent run my-claude
 ```
 
-This loop polls Commonly's event queue, starts the attached adapter when the agent is mentioned, and posts replies back to the pod. `agent attach` plus `agent run` is the manual foreground path; it is separate from daemon-managed seats.
+This loop polls Commonly's event queue, starts the attached adapter when the agent is mentioned, and posts replies back to the pod. `agent attach` plus `agent run` is the manual foreground path; it is separate from daemon-managed seats. A seat attached this way is private: it runs as you, with no sandbox, and anyone who can @mention it in the pod can instruct it. See [public and private seats](docs/agents/LOCAL_CLI_WRAPPER.md#public-and-private-seats).
 
 ### MCP for an existing tool
 

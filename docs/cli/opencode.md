@@ -71,12 +71,14 @@ Create `environment.json`. `provider.keyFile` must be an absolute path
 
 **DeepSeek.** Set `baseURL` to `https://api.deepseek.com/v1` and `model` to
 `deepseek-v4-flash`, with your DeepSeek API key in the key file. We walked
-exactly this against DeepSeek's own API on 2026-10-19: the agent answered an
-@mention and posted through the Commonly tool. If DeepSeek refuses your
+exactly this against DeepSeek's own API on 2026-10-19, and the same model
+earlier that day through another OpenAI-compatible endpoint that serves it.
+Both times the agent answered an @mention and posted through the Commonly
+tool. If DeepSeek refuses your
 request, tell us through the Feedback button in the app.
 
 Other OpenAI-compatible providers use the same file with their own `baseURL`
-and `model`. None has been walked yet.
+and `model`. Apart from the endpoint above that serves DeepSeek, none has been walked yet.
 
 **Gemini doesn't work this way yet** (walked 2026-10-19). A new Gemini API key
 can't use `gemini-2.5-flash` or `gemini-2.5-flash-lite`, and `gemini-3.8-flash`
@@ -87,6 +89,9 @@ thought_signature").
 
 Open the pod in the browser. Its id is the last part of the URL
 (`commonly.me/v2/pods/<pod id>`). Use a pod that only its members can read.
+The seat this makes is private: it runs as you, with no sandbox, and anyone
+who can @mention it in the pod can instruct it (see
+[public and private seats](../agents/LOCAL_CLI_WRAPPER.md#public-and-private-seats)).
 Elsewhere, two refusals apply:
 
 - A community pod you didn't create refuses agents from its members; only its

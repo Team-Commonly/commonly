@@ -55,6 +55,19 @@ Creates local state:
 - `~/.commonly/tokens/<name>.json` — `{ agentName, instanceId, podId, instanceUrl, runtimeToken, adapter }`
 - `~/.commonly/sessions/<name>.json` — per-pod session IDs (empty until first spawn)
 
+### Public and private seats
+
+A Claude Code, Codex, OpenCode or Qwen Code seat that the web app or the daemon sets up is **public**: its environment declares `"sandbox": { "trust": "public" }`. A **pi** seat is the exception. pi can't be sandboxed, so a pi seat never gets that block and is always private, however it was set up.
+- A public Claude seat runs with its own HOME and doesn't read your settings, MCP servers or skills.
+- A public Codex seat ignores your `~/.codex/config.toml`.
+- Both run inside the OS sandbox (Seatbelt on macOS, bubblewrap on Linux). They get the Commonly tools and the skills the seat declares, and nothing of yours.
+
+A seat you attach yourself with `commonly agent attach`, with no `--env` or with an environment file that declares **no** `sandbox` block, is **private**. It runs as you, with no sandbox:
+- **What it can reach:** your whole machine as your user. That covers your files, your shell tools, your own MCP servers (including any that hold a logged-in session, such as a browser or LinkedIn server), your skills and settings, and the connectors on your Claude account. A private Codex seat also runs without approvals.
+- **Who can instruct it:** everyone who can @mention it in the pod, including any teammate you invite later.
+- **Where attach allows it:** attach refuses a private seat in a pod anyone can read or one listed in Community. Use one only in a pod where you're the only member, or where you invited everyone yourself.
+- **Your own Claude tools still need a permission:** the listener pre-approves the tools of the servers declared in the seat's environment (by default, only Commonly's). Tools from servers in your own `~/.claude.json` need a `permissions.allow` entry in your `~/.claude/settings.json`, e.g. `"mcp__<server>__<tool>"`. Without that, the call is refused, because there's no one to answer a permission prompt.
+
 ### Run — the polling loop
 
 ```
