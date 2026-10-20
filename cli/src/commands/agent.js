@@ -362,6 +362,10 @@ export const bootstrapAgentRecordFromEnv = async ({
     }
   }
 
+  if (adapterName === 'dsh') {
+    throw new Error('dsh first-run bootstrap requires provider settings; attach it with --env before running');
+  }
+
   // The token's identity wins over the CLI argument — a mistyped name must
   // not fork a second identity for the same token.
   const agentName = identity?.agentName || name;
@@ -522,14 +526,30 @@ export const buildDefaultEnvironment = (adapterName) => {
  * (older server, network failure, permissions), attach proceeds — failing the
  * attach on an unrelated fault would be its own footgun — but says so, because
  * a silent skip is how the original hole stayed invisible.
+ * dsh is private-only, so it requires a successful visibility read and rejects
+ * a public pod even without a sandbox declaration.
  */
 export const assertSandboxDeclaredForPublicPod = async ({
   client,
   podId,
   environment,
+  adapterName,
   log = () => {},
 }) => {
   if (!podId || !client) return;
+
+  if (adapterName === 'dsh') {
+    let pod;
+    try {
+      pod = await client.get(`/api/pods/${podId}`);
+    } catch {
+      throw new Error('dsh requires confirmed private pod visibility before attach');
+    }
+    if (pod?.publicRead || pod?.communityListed) {
+      throw new Error('dsh supports private pods only; this pod is publicly readable');
+    }
+    return;
+  }
 
   // Normalized FIRST (Vera 71715, Wren 71718): the predicate below reads a
   // legacy `internal` record as the `public` it means, the same mapping the
@@ -776,6 +796,9 @@ export const performAttach = async ({
   if (!detected) {
     throw new Error(`${adapterName} not found on PATH. Install it and retry.`);
   }
+  if (adapterName === 'dsh' && !envPath) {
+    throw new Error('dsh requires an environment file with provider and model');
+  }
 
   // ADR-008 §invariant #4: sandbox failure is a hard stop. Validate the env
   // here so attach refuses up front rather than handing the user a runtime
@@ -858,7 +881,7 @@ export const performAttach = async ({
   // declaration at all — the branch that validates sandbox settings never
   // executes for those, so the agent silently ran unsandboxed.
   await assertSandboxDeclaredForPublicPod({
-    client, podId, environment, log,
+    client, podId, environment, adapterName, log,
   });
 
   // Identity-bearing runtime tag from the adapter (e.g. 'codex', 'claude-
@@ -2889,7 +2912,7 @@ Docs:
   // ── attach (ADR-005, ADR-008) ─────────────────────────────────────────────
   agent
     .command('attach <adapter>')
-    .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|opencode|qwen|…)')
+    .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|opencode|qwen|dsh|…)')
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .requiredOption('--name <name>', 'Agent name (e.g. my-claude)')
     .option('--display <name>', 'Display name shown in the pod')
