@@ -736,3 +736,61 @@ describe('actioned: the recipient did what the row asked, outside its thread', (
     expect(mockUpdateMany.mock.calls[0][1].$set).not.toHaveProperty('resolvedBy');
   });
 });
+
+describe('an agent mention nobody answered for a week leaves the queue as missed', () => {
+  const NOW = new Date('2026-10-20T12:00:00Z');
+  const CUTOFF = new Date('2026-10-13T12:00:00Z');
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUpdateMany.mockResolvedValue({ modifiedCount: 1 });
+  });
+
+  it("resolves an agent's week-old mention as missed and leaves a person's alone", async () => {
+    mockFind.mockReturnValue(chain([{ _id: 'row-agent', actorUserId: 'bot-1' }, { _id: 'row-person', actorUserId: 'human-1' }]));
+    mockUserFind.mockReturnValue(chain([{ _id: 'bot-1' }]));
+
+    const result = await AttentionItemService.sweepMissedAgentMentions({ now: NOW });
+
+    expect(mockUserFind).toHaveBeenCalledWith({ _id: { $in: ['bot-1', 'human-1'] }, isBot: true });
+    expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { _id: { $in: ['row-agent'] }, kind: 'mention', status: 'open' },
+      { $set: { status: 'resolved', resolvedAt: NOW, resolvedBy: 'missed' } },
+    );
+    expect(result).toEqual({ scanned: 2, eligible: 1, missed: 1 });
+  });
+
+  it('looks only at open mentions with an actor, older than seven days by their source time', async () => {
+    mockFind.mockReturnValue(chain([]));
+
+    await AttentionItemService.sweepMissedAgentMentions({ now: NOW });
+
+    expect(mockFind).toHaveBeenCalledWith({
+      kind: 'mention',
+      status: 'open',
+      actorUserId: { $exists: true, $ne: null },
+      $or: [
+        { sourceCreatedAt: { $lt: CUTOFF } },
+        { sourceCreatedAt: { $exists: false }, createdAt: { $lt: CUTOFF } },
+      ],
+    });
+    // Nothing old enough: no actor lookup, no write.
+    expect(mockUserFind).not.toHaveBeenCalled();
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('a dry run counts without writing', async () => {
+    mockFind.mockReturnValue(chain([{ _id: 'row-agent', actorUserId: 'bot-1' }]));
+    mockUserFind.mockReturnValue(chain([{ _id: 'bot-1' }]));
+
+    const result = await AttentionItemService.sweepMissedAgentMentions({ now: NOW, apply: false });
+
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ scanned: 1, eligible: 1, missed: 0 });
+  });
+
+  it('the window is seven days', () => {
+    expect(AttentionItemService.AGENT_MENTION_MISSED_DAYS).toBe(7);
+  });
+});

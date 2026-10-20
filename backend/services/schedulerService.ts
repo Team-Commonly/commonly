@@ -410,6 +410,24 @@ class SchedulerService {
     // re-deriving from state each pass is drop-proof, where a delayed
     // AgentEvent inherited the pending-GC caveat (#993 removed it; the cron
     // is still right, for the drop-proofness rather than the deletion).
+    // An agent's mention with no thread reply for a week leaves the needs-you
+    // queue as `missed` (attentionItemService.sweepMissedAgentMentions). Hourly
+    // is plenty for a week-long window.
+    const missedAgentMentionJob: CronJob = cron.schedule(
+      '17 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { sweepMissedAgentMentions } = require('./attentionItemService');
+          const r = await sweepMissedAgentMentions();
+          console.log(`[attention] missed-mention pass scanned=${r.scanned} eligible=${r.eligible} missed=${r.missed}`);
+        } catch (error) {
+          console.error('[attention] missed-mention pass failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     const stalledConnectJob: CronJob = cron.schedule(
       '*/5 * * * *',
       async () => {
@@ -564,6 +582,7 @@ class SchedulerService {
       skillsRefreshJob,
       onboardingSilenceJob,
       stalledConnectJob,
+      missedAgentMentionJob,
       kernelWorkSweepJob,
       installableReconcileJob,
       decisionCardReconcileJob,
