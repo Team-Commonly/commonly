@@ -51,6 +51,8 @@ const requireComposed = (text) => {
   assert.match(section(text, 'llm-pi-ai'), /baseURL: http:\/\/127\.0\.0\.1:9999\/v1/);
   assert.match(section(text, 'llm-pi-ai'), /reasoning: high/);
   assert.match(section(text, 'llm-pi-ai'), /thinkingFormat: deepseek/);
+  assert.match(section(text, 'llm-pi-ai'), /supportsDeveloperRole: false/);
+  assert.match(section(text, 'llm-pi-ai'), /supportsStore: false/);
   assert.match(section(text, 'agent-default-model'), /provider: commonly/);
   assert.match(section(text, 'llm-deepseek'), /disabled: true/);
   assert.match(section(text, 'llm-deepseek-account'), /disabled: true/);
@@ -97,6 +99,8 @@ try {
   const mutants = [
     ['wrong-api', (copy) => { copy[0].config.providers.commonly.api = 'openai-responses'; }],
     ['thinking-off', (copy) => { delete copy[0].config.providers.commonly.reasoning; }],
+    ['developer-role-on', (copy) => { copy[0].config.providers.commonly.compat.supportsDeveloperRole = true; }],
+    ['store-on', (copy) => { copy[0].config.providers.commonly.compat.supportsStore = true; }],
     ['wrong-model-route', (copy) => { copy[1].config.provider = 'deepseek-official'; }],
     ['native-on', (copy) => { copy[2].disabled = false; }],
     ['native-account-on', (copy) => { copy[3].disabled = false; }],
@@ -146,7 +150,13 @@ try {
   piServer = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
-    piBodies.push({ body: JSON.parse(Buffer.concat(chunks).toString() || '{}'), authorization: req.headers.authorization });
+    const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+    piBodies.push({ body, authorization: req.headers.authorization });
+    if (body.messages?.some((message) => message.role === 'developer') || Object.hasOwn(body, 'store')) {
+      res.writeHead(422, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'DeepSeek rejects developer role and store' } }));
+      return;
+    }
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     for (const frame of [
       { choices: [{ delta: { role: 'assistant', content: 'proxy reply' }, index: 0, finish_reason: null }] },
@@ -169,8 +179,32 @@ try {
   assert.ok(piBodies.every(({ authorization }) => authorization === 'Bearer probe-proxy-key'),
     'project .env replaced the inherited proxy bearer');
   const modelBody = piBodies.find(({ body }) => JSON.stringify(body.messages || []).includes('PI_ENV_PRECEDENCE'))?.body;
+  assert.equal(modelBody?.messages?.[0]?.role, 'system', 'pi-ai did not send the system prompt as system');
+  assert.equal(Object.hasOwn(modelBody, 'store'), false, 'pi-ai sent an unsupported store field');
   assert.equal(modelBody?.thinking?.type, 'enabled', 'pi-ai did not enable DeepSeek thinking');
   assert.equal(modelBody?.reasoning_effort, 'high', 'pi-ai lost the reasoning effort');
+
+  const genericBefore = piBodies.length;
+  const genericRows = buildPatch({ proxyBaseURL: piURL, model: 'other-model', cwd, mcp,
+    effort: 'high', deepseekOfficial: false }).slice(0, -1);
+  const genericResult = await run(['--profile', 'headless', '--patch', await writePatch('pi-generic-compat', genericRows),
+    '--json', 'PI_GENERIC_COMPAT'], join(root, 'pi-generic-home'), { COMMONLY_DSH_PROXY_KEY: 'probe-proxy-key' });
+  assert.equal(genericResult.code, 0, `generic pi-ai request failed: ${genericResult.stderr}`);
+  assert.match(genericResult.stdout, /"type":"final"/);
+  const genericModel = piBodies.slice(genericBefore)
+    .find(({ body }) => JSON.stringify(body.messages || []).includes('PI_GENERIC_COMPAT'))?.body;
+  assert.equal(genericModel?.messages?.[0]?.role, 'system', 'generic provider used developer role');
+  assert.equal(Object.hasOwn(genericModel, 'store'), false, 'generic provider sent store');
+  for (const rejected of [
+    { messages: [{ role: 'developer', content: 'unsupported' }] },
+    { messages: [{ role: 'system', content: 'ok' }], store: false },
+  ]) {
+    const response = await fetch(`${piURL}/chat/completions`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer probe-proxy-key' },
+      body: JSON.stringify(rejected),
+    });
+    assert.equal(response.status, 422, 'stand-in accepted a DeepSeek-incompatible request');
+  }
 
   await writeFile(join(cwd, '.env'), 'DSH_HOME=/tmp/project-shadow\n');
   const beforeRefusal = serverBodies.length;
@@ -178,7 +212,7 @@ try {
     join(root, 'bootstrap-only-home'), { DEEPSEEK_API_KEY: 'probe-native-key' });
   assert.notEqual(blocked.code, 0, 'project .env relocated DSH_HOME');
   assert.equal(serverBodies.length, beforeRefusal, 'bootstrap refusal contacted the provider');
-  process.stdout.write(`PASS dsh ${TESTED_DSH_VERSIONS[0]}: composed rows, ${mutants.length} killed mutants, native request bodies default=${defaultBodies.length} with log / disabled=${disabledBodies.length} without log; planted .env key precedence, pi-ai thinking and bootstrap refusal\n`);
+  process.stdout.write(`PASS dsh ${TESTED_DSH_VERSIONS[0]}: composed rows, ${mutants.length} killed mutants, native request bodies default=${defaultBodies.length} with log / disabled=${disabledBodies.length} without log; planted .env key precedence, pi-ai thinking, system role, no store (official and generic), and bootstrap refusal\n`);
 } finally {
   if (piServer) await new Promise((resolve) => piServer.close(resolve));
   await new Promise((resolve) => server.close(resolve));

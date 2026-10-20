@@ -103,7 +103,13 @@ export const buildPatch = ({ proxyBaseURL, model, cwd, mcp, effort, deepseekOffi
     commonly: {
       apiKeyEnv: PROXY_KEY_ENV, api: 'openai-completions', baseURL: proxyBaseURL,
       ...(effort ? { reasoning: effort } : {}),
-      ...(deepseekOfficial ? { compat: { thinkingFormat: 'deepseek' } } : {}),
+      // The loopback proxy hides the upstream URL from pi-ai's compatibility detection.
+      // Use the conservative Chat Completions roles/fields for every provider.
+      compat: {
+        supportsDeveloperRole: false,
+        supportsStore: false,
+        ...(deepseekOfficial ? { thinkingFormat: 'deepseek' } : {}),
+      },
       models: [{ id: model, name: model, contextWindow: 128000,
         ...(effort ? { reasoningEfforts: {
           low: 'low', medium: 'high', high: 'high', xhigh: 'high', max: 'max',

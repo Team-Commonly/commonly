@@ -97,6 +97,7 @@ test('one patch selects proxy pi-ai, disables native routes and upload, and moun
     expect(rows.find((row) => row.id === 'llm-pi-ai').config.providers.commonly).toMatchObject({
       api: 'openai-completions', apiKeyEnv: 'COMMONLY_DSH_PROXY_KEY', reasoning: 'high',
       baseURL: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/v1\/?$/),
+      compat: { supportsDeveloperRole: false, supportsStore: false },
     });
     expect(rows.find((row) => row.id === 'llm-pi-ai').config.providers.commonly.models[0].reasoningEfforts.high).toBe('high');
     expect(rows.find((row) => row.id === 'llm-deepseek').disabled).toBe(true);
@@ -183,5 +184,10 @@ test('helpers keep the native route disabled and child env closed', () => {
   expect(rows.find((row) => row.id === 'llm-deepseek').disabled).toBe(true);
   const official = buildPatch({ proxyBaseURL: 'http://127.0.0.1:10/v1', model: 'deepseek-flash', cwd: '/tmp/work', mcp,
     effort: 'high', deepseekOfficial: true });
-  expect(official[0].config.providers.commonly.compat.thinkingFormat).toBe('deepseek');
+  expect(official[0].config.providers.commonly.compat).toEqual({
+    thinkingFormat: 'deepseek', supportsDeveloperRole: false, supportsStore: false,
+  });
+  expect(rows[0].config.providers.commonly.compat).toEqual({
+    supportsDeveloperRole: false, supportsStore: false,
+  });
 });
