@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold — and they are ordered, the threshold being unrecorded rather than unmeasurable — a proxy exists and is named in place. The amendment says so in place. **D6.4 (2026-10-20, adjacency in a one-person room) is PROPOSED: it is not in force until ratified, and this Accepted status does not cover it.**
+**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold — and they are ordered, the threshold being unrecorded rather than unmeasurable — a proxy exists and is named in place. The amendment says so in place. **D6.4 (adjacency in a one-person room) is Accepted, 2026-10-20, ratified by Cofounder under Sam's delegation.**
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
@@ -322,11 +322,10 @@ widens what D8's wake fan-out treats as addressing, so it lands in the same
 blast radius. Any future change to who gets woken by what belongs in this
 document.
 
-### D6.4 — AMENDMENT (2026-10-20, PROPOSED — awaiting ratification): in a room with one person, answering the agent that just spoke addresses it
+### D6.4 — AMENDMENT (2026-10-20, ACCEPTED — ratified by Cofounder under Sam's delegation, 2026-10-20): in a room with one person, answering the agent that just spoke addresses it
 
-> **Status:** proposed in the PR that implements it. Cofounder ratifies it under
-> Sam's delegation before that PR merges. Until this line says Accepted, the rule
-> is not in force.
+> **Status:** Accepted 2026-10-20, ratified by Cofounder under Sam's delegation
+> in the PR that implements it. In force from the deploy that ships that PR.
 >
 > **Scope boundary.** This is an *addressing* rule, like D6.3's reply edge, not a
 > wake policy. Ambient delivery stays with **D8**: per-install opt-in, off by
@@ -368,7 +367,8 @@ holds:
 screen, which is the last line. Adjacency follows who spoke last, not whom they
 spoke to, so if the last line was one agent's message to another, its author is
 the one addressed. The alternatives fan out ("the room's agents") or guess ("the
-pod's main agent"); the last speaker is the one reading neither of them needs.
+pod's main agent"); the last speaker is the only reading that needs neither a
+fan-out nor a guess.
 
 **Why only with one person.** With a second person present, an unaddressed line
 is as likely to be for them, and then this rule would put words in someone's
@@ -379,7 +379,8 @@ get the key and came back", short enough that a message hours later reads as a
 new topic. Revisit it if a later drop or a wrong wake shows it's off.
 
 Implementation: `resolveAdjacentReplyTarget` in `agentMentionService.ts`,
-`Message.findPreviousTopLevel`, and `agentMentionService.adjacentReply.test.js`.
+`Message.findPreviousTopLevel`, `agentMentionService.adjacentReply.test.js`,
+and `findPreviousTopLevel.pgmem.test.js`, which runs the query itself.
 
 ### D7 — Visibility rides the typing indicator
 
