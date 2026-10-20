@@ -154,6 +154,54 @@ describe('placement request', () => {
     expect(res.status).toBe(403);
   });
 
+  // C14 rehearsal follow-up (sprint-review on #2365): "On my computer" with
+  // the name of the person's hosted agent stamped a placement the daemon's
+  // runtime-token mint then refused, so the page said "requested" and nothing
+  // ran. Refused up front with the mint's own code, and nothing is stamped.
+  describe('an agent Commonly runs in-process cannot be placed on a machine', () => {
+    const runInProcess = (config) => AgentInstallation.updateOne(
+      { agentName: 'wren-test', instanceId: 'default' },
+      { $set: { config } },
+    );
+
+    it.each([
+      ['hosted on the native engine', { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native' } }],
+      ['native', { runtime: { runtimeType: 'native' } }],
+    ])('%s: 409 in_process_agent_no_token, and no request is stamped', async (_label, config) => {
+      await runInProcess(config);
+      const res = await requestPlacement('machine-a');
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('in_process_agent_no_token');
+      expect(res.body.message).toMatch(/^wren-test is your hosted agent/);
+      const identity = await User.findById(bot._id).lean();
+      expect(identity.botMetadata.requestedMachineId ?? null).toBeNull();
+      const seenByA = await assigned(DAEMON_A);
+      expect(seenByA.body.agents).toEqual([]);
+    });
+
+    it('a request stamped before the check can still be withdrawn', async () => {
+      await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.requestedMachineId': 'machine-a' } });
+      await runInProcess({ runtime: { runtimeType: 'native' } });
+      const res = await requestPlacement(null);
+      expect(res.status).toBe(200);
+      const identity = await User.findById(bot._id).lean();
+      expect(identity.botMetadata.requestedMachineId).toBeNull();
+    });
+
+    it('ownership is checked first: another user learns nothing about how it runs', async () => {
+      await runInProcess({ runtime: { runtimeType: 'native' } });
+      global.__CALLER_ID = String(new mongoose.Types.ObjectId());
+      const res = await requestPlacement('machine-a');
+      expect(res.status).toBe(403);
+      expect(res.body.code).not.toBe('in_process_agent_no_token');
+    });
+
+    it('an agent the person runs themself is still placed', async () => {
+      const res = await requestPlacement('machine-a');
+      expect(res.status).toBe(200);
+    });
+  });
+
   it('409s when the agent is bound to a different machine', async () => {
     await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-b' } });
     const res = await requestPlacement('machine-a');

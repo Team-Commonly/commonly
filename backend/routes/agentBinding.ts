@@ -29,6 +29,7 @@ const User = require('../models/User');
 const {
   getRuntimeTokenHashesForAgent,
   revokeRuntimeTokensForAgent,
+  runsInProcess,
 } = require('./registry/tokens');
 
 const router = express.Router();
@@ -213,6 +214,20 @@ router.post('/request', bindingRateLimit, auth, async (req: express.Request & { 
       return res.status(403).json({
         message: ownershipFailureMessage[ownership.failure],
         code: ownership.failure,
+      });
+    }
+
+    // An agent Commonly runs in-process (the person's hosted agent) can't also
+    // run on a machine: its daemon would be refused at the runtime-token mint,
+    // so the page said "requested" and nothing ever ran. Refused here, with the
+    // mint's code, after the ownership check so another user's agent never
+    // reveals how it runs. Withdrawing (machineId: null) stays allowed, so a
+    // request stamped before this check can still be cleared.
+    if (requestedMachineId && await runsInProcess(null, { agentName, instanceId })) {
+      return res.status(409).json({
+        code: 'in_process_agent_no_token',
+        message: `${agentName} is your hosted agent, and Commonly runs it, so it can't also run on your computer. `
+          + 'Choose a different name for an agent you run yourself.',
       });
     }
 

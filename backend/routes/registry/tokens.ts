@@ -433,6 +433,7 @@ module.exports = {
   revokeRuntimeTokensAfterLastUninstall,
   issueRuntimeTokenForAgent,
   InProcessAgentTokenRefused,
+  runsInProcess,
   issueRuntimeTokenForInstallation,
   issueUserTokenForInstallation,
 };
