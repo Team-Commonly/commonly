@@ -11,6 +11,8 @@
  */
 const {
   HOSTED_MCP_CALL_TIMEOUT_MS,
+  HOSTED_MCP_MAX_REPLY_BYTES,
+  HOSTED_MCP_MAX_RESULT_CHARS,
   createHostedMcpRuntimeDriftCache,
   hostedToolDefinitions,
   findHostedToolDefinition,
@@ -648,5 +650,122 @@ describe('hosted-MCP tool definitions', () => {
     const deps = makeDeps();
     await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
     expect(toolCalls(deps)[0][1].signal).toBeDefined();
+  });
+});
+
+// TASK-254: a hosted tool result is bounded twice. The backend reads no more
+// than HOSTED_MCP_MAX_REPLY_BYTES of a vendor reply, and a turn sees no more
+// than HOSTED_MCP_MAX_RESULT_CHARS of a result, told so in the result itself.
+describe('hosted-MCP results are bounded', () => {
+  const encoder = new TextEncoder();
+  // A body served in 64 KiB chunks, counting how many the reader pulled.
+  const streamedResponse = (totalBytes, contentType = 'application/json') => {
+    const chunk = encoder.encode('x'.repeat(64 * 1024));
+    const state = { pulled: 0, cancelled: false };
+    const body = new ReadableStream({
+      pull(controller) {
+        if (state.pulled * chunk.byteLength >= totalBytes) { controller.close(); return; }
+        state.pulled += 1;
+        controller.enqueue(chunk);
+      },
+      cancel() { state.cancelled = true; },
+    });
+    return { state, response: new Response(body, { status: 200, headers: { 'content-type': contentType } }) };
+  };
+
+  it('cuts a result over the character cap, and says so in the result', async () => {
+    expect(HOSTED_MCP_MAX_RESULT_CHARS).toBe(24_000);
+    const long = 'a'.repeat(30_000);
+    const deps = makeDeps({
+      fetcher: jest.fn(async () => jsonResponse({ jsonrpc: '2.0', id: 'call-1', result: { content: [{ type: 'text', text: long }] } })),
+    });
+    const result = await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
+    expect(result.truncated).toBe(true);
+    expect(result.content[0].text).toBe(long.slice(0, HOSTED_MCP_MAX_RESULT_CHARS));
+    const marker = result.content[result.content.length - 1].text;
+    expect(marker).toMatch(/was cut to the first 24000/);
+    expect(marker).toMatch(/Ask for less/);
+  });
+
+  it('keeps a result under the cap exactly as the vendor sent it', async () => {
+    const vendor = { content: [{ type: 'text', text: 'short' }], structuredContent: { n: 1 } };
+    const deps = makeDeps({ fetcher: jest.fn(async () => jsonResponse({ jsonrpc: '2.0', id: 'call-1', result: vendor })) });
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual(vendor);
+  });
+
+  it('over the cap, drops images and structuredContent but keeps the vendor\'s isError', async () => {
+    const vendor = {
+      isError: true,
+      content: [{ type: 'image', data: 'b'.repeat(40_000), mimeType: 'image/png' }, { type: 'text', text: 'what failed' }],
+      structuredContent: { rows: 'c'.repeat(40_000) },
+    };
+    const deps = makeDeps({ fetcher: jest.fn(async () => jsonResponse({ jsonrpc: '2.0', id: 'call-1', result: vendor })) });
+    const result = await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
+    expect(result.content.map((item) => item.type)).toEqual(['text', 'text']);
+    expect(result.content[0].text).toBe('what failed');
+    expect(JSON.stringify(result).length).toBeLessThan(HOSTED_MCP_MAX_RESULT_CHARS + 1_000);
+  });
+
+  it('stops reading a JSON reply past the byte cap, and fails the call', async () => {
+    expect(HOSTED_MCP_MAX_REPLY_BYTES).toBe(4 * 1024 * 1024);
+    const { state, response } = streamedResponse(HOSTED_MCP_MAX_REPLY_BYTES * 3);
+    const deps = makeDeps({ fetcher: jest.fn(async () => response) });
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION))
+      .rejects.toMatchObject({ code: 'provider_error', message: expect.stringMatching(/larger than 4194304 bytes/) });
+    expect(state.cancelled).toBe(true);
+    expect(state.pulled * 64 * 1024).toBeLessThanOrEqual(HOSTED_MCP_MAX_REPLY_BYTES + 128 * 1024);
+  });
+
+  it('applies the same byte cap to an SSE reply', async () => {
+    const { state, response } = streamedResponse(HOSTED_MCP_MAX_REPLY_BYTES * 2, 'text/event-stream');
+    const deps = makeDeps({ fetcher: jest.fn(async () => response) });
+    await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
+    expect(state.cancelled).toBe(true);
+  });
+
+  it('applies the byte cap to a tools/list page before any tools/call', async () => {
+    // A valid page that is only too big: without the cap it would parse, pin
+    // and let the call through, so the refusal can only be the cap's.
+    const deps = makeDeps();
+    deps.fetcher = sessionFetcher(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      if (body.method === 'tools/call') return jsonResponse(okReply);
+      return jsonResponse({
+        jsonrpc: '2.0',
+        id: 'list-1',
+        result: { tools: [{
+          name: 'list_issues',
+          description: 'd'.repeat(HOSTED_MCP_MAX_REPLY_BYTES + 1),
+          inputSchema: ENTRY.tools[0].inputSchema,
+        }] },
+      });
+    });
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
+    expect(toolCalls(deps).map(([, init]) => JSON.parse(init.body).method)).toEqual(['tools/list']);
+  });
+
+  it('keeps the deadline armed while the body is read, so a trickling reply ends the call', async () => {
+    jest.useFakeTimers();
+    try {
+      const deps = makeDeps({
+        fetcher: jest.fn(async (_url, init) => new Response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode('{"jsonrpc":"2.0",'));
+            init.signal.addEventListener('abort', () => controller.error(new Error('aborted')));
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })),
+      });
+      const pending = definitionFor('linear.list_issues', deps).call({}, CONNECTION);
+      const settled = expect(pending).rejects.toMatchObject({
+        code: 'provider_unreachable', message: expect.stringMatching(/did not finish in time/),
+      });
+      await jest.advanceTimersByTimeAsync(HOSTED_MCP_CALL_TIMEOUT_MS + 1);
+      await settled;
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
