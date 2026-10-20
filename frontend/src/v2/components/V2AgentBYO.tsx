@@ -513,6 +513,8 @@ const V2AgentBYO: React.FC = () => {
       });
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
+      // Defensive: neither route this path calls returns the in-process code
+      // today (sprint-review on #2365). It reads right the day one does.
       setError(e.response?.data?.code === IN_PROCESS_NAME_CODE
         ? t('agentByo.errors.nameIsHosted', { name: cleanName })
         : e.response?.data?.message || e.response?.data?.error || e.message || t('agentByo.errors.installFailed'));

@@ -9,6 +9,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
+import { PERSONA_CARDS } from '../agents/personaCatalogData';
 
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('axios', () => {
@@ -96,6 +97,21 @@ describe('BYO default agent name follows where it runs', () => {
     await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-byo'));
     expect(nameInput()).toHaveValue('sam-codex');
+  });
+
+  // sprint-review on #2365: with ?persona= and no ?name=, nothing marks the
+  // name as chosen, so only the persona branch's place in defaultNameFor keeps
+  // a mode click from renaming it.
+  test('a persona link without ?name= keeps the persona name through both modes', async () => {
+    const card = PERSONA_CARDS.find((c) => c.availability === 'connect');
+    mockGet();
+    renderAt(`/v2/agents/byo?persona=${card.key}`);
+    await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument());
+    expect(nameInput()).toHaveValue(`sam-${card.key}`);
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    expect(nameInput()).toHaveValue(`sam-${card.key}`);
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    expect(nameInput()).toHaveValue(`sam-${card.key}`);
   });
 
   test('a name the person typed is never replaced by a mode switch', async () => {
