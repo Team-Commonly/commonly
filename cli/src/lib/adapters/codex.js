@@ -47,9 +47,11 @@ import {
   mkdtemp,
   readFile,
   readlink,
+  rename,
   rm,
   symlink,
   unlink,
+  writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import {
@@ -62,6 +64,7 @@ import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
@@ -306,6 +309,41 @@ const preparePublicCodexHome = async (ctx) => {
     await unlink(targetAuth);
   }
   return publicHome;
+};
+
+// A public seat ran with none of its declared skills: this adapter never read
+// `environment.skills`, so every outsider's Codex worked without the house
+// rules buildDefaultEnvironment declares for it (found 2026-10-20 beside the
+// Claude half of the same gap, #2354). `codex exec` has no skill loader a
+// public seat can use, but it reads $CODEX_HOME/AGENTS.md as the user's own
+// instructions, and the public home is one this CLI owns. Measured on
+// codex-cli 0.162.1 with this adapter's public flags (`--ignore-user-config`
+// skips config.toml only): a marker in that file came back verbatim on a new
+// thread, and a changed marker came back on `exec resume` of the same thread,
+// so a seat picks the skills up on its next turn either way.
+//
+// `skills.claude` is ADR-008's SKILL.md list ("drivers copy or symlink as
+// appropriate"); Codex reads the same format, so no new key. Rewritten each
+// spawn (staged, then renamed, so a concurrent read never sees half a file),
+// and removed when nothing is declared so a dropped skill stops applying.
+// The cap is Codex's default `project_doc_max_bytes` for AGENTS.md files.
+const PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES = 32 * 1024;
+
+const writePublicCodexInstructions = async (publicHome, ctx) => {
+  const declared = Array.isArray(ctx.environment?.skills?.claude) ? ctx.environment.skills.claude : [];
+  const baseDir = ctx.cwd || process.cwd();
+  const text = await skillsAsText(
+    declared.map((source) => resolveSkillSource(source, baseDir)),
+    { maxBytes: PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES, label: 'codex' },
+  );
+  const target = join(publicHome, 'AGENTS.md');
+  if (!text) {
+    await rm(target, { force: true });
+    return;
+  }
+  const staged = `${target}.${process.pid}.tmp`;
+  await writeFile(staged, `${text}\n`, { encoding: 'utf8', mode: 0o600 });
+  await rename(staged, target);
 };
 
 const publicPermissionProfileFlags = (
@@ -653,6 +691,7 @@ export default {
       }
       if (publicSandboxMode !== null) {
         childEnv.CODEX_HOME = await preparePublicCodexHome(ctx);
+        await writePublicCodexInstructions(childEnv.CODEX_HOME, ctx);
       }
 
       const { threadId } = await runCodex({

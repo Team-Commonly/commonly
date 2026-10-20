@@ -20,6 +20,7 @@ import {
 import { existsSync } from 'fs';
 import { isAbsolute, join, resolve as pathResolve, basename } from 'path';
 import { homedir } from 'os';
+import { resolveSkillSource } from './skill-prompt.js';
 
 // ── Schema — keep the allow-list narrow; ADR-008 §invariants #1+#2 ──────────
 //
@@ -524,10 +525,7 @@ export const mountSkills = async (spec, workspacePath, envFileDir = null) => {
   await mkdir(skillsDir, { recursive: true });
 
   for (const rawSource of sources) {
-    const source = expandHome(rawSource);
-    const absSource = isAbsolute(source)
-      ? source
-      : pathResolve(envFileDir || workspacePath, source);
+    const absSource = resolveSkillSource(rawSource, envFileDir || workspacePath);
     if (!existsSync(absSource)) {
       conflicted.push({ path: absSource, reason: 'missing-source' });
       continue;

@@ -79,6 +79,7 @@ import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 // See codex.js for the rationale on bumping the default + env override.
@@ -274,41 +275,9 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns) => {
 // be admitted through Seatbelt. Linux caps one argv string at 128 KiB, so the
 // total is capped well under it.
 const PUBLIC_SKILL_PROMPT_MAX_BYTES = 96 * 1024;
-const SKILL_FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/;
-
 const publicSkillPromptArgs = async (skillSources) => {
-  const sections = [];
-  let total = 0;
-  for (const source of skillSources || []) {
-    let markdown;
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      markdown = await readFile(join(source, 'SKILL.md'), 'utf8');
-    } catch {
-      // eslint-disable-next-line no-console
-      console.warn(`[claude] public seat: no SKILL.md to inline at ${source}`);
-      continue;
-    }
-    const frontmatter = SKILL_FRONTMATTER_RE.exec(markdown);
-    const name = (frontmatter && /^name:\s*(.+)$/m.exec(frontmatter[1])?.[1].trim())
-      || source.split(/[\\/]/).filter(Boolean).pop();
-    const section = `## Skill: ${name}\n\n${markdown.slice(frontmatter ? frontmatter[0].length : 0).trim()}`;
-    const bytes = Buffer.byteLength(section, 'utf8');
-    if (total + bytes > PUBLIC_SKILL_PROMPT_MAX_BYTES) {
-      // eslint-disable-next-line no-console
-      console.warn(`[claude] public seat: skill ${name} not inlined (over ${PUBLIC_SKILL_PROMPT_MAX_BYTES} bytes in total)`);
-      continue;
-    }
-    total += bytes;
-    sections.push(section);
-  }
-  if (sections.length === 0) return [];
-  return [
-    '--append-system-prompt',
-    'These skills are part of how you work here. Skills are not loaded as files in this seat, '
-      + 'so each one is given in full below. Follow them as you would a loaded skill.\n\n'
-      + sections.join('\n\n'),
-  ];
+  const text = await skillsAsText(skillSources, { maxBytes: PUBLIC_SKILL_PROMPT_MAX_BYTES, label: 'claude' });
+  return text ? ['--append-system-prompt', text] : [];
 };
 
 const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
