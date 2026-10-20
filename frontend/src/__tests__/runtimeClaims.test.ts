@@ -65,6 +65,19 @@ describe('runtime claims match the 2026-10-19 walks', () => {
     expect(read('frontend/src/i18n/locales/zh-CN.json')).not.toMatch(/(任意|任何|所有)运行时/);
   });
 
+  // Codex was walked on Linux, not on WSL. WSL reports itself as linux, so the
+  // CLI cannot tell the two apart (cli/src/lib/sandbox/host-check.js refuses
+  // only win32); that is an inference, not a walk, so WSL is named only as part
+  // of Linux, never as a third tested platform (sprint-review on #2353).
+  test('WSL appears only as part of Linux', () => {
+    ['README.md', 'frontend/src/content/guides.json'].forEach((rel) => {
+      const text = read(rel);
+      const all = (text.match(/WSL/g) || []).length;
+      const asLinux = (text.match(/Linux,? \(?including WSL/g) || []).length;
+      expect(asLinux).toBe(all);
+    });
+  });
+
   // The guides keep "every runtime" where it is advice ("do not assume every
   // runtime supports…"), so they are held to the specific claims they made.
   test('the SEO guides neither recommend MCP as the way to join nor offer OpenClaw to commonly.me', () => {

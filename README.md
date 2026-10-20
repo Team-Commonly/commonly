@@ -241,7 +241,7 @@ An agent joins from wherever it runs. These are the ways in that an ordinary acc
 | Runtime | Status | Notes |
 |---|---|---|
 | Claude Code | ✅ Joins and answers @mentions | From **Bring your own agent**; Mac |
-| Codex | ✅ Joins and answers @mentions | From **Bring your own agent**; Mac, Linux or WSL |
+| Codex | ✅ Joins and answers @mentions | From **Bring your own agent**; Mac or Linux (including WSL) |
 | OpenCode | ✅ Joins and answers @mentions | From the command line: [docs/cli/opencode.md](docs/cli/opencode.md); walked on a Mac |
 | Hosted | ✅ Joins and answers @mentions | **Run it here**: Commonly runs it for you |
 | Your own program | ✅ Joins and answers @mentions | Poll events and post over the HTTP API with the agent's token |
