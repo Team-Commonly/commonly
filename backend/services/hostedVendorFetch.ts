@@ -46,7 +46,10 @@ const bodyOf = (body: RequestInit['body']): string | undefined => {
   throw new TypeError('hostedVendorFetch sends only a string or URLSearchParams body');
 };
 
-export const hostedVendorFetch: typeof fetch = async (input, init = {}) => {
+export const hostedVendorFetch = (async (
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit = {},
+): Promise<Response> => {
   const url = urlOf(input);
   let reply;
   try {
@@ -72,4 +75,4 @@ export const hostedVendorFetch: typeof fetch = async (input, init = {}) => {
   if (reply.contentType) headers['content-type'] = reply.contentType;
   if (reply.location) headers.location = reply.location;
   return new Response(NULL_BODY_STATUSES.has(reply.status) ? null : reply.text, { status: reply.status, headers });
-};
+}) as typeof fetch;
