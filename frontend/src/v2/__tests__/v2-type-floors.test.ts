@@ -164,7 +164,6 @@ const ALLOWLIST: string[] = [
   '.v2-mention-item__sub', // 11.0px — no-mono-family
   '.v2-modal__error', // 11.0px — no-mono-family
   '.v2-modal__hint--muted', // 11.0px — no-mono-family
-  '.v2-pods__create-cancel, .v2-pods__create-submit', // 11.0px — no-mono-family
   '.v2-pods__create-error', // 11.0px — no-mono-family
   '.v2-pods__discover-meta', // 11.0px — no-mono-family
   '.v2-pods__item-icon', // 11.0px — no-mono-family

@@ -304,6 +304,15 @@ describe('V2PodsSidebar — direction C', () => {
     expect(screen.getByPlaceholderText('Pod name')).toBeInTheDocument();
   });
 
+  test('Create stays disabled until the pod has a name', () => {
+    renderSidebar(fleet);
+    fireEvent.click(screen.getByRole('button', { name: 'New pod' }));
+    const submit = document.querySelector<HTMLButtonElement>('.v2-pods__create-submit');
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText('Pod name'), { target: { value: 'Launch' } });
+    expect(submit).toBeEnabled();
+  });
+
   test('the page variant renders the phone list with a Pods title', () => {
     renderSidebar(fleet, null, { variant: 'page' });
     expect(screen.getByRole('heading', { level: 1, name: 'Pods' })).toBeInTheDocument();
