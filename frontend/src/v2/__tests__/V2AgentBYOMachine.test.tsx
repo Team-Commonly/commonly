@@ -156,13 +156,15 @@ describe('BYO on-my-computer mode', () => {
     fireEvent.click(screen.getByText('Add to this computer'));
 
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+    // A computer placement defaults to `<user>-<adapter|local>`, never to the
+    // hosted agent's `<user>-agent` (C14 rehearsal, 2026-10-20).
     expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
-      agentName: 'sam-agent',
+      agentName: 'sam-local',
       podId: 'p1',
       config: expect.objectContaining({ runtime: { runtimeType: 'wrapper' } }),
     }), expect.anything());
     expect(axios.post).toHaveBeenCalledWith('/api/agent-binding/request', {
-      agentName: 'sam-agent', instanceId: 'default', machineId: 'mach-a',
+      agentName: 'sam-local', instanceId: 'default', machineId: 'mach-a',
     }, expect.anything());
     // Honest until the daemon reports it: waiting, not live.
     expect(screen.getByTestId('byo-machine-waiting')).toBeInTheDocument();

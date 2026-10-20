@@ -1,0 +1,133 @@
+// @ts-nocheck
+// The default agent name follows where it runs (C14 rehearsal, 2026-10-20).
+// "Run it here" takes `<user>-agent`. When "Use my own agent" defaulted to the
+// same name, a person who had just started a hosted agent was refused at the
+// token step with "Commonly runs this agent, so it has no runtime token": the
+// own agent shared the hosted one's name.
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import V2AgentBYO from '../components/V2AgentBYO';
+import { AuthContext } from '../../context/AuthContext';
+
+jest.mock('../components/V2NavRail', () => () => null);
+jest.mock('axios', () => {
+  const mock = {
+    get: jest.fn(),
+    post: jest.fn(),
+    patch: jest.fn(),
+    delete: jest.fn(),
+    defaults: { baseURL: '', headers: { common: {} } },
+    interceptors: {
+      request: { use: jest.fn(), eject: jest.fn() },
+      response: { use: jest.fn(), eject: jest.fn() },
+    },
+  };
+  return { __esModule: true, default: mock, ...mock };
+});
+
+const axios = jest.requireMock('axios').default;
+
+const authValue = {
+  currentUser: { _id: 'u1', username: 'sam' },
+  user: { _id: 'u1', username: 'sam' },
+  token: 'user-jwt',
+  loading: false,
+  error: null,
+  isAuthenticated: true,
+  register: jest.fn(),
+  login: jest.fn(),
+  logout: jest.fn(),
+  updateProfile: jest.fn(),
+};
+
+const pods = [{ _id: 'p1', name: 'Workspace', type: 'chat' }];
+
+// Hosting on, so the page asks where the agent runs.
+const mockGet = () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/hosted/availability')) {
+      return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 30 } } });
+    }
+    if (url === '/api/pods') return Promise.resolve({ data: pods });
+    return Promise.resolve({ data: {} });
+  });
+};
+
+const renderAt = (path = '/v2/agents/byo') => {
+  window.history.pushState({}, '', path);
+  return render(
+    <AuthContext.Provider value={authValue}>
+      <MemoryRouter initialEntries={[path]}>
+        <V2AgentBYO />
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+};
+
+const nameInput = () => screen.getByPlaceholderText('my-mcp-agent');
+
+afterEach(() => {
+  jest.clearAllMocks();
+  window.history.pushState({}, '', '/');
+});
+
+describe('BYO default agent name follows where it runs', () => {
+  test('hosted keeps <user>-agent; your own agent is <user>-claude', async () => {
+    mockGet();
+    renderAt();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    expect(nameInput()).toHaveValue('sam-agent');
+
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    expect(nameInput()).toHaveValue('sam-agent');
+
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    expect(nameInput()).toHaveValue('sam-claude');
+
+    // And back: the defaults never leave the two modes on one name.
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    expect(nameInput()).toHaveValue('sam-agent');
+  });
+
+  test('a Codex link defaults your own agent to <user>-codex', async () => {
+    mockGet();
+    renderAt('/v2/agents/byo?adapter=codex');
+    await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    expect(nameInput()).toHaveValue('sam-codex');
+  });
+
+  test('a name the person typed is never replaced by a mode switch', async () => {
+    mockGet();
+    renderAt();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument());
+    fireEvent.change(nameInput(), { target: { value: 'my-reviewer' } });
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    expect(nameInput()).toHaveValue('my-reviewer');
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    expect(nameInput()).toHaveValue('my-reviewer');
+  });
+
+  test("a name that is the person's hosted agent's is explained, not 'has no runtime token'", async () => {
+    mockGet();
+    axios.post
+      .mockResolvedValueOnce({ data: { ok: true } }) // /api/registry/install ("already installed" tolerance aside)
+      .mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: {
+            code: 'in_process_agent_no_token',
+            error: 'Commonly runs this agent, so it has no runtime token. To run an agent yourself, connect your own agent instead.',
+          },
+        },
+      });
+    renderAt();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    fireEvent.change(nameInput(), { target: { value: 'sam-agent' } });
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+    expect(await screen.findByText(/sam-agent is your hosted agent's name/)).toBeInTheDocument();
+    expect(screen.queryByText(/has no runtime token/)).toBeNull();
+  });
+});
