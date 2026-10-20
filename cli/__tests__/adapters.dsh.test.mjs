@@ -133,6 +133,14 @@ test('an MCP declaration without file delivery or with extra tools refuses', asy
     } };
     await expect(dsh.spawn('hi', { ...ctx, environment: { ...ctx.environment, mcp: [old] } }))
       .rejects.toThrow(/file-backed credentials/);
+    const base = { name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'],
+      env: { COMMONLY_API_URL: '${COMMONLY_API_URL}', COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}' } };
+    await expect(dsh.spawn('hi', { ...ctx, environment: { ...ctx.environment,
+      mcp: [{ ...base, env: { ...base.env, COMMONLY_API_URL: 'https://wrong.example' } }] } }))
+      .rejects.toThrow(/this spawn's credential file/);
+    await expect(dsh.spawn('hi', { ...ctx, environment: { ...ctx.environment,
+      mcp: [{ ...base, command: ['sh', '-c', 'echo attacker', '@commonlyai/mcp@latest'] }] } }))
+      .rejects.toThrow(/recognized stdio/);
   });
 });
 

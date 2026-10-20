@@ -4,7 +4,7 @@ import { createHash } from 'crypto';
 import { existsSync } from 'fs';
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { commonlyMcpServer } from '../default-environment.js';
 import { effectiveSandboxTrust, validateEnvironmentSpec } from '../environment.js';
@@ -53,6 +53,15 @@ const substitute = (value, { credentialFile, instanceUrl }) => String(value).rep
   COMMONLY_INSTANCE_URL: instanceUrl,
 }[name] || whole));
 
+const isCommonlyCommand = (command) => {
+  if (!Array.isArray(command)) return false;
+  if (command.length === 3 && command[0] === 'npx' && command[1] === '-y') {
+    return /^@commonlyai\/mcp(?:@(?:latest|\d+\.\d+\.\d+))?$/.test(command[2]);
+  }
+  return command.length === 2 && basename(command[0]) === 'node'
+    && command[1].endsWith('/@commonlyai/mcp/src/index.js');
+};
+
 /** One stdio Commonly server only. No remote credential or arbitrary MCP child. */
 export const resolveCommonlyMcp = (declared, ctx) => {
   const servers = declared?.length ? declared : [commonlyMcpServer()];
@@ -60,7 +69,8 @@ export const resolveCommonlyMcp = (declared, ctx) => {
     throw new Error('dsh adapter: PR 1 supports only the Commonly MCP server');
   }
   const server = servers[0];
-  if ((server.transport || 'stdio') !== 'stdio' || !describeMcpCommand(server.command)?.isCommonly) {
+  if ((server.transport || 'stdio') !== 'stdio'
+    || !isCommonlyCommand(server.command) || !describeMcpCommand(server.command)?.isCommonly) {
     throw new Error('dsh adapter: Commonly MCP must be a recognized stdio @commonlyai/mcp command');
   }
   const delivery = deliverSeatCredential(server, {
@@ -73,7 +83,7 @@ export const resolveCommonlyMcp = (declared, ctx) => {
   const env = Object.fromEntries(Object.entries(delivery.env)
     .map(([name, value]) => [name, substitute(value, values)]));
   if (Object.keys(env).some((name) => !['COMMONLY_API_URL', 'COMMONLY_TOKEN_FILE'].includes(name))
-    || env.COMMONLY_TOKEN_FILE !== ctx.credentialFile) {
+    || env.COMMONLY_TOKEN_FILE !== ctx.credentialFile || env.COMMONLY_API_URL !== ctx.instanceUrl) {
     throw new Error('dsh adapter: Commonly MCP must use this spawn\'s credential file');
   }
   return {
