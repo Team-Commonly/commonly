@@ -501,6 +501,19 @@ describe('attentionItemService', () => {
       expect(AttentionItemService.isHandoffRequest('Waiting on a human merge press.', [])).toBe(true);
     });
 
+    it('"human (merge) press" is an ask on its own, with no lead word and no members (only HUMAN_PRESS_RE accepts it)', () => {
+      expect(AttentionItemService.isHandoffRequest('Gated and green; human merge press please.', [])).toBe(true);
+      expect(AttentionItemService.isHandoffRequest('human press', [])).toBe(true);
+    });
+
+    it('with no human members left, a bare lead word is not an ask (the empty-names guard)', () => {
+      // Without the guard the alternation is empty and the lookahead passes on
+      // any non-word character, so these would page the creator fallback.
+      expect(AttentionItemService.isHandoffRequest('awaiting .', [])).toBe(false);
+      expect(AttentionItemService.isHandoffRequest('needs ', [])).toBe(false);
+      expect(AttentionItemService.isHandoffRequest('awaiting .', ['', '  '])).toBe(false);
+    });
+
     it('every accepted text passes the cheap candidate gate', () => {
       for (const text of ['ready for sam', 'Awaiting the human', 'human merge press', 'needs @lee', 'waiting for lee']) {
         expect(AttentionItemService.TASK_HANDOFF_CANDIDATE_RE.test(text)).toBe(true);
