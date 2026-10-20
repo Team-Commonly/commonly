@@ -281,7 +281,6 @@ const V2LandingPage: React.FC = () => {
   const locale = i18n.resolvedLanguage || i18n.language;
   const rotatingTerms = [
     t('landing.hero.terms.claudeCode'),
-    t('landing.hero.terms.cursor'),
     t('landing.hero.terms.codex'),
     t('landing.hero.terms.wholeTeam'),
   ];
