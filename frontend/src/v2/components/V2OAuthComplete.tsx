@@ -10,9 +10,9 @@ import { useTranslation } from 'react-i18next';
 // short-lived one-time code (never the JWT itself — it would end up in
 // browser history and server logs); we swap it for a session here, hand it to
 // AuthContext, and, for a /v2 destination, navigate in-app the way email
-// sign-in does. A full-page
-// navigation here used to re-download and re-boot the whole app on the path
-// most new people take (OAuth is 93% of outside signups).
+// sign-in does. A full-page navigation here used to re-download and re-boot
+// the whole app on the path most new people take (OAuth is 93% of outside
+// signups).
 const V2OAuthComplete: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();

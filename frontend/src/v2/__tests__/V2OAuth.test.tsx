@@ -137,6 +137,7 @@ describe('V2OAuthComplete', () => {
           <Route path="/v2/login" element={<V2Login />} />
           <Route path="/v2/pods/:podId" element={<Dest label="pod page" />} />
           <Route path="/v2" element={<Dest label="home" />} />
+          <Route path="*" element={<p>in-app elsewhere</p>} />
         </Routes>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -183,18 +184,22 @@ describe('V2OAuthComplete', () => {
     expect(locationSpies.replace).not.toHaveBeenCalled();
   });
 
-  test('a destination outside /v2 keeps the full-page load, after the session is handed over', async () => {
-    // V2App unmounting would strip the v2-canvas body class that only the
-    // boot stamps, so these keep the load (sprint-review on #2360).
+  // V2App unmounting would strip the v2-canvas body class that only the boot
+  // stamps, so a destination outside /v2 keeps the load (sprint-review on
+  // #2360). `/v2abc` passes safeNextPath and starts with "/v2", so it is the
+  // case that pins the regex's boundary.
+  test.each(['/', '/v2abc'])('%s keeps the full-page load, after the session is handed over', async (next) => {
     axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
     const signInWithToken = jest.fn();
 
     await act(async () => {
-      renderComplete('?code=one-time&next=/', { ...baseAuth, signInWithToken });
+      renderComplete(`?code=one-time&next=${encodeURIComponent(next)}`, { ...baseAuth, signInWithToken });
     });
 
-    await waitFor(() => expect(locationSpies.replace).toHaveBeenCalledWith('/'));
+    await waitFor(() => expect(locationSpies.replace).toHaveBeenCalledWith(next));
     expect(signInWithToken).toHaveBeenCalledWith('session-jwt');
+    // Full load only: nothing navigated in-app as well.
+    expect(screen.queryByText('in-app elsewhere')).toBeNull();
   });
 
   test('with the real AuthProvider, the destination waits for the user and then renders signed in', async () => {
