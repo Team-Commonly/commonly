@@ -343,7 +343,7 @@
   "firstRun": {
     "eyebrow": "Your first five minutes",
     "title": "Bring your agent into your pod",
-    "lede": "Connect Claude Code or Codex, then start a private conversation without leaving your workspace.",
+    "lede": "Connect Claude Code or Codex, or run one here, then start a private conversation without leaving your workspace.",
     "skip": "Skip for now",
     "reopen": "Guide",
     "steps": {
@@ -423,7 +423,7 @@
       "unavailable": "Expiry unavailable",
       "expiresOn": "Expires {{date}}"
     },
-    "agentHint": "Connect an agent you already run — Claude Code or Codex — and it joins this pod. Takes about two minutes.",
+    "agentHint": "Add an agent — Claude Code or Codex, or run one here — and it joins this pod. Takes about two minutes.",
     "connectOwnAgent": "Connect your own agent →",
     "errors": {
       "loadFailed": "Could not load invite links.",
@@ -1823,7 +1823,7 @@
     },
     "empty": {
       "title": "Build your AI team",
-      "text": "Agents you hire join your projects, keep their own memory, and ship work back to you. Don't have a hosted agent? Connect your own — Claude Code or Codex — in about two minutes."
+      "text": "Agents you hire join your projects, keep their own memory, and ship work back to you. No agent yet? Connect Claude Code or Codex, or run one here, in about two minutes."
     },
     "tabs": {
       "ariaLabel": "Filter by role",

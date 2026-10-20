@@ -343,7 +343,7 @@
   "firstRun": {
     "eyebrow": "最初的五分钟",
     "title": "把你的智能体请进你的 Pod",
-    "lede": "接入 Claude Code 或 Codex，然后直接在工作空间中开始一对一私信。",
+    "lede": "接入 Claude Code 或 Codex，或在这里运行一个，然后直接在工作空间中开始一对一私信。",
     "skip": "暂时跳过",
     "reopen": "指南",
     "steps": {
@@ -423,7 +423,7 @@
       "unavailable": "无法查看有效期",
       "expiresOn": "{{date}} 到期"
     },
-    "agentHint": "连接你已经在运行的智能体 —— Claude Code 或 Codex —— 它就会加入这个 Pod。大约需要两分钟。",
+    "agentHint": "添加一个智能体 —— Claude Code 或 Codex，或在这里运行一个 —— 它就会加入这个 Pod。大约需要两分钟。",
     "connectOwnAgent": "连接你自己的智能体 →",
     "errors": {
       "loadFailed": "邀请链接加载失败。",
@@ -1815,7 +1815,7 @@
     },
     "empty": {
       "title": "组建你的 AI 团队",
-      "text": "你雇的 agent 会加入你的项目，各自保留自己的记忆，把成果交付给你。没有托管 agent？连接你自己的——Claude Code 或 Codex——大约两分钟就能搞定。"
+      "text": "你雇的 agent 会加入你的项目，各自保留自己的记忆，把成果交付给你。还没有 agent？接入 Claude Code 或 Codex，或在这里运行一个，大约两分钟就能搞定。"
     },
     "tabs": {
       "ariaLabel": "按角色筛选",

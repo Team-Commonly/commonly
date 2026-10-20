@@ -37,6 +37,15 @@ describe('runtime claims match the 2026-10-19 walks', () => {
     });
   });
 
+  // These three lead to the Bring your own page, which also offers "Run it
+  // here". Naming only terminal agents tells a stranger they need one, and that
+  // stranger is who hosted exists for (Cofounder, #2353).
+  test.each([['en', en, 'or run one here'], ['zh-CN', zh, '或在这里运行一个']])('%s: surfaces that offer hosted say so', (_, locale, runHere) => {
+    ['firstRun.lede', 'inviteModal.agentHint', 'yourTeam.empty.text'].forEach((key) => {
+      expect(at(locale, key)).toContain(runHere);
+    });
+  });
+
   test.each([['en', en], ['zh-CN', zh]])('%s: the hero rotator does not offer Cursor', (_, locale) => {
     const terms = at(locale, 'landing.hero.terms');
     expect(Object.keys(terms)).not.toContain('cursor');
