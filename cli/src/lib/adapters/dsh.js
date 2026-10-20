@@ -221,6 +221,10 @@ export default {
     if (!environment?.provider || !environment?.model) {
       throw new Error('dsh requires environment.provider and environment.model');
     }
+    const detected = await this.detect();
+    if (!TESTED_DSH_VERSIONS.includes(detected?.version)) {
+      throw new Error(`dsh adapter: installed version ${detected?.version || 'unknown'} is not smoke-tested (${TESTED_DSH_VERSIONS.join(', ')})`);
+    }
     return resolveProviderKeyFile(environment.provider, workspacePath, 'dsh');
   },
 

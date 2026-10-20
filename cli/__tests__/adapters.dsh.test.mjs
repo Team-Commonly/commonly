@@ -68,6 +68,7 @@ test('unprobed release refuses even for private seats', async () => {
   await withSeat(async (ctx) => {
     spawnSyncMock.mockReturnValue({ status: 0, stdout: 'dsh 0.2.1-rc.3\n' });
     const spawn = jest.fn();
+    await expect(dsh.validateEnvironment(ctx.environment, ctx.cwd)).rejects.toThrow(/not smoke-tested/);
     await expect(dsh.spawn('hi', { ...ctx, _spawnImpl: spawn })).rejects.toThrow(/not smoke-tested/);
     expect(spawn).not.toHaveBeenCalled();
   });
