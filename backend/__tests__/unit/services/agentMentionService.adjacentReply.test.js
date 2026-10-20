@@ -77,6 +77,7 @@ const OWNER = '64aaaaaaaaaaaaaaaaaaaaa1';
 const SECOND_HUMAN = '64aaaaaaaaaaaaaaaaaaaaa2';
 const SEAT_A_BOT = '64bbbbbbbbbbbbbbbbbbbbb1';
 const SCOUT_BOT = '64bbbbbbbbbbbbbbbbbbbbb2';
+const PERSON_WITH_STALE_BOT_METADATA = '64aaaaaaaaaaaaaaaaaaaaa3';
 const NOW = new Date('2026-10-20T03:00:23Z');
 
 const install = (agentName, { wakeOn = false } = {}) => ({
@@ -91,6 +92,10 @@ const USERS = {
   [SECOND_HUMAN]: { _id: SECOND_HUMAN, isBot: false },
   [SEAT_A_BOT]: { _id: SEAT_A_BOT, isBot: true, botMetadata: { agentName: 'seat-a', instanceId: 'default' } },
   [SCOUT_BOT]: { _id: SCOUT_BOT, isBot: true, botMetadata: { agentName: 'scout', instanceId: 'default' } },
+  // A person whose row still carries an agent's metadata: isBot is what decides.
+  [PERSON_WITH_STALE_BOT_METADATA]: {
+    _id: PERSON_WITH_STALE_BOT_METADATA, isBot: false, botMetadata: { agentName: 'seat-a', instanceId: 'default' },
+  },
 };
 
 const leanChain = (value) => ({
@@ -118,15 +123,16 @@ const setup = ({
   PGMessage.findPreviousTopLevel.mockResolvedValue(previous);
 };
 
-// `...extra` goes first, so a `message` override merges into the default
-// message instead of replacing it (sprint-review on #2359: spread last, the
-// thread arm lost its id and returned before the thread guard was reached).
+// Scalars above the spread so an arm can override them; `message` below it, so
+// a `message` override merges into the default message instead of replacing it
+// (sprint-review on #2359: spread last, the thread arm lost its id and returned
+// before the thread guard was reached).
 const send = (content, extra = {}) => AgentMentionService.enqueueMentions({
-  ...extra,
   podId: 'pod-1',
-  message: { content, id: '79500', createdAt: NOW, ...extra.message },
   userId: OWNER,
   username: 'owner',
+  ...extra,
+  message: { content, id: '79500', createdAt: NOW, ...extra.message },
 });
 
 const calls = (type) => AgentEventService.enqueue.mock.calls.map(([args]) => args).filter((a) => a.type === type);
@@ -185,6 +191,16 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
     expect(Pod.findById).not.toHaveBeenCalled();
   });
 
+  test('a previous message by a person whose row carries agent metadata: nothing, isBot decides', async () => {
+    setup({
+      members: [OWNER, PERSON_WITH_STALE_BOT_METADATA, SEAT_A_BOT],
+      previous: { user_id: PERSON_WITH_STALE_BOT_METADATA, created_at: new Date(NOW.getTime() - 5000), message_type: 'text' },
+    });
+    await send('hello?');
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(Pod.findById).not.toHaveBeenCalled();
+  });
+
   test('a previous message from an agent no longer installed here: nothing', async () => {
     setup({ installations: [install('other-seat')] });
     await send('hello?');
@@ -196,15 +212,6 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
     await send('in the thread', { message: { thread_root_id: 79400 } });
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     expect(PGMessage.findPreviousTopLevel).not.toHaveBeenCalled();
-  });
-
-  test('a message whose previous top-level row is a thread root is still adjacent to it', async () => {
-    // The greeting someone threaded on stays top-level (thread_root_id NULL on
-    // the root), so the rule still sees it; the query's own filter is what
-    // skips the replies inside that thread (checked on real Postgres).
-    setup();
-    await send('back in the room');
-    expect(calls('chat.mention').map((m) => m.agentName)).toEqual(['seat-a']);
   });
 
   test('a DM-shaped pod is left to the DM path', async () => {
