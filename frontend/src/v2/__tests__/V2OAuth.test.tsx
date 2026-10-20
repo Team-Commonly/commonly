@@ -5,7 +5,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import V2OAuthButtons from '../components/V2OAuthButtons';
 import V2OAuthComplete from '../components/V2OAuthComplete';
 import V2Login from '../components/V2Login';
-import { AuthContext } from '../../context/AuthContext';
+import { AuthContext, AuthProvider, useAuth } from '../../context/AuthContext';
 
 // Same mock surface as V2Login.test.tsx — axiosConfig assigns
 // axios.defaults.baseURL at import time.
@@ -35,6 +35,7 @@ const baseAuth = {
   isAuthenticated: false,
   register: jest.fn(),
   login: jest.fn(),
+  signInWithToken: jest.fn(),
   logout: jest.fn(),
   updateProfile: jest.fn(),
 };
@@ -125,54 +126,100 @@ describe('V2OAuthButtons', () => {
 });
 
 describe('V2OAuthComplete', () => {
-  const renderComplete = (search: string) => render(
-    <AuthContext.Provider value={baseAuth}>
+  const renderComplete = (search: string, auth = baseAuth) => render(
+    <AuthContext.Provider value={auth}>
       <MemoryRouter initialEntries={[`/v2/oauth/complete${search}`]}>
         <Routes>
           <Route path="/v2/oauth/complete" element={<V2OAuthComplete />} />
           <Route path="/v2/login" element={<V2Login />} />
+          <Route path="/v2/pods/:podId" element={<p>pod page</p>} />
+          <Route path="/v2" element={<p>home</p>} />
         </Routes>
       </MemoryRouter>
     </AuthContext.Provider>,
   );
 
-  test('exchanges the one-time code and stores the session token', async () => {
-    axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
-    const replaceSpy = jest.fn();
-    const originalLocation = window.location;
+  // A full-page navigation would go through window.location; the in-app one
+  // must not touch it.
+  let locationSpies;
+  const originalLocation = window.location;
+  beforeEach(() => {
+    locationSpies = { replace: jest.fn(), assign: jest.fn() };
     Object.defineProperty(window, 'location', {
       configurable: true,
-      value: { ...originalLocation, replace: replaceSpy },
+      value: { ...originalLocation, origin: originalLocation.origin, ...locationSpies },
     });
+  });
+  afterEach(() => {
+    Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+  });
+
+  test('exchanges the one-time code, hands the session to AuthContext and navigates in-app', async () => {
+    axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
+    const signInWithToken = jest.fn();
 
     await act(async () => {
-      renderComplete('?code=one-time&next=/v2/pods/abc');
+      renderComplete('?code=one-time&next=/v2/pods/abc', { ...baseAuth, signInWithToken });
     });
 
-    await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith('/api/auth/oauth/exchange', { code: 'one-time' });
-      expect(localStorage.getItem('token')).toBe('session-jwt');
-      expect(replaceSpy).toHaveBeenCalledWith('/v2/pods/abc');
-    });
-
-    Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    expect(await screen.findByText('pod page')).toBeInTheDocument();
+    expect(axios.post).toHaveBeenCalledWith('/api/auth/oauth/exchange', { code: 'one-time' });
+    expect(signInWithToken).toHaveBeenCalledWith('session-jwt');
+    expect(locationSpies.replace).not.toHaveBeenCalled();
+    expect(locationSpies.assign).not.toHaveBeenCalled();
   });
 
   test('an off-site next (backslash, read as //) lands on /v2, not the other site', async () => {
     axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
-    const replaceSpy = jest.fn();
-    const originalLocation = window.location;
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: { ...originalLocation, origin: originalLocation.origin, replace: replaceSpy },
-    });
 
     await act(async () => {
       renderComplete(`?code=one-time&next=${encodeURIComponent('/\\evil.example/x')}`);
     });
 
-    await waitFor(() => expect(replaceSpy).toHaveBeenCalledWith('/v2'));
-    Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    expect(await screen.findByText('home')).toBeInTheDocument();
+    expect(locationSpies.replace).not.toHaveBeenCalled();
+  });
+
+  test('with the real AuthProvider, the destination waits for the user and then renders signed in', async () => {
+    // The guard every signed-in route uses: boot screen while loading,
+    // signed-out page without a token.
+    const Guarded = () => {
+      const { loading, isAuthenticated, currentUser } = useAuth();
+      if (loading) return <p>booting</p>;
+      if (!isAuthenticated) return <p>signed out</p>;
+      return <p>{`signed in as ${currentUser?.username}`}</p>;
+    };
+    let resolveUser;
+    axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
+    axios.get.mockImplementation((url) => (url === '/api/auth/user'
+      ? new Promise((resolve) => { resolveUser = resolve; })
+      : Promise.resolve({ data: {} })));
+
+    await act(async () => {
+      render(
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/v2/oauth/complete?code=one-time&next=/v2']}>
+            <Routes>
+              <Route path="/v2/oauth/complete" element={<V2OAuthComplete />} />
+              <Route path="/v2" element={<Guarded />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>,
+      );
+    });
+
+    // Never the signed-out page in between: loading holds until the user is in.
+    expect(await screen.findByText('booting')).toBeInTheDocument();
+    expect(screen.queryByText('signed out')).toBeNull();
+    expect(localStorage.getItem('token')).toBe('session-jwt');
+
+    await act(async () => {
+      resolveUser({ data: { _id: 'u1', username: 'ada', email: 'ada@example.com' } });
+    });
+
+    expect(await screen.findByText('signed in as ada')).toBeInTheDocument();
+    expect(axios.get).toHaveBeenCalledWith('/api/auth/user', { headers: { Authorization: 'Bearer session-jwt' } });
+    expect(locationSpies.replace).not.toHaveBeenCalled();
   });
 
   test('bounces to login with an error when the exchange fails', async () => {

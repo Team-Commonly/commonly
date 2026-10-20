@@ -61,7 +61,7 @@ const auth = {
   currentUser: { _id: 'u1', username: 'lily', email: 'lily@example.com', profilePicture: '/uploads/lily.png', role: 'member' },
   user: { _id: 'u1', username: 'lily', email: 'lily@example.com', profilePicture: '/uploads/lily.png', role: 'member' },
   token: 'jwt', loading: false, error: null, isAuthenticated: true,
-  register: jest.fn(), login: jest.fn(), logout: jest.fn(), updateProfile: jest.fn(),
+  register: jest.fn(), login: jest.fn(), signInWithToken: jest.fn(), logout: jest.fn(), updateProfile: jest.fn(),
 };
 
 const TOKEN_CREATED_AT = '2026-09-04T12:00:00.000Z';

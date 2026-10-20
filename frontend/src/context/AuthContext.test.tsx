@@ -123,3 +123,39 @@ test('updateProfile retains multipart support for a file payload', async () => {
     headers: { Authorization: 'Bearer tok', 'Content-Type': 'multipart/form-data' }
   });
 });
+
+test('signInWithToken adopts a token minted elsewhere: loading until the user is loaded', async () => {
+  let resolveUser;
+  axios.get.mockImplementation(() => new Promise((resolve) => { resolveUser = resolve; }));
+  await act(async () => {
+    global.testAuth.signInWithToken('oauth-jwt');
+  });
+  expect(localStorage.getItem('token')).toBe('oauth-jwt');
+  expect(global.testAuth.token).toBe('oauth-jwt');
+  expect(global.testAuth.loading).toBe(true);
+
+  await act(async () => {
+    resolveUser({ data: { _id: 'u1', username: 'ada', email: 'ada@example.com' } });
+  });
+  expect(axios.get).toHaveBeenCalledTimes(1);
+  expect(axios.get).toHaveBeenCalledWith('/api/auth/user', { headers: { Authorization: 'Bearer oauth-jwt' } });
+  expect(global.testAuth.currentUser).toMatchObject({ username: 'ada' });
+  expect(global.testAuth.loading).toBe(false);
+  expect(global.testAuth.isAuthenticated).toBe(true);
+});
+
+test('signInWithToken with the token already held changes nothing, so loading cannot stick', async () => {
+  axios.get.mockResolvedValue({ data: { _id: 'u1', username: 'ada', email: 'ada@example.com' } });
+  await act(async () => {
+    global.testAuth.signInWithToken('same-jwt');
+  });
+  expect(global.testAuth.loading).toBe(false);
+  axios.get.mockClear();
+
+  await act(async () => {
+    global.testAuth.signInWithToken('same-jwt');
+  });
+  expect(axios.get).not.toHaveBeenCalled();
+  expect(global.testAuth.loading).toBe(false);
+  expect(global.testAuth.currentUser).toMatchObject({ username: 'ada' });
+});

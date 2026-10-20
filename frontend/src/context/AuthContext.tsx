@@ -22,6 +22,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   register: (formData: unknown) => Promise<unknown>;
   login: (email: string, password: string) => Promise<unknown>;
+  signInWithToken: (token: string) => void;
   logout: () => void;
   updateProfile: (profile: FormData | Record<string, string>) => Promise<unknown>;
 }
@@ -140,6 +141,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Adopt a session token minted elsewhere (the OAuth code exchange) without
+  // reloading the page. The token effect above loads the user, and loading
+  // stays true until it has, so a caller can navigate in-app straight away:
+  // the route guards show the boot screen rather than the signed-out page.
+  const signInWithToken = (newToken: string): void => {
+    localStorage.setItem('token', newToken);
+    if (newToken === token) return;
+    setLoading(true);
+    setError(null);
+    setToken(newToken);
+  };
+
   const logout = (): void => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     localStorage.removeItem('token');
@@ -174,6 +187,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         error,
         register,
         login,
+        signInWithToken,
         logout,
         updateProfile,
         isAuthenticated: !!token,

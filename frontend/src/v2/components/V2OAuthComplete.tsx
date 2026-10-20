@@ -1,18 +1,21 @@
 import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
+import { useAuth } from '../../context/AuthContext';
 import V2AuthBrand from './V2AuthBrand';
 import { safeNextPath } from '../utils/safeNextPath';
 import { useTranslation } from 'react-i18next';
 
 // Landing pad for the OAuth redirect chain. The backend callback hands us a
 // short-lived one-time code (never the JWT itself — it would end up in
-// browser history and server logs); we swap it for a session here, then do
-// a full-page navigation so AuthContext rehydrates from localStorage the
-// same way every other login path does.
+// browser history and server logs); we swap it for a session here, hand it to
+// AuthContext, and navigate in-app the way email sign-in does. A full-page
+// navigation here used to re-download and re-boot the whole app on the path
+// most new people take (OAuth is 93% of outside signups).
 const V2OAuthComplete: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { signInWithToken } = useAuth();
   const fired = useRef(false); // StrictMode double-mount guard — the code is single-use
   const { t } = useTranslation();
 
@@ -32,13 +35,13 @@ const V2OAuthComplete: React.FC = () => {
       .then((res) => {
         const token = (res.data as { token?: string })?.token;
         if (!token) throw new Error('no token');
-        localStorage.setItem('token', token);
-        window.location.replace(next);
+        signInWithToken(token);
+        navigate(next, { replace: true });
       })
       .catch(() => {
         navigate('/v2/login?oauthError=exchange_failed', { replace: true });
       });
-  }, [searchParams, navigate]);
+  }, [searchParams, navigate, signInWithToken]);
 
   return (
     <div className="v2-login">
