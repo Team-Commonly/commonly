@@ -11370,6 +11370,10 @@ body.modern-ui.v2-canvas {
   font: 500 11px/16px var(--v2-font-mono);
 }
 
+@media (max-width: 760px), (hover: none) and (pointer: coarse) {
+  .v2-pods__search-kbd { display: none; }
+}
+
 .v2-root button.v2-pods__new {
   display: inline-grid;
   /* Same 32px as the search box beside it — the two tools share one baseline. */
@@ -11444,7 +11448,6 @@ body.modern-ui.v2-canvas {
 
 .v2-pods__section-chevron::before { content: '▸'; }
 [aria-expanded="true"] > .v2-pods__section-chevron::before { content: '▾'; }
-.v2-pods__search-kbd::before { content: '⌘K'; }
 
 .v2-root .v2-pods__section--kind button.v2-pods__section-head {
   padding-left: 24px;

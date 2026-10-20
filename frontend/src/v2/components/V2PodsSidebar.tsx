@@ -59,6 +59,16 @@ const EVERYTHING_OPEN_KEY = 'v2:pods.everythingOpen';
 const CLOSED_SECTIONS_KEY = 'v2:pods.closedSections';
 const KIND_OPEN_KEY = 'v2:pods.kindsOpen';
 
+export const searchShortcutHint = (platform: string): string => (
+  /Mac|iPhone|iPad|iPod/i.test(platform) ? '⌘K' : 'Ctrl K'
+);
+
+const browserPlatform = (): string => {
+  if (typeof navigator === 'undefined') return '';
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  return nav.userAgentData?.platform || nav.userAgent || '';
+};
+
 const readSessionFlag = (key: string): boolean => {
   try {
     return sessionStorage.getItem(key) === '1';
@@ -481,7 +491,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
               placeholder={t('podsSidebar.workspace.search')}
               aria-label={t('podsSidebar.workspace.search')}
             />
-            <kbd className="v2-pods__search-kbd" aria-hidden="true" />
+            <kbd className="v2-pods__search-kbd" aria-hidden="true">{searchShortcutHint(browserPlatform())}</kbd>
           </label>
           <button
             type="button"

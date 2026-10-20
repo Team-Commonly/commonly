@@ -6,7 +6,7 @@ import {
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import i18n, { i18nReady } from '../../i18n';
 import V2PodsSidebar, {
-  groupPodsByKind, podKind, recentPods,
+  groupPodsByKind, podKind, recentPods, searchShortcutHint,
 } from '../components/V2PodsSidebar';
 import { characterAvatarFor, paperAvatarFor } from '../utils/avatars';
 import { POD_VISITS_KEY } from '../lib/podRecency';
@@ -270,6 +270,29 @@ describe('V2PodsSidebar — direction C', () => {
     const input = screen.getByRole('searchbox', { name: 'Search pods' });
     expect(document.activeElement).not.toBe(input);
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(document.activeElement).toBe(input);
+  });
+
+  test.each([
+    ['macOS', '⌘K'],
+    ['Macintosh; Intel Mac OS X', '⌘K'],
+    ['iPad', '⌘K'],
+    ['Windows', 'Ctrl K'],
+    ['Linux', 'Ctrl K'],
+  ])('shows the shortcut for %s as %s', (platform, hint) => {
+    expect(searchShortcutHint(platform)).toBe(hint);
+  });
+
+  test('the rendered hint comes from the platform, not a literal', () => {
+    renderSidebar(fleet);
+    // jsdom reports no Mac platform, so the rendered hint must use the Ctrl form.
+    expect(document.querySelector('.v2-pods__search-kbd')).toHaveTextContent('Ctrl K');
+  });
+
+  test('Ctrl+K focuses the search box from anywhere', () => {
+    renderSidebar(fleet);
+    const input = screen.getByRole('searchbox', { name: 'Search pods' });
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
     expect(document.activeElement).toBe(input);
   });
 
