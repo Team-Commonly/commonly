@@ -545,6 +545,9 @@ export const assertSandboxDeclaredForPublicPod = async ({
     } catch {
       throw new Error('dsh requires confirmed private pod visibility before attach');
     }
+    if (typeof pod?.publicRead !== 'boolean' || typeof pod?.communityListed !== 'boolean') {
+      throw new Error('dsh requires confirmed private pod visibility before attach');
+    }
     if (pod?.publicRead || pod?.communityListed) {
       throw new Error('dsh supports private pods only; this pod is publicly readable');
     }

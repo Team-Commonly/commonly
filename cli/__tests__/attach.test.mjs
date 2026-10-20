@@ -344,10 +344,13 @@ describe('performAttach', () => {
   });
 
   test('dsh attach requires confirmed private pod visibility', async () => {
-    const client = { get: jest.fn(async () => ({ publicRead: true })) };
+    const client = { get: jest.fn(async () => ({ publicRead: true, communityListed: false })) };
     await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-public', adapterName: 'dsh' }))
       .rejects.toThrow(/private pods only/);
     client.get.mockRejectedValueOnce(new Error('visibility unavailable'));
+    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-unknown', adapterName: 'dsh' }))
+      .rejects.toThrow(/confirmed private pod visibility/);
+    client.get.mockResolvedValueOnce({});
     await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-unknown', adapterName: 'dsh' }))
       .rejects.toThrow(/confirmed private pod visibility/);
     client.get.mockResolvedValueOnce({ publicRead: false, communityListed: false });
