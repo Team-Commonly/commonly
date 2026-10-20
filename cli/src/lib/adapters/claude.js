@@ -258,59 +258,6 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns) => {
   ];
 };
 
-// A public seat's skills, as appended system-prompt text.
-//
-// `--disable-slash-commands` above is Claude's switch for ALL skills, and
-// `--setting-sources ''` drops the project source the mounted copies live in.
-// So the skills this adapter mounts into <cwd>/.claude/skills never load in a
-// public seat: measured 2026-10-19 on a Bring your own page seat, which
-// answered "I don't see a skill named commonly, or any skills list or Skill
-// tool"; the same workspace with `--setting-sources project` found it. Every
-// self-serve seat is public (COMMONLY_DEFAULT_SANDBOX), so every outsider's
-// Claude ran without the house rules buildDefaultEnvironment mounts for it.
-// Re-enabling skills would also hand a public seat the built-in ones
-// (computer-use, the browser skills), so the flags stay and the declared text
-// is delivered as prompt instead. Inline rather than a file: nothing new has to
-// be admitted through Seatbelt. Linux caps one argv string at 128 KiB, so the
-// total is capped well under it.
-const PUBLIC_SKILL_PROMPT_MAX_BYTES = 96 * 1024;
-const SKILL_FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/;
-
-const publicSkillPromptArgs = async (skillSources) => {
-  const sections = [];
-  let total = 0;
-  for (const source of skillSources || []) {
-    let markdown;
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      markdown = await readFile(join(source, 'SKILL.md'), 'utf8');
-    } catch {
-      // eslint-disable-next-line no-console
-      console.warn(`[claude] public seat: no SKILL.md to inline at ${source}`);
-      continue;
-    }
-    const frontmatter = SKILL_FRONTMATTER_RE.exec(markdown);
-    const name = (frontmatter && /^name:\s*(.+)$/m.exec(frontmatter[1])?.[1].trim())
-      || source.split(/[\\/]/).filter(Boolean).pop();
-    const section = `## Skill: ${name}\n\n${markdown.slice(frontmatter ? frontmatter[0].length : 0).trim()}`;
-    const bytes = Buffer.byteLength(section, 'utf8');
-    if (total + bytes > PUBLIC_SKILL_PROMPT_MAX_BYTES) {
-      // eslint-disable-next-line no-console
-      console.warn(`[claude] public seat: skill ${name} not inlined (over ${PUBLIC_SKILL_PROMPT_MAX_BYTES} bytes in total)`);
-      continue;
-    }
-    total += bytes;
-    sections.push(section);
-  }
-  if (sections.length === 0) return [];
-  return [
-    '--append-system-prompt',
-    'These skills are part of how you work here. Skills are not loaded as files in this seat, '
-      + 'so each one is given in full below. Follow them as you would a loaded skill.\n\n'
-      + sections.join('\n\n'),
-  ];
-};
-
 const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
   const proc = spawnImpl(cmd, args, {
     cwd,
@@ -690,7 +637,6 @@ const prepareArgv = async (innerArgv, ctx) => {
     innerArgv = [
       ...innerArgv,
       ...buildPublicClaudePolicyArgs(allowedPatterns),
-      ...(ctx.publicSkillArgs || []),
     ];
     const claudeBin = resolveClaudePath(claudeEnv);
     // Only stdio servers have a `command`; an HTTP entry (the grant broker)
@@ -728,7 +674,6 @@ const prepareArgv = async (innerArgv, ctx) => {
     innerArgv = [
       ...innerArgv,
       ...buildPublicClaudePolicyArgs(allowedPatterns),
-      ...(ctx.publicSkillArgs || []),
     ];
   } else if (allowedPatterns.length > 0) {
     innerArgv = [...innerArgv, '--allowedTools', ...allowedPatterns];
@@ -834,10 +779,8 @@ export default {
     ];
     const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId, ...modelArgs];
 
-    let mountedSkills = [];
     if (ctx.environment && ctx.cwd) {
       const skills = await mountSkills(ctx.environment, ctx.cwd);
-      mountedSkills = skills.mounted;
       if (skills.conflicted.length > 0) {
         for (const c of skills.conflicted) {
           // eslint-disable-next-line no-console
@@ -849,7 +792,6 @@ export default {
 
     let mcpConfig = null;
     let publicClaudeState = null;
-    let publicSkillArgs = [];
     try {
       // Trust is normalized at entry (legacy `internal` reads as public). The
       // MCP policy follows trust alone, whatever confines the seat: a public
@@ -861,7 +803,6 @@ export default {
       if (publicNativeSandbox) {
         publicClaudeState = await preparePublicClaudeState(ctx);
       }
-      if (publicTrust) publicSkillArgs = await publicSkillPromptArgs(mountedSkills);
       if (Array.isArray(ctx.environment?.mcp) && ctx.environment.mcp.length > 0) {
         mcpConfig = await createMcpConfig(ctx.environment.mcp, {
           runtimeToken: ctx.runtimeToken,
@@ -886,7 +827,6 @@ export default {
         mcpConfigDir: mcpConfig?.dir || null,
         mcpReadDirectories: mcpConfig?.mcpReadDirectories || [],
         publicClaudeState,
-        publicSkillArgs,
         claudeEnv,
       };
       const { cmd, args, env } = await prepareArgv(baseArgs, spawnCtx);
@@ -927,7 +867,6 @@ export default {
           mcpConfigDir: mcpConfig?.dir || null,
           mcpReadDirectories: mcpConfig?.mcpReadDirectories || [],
           publicClaudeState,
-          publicSkillArgs,
           claudeEnv: buildClaudeEnv(
             ctx.env,
             publicClaudeState,
