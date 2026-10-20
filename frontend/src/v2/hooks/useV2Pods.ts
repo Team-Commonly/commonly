@@ -51,7 +51,7 @@ export interface UseV2PodsResult {
   patchLastMessage: (podId: string, last: V2PodLastMessage) => void;
 }
 
-export const useV2Pods = (): UseV2PodsResult => {
+export const useV2Pods = (enabled = true): UseV2PodsResult => {
   const api = useV2Api();
   const [pods, setPods] = useState<V2Pod[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,8 +143,8 @@ export const useV2Pods = (): UseV2PodsResult => {
   }, [api]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (enabled) void refresh();
+  }, [enabled, refresh]);
 
   return { pods, loading, error, refresh, createPod, deletePod, patchLastMessage };
 };
