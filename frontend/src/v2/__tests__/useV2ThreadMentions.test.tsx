@@ -21,12 +21,12 @@ const members = [
 ];
 const agents = [{ agentName: 'laruiss-agent', instanceId: 'default', displayName: 'laruiss-agent' }];
 
-const open = (query, username = 'laruiss') => {
+const open = (query, username = 'laruiss', podMembers = members) => {
   const draft = `@${query}`;
   const inputRef = { current: { selectionStart: draft.length, focus: jest.fn(), setSelectionRange: jest.fn() } };
   const wrapper = ({ children }) => <AuthContext.Provider value={auth(username)}>{children}</AuthContext.Provider>;
   const { result } = renderHook(() => useV2ThreadMentions({
-    members, agents, agentStateByHandle: new Map(), draft, setDraft: jest.fn(), inputRef,
+    members: podMembers, agents, agentStateByHandle: new Map(), draft, setDraft: jest.fn(), inputRef,
   }), { wrapper });
   act(() => { result.current.updateMentionState(draft, draft.length); });
   return result.current.filteredMentions.map((item) => item.value || item.label);
@@ -53,6 +53,19 @@ describe('@ picker', () => {
     const list = open('ag');
     expect(list).toEqual(expect.arrayContaining(['agnes', 'laruiss-agent']));
     expect(list[0]).toBe('agnes');
+  });
+
+  // sprint-review on #2366: with more matches than the picker shows, ranking
+  // must happen before the cap, or an agent late in pod order drops out.
+  test('ranking happens before the 8-item cap: the agent last in pod order still leads', () => {
+    const crowd = Array.from({ length: 10 }, (_, i) => ({ _id: `u-${i}`, username: `lar${i}` }));
+    const list = open('lar', 'laruiss', [...crowd, { _id: 'b-1', username: 'laruiss-agent' }]);
+    expect(list).toHaveLength(8);
+    expect(list[0]).toBe('laruiss-agent');
+  });
+
+  test('the self-skip ignores case', () => {
+    expect(open('lar', 'LaRuiss')).not.toContain('laruiss');
   });
 
   test('someone else signed in sees laruiss as a member', () => {
