@@ -29,10 +29,13 @@ export interface IAttentionItem extends Document {
   status: 'open' | 'resolved';
   resolvedAt?: Date;
   // Mention rows may resolve when their recipient replies; mention and handoff
-  // rows also support an explicit recipient acknowledgement. Decision and
-  // approval actions have source-specific writers and never become dismissible
-  // through this field.
-  resolvedBy?: 'replied' | 'acknowledged';
+  // rows also support an explicit recipient acknowledgement. `actioned` means the
+  // recipient did what the row asked, outside the thread (today: started the
+  // agent a stalled-connect nudge asked them to start). Decision and approval
+  // actions have source-specific writers and never become dismissible through
+  // this field.
+  // Growth's NEEDSYOU metric allowlists what counts as acted on; tell it when a value is added or a new kind starts writing one.
+  resolvedBy?: 'replied' | 'acknowledged' | 'actioned';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,7 +65,7 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   sourceCreatedAt: { type: Date },
   status: { type: String, enum: ['open', 'resolved'], default: 'open', required: true },
   resolvedAt: { type: Date },
-  resolvedBy: { type: String, enum: ['replied', 'acknowledged'] },
+  resolvedBy: { type: String, enum: ['replied', 'acknowledged', 'actioned'] },
 }, { timestamps: true });
 
 // A source can notify each recipient once. Retried source writes must not

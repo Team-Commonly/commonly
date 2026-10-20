@@ -481,6 +481,25 @@ export const sweepDoneTaskHandoffs = async ({ apply = false }: { apply?: boolean
   return { scanned: rows.length, eligible: eligibleIds.length, resolved, missing, apply };
 };
 
+/**
+ * Close a source's open rows as `actioned`: the recipient did what the row
+ * asked, somewhere other than its thread. Used only where that action is
+ * observable, today the stalled-connect nudge, whose ask ("start me") is met
+ * when the agent first connects. Growth counts `actioned` as acted on.
+ */
+export const resolveActioned = async (sourceType: SourceType, sourceId: unknown): Promise<void> => {
+  const id = sourceKey(sourceType, sourceId);
+  if (!id) return;
+  try {
+    await AttentionItem.updateMany(
+      { 'source.type': sourceType, 'source.id': id, status: 'open' },
+      { $set: { status: 'resolved', resolvedAt: new Date(), resolvedBy: 'actioned' } },
+    );
+  } catch (error) {
+    console.warn('[attention] actioned resolution failed; leaving item visible:', (error as Error).message);
+  }
+};
+
 export const resolve = async (sourceType: SourceType, sourceId: unknown): Promise<void> => {
   const id = sourceKey(sourceType, sourceId);
   if (!id) return;
@@ -738,6 +757,6 @@ export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boo
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };

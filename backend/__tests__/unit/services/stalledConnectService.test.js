@@ -41,7 +41,7 @@ jest.mock('../../../services/agentIdentityService', () => ({
 
 const mockAttentionResolve = jest.fn();
 jest.mock('../../../services/attentionItemService', () => ({
-  resolve: (...a) => mockAttentionResolve(...a),
+  resolveActioned: (...a) => mockAttentionResolve(...a),
 }));
 
 const mockEpCreate = jest.fn();

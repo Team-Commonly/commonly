@@ -379,10 +379,10 @@ const resolveConnected = async ({
       console.warn('[stalled-connect] resolution post failed:', (error as Error).message);
     }
     // The nudge asked the installer to start the agent, and they did. Its
-    // "needs you" row resolves now, as an action taken, whether or not the
+    // "needs you" row resolves now as `actioned`, whether or not the
     // confirmation post above went out: a thread reply was never going to be
     // how this one got answered.
-    if (ep.nudgeMessageId) await AttentionItemService.resolve('message', String(ep.nudgeMessageId));
+    if (ep.nudgeMessageId) await AttentionItemService.resolveActioned('message', String(ep.nudgeMessageId));
 
     await StalledConnectEpisode.updateOne(
       { _id: ep._id, status: 'open' },

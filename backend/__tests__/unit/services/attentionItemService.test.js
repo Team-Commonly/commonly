@@ -701,3 +701,25 @@ describe('an agent answering the person who asked', () => {
     warn.mockRestore();
   });
 });
+
+describe('actioned: the recipient did what the row asked, outside its thread', () => {
+  beforeEach(() => { jest.clearAllMocks(); mockUpdateMany.mockResolvedValue({ modifiedCount: 1 }); });
+
+  it("closes a source's open rows as actioned, which Growth counts as acted on", async () => {
+    await AttentionItemService.resolveActioned('message', 'msg-nudge-1');
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { 'source.type': 'message', 'source.id': 'msg-nudge-1', status: 'open' },
+      { $set: { status: 'resolved', resolvedAt: expect.any(Date), resolvedBy: 'actioned' } },
+    );
+  });
+
+  it('does nothing without a source id', async () => {
+    await AttentionItemService.resolveActioned('message', '');
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('plain resolve() still writes no resolvedBy (approval, decision and task resolvers rely on that)', async () => {
+    await AttentionItemService.resolve('approval', 'appr-1');
+    expect(mockUpdateMany.mock.calls[0][1].$set).not.toHaveProperty('resolvedBy');
+  });
+});
