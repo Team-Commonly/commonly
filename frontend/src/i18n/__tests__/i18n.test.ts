@@ -38,6 +38,24 @@ describe('i18n configuration', () => {
     expect(i18n.t(key, { lng: 'en' })).toBe(expected);
   });
 
+  it.each([
+    [0, '1 · 0 agents', '1 member, 0 agents'],
+    [1, '1 · 1 agent', '1 member, 1 agent'],
+    [2, '1 · 2 agents', '1 member, 2 agents'],
+  ])('pluralizes the compact pod header at %i agents', (count, visible, accessible) => {
+    const members = i18n.t('podChat.header.members', { lng: 'en', count: 1 });
+    const agents = i18n.t('podChat.header.agents', { lng: 'en', count });
+    expect(i18n.t('podChat.header.compactMeta', { lng: 'en', members: 1, agents })).toBe(visible);
+    expect(i18n.t('podChat.header.compactMetaAccessible', { lng: 'en', members, agents })).toBe(accessible);
+  });
+
+  it('keeps the Chinese compact count while naming it for assistive tech', () => {
+    const members = i18n.t('podChat.header.members', { lng: 'zh-CN', count: 1 });
+    const agents = i18n.t('podChat.header.agents', { lng: 'zh-CN', count: 1 });
+    expect(i18n.t('podChat.header.compactMeta', { lng: 'zh-CN', members: 1, agents })).toBe('1 · 1个智能体');
+    expect(i18n.t('podChat.header.compactMetaAccessible', { lng: 'zh-CN', members, agents })).toBe('1名成员，1个智能体');
+  });
+
   it('defaults to English when no stored supported language exists', async () => {
     const languages = jest.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['en-US']);
     const language = jest.spyOn(window.navigator, 'language', 'get').mockReturnValue('en-US');

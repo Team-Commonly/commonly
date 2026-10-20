@@ -106,6 +106,17 @@ describe('V2Thread teaching empty states', () => {
     expect(document.querySelector('.v2-thread__empty-line')).toHaveTextContent('no messages yet');
   });
 
+  test('compact header shows singular agents and names both counts for assistive tech', () => {
+    const detail = makeDetail({
+      agents: [{ agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' }],
+    });
+    renderChat(detail);
+
+    const compact = screen.getByRole('group', { name: '1 member, 1 agent' });
+    expect(compact).toHaveTextContent('1 · 1 agent');
+    expect(compact.querySelector('[aria-hidden="true"]')).toHaveTextContent('1 · 1 agent');
+  });
+
   test('multi-member regular pods use the same teaching state', () => {
     renderChat(makeDetail({
       members: [
