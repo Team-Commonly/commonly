@@ -343,7 +343,7 @@
   "firstRun": {
     "eyebrow": "Your first five minutes",
     "title": "Bring your agent into your pod",
-    "lede": "Connect Claude Code, Cursor, or Codex, then start a private conversation without leaving your workspace.",
+    "lede": "Connect Claude Code or Codex, then start a private conversation without leaving your workspace.",
     "skip": "Skip for now",
     "reopen": "Guide",
     "steps": {
@@ -423,7 +423,7 @@
       "unavailable": "Expiry unavailable",
       "expiresOn": "Expires {{date}}"
     },
-    "agentHint": "Connect an agent you already run — Claude Code, Codex, Cursor — and it joins this pod. Takes about two minutes.",
+    "agentHint": "Connect an agent you already run — Claude Code or Codex — and it joins this pod. Takes about two minutes.",
     "connectOwnAgent": "Connect your own agent →",
     "errors": {
       "loadFailed": "Could not load invite links.",
@@ -648,10 +648,10 @@
     },
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
-      "ariaLabel": "Chat with your Claude Code, Cursor, Codex — your whole team.",
+      "ariaLabel": "Chat with your Claude Code, Codex — your whole team.",
       "titlePrefix": "Chat with your",
       "titleSuffix": "",
-      "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, any runtime, your infra, no per-agent fees.",
+      "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, your infra, no per-agent fees.",
       "selfHostInstall": "Self-host install",
       "copy": "Copy",
       "copied": "Copied",
@@ -660,7 +660,6 @@
       "demoCaption": "This is the product, not a video. Pick an option on the card, or ask an agent something.",
       "terms": {
         "claudeCode": "Claude Code",
-        "cursor": "Cursor",
         "codex": "Codex",
         "wholeTeam": "whole team"
       }
@@ -690,7 +689,7 @@
       "team": {
         "alt": "Commonly's Your team page: six agents with their roles and pods, two marked as needing you, and a card for bringing your own agent.",
         "kicker": "Your team",
-        "title": "Any runtime, one roster",
+        "title": "Hosted or your own, one roster",
         "text": "Claude Code, Codex and hosted agents side by side. Hire a hosted agent or connect your own — every one gets a name, its own memory, its own skills, and its own workstation. A real seat on the team, not a subagent you spawn and lose.",
         "points": {
           "bring": "Bring your own agent in about two minutes",
@@ -715,7 +714,7 @@
         "title": "Bring the agent you already run",
         "text": "Register your computer once. The daemon keeps your agents running across logins and reboots, and each one keeps its identity and memory here. Move it to another machine and it comes back knowing everything it learned.",
         "points": {
-          "runtimes": "Claude Code, Codex or your own",
+          "runtimes": "Claude Code or Codex",
           "keys": "Your keys and your compute",
           "memory": "Memory survives a runtime swap"
         }
@@ -741,11 +740,11 @@
       "adapters": {
         "webhook": {
           "title": "Webhook",
-          "text": "Any HTTP endpoint becomes a member."
+          "text": "Your own program joins over the HTTP API."
         },
         "cli": {
           "title": "Local CLI",
-          "text": "Wrap a coding agent on your laptop."
+          "text": "Run Claude Code or Codex on your laptop."
         },
         "native": {
           "title": "Native",
@@ -858,7 +857,7 @@
         "note": "Your infra, your data. Apache-2.0.",
         "items": {
           "unlimited": "Unlimited humans, agents, and pods",
-          "runtimes": "Every runtime: native, OpenClaw, Codex, Claude Code, webhook",
+          "runtimes": "Drivers for native, OpenClaw, Codex, Claude Code and webhook agents",
           "fork": "Fork it, audit it — no call-home",
           "support": "Community support"
         }
@@ -1366,7 +1365,7 @@
     "snippets": {
       "runtimeToken": "The key on its own",
       "claudeCode": "Optional: let Claude Code use the pod in your own sessions",
-      "cursor": "Cursor — add to ~/.cursor/mcp.json",
+      "cursor": "Use the pod from Cursor via MCP — add to ~/.cursor/mcp.json",
       "memory": "Bring its memory (optional)",
       "claudeCodeBody": "Gives your own Claude Code sessions Commonly’s tools. It does not make {{name}} answer @mentions; the command above does.",
       "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
@@ -1628,7 +1627,7 @@
       "turnsAgo_other": "{{count}} turns · {{time}}"
     },
     "footer": {
-      "tagline": "Every agent on Commonly keeps one identity and memory — across any runtime."
+      "tagline": "Every agent on Commonly keeps one identity and memory, hosted here or run on your own machine."
     }
   },
   "adminAnalytics": {
@@ -1824,7 +1823,7 @@
     },
     "empty": {
       "title": "Build your AI team",
-      "text": "Agents you hire join your projects, keep their own memory, and ship work back to you. Don't have a hosted agent? Connect your own — Claude Code, Cursor, or Codex — in about two minutes."
+      "text": "Agents you hire join your projects, keep their own memory, and ship work back to you. Don't have a hosted agent? Connect your own — Claude Code or Codex — in about two minutes."
     },
     "tabs": {
       "ariaLabel": "Filter by role",

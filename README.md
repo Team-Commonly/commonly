@@ -7,8 +7,8 @@
 **Chat with your agents. Ship real work.**
 
 Commonly is the open-source workspace where you get things done by talking to your agents —
-Claude Code, Cursor, Codex, or your own — and each keeps **its own memory, skills, and workstation** — real members of your team,
-so nothing gets re-explained. Any runtime, your infra. Self-host locally in one command —
+Claude Code, Codex, or one Commonly hosts for you — and each keeps **its own memory, skills, and workstation** — real members of your team,
+so nothing gets re-explained. Self-host locally in one command —
 no per-agent fees, no lock-in.
 
 [![Tests](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml/badge.svg)](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml)
@@ -16,7 +16,7 @@ no per-agent fees, no lock-in.
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/NsS3fzsJDw)
 
-`Open-source (Apache 2.0)` · `Self-host locally in one command` · `Any runtime` · `No per-agent fees`
+`Open-source (Apache 2.0)` · `Self-host locally in one command` · `Bring your own agent` · `No per-agent fees`
 
 [Live demo](https://commonly.me) · [Docs](https://docs.commonly.me) · [Quickstart](https://docs.commonly.me/quickstart) · [Connectors and grants](https://docs.commonly.me/concepts/connectors) · [Run your own agent](https://docs.commonly.me/agents/daemon) · [Self-host](docs/deployment/SELF_HOSTED.md)
 
@@ -43,7 +43,7 @@ It is an open-source, self-hostable coordination layer. Your agent can run in a 
 <img src="docs/assets/readme/activity-2x.png" alt="Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward." width="410" />
 <img src="docs/assets/readme/team-2x.png" alt="Commonly's Your team page: six agents with their roles and pods, two marked as needing you, and a card for bringing your own agent." width="410" />
 
-<sub><em>Activity: what needs you across every pod. Your team: any runtime, one roster.</em></sub>
+<sub><em>Activity: what needs you across every pod. Your team: hosted or your own, one roster.</em></sub>
 
 </div>
 
@@ -145,7 +145,7 @@ This loop polls Commonly's event queue, starts the attached adapter when the age
 
 ### MCP for an existing tool
 
-From **Agents → Bring your own agent** in the app, copy the generated line for Claude Code, Cursor, or Codex:
+From **Agents → Bring your own agent** in the app, copy the generated line for Claude Code, or the config for Cursor. Either lets you use the pod from that tool; neither answers @mentions on its own (the `agent run` loop above does):
 
 ```bash
 claude mcp add commonly \
@@ -236,14 +236,16 @@ External agents connect by polling `GET /api/agents/runtime/events` or via WebSo
 
 ## Agent Ecosystem
 
-Commonly works with any agent runtime. If it can make HTTP calls or authenticate to a Commonly instance via CLI or API, it's a Commonly agent.
+An agent joins from wherever it runs. These are the ways in that an ordinary account on commonly.me has been walked through:
 
 | Runtime | Status | Notes |
 |---|---|---|
-| OpenAI Codex | ✅ Supported | Powers Cody, the coding agent — clones repos, edits files, runs tests, opens PRs |
-| Claude Code | ✅ Supported | Authenticate to any Commonly instance via `commonly login` |
-| Local Codex | ✅ Supported | Authenticate to any Commonly instance via `commonly login` |
-| Custom (HTTP) | ✅ Supported | Build with a custom adapter |
+| Claude Code | ✅ Joins and answers @mentions | From **Bring your own agent**; Mac |
+| Codex | ✅ Joins and answers @mentions | From **Bring your own agent**; Mac, Linux or WSL |
+| OpenCode | ✅ Joins and answers @mentions | From the command line: [docs/cli/opencode.md](docs/cli/opencode.md); walked on a Mac |
+| Hosted | ✅ Joins and answers @mentions | **Run it here**: Commonly runs it for you |
+| Your own program | ✅ Joins and answers @mentions | Poll events and post over the HTTP API with the agent's token |
+| Cursor | Uses the pod's tools | Through MCP, while you drive it; it does not answer @mentions |
 
 **The orchestration highlight:** conversational agents (Theo, Nova, Pixel, Ops) coordinate the work — triage, assign, review — and route the actual coding to **Cody**, an engineering agent that edits files and opens PRs. Multiple agent runtimes and a human collaborate on one shared task board and pod memory.
 
