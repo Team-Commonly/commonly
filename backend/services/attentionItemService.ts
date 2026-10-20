@@ -358,16 +358,57 @@ export const recordDecision = async (decision: any): Promise<void> => {
 // A task may be ordinary board history, or it may state a concrete blocked /
 // handoff fact. Capture only the latter at the write boundary; no reader
 // should parse arbitrary historic task prose into a queue card.
-export const TASK_HANDOFF_RE = /human\s+(merge\s+)?press|ready for (the\s+)?(human|sam)|sam'?s?\s+(ruling|call|decision)|awaiting\s+(sam|human)/i;
+//
+// A handoff ASKS for someone: "awaiting", "waiting on/for", "ready for" or
+// "needs", followed by "the human" or the username of one of the pod's own
+// human members, or "human (merge) press". A report of a ruling already made
+// ("X's ruling, 10-19: ...") asks nothing, and no instance's names live here:
+// the previous pattern spelled one person's name, and one report beginning
+// "Sam's ruling" opened 40 rows across a pod's four humans (2026-10-19).
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const HANDOFF_LEAD = String.raw`(?:awaiting|waiting\s+(?:on|for)|ready\s+for|needs?)`;
+const HUMAN_PRESS_RE = /\bhuman\s+(?:merge\s+)?press\b/i;
+const ASKS_A_HUMAN_RE = new RegExp(String.raw`\b${HANDOFF_LEAD}\s+(?:the\s+|a\s+)?human\b`, 'i');
+// Cheap gate before any member lookup, and the backfill's Mongo prefilter.
+// Every text isHandoffRequest accepts matches it.
+export const TASK_HANDOFF_CANDIDATE_RE = /human|awaiting|waiting\s+(?:on|for)|ready\s+for|\bneeds?\b/i;
+
+const named = (text: string, username: string): boolean => Boolean(username)
+  && new RegExp(String.raw`(^|[^A-Za-z0-9_-])@?${escapeRegExp(username)}(?![A-Za-z0-9_-])`, 'i').test(text);
+
+export const isHandoffRequest = (text: string, memberUsernames: string[] = []): boolean => {
+  const value = String(text || '');
+  if (HUMAN_PRESS_RE.test(value) || ASKS_A_HUMAN_RE.test(value)) return true;
+  const names = memberUsernames.map((name) => String(name || '').trim()).filter(Boolean).map(escapeRegExp);
+  if (!names.length) return false;
+  return new RegExp(String.raw`\b${HANDOFF_LEAD}\s+@?(?:${names.join('|')})(?![A-Za-z0-9_-])`, 'i').test(value);
+};
+
+// Who a blocked or handoff card goes to: the human members the update names
+// (@handle or username), otherwise the pod's creator. Paging every member made
+// each status flip in a shared work pod a card for every human in it. If the
+// creator has left, the card goes to the current members rather than to nobody.
+export const handoffRecipients = <T extends { _id: unknown; username?: string }>(
+  members: T[], text: string, createdBy: unknown,
+): T[] => {
+  const mentioned = members.filter((member) => named(String(text || ''), String(member.username || '')));
+  if (mentioned.length) return mentioned;
+  const creator = members.filter((member) => String(member._id) === String(createdBy || ''));
+  return creator.length ? creator : members;
+};
 
 export const recordTaskAttention = async (task: any, options: TaskAttentionOptions = {}): Promise<void> => {
   try {
     const last = Array.isArray(task?.updates) ? task.updates[task.updates.length - 1] : null;
     const blocked = task?.status === 'blocked';
-    const handoff = Boolean(last && TASK_HANDOFF_RE.test(String(last.text || '')));
-    if (!task?.podId || (!handoff && !(options.includeBlocked && blocked))) return;
-    const recipients = await currentHumanMembers(task.podId);
-    const pod = await Pod.findById(task.podId).select('name').lean();
+    const text = String(last?.text || '');
+    const mightAsk = Boolean(last) && TASK_HANDOFF_CANDIDATE_RE.test(text);
+    if (!task?.podId || (!mightAsk && !(options.includeBlocked && blocked))) return;
+    const members = await currentHumanMembers(task.podId);
+    const handoff = mightAsk && isHandoffRequest(text, members.map((member) => String(member.username || '')));
+    if (!handoff && !(options.includeBlocked && blocked)) return;
+    const pod = await Pod.findById(task.podId).select('name createdBy').lean();
+    const recipients = handoffRecipients(members, text, pod?.createdBy);
     const taskKey = String(task._id || task.taskId);
     const sequence = String(last?._id || last?.createdAt?.getTime?.() || task.updatedAt?.getTime?.() || taskKey);
     await recordForRecipients(recipients, {
@@ -699,4 +740,4 @@ export const acknowledgeMention = acknowledgeAttention;
 
 export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };
