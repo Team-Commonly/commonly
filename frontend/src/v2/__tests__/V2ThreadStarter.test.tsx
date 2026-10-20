@@ -295,7 +295,7 @@ describe('V2Thread just-created Pod starter panel', () => {
     axios.post.mockResolvedValueOnce({ data: { token } });
     renderChat(makeDetail(), { onOpenInvite });
 
-    expect(await screen.findByText('Your Pod is ready')).toBeInTheDocument();
+    expect(await screen.findByText('Your pod is ready')).toBeInTheDocument();
     await waitFor(() => {
       expect(axios.post).toHaveBeenCalledWith(
         '/api/pods/p1/invites',
@@ -305,7 +305,7 @@ describe('V2Thread just-created Pod starter panel', () => {
     });
 
     const inviteUrl = `${window.location.origin}/v2/invite/${token}`;
-    expect(await screen.findByLabelText('Invite link for this Pod')).toHaveValue(inviteUrl);
+    expect(await screen.findByLabelText('Invite link for this pod')).toHaveValue(inviteUrl);
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(inviteUrl));
 
@@ -319,7 +319,7 @@ describe('V2Thread just-created Pod starter panel', () => {
 
   test('stays absent without the flag or after messages arrive', async () => {
     const noFlag = renderChat(makeDetail());
-    expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+    expect(screen.queryByText('Your pod is ready')).not.toBeInTheDocument();
     expect(screen.getByText('no messages yet')).toBeInTheDocument();
     noFlag.unmount();
 
@@ -327,7 +327,7 @@ describe('V2Thread just-created Pod starter panel', () => {
     const withMessage = renderChat(makeDetail({
       messages: [{ id: 'm1', content: 'First!', user: { username: 'solo-user' } }],
     }));
-    expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+    expect(screen.queryByText('Your pod is ready')).not.toBeInTheDocument();
     await waitFor(() => expect(sessionStorage.getItem('v2.justCreated.p1')).toBeNull());
     withMessage.unmount();
   });
@@ -336,14 +336,14 @@ describe('V2Thread just-created Pod starter panel', () => {
     sessionStorage.setItem('v2.justCreated.p1', '1');
     renderChat(makeDetail(), { firstRunVisible: true });
 
-    expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+    expect(screen.queryByText('Your pod is ready')).not.toBeInTheDocument();
     expect(axios.post).not.toHaveBeenCalled();
   });
 
   test('does not mint an invite when the starter panel does not render', () => {
     renderChat(makeDetail());
 
-    expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+    expect(screen.queryByText('Your pod is ready')).not.toBeInTheDocument();
     expect(screen.getByText('no messages yet')).toBeInTheDocument();
     expect(axios.post).not.toHaveBeenCalled();
   });
@@ -353,10 +353,10 @@ describe('V2Thread just-created Pod starter panel', () => {
     axios.post.mockResolvedValueOnce({ data: { token: 'e'.repeat(32) } });
     renderChat(makeDetail());
 
-    expect(await screen.findByText('Your Pod is ready')).toBeInTheDocument();
+    expect(await screen.findByText('Your pod is ready')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss starter actions' }));
 
-    expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+    expect(screen.queryByText('Your pod is ready')).not.toBeInTheDocument();
     expect(sessionStorage.getItem('v2.justCreated.p1')).toBeNull();
   });
 });

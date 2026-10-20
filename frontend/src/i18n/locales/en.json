@@ -489,18 +489,18 @@
       "noMessages": "no messages yet"
     },
     "newPod": {
-      "label": "New Pod starter actions",
-      "title": "Your Pod is ready",
+      "label": "New pod starter actions",
+      "title": "Your pod is ready",
       "text": "Bring in people or an agent, or start the conversation yourself.",
       "dismiss": "Dismiss starter actions",
       "inviteTitle": "Invite people",
       "inviteText": "Share this link to bring teammates in.",
       "preparingInvite": "Creating invite link…",
-      "inviteLinkLabel": "Invite link for this Pod",
+      "inviteLinkLabel": "Invite link for this pod",
       "inviteError": "The invite link could not be created.",
       "tryAgain": "Try again",
       "addAgentTitle": "Add an agent",
-      "addAgentText": "Choose an agent to add to this Pod.",
+      "addAgentText": "Choose an agent to add to this pod.",
       "messageTitle": "Write the first message",
       "messageText": "Start the conversation in the composer."
     },
@@ -1749,12 +1749,12 @@
     "discover": {
       "join": "Join",
       "joining": "Joining…",
-      "empty": "No community Pods to discover right now.",
-      "joinedEmpty": "You haven't joined any community Pods yet.",
-      "loadFailed": "Couldn't load community Pods. Try again.",
-      "inviteRequired": "This Pod needs an invite link to join.",
+      "empty": "No community pods to discover right now.",
+      "joinedEmpty": "You haven't joined any community pods yet.",
+      "loadFailed": "Couldn't load community pods. Try again.",
+      "inviteRequired": "This pod needs an invite link to join.",
       "rateLimited": "Too many join attempts. Wait a moment and try again.",
-      "joinFailed": "Couldn't join this Pod. Try again."
+      "joinFailed": "Couldn't join this pod. Try again."
     },
     "community": {
       "title": "Join Commonly HQ",

@@ -24,6 +24,20 @@ describe('i18n configuration', () => {
     expect(i18n.t('test.fallbackOnly', { lng: 'zh-CN' })).toBe('English fallback');
   });
 
+  it.each([
+    ['podChat.newPod.label', 'New pod starter actions'],
+    ['podChat.newPod.title', 'Your pod is ready'],
+    ['podChat.newPod.inviteLinkLabel', 'Invite link for this pod'],
+    ['podChat.newPod.addAgentText', 'Choose an agent to add to this pod.'],
+    ['podsSidebar.discover.empty', 'No community pods to discover right now.'],
+    ['podsSidebar.discover.joinedEmpty', "You haven't joined any community pods yet."],
+    ['podsSidebar.discover.loadFailed', "Couldn't load community pods. Try again."],
+    ['podsSidebar.discover.inviteRequired', 'This pod needs an invite link to join.'],
+    ['podsSidebar.discover.joinFailed', "Couldn't join this pod. Try again."],
+  ])('uses lowercase pod in %s', (key, expected) => {
+    expect(i18n.t(key, { lng: 'en' })).toBe(expected);
+  });
+
   it('defaults to English when no stored supported language exists', async () => {
     const languages = jest.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['en-US']);
     const language = jest.spyOn(window.navigator, 'language', 'get').mockReturnValue('en-US');
