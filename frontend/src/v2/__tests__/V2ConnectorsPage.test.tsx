@@ -701,6 +701,8 @@ describe('V2ConnectorsPage', () => {
     ['issuer_metadata_incomplete', 'hostedMcpIssuerUnavailable'],
     ['client_not_configured', 'hostedMcpClientSetup'],
     ['client_registration_required', 'hostedMcpClientSetup'],
+    ['client_registration_unsupported', 'hostedMcpClientSetup'],
+    ['client_registration_refused', 'hostedMcpClientSetup'],
     ['client_auth_unsupported', 'hostedMcpClientSetup'],
     ['client_auth_refused', 'hostedMcpClientSetup'],
     ['authorization_parameter_conflict', 'hostedMcpClientSetup'],

@@ -40,6 +40,13 @@ export interface ConnectorSecretKindSpec {
   refPaths: readonly string[];
   /** The sentence written for the person reading the Connectors page. */
   unavailableReason: string;
+  /**
+   * The row that holds this kind's ref. Absent means an `Integration` row, as
+   * for every kind before TASK-248; `refPaths` are then paths on that row. A
+   * hosted-MCP client registration is not an Integration, so its secret is
+   * owned by the registration and the sweeps look it up there.
+   */
+  owner?: 'integration' | 'hosted-mcp-dcr-registration';
 }
 
 /** The Slack bot token: the ref lives on the row the OAuth bind writes. */
@@ -85,19 +92,43 @@ export const HOSTED_MCP_REFRESH_TOKEN: ConnectorSecretKindSpec = {
   unavailableReason: 'Hosted MCP connection refresh token is unavailable',
 };
 
+/**
+ * A confidential hosted-MCP client's secret (TASK-248). When a vendor offers
+ * no public-client registration (gitlab.com and api.supabase.com list only
+ * client_secret_basic and client_secret_post), the instance registers a
+ * confidential client and keeps the issued secret here. It belongs to the
+ * registration, not to any one person's connection: every row minted by that
+ * client authenticates its refresh and revocation with it.
+ */
+export const HOSTED_MCP_DCR_CLIENT_SECRET: ConnectorSecretKindSpec = {
+  kind: 'hosted-mcp-dcr-client-secret',
+  provider: 'hosted-mcp',
+  refPaths: ['clientSecretRef'],
+  unavailableReason: 'Hosted MCP client registration secret is unavailable',
+  owner: 'hosted-mcp-dcr-registration',
+};
+
 export const CONNECTOR_SECRET_KINDS: readonly ConnectorSecretKindSpec[] = [
   SLACK_BOT_TOKEN,
   DISCORD_WEBHOOK_URL,
   HOSTED_MCP_ACCESS_TOKEN,
   HOSTED_MCP_REFRESH_TOKEN,
+  HOSTED_MCP_DCR_CLIENT_SECRET,
 ];
+
+/** Whether a kind's ref lives on an Integration row (the default owner). */
+export const ownedByIntegration = (spec: ConnectorSecretKindSpec): boolean => (
+  (spec.owner ?? 'integration') === 'integration'
+);
 
 export const kindSpec = (kind: string): ConnectorSecretKindSpec | undefined => (
   CONNECTOR_SECRET_KINDS.find((spec) => spec.kind === kind)
 );
 
-/** Every ref path the sweeps must inspect, across all kinds. */
-export const allRefPaths = (): string[] => CONNECTOR_SECRET_KINDS.flatMap((spec) => [...spec.refPaths]);
+/** Every ref path on an Integration row the sweeps must inspect, across kinds. */
+export const allRefPaths = (): string[] => CONNECTOR_SECRET_KINDS
+  .filter(ownedByIntegration)
+  .flatMap((spec) => [...spec.refPaths]);
 
 const valueAtPath = (row: unknown, path: string): unknown => path
   .split('.')

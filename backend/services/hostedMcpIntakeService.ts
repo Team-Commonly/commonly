@@ -137,8 +137,17 @@ export class HostedMcpClientError extends Error {
 
 export interface HostedMcpClientConfiguration {
   clientId: string;
-  /** Present only for an instance-configured pre-registered confidential client. */
+  /**
+   * Present for a confidential client: an instance-configured pre-registered
+   * one, or one this instance registered by DCR (TASK-248).
+   */
   clientSecret?: string;
+  /**
+   * The method a DCR-registered confidential client registered with; it
+   * authenticates the token, refresh and revocation calls that way. Absent for
+   * a pre-registered client, which follows the vendor's advertised methods.
+   */
+  tokenEndpointAuthMethod?: 'client_secret_basic' | 'client_secret_post';
 }
 
 export type HostedMcpEndpointKind = 'token' | 'revocation';
@@ -389,13 +398,41 @@ const formEncode = (value: string): string => (
   new URLSearchParams([['value', value]]).toString().slice('value='.length)
 );
 
+/** Client-secret methods this instance can use, in preference order. */
+export const CONFIDENTIAL_CLIENT_METHODS = ['client_secret_basic', 'client_secret_post'] as const;
+
+/** RFC 6749 §2.3.1: the client's secret in the Basic header, or in the form body for post. */
+const confidentialAuthentication = (
+  client: HostedMcpClientConfiguration,
+  method: 'client_secret_basic' | 'client_secret_post',
+): ClientEndpointAuthentication => {
+  const secret = String(client.clientSecret || '');
+  if (method === 'client_secret_post') {
+    return {
+      headers: {},
+      body: { client_id: client.clientId, client_secret: secret },
+    };
+  }
+  const basic = `${formEncode(client.clientId)}:${formEncode(secret)}`;
+  return {
+    headers: { Authorization: `Basic ${Buffer.from(basic).toString('base64')}` },
+    body: {},
+  };
+};
+
 const endpointAuthentication = (
   entry: HostedMcpEntry,
   metadata: Partial<HostedMcpAuthorizationServer>,
   client: HostedMcpClientConfiguration,
   endpoint: HostedMcpEndpointKind,
 ): ClientEndpointAuthentication => {
-  if (entry.client !== 'pre-registered') {
+  // A DCR client is confidential when this instance registered it with a
+  // secret (TASK-248). It is recognised by the secret itself, not by the
+  // method field, so a caller that copies only clientId and clientSecret (the
+  // refresh and removal paths) still sends the secret.
+  const confidential = entry.client === 'pre-registered'
+    || (entry.client === 'dcr' && Boolean(client.clientSecret));
+  if (!confidential) {
     return { headers: {}, body: { client_id: client.clientId } };
   }
   if (!client.clientSecret) {
@@ -414,25 +451,21 @@ const endpointAuthentication = (
   const methods = supported === undefined
     ? ['client_secret_basic']
     : (Array.isArray(supported) ? supported : []);
-  const method = ['client_secret_basic', 'client_secret_post']
-    .find((candidate) => methods.includes(candidate));
+  // The method a DCR client registered with is tried first. Without it the
+  // order is basic, then post: the same order registration chose by, so the
+  // answer matches while the vendor's list is unchanged.
+  const registered = client.tokenEndpointAuthMethod;
+  const preference = registered
+    ? [registered, ...CONFIDENTIAL_CLIENT_METHODS.filter((candidate) => candidate !== registered)]
+    : [...CONFIDENTIAL_CLIENT_METHODS];
+  const method = preference.find((candidate) => methods.includes(candidate));
   if (!method) {
     throw new HostedMcpClientError(
       'client_auth_unsupported',
       `authorization server advertises no supported ${endpoint} client-secret method for ${entry.id}`,
     );
   }
-  if (method === 'client_secret_post') {
-    return {
-      headers: {},
-      body: { client_id: client.clientId, client_secret: client.clientSecret },
-    };
-  }
-  const basic = `${formEncode(client.clientId)}:${formEncode(client.clientSecret)}`;
-  return {
-    headers: { Authorization: `Basic ${Buffer.from(basic).toString('base64')}` },
-    body: {},
-  };
+  return confidentialAuthentication(client, method as 'client_secret_basic' | 'client_secret_post');
 };
 
 /** Authorization-code exchange: PKCE and resource survive every client kind. */

@@ -16,6 +16,10 @@ const noticeKeyByCode: Record<string, string> = {
   issuer_metadata_incomplete: 'hostedMcpIssuerUnavailable',
   client_not_configured: 'hostedMcpClientSetup',
   client_registration_required: 'hostedMcpClientSetup',
+  // The vendor offers no registration this instance supports, or refused the
+  // one it asked for (TASK-248 named both before the first DCR entry ships).
+  client_registration_unsupported: 'hostedMcpClientSetup',
+  client_registration_refused: 'hostedMcpClientSetup',
   client_auth_unsupported: 'hostedMcpClientSetup',
   client_auth_refused: 'hostedMcpClientSetup',
   authorization_parameter_conflict: 'hostedMcpClientSetup',

@@ -1,4 +1,6 @@
 process.env.PG_HOST = '';
+process.env.CONNECTOR_SECRET_KEYS = `dcr-test:${Buffer.alloc(32, 7).toString('base64')}`;
+process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'dcr-test';
 
 const Model = require('../../models/HostedMcpDcrRegistration');
 const {
@@ -7,10 +9,20 @@ const {
   refuseDcrClient,
 } = require('../../services/hostedMcpDcrRegistry');
 const { setupMongoDb, clearMongoDb, closeMongoDb } = require('../utils/testUtils');
+const ConnectorSecret = require('../../models/ConnectorSecret');
+const connectorSecrets = require('../../services/connectorSecrets');
+const {
+  buildTokenExchangeRequest, buildRefreshRequest, buildRevocationRequest,
+} = require('../../services/hostedMcpIntakeService');
 
 const entry = {
-  id: 'close', title: 'Close', client: 'dcr', issuer: 'https://auth.close.com',
-  resource: 'https://mcp.close.com/mcp', scopes: ['mcp.read'], tools: [],
+  id: 'close',
+  title: 'Close',
+  client: 'dcr',
+  issuer: 'https://auth.close.com',
+  resource: 'https://mcp.close.com/mcp',
+  scopes: ['mcp.read'],
+  tools: [],
 };
 const callback = 'https://api.commonly.me/api/integrations/connect/hosted-mcp/close/callback';
 const metadata = {
@@ -34,7 +46,7 @@ describe('instance-scoped hosted MCP DCR registry', () => {
   beforeAll(async () => {
     await setupMongoDb();
   });
-  beforeEach(async () => { await Model.deleteMany({}); });
+  beforeEach(async () => { await Model.deleteMany({}); await ConnectorSecret.deleteMany({}); });
   afterAll(async () => { await clearMongoDb(); await closeMongoDb(); });
 
   test('first start registers a public client once and a second reuses it', async () => {
@@ -114,19 +126,228 @@ describe('instance-scoped hosted MCP DCR registry', () => {
     expect(await Model.findOne({ clientId: 'old' })).toMatchObject({ current: false });
   });
 
-  test('refuses AS metadata without none before registration and refuses a secret-bearing answer', async () => {
+  // TASK-248 inverted the first half of this arm: a vendor listing only
+  // client_secret_* methods now gets a confidential client (below). What stays
+  // refused before any POST is a vendor naming no method this registry
+  // supports, or naming none at all.
+  test('refuses before any POST when the vendor names no supported registration method', async () => {
     const fetch = registrationFetch([]);
-    await expect(ensureDcrClient(entry, {
-      ...metadata, token_endpoint_auth_methods_supported: ['client_secret_basic'],
-    }, callback, fetch)).rejects.toMatchObject({ code: 'client_registration_unsupported' });
+    for (const supported of [['private_key_jwt'], [], undefined]) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(ensureDcrClient(entry, {
+        ...metadata, token_endpoint_auth_methods_supported: supported,
+      }, callback, fetch)).rejects.toMatchObject({ code: 'client_registration_unsupported' });
+    }
     expect(fetch).not.toHaveBeenCalled();
+    expect(await Model.countDocuments({})).toBe(0);
+  });
+
+  test('a public registration answered with a secret is still refused, and nothing is stored', async () => {
     const secretAnswer = jest.fn(async () => new Response(JSON.stringify({
-      client_id: 'private', client_secret: 'must-not-store',
-      token_endpoint_auth_method: 'client_secret_basic', redirect_uris: [callback],
+      client_id: 'private',
+      client_secret: 'must-not-store',
+      token_endpoint_auth_method: 'client_secret_basic',
+      redirect_uris: [callback],
     }), { status: 201 }));
     await expect(ensureDcrClient(entry, metadata, callback, secretAnswer))
       .rejects.toMatchObject({ code: 'client_registration_unsupported' });
     expect(await Model.countDocuments({})).toBe(0);
+    expect(await ConnectorSecret.countDocuments({})).toBe(0);
+  });
+
+  describe('a vendor that offers only confidential registration (TASK-248)', () => {
+    const confidential = { ...metadata, token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'] };
+    const confidentialAnswer = (seen, overrides = {}) => jest.fn(async (_url, init) => {
+      seen.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({
+        client_id: 'conf-1',
+        client_secret: 'issued-secret-1',
+        token_endpoint_auth_method: 'client_secret_basic',
+        redirect_uris: [callback],
+        client_secret_expires_at: 0,
+        registration_access_token: 'never-stored',
+        ...overrides,
+      }), { status: 201 });
+    });
+
+    test('registers with the vendor\'s listed method, keeps the secret encrypted and owned by the row, and reuses it', async () => {
+      const sent = [];
+      const fetch = confidentialAnswer(sent);
+      const first = await ensureDcrClient(entry, confidential, callback, fetch);
+      const second = await ensureDcrClient(entry, confidential, callback, fetch);
+      expect(first).toEqual({ clientId: 'conf-1', clientSecret: 'issued-secret-1', tokenEndpointAuthMethod: 'client_secret_basic' });
+      expect(second).toEqual(first);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(sent[0]).toMatchObject({ token_endpoint_auth_method: 'client_secret_basic', redirect_uris: [callback] });
+
+      const row = (await Model.findOne({})).toObject();
+      expect(row.tokenEndpointAuthMethod).toBe('client_secret_basic');
+      expect(JSON.stringify(row)).not.toMatch(/issued-secret-1|never-stored/);
+      const secret = await ConnectorSecret.findById(row.clientSecretRef).lean();
+      expect(String(secret.integrationId)).toBe(String(row._id));
+      expect(secret.kind).toBe('hosted-mcp-dcr-client-secret');
+      expect(secret.ciphertext).not.toMatch(/issued-secret-1/);
+      expect(await connectorSecrets.get(row.clientSecretRef)).toBe('issued-secret-1');
+    });
+
+    test('two concurrent first starts keep only the winner\'s secret, and both use the winner\'s client', async () => {
+      await Model.init();
+      let release;
+      const bothPosted = new Promise((resolve) => { release = resolve; });
+      let posts = 0;
+      const fetch = jest.fn(async () => {
+        posts += 1;
+        const n = posts;
+        if (posts === 2) release();
+        await bothPosted;
+        return new Response(JSON.stringify({
+          client_id: `conf-race-${n}`,
+          client_secret: `race-secret-${n}`,
+          token_endpoint_auth_method: 'client_secret_basic',
+          redirect_uris: [callback],
+        }), { status: 201 });
+      });
+      const [a, b] = await Promise.all([
+        ensureDcrClient(entry, confidential, callback, fetch),
+        ensureDcrClient(entry, confidential, callback, fetch),
+      ]);
+      expect(posts).toBe(2);
+      expect(a).toEqual(b);
+      const winner = await Model.findOne({ current: true }).lean();
+      expect(a.clientId).toBe(winner.clientId);
+      // The loser's secret is deleted; only the stored registration's remains.
+      const secrets = await ConnectorSecret.find({}).lean();
+      expect(secrets.map((secret) => String(secret._id))).toEqual([winner.clientSecretRef]);
+    });
+
+    test('client_secret_post when that is the only secret method the vendor lists', async () => {
+      const sent = [];
+      const client = await ensureDcrClient(
+        entry, 
+        { ...metadata, token_endpoint_auth_methods_supported: ['client_secret_post'] },
+        callback, 
+        confidentialAnswer(sent, { token_endpoint_auth_method: 'client_secret_post' }),
+      );
+      expect(sent[0].token_endpoint_auth_method).toBe('client_secret_post');
+      expect(client.tokenEndpointAuthMethod).toBe('client_secret_post');
+    });
+
+    test('an answer without a secret, or with another auth method, is refused and stores nothing', async () => {
+      const postOnly = { ...metadata, token_endpoint_auth_methods_supported: ['client_secret_post'] };
+      for (const [vendor, overrides] of [
+        [confidential, { client_secret: undefined }],
+        [confidential, { client_secret: '' }],
+        [confidential, { token_endpoint_auth_method: 'client_secret_post' }],
+        // RFC 7591: an omitted method means client_secret_basic, a mismatch for a post-only vendor.
+        [postOnly, { token_endpoint_auth_method: undefined }],
+      ]) {
+        // eslint-disable-next-line no-await-in-loop
+        await expect(ensureDcrClient(entry, vendor, callback, confidentialAnswer([], overrides)))
+          .rejects.toMatchObject({ code: 'client_registration_unsupported' });
+      }
+      expect(await Model.countDocuments({})).toBe(0);
+      expect(await ConnectorSecret.countDocuments({})).toBe(0);
+    });
+
+    test('a secret that lapses is replaced by registering again before it does', async () => {
+      const now = new Date('2026-10-21T12:00:00Z');
+      // Each secret the vendor issues lapses two days after the first start.
+      const day = 24 * 60 * 60 * 1000;
+      let n = 0;
+      const fetch = jest.fn(async () => {
+        n += 1;
+        return new Response(JSON.stringify({
+          client_id: `conf-${n}`,
+          client_secret: `secret-${n}`,
+          token_endpoint_auth_method: 'client_secret_basic',
+          redirect_uris: [callback],
+          client_secret_expires_at: Math.floor((now.getTime() + n * 2 * day) / 1000),
+        }), { status: 201 });
+      });
+      const first = await ensureDcrClient(entry, confidential, callback, fetch, now);
+      expect(first.clientId).toBe('conf-1');
+      const later = new Date(now.getTime() + 36 * 60 * 60 * 1000); // inside the 24 h margin
+      const renewed = await ensureDcrClient(entry, confidential, callback, fetch, later);
+      expect(renewed.clientId).toBe('conf-2');
+      expect(await Model.countDocuments({ current: true })).toBe(1);
+      // The retired client still serves rows it minted, with its own secret.
+      expect(await dcrClientForRow(entry, 'conf-1')).toEqual({
+        clientId: 'conf-1', clientSecret: 'secret-1', tokenEndpointAuthMethod: 'client_secret_basic',
+      });
+    });
+
+    test('an already-lapsing secret in the answer is refused', async () => {
+      const now = new Date('2026-10-21T12:00:00Z');
+      await expect(ensureDcrClient(
+        entry, 
+        confidential, 
+        callback,
+        confidentialAnswer([], { client_secret_expires_at: Math.floor(now.getTime() / 1000) + 60 }), 
+        now,
+      ))
+        .rejects.toMatchObject({ code: 'client_registration_refused' });
+    });
+
+    test('a refused client\'s secret is deleted with it', async () => {
+      await ensureDcrClient(entry, confidential, callback, confidentialAnswer([]));
+      const { clientSecretRef } = await Model.findOne({}).lean();
+      await refuseDcrClient(entry, 'conf-1');
+      expect(await ConnectorSecret.findById(clientSecretRef)).toBeNull();
+      expect(await dcrClientForRow(entry, 'conf-1')).toBeNull();
+    });
+
+    test('a registration whose secret can no longer be read is replaced on the next start', async () => {
+      await ensureDcrClient(entry, confidential, callback, confidentialAnswer([], { client_id: 'conf-old' }));
+      await ConnectorSecret.deleteMany({});
+      const client = await ensureDcrClient(entry, confidential, callback, confidentialAnswer([], { client_id: 'conf-new' }));
+      expect(client.clientId).toBe('conf-new');
+      expect(await dcrClientForRow(entry, 'conf-old')).toBeNull();
+    });
+
+    test('the token and revocation calls authenticate with the registered method, and PKCE still rides', async () => {
+      const client = await ensureDcrClient(entry, confidential, callback, confidentialAnswer([]));
+      const exchange = buildTokenExchangeRequest(entry, confidential, client, {
+        code: 'code-1', codeVerifier: 'verifier-1', redirectUri: callback,
+      });
+      expect(exchange.headers.Authorization).toBe(`Basic ${Buffer.from('conf-1:issued-secret-1').toString('base64')}`);
+      expect(exchange.body.get('code_verifier')).toBe('verifier-1');
+      expect(exchange.body.get('client_secret')).toBeNull();
+
+      // A post-registered client revokes with post where the vendor lists it...
+      const post = { ...client, tokenEndpointAuthMethod: 'client_secret_post' };
+      const listed = { ...confidential, revocation_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'] };
+      const revoke = buildRevocationRequest(entry, listed, post, { token: 'tok', tokenTypeHint: 'refresh_token' });
+      expect(revoke.headers.Authorization).toBeUndefined();
+      expect(revoke.body.get('client_id')).toBe('conf-1');
+      expect(revoke.body.get('client_secret')).toBe('issued-secret-1');
+      // ...and with basic where the list is omitted, which RFC 8414 defaults to basic.
+      const defaulted = buildRevocationRequest(entry, confidential, post, { token: 'tok', tokenTypeHint: 'refresh_token' });
+      expect(defaulted.headers.Authorization).toMatch(/^Basic /);
+      expect(defaulted.body.get('client_secret')).toBeNull();
+    });
+
+    test('refresh still sends the secret when the caller copies only clientId and clientSecret', async () => {
+      // hostedMcpCredentialService and connectionRemovalService pass the client on as
+      // { clientId, clientSecret }; without the secret the vendor answers invalid_client
+      // and the registration is poisoned for every row it minted.
+      const { clientId, clientSecret } = await ensureDcrClient(entry, confidential, callback, confidentialAnswer([]));
+      const refresh = buildRefreshRequest(entry, confidential, { clientId, clientSecret }, { refreshToken: 'rt-1' });
+      expect(refresh.headers.Authorization).toBe(`Basic ${Buffer.from('conf-1:issued-secret-1').toString('base64')}`);
+
+      const postOnly = { ...metadata, token_endpoint_auth_methods_supported: ['client_secret_post'] };
+      const viaPost = buildRefreshRequest(entry, postOnly, { clientId, clientSecret }, { refreshToken: 'rt-1' });
+      expect(viaPost.body.get('client_secret')).toBe('issued-secret-1');
+    });
+
+    test('a public DCR client still sends only its client_id', async () => {
+      const client = await ensureDcrClient(entry, metadata, callback, registrationFetch([]));
+      const exchange = buildTokenExchangeRequest(entry, metadata, client, {
+        code: 'code-1', codeVerifier: 'verifier-1', redirectUri: callback,
+      });
+      expect(exchange.headers.Authorization).toBeUndefined();
+      expect(exchange.body.get('client_id')).toBe('registered-1');
+      expect(exchange.body.get('client_secret')).toBeNull();
+    });
   });
 
   test('a CIMD entry never touches the registry or the AS', async () => {
