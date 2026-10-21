@@ -849,17 +849,10 @@ const executeApprovedToolCall = async (
 ): Promise<unknown> => {
   if (!toolCall.canonicalArgs) throw new Error('approval arguments unavailable');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-  const broker = require('./toolBrokerService');
-  const execute = broker.executeApprovedToolCall as ((input: {
-    grantId: string;
-    agentUserId: string;
-    tool: string;
-    args: Record<string, unknown>;
-    expectedArgsDigest: string;
-    expectedDefinitionDigest?: string;
-    approvalId: string;
-  }) => Promise<{ result: unknown }>);
-  const response = await execute({
+  // Share the broker's argument type so a new required binding cannot be
+  // forgotten by this approval-side call site.
+  const broker = require('./toolBrokerService') as typeof import('./toolBrokerService');
+  const response = await broker.executeApprovedToolCall({
     grantId: toolCall.grantId,
     agentUserId,
     tool: toolCall.tool,

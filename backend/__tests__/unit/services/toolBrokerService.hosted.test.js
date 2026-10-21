@@ -841,7 +841,7 @@ describe('a hosted-MCP grant through the broker', () => {
     }
   });
 
-  it('binds a parked write to its catalogue entry id', async () => {
+  it('refuses when an entry rename removes the parked tool name', async () => {
     const parked = await parkWrite();
     ENTRY.id = 'linear-repinned';
     try {

@@ -6,6 +6,7 @@ const {
   assessEntryTools,
   canonicalJson,
   createHostedMcpDriftCache,
+  digestPinnedDefinition,
   entryToolProjections,
   hostedMcpToolName,
 } = require('../../../services/hostedMcpEntryService');
@@ -34,6 +35,15 @@ const pinned = (over) => Object.assign({
   inputSchema: { type: 'object', properties: { team: { type: 'string' } } },
   annotations: { readOnlyHint: true },
 }, over);
+
+test('the parked definition digest includes the entry id and canonical whole pin', () => {
+  const pin = pinned({});
+  expect(digestPinnedDefinition('linear', pin)).not.toBe(digestPinnedDefinition('linear-repinned', pin));
+  expect(digestPinnedDefinition('linear', pin)).toBe(digestPinnedDefinition('linear', {
+    ...pin,
+    inputSchema: { properties: { team: { type: 'string' } }, type: 'object' },
+  }));
+});
 
 const linear = (over) => Object.assign({
   id: 'linear',
