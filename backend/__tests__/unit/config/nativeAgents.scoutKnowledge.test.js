@@ -165,3 +165,37 @@ describe('the hosted offer names the model a hosted turn runs on', () => {
     expect(description).not.toMatch(/DeepSeek/);
   });
 });
+
+// Sam, 2026-10-21: "scout should only answer in English, if they said Chinese
+// it will cause confusion and misunderstanding". The app's zh-CN interface is
+// untouched; this is Scout's own replies.
+describe('Scout answers in English only', () => {
+  const { SCOUT_WELCOME, SCOUT_LANGUAGE_RULE } = require('../../../config/native-agents/scout');
+  const { HOUSE_PREAMBLE } = require('../../../config/native-agents/housePreamble');
+  const prompt = scoutApp.systemPrompt;
+  const CJK = /[぀-ヿ㐀-鿿가-힯＀-￯]/;
+
+  test('the welcome is in English, with no invitation to write in another language', () => {
+    expect(SCOUT_WELCOME).toBe('I\'m Scout. This pod is yours, and I work in it with you. '
+      + 'Start with one of these, or tell me what you\'re working on.');
+    expect(SCOUT_WELCOME).not.toMatch(CJK);
+  });
+
+  test('a question in another language is answered in plain English, not translated or mirrored', () => {
+    expect(SCOUT_LANGUAGE_RULE).toMatch(/^Always reply in English, in plain, simple words, even when the person writes in another language\./);
+    expect(SCOUT_LANGUAGE_RULE).toMatch(/Do not translate their message or mirror their language\./);
+    expect(prompt).toContain(SCOUT_LANGUAGE_RULE);
+  });
+
+  test('the rule sits in Scout\'s own hard rules, after the house rule it replaces, and says so', () => {
+    expect(prompt.indexOf('ROLE-SPECIFIC HARD RULES:\n' + SCOUT_LANGUAGE_RULE))
+      .toBeGreaterThan(prompt.indexOf(HOUSE_PREAMBLE));
+    expect(SCOUT_LANGUAGE_RULE).toMatch(/replaces the house rule to match the user's language/);
+  });
+
+  test('nothing in Scout\'s own prompt asks for another language', () => {
+    const scoutOwn = prompt.replace(HOUSE_PREAMBLE, '');
+    expect(scoutOwn).not.toMatch(CJK);
+    expect(scoutOwn).not.toMatch(/zh-CN|in Chinese/);
+  });
+});
