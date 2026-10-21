@@ -218,11 +218,18 @@ describe('per-spawn child credentials (TASK-094)', () => {
     const route = { method: 'POST', baseUrl: '/api/agents/runtime',
       route: { path: '/agent-dm' }, params: {} };
     try {
-      const mintRoute = { method: 'POST', baseUrl: '/api/agents/runtime/spawn-credentials',
-        route: { path: '/' }, params: {} };
-      expect((await runAuth(raw, mintRoute)).nexted).toBe(true);
-      const child = await mint(seat, 'spawn-narrowed');
-      for (const token of [raw, child.token]) {
+      const express = require('express');
+      const request = require('supertest');
+      const app = express();
+      app.use(express.json());
+      app.use('/api/agents/runtime/spawn-credentials', require('../../../routes/spawnCredentials'));
+      const minted = await request(app).post('/api/agents/runtime/spawn-credentials')
+        .set('Authorization', `Bearer ${raw}`).send({ spawnId: 'spawn-narrowed' });
+      expect(minted.status).toBe(201);
+      const child = await AgentCredential.findById(minted.body.credentialId);
+      expect(child.scopes).toEqual(['spawn']);
+      expect(String(child.parentId)).toBe(String(seat._id));
+      for (const token of [raw, minted.body.token]) {
         const { res, nexted } = await runAuth(token, route);
         expect(nexted).toBe(false);
         expect(res.statusCode).toBe(403);

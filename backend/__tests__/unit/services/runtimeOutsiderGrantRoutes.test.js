@@ -5,6 +5,8 @@ const ts = require('typescript');
 jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/pg/Message', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/AgentAsk', () => ({ findOne: jest.fn() }));
+const mockEnsembleFindById = jest.fn();
+jest.mock('../../../models/AgentEnsembleState', () => ({ findById: (...args) => mockEnsembleFindById(...args) }));
 
 const { runtimeOutsiderGrantRouteKeys, classifyRuntimeOutsiderGrantRoute } =
   require('../../../services/runtimeOutsiderGrantRoutes');
@@ -34,26 +36,16 @@ const wrappers = {
 
 test('every runtime-token acceptor is in the route table', () => {
   const actual = [];
-  const unknownAcceptors = [];
   // Discover source files by the middleware they USE, not by a token-prefix
-  // grep. That was the route-census miss behind TASK-213 (Vera 79682).
-  for (const file of fs.readdirSync(routesDir).filter((entry) => entry.endsWith('.ts'))) {
-    const name = path.basename(file, '.ts');
-    if (fileBases[name]) continue;
-    const source = fs.readFileSync(path.join(routesDir, file), 'utf8');
-    const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-    const walk = (node) => {
-      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
-          && node.expression.expression.getText(tree) === 'router'
-          && ['get', 'post', 'put', 'patch', 'delete'].includes(node.expression.name.text)
-          && node.arguments.slice(1).some((arg) => ts.isIdentifier(arg) && arg.text === 'agentRuntimeAuth')) {
-        unknownAcceptors.push(file);
-      }
-      ts.forEachChild(node, walk);
-    };
-    walk(tree);
-  }
-  expect(unknownAcceptors).toEqual([]);
+  // grep. A new file fails here until its mount and routes are classified.
+  const sourceFiles = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(dir, entry.name);
+    return entry.isDirectory() ? sourceFiles(file) : (entry.name.endsWith('.ts') ? [file] : []);
+  });
+  const acceptorFiles = sourceFiles(routesDir).filter((file) =>
+    /require\(['"][^'"]*middleware\/agentRuntimeAuth['"]\)/.test(fs.readFileSync(file, 'utf8')));
+  expect(acceptorFiles.map((file) => path.basename(file, '.ts')).sort())
+    .toEqual(Object.keys(fileBases).sort());
   for (const [name, base] of Object.entries(fileBases)) {
     const source = fs.readFileSync(path.join(routesDir, `${name}.ts`), 'utf8');
     const tree = ts.createSourceFile(`${name}.ts`, source, ts.ScriptTarget.Latest, true);
@@ -93,4 +85,14 @@ test('unscoped posts resolve no pod and broker calls retain their own gate', asy
   expect((await classify('/api/grants', 'POST', '/:grantId/attenuate')).routeClass).toBe('grant');
   expect((await classify('/api/mcp/grants', 'POST', '/:grantId')).routeClass).toBe('grant');
   expect((await classify('/api/agents/runtime/spawn-credentials', 'POST', '/')).routeClass).toBe('read');
+});
+
+test('ensemble response resolves the record pod rather than the ignored path pod', async () => {
+  mockEnsembleFindById.mockReturnValue({ select: () => ({ lean: async () => ({ podId: 'pod-b' }) }) });
+  const route = await classifyRuntimeOutsiderGrantRoute({
+    baseUrl: '/api/pods', method: 'POST', route: { path: '/:podId/ensemble/response' },
+    params: { podId: 'pod-a' }, body: { ensembleId: 'ensemble-1' },
+  });
+  expect(mockEnsembleFindById).toHaveBeenCalledWith('ensemble-1');
+  expect(route).toEqual({ routeClass: 'pod_write', podId: 'pod-b' });
 });
