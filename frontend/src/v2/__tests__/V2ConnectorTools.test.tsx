@@ -122,6 +122,18 @@ const renderTools = (props = {}) => render(
 
 beforeEach(() => { jest.clearAllMocks(); mockApi([githubEntry]); });
 
+test('explains why a seat reached by grants in multiple pods cannot post', async () => {
+  const baseGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{
+      name: 'scout', displayName: 'Scout', userId: 'a1', runtimeNarrowedByMultipleGrantPods: true,
+    }] } });
+    return baseGet(url);
+  });
+  renderTools();
+  expect(await screen.findByText(/Scout cannot post while connectors reach more than one of their pods/)).toBeInTheDocument();
+});
+
 test('a sole join-policy refusal offers the owner an in-place fix and then allows retry', async () => {
   axios.post.mockRejectedValueOnce({ response: { data: {
     error: 'outsider_grant_pod_joinable', message: 'Agents can self-install into this pod. Make it invite-only to use this connector.',

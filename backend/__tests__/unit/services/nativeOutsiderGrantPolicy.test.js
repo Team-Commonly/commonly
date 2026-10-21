@@ -2,6 +2,7 @@
 const mockPodFind = jest.fn();
 const mockGrantFind = jest.fn();
 const mockConnectionFind = jest.fn();
+const mockInstallationFind = jest.fn();
 
 jest.mock('../../../models/Pod', () => ({
   __esModule: true,
@@ -15,8 +16,11 @@ jest.mock('../../../models/Integration', () => ({
   __esModule: true,
   default: { find: (...args) => mockConnectionFind(...args) },
 }));
+jest.mock('../../../models/AgentRegistry', () => ({
+  AgentInstallation: { find: (...args) => mockInstallationFind(...args) },
+}));
 
-const { podHasOutsiderWritableGrant, podsWithOutsiderWritableGrants } = require('../../../services/nativeOutsiderGrantPolicy');
+const { podHasOutsiderWritableGrant, podsWithOutsiderWritableGrants, agentsWithMultipleOutsiderGrantPods } = require('../../../services/nativeOutsiderGrantPolicy');
 
 const POD = '507f1f77bcf86cd799439011';
 const SEAT = '507f1f77bcf86cd799439013';
@@ -35,6 +39,7 @@ beforeEach(() => {
   mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }]));
   mockGrantFind.mockReturnValue(chain([grant()]));
   mockConnectionFind.mockReturnValue(chain([{ _id: CONNECTION, type: 'hosted-mcp' }]));
+  mockInstallationFind.mockReturnValue(chain([]));
 });
 
 test('a live pod grant with a current audience member narrows every native agent in the pod', async () => {
@@ -69,6 +74,21 @@ test('batch census checks multiple installation pods with one query per collecti
   expect(mockPodFind).toHaveBeenCalledTimes(1);
   expect(mockGrantFind).toHaveBeenCalledTimes(1);
   expect(mockConnectionFind).toHaveBeenCalledTimes(1);
+});
+
+test('roster marker uses every installation pod, including pods outside the viewer roster', async () => {
+  mockInstallationFind.mockReturnValue(chain([
+    { agentName: 'scout', instanceId: 'default', podId: POD },
+    { agentName: 'scout', instanceId: 'default', podId: OTHER },
+  ]));
+  mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }, { _id: OTHER, members: [SEAT] }]));
+  mockGrantFind.mockReturnValue(chain([grant(), grant({ target: { kind: 'pod', id: OTHER } })]));
+  expect(await agentsWithMultipleOutsiderGrantPods([{ agentName: 'scout', instanceId: 'default' }]))
+    .toEqual(new Set(['scout:default']));
+  expect(mockInstallationFind).toHaveBeenCalledTimes(1);
+  expect(mockPodFind).toHaveBeenCalledTimes(1);
+  mockGrantFind.mockReturnValue(chain([grant()]));
+  expect(await agentsWithMultipleOutsiderGrantPods([{ agentName: 'scout' }])).toEqual(new Set());
 });
 
 test('a seat grant is in scope only when its seat is a current member and in its audience', async () => {

@@ -101,7 +101,14 @@ export interface HostedMcpManualRevokeNotice {
   revokePage: string;
 }
 
-interface PodSeat { userId: string | null; displayName?: string; name: string; internal?: boolean }
+interface PodSeat {
+  userId: string | null;
+  displayName?: string;
+  name: string;
+  internal?: boolean;
+  runtimeNarrowedByMultipleGrantPods?: boolean;
+  runtimeNarrowingUnavailable?: boolean;
+}
 
 interface Props {
   pods: V2Pod[];
@@ -233,6 +240,11 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const isAdmin = currentUser?.role === 'admin';
 
   const podIds = useMemo(() => pods.slice(0, MAX_PODS).map((pod) => String(pod._id)), [pods]);
+  const blockedSeatNames = [...new Map(Object.values(seats).flat()
+    .filter((seat) => seat.runtimeNarrowedByMultipleGrantPods)
+    .map((seat) => [seat.userId || seat.name, seat.displayName || seat.name])).values()];
+  const narrowingStatusUnavailable = Object.values(seats).flat()
+    .some((seat) => seat.runtimeNarrowingUnavailable);
 
   const load = useCallback(async () => {
     const catalogRes = await api.get<{ installables?: ToolCatalogEntry[]; hiddenToolConnections?: HiddenToolConnection[] }>('/api/installables').catch(() => null);
@@ -1083,6 +1095,21 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
+        {blockedSeatNames.length > 0 && (
+          <p className="v2-connector-aside__note" role="status">
+            {t('tools.multiGrantPodPostingBlocked', {
+              defaultValue: '{{agents}} cannot post while connectors reach more than one of their pods. End a grant until only one pod has connector access.',
+              agents: blockedSeatNames.join(t('tools.listSeparator', { defaultValue: ', ' })),
+            })}
+          </p>
+        )}
+        {narrowingStatusUnavailable && (
+          <p className="v2-connector-aside__note" role="status">
+            {t('tools.runtimePostingStatusUnavailable', {
+              defaultValue: 'Could not check whether connector grants limit agent posting. Try again shortly.',
+            })}
+          </p>
+        )}
         {error && !draft && !selected && !githubAppSetup && (
           <p className="v2-connector-aside__note" role="alert">{error}</p>
         )}

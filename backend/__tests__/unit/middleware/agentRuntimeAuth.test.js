@@ -22,6 +22,8 @@ const mockCompleteStarterTask = jest.fn();
 const mockMarkByoConnectionAttempt = jest.fn();
 const mockNarrowedPods = jest.fn();
 const mockEnsembleFindById = jest.fn();
+const mockCredentialFindOne = jest.fn();
+const mockCredentialFindById = jest.fn();
 
 jest.mock('../../../models/AgentEnsembleState', () => ({
   findById: (...args) => mockEnsembleFindById(...args),
@@ -49,8 +51,8 @@ jest.mock('../../../models/User', () => {
 // legacy fallback; the credential paths have their own suite
 // (agentCredential.substrate.test.js on mongodb-memory-server).
 jest.mock('../../../models/AgentCredential', () => ({
-  findOne: jest.fn().mockResolvedValue(null),
-  findById: jest.fn().mockResolvedValue(null),
+  findOne: (...args) => mockCredentialFindOne(...args),
+  findById: (...args) => mockCredentialFindById(...args),
   updateOne: jest.fn().mockResolvedValue({}),
 }));
 
@@ -84,6 +86,8 @@ const buildRes = () => {
 beforeEach(() => {
   mockNarrowedPods.mockReset().mockResolvedValue(new Set());
   mockEnsembleFindById.mockReset();
+  mockCredentialFindOne.mockReset().mockResolvedValue(null);
+  mockCredentialFindById.mockReset();
   mockSecret.hash.mockReset();
   mockSecret.hash.mockReturnValue('hashed-token');
   mockUserFindOne.mockReset();
@@ -324,6 +328,57 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
     isBot: true,
     botMetadata: { agentName: 'my-byo-agent', instanceId: 'default', displayName: 'My BYO Agent' },
     agentRuntimeTokens: [{ tokenHash: 'hashed-token', ...(lastUsedAt ? { lastUsedAt } : {}) }],
+  });
+
+  const narrowedRoute = () => {
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/agent-dm' }, params: {} });
+    mockInstallationFind.mockReturnValue({
+      lean: async () => [{ podId: { toString: () => 'pod-workspace' }, status: 'active' }],
+    });
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-workspace']));
+    return req;
+  };
+
+  test('refuses an outward call for an embedded User agent token', async () => {
+    const bot = buildAgentUser(new Date('2026-08-12T00:00:00Z'));
+    mockUserFindOne.mockResolvedValue(bot);
+    const req = narrowedRoute();
+    const res = buildRes();
+    const next = jest.fn();
+
+    await agentRuntimeAuth(req, res, next);
+
+    expect(req.agentUser).toBe(bot);
+    expect(req.agentCredential).toBeNull();
+    expect(mockInstallationFindOne).not.toHaveBeenCalled();
+    expect(mockNarrowedPods).toHaveBeenCalledWith(['pod-workspace']);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'outsider_grant_runtime_narrowed' }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('refuses an outward call for a spawn-scoped AgentCredential row', async () => {
+    const bot = { ...buildAgentUser(null), agentRuntimeTokens: [] };
+    const child = { _id: 'credential-child', kind: 'runtime', status: 'active',
+      parentId: 'credential-parent', scopes: ['spawn'], agentUserId: bot._id };
+    mockCredentialFindOne.mockResolvedValue(child);
+    mockCredentialFindById.mockReturnValue({ select: () => ({ lean: async () => ({ status: 'active' }) }) });
+    mockUserFindOne.mockResolvedValueOnce(null).mockResolvedValueOnce(bot);
+    const req = narrowedRoute();
+    const res = buildRes();
+    const next = jest.fn();
+
+    await agentRuntimeAuth(req, res, next);
+
+    expect(req.agentUser).toBe(bot);
+    expect(req.agentCredential).toBe(child);
+    expect(mockInstallationFindOne).not.toHaveBeenCalled();
+    expect(mockNarrowedPods).toHaveBeenCalledWith(['pod-workspace']);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'outsider_grant_runtime_narrowed' }));
+    expect(next).not.toHaveBeenCalled();
   });
 
   test('fires once, with the installation podIds and the display label', async () => {
