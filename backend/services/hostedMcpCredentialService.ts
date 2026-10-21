@@ -54,6 +54,7 @@ import {
   discoverAuthorizationServer,
   resolvedClientId,
   resolvedClientSecret,
+  type HostedMcpClientConfiguration,
 } from './hostedMcpIntakeService';
 import * as connectorSecrets from './connectorSecrets';
 import { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } from './connectorSecretKinds';
@@ -120,6 +121,8 @@ interface CredentialDeps {
     entry: HostedMcpEntry;
     clientId: string;
     clientSecret?: string;
+    /** A DCR confidential client's registered method (TASK-248); sent as recorded. */
+    tokenEndpointAuthMethod?: HostedMcpClientConfiguration['tokenEndpointAuthMethod'];
     refreshToken: string;
   }) => Promise<RefreshResult>;
   secrets: Pick<typeof connectorSecrets, 'get' | 'put' | 'revoke'>;
@@ -206,6 +209,64 @@ export const defaultRowDeps = (): CredentialDeps['row'] => ({
   },
 });
 
+/**
+ * The vendor refresh: discover the token endpoint, authenticate as the row's
+ * own client, and read the answer. Exported, like the removal side's
+ * revokeTokenAtVendor, so the credential it actually sends is testable with a
+ * fetch double (a DCR client's registered method must reach this call).
+ */
+export const refreshTokenAtVendor = async ({
+  entry, clientId, clientSecret, tokenEndpointAuthMethod, refreshToken,
+}: Parameters<CredentialDeps['refreshAtVendor']>[0], fetchImpl: typeof fetch = fetch): Promise<RefreshResult> => {
+  const metadata = await discoverAuthorizationServer(entry.issuer, fetchImpl);
+  const client = {
+    clientId,
+    ...(clientSecret ? { clientSecret } : {}),
+    ...(tokenEndpointAuthMethod ? { tokenEndpointAuthMethod } : {}),
+  };
+  const tokenRequest = buildRefreshRequest(entry, metadata, client, {
+    refreshToken,
+  });
+  const response = await upstreamFetch(metadata.token_endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+      ...tokenRequest.headers,
+    },
+    body: tokenRequest.body,
+  }, fetchImpl);
+  const body = await response.json().catch(() => ({} as Record<string, unknown>)) as Record<string, unknown>;
+  if (!response.ok) {
+    const code = String(body.error || '');
+    if (code === 'invalid_client' && entry.client === 'dcr') {
+      await refuseDcrClient(entry, clientId);
+      throw new HostedMcpCredentialError(
+        'reconnect_required',
+        'OAuth client was refused by the provider; reconnect to continue',
+      );
+    }
+    // `invalid_grant` is the vendor saying the refresh token itself is done:
+    // revoked from the vendor's side, or run out its own lifetime. Everything
+    // else — a 500, a 429, a body we cannot read — is the vendor having a bad
+    // moment, and the next call should try again with the same pair.
+    const definitive = code === 'invalid_grant' || response.status === 400 || response.status === 401;
+    throw new HostedMcpCredentialError(
+      definitive ? 'connection_error' : 'refresh_unreachable',
+      `refresh refused (${response.status}${code ? ` ${code}` : ''})`,
+      !definitive,
+    );
+  }
+  if (!body.access_token) {
+    throw new HostedMcpCredentialError('refresh_unreachable', 'refresh returned no access token', true);
+  }
+  return {
+    accessToken: String(body.access_token),
+    refreshToken: body.refresh_token ? String(body.refresh_token) : undefined,
+    expiresIn: typeof body.expires_in === 'number' ? body.expires_in : undefined,
+  };
+};
+
 const defaultDeps = (): CredentialDeps => ({
   now: () => new Date(),
   entryFor: (row) => {
@@ -231,50 +292,7 @@ const defaultDeps = (): CredentialDeps => ({
       { new: true },
     );
   },
-  refreshAtVendor: async ({ entry, clientId, clientSecret, refreshToken }) => {
-    const metadata = await discoverAuthorizationServer(entry.issuer);
-    const tokenRequest = buildRefreshRequest(entry, metadata, { clientId, ...(clientSecret ? { clientSecret } : {}) }, {
-      refreshToken,
-    });
-    const response = await upstreamFetch(metadata.token_endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-        ...tokenRequest.headers,
-      },
-      body: tokenRequest.body,
-    });
-    const body = await response.json().catch(() => ({} as Record<string, unknown>)) as Record<string, unknown>;
-    if (!response.ok) {
-      const code = String(body.error || '');
-      if (code === 'invalid_client' && entry.client === 'dcr') {
-        await refuseDcrClient(entry, clientId);
-        throw new HostedMcpCredentialError(
-          'reconnect_required',
-          'OAuth client was refused by the provider; reconnect to continue',
-        );
-      }
-      // `invalid_grant` is the vendor saying the refresh token itself is done:
-      // revoked from the vendor's side, or run out its own lifetime. Everything
-      // else — a 500, a 429, a body we cannot read — is the vendor having a bad
-      // moment, and the next call should try again with the same pair.
-      const definitive = code === 'invalid_grant' || response.status === 400 || response.status === 401;
-      throw new HostedMcpCredentialError(
-        definitive ? 'connection_error' : 'refresh_unreachable',
-        `refresh refused (${response.status}${code ? ` ${code}` : ''})`,
-        !definitive,
-      );
-    }
-    if (!body.access_token) {
-      throw new HostedMcpCredentialError('refresh_unreachable', 'refresh returned no access token', true);
-    }
-    return {
-      accessToken: String(body.access_token),
-      refreshToken: body.refresh_token ? String(body.refresh_token) : undefined,
-      expiresIn: typeof body.expires_in === 'number' ? body.expires_in : undefined,
-    };
-  },
+  refreshAtVendor: (input) => refreshTokenAtVendor(input),
   secrets: connectorSecrets,
   row: defaultRowDeps(),
   sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
@@ -349,6 +367,7 @@ export const credentialFor = async (
   const recordedClientId = row.config?.clientId;
   let clientId: string;
   let clientSecret: string | undefined;
+  let tokenEndpointAuthMethod: HostedMcpClientConfiguration['tokenEndpointAuthMethod'];
   try {
     if (entry.client === 'dcr') {
       const recorded = await deps.dcrClientForRow(entry, recordedClientId);
@@ -359,6 +378,7 @@ export const credentialFor = async (
       }
       clientId = recorded.clientId;
       clientSecret = recorded.clientSecret;
+      tokenEndpointAuthMethod = recorded.tokenEndpointAuthMethod;
     } else {
       clientId = deps.clientIdFor(entry);
       clientSecret = deps.clientSecretFor(entry);
@@ -427,7 +447,9 @@ export const credentialFor = async (
 
   let refreshed: RefreshResult;
   try {
-    refreshed = await deps.refreshAtVendor({ entry, clientId, clientSecret, refreshToken });
+    refreshed = await deps.refreshAtVendor({
+      entry, clientId, clientSecret, ...(tokenEndpointAuthMethod ? { tokenEndpointAuthMethod } : {}), refreshToken,
+    });
   } catch (error) {
     const failure = error instanceof HostedMcpCredentialError
       ? error

@@ -55,6 +55,7 @@ import {
   discoverAuthorizationServer,
   resolvedClientId,
   resolvedClientSecret,
+  type HostedMcpClientConfiguration,
 } from './hostedMcpIntakeService';
 import * as connectorSecrets from './connectorSecrets';
 import { upstreamFetch } from './upstreamFetch';
@@ -110,6 +111,8 @@ export interface RemovalDeps {
     entry: HostedMcpEntry;
     clientId: string;
     clientSecret?: string;
+    /** A DCR confidential client's registered method (TASK-248); sent as recorded. */
+    tokenEndpointAuthMethod?: HostedMcpClientConfiguration['tokenEndpointAuthMethod'];
     token: string;
     tokenTypeHint: 'refresh_token' | 'access_token';
   }) => Promise<void>;
@@ -165,6 +168,7 @@ export const revokeTokenAtVendor = async (input: {
   entry: HostedMcpEntry;
   clientId: string;
   clientSecret?: string;
+  tokenEndpointAuthMethod?: HostedMcpClientConfiguration['tokenEndpointAuthMethod'];
   token: string;
   tokenTypeHint: 'refresh_token' | 'access_token';
 }, fetchImpl: typeof fetch = hostedVendorFetch): Promise<void> => {
@@ -184,7 +188,11 @@ export const revokeTokenAtVendor = async (input: {
   const request = buildRevocationRequest(
     input.entry,
     metadata,
-    { clientId: input.clientId, ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}) },
+    {
+      clientId: input.clientId,
+      ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}),
+      ...(input.tokenEndpointAuthMethod ? { tokenEndpointAuthMethod: input.tokenEndpointAuthMethod } : {}),
+    },
     { token: input.token, tokenTypeHint: input.tokenTypeHint },
   );
   const response = await upstreamFetch(target.endpoint, {
@@ -320,6 +328,7 @@ export const removeConnection = async (options: {
     const recordedClientId = connection?.config?.clientId;
     let clientId: string | undefined;
     let clientSecret: string | undefined;
+    let tokenEndpointAuthMethod: HostedMcpClientConfiguration['tokenEndpointAuthMethod'];
     let clientMatches = true;
     try {
       if (entry.client === 'dcr') {
@@ -327,6 +336,7 @@ export const removeConnection = async (options: {
         clientMatches = Boolean(recorded);
         clientId = recorded?.clientId;
         clientSecret = recorded?.clientSecret;
+        tokenEndpointAuthMethod = recorded?.tokenEndpointAuthMethod;
       } else {
         clientId = deps.clientIdFor(entry);
         // During the first rollout legacy rows have no snapshot. The backfill
@@ -389,6 +399,7 @@ export const removeConnection = async (options: {
             entry,
             clientId: clientId as string,
             ...(clientSecret ? { clientSecret } : {}),
+            ...(tokenEndpointAuthMethod ? { tokenEndpointAuthMethod } : {}),
             token,
             tokenTypeHint,
           });

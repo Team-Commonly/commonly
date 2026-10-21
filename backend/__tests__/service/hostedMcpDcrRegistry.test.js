@@ -296,6 +296,30 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       expect(await dcrClientForRow(entry, 'conf-1')).toBeNull();
     });
 
+    test('a confidential registration with no secret ref is replaced, never used without its secret', async () => {
+      await ensureDcrClient(entry, confidential, callback, confidentialAnswer([], { client_id: 'conf-noref' }));
+      await Model.updateOne({ clientId: 'conf-noref' }, { $set: { clientSecretRef: null } });
+      expect(await dcrClientForRow(entry, 'conf-noref')).toBeNull();
+      const client = await ensureDcrClient(entry, confidential, callback, confidentialAnswer([], { client_id: 'conf-fresh' }));
+      expect(client.clientId).toBe('conf-fresh');
+    });
+
+    test('a registration whose secret key left the ring is replaced on the next start', async () => {
+      await ensureDcrClient(entry, confidential, callback, confidentialAnswer([], { client_id: 'conf-oldkey' }));
+      const keys = process.env.CONNECTOR_SECRET_KEYS;
+      const active = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+      process.env.CONNECTOR_SECRET_KEYS = `dcr-rotated:${Buffer.alloc(32, 9).toString('base64')}`;
+      process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'dcr-rotated';
+      try {
+        expect(await dcrClientForRow(entry, 'conf-oldkey')).toBeNull();
+        const client = await ensureDcrClient(entry, confidential, callback, confidentialAnswer([], { client_id: 'conf-newkey' }));
+        expect(client).toMatchObject({ clientId: 'conf-newkey', clientSecret: 'issued-secret-1' });
+      } finally {
+        process.env.CONNECTOR_SECRET_KEYS = keys;
+        process.env.CONNECTOR_SECRET_ACTIVE_KEY = active;
+      }
+    });
+
     test('a registration whose secret can no longer be read is replaced on the next start', async () => {
       await ensureDcrClient(entry, confidential, callback, confidentialAnswer([], { client_id: 'conf-old' }));
       await ConnectorSecret.deleteMany({});
@@ -313,17 +337,20 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       expect(exchange.body.get('code_verifier')).toBe('verifier-1');
       expect(exchange.body.get('client_secret')).toBeNull();
 
-      // A post-registered client revokes with post where the vendor lists it...
+      // Vera on #2377: a recorded method is sent as recorded, never filtered by an
+      // advertised list. The removal passes `{}` for a dcr entry, and RFC 8414
+      // defaults an omitted list to basic, which turned a post-registered client
+      // into Basic. Held on both inputs: no revocation metadata at all, and a
+      // discovered document that omits the revocation list.
       const post = { ...client, tokenEndpointAuthMethod: 'client_secret_post' };
-      const listed = { ...confidential, revocation_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'] };
-      const revoke = buildRevocationRequest(entry, listed, post, { token: 'tok', tokenTypeHint: 'refresh_token' });
-      expect(revoke.headers.Authorization).toBeUndefined();
-      expect(revoke.body.get('client_id')).toBe('conf-1');
-      expect(revoke.body.get('client_secret')).toBe('issued-secret-1');
-      // ...and with basic where the list is omitted, which RFC 8414 defaults to basic.
-      const defaulted = buildRevocationRequest(entry, confidential, post, { token: 'tok', tokenTypeHint: 'refresh_token' });
-      expect(defaulted.headers.Authorization).toMatch(/^Basic /);
-      expect(defaulted.body.get('client_secret')).toBeNull();
+      for (const revocationMetadata of [{}, confidential]) {
+        const revoke = buildRevocationRequest(entry, revocationMetadata, post, { token: 'tok', tokenTypeHint: 'refresh_token' });
+        expect(revoke.headers.Authorization).toBeUndefined();
+        expect(revoke.body.get('client_id')).toBe('conf-1');
+        expect(revoke.body.get('client_secret')).toBe('issued-secret-1');
+        const refresh = buildRefreshRequest(entry, revocationMetadata, post, { refreshToken: 'rt-1' });
+        expect(refresh.body.get('client_secret')).toBe('issued-secret-1');
+      }
     });
 
     test('refresh still sends the secret when the caller copies only clientId and clientSecret', async () => {

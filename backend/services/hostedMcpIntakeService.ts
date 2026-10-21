@@ -426,10 +426,17 @@ const endpointAuthentication = (
   client: HostedMcpClientConfiguration,
   endpoint: HostedMcpEndpointKind,
 ): ClientEndpointAuthentication => {
-  // A DCR client is confidential when this instance registered it with a
-  // secret (TASK-248). It is recognised by the secret itself, not by the
-  // method field, so a caller that copies only clientId and clientSecret (the
-  // refresh and removal paths) still sends the secret.
+  // A confidential client this instance registered (TASK-248) authenticates
+  // exactly as it registered, at every endpoint. No advertised list is read:
+  // the removal path passes no metadata for a dcr entry, and RFC 8414's
+  // omitted-list default (basic) would otherwise turn a post-registered client
+  // into Basic, and its invalid_client would refuse the registration every
+  // row shares (Vera, #2377).
+  if (entry.client === 'dcr' && client.clientSecret && client.tokenEndpointAuthMethod) {
+    return confidentialAuthentication(client, client.tokenEndpointAuthMethod);
+  }
+  // A DCR client with a secret but no recorded method still sends the secret,
+  // choosing from the advertised list like a pre-registered client.
   const confidential = entry.client === 'pre-registered'
     || (entry.client === 'dcr' && Boolean(client.clientSecret));
   if (!confidential) {
@@ -451,14 +458,7 @@ const endpointAuthentication = (
   const methods = supported === undefined
     ? ['client_secret_basic']
     : (Array.isArray(supported) ? supported : []);
-  // The method a DCR client registered with is tried first. Without it the
-  // order is basic, then post: the same order registration chose by, so the
-  // answer matches while the vendor's list is unchanged.
-  const registered = client.tokenEndpointAuthMethod;
-  const preference = registered
-    ? [registered, ...CONFIDENTIAL_CLIENT_METHODS.filter((candidate) => candidate !== registered)]
-    : [...CONFIDENTIAL_CLIENT_METHODS];
-  const method = preference.find((candidate) => methods.includes(candidate));
+  const method = CONFIDENTIAL_CLIENT_METHODS.find((candidate) => methods.includes(candidate));
   if (!method) {
     throw new HostedMcpClientError(
       'client_auth_unsupported',
