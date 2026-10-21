@@ -240,6 +240,16 @@ spec:
               name: api-keys
               key: ONBOARDING_ALERT_EMAIL
               optional: true
+        # The team's own accounts, left out of the silence alert beside the built-in
+        # rule (admins, reserved email domains): usernames, prefix*, @domain
+        # (services/userClassification.ts). Names people, so secret store only.
+        # Unset = built-in rule only.
+        - name: INTERNAL_ACCOUNTS
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: INTERNAL_ACCOUNTS
+              optional: true
 
         # AI Services
         - name: GEMINI_API_KEY

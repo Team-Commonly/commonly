@@ -114,6 +114,26 @@ describe('onboardingSilenceService.scan', () => {
     expect(mockEpisodeCreate).toHaveBeenCalledTimes(1);
   });
 
+  // 2026-10-21: growth-ops, our own operator account, opened two episodes on
+  // 10-16 and paged a person. The newcomer lookup leaves internal accounts out;
+  // userClassification.internal.test.js runs that filter against real Mongo.
+  it('looks only at outside people: the newcomer lookup carries the internal-account exclusion', async () => {
+    setup();
+    const saved = process.env.INTERNAL_ACCOUNTS;
+    process.env.INTERNAL_ACCOUNTS = 'teammate';
+    try {
+      await scan({ now: NOW });
+    } finally {
+      if (saved === undefined) delete process.env.INTERNAL_ACCOUNTS; else process.env.INTERNAL_ACCOUNTS = saved;
+    }
+    const newcomerFilter = mockUserFind.mock.calls.map(([filter]) => filter).find((filter) => filter && filter.createdAt);
+    expect(newcomerFilter.$nor).toEqual(expect.arrayContaining([
+      { role: 'admin' },
+      { username: { $regex: /^(?:teammate)$/i } },
+    ]));
+    expect(newcomerFilter.isBot).toEqual({ $ne: true });
+  });
+
   it('does not fire on a message younger than the threshold', async () => {
     // The judging window is [now-lookback, now-threshold]. A message typed 5
     // minutes ago is outside it, so PG never returns it — assert the bound we
