@@ -325,4 +325,39 @@ describe('BYO on-my-computer mode', () => {
     // route), so this asserts the exclusion is real rather than an empty set.
     expect(container.querySelectorAll('.v2-rail__account .v2-avatar').length).toBe(1);
   });
+
+  // The placement route refuses an agent Commonly runs in-process (the
+  // person's hosted agent) with in_process_agent_no_token. The page says so
+  // in plain words and shows no "waiting for your computer" result. Matched on
+  // the words both the server's message and the page's own copy for that code
+  // share, so it holds whichever one renders.
+  test("placing the person's hosted agent on a computer is refused in plain words", async () => {
+    mockGet();
+    axios.post.mockImplementation((url) => {
+      if (url === '/api/registry/install') {
+        return Promise.reject({ response: { status: 400, data: { error: 'Agent already installed in this pod' } } });
+      }
+      if (url === '/api/agent-binding/request') {
+        return Promise.reject({
+          response: {
+            status: 409,
+            data: {
+              code: 'in_process_agent_no_token',
+              message: "sam-hosted is your hosted agent, and Commonly runs it, so it can't also run on your computer. Choose a different name for an agent you run yourself.",
+            },
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    fireEvent.change(screen.getByPlaceholderText('my-mcp-agent'), { target: { value: 'sam-hosted' } });
+    fireEvent.click(screen.getByText('Add to this computer'));
+
+    expect(await screen.findByText(/sam-hosted is your hosted agent/)).toBeInTheDocument();
+    expect(screen.queryByTestId('byo-machine-result')).toBeNull();
+    expect(screen.queryByText(/has no runtime token/)).toBeNull();
+  });
 });
