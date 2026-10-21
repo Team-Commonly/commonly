@@ -79,7 +79,7 @@ test('private memory passes, shared memory is outward', async () => {
 test('unscoped posts resolve no pod and broker calls retain their own gate', async () => {
   const classify = (baseUrl, method, routePath, body = {}) =>
     classifyRuntimeOutsiderGrantRoute({ baseUrl, method, route: { path: routePath }, body, params: {} });
-  expect((await classify('/api/agents/runtime', 'POST', '/posts')).routeClass).toBe('pod_write');
+  expect((await classify('/api/agents/runtime', 'POST', '/posts')).routeClass).toBe('outward');
   expect((await classify('/api/agents/runtime', 'POST', '/posts')).podId).toBeNull();
   expect((await classify('/api/github', 'POST', '/issues')).routeClass).toBe('outward');
   expect((await classify('/api/grants', 'POST', '/:grantId/attenuate')).routeClass).toBe('grant');

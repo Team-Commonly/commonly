@@ -101,5 +101,10 @@ export const classifyRuntimeOutsiderGrantRoute = async (req: Request): Promise<{
       && rule.routeClass === 'pod_write') {
     return { routeClass: privateMemory(req) ? 'read' : 'outward', podId: null };
   }
-  return { routeClass: rule.routeClass, podId: rule.resolvePod ? await rule.resolvePod(req) : null };
+  const podId = rule.resolvePod ? await rule.resolvePod(req) : null;
+  if (!podId && req.baseUrl === runtime
+      && (req.route?.path === '/posts' || req.route?.path === '/threads/:threadId/comments')) {
+    return { routeClass: 'outward', podId: null };
+  }
+  return { routeClass: rule.routeClass, podId };
 };
