@@ -25,15 +25,19 @@ export const resolveSkillSource = (rawSource, baseDir) => {
   return isAbsolute(source) ? source : pathResolve(baseDir, source);
 };
 
+const SECTION_SEPARATOR = '\n\n';
+
 /**
  * Each source's SKILL.md as `## Skill: <name>` plus its body without the
- * frontmatter, in declared order, stopping short of `maxBytes` in total. A
- * source with no SKILL.md, or one that would cross the cap, is skipped with a
- * warning naming the runtime (`label`) rather than failing the spawn.
+ * frontmatter, in declared order. `maxBytes` bounds the whole text
+ * skillsAsText returns (preamble, separators and `trailer` included), so a cap
+ * is the size of what the runtime reads. A source with no SKILL.md, or one that
+ * would cross the cap, is skipped with a warning naming the runtime (`label`)
+ * rather than failing the spawn.
  */
-export const readSkillSections = async (skillSources, { maxBytes, label }) => {
+export const readSkillSections = async (skillSources, { maxBytes, label, trailer = '' }) => {
   const sections = [];
-  let total = 0;
+  let total = Buffer.byteLength(SKILLS_AS_TEXT_PREAMBLE, 'utf8') + Buffer.byteLength(trailer, 'utf8');
   for (const source of skillSources || []) {
     let markdown;
     try {
@@ -48,7 +52,7 @@ export const readSkillSections = async (skillSources, { maxBytes, label }) => {
     const name = (frontmatter && /^name:\s*(.+)$/m.exec(frontmatter[1])?.[1].trim())
       || source.split(/[\\/]/).filter(Boolean).pop();
     const section = `## Skill: ${name}\n\n${markdown.slice(frontmatter ? frontmatter[0].length : 0).trim()}`;
-    const bytes = Buffer.byteLength(section, 'utf8');
+    const bytes = Buffer.byteLength(SECTION_SEPARATOR, 'utf8') + Buffer.byteLength(section, 'utf8');
     if (total + bytes > maxBytes) {
       // eslint-disable-next-line no-console
       console.warn(`[${label}] public seat: skill ${name} not inlined (over ${maxBytes} bytes in total)`);
@@ -60,8 +64,10 @@ export const readSkillSections = async (skillSources, { maxBytes, label }) => {
   return sections;
 };
 
-/** The preamble and every section, or null when no skill could be read. */
+/** The preamble, every section and `trailer`, or null when no skill could be read. */
 export const skillsAsText = async (skillSources, options) => {
   const sections = await readSkillSections(skillSources, options);
-  return sections.length ? `${SKILLS_AS_TEXT_PREAMBLE}\n\n${sections.join('\n\n')}` : null;
+  return sections.length
+    ? `${SKILLS_AS_TEXT_PREAMBLE}${SECTION_SEPARATOR}${sections.join(SECTION_SEPARATOR)}${options.trailer || ''}`
+    : null;
 };

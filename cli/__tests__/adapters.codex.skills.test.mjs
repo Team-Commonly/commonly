@@ -28,6 +28,7 @@ await jest.unstable_mockModule('child_process', () => ({
 }));
 
 const codex = (await import('../src/lib/adapters/codex.js')).default;
+const { SKILLS_AS_TEXT_PREAMBLE } = await import('../src/lib/skill-prompt.js');
 
 // The fake codex reads AGENTS.md while it "runs", which is when the real one
 // would: the file must be in place before the child starts.
@@ -137,25 +138,48 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
     warn.mockRestore();
   });
 
-  test('the cap is Codex\'s own 32 KiB: a section of exactly 32768 bytes is inlined, and nothing after it', async () => {
-    // Vera's C5 on #2368: raising this cap to 1 GiB failed no arm, and Codex
-    // truncates AGENTS.md past `project_doc_max_bytes` (32768 at 0.162.1), so a
-    // larger cap would let a skill be cut with no warning from either side.
-    const header = '## Skill: big\n\n';
+  // Vera on #2368: raising the cap to 1 GiB failed no arm (C5), and the cap
+  // first counted only the sections, so a file that met it ran 168 bytes past
+  // it once the preamble, separators and final newline were added. The cap is
+  // our own ceiling on the file as written (Codex does not cap this file; see
+  // the comment on PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES), so these arms measure
+  // the file itself, one byte either side of 32768.
+  const capFixture = async (bodyBytes) => {
     const big = join(root, 'skills', 'big');
     const after = join(root, 'skills', 'after');
     await mkdir(big, { recursive: true });
     await mkdir(after, { recursive: true });
-    await writeFile(join(big, 'SKILL.md'), `---\nname: big\n---\n${'x'.repeat(32768 - header.length)}\n`, 'utf8');
+    await writeFile(join(big, 'SKILL.md'), `---\nname: big\n---\n${'x'.repeat(bodyBytes)}\n`, 'utf8');
     await writeFile(join(after, 'SKILL.md'), '---\nname: after\n---\nOne more line.\n', 'utf8');
+    return [big, after];
+  };
+  // preamble + "\n\n" + "## Skill: big\n\n" + body + "\n" is the whole file.
+  const bodyForFileOf = (fileBytes) => fileBytes
+    - Buffer.byteLength(SKILLS_AS_TEXT_PREAMBLE, 'utf8') - 2 - Buffer.byteLength('## Skill: big\n\n', 'utf8') - 1;
+
+  test('a skill that brings AGENTS.md to exactly 32768 bytes is inlined, and the file is 32768 bytes', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const { impl, calls } = makeSpawnImpl();
-    await spawnSeat(impl, { sandbox: { trust: 'public' }, skills: { claude: [big, after] } });
+    await spawnSeat(impl, { sandbox: { trust: 'public' }, skills: { claude: await capFixture(bodyForFileOf(32768)) } });
 
     const seen = await calls[0].seen;
-    expect(seen).toContain(`${header}${'x'.repeat(32768 - header.length)}`);
+    expect(seen).toContain('## Skill: big');
     expect(seen).not.toContain('## Skill: after');
+    expect(Buffer.byteLength(seen, 'utf8')).toBe(32768);
     expect(warn).toHaveBeenCalledWith('[codex] public seat: skill after not inlined (over 32768 bytes in total)');
+    warn.mockRestore();
+  });
+
+  test('one byte more and that skill is left out whole, while a later one that fits still goes in', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { impl, calls } = makeSpawnImpl();
+    await spawnSeat(impl, { sandbox: { trust: 'public' }, skills: { claude: await capFixture(bodyForFileOf(32768) + 1) } });
+
+    const seen = await calls[0].seen;
+    expect(seen).not.toContain('## Skill: big');
+    expect(seen).toContain('## Skill: after');
+    expect(Buffer.byteLength(seen, 'utf8')).toBeLessThanOrEqual(32768);
+    expect(warn).toHaveBeenCalledWith('[codex] public seat: skill big not inlined (over 32768 bytes in total)');
     warn.mockRestore();
   });
 

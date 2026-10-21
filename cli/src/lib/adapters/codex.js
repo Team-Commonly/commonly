@@ -326,10 +326,18 @@ const preparePublicCodexHome = async (ctx) => {
 // appropriate"); Codex reads the same format, so no new key. Rewritten each
 // spawn (staged, then renamed, so a concurrent read never sees half a file),
 // and removed when nothing is declared so a dropped skill stops applying.
-// The cap is Codex's default `project_doc_max_bytes` for AGENTS.md files:
-// codex-cli 0.162.1 ships `project_doc_max_bytes = 32768` in its default
-// config (read from the shipped binary, 2026-10-21). Codex truncates past it,
-// so a skill that would cross it is left out whole rather than cut mid-text.
+// The cap is our own, set at Codex's `project_doc_max_bytes` (32768 in
+// codex-cli 0.162.1's shipped default config, read from the binary 2026-10-21).
+// It is not a limit Codex applies to this file. At rust-v0.162.1 the global
+// `$CODEX_HOME/AGENTS.md` is read whole and trimmed
+// (codex-home/src/instructions/mod.rs) and passed in as user instructions,
+// outside the project-doc budget, which counts only the project AGENTS.md files
+// discovered from the working directory (core/src/agents_md.rs,
+// load_project_instructions). So the skills never share a budget with a
+// workspace's own AGENTS.md, and nothing past the cap would be cut. The cap is
+// what keeps the injected text to the size Codex allows a project doc. It
+// bounds the file as written, final newline included, and a skill that would
+// cross it is left out whole.
 const PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES = 32 * 1024;
 
 const writePublicCodexInstructions = async (publicHome, ctx) => {
@@ -337,7 +345,7 @@ const writePublicCodexInstructions = async (publicHome, ctx) => {
   const baseDir = ctx.cwd || process.cwd();
   const text = await skillsAsText(
     declared.map((source) => resolveSkillSource(source, baseDir)),
-    { maxBytes: PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES, label: 'codex' },
+    { maxBytes: PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES, label: 'codex', trailer: '\n' },
   );
   const target = join(publicHome, 'AGENTS.md');
   if (!text) {
@@ -345,7 +353,7 @@ const writePublicCodexInstructions = async (publicHome, ctx) => {
     return;
   }
   const staged = `${target}.${process.pid}.tmp`;
-  await writeFile(staged, `${text}\n`, { encoding: 'utf8', mode: 0o600 });
+  await writeFile(staged, text, { encoding: 'utf8', mode: 0o600 });
   await rename(staged, target);
 };
 
