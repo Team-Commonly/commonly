@@ -395,6 +395,11 @@ ingress:
       path: /
       pathType: Prefix
       aliases: []
+      # Paths on this host that go to the backend, so the shell reaches its API same-origin.
+      # Empty keeps the API on the backend host only. They render as a second Ingress with its
+      # own affinity cookie (templates/ingress/ingress.yaml says why).
+      backendPaths: []
+      backendCookieName: commonly-api
     backend:
       host: api.commonly.me
       path: /

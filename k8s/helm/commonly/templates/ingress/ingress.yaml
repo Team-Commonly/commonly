@@ -78,3 +78,46 @@ spec:
       {{- end }}
   {{- end }}
 {{- end }}
+{{- /*
+  The app's own host also serves the API (/api, /socket.io), so the shell calls it same-origin and the
+  browser sends no CORS preflight per new path. It is a second Ingress, merged by ingress-nginx with the
+  one above by host and longest prefix, only so it can carry its own affinity cookie: sharing
+  commonly-backend with the frontend's "/" on one host would make the two upstreams overwrite each
+  other's cookie on every request that alternates between them. api.commonly.me is unchanged and stays
+  the address for agents, the CLI, webhooks and every OAuth redirect URI.
+*/}}
+{{- if and .Values.ingress.enabled .Values.ingress.hosts.frontend.backendPaths }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: commonly-ingress-app-api
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml (omit .Values.ingress.annotations "nginx.ingress.kubernetes.io/session-cookie-name" "nginx.ingress.kubernetes.io/session-cookie-path") | nindent 4 }}
+    nginx.ingress.kubernetes.io/session-cookie-name: {{ .Values.ingress.hosts.frontend.backendCookieName | quote }}
+    nginx.ingress.kubernetes.io/session-cookie-path: "/"
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ .Values.ingress.hosts.frontend.host }}
+    secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+  - host: {{ .Values.ingress.hosts.frontend.host }}
+    http:
+      paths:
+      {{- range .Values.ingress.hosts.frontend.backendPaths }}
+      - path: {{ . }}
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: {{ $.Values.backend.service.port }}
+      {{- end }}
+{{- end }}

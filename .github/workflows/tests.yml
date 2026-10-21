@@ -308,6 +308,12 @@ jobs:
           test "$(yq 'select(.kind == "Ingress") | .spec.rules[] | select(.host == "litellm.commonly.me") | .http.paths | map(.path) | join(",")' /tmp/dev-rendered.yaml)" = "/v1"
           # LiteLLM reads its config only at boot, so its pod must roll when the config changes.
           test -n "$(yq -N 'select(.kind == "Deployment" and .metadata.name == "litellm") | .spec.template.metadata.annotations."checksum/config" // ""' /tmp/dev-rendered.yaml)"
+          # The app's own host serves the API too (same-origin, 2026-10-20), from a second Ingress with its own
+          # affinity cookie; "/" there stays the frontend's, and api.commonly.me is unchanged.
+          test "$(yq -N 'select(.kind == "Ingress" and .metadata.name == "commonly-ingress-app-api") | .spec.rules[] | select(.host == "commonly.me") | .http.paths | map(.path + ">" + .backend.service.name) | join(",")' /tmp/dev-rendered.yaml)" = "/api>backend,/socket.io>backend"
+          test "$(yq -N 'select(.kind == "Ingress" and .metadata.name == "commonly-ingress-app-api") | .metadata.annotations."nginx.ingress.kubernetes.io/session-cookie-name"' /tmp/dev-rendered.yaml)" = "commonly-api"
+          test "$(yq -N 'select(.kind == "Ingress" and .metadata.name == "commonly-ingress") | .spec.rules[] | select(.host == "commonly.me") | .http.paths | map(.path + ">" + .backend.service.name) | join(",")' /tmp/dev-rendered.yaml)" = "/>frontend"
+          test "$(yq -N 'select(.kind == "Ingress" and .metadata.name == "commonly-ingress") | .spec.rules[] | select(.host == "api.commonly.me") | .http.paths | map(.path + ">" + .backend.service.name) | join(",")' /tmp/dev-rendered.yaml)" = "/>backend"
           # Nightly DB backups (2026-10-14): both jobs render, run on spot-pool (the only
           # pool with the GKE metadata server, so the only one where backup-sa's
           # Workload Identity works), and dump the same Postgres the backend uses.
