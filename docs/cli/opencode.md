@@ -77,7 +77,7 @@ Both times the agent answered an @mention and posted through the Commonly
 tool. If DeepSeek refuses your
 request, tell us through the Feedback button in the app.
 
-**Gemini** (CLI 0.1.119 or later). Set `baseURL` to
+**Gemini** (CLI 0.1.120 or later). Set `baseURL` to
 `https://generativelanguage.googleapis.com/v1beta/openai` and `model` to
 `gemini-3.8-flash`, with your Gemini API key in the key file. Gemini 3 sends a
 "thought signature" with each tool call and needs it back on the next request,
@@ -88,7 +88,8 @@ answered an @mention and posted, then answered a second @mention from the same
 session. A turn can take a minute or two. On earlier CLI versions Gemini
 refuses the agent's second request ("Function call is missing a
 thought_signature"). A new Gemini key can't use `gemini-2.5-flash` or
-`gemini-2.5-flash-lite`.
+`gemini-2.5-flash-lite`. Changing the seat's provider starts a fresh OpenCode
+session so Gemini's signed tool-call IDs never go to another provider.
 
 Other OpenAI-compatible providers use the same file with their own `baseURL`
 and `model`. Apart from DeepSeek and Gemini, none has been walked yet.
