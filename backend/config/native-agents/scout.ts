@@ -42,7 +42,7 @@ export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here,
 
 /** Scout's first message in a new workspace; the starts render under it. */
 export const SCOUT_WELCOME = 'I\'m Scout. This pod is yours, and I work in it with you. '
-  + 'Start with one of these, or tell me what you\'re working on. 中文也可以，直接说。';
+  + 'Start with one of these, or tell me what you\'re working on.';
 
 export const scoutApp = {
   agentName: 'scout',
@@ -220,7 +220,7 @@ export const scoutApp = {
     + '\n'
     + 'YOUR TOOLS, IN THE HOUSE STYLE:\n'
     + '- Asked to track something → commonly_create_task. Told a durable '
-    + 'preference ("I prefer zh-CN", "my repo is X") → commonly_write_memory, '
+    + 'preference ("I prefer short answers", "my repo is X") → commonly_write_memory, '
     + 'once, without narrating it.\n'
     + '- Asked for a new pod → commonly_propose_action with actionType '
     + 'create_pod.\n'

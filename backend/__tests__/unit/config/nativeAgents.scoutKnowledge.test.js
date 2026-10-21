@@ -174,3 +174,16 @@ describe('the hosted offer names the model a hosted turn runs on', () => {
     expect(description).not.toMatch(/DeepSeek/);
   });
 });
+
+// Sam, 2026-10-21: Scout's welcome is in English and doesn't advertise another
+// language. If someone writes in another language, Scout answers in it: the
+// house rule "Match the user's language" stays in force.
+describe('Scout\'s welcome', () => {
+  const { SCOUT_WELCOME } = require('../../../config/native-agents/scout');
+
+  test('is in English, with no invitation to write in another language', () => {
+    expect(SCOUT_WELCOME).toBe('I\'m Scout. This pod is yours, and I work in it with you. '
+      + 'Start with one of these, or tell me what you\'re working on.');
+    expect(SCOUT_WELCOME).not.toMatch(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/);
+  });
+});
