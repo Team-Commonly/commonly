@@ -53,6 +53,9 @@ jest.mock('../../../models/AgentEvent', () => ({
 
 jest.mock('../../../models/pg/Message', () => ({
   findById: jest.fn(),
+  // ADR-018 D6.4 reads the previous top-level message on an unrouted human
+  // message; null means no adjacency, so D8 is what these arms exercise.
+  findPreviousTopLevel: jest.fn().mockResolvedValue(null),
 }));
 
 jest.mock('../../../services/welcomeWakeService', () => ({
@@ -186,7 +189,9 @@ describe('wake-on-message (ADR-018 D8)', () => {
 
     expect(res.woken).toEqual([]);
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
-    // Zero-opt-in fast path: no pod-shape lookup was needed at all.
+    // No pod-shape lookup: with no opt-in there is no wake fan-out, and D6.4
+    // adjacency looks at the pod only when the previous message is a recent
+    // agent post (here there is none).
     expect(Pod.findById).not.toHaveBeenCalled();
   });
 
