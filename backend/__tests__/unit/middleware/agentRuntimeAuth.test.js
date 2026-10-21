@@ -178,6 +178,29 @@ describe('TASK-213 runtime token narrowing', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  test('failed route pod lookup refuses a write even when one grant pod is known', async () => {
+    setupLegacy();
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
+    mockEnsembleFindById.mockReturnValue({ select: () => ({ lean: async () => {
+      throw new Error('ensemble DB unavailable');
+    } }) });
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/pods',
+      route: { path: '/:podId/ensemble/response' }, params: { podId: 'pod-a' },
+      body: { ensembleId: 'ensemble-a', content: 'write' } });
+    const res = buildRes();
+    const next = jest.fn();
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await agentRuntimeAuth(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'outsider_grant_runtime_narrowed', routeClass: 'unknown',
+      }));
+      expect(next).not.toHaveBeenCalled();
+    } finally { log.mockRestore(); }
+  });
+
   test('failed grant census narrows the agent', async () => {
     setupLegacy();
     mockNarrowedPods.mockRejectedValue(new Error('grant DB unavailable'));

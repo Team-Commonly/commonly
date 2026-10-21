@@ -91,6 +91,19 @@ test('roster marker uses every installation pod, including pods outside the view
   expect(await agentsWithMultipleOutsiderGrantPods([{ agentName: 'scout' }])).toEqual(new Set());
 });
 
+test('roster marker treats a failed grant census as narrowing in every installation pod', async () => {
+  mockInstallationFind.mockReturnValue(chain([
+    { agentName: 'scout', instanceId: 'default', podId: POD },
+    { agentName: 'scout', instanceId: 'default', podId: OTHER },
+  ]));
+  mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }, { _id: OTHER, members: [SEAT] }]));
+  mockGrantFind.mockReturnValue({ select: () => ({ lean: async () => {
+    throw new Error('grant DB unavailable');
+  } }) });
+  expect(await agentsWithMultipleOutsiderGrantPods([{ agentName: 'scout', instanceId: 'default' }]))
+    .toEqual(new Set(['scout:default']));
+});
+
 test('a seat grant is in scope only when its seat is a current member and in its audience', async () => {
   mockGrantFind.mockReturnValue(chain([grant({ target: { kind: 'seat', id: SEAT } })]));
   expect(await podHasOutsiderWritableGrant(POD)).toBe(true);

@@ -1101,7 +1101,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         {blockedSeatNames.length > 0 && (
           <p className="v2-connector-aside__note" role="status">
             {t('tools.multiGrantPodPostingBlocked', {
-              defaultValue: '{{agents}} cannot post while connectors reach more than one of their pods. End a grant until only one pod has connector access.',
+              defaultValue: '{{agents}} cannot post in any pod while connectors reach more than one of their pods. End a grant until only one pod has connector access.',
               agents: blockedSeatNames.join(t('tools.listSeparator', { defaultValue: ', ' })),
             })}
           </p>

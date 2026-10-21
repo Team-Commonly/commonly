@@ -2275,7 +2275,7 @@
     "notEnabled": "not enabled on this instance · ask your operator",
     "notGranted": "not granted",
     "nothingMatches": "Nothing matches.",
-    "multiGrantPodPostingBlocked": "{{agents}} cannot post while connectors reach more than one of their pods. End a grant until only one pod has connector access.",
+    "multiGrantPodPostingBlocked": "{{agents}} cannot post in any pod while connectors reach more than one of their pods. End a grant until only one pod has connector access.",
     "runtimePostingStatusUnavailable": "Could not check whether connector grants limit agent posting. Try again shortly.",
     "unknownConnector": "Unknown connector",
     "unknownWritePolicy": "write policy unavailable",

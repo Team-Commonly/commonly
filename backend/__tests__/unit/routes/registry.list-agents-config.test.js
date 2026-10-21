@@ -186,6 +186,17 @@ describe('registry list pod agents config payload', () => {
       skillEnvKeys: ['github'],
     }));
     expect(res.body.agents[0].runtime).not.toHaveProperty('webhookSecret');
+
+    agentsWithMultipleOutsiderGrantPods.mockRejectedValueOnce(new Error('grant DB unavailable'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const unavailable = await request(app).get('/api/registry/pods/pod-1/agents');
+      expect(unavailable.status).toBe(200);
+      expect(unavailable.body.agents[0]).toEqual(expect.objectContaining({
+        runtimeNarrowedByMultipleGrantPods: false,
+        runtimeNarrowingUnavailable: true,
+      }));
+    } finally { warn.mockRestore(); }
   });
 
   it('uses the chat principal label when scoped labels differ', async () => {
