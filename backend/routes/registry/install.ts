@@ -48,7 +48,7 @@ const {
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
-const { firstAgentWakeDefault } = require('../../services/wakeDefaultService');
+const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 
 // Inlined per-route limiter. This comment used to attribute its clean CodeQL
@@ -739,17 +739,10 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       }
     }
 
-    // ADR-018 D8.1: the first agent a person brings into a pod wakes on every
-    // human message by default (services/wakeDefaultService.ts). Best effort:
-    // a failed lookup installs as before, mention-only.
-    try {
-      const wakeDefault = await firstAgentWakeDefault({
-        podId, agentName, instanceId: normalizedInstanceId, installConfig,
-      });
-      if (wakeDefault) Object.assign(installConfig, wakeDefault);
-    } catch (err) {
-      console.warn('[install] first-agent wake default skipped:', (err as Error).message);
-    }
+    // ADR-018 D8.1: an agent a person brings into a pod wakes on every human
+    // message by default (services/wakeDefaultService.ts).
+    const wakeDefault = personAgentWakeDefault(installConfig);
+    if (wakeDefault) Object.assign(installConfig, wakeDefault);
 
     const installation = await AgentInstallation.install(agentName, podId, {
       version: version || agent.latestVersion,

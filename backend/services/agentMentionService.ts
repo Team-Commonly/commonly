@@ -1108,9 +1108,9 @@ const resolveAdjacentReplyTarget = async ({
   };
 };
 
-// ADR-018 D8.1: an install whose ambient wake was turned on by default (the
-// first agent a person brings into a pod, services/wakeDefaultService.ts)
-// wakes only on a HUMAN's message. Agent-authored messages never wake it, so
+// ADR-018 D8.1: an install whose ambient wake was turned on by default (an
+// agent a person brings into a pod, services/wakeDefaultService.ts) wakes
+// only on a HUMAN's message. Agent-authored messages never wake it, so
 // the default can't start agents answering each other. An unknown sender is
 // not a known human, so it doesn't wake it either. Installs that opted in
 // explicitly carry no such flag and keep their delivery exactly.
