@@ -15,6 +15,7 @@ import opencode from './opencode.js';
 import qwen from './qwen.js';
 import dsh from './dsh.js';
 import goose from './goose.js';
+import hermes from './hermes.js';
 
 const ADAPTERS = {
   [stub.name]: stub,
@@ -25,6 +26,7 @@ const ADAPTERS = {
   [qwen.name]: qwen,
   [dsh.name]: dsh,
   [goose.name]: goose,
+  [hermes.name]: hermes,
 };
 
 export const listAdapterNames = () => Object.keys(ADAPTERS);
