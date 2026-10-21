@@ -52,6 +52,7 @@ import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
+import { isAnswerableToolError } from '../public-tool-error.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
@@ -299,7 +300,7 @@ const makeEventParser = () => {
   let usage = null;
   let errorMessage = null;
   // Every tool call that came back as an error, for the public-seat check in
-  // spawn (publicToolConnectionFailure).
+  // spawn (publicToolFailure).
   const toolErrors = [];
   const consumeLine = (line) => {
     if (!line.trim()) return;
@@ -357,30 +358,32 @@ const makeEventParser = () => {
 //
 // OpenCode names an MCP tool `<server>_<tool>`, and a failed call reports
 // `state.status: 'error'` with the message in `state.error` (measured on
-// OpenCode 1.19.0). Only tools of the declared Commonly server count, and only
-// connection failures: an authorization or validation error is an answer the
-// model can still give in plain words. This adapter-level check covers
-// OpenCode until the adapter-agnostic readiness check lands.
-export const PUBLIC_TOOL_CONNECTION_FAILED_CODE = 'public_tool_connection_failed';
-const CONNECTION_ERROR_RE = /fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|socket hang up|network error|timed out|timeout/i;
+// OpenCode 1.19.0). Only tools of the declared Commonly server count. Of
+// those, only the errors `isAnswerableToolError` names (an API refusal the
+// person can be told about, or a schema mistake the model fixes) leave the
+// turn to be posted; any other failure withholds it. This adapter-level check
+// stays beside the adapter-agnostic readiness witness (TASK-256): it sees the
+// runtime's own view of each call, and the witness sees a server that never
+// started, so each catches what the other cannot.
+export const PUBLIC_TOOL_FAILED_CODE = 'public_tool_failed';
 
-export const publicToolConnectionFailure = (toolErrors, mcpServers) => {
+export const publicToolFailure = (toolErrors, mcpServers) => {
   const prefixes = (Array.isArray(mcpServers) ? mcpServers : [])
     .filter((server) => server?.name && isShippedCommonlyMcpCommand(server.command))
     .map((server) => `${server.name}_`);
   if (!prefixes.length) return null;
   return (toolErrors || []).find(({ tool, error }) => (
-    prefixes.some((prefix) => tool.startsWith(prefix)) && CONNECTION_ERROR_RE.test(error)
+    prefixes.some((prefix) => tool.startsWith(prefix)) && !isAnswerableToolError(error)
   )) || null;
 };
 
-const publicToolConnectionError = ({ tool, error }) => {
-  const reason = String(error).replace(/\s+/g, ' ').slice(0, 160);
+const publicToolFailedError = ({ tool, error }) => {
+  const reason = String(error).replace(/\s+/g, ' ').slice(0, 160) || '(empty error)';
   const failure = new Error(
-    `public seat withheld this turn's reply: Commonly tool ${tool} could not reach the API (${reason}), `
-    + 'so nothing was posted and the event stays unacked for retry',
+    `public seat withheld this turn's reply: Commonly tool ${tool} failed in a way the model must not narrate `
+    + `(${reason}), so nothing was posted and the event stays unacked for retry`,
   );
-  failure.code = PUBLIC_TOOL_CONNECTION_FAILED_CODE;
+  failure.code = PUBLIC_TOOL_FAILED_CODE;
   return failure;
 };
 
@@ -835,8 +838,8 @@ export default {
         spawnImpl: ctx._spawnImpl,
       });
       if (isPublic) {
-        const failure = publicToolConnectionFailure(result.toolErrors, ctx.environment?.mcp);
-        if (failure) throw publicToolConnectionError(failure);
+        const failure = publicToolFailure(result.toolErrors, ctx.environment?.mcp);
+        if (failure) throw publicToolFailedError(failure);
       }
       return {
         text: result.text.trim(),
