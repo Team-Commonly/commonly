@@ -268,14 +268,20 @@ class Journey:
         # path gains parameters as the page does (#2293 added from and adapter),
         # and an exact match turned that into eleven false failures.
         parts = urllib.parse.urlsplit(path)
-        query = dict(urllib.parse.parse_qsl(parts.query))
+        # Blank values kept: `?pod=&pod=<ours>` repeats a key whose first value the page reads as ''.
+        pairs = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        query = dict(pairs)
         want = {'pod': self.pod, 'name': self.seat, 'from': 'card'}
         card_adapter = ((self.card.get('payload') or {}).get('params') or {}).get('adapter')
-        if 'adapter' in query:
+        if card_adapter or 'adapter' in query:
             want['adapter'] = card_adapter
         wrong = {key: query.get(key) for key, value in want.items() if query.get(key) != value}
-        if parts.path != '/v2/agents/byo' or wrong:
-            raise StepFailed(f'connectPath was {path!r}, expected /v2/agents/byo with {want}')
+        # A same-site path only, and each key once: the page reads the first value of a repeated key,
+        # and a dict of the pairs keeps the last.
+        repeated = sorted({key for key, _ in pairs if sum(1 for k, _ in pairs if k == key) > 1})
+        if parts.scheme or parts.netloc or parts.path != '/v2/agents/byo' or wrong or repeated:
+            raise StepFailed(f'connectPath was {path!r}, expected /v2/agents/byo with {want}'
+                             + (f' (repeated: {repeated})' if repeated else ''))
         return {'adapter': query.get('adapter')}
 
     def byo(self):
