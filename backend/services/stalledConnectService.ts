@@ -328,6 +328,8 @@ const resolveConnected = async ({
   const AgentMessageService = require('./agentMessageService');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { buildAgentUsername } = require('./agentIdentityService');
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const AttentionItemService = require('./attentionItemService');
 
   const open = await StalledConnectEpisode.find({ status: 'open' }).limit(200).lean();
   for (const ep of open as Array<Record<string, any>>) {
@@ -376,6 +378,11 @@ const resolveConnected = async ({
     } catch (error) {
       console.warn('[stalled-connect] resolution post failed:', (error as Error).message);
     }
+    // The nudge asked the installer to start the agent, and they did. Its
+    // "needs you" row resolves now as `actioned`, whether or not the
+    // confirmation post above went out: a thread reply was never going to be
+    // how this one got answered.
+    if (ep.nudgeMessageId) await AttentionItemService.resolveActioned('message', String(ep.nudgeMessageId));
 
     await StalledConnectEpisode.updateOne(
       { _id: ep._id, status: 'open' },

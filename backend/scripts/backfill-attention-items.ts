@@ -18,7 +18,7 @@ const Message = require('../models/Message');
 const Task = require('../models/Task');
 const User = require('../models/User');
 const {
-  recordApproval, recordDecision, recordMentionedUsers, recordTaskAttention, TASK_HANDOFF_RE,
+  recordApproval, recordDecision, recordMentionedUsers, recordTaskAttention, TASK_HANDOFF_CANDIDATE_RE,
 } = require('../services/attentionItemService');
 
 const APPLY = process.argv.includes('--apply');
@@ -54,7 +54,7 @@ export const main = async (): Promise<void> => {
       Activity.find({ type: 'approval_needed', 'approval.status': 'pending', deleted: { $ne: true } }).lean(),
       DecisionRequest.find({ status: 'pending' }).lean(),
       Task.find({
-        $or: [{ status: 'blocked' }, { 'updates.text': { $regex: TASK_HANDOFF_RE } }],
+        $or: [{ status: 'blocked' }, { 'updates.text': { $regex: TASK_HANDOFF_CANDIDATE_RE } }],
       }).select('podId taskId title status notes updates updatedAt').lean(),
       legacyAcknowledgements(),
       Message.find({ createdAt: { $gte: cutoff } }).lean(),

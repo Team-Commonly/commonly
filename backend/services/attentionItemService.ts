@@ -281,6 +281,50 @@ export const sweepResolvedMentionAttention = async ({ apply = false }: { apply?:
   return { scanned: rows.length, eligible, resolved, unavailable };
 };
 
+/**
+ * A thread reply is the only reply (Sam, 2026-09-06), so an agent's mention
+ * nobody answers in its thread stays open for good. Seats post status and gate
+ * notes that name a person, and the 2026-10-20 audit found one founder's queue
+ * holding 113 of them, the oldest five weeks old. After
+ * AGENT_MENTION_MISSED_DAYS without a reply, such a row leaves the needs-you
+ * queue as `missed`: resolved, never counted as acted on, kept in the store,
+ * and its message still in the pod.
+ *
+ * Only an agent's mention expires this way. A person's mention, a decision, an
+ * approval and a handoff stay until answered: the person waiting on them is
+ * real. A row with no recorded actor is left alone, since it can't be shown to
+ * be an agent's.
+ */
+export const AGENT_MENTION_MISSED_DAYS = 7;
+
+export const sweepMissedAgentMentions = async (
+  { now = new Date(), apply = true }: { now?: Date; apply?: boolean } = {},
+) => {
+  const cutoff = new Date(now.getTime() - AGENT_MENTION_MISSED_DAYS * 24 * 60 * 60 * 1000);
+  const rows = await AttentionItem.find({
+    kind: 'mention',
+    status: 'open',
+    actorUserId: { $exists: true, $ne: null },
+    $or: [
+      { sourceCreatedAt: { $lt: cutoff } },
+      { sourceCreatedAt: { $exists: false }, createdAt: { $lt: cutoff } },
+    ],
+  }).select('_id actorUserId').lean();
+  if (!rows.length) return { scanned: 0, eligible: 0, missed: 0 };
+  const actorIds = [...new Set((rows as any[]).map((row) => String(row.actorUserId || '')).filter(Boolean))];
+  const bots = await User.find({ _id: { $in: actorIds }, isBot: true }).select('_id').lean();
+  const botIds = new Set((bots as any[]).map((bot) => String(bot._id)));
+  const ids = (rows as any[]).filter((row) => botIds.has(String(row.actorUserId || ''))).map((row) => row._id);
+  if (!apply || !ids.length) return { scanned: rows.length, eligible: ids.length, missed: 0 };
+  // Still open at write time: a reply or an acknowledgement that lands during
+  // the sweep keeps its own resolution.
+  const result = await AttentionItem.updateMany(
+    { _id: { $in: ids }, kind: 'mention', status: 'open' },
+    { $set: { status: 'resolved', resolvedAt: now, resolvedBy: 'missed' } },
+  );
+  return { scanned: rows.length, eligible: ids.length, missed: Number(result.modifiedCount || 0) };
+};
+
 export const recordApproval = async (approval: any): Promise<void> => {
   try {
     const podId = approval?.podId;
@@ -358,16 +402,57 @@ export const recordDecision = async (decision: any): Promise<void> => {
 // A task may be ordinary board history, or it may state a concrete blocked /
 // handoff fact. Capture only the latter at the write boundary; no reader
 // should parse arbitrary historic task prose into a queue card.
-export const TASK_HANDOFF_RE = /human\s+(merge\s+)?press|ready for (the\s+)?(human|sam)|sam'?s?\s+(ruling|call|decision)|awaiting\s+(sam|human)/i;
+//
+// A handoff ASKS for someone: "awaiting", "waiting on/for", "ready for" or
+// "needs", followed by "the human" or the username of one of the pod's own
+// human members, or "human (merge) press". A report of a ruling already made
+// ("X's ruling, 10-19: ...") asks nothing, and no instance's names live here:
+// the previous pattern spelled one person's name, and one report beginning
+// "Sam's ruling" opened 40 rows across a pod's four humans (2026-10-19).
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const HANDOFF_LEAD = String.raw`(?:awaiting|waiting\s+(?:on|for)|ready\s+for|needs?)`;
+const HUMAN_PRESS_RE = /\bhuman\s+(?:merge\s+)?press\b/i;
+const ASKS_A_HUMAN_RE = new RegExp(String.raw`\b${HANDOFF_LEAD}\s+(?:the\s+|a\s+)?human\b`, 'i');
+// Cheap gate before any member lookup, and the backfill's Mongo prefilter.
+// Every text isHandoffRequest accepts matches it.
+export const TASK_HANDOFF_CANDIDATE_RE = /human|awaiting|waiting\s+(?:on|for)|ready\s+for|\bneeds?\b/i;
+
+const named = (text: string, username: string): boolean => Boolean(username)
+  && new RegExp(String.raw`(^|[^A-Za-z0-9_-])@?${escapeRegExp(username)}(?![A-Za-z0-9_-])`, 'i').test(text);
+
+export const isHandoffRequest = (text: string, memberUsernames: string[] = []): boolean => {
+  const value = String(text || '');
+  if (HUMAN_PRESS_RE.test(value) || ASKS_A_HUMAN_RE.test(value)) return true;
+  const names = memberUsernames.map((name) => String(name || '').trim()).filter(Boolean).map(escapeRegExp);
+  if (!names.length) return false;
+  return new RegExp(String.raw`\b${HANDOFF_LEAD}\s+@?(?:${names.join('|')})(?![A-Za-z0-9_-])`, 'i').test(value);
+};
+
+// Who a blocked or handoff card goes to: the human members the update names
+// (@handle or username), otherwise the pod's creator. Paging every member made
+// each status flip in a shared work pod a card for every human in it. If the
+// creator has left, the card goes to the current members rather than to nobody.
+export const handoffRecipients = <T extends { _id: unknown; username?: string }>(
+  members: T[], text: string, createdBy: unknown,
+): T[] => {
+  const mentioned = members.filter((member) => named(String(text || ''), String(member.username || '')));
+  if (mentioned.length) return mentioned;
+  const creator = members.filter((member) => String(member._id) === String(createdBy || ''));
+  return creator.length ? creator : members;
+};
 
 export const recordTaskAttention = async (task: any, options: TaskAttentionOptions = {}): Promise<void> => {
   try {
     const last = Array.isArray(task?.updates) ? task.updates[task.updates.length - 1] : null;
     const blocked = task?.status === 'blocked';
-    const handoff = Boolean(last && TASK_HANDOFF_RE.test(String(last.text || '')));
-    if (!task?.podId || (!handoff && !(options.includeBlocked && blocked))) return;
-    const recipients = await currentHumanMembers(task.podId);
-    const pod = await Pod.findById(task.podId).select('name').lean();
+    const text = String(last?.text || '');
+    const mightAsk = Boolean(last) && TASK_HANDOFF_CANDIDATE_RE.test(text);
+    if (!task?.podId || (!mightAsk && !(options.includeBlocked && blocked))) return;
+    const members = await currentHumanMembers(task.podId);
+    const handoff = mightAsk && isHandoffRequest(text, members.map((member) => String(member.username || '')));
+    if (!handoff && !(options.includeBlocked && blocked)) return;
+    const pod = await Pod.findById(task.podId).select('name createdBy').lean();
+    const recipients = handoffRecipients(members, text, pod?.createdBy);
     const taskKey = String(task._id || task.taskId);
     const sequence = String(last?._id || last?.createdAt?.getTime?.() || task.updatedAt?.getTime?.() || taskKey);
     await recordForRecipients(recipients, {
@@ -438,6 +523,25 @@ export const sweepDoneTaskHandoffs = async ({ apply = false }: { apply?: boolean
     resolved = Number(result.modifiedCount || 0);
   }
   return { scanned: rows.length, eligible: eligibleIds.length, resolved, missing, apply };
+};
+
+/**
+ * Close a source's open rows as `actioned`: the recipient did what the row
+ * asked, somewhere other than its thread. Used only where that action is
+ * observable, today the stalled-connect nudge, whose ask ("start me") is met
+ * when the agent first connects. Growth counts `actioned` as acted on.
+ */
+export const resolveActioned = async (sourceType: SourceType, sourceId: unknown): Promise<void> => {
+  const id = sourceKey(sourceType, sourceId);
+  if (!id) return;
+  try {
+    await AttentionItem.updateMany(
+      { 'source.type': sourceType, 'source.id': id, status: 'open' },
+      { $set: { status: 'resolved', resolvedAt: new Date(), resolvedBy: 'actioned' } },
+    );
+  } catch (error) {
+    console.warn('[attention] actioned resolution failed; leaving item visible:', (error as Error).message);
+  }
 };
 
 export const resolve = async (sourceType: SourceType, sourceId: unknown): Promise<void> => {
@@ -697,6 +801,6 @@ export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boo
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };

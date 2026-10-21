@@ -39,6 +39,11 @@ jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: (n, i) => (i && i !== 'default' ? `${n}-${i}` : n),
 }));
 
+const mockAttentionResolve = jest.fn();
+jest.mock('../../../services/attentionItemService', () => ({
+  resolveActioned: (...a) => mockAttentionResolve(...a),
+}));
+
 const mockEpCreate = jest.fn();
 const mockEpFind = jest.fn();
 const mockEpUpdate = jest.fn();
@@ -276,6 +281,31 @@ describe('keeping the forward promise', () => {
     expect(posted.content).toContain('commonly agent run ai1-agent');
   });
 
+  it("resolves the installer's needs-you row for the nudge once the agent connects", async () => {
+    const usedAt = new Date(NOW.getTime() - 10 * MINUTE);
+    setup({ installs: [], open: [{ ...openEpisode, nudgeMessageId: 'msg-nudge-1' }] });
+    mockInstallFindById.mockReturnValue({
+      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: usedAt }] })),
+    });
+
+    await scan({ now: NOW });
+
+    expect(mockAttentionResolve).toHaveBeenCalledWith('message', 'msg-nudge-1');
+  });
+
+  it('resolves the nudge row even when the confirmation post fails: the person still did it', async () => {
+    const usedAt = new Date(NOW.getTime() - 10 * MINUTE);
+    setup({ installs: [], open: [{ ...openEpisode, nudgeMessageId: 'msg-nudge-2' }] });
+    mockInstallFindById.mockReturnValue({
+      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: usedAt }] })),
+    });
+    mockPost.mockRejectedValueOnce(new Error('post down'));
+
+    await scan({ now: NOW });
+
+    expect(mockAttentionResolve).toHaveBeenCalledWith('message', 'msg-nudge-2');
+  });
+
   it('keeps waiting while it is still never-connected', async () => {
     setup({ installs: [], open: [openEpisode] });
     mockInstallFindById.mockReturnValue({ lean: () => Promise.resolve(install()) });
@@ -284,6 +314,7 @@ describe('keeping the forward promise', () => {
 
     expect(r.resolved).toHaveLength(0);
     expect(mockPost).not.toHaveBeenCalled();
+    expect(mockAttentionResolve).not.toHaveBeenCalled();
   });
 
   it('closes silently when the seat was uninstalled — no room, no promise to keep', async () => {

@@ -420,7 +420,10 @@ describe('attentionItemService', () => {
     expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 
-  it('materializes a blocked board row once for each current human recipient', async () => {
+  // A blocked card that names nobody goes to the pod's creator, not to every
+  // human in the pod: a status flip in a shared work pod used to page all of
+  // them (2026-10-20 needs-you audit).
+  it('materializes a blocked board row for the pod creator when the update names nobody', async () => {
     mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: ['owner', 'sam'] }));
     mockUserFind.mockReturnValue(chain([
       { _id: 'owner', username: 'owner', isBot: false },
@@ -432,12 +435,97 @@ describe('attentionItemService', () => {
       title: 'Choose a deploy shape', updates: [{ _id: 'update-1', text: 'Blocked on an upstream choice.' }],
     }, { includeBlocked: true });
 
-    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
     expect(mockUpdateOne).toHaveBeenCalledWith(
-      expect.objectContaining({ 'source.type': 'task', 'source.id': 'task-1:update-1' }),
+      expect.objectContaining({ recipientUserId: 'owner', 'source.type': 'task', 'source.id': 'task-1:update-1' }),
       expect.objectContaining({ $setOnInsert: expect.objectContaining({ kind: 'handoff', title: 'Choose a deploy shape' }) }),
       { upsert: true },
     );
+  });
+
+  describe('a handoff asks; a report of a ruling does not', () => {
+    const shipRoom = () => {
+      mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: ['owner', 'sam', 'lee'] }));
+      mockUserFind.mockReturnValue(chain([
+        { _id: 'owner', username: 'owner', isBot: false },
+        { _id: 'sam', username: 'Sam', isBot: false },
+        { _id: 'lee', username: 'lee', isBot: false },
+      ]));
+    };
+    const update = (text) => ({
+      _id: 'task-2', podId: 'pod-1', taskId: 'TASK-2', status: 'pending',
+      title: 'Wave 1 #1', updates: [{ _id: 'update-2', text }],
+    });
+    const recipients = () => mockUpdateOne.mock.calls.map(([selector]) => selector.recipientUserId);
+
+    it("a note reporting a ruling already made opens nothing (the 2026-10-19 \"Sam's ruling\" fan-out)", async () => {
+      shipRoom();
+      // "needs" passes the cheap gate, so this reaches isHandoffRequest itself.
+      await AttentionItemService.recordTaskAttention(update("Sam's ruling, 10-19 (relayed by Cofounder): writes are allowed when the member approves them; the Linear entry needs a re-pin."));
+      expect(mockUserFind).toHaveBeenCalled();
+      expect(mockUpdateOne).not.toHaveBeenCalled();
+    });
+
+    it('an ask naming a human member goes to that member only', async () => {
+      shipRoom();
+      await AttentionItemService.recordTaskAttention(update("Awaiting @sam's call on the scope before the build."));
+      expect(recipients()).toEqual(['sam']);
+    });
+
+    it('an ask of "the human" goes to the pod creator', async () => {
+      shipRoom();
+      await AttentionItemService.recordTaskAttention(update('Gated and green; ready for the human press.'));
+      expect(recipients()).toEqual(['owner']);
+    });
+
+    it('an ask naming someone who is not a member of this pod opens nothing', async () => {
+      shipRoom();
+      await AttentionItemService.recordTaskAttention(update("Awaiting Bob's call before the build."));
+      expect(mockUpdateOne).not.toHaveBeenCalled();
+    });
+
+    it('ordinary progress prose costs no member lookup', async () => {
+      shipRoom();
+      await AttentionItemService.recordTaskAttention(update('Rebased onto main; CI is running.'));
+      expect(mockUserFind).not.toHaveBeenCalled();
+      expect(mockUpdateOne).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('isHandoffRequest and handoffRecipients', () => {
+    it('knows no names of its own: a name counts only when it is a member of this pod', () => {
+      expect(AttentionItemService.isHandoffRequest('ready for sam', [])).toBe(false);
+      expect(AttentionItemService.isHandoffRequest('ready for sam', ['Sam'])).toBe(true);
+      expect(AttentionItemService.isHandoffRequest('needs lee-ops review', ['lee'])).toBe(false);
+      expect(AttentionItemService.isHandoffRequest("Sam's ruling, 10-19: ship it", ['Sam'])).toBe(false);
+      expect(AttentionItemService.isHandoffRequest('Waiting on a human merge press.', [])).toBe(true);
+    });
+
+    it('"human (merge) press" is an ask on its own, with no lead word and no members (only HUMAN_PRESS_RE accepts it)', () => {
+      expect(AttentionItemService.isHandoffRequest('Gated and green; human merge press please.', [])).toBe(true);
+      expect(AttentionItemService.isHandoffRequest('human press', [])).toBe(true);
+    });
+
+    it('with no human members left, a bare lead word is not an ask (the empty-names guard)', () => {
+      // Without the guard the alternation is empty and the lookahead passes on
+      // any non-word character, so these would page the creator fallback.
+      expect(AttentionItemService.isHandoffRequest('awaiting .', [])).toBe(false);
+      expect(AttentionItemService.isHandoffRequest('needs ', [])).toBe(false);
+      expect(AttentionItemService.isHandoffRequest('awaiting .', ['', '  '])).toBe(false);
+    });
+
+    it('every accepted text passes the cheap candidate gate', () => {
+      for (const text of ['ready for sam', 'Awaiting the human', 'human merge press', 'needs @lee', 'waiting for lee']) {
+        expect(AttentionItemService.TASK_HANDOFF_CANDIDATE_RE.test(text)).toBe(true);
+      }
+    });
+
+    it('named members first, then the creator, then everyone when the creator has left', () => {
+      const members = [{ _id: 'owner', username: 'owner' }, { _id: 'sam', username: 'Sam' }];
+      expect(AttentionItemService.handoffRecipients(members, 'over to @Sam', 'owner').map((m) => m._id)).toEqual(['sam']);
+      expect(AttentionItemService.handoffRecipients(members, 'blocked', 'owner').map((m) => m._id)).toEqual(['owner']);
+      expect(AttentionItemService.handoffRecipients(members, 'blocked', 'gone').map((m) => m._id)).toEqual(['owner', 'sam']);
+    });
   });
 
   // createdBy keeps a departed creator's id after leavePod. Membership is
@@ -624,5 +712,85 @@ describe('an agent answering the person who asked', () => {
     await answer('@lee here is the answer.');
     expect(recipients()).toEqual(['lee']);
     warn.mockRestore();
+  });
+});
+
+describe('actioned: the recipient did what the row asked, outside its thread', () => {
+  beforeEach(() => { jest.clearAllMocks(); mockUpdateMany.mockResolvedValue({ modifiedCount: 1 }); });
+
+  it("closes a source's open rows as actioned, which Growth counts as acted on", async () => {
+    await AttentionItemService.resolveActioned('message', 'msg-nudge-1');
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { 'source.type': 'message', 'source.id': 'msg-nudge-1', status: 'open' },
+      { $set: { status: 'resolved', resolvedAt: expect.any(Date), resolvedBy: 'actioned' } },
+    );
+  });
+
+  it('does nothing without a source id', async () => {
+    await AttentionItemService.resolveActioned('message', '');
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('plain resolve() still writes no resolvedBy (approval, decision and task resolvers rely on that)', async () => {
+    await AttentionItemService.resolve('approval', 'appr-1');
+    expect(mockUpdateMany.mock.calls[0][1].$set).not.toHaveProperty('resolvedBy');
+  });
+});
+
+describe('an agent mention nobody answered for a week leaves the queue as missed', () => {
+  const NOW = new Date('2026-10-20T12:00:00Z');
+  const CUTOFF = new Date('2026-10-13T12:00:00Z');
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUpdateMany.mockResolvedValue({ modifiedCount: 1 });
+  });
+
+  it("resolves an agent's week-old mention as missed and leaves a person's alone", async () => {
+    mockFind.mockReturnValue(chain([{ _id: 'row-agent', actorUserId: 'bot-1' }, { _id: 'row-person', actorUserId: 'human-1' }]));
+    mockUserFind.mockReturnValue(chain([{ _id: 'bot-1' }]));
+
+    const result = await AttentionItemService.sweepMissedAgentMentions({ now: NOW });
+
+    expect(mockUserFind).toHaveBeenCalledWith({ _id: { $in: ['bot-1', 'human-1'] }, isBot: true });
+    expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { _id: { $in: ['row-agent'] }, kind: 'mention', status: 'open' },
+      { $set: { status: 'resolved', resolvedAt: NOW, resolvedBy: 'missed' } },
+    );
+    expect(result).toEqual({ scanned: 2, eligible: 1, missed: 1 });
+  });
+
+  it('looks only at open mentions with an actor, older than seven days by their source time', async () => {
+    mockFind.mockReturnValue(chain([]));
+
+    await AttentionItemService.sweepMissedAgentMentions({ now: NOW });
+
+    expect(mockFind).toHaveBeenCalledWith({
+      kind: 'mention',
+      status: 'open',
+      actorUserId: { $exists: true, $ne: null },
+      $or: [
+        { sourceCreatedAt: { $lt: CUTOFF } },
+        { sourceCreatedAt: { $exists: false }, createdAt: { $lt: CUTOFF } },
+      ],
+    });
+    // Nothing old enough: no actor lookup, no write.
+    expect(mockUserFind).not.toHaveBeenCalled();
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('a dry run counts without writing', async () => {
+    mockFind.mockReturnValue(chain([{ _id: 'row-agent', actorUserId: 'bot-1' }]));
+    mockUserFind.mockReturnValue(chain([{ _id: 'bot-1' }]));
+
+    const result = await AttentionItemService.sweepMissedAgentMentions({ now: NOW, apply: false });
+
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ scanned: 1, eligible: 1, missed: 0 });
+  });
+
+  it('the window is seven days', () => {
+    expect(AttentionItemService.AGENT_MENTION_MISSED_DAYS).toBe(7);
   });
 });
