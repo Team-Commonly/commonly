@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync
 import { join, dirname, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
+import { createHash } from 'crypto';
 
 import { createClient } from '../lib/api.js';
 import {
@@ -1241,6 +1242,16 @@ export const performRun = ({
       `${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`,
     ),
   });
+  // OpenCode retains tool-call IDs in its resumed history. A Gemini proxy
+  // marks those IDs with signature references, so changing providers must
+  // start a fresh session before another upstream can receive them.
+  const sessionBinding = adapter?.name === 'opencode'
+    ? createHash('sha256').update(JSON.stringify([
+      seatEnvironment?.provider?.id || null,
+      seatEnvironment?.provider?.baseURL || null,
+      seatEnvironment?.provider?.keyFile || null,
+    ])).digest('hex')
+    : null;
   let running = true;
   // Stop-after-N-auth-failures: without this, a revoked token leaves the
   // poller hammering 401s forever at 60s backoff — invisible to the user.
@@ -1531,7 +1542,7 @@ export const performRun = ({
   const runTurn = async ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
   }) => {
-    const sessionId = getSession(agentName, eventPodId);
+    const sessionId = getSession(agentName, eventPodId, { binding: sessionBinding });
     // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
     // and (if the adapter returns a summary) patch-sync back after.
     const memoryLongTerm = await readLongTerm(client, { onError });
@@ -1666,7 +1677,7 @@ export const performRun = ({
     }
 
     if (result.newSessionId) {
-      setSession(agentName, eventPodId, result.newSessionId);
+      setSession(agentName, eventPodId, result.newSessionId, { binding: sessionBinding });
     }
     // Decide whether to post the CLI's final text. The agent owns its posting:
     // if it already spoke this turn through commonly_post_message, echoing its

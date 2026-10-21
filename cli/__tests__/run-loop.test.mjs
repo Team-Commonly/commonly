@@ -1660,6 +1660,45 @@ describe('performRun', () => {
     expect(seenSessionIds).toEqual([null, 'claude-sid-42']);
   });
 
+  test('OpenCode starts a fresh session when its provider changes, then resumes that provider', async () => {
+    let eventNumber = 0;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/context')) return { podId: 'pod-abc', revision: 0, focus: null };
+      eventNumber += 1;
+      return { events: [makeEvent({ _id: `provider-turn-${eventNumber}` })] };
+    });
+    createClient.mockReturnValue({ get: mockGet, post: jest.fn().mockResolvedValue({}) });
+    const seenSessionIds = [];
+    const adapter = {
+      name: 'opencode',
+      supportsProvider: true,
+      detect: stubAdapter.detect,
+      spawn: jest.fn(async (_prompt, ctx) => {
+        seenSessionIds.push(ctx.sessionId);
+        return { text: 'ok', newSessionId: `session-${seenSessionIds.length}` };
+      }),
+    };
+    const runWithProvider = async (baseURL) => {
+      const run = performRun({
+        instanceUrl: 'http://localhost:5000',
+        token: 'cm_agent_test',
+        adapter,
+        agentName: 'my-stub',
+        environment: { provider: { id: 'google', baseURL, keyFile: '/keys/google' } },
+        setTimeoutImpl: noopTimeout,
+      });
+      await drainMicrotasks();
+      run.stop();
+    };
+
+    await runWithProvider('https://generativelanguage.googleapis.com/v1beta/openai');
+    await runWithProvider('https://api.other-provider.example/v1');
+    await runWithProvider('https://api.other-provider.example/v1');
+    expect(seenSessionIds).toEqual([null, null, 'session-2']);
+  });
+
   test('clearSessions removes persisted session ids for an agent', async () => {
     setSession('my-stub', 'pod-a', 'sid-a');
     setSession('my-stub', 'pod-b', 'sid-b');
