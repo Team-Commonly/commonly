@@ -341,6 +341,9 @@ const preparePublicCodexHome = async (ctx) => {
 const PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES = 32 * 1024;
 
 const writePublicCodexInstructions = async (publicHome, ctx) => {
+  // Codex loads this file before AGENTS.md when it exists. Clear any leftover
+  // override on every spawn so it cannot shadow the seat's declared skills.
+  await rm(join(publicHome, 'AGENTS.override.md'), { force: true });
   const declared = Array.isArray(ctx.environment?.skills?.claude) ? ctx.environment.skills.claude : [];
   const baseDir = ctx.cwd || process.cwd();
   const text = await skillsAsText(
