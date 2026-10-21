@@ -9125,12 +9125,19 @@ body.modern-ui.v2-canvas {
   overflow-x: auto;
 }
 
-/* The tool's own name beside the readable verb, as meta. It wraps as one
-   unit, so a narrow card never splits the verb from its number. */
+/* A readable connector call: the verb, then the tool's own name as meta. The
+   gap is a column gap, so a tool name that wraps onto its own line starts
+   flush left rather than indented (Cofounder at 390). */
+.v2-approval__action--tool {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+}
+
+/* The tool name wraps as one unit, so a narrow card never splits the verb from its number. */
 .v2-approval__tool-name {
-  display: inline-block;
   white-space: nowrap;
-  margin-left: 8px;
   font: 500 11.5px/1.4 var(--v2-font-mono);
   color: var(--v2-text-muted);
 }

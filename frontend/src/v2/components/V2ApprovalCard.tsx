@@ -233,10 +233,14 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
         </div>
         {pendingToolCall ? (
           <>
-            <div className="v2-approval__action" data-testid="approval-action">
-              {readable?.verb ? t(readable.verb.key, readable.verb.vars) : pendingToolCall.tool}
-              {readable?.verb && <span className="v2-approval__tool-name">{pendingToolCall.tool}</span>}
-            </div>
+            {readable?.verb ? (
+              <div className="v2-approval__action v2-approval__action--tool" data-testid="approval-action">
+                <span>{t(readable.verb.key, readable.verb.vars)}</span>
+                <span className="v2-approval__tool-name">{pendingToolCall.tool}</span>
+              </div>
+            ) : (
+              <div className="v2-approval__action" data-testid="approval-action">{pendingToolCall.tool}</div>
+            )}
             {/* Every pinned argument, relabelled but never dropped (toolCallView). */}
             {readable && readable.rows.length > 0 && (
               <dl className="v2-approval__args" data-testid="approval-args">
