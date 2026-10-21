@@ -438,3 +438,10 @@ slack:
 hostedMcp:
   googleCalendar:
     enabled: false
+
+# The team's own accounts, left out of the "typed and got no reply" alert, come
+# from the secret store (INTERNAL_ACCOUNTS, #2373). The key exists, and on
+# 2026-10-21 a throwaway ExternalSecret synced it while api-keys stayed Ready, so
+# turning this on doesn't fail the api-keys sync (see values.yaml).
+internalAccounts:
+  fromSecret: true
