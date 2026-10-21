@@ -70,6 +70,7 @@ export interface GithubToolDefinition extends ToolDefinitionBase {
 export interface HostedToolDefinition extends ToolDefinitionBase {
   connectionType: 'hosted-mcp';
   entryId: string;
+  definitionDigest: string;
   /** Server-owned catalogue title for the agent-facing untrusted-content marker. */
   entryTitle: string;
   /** Refuse a changed or withdrawn upstream pin before approval or budget use. */
@@ -1204,6 +1205,8 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
             tool: definition.name,
             canonicalArgs,
             argsDigest: digestArgs(canonicalArgs),
+            ...(definition.connectionType === 'hosted-mcp'
+              ? { definitionDigest: definition.definitionDigest } : {}),
             // The parked envelope carries the credential owner so the record the
             // DECISION writes (approvalActionService) keeps naming it, even if
             // the Connection row is gone by then (§8).
@@ -1315,6 +1318,7 @@ export interface ApprovedToolCallInput {
   tool: string;
   args: Record<string, unknown>;
   expectedArgsDigest: string;
+  expectedDefinitionDigest?: string;
   approvalId: string;
 }
 
@@ -1334,9 +1338,16 @@ export const executeApprovedToolCall = async (
   // resolution and carries its id on the error; the catch prefers it.
   let credentialOwnerId: string | undefined;
   try {
+    if (input.expectedDefinitionDigest && !definition) {
+      throw new RoomGrantError('definition_digest_mismatch', 'hosted tool changed since approval; ask again', 409);
+    }
     if (!definition) throw new RoomGrantError('tool_not_found', 'tool is not registered', 404);
     if (digestArgs(input.args) !== input.expectedArgsDigest) {
       throw new RoomGrantError('args_digest_mismatch', 'approved tool arguments no longer match', 409);
+    }
+    if (definition.connectionType === 'hosted-mcp'
+      && (!input.expectedDefinitionDigest || definition.definitionDigest !== input.expectedDefinitionDigest)) {
+      throw new RoomGrantError('definition_digest_mismatch', 'hosted tool changed since approval; ask again', 409);
     }
     grant = (await RoomGrant.findOne({ grantId: input.grantId })) || undefined;
     if (!grant) throw new RoomGrantError('grant_not_found', 'grant not found', 404);

@@ -856,6 +856,7 @@ const executeApprovedToolCall = async (
     tool: string;
     args: Record<string, unknown>;
     expectedArgsDigest: string;
+    expectedDefinitionDigest?: string;
     approvalId: string;
   }) => Promise<{ result: unknown }>);
   const response = await execute({
@@ -864,6 +865,7 @@ const executeApprovedToolCall = async (
     tool: toolCall.tool,
     args: toolCall.canonicalArgs,
     expectedArgsDigest: toolCall.argsDigest,
+    expectedDefinitionDigest: toolCall.definitionDigest,
     approvalId,
   });
   return response.result;

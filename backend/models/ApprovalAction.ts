@@ -38,6 +38,8 @@ export interface ApprovalToolCall {
   tool: string;
   canonicalArgs?: Record<string, unknown>;
   argsDigest: string;
+  /** Complete hosted pin at park time; absent for GitHub App calls. */
+  definitionDigest?: string;
   /**
    * Whose credential the parked call would spend (scope §8), copied from the
    * resolved Connection so the record written at DECISION time still names the

@@ -110,6 +110,20 @@ test('executes on approved with the stored args and writes the second trail row'
   expect(mockEnqueue).not.toHaveBeenCalled();
 });
 
+test('passes a parked hosted definition digest to the broker without exposing it on the card', async () => {
+  const pending = row({ toolCall: { ...toolCall, tool: 'linear.create_issue', definitionDigest: 'pinned-definition' } });
+  const resolved = row({ status: 'resolved', decision: 'approved' });
+  mockApproval.findById.mockResolvedValue(pending);
+  mockApproval.findOneAndUpdate.mockResolvedValue(resolved);
+  broker.executeApprovedToolCall.mockResolvedValue({ result: { id: 9 } });
+
+  expect(service.buildCardPayload(pending).toolCall).toEqual({ tool: 'linear.create_issue' });
+  await service.resolveApproval({ approvalId: pending._id, callerUserId: OWNER, decision: 'approved' });
+  expect(broker.executeApprovedToolCall).toHaveBeenCalledWith(expect.objectContaining({
+    expectedDefinitionDigest: 'pinned-definition',
+  }));
+});
+
 test('uses the approver display name in the execution receipt', async () => {
   const pending = row();
   const resolved = row({ status: 'resolved', decision: 'approved' });
