@@ -274,6 +274,9 @@ redis:
   tolerations: []
 
 # External Secrets Operator configuration
+githubGig:
+  fromSecret: false
+
 externalSecrets:
   enabled: true
   # Prefix on every environment-scoped Secret Manager key (commonly-dev-NAME).

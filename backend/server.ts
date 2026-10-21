@@ -26,6 +26,7 @@ const discordWebhookRoutes = require('./routes/webhooks/discord');
 const slackWebhookRoutes = require('./routes/webhooks/slack');
 const groupMeWebhookRoutes = require('./routes/webhooks/groupme');
 const telegramWebhookRoutes = require('./routes/webhooks/telegram');
+const githubGigWebhookRoutes = require('./routes/webhooks/github');
 const discordRoutes = require('./routes/discord');
 const githubRoutes = require('./routes/github');
 const analyticsRoutes = require('./routes/analytics');
@@ -222,6 +223,9 @@ app.use(
 );
 app.use('/api/webhooks/groupme', express.json());
 app.use('/api/webhooks/telegram', express.json());
+// GitHub signs the exact bytes. This parser must precede global JSON parsing.
+app.use('/api/webhooks/github', githubGigWebhookRoutes.githubGigRawBody);
+app.use('/api/webhooks/github', githubGigWebhookRoutes.githubGigRawError);
 
 // JSON parsing for all other routes
 app.use(express.json());
@@ -261,6 +265,7 @@ app.use('/api/webhooks/discord', discordWebhookRoutes);
 app.use('/api/webhooks/slack', slackWebhookRoutes);
 app.use('/api/webhooks/groupme', groupMeWebhookRoutes);
 app.use('/api/webhooks/telegram', telegramWebhookRoutes);
+app.use('/api/webhooks/github', githubGigWebhookRoutes);
 app.use('/api/discord', discordRoutes);
 app.use('/api/github', githubRoutes);
 app.use('/api/analytics', analyticsRoutes);

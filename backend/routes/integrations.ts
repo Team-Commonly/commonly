@@ -13,6 +13,8 @@ const hostedMcpConnectRoutes = require('./hostedMcpConnect');
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
+const GithubGigBinding = require('../models/GithubGigBinding');
+// eslint-disable-next-line global-require
 const DiscordIntegration = require('../models/DiscordIntegration');
 // eslint-disable-next-line global-require
 const DiscordService = require('../services/discordService');
@@ -265,6 +267,48 @@ router.post('/github-app', writeIntegrationsRateLimit, auth, adminAuth, async (r
     console.error('Error creating GitHub App integration:', error);
     return res.status(500).json({ message: 'Server error' });
   }
+});
+
+// Explicit admin bind for the App-wide activity webhook. Connection creation
+// alone never opts a repository into a pod or agent-visible activity.
+router.put('/github-app/:id/gig-pod', writeIntegrationsRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
+  const podId = String(req.body?.podId || '');
+  const integrationId = String(req.params?.id || '');
+  if (!Types.ObjectId.isValid(podId)) return res.status(400).json({ message: 'Valid podId required' });
+  if (!Types.ObjectId.isValid(integrationId)) return res.status(404).json({ message: 'GitHub App connection not found' });
+  const integration = await Integration.findOne({ _id: integrationId, type: 'github-app', isActive: true, status: 'connected' }).lean();
+  if (!integration) return res.status(404).json({ message: 'GitHub App connection not found' });
+  const owner = String(req.body?.owner || integration.config?.owner || '').toLowerCase();
+  const repo = String(req.body?.repo || integration.config?.repo || '').toLowerCase();
+  if (!/^[A-Za-z0-9_.-]{1,100}$/.test(owner) || !/^[A-Za-z0-9_.-]{1,100}$/.test(repo)) {
+    return res.status(400).json({ message: 'Valid owner and repo required' });
+  }
+  const pod = await Pod.findById(new Types.ObjectId(podId)).select('type members').lean();
+  if (!pod) return res.status(404).json({ message: 'Pod not found' });
+  if (pod.type === 'agent-room' || pod.type === 'agent-dm' || pod.type === 'agent-admin') {
+    return res.status(400).json({ message: 'GitHub activity requires a shared pod' });
+  }
+  if (!pod.members?.some((member: unknown) => String(member) === String(req.user?.id))) {
+    return res.status(403).json({ message: 'Only pod members can bind GitHub activity' });
+  }
+  const binding = await GithubGigBinding.findOneAndUpdate(
+    { installationId: String(integration.installationId), owner, repo },
+    { $set: { podId: new Types.ObjectId(podId) }, $setOnInsert: { createdBy: new Types.ObjectId(String(req.user?.id)) } },
+    { new: true, upsert: true },
+  );
+  return res.json({ binding });
+});
+
+router.delete('/github-app/:id/gig-pod', writeIntegrationsRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
+  const integrationId = String(req.params?.id || '');
+  if (!Types.ObjectId.isValid(integrationId)) return res.status(404).json({ message: 'GitHub App connection not found' });
+  const integration = await Integration.findOne({ _id: integrationId, type: 'github-app' }).lean();
+  if (!integration) return res.status(404).json({ message: 'GitHub App connection not found' });
+  const owner = String(req.body?.owner || integration.config?.owner || '').toLowerCase();
+  const repo = String(req.body?.repo || integration.config?.repo || '').toLowerCase();
+  if (!/^[A-Za-z0-9_.-]{1,100}$/.test(owner) || !/^[A-Za-z0-9_.-]{1,100}$/.test(repo)) return res.status(400).json({ message: 'Valid owner and repo required' });
+  await GithubGigBinding.deleteOne({ installationId: String(integration.installationId), owner, repo });
+  return res.status(204).json({});
 });
 
 router.post('/ingest', ingestAuth, async (req: AuthReq, res: Res) => {

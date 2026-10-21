@@ -76,6 +76,7 @@ export interface V2Message {
   // the `...raw` spread — declared here so consumers can read it typed.
   payload?: {
     kind?: string;
+    elements?: unknown[];
     // kind 'starts': offers rendered as buttons under the message (first
     // session, direction B). A plain start sends its label as the person's own
     // message; `href` (an in-app /v2/ path) navigates, and `action: 'invite'`
