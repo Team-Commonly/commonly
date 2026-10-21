@@ -378,6 +378,12 @@ rbac:
   serviceAccount:
     name: agent-provisioner
 
+# The team's own accounts (INTERNAL_ACCOUNTS on the backend), read from the
+# secret store. Turn on only after the key exists there: the ExternalSecret
+# fails its whole sync on a missing key (templates/secrets/api-keys.yaml).
+internalAccounts:
+  fromSecret: false
+
 # Ingress configuration
 ingress:
   enabled: true

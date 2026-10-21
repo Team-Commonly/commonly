@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import OnboardingSilenceEpisode, { IAgentEventSnapshot } from '../models/OnboardingSilenceEpisode';
-import { HUMAN_FILTER, BOT_FILTER } from './userClassification';
+import { HUMAN_FILTER, BOT_FILTER, internalAccountExclusion } from './userClassification';
 
 /**
  * "Signed up, typed, got no reply" — the onboarding-silence alert (W4 item 2).
@@ -277,7 +277,12 @@ export const scan = async ({
   const windowStart = new Date(now.getTime() - lookbackHours * 60 * MINUTE_MS);
   const signupSince = new Date(now.getTime() - onboardingWindowDays * DAY_MS);
 
-  const newcomers = await User.find({ createdAt: { $gte: signupSince }, ...HUMAN_FILTER })
+  // Outside people only: the alert pages a human, and a teammate's or a QA
+  // account's silence is not a newcomer we failed (growth-ops opened two on
+  // 2026-10-16). See internalAccountExclusion for what counts as ours.
+  const newcomers = await User.find({
+    createdAt: { $gte: signupSince }, ...HUMAN_FILTER, ...internalAccountExclusion(),
+  })
     .select('_id username createdAt').lean();
 
   await resolveOpenEpisodes({ now, result });
