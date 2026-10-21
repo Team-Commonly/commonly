@@ -7,6 +7,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
     findOne: jest.fn(),
     find: jest.fn(),
     install: jest.fn(),
+    exists: jest.fn(),
   },
 }));
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
@@ -125,6 +126,7 @@ describe('registry install runtimeType fallback', () => {
 
     AgentInstallation.findOne.mockResolvedValue(null);
     AgentInstallation.find.mockReturnValue(buildLeanChain([]));
+    AgentInstallation.exists.mockResolvedValue(null);
     AgentInstallation.install.mockImplementation(async (_agentName, _podId, options) => ({
       _id: { toString: () => 'install-1' },
       agentName: 'sample-agent',
@@ -199,6 +201,44 @@ describe('registry install runtimeType fallback', () => {
       }),
     );
     expect(res.status).not.toHaveBeenCalledWith(500);
+  });
+
+  // ADR-018 D8.1: the route stores the first-agent wake default
+  // (wakeDefaultService.test.js runs the rule itself against real Mongo).
+  describe('the first agent a person brings in wakes on every human message', () => {
+    const ownAgentInstall = async () => {
+      AgentRegistry.getByName.mockResolvedValue({
+        agentName: 'sample-agent',
+        displayName: 'Sample Agent',
+        description: 'BYO agent',
+        latestVersion: '1.0.0',
+        manifest: persistedManifest({ name: 'sample-agent', version: '1.0.0', context: { required: [] } }),
+      });
+      const req = {
+        body: {
+          agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: { runtime: { runtimeType: 'webhook' } }, scopes: [],
+        },
+        user: { id: 'user-1', username: 'installer' },
+        userId: 'user-1',
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await installHandler(req, res);
+      return AgentInstallation.install.mock.calls[0][2].config;
+    };
+
+    it('stores wakeOnMessage (human-only) and board wakes off for the first one', async () => {
+      const config = await ownAgentInstall();
+      expect(config.runtime).toEqual(expect.objectContaining({ runtimeType: 'webhook', host: 'byo' }));
+      expect(config.wakeOnMessage).toEqual(expect.objectContaining({ enabled: true, humanOnly: true }));
+      expect(config.boardWake).toEqual({ enabled: false });
+    });
+
+    it('stores no wake setting when another agent in the pod already answers every message', async () => {
+      AgentInstallation.exists.mockResolvedValue({ _id: 'other-answerer' });
+      const config = await ownAgentInstall();
+      expect(config).not.toHaveProperty('wakeOnMessage');
+      expect(config).not.toHaveProperty('boardWake');
+    });
   });
 
   it('preserves opencode as an open driver identity through the registry model and install route', async () => {

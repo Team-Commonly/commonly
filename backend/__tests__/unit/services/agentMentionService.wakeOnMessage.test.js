@@ -267,6 +267,42 @@ describe('wake-on-message (ADR-018 D8)', () => {
     expect(res.woken).toEqual(['seat-b']);
   });
 
+  // ADR-018 D8.1 (2026-10-21): an ambient wake turned on by default (the
+  // first agent a person brings into a pod) carries humanOnly, so only a
+  // person's message wakes it. Explicit opt-ins keep their delivery exactly.
+  describe('a human-only wake (the first-agent default)', () => {
+    const humanOnly = (agentName) => ({
+      agentName, instanceId: 'default', displayName: agentName,
+      config: { wakeOnMessage: { enabled: true, humanOnly: true, reason: 'first-agent-default' } },
+    });
+
+    test('wakes on a person\'s message', async () => {
+      mockInstallations([humanOnly('sam-claude')]);
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1', message: { content: 'hi there', id: 'msg-h1' }, userId: 'user-1', username: 'sam',
+      });
+      expect(res.woken).toEqual(['sam-claude']);
+    });
+
+    test('never wakes on an agent\'s message, while an explicit opt-in beside it still does', async () => {
+      mockBotSender('scout');
+      mockInstallations([humanOnly('sam-claude'), install('seat-b', { optIn: true })]);
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1', message: { content: 'Scout says welcome', id: 'msg-h2' }, userId: 'bot-1', username: 'scout',
+      });
+      expect(res.woken).toEqual(['seat-b']);
+    });
+
+    test('an unknown sender is not a known human, so it doesn\'t wake either', async () => {
+      User.findById.mockReturnValue({ select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue(null) });
+      mockInstallations([humanOnly('sam-claude')]);
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1', message: { content: 'who am I', id: 'msg-h3' }, userId: 'ghost', username: 'ghost',
+      });
+      expect(res.woken).toEqual([]);
+    });
+  });
+
   test('DM-shaped pods are excluded — enqueueDmEvent already routes every message there', async () => {
     mockPod('agent-room');
     mockInstallations([install('seat-a', { optIn: true })]);
