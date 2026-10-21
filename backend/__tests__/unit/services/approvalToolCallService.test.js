@@ -207,11 +207,11 @@ test('an isError result keeps its failed ending and hides vendor content from ca
   expect(JSON.stringify(service.buildCardPayload(resolved))).not.toContain('private vendor text');
   expect(JSON.stringify(mockEnqueue.mock.calls[0][0])).not.toContain('private vendor text');
   expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
-    content: expect.stringContaining(' · failed'),
+    content: expect.stringContaining(' · failed (upstream_tool_error)'),
   }));
 });
 
-test.each(['grant_expired', 'budget_exhausted', 'merge_head_mismatch'])(
+test.each(['grant_expired', 'budget_exhausted', 'merge_head_mismatch', 'definition_digest_mismatch'])(
   'an approved broker refusal %s delivers its code and trail id without vendor prose', async (code) => {
   const pending = row();
   const resolved = row({ status: 'resolved', decision: 'approved' });
@@ -227,8 +227,31 @@ test.each(['grant_expired', 'budget_exhausted', 'merge_head_mismatch'])(
   expect(JSON.stringify(service.buildCardPayload(resolved))).not.toContain('private vendor text');
   expect(mockEnqueue.mock.calls[0][0].payload.content).toContain(code);
   expect(JSON.stringify(mockEnqueue.mock.calls[0][0])).not.toContain('private vendor text');
+  expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
+    content: expect.stringContaining(` · refused (${code})`),
+  }));
   },
 );
+
+test('a definition change refusal reaches the card with its code and no vendor error text', async () => {
+  const pending = row();
+  const resolved = row({ status: 'resolved', decision: 'approved' });
+  mockApproval.findById.mockResolvedValue(pending);
+  mockApproval.findOneAndUpdate.mockResolvedValue(resolved);
+  broker.executeApprovedToolCall.mockRejectedValue(Object.assign(new Error('private vendor text'), {
+    code: 'definition_digest_mismatch',
+    details: { callId: 'trail-changed', outcome: 'refused', recorded: true },
+  }));
+  const response = await service.resolveApproval({ approvalId: pending._id, callerUserId: OWNER, decision: 'approved' });
+  expect(response.body.approval).toMatchObject({
+    toolCallEnding: 'refused', toolCallCode: 'definition_digest_mismatch', toolCallTrailId: 'trail-changed',
+  });
+  expect(JSON.stringify(response.body.approval)).not.toContain('private vendor text');
+  expect(mockEnqueue.mock.calls[0][0].payload.code).toBe('definition_digest_mismatch');
+  expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
+    content: expect.stringContaining(' · refused (definition_digest_mismatch)'),
+  }));
+});
 
 test('two concurrent approvals execute the tool once', async () => {
   const pending = row();

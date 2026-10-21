@@ -1302,6 +1302,7 @@
       "ran": "Approved — tool call ran.",
       "failed": "Approved — tool call failed ({{code}}).",
       "refused": "Approved — tool call refused ({{code}}).",
+      "pinChanged": "Approved, but the tool changed since this request. Ask again before running it.",
       "expiredPending": "This tool-call approval has expired."
     },
     "approve": "Approve",

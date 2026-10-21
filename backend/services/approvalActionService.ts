@@ -752,7 +752,8 @@ const postToolCallRoomReceipt = async (row: IApprovalAction, approverName: strin
   try {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AgentMessageService = require('./agentMessageService');
-    const content = `${approverName} approved ${row.agentName}'s ${row.toolCall.tool} · ${row.toolCallEnding}`;
+    const ending = `${row.toolCallEnding}${row.toolCallCode ? ` (${row.toolCallCode})` : ''}`;
+    const content = `${approverName} approved ${row.agentName}'s ${row.toolCall.tool} · ${ending}`;
     const metadata = { source: 'approval-tool-call', approvalId: String(row._id) };
     if (typeof AgentMessageService._postToTarget === 'function' && row.agentUserId) {
       const agentUser = await User.findById(row.agentUserId);

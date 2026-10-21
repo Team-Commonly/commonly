@@ -308,7 +308,9 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                 ? t('approvalCard.toolCall.ran')
                 : toolCallEnding === 'failed'
                   ? t('approvalCard.toolCall.failed', { code: toolCallCode })
-                  : t('approvalCard.toolCall.refused', { code: toolCallCode })
+                  : toolCallCode === 'definition_digest_mismatch'
+                    ? t('approvalCard.toolCall.pinChanged')
+                    : t('approvalCard.toolCall.refused', { code: toolCallCode })
               : isToolCall
                 ? t('approvalCard.approved')
               : payload.executionError

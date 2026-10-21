@@ -231,6 +231,17 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.queryByText(/private vendor error/i)).not.toBeInTheDocument();
   });
 
+  test('a resolved definition mismatch tells the owner the tool changed and to ask again', () => {
+    // The resolver card shape for a trailed definition_digest_mismatch refusal.
+    renderCard({
+      kind: 'approval-card', approvalId: 'changed-pin', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', toolCall: { tool: 'linear.create_issue' },
+      toolCallEnding: 'refused', toolCallCode: 'definition_digest_mismatch', toolCallTrailId: 'trail-changed',
+    });
+    expect(screen.getByText(en.approvalCard.toolCall.pinChanged)).toBeInTheDocument();
+    expect(screen.queryByText(/tool call refused/i)).not.toBeInTheDocument();
+  });
+
   test('the owner fetches canonical args and must see them before approving', async () => {
     mockGet.mockResolvedValue({
       approvals: [{
