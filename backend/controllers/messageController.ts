@@ -13,6 +13,8 @@ const { deliverMessageToAgents } = require('../services/messageAgentDeliveryServ
 const DMService = require('../services/dmService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { markPodOpened, markStartPicked } = require('../services/onboardingMarks');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { gateWelcomeHostedActions } = require('../services/welcomeHostedStart');
 // eslint-disable-next-line global-require
 const { syncPodFromMongo } = require('../services/pgPodSyncService');
 
@@ -143,7 +145,7 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
         // eslint-disable-next-line no-console
         console.warn('[messages] reaction enrichment skipped:', (rxnErr as Error).message);
       }
-      res.json(messages);
+      res.json(await gateWelcomeHostedActions(messages as Array<Record<string, unknown>>, podId, userId));
       return;
     } catch (pgErr) {
       const e = pgErr as { message?: string };
@@ -156,7 +158,7 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
       .populate('userId', 'username profilePicture')
       .sort({ createdAt: -1 })
       .limit(limit);
-    res.json(messages.map(normalizeMongo));
+    res.json(await gateWelcomeHostedActions(messages.map(normalizeMongo), podId, userId));
   } catch (err) {
     const e = err as { message?: string; kind?: string };
     console.error('Error in getMessages:', e.message);

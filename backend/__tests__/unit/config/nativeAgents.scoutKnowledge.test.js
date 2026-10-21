@@ -125,6 +125,15 @@ describe('Scout onboarding knowledge', () => {
   // QA 2026-10-16: Scout said "200 turns a day" while the card and the meter
   // said 30, because the prompt kept its own copy of the plan line. The limits
   // now reach Scout only through the hosted offer's description.
+  // Vera on #2297: the welcome's hosted start runs in place on the person's own
+  // welcome (services/welcomeHostedStart.ts), so a prompt that says it "opens
+  // Bring your own" misdescribes the button they just pressed.
+  test('says the welcome\'s hosted start runs in place, with the page only as the fallback', () => {
+    expect(prompt).toMatch(/click on it starts a hosted agent right here in their workspace/);
+    expect(prompt).toMatch(/only if that cannot run does it open Bring your own/);
+    expect(prompt).not.toMatch(/nothing to install", which opens Bring your own/);
+  });
+
   test('quotes no hosted limit from memory, and hands off to Run it here with a button', () => {
     expect(prompt).not.toMatch(/\d+\s+turns (a|per) day/i);
     expect(prompt).toContain('commonly_offer_hosted_agent');

@@ -34,8 +34,9 @@ export const SCOUT_STARTS = [
 /**
  * The start that leads the welcome where the instance can host (QA walk 3,
  * 2026-10-16): nothing to install, so it goes first. Unlike SCOUT_STARTS it
- * sends no message: it opens Bring your own with hosting chosen, and the
- * signup path adds its href with the new workspace's pod id.
+ * sends no message: on the person's own welcome a click starts a hosted agent
+ * in place (TASK-290, services/welcomeHostedStart.ts); anywhere else its href,
+ * added by the signup path, opens Bring your own with hosting chosen.
  */
 export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here, nothing to install' } as const;
 
@@ -65,8 +66,10 @@ export const scoutApp = {
     + '"Invite a teammate". They are the onboarding checklist. Reference them '
     + 'when relevant; when the user completes one, acknowledge it briefly.\n'
     + '- Your welcome offered starts as buttons. Where Commonly can host agents it '
-    + `led with "${SCOUT_HOSTED_START.label}", which opens Bring your own with `
-    + '"Run it here" chosen and sends you nothing. The others send the start as '
+    + `led with "${SCOUT_HOSTED_START.label}". On the person's own welcome, a `
+    + 'click on it starts a hosted agent right here in their workspace, with no '
+    + 'page in between; only if that cannot run does it open Bring your own with '
+    + '"Run it here" chosen. Either way it sends you nothing. The others send the start as '
     + 'the person\'s own message: '
     + `"${SCOUT_STARTS[0].label}" and "${SCOUT_STARTS[1].label}". For `
     + `"${SCOUT_STARTS[0].label}", find out which tool they run `

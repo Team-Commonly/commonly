@@ -4,12 +4,16 @@ const PGMessage = require('../../../models/pg/Message');
 const MongoPod = require('../../../models/Pod');
 const AgentMentionService = require('../../../services/agentMentionService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
+const { gateWelcomeHostedActions } = require('../../../services/welcomeHostedStart');
 
 jest.mock('../../../models/pg/Pod');
 jest.mock('../../../models/pg/Message');
 jest.mock('../../../models/Pod');
 jest.mock('../../../services/agentMentionService');
 jest.mock('../../../models/AgentRegistry');
+jest.mock('../../../services/welcomeHostedStart', () => ({
+  gateWelcomeHostedActions: jest.fn(async (messages) => messages),
+}));
 
 // Mongo membership is the decision since TASK-162, so every arm that expects a
 // status other than 404 has to say what the pod's `members` holds. `null` is a
@@ -46,6 +50,24 @@ describe('pgMessageController', () => {
     const res = jsonRes();
     await controller.getMessages(req, res);
     expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it('gates hosted welcome payloads before returning legacy PG messages', async () => {
+    PGPod.findById.mockResolvedValue({ type: 'chat' });
+    mongoPod(['u1']);
+    const raw = [{
+      id: 'm1',
+      payload: { kind: 'starts', starts: [{ id: 'run-hosted', action: 'run-hosted', caps: { turnsPerDay: 200 } }] },
+    }];
+    const gated = [{ id: 'm1', payload: { kind: 'starts', starts: [{ id: 'run-hosted' }] } }];
+    PGMessage.findByPodId.mockResolvedValue(raw);
+    gateWelcomeHostedActions.mockResolvedValueOnce(gated);
+    const res = jsonRes();
+
+    await controller.getMessages({ params: { podId: 'p1' }, query: {}, userId: 'u1' }, res);
+
+    expect(gateWelcomeHostedActions).toHaveBeenCalledWith(raw, 'p1', 'u1');
+    expect(res.json).toHaveBeenCalledWith(gated);
   });
 
   it('returns mention delivery feedback for a legacy PG message post', async () => {

@@ -10,6 +10,8 @@ export interface V2Start {
   label: string;
   href?: string;
   action?: string;
+  // The welcome's hosted start carries the beta limits shown under it.
+  caps?: { agentsPerUser: number; turnsPerDay: number };
 }
 
 export interface V2Message {

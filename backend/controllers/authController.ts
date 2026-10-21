@@ -302,12 +302,25 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
         // eslint-disable-next-line global-require
         const AgentMessageService = require('../services/agentMessageService');
         // Lead with hosting where this instance can host (QA walk 3, 10-16):
-        // nothing to install, one click to Bring your own with it chosen, one
-        // more to a live agent. It navigates rather than sending a message.
+        // nothing to install. One click starts a hosted agent right here
+        // (TASK-290, services/welcomeHostedStart.ts), with the beta limits
+        // under the button. The href stays for anyone the thread will not
+        // run it for: it opens Bring your own with hosting chosen.
         // eslint-disable-next-line global-require
         const { hostedEngineAvailable } = require('../services/nativeRuntimeService');
+        // eslint-disable-next-line global-require
+        const { hostedCapsForOwner } = require('../services/hostedRuntimeService');
+        // eslint-disable-next-line global-require
+        const { WELCOME_HOSTED_ACTION } = require('../services/welcomeHostedStart');
         const hostedHref = `/v2/agents/byo?pod=${encodeURIComponent(pod._id.toString())}&mode=hosted`;
-        const hostedStart = hostedEngineAvailable() ? [{ ...SCOUT_HOSTED_START, href: hostedHref }] : [];
+        const hostedStart = hostedEngineAvailable()
+          ? [{
+            ...SCOUT_HOSTED_START,
+            href: hostedHref,
+            action: WELCOME_HOSTED_ACTION,
+            caps: await hostedCapsForOwner(userId),
+          }]
+          : [];
         await AgentMessageService.postMessage({
           agentName: scoutApp.agentName,
           instanceId: scoutInstanceId,

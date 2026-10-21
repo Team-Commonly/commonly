@@ -15,7 +15,11 @@
  * The first-session starts add a second: firstStartId and firstStartAt, the
  * first time a person posts one of Scout's starts in a pod they created. A
  * click on a start sends its label as their message, so the server reads the
- * pick from the message itself and trusts nothing new from the client.
+ * pick from the message itself and trusts nothing new from the client. The
+ * welcome's "Run an agent here" sends no message: it records firstStartId
+ * 'run-hosted' when the server resolves a click on the person's own welcome
+ * (POST /api/hosted/welcome-start, TASK-290), so a person who started there,
+ * and so never opened Bring your own, still shows which start they picked.
  *
  * byoOpenedAt is the first time a person opens the Bring your own agent page,
  * read from the page's own load request (GET /api/hosted/availability, which
@@ -57,17 +61,31 @@ export function markStartPicked(
   const text = typeof content === 'string' ? content.trim() : '';
   const start = SCOUT_STARTS.find(({ label }) => label === text);
   if (!start) return;
+  recordFirstStart(id, start.id);
+}
+
+/**
+ * The welcome's hosted start, once the server has checked the click came from
+ * the person's own welcome (services/welcomeHostedStart.ts).
+ */
+export function markWelcomeHostedStart(userId: unknown): void {
+  const id = String(userId || '');
+  if (!id) return;
+  recordFirstStart(id, 'run-hosted');
+}
+
+function recordFirstStart(id: string, startId: string): void {
   if (startPickedMarked.has(id)) return;
   startPickedMarked.add(id);
   try {
     User.updateOne(
       { _id: id, isBot: { $ne: true }, 'onboarding.firstStartAt': { $exists: false } },
-      { $set: { 'onboarding.firstStartId': start.id, 'onboarding.firstStartAt': new Date() } },
+      { $set: { 'onboarding.firstStartId': startId, 'onboarding.firstStartAt': new Date() } },
     ).catch(() => {
       startPickedMarked.delete(id);
     });
   } catch {
-    // Telemetry fails open: it must never break sending a message.
+    // Telemetry fails open: it must never break the request that triggers it.
     startPickedMarked.delete(id);
   }
 }

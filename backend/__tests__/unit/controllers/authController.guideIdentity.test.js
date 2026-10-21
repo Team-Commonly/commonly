@@ -130,8 +130,10 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
   });
 
   // QA walk 3 (2026-10-16): where the instance can host, the welcome leads with
-  // hosting, nothing to install. That start navigates (to Bring your own with
-  // hosting chosen, in this workspace) instead of sending a message.
+  // hosting, nothing to install. It sends no message: on the person's own
+  // welcome it runs in place (TASK-290), with the beta limits under it, and its
+  // link opens Bring your own with hosting chosen, in this workspace, for
+  // anyone it does not run for.
   test('leads the starts with Run an agent here, aimed at this workspace, where the instance can host', async () => {
     const saved = { ...process.env };
     try {
@@ -142,9 +144,15 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
       const { SCOUT_STARTS, SCOUT_HOSTED_START } = require('../../../config/native-agents/scout');
       await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'User-1');
 
+      // eslint-disable-next-line global-require
+      const { hostedCaps } = require('../../../services/hostedRuntimeService');
       const { starts } = mockPostMessage.mock.calls[0][0].payload;
       expect(starts[0]).toEqual({
-        id: 'run-hosted', label: SCOUT_HOSTED_START.label, href: '/v2/agents/byo?pod=pod-123&mode=hosted',
+        id: 'run-hosted',
+        label: SCOUT_HOSTED_START.label,
+        href: '/v2/agents/byo?pod=pod-123&mode=hosted',
+        action: 'run-hosted',
+        caps: hostedCaps(),
       });
       expect(starts.slice(1)).toEqual(SCOUT_STARTS.map(({ id, label }) => ({ id, label })));
     } finally {

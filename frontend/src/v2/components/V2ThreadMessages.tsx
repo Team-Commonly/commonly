@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { HistorySearchState, V2Message, V2Start } from '../hooks/useV2PodDetail';
 import { UseV2ThreadState } from '../hooks/useV2ThreadState';
+import { WELCOME_HOSTED_ACTION, type WelcomeHostedStartState } from '../hooks/useWelcomeHostedStart';
 import { ThreadViewItem } from '../utils/threadView';
 import { isGroupedWithPrevious } from '../utils/messageGrouping';
 import V2MessageRow from './V2MessageRow';
@@ -27,8 +28,10 @@ interface V2ThreadMessagesProps {
   // Scout's starts, keyed by the message that offers them; already filtered to
   // the ones this person has not sent (V2Thread). A click sends the label.
   startsByMessageId?: Map<string, V2Start[]>;
-  onStart?: (start: V2Start) => void;
+  onStart?: (start: V2Start, messageId: string) => void;
   startsDisabled?: boolean;
+  // The welcome's hosted start while it runs in place, or after it failed.
+  hostedStart?: WelcomeHostedStartState;
   onQuoteNavigate?: (messageId: string | number) => void;
   onDecisionRuled?: (decisionId: string, ruling: V2DecisionRuling) => void;
   onAimAtThread: (rootId: string, preview: string) => void;
@@ -130,6 +133,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   startsByMessageId,
   onStart,
   startsDisabled = false,
+  hostedStart = null,
   onQuoteNavigate,
   onDecisionRuled,
   onAimAtThread,
@@ -285,17 +289,34 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
               />
               {onStart && (startsByMessageId?.get(String(message.id))?.length ?? 0) > 0 && (
                 <div className="v2-chat__starts" role="group" aria-label={t('podChat.starts.label')}>
-                  {startsByMessageId?.get(String(message.id))?.map((start) => (
-                    <button
-                      key={start.id}
-                      type="button"
-                      className="v2-chat__start"
-                      disabled={startsDisabled}
-                      onClick={() => onStart(start)}
-                    >
-                      {start.label}
-                    </button>
-                  ))}
+                  {startsByMessageId?.get(String(message.id))?.map((start) => {
+                    const hostedHere = start.action === WELCOME_HOSTED_ACTION
+                      && hostedStart?.messageId === String(message.id) ? hostedStart : null;
+                    const starting = hostedHere?.status === 'starting';
+                    const noteId = start.caps ? `v2-start-note-${message.id}-${start.id}` : undefined;
+                    return (
+                      <React.Fragment key={start.id}>
+                        <button
+                          type="button"
+                          className="v2-chat__start"
+                          disabled={startsDisabled || starting}
+                          aria-busy={starting || undefined}
+                          aria-describedby={noteId}
+                          onClick={() => onStart(start, String(message.id))}
+                        >
+                          {starting ? t('agentByo.actions.starting') : start.label}
+                        </button>
+                        {start.caps && (
+                          <p className="v2-chat__start-note" id={noteId}>
+                            {t('agentByo.compact.limits', { agents: start.caps.agentsPerUser, turns: start.caps.turnsPerDay })}
+                          </p>
+                        )}
+                        {hostedHere?.status === 'failed' && (
+                          <p className="v2-chat__start-note v2-chat__start-note--error" role="alert">{hostedHere.error}</p>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </div>
               )}
               {agentDeliveryHint?.messageId === message.id && (
