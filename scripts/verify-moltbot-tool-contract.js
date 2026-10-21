@@ -120,6 +120,7 @@ const MENTION_CUES = [
   'formatCollaborativePodCue',
   'formatConsultationCue',
   'formatMentionReplyCue',
+  'formatHandoffCue',
 ];
 
 /**

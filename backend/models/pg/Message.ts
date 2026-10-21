@@ -347,6 +347,24 @@ class Message {
     return result.rows.length > 0;
   }
 
+  /**
+   * What one author posted in a pod since `since`, newest first: content only,
+   * system rows excluded, at most `limit` rows. The handoff cue
+   * (agentMentionService) reads it to ask whether an agent recently
+   * @mentioned another, in which case a mention back is an answer rather
+   * than a new handoff.
+   */
+  static async recentContentByAuthor(podId: unknown, userId: unknown, since: Date, limit = 20): Promise<string[]> {
+    if (!podId || !userId) return [];
+    const result = await (pool as PgPool).query(
+      `SELECT content FROM messages
+       WHERE pod_id = $1 AND user_id = $2 AND created_at > $3 AND message_type != 'system'
+       ORDER BY id DESC LIMIT $4`,
+      [(podId as { toString(): string }).toString(), (userId as { toString(): string }).toString(), since, limit],
+    );
+    return (result.rows as Array<{ content?: unknown }>).map((row) => String(row.content || ''));
+  }
+
   static async update(id: string, content: string): Promise<MessageRow | undefined> {
     const query = `
       UPDATE messages

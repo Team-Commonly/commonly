@@ -23,7 +23,9 @@ const { maybeFireWelcomeWake } = require('./welcomeWakeService') as {
   maybeFireWelcomeWake: (opts: Record<string, unknown>) => Promise<unknown>;
 };
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-const { resolveAgentDisplayLabel } = require('./agentIdentityService') as {
+const { resolveAgentDisplayLabel, buildAgentUsername } = require('./agentIdentityService') as {
+  // The bot username an agent is issued; also a key the mention map resolves.
+  buildAgentUsername: (agentType: string, instanceId: string) => string;
   resolveAgentDisplayLabel: (
     user: { username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null | undefined,
     fallback?: string,
@@ -610,6 +612,23 @@ const formatPodContextFrame = (podId: string): string =>
   `in a mentions filter the human pulls; nothing pushes. Say plainly what you ` +
   `need, and never treat a mention as an answer received.]`;
 
+// An agent only wakes on an @mention. When one agent hands work to another
+// and the second posts its result without @mentioning the first, the first
+// never sees it, and a promised review silently drops (C14 call rehearsal,
+// 2026-10-20). The handed-over agent is told, inline, to mention the one who
+// handed it over. Only the first handoff in a chain is cued: a mention that
+// answers a recent mention from its target is a result, and cueing it again
+// is how "done @x" → "thanks @y" → … would loop.
+const HANDOFF_ANSWER_WINDOW_MS = 30 * 60 * 1000;
+const formatHandoffCue = (handle: string): string => `[@${handle} handed this to you. When it's done, post the `
+  + `result and @mention @${handle}: an agent only wakes on an @mention, so without it they never see your result.]`;
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Whole-handle match: `@aria` in "thanks @aria." but not in "@aria-dev".
+const mentionsHandle = (content: string, handle: string): boolean => new RegExp(
+  `(^|[^A-Za-z0-9_-])@${escapeRegExp(handle)}(?![A-Za-z0-9_-])`,
+  'i',
+).test(content);
+
 // Cross-runtime consultation cue. Companion to the pod-context frame
 // above; same rationale (inline cue beats structured metadata per
 // ADR-012 §9 + pod-context-cue precedent + smoke 2026-05-20 evidence
@@ -877,13 +896,15 @@ const isCollaborativePod = (
 // unconditional and was missing from this table until the wake path was
 // routed through here — the table is the thing people read to decide
 // what a given event type carries, so it is kept exhaustive:
-//   chat.mention + non-specialist + collab → [Pod] [Author] [CollabPod] [Collab] [Reply] body
-//   chat.mention + non-specialist + solo   → [Pod] [Author] [Collab] [Reply] body
-//   chat.mention + specialist              → [Pod] [Author] [Reply] body
-//   thread.mention + non-specialist        → [Pod] [Author] [Collab] body
-//   thread.mention + specialist            → [Pod] [Author] body
+//   chat.mention + non-specialist + collab → [Pod] [Author] [CollabPod] [Collab] [Reply] [Handoff?] body
+//   chat.mention + non-specialist + solo   → [Pod] [Author] [Collab] [Reply] [Handoff?] body
+//   chat.mention + specialist              → [Pod] [Author] [Reply] [Handoff?] body
+//   thread.mention + non-specialist        → [Pod] [Author] [Collab] [Handoff?] body
+//   thread.mention + specialist            → [Pod] [Author] [Handoff?] body
 //   message.posted + non-specialist        → [Pod] [Author] [Collab] [Wake] body
 //   message.posted + specialist            → [Pod] [Author] [Wake] body
+// [Handoff?] is present only when an agent hands work to another agent for
+// the first time in a chain (formatHandoffCue); never on message.posted.
 const buildContentForTarget = (
   podId: string,
   rawContent: string,
@@ -895,6 +916,9 @@ const buildContentForTarget = (
   // pass it today, so requiring it costs nothing now and turns a future
   // omission into a compile error instead of a silent "unknown".
   author: { username?: string; createdAt?: unknown; messageId?: string },
+  // The handle of the agent that handed this over, when this mention is the
+  // first handoff in an agent-to-agent chain (see formatHandoffCue).
+  handoffFrom?: string,
 ): string => {
   const frames: string[] = [formatPodContextFrame(podId)];
   // First after pod context, and unconditional: every event type and
@@ -913,6 +937,9 @@ const buildContentForTarget = (
   }
   if (eventType === 'chat.mention') {
     frames.push(formatMentionReplyCue(podId));
+  }
+  if (handoffFrom && eventType !== 'message.posted') {
+    frames.push(formatHandoffCue(handoffFrom));
   }
   // Last before the body on purpose: this is the frame that tells the
   // agent why it is awake at all, and proximity to the body is the one
@@ -1789,6 +1816,61 @@ const enqueueMentions = async ({
     return false;
   };
 
+  // The handoff cue (formatHandoffCue): an agent handing work to another
+  // agent tells it to @mention the sender back with the result.
+  //
+  // The sender's handles are every key in this pod's mention map that
+  // resolves to the sender, so "did the target mention the sender" catches
+  // `@aria`, `@openclaw-aria` and a display-name slug alike. The cue names the
+  // canonical one (the bot username) when it resolves here.
+  const senderHandles = senderAgentName
+    ? Array.from(mentionMap.entries())
+      .filter(([key, target]) => key !== 'default'
+        && target.agentName.toLowerCase() === senderAgentName
+        && (target.instanceId || 'default') === senderInstanceId)
+      .map(([key]) => key)
+    : [];
+  const senderCanonicalHandle = senderAgentName
+    ? buildAgentUsername(senderAgentName, senderInstanceId || 'default')
+    : '';
+  const cueHandle = senderHandles.includes(senderCanonicalHandle) ? senderCanonicalHandle : senderHandles[0];
+
+  // Skipped when this mention answers one: the target @mentioned the sender
+  // in this pod within HANDOFF_ANSWER_WINDOW_MS, so the sender is reporting
+  // back, not handing over. That keeps the cue on the first handoff of a
+  // chain, so a chain ends once the result is back. A chain that keeps
+  // going anyway still meets the two guards that already bound bot-to-bot
+  // mentions: the #508 dampener above (more than MENTION_LOOP_MAX mentions of
+  // one bot in one pod within MENTION_LOOP_WINDOW_MS are dropped, every
+  // runtime) and the wrapper's cascade governor (cli/src/lib/enforcement.js,
+  // CASCADE_DEFAULTS). Any failure here means no cue, which is the behaviour
+  // before the cue existed.
+  const handoffFrom = async (target: MentionTarget): Promise<string | undefined> => {
+    if (!cueHandle || isSelfMention(target)) return undefined;
+    try {
+      const targetUser = await User.findOne({
+        username: buildAgentUsername(target.agentName, target.instanceId || 'default'),
+        isBot: true,
+      }).select('_id').lean() as { _id?: unknown } | null;
+      if (targetUser?._id) {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const PGMessage = require('../models/pg/Message') as {
+          recentContentByAuthor: (podId: unknown, userId: unknown, since: Date) => Promise<string[]>;
+        };
+        const recent = await PGMessage.recentContentByAuthor(
+          podId, targetUser._id, new Date(Date.now() - HANDOFF_ANSWER_WINDOW_MS),
+        );
+        if (recent.some((content) => senderHandles.some((handle) => mentionsHandle(content, handle)))) {
+          return undefined;
+        }
+      }
+      return cueHandle;
+    } catch (error) {
+      console.warn('[handoff-cue] check failed (no cue):', (error as Error).message);
+      return undefined;
+    }
+  };
+
   await Promise.all(
     rawMentions.map(async (raw) => {
       const normalized = raw.toLowerCase();
@@ -1831,7 +1913,10 @@ const enqueueMentions = async ({
               messageId: message?._id || message?.id
                 ? String(message?._id || message?.id)
                 : undefined,
-              content: buildContentForTarget(podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFrame),
+              content: buildContentForTarget(
+                podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFrame,
+                await handoffFrom(directMatch),
+              ),
               userId,
               username,
               mentions: rawMentions,
@@ -1879,7 +1964,10 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content: buildContentForTarget(podId, rawContent, eventType, resolved.agentName, collaborativePod, authorFrame),
+                  content: buildContentForTarget(
+                    podId, rawContent, eventType, resolved.agentName, collaborativePod, authorFrame,
+                    await handoffFrom({ agentName: resolved.agentName, instanceId: resolved.instanceId }),
+                  ),
                   userId,
                   username,
                   mentions: rawMentions,
@@ -1950,7 +2038,10 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content: buildContentForTarget(podId, rawContent, eventType, agentType, collaborativePod, authorFrame),
+                  content: buildContentForTarget(
+                    podId, rawContent, eventType, agentType, collaborativePod, authorFrame,
+                    await handoffFrom({ agentName: agentType, instanceId: match.instanceId || 'default' }),
+                  ),
                   userId,
                   username,
                   mentions: rawMentions,
