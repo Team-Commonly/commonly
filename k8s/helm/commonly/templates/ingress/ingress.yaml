@@ -96,7 +96,12 @@ metadata:
   labels:
     {{- include "commonly.labels" . | nindent 4 }}
   annotations:
-    {{- toYaml (omit .Values.ingress.annotations "nginx.ingress.kubernetes.io/session-cookie-name" "nginx.ingress.kubernetes.io/session-cookie-path") | nindent 4 }}
+    {{- with .Values.ingress.annotations }}
+    {{- $shared := omit . "nginx.ingress.kubernetes.io/session-cookie-name" "nginx.ingress.kubernetes.io/session-cookie-path" }}
+    {{- if $shared }}
+    {{- toYaml $shared | nindent 4 }}
+    {{- end }}
+    {{- end }}
     nginx.ingress.kubernetes.io/session-cookie-name: {{ .Values.ingress.hosts.frontend.backendCookieName | quote }}
     nginx.ingress.kubernetes.io/session-cookie-path: "/"
 spec:
