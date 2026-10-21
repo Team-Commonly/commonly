@@ -82,9 +82,11 @@ const writeHandledEvents = (agentName, ids) => {
   writeFileSync(handledEventsFile(agentName), JSON.stringify(ids, null, 2), 'utf8');
 };
 
-export const getSession = (agentName, podId) => {
+export const getSession = (agentName, podId, { binding = null } = {}) => {
   if (!agentName || !podId) return null;
-  return readAgent(agentName)[podId]?.sessionId || null;
+  const entry = readAgent(agentName)[podId];
+  if (binding !== null && entry?.binding !== binding) return null;
+  return entry?.sessionId || null;
 };
 
 // Read-only diagnostic projection used by the daemon operator surface. A
@@ -99,10 +101,14 @@ export const getLastTurn = (agentName) => {
     .at(-1) || null;
 };
 
-export const setSession = (agentName, podId, sessionId) => {
+export const setSession = (agentName, podId, sessionId, { binding = null } = {}) => {
   if (!agentName || !podId) return;
   const state = readAgent(agentName);
-  state[podId] = { sessionId, lastTurn: new Date().toISOString() };
+  state[podId] = {
+    sessionId,
+    lastTurn: new Date().toISOString(),
+    ...(binding !== null ? { binding } : {}),
+  };
   writeAgent(agentName, state);
 };
 

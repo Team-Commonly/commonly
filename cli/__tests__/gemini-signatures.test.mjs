@@ -4,7 +4,7 @@
  * tool loop without the signature back on the call, and OpenCode's provider
  * drops the field, so the proxy carries a reference in the call's id.
  */
-import { createServer } from 'http';
+import { createServer, request as httpRequest } from 'http';
 import {
   chmod, mkdtemp, readdir, rm, stat, utimes, writeFile,
 } from 'fs/promises';
@@ -164,7 +164,10 @@ describe('signing a reply', () => {
     const reply = JSON.stringify({ choices: [{ message: { tool_calls: [{ id: 'call_9', extra_content: { google: { thought_signature: SIG } } }] } }] });
     expect(await signer.write(Buffer.from(reply))).toBe('');
     const call = JSON.parse(await signer.end()).choices[0].message.tool_calls[0];
-    expect(unsignedId(call.id).id).toBe('call_9');
+    const { id, key } = unsignedId(call.id);
+    expect(id).toBe('call_9');
+    expect(key).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expect(await store.lookup(key)).toBe(SIG);
   });
 
   test('a reply with no signature is unchanged', async () => {
@@ -255,6 +258,32 @@ describe('through the provider proxy', () => {
       expect(await (await post(proxy, token, { messages: [{ role: 'assistant', tool_calls: [{ id: signedId('x', KEY) }] }] })).text()).toBe(reply);
       expect(JSON.parse(up.seen[0].body).messages[0].tool_calls[0]).toEqual({ id: signedId('x', KEY) });
       expect(up.seen[0].headers['accept-encoding']).not.toBe('identity');
+    } finally {
+      await proxy.close();
+      await new Promise((resolve) => up.server.close(resolve));
+    }
+  });
+
+  test('a signed request larger than 64 MiB is refused before it reaches Gemini', async () => {
+    const up = await startUpstream((_n, res) => res.end('unexpected'));
+    const { proxy, token } = await startProxy(up.port, createSignatureStore(join(root, 'sigs')));
+    try {
+      const status = await new Promise((resolve, reject) => {
+        const request = httpRequest({
+          hostname: '127.0.0.1',
+          port: proxy.port,
+          path: '/v1beta/openai/chat/completions',
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        }, (response) => {
+          response.resume();
+          response.on('end', () => resolve(response.statusCode));
+        });
+        request.on('error', reject);
+        request.end(Buffer.alloc(64 * 1024 * 1024 + 1, 0x20));
+      });
+      expect(status).toBe(413);
+      expect(up.seen).toHaveLength(0);
     } finally {
       await proxy.close();
       await new Promise((resolve) => up.server.close(resolve));
