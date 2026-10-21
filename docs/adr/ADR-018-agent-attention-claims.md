@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold — and they are ordered, the threshold being unrecorded rather than unmeasurable — a proxy exists and is named in place. The amendment says so in place. **D6.4 (adjacency in a one-person room) is Accepted, 2026-10-20, ratified by Cofounder under Sam's delegation.**
+**Status:** Accepted — ratified by Sam 2026-08-17. D8.1 (2026-10-21) is Accepted, ratified by Cofounder on Sam's explicit direction. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold — and they are ordered, the threshold being unrecorded rather than unmeasurable — a proxy exists and is named in place. The amendment says so in place. **D6.4 (adjacency in a one-person room) is Accepted, 2026-10-20, ratified by Cofounder under Sam's delegation.**
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
@@ -400,6 +400,25 @@ decline (D6). Claims are what make this mode safe: all wake, one acts.
 
 A pod-level "everyone always acts" mode composes later by setting the flag on
 every install; it is not primitive.
+
+### D8.1 — AMENDMENT (2026-10-21): an agent a person brings into a pod wakes on every human message by default
+
+**Status: ACCEPTED — ratified by Cofounder on Sam's explicit direction, 2026-10-21.** Sam: *"have the byo agent by default wake on message instead of mention (the knob is always there still)"*. The principle behind it: every agent should read new messages, even when it doesn't own the reply.
+
+D8's "default **off**" becomes **on for every agent a person brings into a pod**. A person who connects their own agent and then simply talks to it should get an answer without typing its @name.
+
+**Why several listening agents are safe.** It's this ADR's claim inbox, not a default. All wake, one claims and acts, and the others stand down (D8). A broadcast `NO_REPLY` releases the claim for a second pass (D6.1). The typing indicator shows who is on it (D7). So the default is not limited to the first agent in a pod.
+
+- **Who gets the default.** A new install of an agent the person brought from the Bring your own page: the own-agent seat (`runtimeType: 'webhook'`, polling, `host: 'byo'`) and the computer placement (`'wrapper'`).
+- **Who doesn't.** Scout and first-party apps keep their own settings. So does `agent attach`, which keeps its explicit `--wake-on-message` flag. So do hosted agents: a hosted agent can't take an ambient turn yet, because `HOSTED_NATIVE_EVENT_TYPES` answers only `chat.mention` and `first_contact`. Hosted ambient and an in-app switch are the follow-up.
+- **Human-only.** A defaulted install carries `wakeOnMessage.humanOnly: true`. An agent-authored message never wakes it ambiently, nor does a sender not known to be human, so the default can't start agents answering each other. The agents still see each other's messages in the context they read when a person's message wakes them. Explicit opt-ins carry no such flag, and their delivery is unchanged.
+- **Board wakes stay off.** The default also writes `boardWake.enabled: false`, because an absent `boardWake` inherits `wakeOnMessage` and would otherwise subscribe the agent to task-board wakes as a side effect.
+- **Still a setting, not a ratchet.** An explicit `wakeOnMessage` in the install request always wins, and the owner can turn it off at any time, as D8 says.
+- **New installs only.** No existing installation is migrated.
+
+Implementation: `backend/services/wakeDefaultService.ts` (the rule), the registry install route (where it is applied), and `agentMentionService.humanOnlyWake` (the human-only gate).
+
+> **Scope boundary.** This changes the *default* of an install's own setting at the moment it is created. It does **not** gate any wake on pod size, member count or workspace shape. That is ADR-020 D6's subject, and reading D6 as wake policy is the #963 regression (every multi-agent workspace demoted to mention-only, fixed in #967). Anything that would wake or silence agents by the shape of the pod belongs in this ADR, decided explicitly, not inferred from D6.
 
 ### D9 — Heartbeat shrinks; it does not die
 

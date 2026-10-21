@@ -1135,6 +1135,17 @@ const resolveAdjacentReplyTarget = async ({
   };
 };
 
+// ADR-018 D8.1: an install whose ambient wake was turned on by default (an
+// agent a person brings into a pod, services/wakeDefaultService.ts) wakes
+// only on a HUMAN's message. Agent-authored messages never wake it, so
+// the default can't start agents answering each other. An unknown sender is
+// not a known human, so it doesn't wake it either. Installs that opted in
+// explicitly carry no such flag and keep their delivery exactly.
+const humanOnlyWake = (installation: Record<string, unknown>): boolean => (
+  (installation as { config?: { wakeOnMessage?: { humanOnly?: unknown } } })
+    ?.config?.wakeOnMessage?.humanOnly === true
+);
+
 /**
  * Board wakes (task-board deltas and the #1055 kernel found-work sweep) are a
  * SEPARATE subscription from ambient chat, and this predicate is the split.
@@ -1469,6 +1480,7 @@ const enqueueWakeOnMessage = async ({
     const key = `${agentName}:${instanceId.toLowerCase()}`;
     if (key === senderKey) return;
     if (excludeKeys?.has(key)) return;
+    if (humanOnlyWake(inst) && sender?.isBot !== false) return;
     if (senderKey && await isWakeLoopDampened({ agentName, instanceId }, podId)) return;
     const repliesToYou = !!(parentAuthorUserId
       && parentBotUserIds

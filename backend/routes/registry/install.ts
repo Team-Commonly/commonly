@@ -48,6 +48,7 @@ const {
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 
 // Inlined per-route limiter. This comment used to attribute its clean CodeQL
@@ -737,6 +738,11 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         await revokeRuntimeTokensAfterLastUninstall(safeAgentName, normalizedInstanceId);
       }
     }
+
+    // ADR-018 D8.1: an agent a person brings into a pod wakes on every human
+    // message by default (services/wakeDefaultService.ts).
+    const wakeDefault = personAgentWakeDefault(installConfig);
+    if (wakeDefault) Object.assign(installConfig, wakeDefault);
 
     const installation = await AgentInstallation.install(agentName, podId, {
       version: version || agent.latestVersion,

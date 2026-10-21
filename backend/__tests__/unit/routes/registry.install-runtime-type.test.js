@@ -201,6 +201,43 @@ describe('registry install runtimeType fallback', () => {
     expect(res.status).not.toHaveBeenCalledWith(500);
   });
 
+  // ADR-018 D8.1: the route stores the wake default for an agent a person
+  // brings in (wakeDefaultService.test.js covers the rule itself).
+  describe('an agent a person brings in wakes on every human message', () => {
+    const ownAgentInstall = async (extraConfig = {}) => {
+      AgentRegistry.getByName.mockResolvedValue({
+        agentName: 'sample-agent',
+        displayName: 'Sample Agent',
+        description: 'BYO agent',
+        latestVersion: '1.0.0',
+        manifest: persistedManifest({ name: 'sample-agent', version: '1.0.0', context: { required: [] } }),
+      });
+      const req = {
+        body: {
+          agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: { runtime: { runtimeType: 'webhook' }, ...extraConfig }, scopes: [],
+        },
+        user: { id: 'user-1', username: 'installer' },
+        userId: 'user-1',
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await installHandler(req, res);
+      return AgentInstallation.install.mock.calls[0][2].config;
+    };
+
+    it('stores wakeOnMessage (human-only) and board wakes off', async () => {
+      const config = await ownAgentInstall();
+      expect(config.runtime).toEqual(expect.objectContaining({ runtimeType: 'webhook', host: 'byo' }));
+      expect(config.wakeOnMessage).toEqual(expect.objectContaining({ enabled: true, humanOnly: true }));
+      expect(config.boardWake).toEqual({ enabled: false });
+    });
+
+    it('keeps an explicit wakeOnMessage from the request', async () => {
+      const config = await ownAgentInstall({ wakeOnMessage: { enabled: false } });
+      expect(config.wakeOnMessage).toEqual({ enabled: false });
+      expect(config).not.toHaveProperty('boardWake');
+    });
+  });
+
   it('preserves opencode as an open driver identity through the registry model and install route', async () => {
     AgentRegistry.getByName.mockResolvedValue({
       agentName: 'sample-agent',
