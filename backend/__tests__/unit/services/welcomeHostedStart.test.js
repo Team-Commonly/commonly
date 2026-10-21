@@ -30,7 +30,7 @@ const welcomePayload = () => ({
   starts: [
     {
       id: 'run-hosted',
-      label: 'Run an agent here, nothing to install',
+      label: 'Run an agent here',
       href: HREF,
       action: 'run-hosted',
       caps: { agentsPerUser: 1, turnsPerDay: 30 },

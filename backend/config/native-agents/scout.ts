@@ -38,11 +38,10 @@ export const SCOUT_STARTS = [
  * in place (TASK-290, services/welcomeHostedStart.ts); anywhere else its href,
  * added by the signup path, opens Bring your own with hosting chosen.
  */
-export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here, nothing to install' } as const;
+export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here' } as const;
 
 /** Scout's first message in a new workspace; the starts render under it. */
-export const SCOUT_WELCOME = 'I\'m Scout. This pod is yours, and I work in it with you. '
-  + 'Start with one of these, or tell me what you\'re working on.';
+export const SCOUT_WELCOME = 'I\'m Scout. Pick a start or tell me your goal.';
 
 export const scoutApp = {
   agentName: 'scout',

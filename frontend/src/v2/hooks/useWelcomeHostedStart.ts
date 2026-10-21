@@ -15,7 +15,7 @@ interface WelcomeStartPlan {
 
 export type WelcomeHostedStartState =
   | { messageId: string; status: 'starting' }
-  | { messageId: string; status: 'live' }
+  | { messageId: string; status: 'live'; agentName: string }
   | { messageId: string; status: 'failed'; error: string }
   | null;
 
@@ -77,7 +77,7 @@ export function useWelcomeHostedStart(
         agentName: agent.agentName,
         ...(agent.instanceId ? { instanceId: agent.instanceId } : {}),
       });
-      setState({ messageId, status: 'live' });
+      setState({ messageId, status: 'live', agentName: agent.agentName });
       onLive();
     } catch (err) {
       const data = (err as ApiError).response?.data;

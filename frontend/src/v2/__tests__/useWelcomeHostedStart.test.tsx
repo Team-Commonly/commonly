@@ -34,5 +34,5 @@ test('a second run while the first is in flight sends nothing', async () => {
     '/api/hosted/welcome-start', '/api/registry/install', '/api/hosted/provision',
   ]);
   expect(onLive).toHaveBeenCalledTimes(1);
-  expect(result.current.state).toEqual({ messageId: '41', status: 'live' });
+  expect(result.current.state).toEqual({ messageId: '41', status: 'live', agentName: 'maya-agent' });
 });
