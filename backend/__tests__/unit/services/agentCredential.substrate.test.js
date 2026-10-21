@@ -53,8 +53,8 @@ const makeRes = () => {
   return res;
 };
 
-const runAuth = async (rawToken) => {
-  const req = { header: (h) => (h === 'Authorization' ? `Bearer ${rawToken}` : undefined) };
+const runAuth = async (rawToken, route) => {
+  const req = { header: (h) => (h === 'Authorization' ? `Bearer ${rawToken}` : undefined), ...route };
   const res = makeRes();
   let nexted = false;
   await agentRuntimeAuth(req, res, () => { nexted = true; });
@@ -206,6 +206,30 @@ describe('per-spawn child credentials (TASK-094)', () => {
 
     expect(nexted).toBe(true);
     expect(req.agentAuthorizedPodIds).toContain(String(podId));
+  });
+
+  it('a minted child and its seat inherit the same live-grant refusal', async () => {
+    const { raw, seat } = await makeSeat();
+    const { AgentInstallation } = require('../../../models/AgentRegistry');
+    const installation = await AgentInstallation.findOne({ agentName: 'testbot', instanceId: 'default' });
+    const grantPolicy = require('../../../services/nativeOutsiderGrantPolicy');
+    const spy = jest.spyOn(grantPolicy, 'podsWithOutsiderWritableGrants')
+      .mockResolvedValue(new Set([String(installation.podId)]));
+    const route = { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/agent-dm' }, params: {} };
+    try {
+      const mintRoute = { method: 'POST', baseUrl: '/api/agents/runtime/spawn-credentials',
+        route: { path: '/' }, params: {} };
+      expect((await runAuth(raw, mintRoute)).nexted).toBe(true);
+      const child = await mint(seat, 'spawn-narrowed');
+      for (const token of [raw, child.token]) {
+        const { res, nexted } = await runAuth(token, route);
+        expect(nexted).toBe(false);
+        expect(res.statusCode).toBe(403);
+        expect(res.body.code).toBe('outsider_grant_runtime_narrowed');
+      }
+      expect(spy).toHaveBeenCalledTimes(3);
+    } finally { spy.mockRestore(); }
   });
 
   it('the negative control: a credential row with an agentUserId but no spawn scope is NOT an authentication path', async () => {

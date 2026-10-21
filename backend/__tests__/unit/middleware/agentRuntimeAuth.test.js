@@ -20,6 +20,11 @@ const mockInstallationFind = jest.fn();
 const mockInstallationUpdateOne = jest.fn();
 const mockCompleteStarterTask = jest.fn();
 const mockMarkByoConnectionAttempt = jest.fn();
+const mockNarrowedPods = jest.fn();
+
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podsWithOutsiderWritableGrants: (...args) => mockNarrowedPods(...args),
+}));
 
 jest.mock('../../../services/starterTaskService', () => ({
   completeConnectAgentStarterTask: (...args) => mockCompleteStarterTask(...args),
@@ -72,6 +77,7 @@ const buildRes = () => {
 };
 
 beforeEach(() => {
+  mockNarrowedPods.mockReset().mockResolvedValue(new Set());
   mockSecret.hash.mockReset();
   mockSecret.hash.mockReturnValue('hashed-token');
   mockUserFindOne.mockReset();
@@ -83,6 +89,144 @@ beforeEach(() => {
   mockCompleteStarterTask.mockReset();
   mockCompleteStarterTask.mockResolvedValue(undefined);
   mockMarkByoConnectionAttempt.mockReset();
+});
+
+describe('TASK-213 runtime token narrowing', () => {
+  const setupLegacy = () => {
+    mockUserFindOne.mockResolvedValue(null);
+    const installation = {
+      _id: 'install-a', agentName: 'codex', instanceId: 'rivet',
+      podId: { toString: () => 'pod-a' }, runtimeTokens: [{ tokenHash: 'hashed-token', lastUsedAt: new Date() }],
+    };
+    mockInstallationFindOne.mockResolvedValue(installation);
+    mockInstallationFind.mockResolvedValue([installation]);
+    mockInstallationUpdateOne.mockResolvedValue({});
+    return installation;
+  };
+
+  test('allows a write into the one grant pod and refuses another pod', async () => {
+    setupLegacy();
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/pods/:podId/messages' }, params: { podId: 'pod-b' } });
+    const res = buildRes();
+    const next = jest.fn();
+    await agentRuntimeAuth(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'outsider_grant_runtime_narrowed' }));
+    req.params.podId = 'pod-a';
+    await agentRuntimeAuth(req, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  test('unknown GET fails closed, but listed read passes', async () => {
+    setupLegacy();
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'GET', baseUrl: '/api/agents/runtime',
+      route: { path: '/future-read' }, params: {} });
+    const res = buildRes();
+    const next = jest.fn();
+    await agentRuntimeAuth(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    req.route.path = '/installations';
+    await agentRuntimeAuth(req, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  test('a post without a pod and an outward DM are refused', async () => {
+    setupLegacy();
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/posts' }, params: {}, body: { content: 'x' } });
+    const res = buildRes();
+    const next = jest.fn();
+    await agentRuntimeAuth(req, res, next);
+    req.route.path = '/agent-dm';
+    await agentRuntimeAuth(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledTimes(2);
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('failed grant census narrows the agent', async () => {
+    setupLegacy();
+    mockNarrowedPods.mockRejectedValue(new Error('grant DB unavailable'));
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/agent-dm' }, params: {} });
+    const res = buildRes();
+    const next = jest.fn();
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await agentRuntimeAuth(req, res, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+    } finally { log.mockRestore(); }
+  });
+
+  test('two grant pods refuse even a contained write, while revocation lifts the gate', async () => {
+    setupLegacy();
+    mockInstallationFind.mockResolvedValue([
+      { podId: { toString: () => 'pod-a' } },
+      { podId: { toString: () => 'pod-b' } },
+    ]);
+    mockNarrowedPods.mockResolvedValueOnce(new Set(['pod-a', 'pod-b']))
+      .mockResolvedValueOnce(new Set());
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/pods/:podId/messages' }, params: { podId: 'pod-a' } });
+    const res = buildRes();
+    const next = jest.fn();
+    await agentRuntimeAuth(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'outsider_grant_runtime_narrowed', podIds: ['pod-a', 'pod-b'],
+    }));
+    await agentRuntimeAuth(req, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  test('two grant pods refuse a private memory write too', async () => {
+    setupLegacy();
+    mockInstallationFind.mockResolvedValue([
+      { podId: { toString: () => 'pod-a' } },
+      { podId: { toString: () => 'pod-b' } },
+    ]);
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a', 'pod-b']));
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'PUT', baseUrl: '/api/agents/runtime',
+      route: { path: '/memory' }, params: {},
+      body: { sections: { long_term: { visibility: 'private', content: 'x' } } } });
+    const res = buildRes();
+    const next = jest.fn();
+    await agentRuntimeAuth(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('spawn maintenance is available in one grant pod, but not across two', async () => {
+    setupLegacy();
+    mockInstallationFind.mockResolvedValue([
+      { podId: { toString: () => 'pod-a' } },
+      { podId: { toString: () => 'pod-b' } },
+    ]);
+    mockNarrowedPods.mockResolvedValueOnce(new Set(['pod-a']))
+      .mockResolvedValueOnce(new Set(['pod-a', 'pod-b']));
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/agents/runtime/spawn-credentials',
+      route: { path: '/' }, params: {} });
+    const res = buildRes();
+    const next = jest.fn();
+    await agentRuntimeAuth(req, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    await agentRuntimeAuth(req, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
 });
 
 describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {

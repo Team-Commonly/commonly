@@ -10,6 +10,8 @@ import AgentCredential from '../models/AgentCredential';
 import { markByoConnectionAttempt } from '../services/onboardingMarks';
 import { isSpawnCredential } from '../services/spawnCredentialService';
 import { machineHasLiveAuthorization } from '../services/machineService';
+import { podsWithOutsiderWritableGrants } from '../services/nativeOutsiderGrantPolicy';
+import { classifyRuntimeOutsiderGrantRoute } from '../services/runtimeOutsiderGrantRoutes';
 
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
@@ -73,6 +75,45 @@ const extractToken = (req: Request): string | undefined => {
     return authHeader.replace('Bearer ', '').trim();
   }
   return req.header('x-commonly-agent-token');
+};
+
+const checkOutsiderGrantRuntimeNarrowing = async (
+  req: Request, res: Response, installationPodIds: string[],
+): Promise<boolean> => {
+  const uniquePodIds = [...new Set(installationPodIds.filter(Boolean))];
+  if (!uniquePodIds.length) return true;
+  let narrowedPods: Set<string>;
+  try {
+    narrowedPods = await podsWithOutsiderWritableGrants(uniquePodIds);
+  } catch (error) {
+    // A failed grant read must never turn into an unrestricted token.
+    console.error('Outsider grant runtime census failed:', error);
+    narrowedPods = new Set(uniquePodIds);
+  }
+  if (!narrowedPods.size) return true;
+  let route: Awaited<ReturnType<typeof classifyRuntimeOutsiderGrantRoute>>;
+  try {
+    route = await classifyRuntimeOutsiderGrantRoute(req);
+  } catch (error) {
+    console.error('Outsider grant runtime route resolution failed:', error);
+    route = { routeClass: 'unknown', podId: null };
+  }
+  const allowed = (route.routeClass === 'read'
+      && (narrowedPods.size === 1 || req.method.toUpperCase() === 'GET'))
+    || route.routeClass === 'grant'
+    || (route.routeClass === 'pod_write' && narrowedPods.size === 1
+      && route.podId === [...narrowedPods][0]);
+  if (allowed) return true;
+  const action = req.method.toUpperCase() === 'GET' ? route.routeClass : 'write';
+  res.status(403).json({
+    code: 'outsider_grant_runtime_narrowed',
+    message: narrowedPods.size > 1
+      ? `Runtime ${action} (${route.routeClass}) refused: outsider-writable grants reach installation pods ${[...narrowedPods].join(', ')}; writes cannot be confined to one pod`
+      : `Runtime ${route.routeClass} refused while an outsider-writable grant reaches pod ${[...narrowedPods][0]}`,
+    podIds: [...narrowedPods],
+    routeClass: route.routeClass,
+  });
+  return false;
 };
 
 export default async function agentRuntimeAuth(req: Request, res: Response, next: NextFunction): Promise<void | Response> {
@@ -192,6 +233,8 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       req.agentAuthorizedPodIds = authorizedPodIds;
       req.agentInstallation = (installations[0] as never) || null;
 
+      if (!await checkOutsiderGrantRuntimeNarrowing(req, res, installationPodIds)) return undefined;
+
       if (isFirstTokenUse) {
         for (const installationRow of installations) {
           markByoConnectionAttempt(installationRow.installedBy, installationRow);
@@ -244,10 +287,16 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       instanceId: installation.instanceId || 'default',
       status: 'active',
     });
+    // The matched credential is itself an active installation. Preserve its
+    // pod even if a legacy instanceId shape makes the identity-wide query
+    // miss it; otherwise this token would escape the grant census.
+    const identityInstallations = allActiveInstallations.some((inst: { _id?: unknown }) =>
+      String(inst._id) === String(installation._id))
+      ? allActiveInstallations : [installation, ...allActiveInstallations];
 
     req.agentInstallation = installation as never;
-    req.agentInstallations = allActiveInstallations as never[];
-    req.agentAuthorizedPodIds = allActiveInstallations
+    req.agentInstallations = identityInstallations as never[];
+    req.agentAuthorizedPodIds = identityInstallations
       .map((inst: { podId?: { toString: () => string } }) => inst?.podId?.toString())
       .filter(Boolean) as string[];
 
@@ -302,6 +351,17 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       console.warn('[agentRuntimeAuth] failed to resolve bot user for legacy token path:', (err as Error).message);
     }
 
+    if (!await checkOutsiderGrantRuntimeNarrowing(
+      req, res, identityInstallations.map((inst: { podId?: unknown }) => String(inst.podId || '')),
+    )) return undefined;
+    if (isFirstLegacyTokenUse) {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
+      void completeConnectAgentStarterTask({
+        podIds: req.agentAuthorizedPodIds,
+        agentLabel: installation.displayName || installation.agentName,
+      });
+    }
     return next();
   } catch (error) {
     console.error('Agent auth error:', error);
