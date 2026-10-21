@@ -222,6 +222,15 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.queryByText(/tool call refused/i)).not.toBeInTheDocument();
   });
 
+  test('an ending-less approved card with no execution witness never claims a broker refusal', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'legacy-unwitnessed', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', toolCall: { tool: 'linear.create_issue' },
+    });
+    expect(screen.getByText(en.approvalCard.approved)).toBeInTheDocument();
+    expect(screen.queryByText(/tool call refused/i)).not.toBeInTheDocument();
+  });
+
   test('a pre-ending failed tool call stays failed without showing vendor error text', () => {
     renderCard({
       kind: 'approval-card', approvalId: 'legacy-failed', status: 'resolved', decision: 'approved',
