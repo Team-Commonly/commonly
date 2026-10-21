@@ -1380,7 +1380,26 @@
       "failed": "Approved — tool call failed ({{code}}).",
       "refused": "Approved — tool call refused ({{code}}).",
       "pinChanged": "Approved, but the tool changed since this request. Ask again before running it.",
-      "expiredPending": "This tool-call approval has expired."
+      "expiredPending": "This tool-call approval has expired.",
+      "verb": {
+        "mergePullRequest": "Merge pull request #{{number}}",
+        "createIssue": "Open an issue",
+        "commentOnIssue": "Comment on issue #{{number}}",
+        "closeIssue": "Close issue #{{number}}"
+      },
+      "label": {
+        "repository": "Repository",
+        "pullRequest": "Pull request",
+        "issue": "Issue",
+        "head": "Head commit",
+        "mergeMethod": "Merge method",
+        "commitTitle": "Commit title",
+        "commitMessage": "Commit message",
+        "title": "Title",
+        "body": "Body",
+        "labels": "Labels"
+      },
+      "exactArgs": "Exact arguments"
     },
     "approve": "Approve",
     "decline": "Decline",
