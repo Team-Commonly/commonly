@@ -4,6 +4,7 @@ import { createHash } from 'crypto';
 import { mkdir } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
+import { StringDecoder } from 'string_decoder';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { effectiveSandboxTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -47,55 +48,70 @@ const runHermes = ({ args, prompt, cwd, env, timeoutMs, spawnImpl, credentials }
     cwd, env, stdio: ['pipe', 'pipe', 'pipe'],
   });
   const state = { started: false, result: null };
+  const decoder = new StringDecoder('utf8');
   let buffer = '';
   let stderr = '';
   let timedOut = false;
   let settled = false;
+  let closed = false;
+  let stopping = false;
   let killTimer;
   const finish = (error, result) => {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
-    clearTimeout(killTimer);
     if (error) reject(error); else resolve(result);
+  };
+  const stop = () => {
+    if (stopping || closed) return;
+    stopping = true;
+    child.kill('SIGTERM');
+    killTimer = setTimeout(() => {
+      if (!closed) child.kill('SIGKILL');
+    }, 5000);
+  };
+  const failAndStop = (error) => {
+    stop();
+    finish(error);
   };
   const timer = setTimeout(() => {
     timedOut = true;
-    child.kill('SIGTERM');
-    killTimer = setTimeout(() => child.kill('SIGKILL'), 5000);
+    stop();
   }, timeoutMs);
-  child.on('error', (error) => finish(adapterFailure('Hermes', error?.message || 'spawn failed', { credentials })));
+  child.on('error', (error) => failAndStop(adapterFailure('Hermes', error?.message || 'spawn failed', { credentials })));
   child.stdout.on('data', (chunk) => {
     if (settled) return;
-    buffer += chunk.toString();
+    buffer += decoder.write(chunk);
     let newline = buffer.indexOf('\n');
     while (newline !== -1) {
       if (newline > MAX_LINE_CHARS) {
-        finish(new Error('Hermes JSONL line exceeded 1 MiB'));
-        child.kill('SIGTERM');
+        failAndStop(new Error('Hermes JSONL line exceeded 1 MiB'));
         return;
       }
       const line = buffer.slice(0, newline).trim();
       buffer = buffer.slice(newline + 1);
       if (line) {
         try { readHermesJsonl(line, state); } catch (error) {
-          finish(error);
-          child.kill('SIGTERM');
+          failAndStop(error);
           return;
         }
       }
       newline = buffer.indexOf('\n');
     }
     if (buffer.length > MAX_LINE_CHARS) {
-      finish(new Error('Hermes JSONL line exceeded 1 MiB'));
-      child.kill('SIGTERM');
+      failAndStop(new Error('Hermes JSONL line exceeded 1 MiB'));
     }
   });
+  child.stdout.on('error', (error) => failAndStop(adapterFailure('Hermes stdout', error?.message || 'read failed', { credentials })));
   child.stderr.on('data', (chunk) => {
     stderr = `${stderr}${chunk.toString()}`.slice(-MAX_STDERR_CHARS);
   });
   child.on('close', (code) => {
+    closed = true;
+    clearTimeout(killTimer);
+    if (settled) return;
     if (timedOut) return finish(new Error(`Hermes timed out after ${timeoutMs}ms`));
+    buffer += decoder.end();
     if (buffer.trim()) {
       try { readHermesJsonl(buffer.trim(), state); } catch (error) { return finish(error); }
     }
@@ -111,19 +127,19 @@ const runHermes = ({ args, prompt, cwd, env, timeoutMs, spawnImpl, credentials }
     }
     return finish(null, { text: result.text, newSessionId: result.session_id });
   });
-  child.stdin.on('error', (error) => finish(adapterFailure('Hermes stdin', error?.message || 'write failed', { credentials })));
+  child.stdin.on('error', (error) => failAndStop(adapterFailure('Hermes stdin', error?.message || 'write failed', { credentials })));
   child.stdin.end(prompt);
 });
 
 export default {
   name: 'hermes',
   runtimeType: 'hermes',
-  supportsProvider: true,
+  supportsProvider: false,
   providerKeyEnv: 'OPENROUTER_API_KEY',
 
   async validateEnvironment(environment) {
-    if (environment?.provider && environment.provider !== 'openrouter') {
-      throw new Error('Hermes adapter currently supports only the OpenRouter provider');
+    if (environment?.provider !== undefined) {
+      throw new Error('Hermes adapter does not consume environment.provider; supply OPENROUTER_API_KEY in the host environment');
     }
     if (environment?.mcp?.length) {
       throw new Error('Hermes adapter does not yet consume environment.mcp declarations');

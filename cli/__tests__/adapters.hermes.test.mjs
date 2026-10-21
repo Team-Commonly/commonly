@@ -13,6 +13,7 @@ import { join } from 'path';
 import { PassThrough } from 'stream';
 import { jest } from '@jest/globals';
 import hermes, { TESTED_HERMES_VERSION, readHermesJsonl } from '../src/lib/adapters/hermes.js';
+import { validateEnvironmentSpec } from '../src/lib/environment.js';
 
 const fixture = async (name) => readFile(
   new URL(`./fixtures/hermes-0.22.2/${name}.jsonl`, import.meta.url), 'utf8',
@@ -112,6 +113,91 @@ test('refuses a declared MCP server rather than silently dropping its tools', as
   await expect(hermes.validateEnvironment({
     mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '@commonlyai/mcp'] }],
   })).rejects.toThrow('does not yet consume environment.mcp');
+});
+
+test('does not advertise the provider object contract it cannot consume', async () => {
+  const environment = {
+    model: 'test-model',
+    provider: { id: 'openrouter', baseURL: 'https://openrouter.ai/api/v1', keyFile: '/tmp/test-only-key' },
+  };
+  expect(validateEnvironmentSpec(environment)).toEqual({ ok: true, errors: [] });
+  expect(hermes.supportsProvider).toBe(false);
+  await expect(hermes.validateEnvironment(environment)).rejects.toThrow('does not consume environment.provider');
+});
+
+test('preserves a UTF-8 JSONL result split inside a character', async () => {
+  await withHome(async (home) => {
+    const recording = Buffer.from([
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'unicode-test' }),
+      JSON.stringify({ type: 'result', session_id: 'unicode-test', exit_code: 0, text: '你好🙂' }),
+    ].join('\n') + '\n');
+    const cut = recording.indexOf(Buffer.from('你')) + 1;
+    const spawnImpl = () => {
+      const child = new EventEmitter();
+      child.stdin = new PassThrough();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.kill = jest.fn();
+      queueMicrotask(() => {
+        child.stdout.write(recording.subarray(0, cut));
+        child.stdout.write(recording.subarray(cut));
+        child.emit('close', 0);
+      });
+      return child;
+    };
+    await expect(hermes.spawn('hello', {
+      cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
+      _spawnSyncImpl: versionProbe(), _spawnImpl: spawnImpl,
+    })).resolves.toMatchObject({ text: '你好🙂' });
+  });
+});
+
+test('malformed JSONL still force-kills a child that ignores TERM', async () => {
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+  try {
+    await withHome(async (home) => {
+      const child = new EventEmitter();
+      child.stdin = new PassThrough();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.kill = jest.fn();
+      await expect(hermes.spawn('hello', {
+        cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
+        _spawnSyncImpl: versionProbe(),
+        _spawnImpl: () => {
+          queueMicrotask(() => child.stdout.write('{bad}\n'));
+          return child;
+        },
+      })).rejects.toThrow('invalid JSONL');
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+      await jest.advanceTimersByTimeAsync(5000);
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    });
+  } finally { jest.useRealTimers(); }
+});
+
+test('stdin failure also retains force-kill escalation', async () => {
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+  try {
+    await withHome(async (home) => {
+      const child = new EventEmitter();
+      child.stdin = new PassThrough();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.kill = jest.fn();
+      await expect(hermes.spawn('hello', {
+        cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
+        _spawnSyncImpl: versionProbe(),
+        _spawnImpl: () => {
+          queueMicrotask(() => child.stdin.emit('error', new Error('broken pipe')));
+          return child;
+        },
+      })).rejects.toThrow('broken pipe');
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+      await jest.advanceTimersByTimeAsync(5000);
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    });
+  } finally { jest.useRealTimers(); }
 });
 
 test('rejects invalid JSONL and a process that exits before its terminal result', async () => {

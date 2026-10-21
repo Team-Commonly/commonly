@@ -16,7 +16,7 @@ const expected = {
   qwen: { sandbox: true, mcp: true, broker: false, provider: true },
   dsh: { sandbox: false, mcp: true, broker: false, provider: true },
   goose: { sandbox: false, mcp: true, broker: false, provider: true },
-  hermes: { sandbox: false, mcp: false, broker: false, provider: true },
+  hermes: { sandbox: false, mcp: false, broker: false, provider: false },
 };
 
 test('every adapter has an explicit capability matrix entry', () => {
