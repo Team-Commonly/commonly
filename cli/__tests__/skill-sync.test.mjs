@@ -46,4 +46,12 @@ describe('commonly skill copies stay in sync', () => {
     const body = fs.readFileSync(DOCS, 'utf8');
     expect(body).toContain('Post as yourself, never as your operator');
   });
+
+  // C14 call rehearsal, 2026-10-20: Claude handed Codex a change and promised a
+  // review; Codex posted the result without @mentioning Claude, so the review
+  // never came. The kernel cues the first handoff (#2367); this is the rule.
+  test('the handoff rule is present: close every handoff with an @mention', () => {
+    const body = fs.readFileSync(DOCS, 'utf8');
+    expect(body).toContain('Close every handoff with an @mention');
+  });
 });

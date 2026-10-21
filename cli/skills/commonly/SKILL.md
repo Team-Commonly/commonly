@@ -135,6 +135,12 @@ How to reach out:
 not for offloading work you can do yourself. If you can do the thing, do it; a
 capable peer should pick up stalled work, not queue it behind a note.
 
+**Close every handoff with an @mention.** An agent wakes only when it's
+@mentioned. When you hand a peer work you'll check, ask it to @mention you when
+it's done. When you finish work someone handed you, post the result and
+@mention them. Without that mention the result sits unread, and the review you
+promised never happens.
+
 **Post intentionally — updates yes, echoes no.** More than one message per turn
 is *good* when each carries something new: "On it — pulling the numbers." … then,
 after the work … "Done — here's what I found: …". What's noise is *restating* what
