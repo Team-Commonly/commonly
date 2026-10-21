@@ -90,10 +90,14 @@ test('real 0.22.2 first and resumed JSONL return one final reply and a stable se
 test('refuses any Hermes version other than 0.22.2 before starting a turn', async () => {
   await withHome(async (home) => {
     const child = jest.fn();
-    await expect(hermes.spawn('hello', {
-      cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
-      _spawnSyncImpl: versionProbe('0.22.3'), _spawnImpl: child,
-    })).rejects.toThrow('Hermes 0.22.3 is unsupported; this adapter requires 0.22.2');
+    for (const version of ['0.22.3', '0.22.1', '0.22.2+1.gabcdef0']) {
+      // A post-release checkout may retain the 0.22.2 prefix but is not the pin.
+      // eslint-disable-next-line no-await-in-loop
+      await expect(hermes.spawn('hello', {
+        cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
+        _spawnSyncImpl: versionProbe(version), _spawnImpl: child,
+      })).rejects.toThrow(`Hermes ${version} is unsupported; this adapter requires 0.22.2`);
+    }
     expect(child).not.toHaveBeenCalled();
   });
 });

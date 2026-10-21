@@ -23,7 +23,7 @@ const readVersion = (env, spawnSyncImpl = spawnSync) => {
   if (probe.error || probe.status !== 0) {
     throw new Error('Hermes version probe failed; install Hermes Agent 0.22.2');
   }
-  const version = String(probe.stdout || '').match(/Hermes Agent v(\d+\.\d+\.\d+)/i)?.[1];
+  const version = String(probe.stdout || '').match(/Hermes Agent v([^\s]+)/i)?.[1];
   if (version !== TESTED_HERMES_VERSION) {
     throw new Error(`Hermes ${version || 'unknown'} is unsupported; this adapter requires ${TESTED_HERMES_VERSION}`);
   }
