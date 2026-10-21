@@ -119,6 +119,16 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
     await expect(stat(join(publicHome, 'AGENTS.override.md'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  test('an override is removed even when the seat declares no skills', async () => {
+    await writeFile(join(publicHome, 'AGENTS.override.md'), '# Old instructions\n', 'utf8');
+    const { impl, calls } = makeSpawnImpl();
+    await spawnSeat(impl, { sandbox: { trust: 'public' } });
+
+    expect(await calls[0].seen).toBeNull();
+    await expect(stat(join(publicHome, 'AGENTS.override.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(publicHome, 'AGENTS.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   test('the file is private to the operator', async () => {
     const { impl } = makeSpawnImpl();
     await spawnSeat(impl, { sandbox: { trust: 'public' }, skills: { claude: [skillSrc] } });
