@@ -80,11 +80,11 @@ const SCOUT_BOT = '64bbbbbbbbbbbbbbbbbbbbb2';
 const PERSON_WITH_STALE_BOT_METADATA = '64aaaaaaaaaaaaaaaaaaaaa3';
 const NOW = new Date('2026-10-20T03:00:23Z');
 
-const install = (agentName, { wakeOn = false } = {}) => ({
+const install = (agentName, { wakeOn = false, humanOnly = false } = {}) => ({
   agentName,
   instanceId: 'default',
   displayName: agentName,
-  ...(wakeOn ? { config: { wakeOnMessage: { enabled: true } } } : {}),
+  ...(wakeOn ? { config: { wakeOnMessage: { enabled: true, ...(humanOnly ? { humanOnly: true } : {}) } } } : {}),
 });
 
 const USERS = {
@@ -173,6 +173,19 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
     expect(calls('message.posted').map((c) => c.agentName)).toEqual(['seat-a']);
     expect(res.woken).toEqual(['seat-a']);
     // With nothing adjacency could reach, it reads nothing.
+    expect(PGMessage.findPreviousTopLevel).not.toHaveBeenCalled();
+  });
+
+  // D8.1 (#2375) gives every agent a person brings in this shape by default, so
+  // it is now the common case for a person answering their own agent. The
+  // human-only ambient wake hears the reply; adjacency must not add a second
+  // delivery, and the default must not leave the reply unheard.
+  test('an agent on the D8.1 default (human-only wake) hears the reply once, through the ambient wake', async () => {
+    setup({ installations: [install('seat-a', { wakeOn: true, humanOnly: true })] });
+    const res = await send('thanks, and next?');
+    expect(calls('chat.mention')).toHaveLength(0);
+    expect(calls('message.posted').map((c) => c.agentName)).toEqual(['seat-a']);
+    expect(res.woken).toEqual(['seat-a']);
     expect(PGMessage.findPreviousTopLevel).not.toHaveBeenCalled();
   });
 
