@@ -21,6 +21,11 @@ const mockInstallationUpdateOne = jest.fn();
 const mockCompleteStarterTask = jest.fn();
 const mockMarkByoConnectionAttempt = jest.fn();
 const mockNarrowedPods = jest.fn();
+const mockEnsembleFindById = jest.fn();
+
+jest.mock('../../../models/AgentEnsembleState', () => ({
+  findById: (...args) => mockEnsembleFindById(...args),
+}));
 
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podsWithOutsiderWritableGrants: (...args) => mockNarrowedPods(...args),
@@ -78,6 +83,7 @@ const buildRes = () => {
 
 beforeEach(() => {
   mockNarrowedPods.mockReset().mockResolvedValue(new Set());
+  mockEnsembleFindById.mockReset();
   mockSecret.hash.mockReset();
   mockSecret.hash.mockReturnValue('hashed-token');
   mockUserFindOne.mockReset();
@@ -150,6 +156,22 @@ describe('TASK-213 runtime token narrowing', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledTimes(2);
     expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('ensemble path in P cannot write into an ensemble stored in Q', async () => {
+    setupLegacy();
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
+    mockEnsembleFindById.mockReturnValue({ select: () => ({ lean: async () => ({ podId: 'pod-b' }) }) });
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/pods',
+      route: { path: '/:podId/ensemble/response' }, params: { podId: 'pod-a' },
+      body: { ensembleId: 'ensemble-b', content: 'cross-pod' } });
+    const res = buildRes();
+    const next = jest.fn();
+    await agentRuntimeAuth(req, res, next);
+    expect(mockEnsembleFindById).toHaveBeenCalledWith('ensemble-b');
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
   });
 
   test('failed grant census narrows the agent', async () => {
