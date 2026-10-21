@@ -27,6 +27,9 @@ import { PERSONA_CARDS } from '../agents/personaCatalogData';
 import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
+// The token routes refuse a name that belongs to an agent Commonly runs (the
+// person's hosted agent): say that, not "has no runtime token".
+const IN_PROCESS_NAME_CODE = 'in_process_agent_no_token';
 const DEFAULT_POD_TYPE = 'chat';
 // @latest matters: `agent run` learned to bootstrap from these env vars in
 // 0.1.9 — a machine with an older global install must upgrade, not skip the
@@ -147,16 +150,20 @@ const V2AgentBYO: React.FC = () => {
   // shared literal default ("my-mcp-agent") 409s for every user after the
   // first one to accept it. Seed from the username so defaults never collide.
   const { currentUser } = useAuth();
-  const defaultAgentName = (() => {
-    const u = (currentUser?.username || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
-    if (personaCard) return u ? `${u}-${personaCard.key}` : personaCard.key;
-    return u ? `${u}-agent` : DEFAULT_AGENT_NAME;
-  })();
-  const [name, setName] = useState<string>(prefill.name || defaultAgentName);
-  // currentUser can resolve after mount — refresh the default if untouched.
-  useEffect(() => {
-    setName((prev) => (prev === DEFAULT_AGENT_NAME && defaultAgentName !== DEFAULT_AGENT_NAME ? defaultAgentName : prev));
-  }, [defaultAgentName]);
+  const userSlug = (currentUser?.username || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+  // The default name follows where the agent runs (C14 rehearsal, 2026-10-20):
+  // "Run it here" takes `<user>-agent`, so an own agent defaulting to the same
+  // name was refused at the token step once the hosted one existed. Your own
+  // agent defaults to `<user>-<claude|codex>`, a computer placement to
+  // `<user>-<adapter|local>`. A name the person typed is never replaced.
+  const defaultNameFor = (runMode: string | null, runner: string): string => {
+    if (personaCard) return userSlug ? `${userSlug}-${personaCard.key}` : personaCard.key;
+    if (!userSlug) return DEFAULT_AGENT_NAME;
+    if (runMode === 'byo' || runMode === 'machine') return `${userSlug}-${runner || 'local'}`;
+    return `${userSlug}-agent`;
+  };
+  const [name, setName] = useState<string>(prefill.name || defaultNameFor(null, ''));
+  const [nameTouched, setNameTouched] = useState<boolean>(Boolean(prefill.name));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState<{ token: string; agentName: string; podId: string; issuedAt: number } | null>(null);
@@ -248,6 +255,12 @@ const V2AgentBYO: React.FC = () => {
   // back to Claude or auto-detect, and vice versa.
   const [adapter, setAdapter] = useState<MachineAdapter>('');
   const [model, setModel] = useState<string>('');
+  // Re-default while the person hasn't typed a name: when the user resolves
+  // after mount, and when the mode or the runner changes.
+  const defaultAgentName = defaultNameFor(mode, mode === 'machine' ? adapter : listenAdapter);
+  useEffect(() => {
+    if (!nameTouched) setName(defaultAgentName);
+  }, [defaultAgentName, nameTouched]);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
 
@@ -496,8 +509,12 @@ const V2AgentBYO: React.FC = () => {
         machineName: selectedMachineName,
       });
     } catch (err) {
-      const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
-      setError(e.response?.data?.message || e.response?.data?.error || e.message || t('agentByo.errors.installFailed'));
+      const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
+      // Defensive: neither route this path calls returns the in-process code
+      // today (sprint-review on #2365). It reads right the day one does.
+      setError(e.response?.data?.code === IN_PROCESS_NAME_CODE
+        ? t('agentByo.errors.nameIsHosted', { name: cleanName })
+        : e.response?.data?.message || e.response?.data?.error || e.message || t('agentByo.errors.installFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -566,8 +583,10 @@ const V2AgentBYO: React.FC = () => {
         setMemoryError(null);
       }
     } catch (err) {
-      const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
-      setError(e.response?.data?.error || e.response?.data?.message || e.message || t('agentByo.errors.installFailed'));
+      const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
+      setError(e.response?.data?.code === IN_PROCESS_NAME_CODE
+        ? t('agentByo.errors.nameIsHosted', { name: cleanName })
+        : e.response?.data?.error || e.response?.data?.message || e.message || t('agentByo.errors.installFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -971,7 +990,7 @@ const V2AgentBYO: React.FC = () => {
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setNameTouched(true); setName(e.target.value); }}
               placeholder={DEFAULT_AGENT_NAME}
               className="v2-byo__input"
             />

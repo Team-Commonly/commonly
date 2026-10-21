@@ -99,13 +99,14 @@ describe('V2AgentBYO listening verification', () => {
     await act(async () => { jest.advanceTimersByTime(4000); });
     expect(screen.queryByTestId('byo-listen-ok')).not.toBeInTheDocument();
 
-    // Second poll: the just-issued agent (sam-agent) authenticates.
+    // Second poll: the just-issued agent (sam-claude: your own agent defaults
+    // to `<user>-<adapter>`) authenticates.
     axios.get.mockResolvedValueOnce({
       data: {
         issued: true,
         connected: true,
         lastUsedAt: new Date().toISOString(),
-        connectedAgent: { agentName: 'sam-agent', instanceId: 'default', podId: 'p1' },
+        connectedAgent: { agentName: 'sam-claude', instanceId: 'default', podId: 'p1' },
       },
     });
     await act(async () => { jest.advanceTimersByTime(4000); });

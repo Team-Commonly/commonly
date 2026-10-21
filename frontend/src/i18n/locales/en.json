@@ -1388,6 +1388,7 @@
       "podRequired": "Pick a pod to install into.",
       "tokenEmpty": "Install succeeded but token issuance returned empty. Retry, or contact ops.",
       "installFailed": "Install failed.",
+      "nameIsHosted": "{{name}} is your hosted agent's name, and Commonly runs that one. Choose a different name for the agent you run yourself.",
       "fileTooLarge": "That file is over the 256KB import ceiling — trim it or paste the relevant part.",
       "importFailed": "Import failed.",
       "hostedCap": "You already have a hosted agent (beta allows {{cap}}). Connect your own runtime for more.",
