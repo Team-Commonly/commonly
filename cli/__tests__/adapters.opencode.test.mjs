@@ -734,6 +734,43 @@ describe('opencode external provider config', () => {
     });
   });
 
+  // TASK-251: Gemini 3 needs its thought signatures back on the next request
+  // and OpenCode's provider drops them, so a Gemini seat goes through the
+  // signing proxy even when private. The test above is the control: any other
+  // private provider still goes direct.
+  test('a private Gemini seat goes through the loopback proxy, never direct', async () => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const keyFile = join(root, 'secrets', 'gemini-key');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(join(root, 'secrets'), { recursive: true });
+      await writeFile(keyFile, 'gemini-secret-never-inline');
+      await chmod(keyFile, 0o600);
+      const spawn = makeSpawnImpl({
+        onCall: (_cmd, _args, options) => {
+          const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+          const { baseURL, apiKey } = config.provider.google.options;
+          expect(baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1beta\/openai$/);
+          expect(apiKey).not.toBe(`{file:${realpathSync(keyFile)}}`);
+        },
+      });
+      await opencode.spawn('gemini turn', {
+        cwd: workspace,
+        env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'operator-data') },
+        environment: {
+          model: 'gemini-3-flash-preview',
+          provider: {
+            id: 'google', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', keyFile,
+          },
+        },
+        _geminiSignatureDir: join(root, 'signatures'),
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: spawn.impl,
+      });
+      expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
   test('refuses provider keys with unsafe paths before spawning', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
