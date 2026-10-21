@@ -85,6 +85,17 @@ export interface IAgentRun extends Document {
   webSearches?: number;
   /** Web pages the turn requested (TASK-267b); absent when it read none. */
   webFetches?: number;
+  /**
+   * Web results the turn lost after the guard stopped it: the ones set aside
+   * plus the ones in the rounds dropped after them. Absent when none were.
+   */
+  webSetAside?: number;
+  /**
+   * False when the person's turn meter leaves this run out: a hosted run that
+   * failed and posted nothing. Absent means counted. The per-user spend
+   * ceiling counts every run, whatever this says.
+   */
+  metered?: boolean;
   startedAt: Date;
   completedAt?: Date;
   errorKind?: AgentRunErrorKind;
@@ -143,6 +154,8 @@ const AgentRunSchema = new Schema<IAgentRun>(
     sandboxSeconds: { type: Number },
     webSearches: { type: Number },
     webFetches: { type: Number },
+    webSetAside: { type: Number },
+    metered: { type: Boolean },
     startedAt: { type: Date, default: Date.now },
     completedAt: { type: Date },
     errorKind: {

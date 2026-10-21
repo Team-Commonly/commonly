@@ -101,6 +101,20 @@ const LITELLM_TIMEOUT_MS = Number(process.env.NATIVE_RUNTIME_TIMEOUT_MS) || 45_0
 const NATIVE_RUNTIME_GUARDRAILS = (
   process.env.NATIVE_RUNTIME_GUARDRAILS ?? 'openai-moderation-enforce,injection-guard'
 ).split(',').map((s) => s.trim()).filter(Boolean);
+// How a guardrail rejection reads in a chat call's error body.
+const GUARDRAIL_REJECTION = /guardrail|moderation|prompt-injection/i;
+const GUARD_CHECK_TIMEOUT_MS = 10_000;
+
+// A web result the guard stops on its own is replaced with this before the
+// turn's one extra round. It names no rule and repeats nothing from the result.
+const WEB_SET_ASIDE_NOTICE = 'This result was set aside: a content filter stopped it, and its text is no longer '
+  + 'in this conversation. Answer with what you have, and tell the person which page or search you could not use.';
+const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
+// What a hosted agent posts when a turn someone was waiting on ends on a guard
+// stop or an error with nothing posted. Fixed text, so it carries nothing the
+// turn read.
+export const HOSTED_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this, and it didn\'t count against today\'s '
+  + 'turns. You can ask again, or ask it a different way.';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -125,6 +139,43 @@ function resolveLiteLLM(): { baseUrl: string; apiKey: string } | null {
 
 export function isNativeRuntimeAvailable(): boolean {
   return resolveLiteLLM() !== null;
+}
+
+/**
+ * Which of these texts the turn's guardrails stop on their own, checked with
+ * no model call: LiteLLM's /guardrails/apply_guardrail answers 2xx for a pass
+ * and 400 for a stop. Null when a check cannot be made, so the caller sets
+ * aside every candidate instead of guessing which one was clean.
+ */
+async function textsTheGuardStops(
+  litellm: { baseUrl: string; apiKey: string },
+  texts: string[],
+): Promise<boolean[] | null> {
+  try {
+    return await Promise.all(texts.map(async (text) => {
+      for (const guardrailName of NATIVE_RUNTIME_GUARDRAILS) {
+        // eslint-disable-next-line no-await-in-loop
+        const resp = await axios.post(
+          `${litellm.baseUrl}/guardrails/apply_guardrail`,
+          { guardrail_name: guardrailName, text },
+          {
+            headers: { Authorization: `Bearer ${litellm.apiKey}`, 'Content-Type': 'application/json' },
+            timeout: GUARD_CHECK_TIMEOUT_MS,
+            validateStatus: () => true,
+          },
+        );
+        if (resp?.status === 400) return true;
+        if (!(resp?.status >= 200 && resp?.status < 300)) throw new Error(`guardrail check HTTP ${resp?.status}`);
+      }
+      return false;
+    }));
+  } catch (error) {
+    console.warn(
+      '[native-runtime] guardrail check unavailable; setting aside every web result:',
+      (error as Error).message,
+    );
+    return null;
+  }
 }
 
 /**
@@ -1345,6 +1396,10 @@ export async function runAgent(
         instanceId,
         startedAt: { $gte: dayStart },
         trigger: { $ne: UNMETERED_TRIGGER },
+        // For a hosted install this cap is the person's plan line, so it
+        // leaves out the runs their meter leaves out (nativeTurnsToday). The
+        // per-user ceiling below counts every run.
+        ...(hostedNative ? { metered: { $ne: false } } : {}),
       });
       if (runsToday >= dailyRunCap) {
         console.warn(
@@ -1596,6 +1651,7 @@ export async function runAgent(
     run.status = 'failed';
     run.errorKind = 'config';
     run.errorMessage = 'LiteLLM resolved to null at dispatch time';
+    if (hostedNative) run.metered = false;
     run.completedAt = new Date();
     await run.save();
     emitStop();
@@ -1673,6 +1729,35 @@ export async function runAgent(
     }
   }
 
+  // A guard stop after the turn read the web is most often a page, not the
+  // person. So the turn keeps where each web result sits (its tool-call round
+  // and its message), and on the first stop sets aside the result the guard
+  // stops on its own, drops every round after the one that brought it in, and
+  // gives the model one more round with no lookups. Every later round was
+  // produced with that text in front of the model, so none of it is kept.
+  const webResults: Array<{ round: number; index: number }> = [];
+  const roundEnds: number[] = [];
+  let webSetAside = false;
+  // Returns how many results were set aside, and how many web results the
+  // turn lost in all (those plus the ones in the dropped rounds).
+  const setAsideStoppedWebResult = async (): Promise<{ setAside: number; removed: number }> => {
+    const stops = await textsTheGuardStops(litellm, webResults.map(({ index }) => String(messages[index].content)));
+    // The guard stopped on something else, the pod's text or the request.
+    if (stops && !stops.includes(true)) return { setAside: 0, removed: 0 };
+    const before = webResults.length;
+    const firstRound = stops ? webResults[stops.indexOf(true)].round : webResults[0].round;
+    const aside = webResults.filter((result, i) => result.round === firstRound && (!stops || stops[i]));
+    messages.length = roundEnds[firstRound];
+    roundEnds.length = firstRound + 1;
+    aside.forEach(({ index }) => {
+      messages[index] = { ...messages[index], content: JSON.stringify({ ok: false, error: WEB_SET_ASIDE_NOTICE }) };
+    });
+    const kept = webResults.filter((result) => result.round < firstRound
+      || (result.round === firstRound && !aside.includes(result)));
+    webResults.splice(0, webResults.length, ...kept);
+    return { setAside: aside.length, removed: before - kept.length };
+  };
+
   try {
     // Tool names offered in the most recent model call; a call to anything
     // else is refused at dispatch.
@@ -1713,9 +1798,13 @@ export async function runAgent(
       // (TASK-267a): only in-pod read and post, and searching, remain.
       const webTainted = Boolean(dispatchCtx.webTainted);
       const podBridged = mayLookUp ? await podBridgedNow() : false;
+      // The round after a set-aside is the recovery round: one model call,
+      // offered only a post, and the run ends after it whatever it did.
+      const recoveryRound = webSetAside;
       const offeredTools = [
-        ...toolsForConfig(cfg, inPodOnly, { webTainted, podBridged }),
-        ...(webTainted ? [] : broker.tools),
+        ...toolsForConfig(cfg, inPodOnly, { webTainted, podBridged })
+          .filter((tool) => !recoveryRound || tool.function.name === 'commonly_post_message'),
+        ...(webTainted || recoveryRound ? [] : broker.tools),
       ];
       offeredToolNames = new Set(offeredTools.map((tool: any) => String(tool?.function?.name || '')));
       try {
@@ -1753,7 +1842,16 @@ export async function runAgent(
           // error status from LiteLLM. Tag it distinctly so it's observable in
           // AgentRun metrics (told apart from genuine LLM failures) and never
           // surfaces the raw proxy payload back to a possibly-malicious user.
-          if (/guardrail|moderation|prompt-injection/i.test(bodyText)) {
+          if (GUARDRAIL_REJECTION.test(bodyText)) {
+            // Once a turn, and never after a post: the person already has that answer.
+            if (!webSetAside && !postedViaTool && webResults.length > 0) {
+              const { setAside, removed } = await setAsideStoppedWebResult();
+              if (setAside > 0) {
+                webSetAside = true;
+                run.webSetAside = removed;
+                continue;
+              }
+            }
             run.status = 'failed';
             run.errorKind = 'guardrail_blocked';
             run.errorMessage = 'Request blocked by a content guardrail (prompt-injection / moderation).';
@@ -1790,6 +1888,7 @@ export async function runAgent(
       const toolCalls = msg.tool_calls || [];
 
       if (toolCalls.length > 0) {
+        const round = roundEnds.length;
         // Preserve the assistant message with tool_calls so the next turn's
         // tool response messages can reference tool_call_id.
         messages.push({
@@ -1855,9 +1954,13 @@ export async function runAgent(
           // naming the grant; any other tool not offered this turn is refused here.
           const narrowedAway = Boolean(dispatchCtx.inPodOnly) && !IN_POD_NATIVE_TOOLS.has(toolName);
           const notOffered = `${toolName || 'That tool'} is not available to you in this turn.`;
-          const result: DispatchResult = offeredToolNames.has(toolName) || narrowedAway || webTaintedAway
-            ? await dispatchTool(toolName, parsedArgs, dispatchCtx)
-            : { content: { ok: false, error: notOffered }, error: notOffered };
+          // The recovery round posts at most one reply.
+          const replied = recoveryRound && postedViaTool ? RECOVERY_REPLIED_REFUSAL : '';
+          let result: DispatchResult;
+          if (replied) result = { content: { ok: false, error: replied }, error: replied };
+          else if (offeredToolNames.has(toolName) || narrowedAway || webTaintedAway) {
+            result = await dispatchTool(toolName, parsedArgs, dispatchCtx);
+          } else result = { content: { ok: false, error: notOffered }, error: notOffered };
           const elapsed = Date.now() - toolStart;
           turn.toolCalls.push({
             name: toolName,
@@ -1894,8 +1997,10 @@ export async function runAgent(
               ? `${untrustedConnectorMarker(result.untrustedSourceTitle)}\n`
               : '') + JSON.stringify(result.content ?? { ok: !result.error }),
           });
+          if (WEB_LOOKUP_TOOLS.has(toolName) && !result.error) webResults.push({ round, index: messages.length - 1 });
           }
         }
+        roundEnds.push(messages.length);
 
         turn.elapsedMs = Date.now() - turnStart;
         run.turns.push(turn);
@@ -1903,6 +2008,18 @@ export async function runAgent(
         await run.save();
 
         turnIndex += 1;
+        // The recovery round ends the run: answered (or declined through a
+        // post) is a success, anything else could not finish.
+        if (recoveryRound) {
+          if (postedViaTool) {
+            run.status = run.status === 'running' ? 'succeeded' : run.status;
+          } else {
+            run.status = 'failed';
+            run.errorKind = 'guardrail_blocked';
+            run.errorMessage = 'Request blocked by a content guardrail (prompt-injection / moderation).';
+          }
+          break;
+        }
         // A hosted agent's greeting is one post. Given another round, the
         // model posted the greeting's last line as a second message (QA walk
         // 4, 2026-10-16), so its first-contact run ends at its first post.
@@ -1949,6 +2066,9 @@ export async function runAgent(
           // complete the claim and swallow the human wake a second time.
           if (!postResult?.skipped) finalMessage = textOut;
         } catch (postErr) {
+          // The reply did not reach the pod, so the run did not answer: it
+          // fails, and a hosted one gets the fixed handling below (vera on #2305).
+          run.status = 'failed';
           run.errorMessage = (postErr as Error).message;
           run.errorKind = 'tool_error';
         }
@@ -1961,6 +2081,34 @@ export async function runAgent(
     run.status = 'failed';
     run.errorKind = run.errorKind || 'unknown';
     run.errorMessage = (loopErr as Error).message?.slice(0, 1000) || 'unknown error';
+  }
+
+  // A hosted turn that failed (a guard stop or an error) and posted nothing
+  // costs the person no turn. When someone was waiting on it, a mention or a
+  // DM, it posts one fixed line instead of leaving them in silence. A turn
+  // that declined (NO_REPLY, a silent group-pod turn) ended succeeded and
+  // never reaches this. The per-user spend ceiling still counts the run.
+  if (hostedNative && run.status === 'failed' && !postedViaTool && !finalMessage) {
+    run.metered = false;
+    if (wasDirectlyAddressed(trigger) && !(dispatchCtx.webTainted && await podBridgedNow())) {
+      try {
+        const AgentMessageService = require('./agentMessageService');
+        await AgentMessageService.postMessage({
+          agentName,
+          instanceId,
+          podId,
+          content: HOSTED_RUN_FAILED_LINE,
+          messageType: 'text',
+          displayName,
+          installationConfig: cfg,
+          metadata: { source: 'native-runtime', runFailed: true },
+          noOutboundRelay: Boolean(dispatchCtx.webTainted),
+          answeringMessageId: dispatchCtx.answeringMessageId,
+        });
+      } catch (postErr) {
+        console.warn('[native-runtime] failed-run line not posted:', (postErr as Error).message);
+      }
+    }
   }
 
   // TASK-266: the sandbox lives for one turn. Close it whatever happened, and
