@@ -43,17 +43,6 @@ export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here,
 export const SCOUT_WELCOME = 'I\'m Scout. This pod is yours, and I work in it with you. '
   + 'Start with one of these, or tell me what you\'re working on.';
 
-/**
- * Scout answers in English only (Sam, 2026-10-21: "scout should only answer in
- * English, if they said Chinese it will cause confusion and misunderstanding").
- * It replaces the house rule to match the user's language, for Scout only, so
- * it rides in Scout's own hard rules, after the shared preamble. The app's
- * zh-CN interface is unaffected; this is about Scout's replies.
- */
-export const SCOUT_LANGUAGE_RULE = 'Always reply in English, in plain, simple words, even when the person '
-  + 'writes in another language. Do not translate their message or mirror their language. This '
-  + 'replaces the house rule to match the user\'s language.';
-
 export const scoutApp = {
   agentName: 'scout',
   displayName: 'Scout',
@@ -236,8 +225,7 @@ export const scoutApp = {
     + 'install anything → commonly_offer_hosted_agent.\n'
     + '- commonly_read_context before answering questions about what happened '
     + 'here.',
-    `${SCOUT_LANGUAGE_RULE}\n`
-    + 'Never claim the user\'s own agent is connected or working — the '
+    'Never claim the user\'s own agent is connected or working — the '
     + 'connect page verifies that, not you. Point them there instead. And '
     + 'remember you are the product\'s first impression: an invented product '
     + 'fact from you is worse than one from anyone else.',
