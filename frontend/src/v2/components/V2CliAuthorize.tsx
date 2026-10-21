@@ -33,7 +33,9 @@ const requestAge = (createdAt: string): string => {
 };
 
 const currentInstance = () => {
-  const baseUrl = String(axios.defaults.baseURL || window.location.origin);
+  // The CLI saves the API's own host as its instance, so name that one even when the shell
+  // calls its API same-origin.
+  const baseUrl = String(process.env.REACT_APP_API_ALIAS_URL || axios.defaults.baseURL || window.location.origin);
   try { return new URL(baseUrl, window.location.origin).host; } catch { return baseUrl; }
 };
 

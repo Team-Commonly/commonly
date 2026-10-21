@@ -62,6 +62,30 @@ describe('V2OAuthButtons', () => {
     expect(screen.getByRole('link', { name: /continue with google/i })).toBeInTheDocument();
   });
 
+  // Same-origin build (2026-10): the shell's API base is commonly.me, but the start link must
+  // stay on api.commonly.me, where the providers' callbacks are registered. If it ever points
+  // at the shell's host, sign-in depends on OAUTH_CALLBACK_BASE_URL staying set.
+  test('points the provider start at the API host in a same-origin build', async () => {
+    const saved = { base: process.env.REACT_APP_API_URL, alias: process.env.REACT_APP_API_ALIAS_URL };
+    process.env.REACT_APP_API_URL = 'https://commonly.me';
+    process.env.REACT_APP_API_ALIAS_URL = 'https://api.commonly.me';
+    try {
+      axios.get.mockResolvedValueOnce({ data: { providers: [{ id: 'github', label: 'GitHub' }] } });
+      render(
+        <MemoryRouter>
+          <V2OAuthButtons />
+        </MemoryRouter>,
+      );
+      const href = (await screen.findByRole('link', { name: /continue with github/i })).getAttribute('href') as string;
+      expect(new URL(href).origin).toBe('https://api.commonly.me');
+      expect(href.startsWith('https://commonly.me/')).toBe(false);
+      expect(new URL(href).pathname).toBe('/api/auth/oauth/github/start');
+    } finally {
+      if (saved.base === undefined) delete process.env.REACT_APP_API_URL; else process.env.REACT_APP_API_URL = saved.base;
+      if (saved.alias === undefined) delete process.env.REACT_APP_API_ALIAS_URL; else process.env.REACT_APP_API_ALIAS_URL = saved.alias;
+    }
+  });
+
   test('carries the first-touch ref into the provider start', async () => {
     localStorage.setItem('commonly.firstTouchRef', JSON.stringify({ ref: 'x' }));
     axios.get.mockResolvedValueOnce({ data: { providers: [{ id: 'google', label: 'Google' }] } });

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from '../../utils/axiosConfig';
-import getApiBaseUrl from '../../utils/apiBaseUrl';
+import { getApiAliasUrl } from '../../utils/apiBaseUrl';
 import { useTranslation } from 'react-i18next';
 import { readFirstTouchRef } from '../utils/firstTouch';
 
@@ -93,7 +93,8 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
     const ref = readFirstTouchRef();
     if (ref) params.set('ref', ref);
     const qs = params.toString();
-    return `${getApiBaseUrl()}/api/auth/oauth/${id}/start${qs ? `?${qs}` : ''}`;
+    // The API's own host, where the providers' callbacks are registered (getApiAliasUrl).
+    return `${getApiAliasUrl()}/api/auth/oauth/${id}/start${qs ? `?${qs}` : ''}`;
   };
 
   return (

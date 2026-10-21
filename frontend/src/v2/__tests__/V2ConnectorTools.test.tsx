@@ -720,6 +720,42 @@ test('step 7: the page\'s call to start a hosted connect is credentialed', async
   }
 });
 
+// Same-origin build (2026-10): the shell calls its API on commonly.me, but the vendor's callback
+// is registered on api.commonly.me, so the start (which sets the flow's nonce cookie) must stay
+// there. Resolving it to the shell's host would put the cookie on the wrong host.
+test('a hosted connect start stays on the API host in a same-origin build', async () => {
+  const saved = { base: process.env.REACT_APP_API_URL, alias: process.env.REACT_APP_API_ALIAS_URL };
+  process.env.REACT_APP_API_URL = 'https://commonly.me';
+  process.env.REACT_APP_API_ALIAS_URL = 'https://api.commonly.me';
+  const hosted = {
+    installableId: 'linear', list: 'tools', label: 'Linear', description: 'Issues and projects in Linear.',
+    connectionType: 'hosted-mcp', entryId: 'linear', available: true,
+    broker: { id: 'commonly-grant-broker' },
+    tools: [{ name: 'linear.list_issues', requiredWriteMode: 'read', irreversible: false }],
+    connections: [],
+  };
+  mockApi([hosted]);
+  axios.post.mockResolvedValue({ data: { authorizeUrl: 'https://mcp.linear.app/authorize?state=s' } });
+  const open = jest.spyOn(window, 'open').mockReturnValue({ opener: null, location: { assign: jest.fn() }, close: jest.fn() } as never);
+  try {
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/integrations/connect/hosted-mcp/linear/start',
+      {},
+      expect.objectContaining({ withCredentials: true, baseURL: 'https://api.commonly.me' }),
+    ));
+    const call = axios.post.mock.calls.find((c: unknown[]) => c[0] === '/api/integrations/connect/hosted-mcp/linear/start');
+    const origin = new URL(call[0], call[2].baseURL).origin;
+    expect(origin).toBe('https://api.commonly.me');
+    expect(origin).not.toBe('https://commonly.me');
+  } finally {
+    open.mockRestore();
+    if (saved.base === undefined) delete process.env.REACT_APP_API_URL; else process.env.REACT_APP_API_URL = saved.base;
+    if (saved.alias === undefined) delete process.env.REACT_APP_API_ALIAS_URL; else process.env.REACT_APP_API_ALIAS_URL = saved.alias;
+  }
+});
+
 test('a hosted connect start error uses fixed copy instead of response text', async () => {
   mockApi([{ ...linearEntry, connections: [] }]);
   axios.post.mockRejectedValue({

@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { getApiAliasUrl } from '../../utils/apiBaseUrl';
 import { useRelativeNow } from '../hooks/useRelativeNow';
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
@@ -674,10 +675,12 @@ const V2ConnectorsPage: React.FC = () => {
     setError(null);
     setRowRefusal(null);
     try {
+      // On the API's own host, not the shell's: the nonce cookie this sets must reach Slack's
+      // callback, which is registered on that host (getApiAliasUrl).
       const result = await api.post<SlackAuthorizeResponse>(
         '/api/installables/slack/authorize-url',
         {},
-        { withCredentials: true },
+        { withCredentials: true, baseURL: getApiAliasUrl() },
       );
       if (!result.authorizeUrl) throw new Error('Slack authorization URL was missing');
       if (authorizationWindow) {

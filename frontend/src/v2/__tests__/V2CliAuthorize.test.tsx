@@ -73,6 +73,24 @@ describe('V2CliAuthorize', () => {
     axios.defaults.baseURL = '';
   });
 
+  // Same-origin build (2026-10): the shell's base is commonly.me, but the CLI saved the API's
+  // own host, so the page names that one.
+  test('names the API host as the instance in a same-origin build', async () => {
+    const saved = process.env.REACT_APP_API_ALIAS_URL;
+    process.env.REACT_APP_API_ALIAS_URL = 'https://api.commonly.me';
+    axios.defaults.baseURL = 'https://commonly.me';
+    try {
+      axios.post.mockResolvedValueOnce({ data: { status: 'pending', request: { hostname: 'sam-laptop', clientName: 'commonly-cli', createdAt: '2026-08-31T00:00:00.000Z' } } });
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      expect(await screen.findByText('api.commonly.me')).toBeInTheDocument();
+      expect(screen.queryByText('commonly.me')).not.toBeInTheDocument();
+    } finally {
+      axios.defaults.baseURL = '';
+      if (saved === undefined) delete process.env.REACT_APP_API_ALIAS_URL; else process.env.REACT_APP_API_ALIAS_URL = saved;
+    }
+  });
+
   test('labels an already-consumed code instead of calling it expired', async () => {
     axios.post.mockResolvedValue({ data: { status: 'consumed' } });
     renderPage();

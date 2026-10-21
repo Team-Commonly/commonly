@@ -70,5 +70,14 @@ const normalizeUploadUrl = (value: string | null | undefined): string | null | u
   return value;
 };
 
-export { normalizeUploadUrl };
+/**
+ * The API's own host, for the few calls that must not go same-origin even when the shell does.
+ * A request that sets a cookie the vendor's OAuth callback must carry has to land on the host
+ * that callback is registered on (api.commonly.me), and so does the OAuth start link, whose
+ * callback host comes from the same place. Falls back to the API base when no alias is set,
+ * so a build without one behaves exactly as before.
+ */
+const getApiAliasUrl = (): string => process.env.REACT_APP_API_ALIAS_URL || getApiBaseUrl();
+
+export { normalizeUploadUrl, getApiAliasUrl };
 export default getApiBaseUrl;
