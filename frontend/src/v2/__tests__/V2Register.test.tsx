@@ -77,7 +77,6 @@ describe('V2Register', () => {
     const { login } = renderRegister();
 
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
-    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'new-user' } });
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
     fireEvent.click(screen.getByRole('button', { name: /create account/i }));
@@ -86,9 +85,23 @@ describe('V2Register', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/v2');
   });
 
+  // TASK-290 A: the page asks for an email and a password only; the server
+  // derives the handle from the email.
+  it('asks for no username and sends none', async () => {
+    renderRegister();
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
+    expect(screen.queryByLabelText(/username/i)).toBeNull();
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
+    fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/auth/register', expect.anything()));
+    expect(axios.post.mock.calls[0][1]).not.toHaveProperty('username');
+  });
+
   const createAccount = async () => {
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
-    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'new-user' } });
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
     fireEvent.click(screen.getByRole('button', { name: /create account/i }));
@@ -133,7 +146,6 @@ describe('V2Register', () => {
     const { login } = renderRegister(jest.fn().mockRejectedValue(new Error('login unavailable')));
 
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
-    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'new-user' } });
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
     fireEvent.click(screen.getByRole('button', { name: /create account/i }));
@@ -158,7 +170,6 @@ describe('V2Register', () => {
     renderRegister(jest.fn().mockRejectedValue(new Error('login unavailable')));
 
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
-    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'new-user' } });
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
     fireEvent.click(screen.getByRole('button', { name: /create account/i }));
@@ -178,7 +189,6 @@ describe('V2Register', () => {
     renderRegister(jest.fn().mockRejectedValue(new Error('login unavailable')));
 
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
-    fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'new-user' } });
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
     fireEvent.click(screen.getByRole('button', { name: /create account/i }));
