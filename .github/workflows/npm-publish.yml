@@ -173,3 +173,12 @@ jobs:
           NAME: ${{ steps.cmp.outputs.name }}
           WANT: ${{ steps.cmp.outputs.repo_v }}
         run: bash "$GITHUB_WORKSPACE/scripts/verify-npm-publish-readback.sh"
+
+      # The MCP Registry lists commonly-mcp from its server.json, after npm
+      # serves the version. Runs whether or not this push published (it is a
+      # no-op when the version is already listed), so a registry failure can be
+      # retried by re-running the job. Auth is this job's OIDC id-token.
+      - name: List commonly-mcp on the MCP Registry
+        if: matrix.pkg == 'commonly-mcp' && (env.PICK == 'all' || env.PICK == 'commonly-mcp')
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/scripts/publish-mcp-registry.sh"
