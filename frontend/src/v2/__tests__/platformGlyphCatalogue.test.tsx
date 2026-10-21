@@ -54,4 +54,13 @@ describe('platform glyph catalogue contract', () => {
     expect(svg?.querySelector('path')?.getAttribute('d')).toContain('M3.5 10h17');
     expect(svg?.querySelector('circle')).toBeNull();
   });
+
+  it('renders PostHog with its mark instead of the unknown-platform dot', () => {
+    const { container } = render(React.createElement(PlatformGlyph, { type: 'posthog' }));
+    const svg = container.querySelector('svg');
+    expect(svg).toHaveAttribute('width', '20');
+    expect(svg).toHaveAttribute('fill', 'currentColor');
+    expect(svg?.querySelector('path')?.getAttribute('d')).toContain('M9.854 14.5 5 9.647');
+    expect(svg?.querySelector('circle')).toBeNull();
+  });
 });

@@ -1,0 +1,1431 @@
+{
+  "tools": [
+    {
+      "name": "insights-list",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "created_by": {
+            "description": "JSON-encoded array of user IDs. Only returns insights whose `created_by` is in the list, e.g. `[1,42]`.",
+            "type": "string"
+          },
+          "created_date_from": {
+            "description": "Filter by `created_at > created_date_from`. Accepts absolute or relative dates.",
+            "type": "string"
+          },
+          "created_date_to": {
+            "description": "Filter by `created_at < created_date_to`. Accepts absolute or relative dates.",
+            "type": "string"
+          },
+          "dashboards": {
+            "description": "JSON-encoded array of dashboard IDs. Returns insights attached to every listed dashboard (AND).",
+            "type": "string"
+          },
+          "date_from": {
+            "description": "Filter by `last_modified_at > date_from`. Accepts absolute dates (`2025-04-23`) or relative strings (`-7d`, `-1m`).",
+            "type": "string"
+          },
+          "date_to": {
+            "description": "Filter by `last_modified_at < date_to`. Accepts absolute dates or relative strings.",
+            "type": "string"
+          },
+          "display": {
+            "description": "Comma-separated chart types, e.g. `ActionsLineGraph,ActionsBar`. Only returns trends and SQL insights shown as one of them. A trends insight with no chart type set counts as `ActionsLineGraph`.",
+            "type": "string"
+          },
+          "exclude_bi": {
+            "description": "Exclude Business intelligence worksheets from the insight list.",
+            "type": "boolean"
+          },
+          "favorited": {
+            "description": "Include this parameter (any value) to restrict results to insights marked as favorited.",
+            "type": "boolean"
+          },
+          "include_dashboards": {
+            "description": "Opt in to receiving the deprecated `dashboards` field in insight payloads. Once opt-in enforcement is enabled, API-token callers stop receiving it by default; use `dashboard_tiles` instead.",
+            "type": "boolean"
+          },
+          "insight": {
+            "description": "Restrict to a single insight type. `JSON` matches non-wrapper query insights; `SQL` matches HogQL queries; `BI` matches editable worksheets.",
+            "type": "string",
+            "enum": [
+              "BI",
+              "FUNNELS",
+              "JOURNEYS",
+              "JSON",
+              "LIFECYCLE",
+              "PATHS",
+              "RETENTION",
+              "SQL",
+              "STICKINESS",
+              "TRENDS"
+            ]
+          },
+          "last_viewed_date_from": {
+            "description": "Filter by `last_viewed_at > last_viewed_date_from`. Accepts absolute or relative dates.",
+            "type": "string"
+          },
+          "last_viewed_date_to": {
+            "description": "Filter by `last_viewed_at < last_viewed_date_to`. Accepts absolute or relative dates.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Number of results to return per page.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "The initial index from which to return the results.",
+            "type": "number"
+          },
+          "order": {
+            "description": "Sort by an insight field, with a leading minus for descending order. Supports last_modified_at and last_viewed_at.",
+            "type": "string"
+          },
+          "saved": {
+            "description": "When truthy, restricts results to insights that are saved (or attached to a visible dashboard). When falsy, only unsaved insights.",
+            "type": "boolean"
+          },
+          "search": {
+            "description": "Search term matched across name, derived_name, description, and tag names. Returns exact (case-insensitive substring) matches only; if no exact match exists, returns similar (fuzzy trigram) matches instead. Each result's `search_match_type` is `exact` or `similar`.",
+            "type": "string"
+          },
+          "short_id": {
+            "type": "string"
+          },
+          "tags": {
+            "description": "JSON-encoded array of tag names. Returns insights with any of the listed tags.",
+            "type": "string"
+          },
+          "user": {
+            "description": "Include this parameter (any value) to restrict results to insights created by the authenticated user.",
+            "type": "boolean"
+          },
+          "context": {
+            "type": "string",
+            "description": "Explain in 15-25 words, in third person, why this tool is called and how it supports the user's goal. For analytics only. You MUST describe only the abstract purpose of the tool call. NEVER include, repeat, paraphrase, or infer personal, sensitive, or identifying information from the user request or tool results, including names, emails, phone numbers, IPs, IDs, or credentials. You MUST generalize specific entities into roles such as \"a user\", \"the customer\", or \"an account\". Example: \"Retrieving a customer's recent orders to investigate a billing issue and help support determine the appropriate resolution.\""
+          },
+          "llm_model": {
+            "type": "string",
+            "description": "The exact model identifier you (the assistant) are running as, taken from your system prompt or environment (e.g. \"claude-opus-4-8\", \"gpt-5.2\"). Used for analytics only. If you do not know your model identifier with certainty, pass \"unknown\" \u2014 never guess."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Pass the exact conversation_id from the server's previous response, unchanged. The server provides it on the first call \u2014 never invent one, and do not issue parallel tool calls until you have it. Keep passing the same conversation_id for the rest of the conversation, including after later user messages or on a different task; do not reset it when the user starts a new request."
+          }
+        },
+        "required": [
+          "context",
+          "llm_model"
+        ]
+      }
+    },
+    {
+      "name": "insight-get",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "Numeric primary key or 8-character `short_id` (for example `AaVQ8Ijw`) identifying the insight."
+          },
+          "filters_override": {
+            "description": "Object (or pre-encoded JSON string) to override the insight's filters for this request only (not persisted). Top-level keys replace; nested values are not deep-merged \u2014 pass the complete value for any key you override. Accepts the same keys as the dashboard filters schema (e.g., `date_from`, `date_to`, `properties`). Ignored when accessed via a sharing token.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "include_dashboards": {
+            "description": "Opt in to receiving the deprecated `dashboards` field in insight payloads. Once opt-in enforcement is enabled, API-token callers stop receiving it by default; use `dashboard_tiles` instead.",
+            "type": "boolean"
+          },
+          "variables_override": {
+            "description": "Object (or pre-encoded JSON string) to override the insight's HogQL variables for this request only (not persisted). Format: {\"<variable_id>\": {\"code_name\": \"<code_name>\", \"variableId\": \"<variable_id>\", \"value\": <new_value>}}. Each entry must include `code_name` \u2014 partial entries are silently dropped. The simplest workflow is to call `insight-get` first, copy the matching entry from the response, and mutate `value`. Top-level keys replace; nested values are not deep-merged. Ignored when accessed via a sharing token.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "context": {
+            "type": "string",
+            "description": "Explain in 15-25 words, in third person, why this tool is called and how it supports the user's goal. For analytics only. You MUST describe only the abstract purpose of the tool call. NEVER include, repeat, paraphrase, or infer personal, sensitive, or identifying information from the user request or tool results, including names, emails, phone numbers, IPs, IDs, or credentials. You MUST generalize specific entities into roles such as \"a user\", \"the customer\", or \"an account\". Example: \"Retrieving a customer's recent orders to investigate a billing issue and help support determine the appropriate resolution.\""
+          },
+          "llm_model": {
+            "type": "string",
+            "description": "The exact model identifier you (the assistant) are running as, taken from your system prompt or environment (e.g. \"claude-opus-4-8\", \"gpt-5.2\"). Used for analytics only. If you do not know your model identifier with certainty, pass \"unknown\" \u2014 never guess."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Pass the exact conversation_id from the server's previous response, unchanged. The server provides it on the first call \u2014 never invent one, and do not issue parallel tool calls until you have it. Keep passing the same conversation_id for the rest of the conversation, including after later user messages or on a different task; do not reset it when the user starts a new request."
+          }
+        },
+        "required": [
+          "id",
+          "context",
+          "llm_model"
+        ]
+      }
+    },
+    {
+      "name": "insight-query",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "insightId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "description": "The insight to run: its numeric `id` or 8-character `short_id`."
+          },
+          "output_format": {
+            "default": "optimized",
+            "description": "Output format. \"optimized\" returns a human-readable summary from server-side formatters (recommended for analysis). \"json\" returns the raw query results as JSON.",
+            "type": "string",
+            "enum": [
+              "optimized",
+              "json"
+            ]
+          },
+          "variables_override": {
+            "description": "Object (or pre-encoded JSON string) to override the insight's HogQL variables for this run only (not persisted). Format: {\"<variable_id>\": {\"code_name\": \"<code_name>\", \"variableId\": \"<variable_id>\", \"value\": <new_value>}}. Each entry must include `code_name` \u2014 partial entries are silently dropped. The simplest workflow is to call `insight-get` first, copy the matching entry from the response's query variables, and mutate `value`. Top-level keys replace; nested values are not deep-merged. Ignored when accessed via a sharing token.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "filters_override": {
+            "description": "Object (or pre-encoded JSON string) to override the insight's filters for this run only (not persisted). Top-level keys replace; nested values are not deep-merged \u2014 pass the complete value for any key you override. Accepted keys: `date_from`, `date_to`, `explicitDate`, `interval`, `properties`, `filterTestAccounts`, `breakdown_filter`, `compareFilter`, `metricFilters`, `metricVariables`. Other keys (for example `display`, `dateRange`, `filter_test_accounts` or `compare`) are rejected. Ignored when accessed via a sharing token.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "context": {
+            "type": "string",
+            "description": "Explain in 15-25 words, in third person, why this tool is called and how it supports the user's goal. For analytics only. You MUST describe only the abstract purpose of the tool call. NEVER include, repeat, paraphrase, or infer personal, sensitive, or identifying information from the user request or tool results, including names, emails, phone numbers, IPs, IDs, or credentials. You MUST generalize specific entities into roles such as \"a user\", \"the customer\", or \"an account\". Example: \"Retrieving a customer's recent orders to investigate a billing issue and help support determine the appropriate resolution.\""
+          },
+          "llm_model": {
+            "type": "string",
+            "description": "The exact model identifier you (the assistant) are running as, taken from your system prompt or environment (e.g. \"claude-opus-4-8\", \"gpt-5.2\"). Used for analytics only. If you do not know your model identifier with certainty, pass \"unknown\" \u2014 never guess."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Pass the exact conversation_id from the server's previous response, unchanged. The server provides it on the first call \u2014 never invent one, and do not issue parallel tool calls until you have it. Keep passing the same conversation_id for the rest of the conversation, including after later user messages or on a different task; do not reset it when the user starts a new request."
+          }
+        },
+        "required": [
+          "insightId",
+          "context",
+          "llm_model"
+        ]
+      }
+    },
+    {
+      "name": "dashboards-get-all",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "created_by": {
+            "description": "Optional. Return only dashboards created by the user with this UUID.",
+            "type": "string"
+          },
+          "exclude_generated": {
+            "description": "Optional. Exclude dashboards that PostHog generated.",
+            "type": "boolean"
+          },
+          "folder": {
+            "description": "Optional. Return only dashboards filed directly in this project-tree folder, e.g. 'Unfiled/Dashboards'. An empty string matches dashboards at the project root. Nested sub-folders are not included.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Number of results to return per page.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "The initial index from which to return the results.",
+            "type": "number"
+          },
+          "ordering": {
+            "description": "Optional. `-last_viewed_at` puts the dashboards you viewed most recently first. A dashboard you never viewed sorts by its creation time. This order replaces the search relevance order.",
+            "type": "string",
+            "enum": [
+              "-last_viewed_at"
+            ]
+          },
+          "pinned": {
+            "description": "Optional. Return only pinned dashboards.",
+            "type": "boolean"
+          },
+          "search": {
+            "description": "Optional. Match against dashboard `name`, `description`, and tag names. Returns exact (case-insensitive substring) matches only; if no exact match exists, returns similar (fuzzy trigram \u2014 typos, transpositions, prefix-as-you-type) matches instead. Results are then ordered by relevance, then pinned status, then name; each result's `search_match_type` is `exact` or `similar`. When omitted, dashboards are ordered by pinned status then alphabetical name. Capped at 200 characters; longer queries return a 400 error.",
+            "type": "string"
+          },
+          "context": {
+            "type": "string",
+            "description": "Explain in 15-25 words, in third person, why this tool is called and how it supports the user's goal. For analytics only. You MUST describe only the abstract purpose of the tool call. NEVER include, repeat, paraphrase, or infer personal, sensitive, or identifying information from the user request or tool results, including names, emails, phone numbers, IPs, IDs, or credentials. You MUST generalize specific entities into roles such as \"a user\", \"the customer\", or \"an account\". Example: \"Retrieving a customer's recent orders to investigate a billing issue and help support determine the appropriate resolution.\""
+          },
+          "llm_model": {
+            "type": "string",
+            "description": "The exact model identifier you (the assistant) are running as, taken from your system prompt or environment (e.g. \"claude-opus-4-8\", \"gpt-5.2\"). Used for analytics only. If you do not know your model identifier with certainty, pass \"unknown\" \u2014 never guess."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Pass the exact conversation_id from the server's previous response, unchanged. The server provides it on the first call \u2014 never invent one, and do not issue parallel tool calls until you have it. Keep passing the same conversation_id for the rest of the conversation, including after later user messages or on a different task; do not reset it when the user starts a new request."
+          }
+        },
+        "required": [
+          "context",
+          "llm_model"
+        ]
+      }
+    },
+    {
+      "name": "dashboard-get",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "A unique integer value identifying this dashboard."
+          },
+          "filters_override": {
+            "description": "Object (or pre-encoded JSON string) to override dashboard filters for this request only (not persisted). Top-level keys replace; nested values are not deep-merged \u2014 pass the complete value for any key you override. Accepts the same keys as the dashboard filters schema (e.g., `date_from`, `date_to`, `properties`). Ignored when accessed via a sharing token.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "include_dashboards": {
+            "description": "Opt in to receiving the deprecated `dashboards` field in insight payloads. Once opt-in enforcement is enabled, API-token callers stop receiving it by default; use `dashboard_tiles` instead.",
+            "type": "boolean"
+          },
+          "variables_override": {
+            "description": "Object (or pre-encoded JSON string) to override dashboard variables for this request only (not persisted). Format: {\"<variable_id>\": {\"code_name\": \"<code_name>\", \"variableId\": \"<variable_id>\", \"value\": <new_value>}}. Each entry must include `code_name` \u2014 partial entries are silently dropped. The simplest workflow is to call `dashboard-get` first, copy the matching entry from the response, and mutate `value`. Top-level keys replace; nested values are not deep-merged. Ignored when accessed via a sharing token.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            ]
+          },
+          "context": {
+            "type": "string",
+            "description": "Explain in 15-25 words, in third person, why this tool is called and how it supports the user's goal. For analytics only. You MUST describe only the abstract purpose of the tool call. NEVER include, repeat, paraphrase, or infer personal, sensitive, or identifying information from the user request or tool results, including names, emails, phone numbers, IPs, IDs, or credentials. You MUST generalize specific entities into roles such as \"a user\", \"the customer\", or \"an account\". Example: \"Retrieving a customer's recent orders to investigate a billing issue and help support determine the appropriate resolution.\""
+          },
+          "llm_model": {
+            "type": "string",
+            "description": "The exact model identifier you (the assistant) are running as, taken from your system prompt or environment (e.g. \"claude-opus-4-8\", \"gpt-5.2\"). Used for analytics only. If you do not know your model identifier with certainty, pass \"unknown\" \u2014 never guess."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Pass the exact conversation_id from the server's previous response, unchanged. The server provides it on the first call \u2014 never invent one, and do not issue parallel tool calls until you have it. Keep passing the same conversation_id for the rest of the conversation, including after later user messages or on a different task; do not reset it when the user starts a new request."
+          }
+        },
+        "required": [
+          "id",
+          "context",
+          "llm_model"
+        ]
+      }
+    },
+    {
+      "name": "feature-flag-get-all",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "description": "Filter by flag state. `\"true\"` returns enabled flags, `\"false\"` returns disabled flags, and `\"STALE\"` returns enabled flags that PostHog classifies as stale.",
+            "type": "string",
+            "enum": [
+              "STALE",
+              "false",
+              "true"
+            ]
+          },
+          "archived": {
+            "description": "Filter by archived state. When omitted, archived flags are excluded.",
+            "type": "string",
+            "enum": [
+              "false",
+              "true"
+            ]
+          },
+          "created_by_id": {
+            "description": "Filter by the user(s) who created the feature flag. Accepts a single user ID, or a JSON-encoded / comma-separated list of user IDs to match any of them.",
+            "type": "string"
+          },
+          "eligible_for_experiment": {
+            "description": "When 'true', only return flags that can back an experiment: multivariate with 2-20 variants. Any other value is ignored.",
+            "type": "string",
+            "enum": [
+              "true"
+            ]
+          },
+          "evaluation_runtime": {
+            "description": "Filter feature flags by their evaluation runtime.",
+            "type": "string",
+            "enum": [
+              "all",
+              "client",
+              "server"
+            ]
+          },
+          "excluded_properties": {
+            "description": "JSON-encoded list of feature flag keys to exclude from the results.",
+            "type": "string"
+          },
+          "excluded_tags": {
+            "description": "JSON-encoded list of tag names to exclude. Flags carrying any of these tags are filtered out.",
+            "type": "string"
+          },
+          "has_evaluation_contexts": {
+            "description": "Filter feature flags by presence of evaluation contexts. 'true' returns only flags with at least one evaluation context, 'false' returns only flags without.",
+            "type": "string",
+            "enum": [
+              "false",
+              "true"
+            ]
+          },
+          "key": {
+            "description": "Filter by exact feature flag key match. Case insensitive.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Number of results to return per page.",
+            "type": "number"
+          },
+          "offset": {
+            "description": "The initial index from which to return the results.",
+            "type": "number"
+          },
+          "search": {
+            "description": "Search by feature flag key or name (case-insensitive). Use this to find the flag ID for get/update/delete tools.",
+            "type": "string"
+          },
+          "tags": {
+            "description": "JSON-encoded list of tag names to filter feature flags by.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "boolean",
+              "experiment",
+              "multivariant",
+              "remote_config"
+            ]
+          },
+          "context": {
+            "type": "string",
+            "description": "Explain in 15-25 words, in third person, why this tool is called and how it supports the user's goal. For analytics only. You MUST describe only the abstract purpose of the tool call. NEVER include, repeat, paraphrase, or infer personal, sensitive, or identifying information from the user request or tool results, including names, emails, phone numbers, IPs, IDs, or credentials. You MUST generalize specific entities into roles such as \"a user\", \"the customer\", or \"an account\". Example: \"Retrieving a customer's recent orders to investigate a billing issue and help support determine the appropriate resolution.\""
+          },
+          "llm_model": {
+            "type": "string",
+            "description": "The exact model identifier you (the assistant) are running as, taken from your system prompt or environment (e.g. \"claude-opus-4-8\", \"gpt-5.2\"). Used for analytics only. If you do not know your model identifier with certainty, pass \"unknown\" \u2014 never guess."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Pass the exact conversation_id from the server's previous response, unchanged. The server provides it on the first call \u2014 never invent one, and do not issue parallel tool calls until you have it. Keep passing the same conversation_id for the rest of the conversation, including after later user messages or on a different task; do not reset it when the user starts a new request."
+          }
+        },
+        "required": [
+          "context",
+          "llm_model"
+        ]
+      }
+    },
+    {
+      "name": "feature-flag-get-definition-by-key",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The feature flag key: the string identifier used in code (e.g. \"new-checkout\")."
+          },
+          "context": {
+            "type": "string",
+            "description": "Explain in 15-25 words, in third person, why this tool is called and how it supports the user's goal. For analytics only. You MUST describe only the abstract purpose of the tool call. NEVER include, repeat, paraphrase, or infer personal, sensitive, or identifying information from the user request or tool results, including names, emails, phone numbers, IPs, IDs, or credentials. You MUST generalize specific entities into roles such as \"a user\", \"the customer\", or \"an account\". Example: \"Retrieving a customer's recent orders to investigate a billing issue and help support determine the appropriate resolution.\""
+          },
+          "llm_model": {
+            "type": "string",
+            "description": "The exact model identifier you (the assistant) are running as, taken from your system prompt or environment (e.g. \"claude-opus-4-8\", \"gpt-5.2\"). Used for analytics only. If you do not know your model identifier with certainty, pass \"unknown\" \u2014 never guess."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Pass the exact conversation_id from the server's previous response, unchanged. The server provides it on the first call \u2014 never invent one, and do not issue parallel tool calls until you have it. Keep passing the same conversation_id for the rest of the conversation, including after later user messages or on a different task; do not reset it when the user starts a new request."
+          }
+        },
+        "required": [
+          "key",
+          "context",
+          "llm_model"
+        ]
+      }
+    },
+    {
+      "name": "dashboard-create",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_dashboards": {
+            "description": "Opt in to receiving the deprecated `dashboards` field in insight payloads. Once opt-in enforcement is enabled, API-token callers stop receiving it by default; use `dashboard_tiles` instead.",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "breakdown_colors": {
+            "description": "Colors pinned to specific breakdown values across the dashboard's tiles. A list of entries, not an object keyed by breakdown value. Send an empty list to clear them.",
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "breakdownValue": {
+                      "type": "string",
+                      "description": "The breakdown value this color applies to, as it appears in the chart legend."
+                    },
+                    "colorToken": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^preset-[1-9][0-9]*$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Palette slot to color the value with, as `preset-1` upwards. Not a CSS color: a hex value is rejected. Null leaves the value on its default color."
+                    },
+                    "breakdownType": {
+                      "description": "Breakdown type the value came from, such as `event`, `person`, `session`, or `cohort`.",
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "breakdownProperty": {
+                      "description": "Breakdown property the color is scoped to, so the color applies only to tiles that break down by that property. Omit to apply it under every property.",
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source": {
+                      "description": "`manual` for a color a person picked, `auto` for one the dashboard assigned.\n\n* `auto` - auto\n* `manual` - manual",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "auto",
+                            "manual"
+                          ],
+                          "description": "* `auto` - auto\n* `manual` - manual"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "breakdownValue",
+                    "colorToken"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data_color_theme_id": {
+            "description": "ID of the color theme used for chart visualizations.",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {}
+          },
+          "quick_filter_ids": {
+            "description": "List of quick filter IDs associated with this dashboard",
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grid_spacing": {
+            "description": "Named tile density preset. Use tight, condensed, standard, relaxed, or wide.\n\n* `tight` - tight\n* `condensed` - condensed\n* `standard` - standard\n* `relaxed` - relaxed\n* `wide` - wide",
+            "type": "string",
+            "enum": [
+              "tight",
+              "condensed",
+              "standard",
+              "relaxed",
+              "wide"
+            ]
+          },
+          "layout_compaction": {
+            "description": "How tiles rearrange after a move or resize. vertical stacks tiles upward, horizontal stacks tiles to the left, and stable preserves positions while moving colliding tiles.\n\n* `vertical` - vertical\n* `horizontal` - horizontal\n* `stable` - stable",
+            "type": "string",
+            "enum": [
+              "vertical",
+              "horizontal",
+              "stable"
+            ]
+          },
+          "group_titles": {
+            "description": "Titles for tile groups, keyed by the tiles' group_key. The dashboard shows a title above its group. A write replaces the whole map. Send an empty object or null to remove all group titles.",
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "use_template": {
+            "description": "Template key to create the dashboard from a predefined template.",
+            "type": "string"
+          },
+          "use_dashboard": {
+            "description": "ID of an existing dashboard to duplicate.",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delete_insights": {
+            "default": false,
+            "description": "When deleting, also delete insights that are only on this dashboard.",
+            "type": "boolean"
+          },
+          "context": {
+            "type": "string",
+            "description": "Explain in 15-25 words, in third person, why this tool is called and how it supports the user's goal. For analytics only. You MUST describe only the abstract purpose of the tool call. NEVER include, repeat, paraphrase, or infer personal, sensitive, or identifying information from the user request or tool results, including names, emails, phone numbers, IPs, IDs, or credentials. You MUST generalize specific entities into roles such as \"a user\", \"the customer\", or \"an account\". Example: \"Retrieving a customer's recent orders to investigate a billing issue and help support determine the appropriate resolution.\""
+          },
+          "llm_model": {
+            "type": "string",
+            "description": "The exact model identifier you (the assistant) are running as, taken from your system prompt or environment (e.g. \"claude-opus-4-8\", \"gpt-5.2\"). Used for analytics only. If you do not know your model identifier with certainty, pass \"unknown\" \u2014 never guess."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Pass the exact conversation_id from the server's previous response, unchanged. The server provides it on the first call \u2014 never invent one, and do not issue parallel tool calls until you have it. Keep passing the same conversation_id for the rest of the conversation, including after later user messages or on a different task; do not reset it when the user starts a new request."
+          }
+        },
+        "required": [
+          "context",
+          "llm_model"
+        ]
+      }
+    },
+    {
+      "name": "create-feature-flag",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "description": "Feature flag key.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Feature flag description (stored in the `name` field for backwards compatibility).",
+            "type": "string"
+          },
+          "filters": {
+            "description": "Feature flag targeting configuration.",
+            "type": "object",
+            "properties": {
+              "groups": {
+                "description": "Release condition groups for the feature flag.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "properties": {
+                      "description": "Property conditions for this release condition group.",
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "Property key used in this feature flag condition."
+                              },
+                              "type": {
+                                "description": "Property filter type. Set it on every property. Use `group` with `group_type_index` to filter on a group's properties.\n\n* `cohort` - cohort\n* `person` - person\n* `group` - group",
+                                "type": "string",
+                                "enum": [
+                                  "cohort",
+                                  "person",
+                                  "group"
+                                ]
+                              },
+                              "cohort_name": {
+                                "description": "Resolved cohort name for cohort-type filters.",
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "group_type_index": {
+                                "description": "Group type index a `group` filter reads properties from. Defaults to the condition set's `aggregation_group_type_index`.",
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "value": {
+                                "description": "Comparison value for the property filter. Supports strings, numbers, booleans, and arrays."
+                              },
+                              "operator": {
+                                "type": "string",
+                                "enum": [
+                                  "exact",
+                                  "is_not",
+                                  "icontains",
+                                  "not_icontains",
+                                  "starts_with",
+                                  "not_starts_with",
+                                  "ends_with",
+                                  "not_ends_with",
+                                  "regex",
+                                  "not_regex",
+                                  "gt",
+                                  "gte",
+                                  "lt",
+                                  "lte"
+                                ],
+                                "description": "Operator used to compare the property value.\n\n* `exact` - exact\n* `is_not` - is_not\n* `icontains` - icontains\n* `not_icontains` - not_icontains\n* `starts_with` - starts_with\n* `not_starts_with` - not_starts_with\n* `ends_with` - ends_with\n* `not_ends_with` - not_ends_with\n* `regex` - regex\n* `not_regex` - not_regex\n* `gt` - gt\n* `gte` - gte\n* `lt` - lt\n* `lte` - lte"
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "value",
+                              "operator"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "Property key used in this feature flag condition."
+                              },
+                              "type": {
+                                "description": "Property filter type. Set it on every property. Use `group` with `group_type_index` to filter on a group's properties.\n\n* `cohort` - cohort\n* `person` - person\n* `group` - group",
+                                "type": "string",
+                                "enum": [
+                                  "cohort",
+                                  "person",
+                                  "group"
+                                ]
+                              },
+                              "cohort_name": {
+                                "description": "Resolved cohort name for cohort-type filters.",
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "group_type_index": {
+                                "description": "Group type index a `group` filter reads properties from. Defaults to the condition set's `aggregation_group_type_index`.",
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "operator": {
+                                "type": "string",
+                                "enum": [
+                                  "is_set",
+                                  "is_not_set"
+                                ],
+                                "description": "Existence operator.\n\n* `is_set` - is_set\n* `is_not_set` - is_not_set"
+                              },
+                              "value": {
+                                "description": "Optional value. Runtime behavior determines whether this is ignored."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "operator"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "Property key used in this feature flag condition."
+                              },
+                              "type": {
+                                "description": "Property filter type. Set it on every property. Use `group` with `group_type_index` to filter on a group's properties.\n\n* `cohort` - cohort\n* `person` - person\n* `group` - group",
+                                "type": "string",
+                                "enum": [
+                                  "cohort",
+                                  "person",
+                                  "group"
+                                ]
+                              },
+                              "cohort_name": {
+                                "description": "Resolved cohort name for cohort-type filters.",
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "group_type_index": {
+                                "description": "Group type index a `group` filter reads properties from. Defaults to the condition set's `aggregation_group_type_index`.",
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "operator": {
+                                "type": "string",
+                                "enum": [
+                                  "is_date_exact",
+                                  "is_date_before",
+                                  "is_date_after"
+                                ],
+                                "description": "Date comparison operator.\n\n* `is_date_exact` - is_date_exact\n* `is_date_after` - is_date_after\n* `is_date_before` - is_date_before"
+                              },
+                              "value": {
+                                "type": "string",
+                                "description": "Date value in ISO format or relative date expression."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "operator",
+                              "value"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "Property key used in this feature flag condition."
+                              },
+                              "type": {
+                                "description": "Property filter type. Set it on every property. Use `group` with `group_type_index` to filter on a group's properties.\n\n* `cohort` - cohort\n* `person` - person\n* `group` - group",
+                                "type": "string",
+                                "enum": [
+                                  "cohort",
+                                  "person",
+                                  "group"
+                                ]
+                              },
+                              "cohort_name": {
+                                "description": "Resolved cohort name for cohort-type filters.",
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "group_type_index": {
+                                "description": "Group type index a `group` filter reads properties from. Defaults to the condition set's `aggregation_group_type_index`.",
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "operator": {
+                                "type": "string",
+                                "enum": [
+                                  "semver_gt",
+                                  "semver_gte",
+                                  "semver_lt",
+                                  "semver_lte",
+                                  "semver_eq",
+                                  "semver_neq",
+                                  "semver_tilde",
+                                  "semver_caret",
+                                  "semver_wildcard"
+                                ],
+                                "description": "Semantic version comparison operator.\n\n* `semver_gt` - semver_gt\n* `semver_gte` - semver_gte\n* `semver_lt` - semver_lt\n* `semver_lte` - semver_lte\n* `semver_eq` - semver_eq\n* `semver_neq` - semver_neq\n* `semver_tilde` - semver_tilde\n* `semver_caret` - semver_caret\n* `semver_wildcard` - semver_wildcard"
+                              },
+                              "value": {
+                                "type": "string",
+                                "description": "Semantic version string."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "operator",
+                              "value"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "Property key used in this feature flag condition."
+                              },
+                              "type": {
+                                "description": "Property filter type. Set it on every property. Use `group` with `group_type_index` to filter on a group's properties.\n\n* `cohort` - cohort\n* `person` - person\n* `group` - group",
+                                "type": "string",
+                                "enum": [
+                                  "cohort",
+                                  "person",
+                                  "group"
+                                ]
+                              },
+                              "cohort_name": {
+                                "description": "Resolved cohort name for cohort-type filters.",
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "group_type_index": {
+                                "description": "Group type index a `group` filter reads properties from. Defaults to the condition set's `aggregation_group_type_index`.",
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "operator": {
+                                "type": "string",
+                                "enum": [
+                                  "icontains_multi",
+                                  "not_icontains_multi"
+                                ],
+                                "description": "Multi-contains operator.\n\n* `icontains_multi` - icontains_multi\n* `not_icontains_multi` - not_icontains_multi"
+                              },
+                              "value": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "List of strings to evaluate against."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "operator",
+                              "value"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "Property key used in this feature flag condition."
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "cohort"
+                                ],
+                                "description": "Cohort property type required for in/not_in operators.\n\n* `cohort` - cohort"
+                              },
+                              "cohort_name": {
+                                "description": "Resolved cohort name for cohort-type filters.",
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "group_type_index": {
+                                "description": "Group type index a `group` filter reads properties from. Defaults to the condition set's `aggregation_group_type_index`.",
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "operator": {
+                                "type": "string",
+                                "enum": [
+                                  "in",
+                                  "not_in"
+                                ],
+                                "description": "Membership operator for cohort properties.\n\n* `in` - in\n* `not_in` - not_in"
+                              },
+                              "value": {
+                                "description": "Cohort comparison value (single or list, depending on usage)."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "type",
+                              "operator",
+                              "value"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "Property key used in this feature flag condition."
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "flag"
+                                ],
+                                "description": "Flag property type required for flag dependency checks.\n\n* `flag` - flag"
+                              },
+                              "cohort_name": {
+                                "description": "Resolved cohort name for cohort-type filters.",
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "group_type_index": {
+                                "description": "Group type index a `group` filter reads properties from. Defaults to the condition set's `aggregation_group_type_index`.",
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "operator": {
+                                "type": "string",
+                                "enum": [
+                                  "flag_evaluates_to"
+                                ],
+                                "description": "Operator for feature flag dependency evaluation.\n\n* `flag_evaluates_to` - flag_evaluates_to"
+                              },
+                              "value": {
+                                "description": "Value to compare flag evaluation against."
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "type",
+                              "operator",
+                              "value"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "rollout_percentage": {
+                      "description": "Rollout percentage for this release condition group.",
+                      "type": "number"
+                    },
+                    "variant": {
+                      "description": "Variant key override for multivariate flags.",
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "aggregation_group_type_index": {
+                      "description": "Group type index for this condition set. None means person-level aggregation.",
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "multivariate": {
+                "description": "Multivariate configuration for variant-based rollouts.",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "variants": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string",
+                              "description": "Unique key for this variant."
+                            },
+                            "name": {
+                              "description": "Human-readable name for this variant.",
+                              "type": "string"
+                            },
+                            "rollout_percentage": {
+                              "type": "number",
+                              "description": "Variant rollout percentage."
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "rollout_percentage"
+                          ]
+                        },
+                        "description": "Variant definitions for multivariate feature flags."
+                      }
+                    },
+                    "required": [
+                      "variants"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "aggregation_group_type_index": {
+                "description": "Group type index for group-based feature flags.",
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "payloads": {
+                "description": "Optional payload values keyed by variant key.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "feature_enrollment": {
+                "description": "Whether this flag has early access feature enrollment enabled. When true, the flag is evaluated against the person property $feature_enrollment/{flag_key}.",
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "early_exit": {
+                "default": false,
+                "description": "When true, condition evaluation stops at the first matching condition set rather than continuing to evaluate subsequent groups.",
+                "type": "boolean"
+              }
+            }
+          },
+          "active": {
+            "description": "Whether the feature flag is active.",
+            "type": "boolean"
+          },
+          "tags": {
+            "description": "Organizational tags for this feature flag.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evaluation_contexts": {
+            "description": "Evaluation contexts that control where this flag evaluates at runtime.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_remote_configuration": {
+            "description": "Whether this flag delivers a payload instead of gating a feature (Remote Config mode). When true, set the delivered payload through the `filters` param under `filters.payloads.true` as a JSON-encoded string. There is no dedicated payload parameter.",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ensure_experience_continuity": {
+            "description": "Whether to persist the flag's value for a user across the anonymous-to-identified transition (the \"persist across authentication steps\" option in the UI). Keeps a user's evaluated value stable once they log in. Incompatible with `device_id` bucketing.",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evaluation_runtime": {
+            "description": "Where this flag is allowed to evaluate \u2014 `server` (server-side SDKs only), `client` (client-side SDKs only), or `all` (both). Defaults to `all`.",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "server",
+                  "client",
+                  "all"
+                ],
+                "description": "* `server` - Server\n* `client` - Client\n* `all` - All"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bucketing_identifier": {
+            "description": "Identifier used to bucket users into rollout percentages and variants \u2014 `distinct_id` (user ID, the default) or `device_id`. Using `device_id` is incompatible with `ensure_experience_continuity=true`.",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "distinct_id",
+                  "device_id"
+                ],
+                "description": "* `distinct_id` - User ID (default)\n* `device_id` - Device ID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "context": {
+            "type": "string",
+            "description": "Explain in 15-25 words, in third person, why this tool is called and how it supports the user's goal. For analytics only. You MUST describe only the abstract purpose of the tool call. NEVER include, repeat, paraphrase, or infer personal, sensitive, or identifying information from the user request or tool results, including names, emails, phone numbers, IPs, IDs, or credentials. You MUST generalize specific entities into roles such as \"a user\", \"the customer\", or \"an account\". Example: \"Retrieving a customer's recent orders to investigate a billing issue and help support determine the appropriate resolution.\""
+          },
+          "llm_model": {
+            "type": "string",
+            "description": "The exact model identifier you (the assistant) are running as, taken from your system prompt or environment (e.g. \"claude-opus-4-8\", \"gpt-5.2\"). Used for analytics only. If you do not know your model identifier with certainty, pass \"unknown\" \u2014 never guess."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Pass the exact conversation_id from the server's previous response, unchanged. The server provides it on the first call \u2014 never invent one, and do not issue parallel tool calls until you have it. Keep passing the same conversation_id for the rest of the conversation, including after later user messages or on a different task; do not reset it when the user starts a new request."
+          }
+        },
+        "required": [
+          "context",
+          "llm_model"
+        ]
+      }
+    }
+  ]
+}

@@ -11,6 +11,7 @@
  */
 const {
   HOSTED_MCP_CALL_TIMEOUT_MS,
+  HOSTED_MCP_LIST_MAX_BYTES,
   createHostedMcpRuntimeDriftCache,
   hostedToolDefinitions,
   findHostedToolDefinition,
@@ -135,6 +136,42 @@ describe('hosted-MCP tool definitions', () => {
     await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
     expect(deps.fetcher).toHaveBeenCalledTimes(1);
     expect(JSON.parse(deps.fetcher.mock.calls[0][1].body).method).toBe('tools/list');
+  });
+
+  it('refuses an oversized JSON tools/list body before parsing or calling a tool', async () => {
+    const reply = JSON.stringify({ jsonrpc: '2.0', id: 'list-1', result: { tools: [{
+      name: 'list_issues', inputSchema: ENTRY.tools[0].inputSchema,
+    }] } });
+    const body = new TextEncoder().encode(reply + ' '.repeat(HOSTED_MCP_LIST_MAX_BYTES));
+    const deps = makeDeps({
+      fetcher: jest.fn(async () => new Response(body, {
+        headers: { 'content-type': 'application/json' },
+      })),
+    });
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION))
+      .rejects.toMatchObject({ code: 'provider_error', message: expect.stringContaining('could not be verified') });
+    expect(deps.fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares the byte budget across SSE tools/list pages', async () => {
+    const first = `data: ${JSON.stringify({
+      jsonrpc: '2.0', id: 'list-1', result: { tools: [], nextCursor: 'page-2' },
+    })}\n${' '.repeat(Math.floor(HOSTED_MCP_LIST_MAX_BYTES / 2))}`;
+    const second = `data: ${JSON.stringify({
+      jsonrpc: '2.0', id: 'list-2', result: { tools: [{
+        name: 'list_issues', inputSchema: ENTRY.tools[0].inputSchema,
+      }] },
+    })}\n${' '.repeat(Math.floor(HOSTED_MCP_LIST_MAX_BYTES / 2))}`;
+    const deps = makeDeps({
+      fetcher: jest.fn(async (_url, init) => sseResponse([
+        JSON.parse(init.body).params.cursor ? second : first,
+      ])),
+    });
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION))
+      .rejects.toMatchObject({ code: 'provider_error', message: expect.stringContaining('could not be verified') });
+    expect(deps.fetcher).toHaveBeenCalledTimes(2);
   });
 
   it('offers nothing when the catalogue is empty, and one definition per pinned tool otherwise', () => {

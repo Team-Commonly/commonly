@@ -41,6 +41,10 @@ import type { ToolConnection, ToolDefinition } from './toolBrokerService';
  * rather than as a refusal, so the trail does not read as the member's fault.
  */
 export const HOSTED_MCP_CALL_TIMEOUT_MS = 30 * 1000;
+// The timeout and page limit do not bound a vendor's response body. PostHog's
+// native tools/list is already over 5 MB; leave room for growth, but refuse an
+// unbounded list before parsing or retaining its tools across pages.
+export const HOSTED_MCP_LIST_MAX_BYTES = 16 * 1024 * 1024;
 
 export interface HostedMcpToolDeps {
   /** The row the connection id names. Absent means the grant outlived its row. */
@@ -87,19 +91,50 @@ const defaultDeps = (): HostedMcpToolDeps => ({
  * `result` or an `error`: a frame that is neither is not the answer to this
  * call, so it is not mistaken for one.
  */
-const jsonRpcReply = async (response: Response): Promise<Record<string, unknown>> => {
+const boundedResponseText = async (response: Response, budget: { remaining: number }): Promise<string> => {
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const decoder = new TextDecoder();
+  const parts: string[] = [];
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      budget.remaining -= value.byteLength;
+      if (budget.remaining < 0) {
+        await reader.cancel();
+        throw new RoomGrantError('provider_error', 'hosted-MCP tools/list exceeded the response size limit', 502);
+      }
+      parts.push(decoder.decode(value, { stream: true }));
+    }
+    parts.push(decoder.decode());
+    return parts.join('');
+  } finally {
+    reader.releaseLock();
+  }
+};
+
+const jsonRpcReply = async (
+  response: Response,
+  listBudget?: { remaining: number },
+): Promise<Record<string, unknown>> => {
   const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
   if (!contentType.includes('text/event-stream')) {
     let body: Record<string, unknown>;
     try {
-      body = await response.json() as Record<string, unknown>;
-    } catch {
+      body = listBudget
+        ? JSON.parse(await boundedResponseText(response, listBudget)) as Record<string, unknown>
+        : await response.json() as Record<string, unknown>;
+    } catch (error) {
+      if (error instanceof RoomGrantError) throw error;
       throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned invalid JSON', 502);
     }
     if (body && (body.result !== undefined || body.error !== undefined)) return body;
     throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned no JSON-RPC reply', 502);
   }
-  const text = await response.text();
+  const text = listBudget
+    ? await boundedResponseText(response, listBudget)
+    : await response.text();
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed.startsWith('data:')) continue;
@@ -129,6 +164,7 @@ const listUpstreamTools = async (
   const timer = setTimeout(() => controller.abort(), HOSTED_MCP_CALL_TIMEOUT_MS);
   try {
     const allTools: HostedMcpUpstreamTool[] = [];
+    const listBudget = { remaining: HOSTED_MCP_LIST_MAX_BYTES };
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
     for (let page = 0; page < 100; page += 1) {
@@ -155,7 +191,7 @@ const listUpstreamTools = async (
       if (!response.ok) {
         throw new RoomGrantError('provider_error', `hosted-MCP vendor answered ${response.status}`, 502);
       }
-      const reply = await jsonRpcReply(response);
+      const reply = await jsonRpcReply(response, listBudget);
       if (reply.error) throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned an error', 502);
       const result = reply.result as { tools?: unknown; nextCursor?: unknown } | undefined;
       if (!Array.isArray(result?.tools)) {
