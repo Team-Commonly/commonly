@@ -137,6 +137,28 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
     warn.mockRestore();
   });
 
+  test('the cap is Codex\'s own 32 KiB: a section of exactly 32768 bytes is inlined, and nothing after it', async () => {
+    // Vera's C5 on #2368: raising this cap to 1 GiB failed no arm, and Codex
+    // truncates AGENTS.md past `project_doc_max_bytes` (32768 at 0.162.1), so a
+    // larger cap would let a skill be cut with no warning from either side.
+    const header = '## Skill: big\n\n';
+    const big = join(root, 'skills', 'big');
+    const after = join(root, 'skills', 'after');
+    await mkdir(big, { recursive: true });
+    await mkdir(after, { recursive: true });
+    await writeFile(join(big, 'SKILL.md'), `---\nname: big\n---\n${'x'.repeat(32768 - header.length)}\n`, 'utf8');
+    await writeFile(join(after, 'SKILL.md'), '---\nname: after\n---\nOne more line.\n', 'utf8');
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { impl, calls } = makeSpawnImpl();
+    await spawnSeat(impl, { sandbox: { trust: 'public' }, skills: { claude: [big, after] } });
+
+    const seen = await calls[0].seen;
+    expect(seen).toContain(`${header}${'x'.repeat(32768 - header.length)}`);
+    expect(seen).not.toContain('## Skill: after');
+    expect(warn).toHaveBeenCalledWith('[codex] public seat: skill after not inlined (over 32768 bytes in total)');
+    warn.mockRestore();
+  });
+
   test('a private seat runs on the operator\'s own home, which is never written', async () => {
     const { impl, calls } = makeSpawnImpl();
     await spawnSeat(impl, { skills: { claude: [skillSrc] } });

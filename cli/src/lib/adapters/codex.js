@@ -326,7 +326,10 @@ const preparePublicCodexHome = async (ctx) => {
 // appropriate"); Codex reads the same format, so no new key. Rewritten each
 // spawn (staged, then renamed, so a concurrent read never sees half a file),
 // and removed when nothing is declared so a dropped skill stops applying.
-// The cap is Codex's default `project_doc_max_bytes` for AGENTS.md files.
+// The cap is Codex's default `project_doc_max_bytes` for AGENTS.md files:
+// codex-cli 0.162.1 ships `project_doc_max_bytes = 32768` in its default
+// config (read from the shipped binary, 2026-10-21). Codex truncates past it,
+// so a skill that would cross it is left out whole rather than cut mid-text.
 const PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES = 32 * 1024;
 
 const writePublicCodexInstructions = async (publicHome, ctx) => {
