@@ -87,6 +87,26 @@ test('a legacy tool-call row never exposes stored vendor result or error on its 
   expect(JSON.stringify(card)).not.toContain('private vendor');
 });
 
+test('a pre-ending tool-call row projects its stored success or failure without vendor content', () => {
+  const succeeded = service.buildCardPayload(row({
+    status: 'resolved', decision: 'approved', executionResult: { id: 9, content: 'private vendor text' },
+  }));
+  expect(succeeded.toolCallEnding).toBe('ran');
+  expect(JSON.stringify(succeeded)).not.toContain('private vendor');
+
+  const failed = service.buildCardPayload(row({
+    status: 'resolved', decision: 'approved', executionError: 'private vendor error',
+  }));
+  expect(failed).toMatchObject({ toolCallEnding: 'failed', toolCallCode: 'legacy_execution_failed' });
+  expect(JSON.stringify(failed)).not.toContain('private vendor');
+
+  const providerFailed = service.buildCardPayload(row({
+    status: 'resolved', decision: 'approved', executionResult: { isError: true, content: 'private vendor text' },
+  }));
+  expect(providerFailed).toMatchObject({ toolCallEnding: 'failed', toolCallCode: 'legacy_execution_failed' });
+  expect(JSON.stringify(providerFailed)).not.toContain('private vendor');
+});
+
 test('parks a call as an ApprovalAction owned by the granter and returns pending_approval', async () => {
   const created = row();
   mockApproval.create.mockResolvedValue(created);

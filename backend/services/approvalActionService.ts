@@ -74,6 +74,16 @@ export interface CardPayload {
   toolCallTrailId?: string;
 }
 
+const legacyToolCallOutcome = (row: IApprovalAction): Partial<CardPayload> => {
+  if (row.actionType !== 'tool_call' || row.toolCallEnding || row.status !== 'resolved'
+    || row.decision !== 'approved') return {};
+  const result = row.executionResult as Record<string, unknown> | undefined;
+  if (row.executionError || result?.isError === true) {
+    return { toolCallEnding: 'failed', toolCallCode: 'legacy_execution_failed' };
+  }
+  return row.executionResult !== undefined ? { toolCallEnding: 'ran' } : {};
+};
+
 export const buildCardPayload = (row: IApprovalAction): CardPayload => ({
   kind: CARD_KIND,
   approvalId: String(row._id),
@@ -93,6 +103,7 @@ export const buildCardPayload = (row: IApprovalAction): CardPayload => ({
   expiresAt: row.expiresAt?.toISOString?.() || new Date(row.expiresAt).toISOString(),
   ...(row.actionType === 'tool_call'
     ? {
+      ...legacyToolCallOutcome(row),
       ...(row.toolCallEnding ? { toolCallEnding: row.toolCallEnding } : {}),
       ...(row.toolCallCode ? { toolCallCode: row.toolCallCode } : {}),
       ...(row.toolCallTrailId ? { toolCallTrailId: row.toolCallTrailId } : {}),

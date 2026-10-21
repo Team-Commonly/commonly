@@ -213,6 +213,24 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.queryByText(en.approvalCard.approved)).not.toBeInTheDocument();
   });
 
+  test('pre-ending message payloads use their old execution fields without claiming a refusal', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'legacy-ran', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', executionResult: { id: 9 },
+    });
+    expect(screen.getByText(en.approvalCard.toolCall.ran)).toBeInTheDocument();
+    expect(screen.queryByText(/tool call refused/i)).not.toBeInTheDocument();
+  });
+
+  test('a pre-ending failed tool call stays failed without showing vendor error text', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'legacy-failed', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', executionError: 'private vendor error',
+    });
+    expect(screen.getByText(/tool call failed \(legacy_execution_failed\)/i)).toBeInTheDocument();
+    expect(screen.queryByText(/private vendor error/i)).not.toBeInTheDocument();
+  });
+
   test('the owner fetches canonical args and must see them before approving', async () => {
     mockGet.mockResolvedValue({
       approvals: [{

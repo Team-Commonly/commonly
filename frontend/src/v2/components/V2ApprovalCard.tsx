@@ -154,6 +154,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   // call expires closed; the next decision or sweep persists its terminal face.
   const execution = payload.executionResult as
     | {
+      isError?: boolean;
       podId?: string;
       agentJoined?: boolean;
       agentJoinError?: string;
@@ -161,6 +162,14 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
       alreadyInstalled?: boolean;
     }
     | undefined;
+  // Old message payloads remain in pod history. Their tool-call rows predate
+  // broker endings, so read the old execution fields without displaying vendor text.
+  const legacyToolCall = isToolCall && !payload.toolCallEnding;
+  const toolCallEnding = payload.toolCallEnding || (legacyToolCall
+    ? (payload.executionError || execution?.isError === true ? 'failed'
+      : payload.executionResult !== undefined ? 'ran' : undefined)
+    : undefined);
+  const toolCallCode = payload.toolCallCode || (legacyToolCall ? 'legacy_execution_failed' : 'broker_error');
   // connect_local_agent's result carries a connectPath — the seat exists,
   // but the token step is a human-in-browser act on the connect page; the
   // card's job is to hand the user there, never to carry a credential.
@@ -293,13 +302,15 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
         )}
 
         {status === 'resolved' && payload.decision === 'approved' && (
-          <div className={`v2-approval__state ${payload.executionError || agentJoinFailed || (isToolCall && payload.toolCallEnding !== 'ran') ? 'v2-approval__state--attention' : 'v2-approval__state--approved'}`}>
-            {isToolCall
-              ? payload.toolCallEnding === 'ran'
+          <div className={`v2-approval__state ${payload.executionError || agentJoinFailed || (isToolCall && toolCallEnding && toolCallEnding !== 'ran') ? 'v2-approval__state--attention' : 'v2-approval__state--approved'}`}>
+            {isToolCall && toolCallEnding
+              ? toolCallEnding === 'ran'
                 ? t('approvalCard.toolCall.ran')
-                : payload.toolCallEnding === 'failed'
-                  ? t('approvalCard.toolCall.failed', { code: payload.toolCallCode || 'broker_error' })
-                  : t('approvalCard.toolCall.refused', { code: payload.toolCallCode || 'broker_error' })
+                : toolCallEnding === 'failed'
+                  ? t('approvalCard.toolCall.failed', { code: toolCallCode })
+                  : t('approvalCard.toolCall.refused', { code: toolCallCode })
+              : isToolCall
+                ? t('approvalCard.approved')
               : payload.executionError
               ? t('approvalCard.approvedButFailed', { error: payload.executionError })
               : agentJoinFailed
