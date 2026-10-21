@@ -51,6 +51,8 @@ import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
+import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
+import { isAnswerableToolError } from '../public-tool-error.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
@@ -297,6 +299,9 @@ const makeEventParser = () => {
   let text = '';
   let usage = null;
   let errorMessage = null;
+  // Every tool call that came back as an error, for the public-seat check in
+  // spawn (publicToolFailure).
+  const toolErrors = [];
   const consumeLine = (line) => {
     if (!line.trim()) return;
     try {
@@ -306,6 +311,12 @@ const makeEventParser = () => {
         text += event.part.text;
       } else if (event.type === 'step_finish' && event.part?.tokens) {
         usage = event.part.tokens;
+      } else if (event.type === 'tool_use' && event.part?.state?.status === 'error') {
+        const { error } = event.part.state;
+        toolErrors.push({
+          tool: String(event.part.tool || ''),
+          error: typeof error === 'string' ? error : JSON.stringify(error ?? ''),
+        });
       } else if (event.type === 'error') {
         errorMessage = event.error?.data?.message || event.error?.message || 'OpenCode turn failed';
       }
@@ -332,7 +343,48 @@ const makeEventParser = () => {
     get text() { return text; },
     get usage() { return usage; },
     get errorMessage() { return errorMessage; },
+    get toolErrors() { return toolErrors; },
   };
+};
+
+// A public seat must never show a stranger its own plumbing. When a Commonly
+// tool can't reach the API, the model is left narrating the failure, and the
+// run loop posted that narration: on 2026-10-21 a canary of Commonly HQ's
+// support seat (this adapter, its prompt, an unreachable API) told the asker
+// "every Commonly tool call (`list_pods`, `list_artifacts`) is returning
+// `fetch failed`", and an instruction to answer NO_REPLY in that case held in
+// only 1 of 3 turns. So the turn is withheld here instead: nothing is posted,
+// and the run loop keeps the event unacked for its retry.
+//
+// OpenCode names an MCP tool `<server>_<tool>`, and a failed call reports
+// `state.status: 'error'` with the message in `state.error` (measured on
+// OpenCode 1.19.0). Only tools of the declared Commonly server count. Of
+// those, only the errors `isAnswerableToolError` names (an API refusal the
+// person can be told about, or a schema mistake the model fixes) leave the
+// turn to be posted; any other failure withholds it. This adapter-level check
+// stays beside the adapter-agnostic readiness witness (TASK-256): it sees the
+// runtime's own view of each call, and the witness sees a server that never
+// started, so each catches what the other cannot.
+export const PUBLIC_TOOL_FAILED_CODE = 'public_tool_failed';
+
+export const publicToolFailure = (toolErrors, mcpServers) => {
+  const prefixes = (Array.isArray(mcpServers) ? mcpServers : [])
+    .filter((server) => server?.name && isShippedCommonlyMcpCommand(server.command))
+    .map((server) => `${server.name}_`);
+  if (!prefixes.length) return null;
+  return (toolErrors || []).find(({ tool, error }) => (
+    prefixes.some((prefix) => tool.startsWith(prefix)) && !isAnswerableToolError(error)
+  )) || null;
+};
+
+const publicToolFailedError = ({ tool, error }) => {
+  const reason = String(error).replace(/\s+/g, ' ').slice(0, 160) || '(empty error)';
+  const failure = new Error(
+    `public seat withheld this turn's reply: Commonly tool ${tool} failed in a way the model must not narrate `
+    + `(${reason}), so nothing was posted and the event stays unacked for retry`,
+  );
+  failure.code = PUBLIC_TOOL_FAILED_CODE;
+  return failure;
 };
 
 const runOpenCode = ({ cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
@@ -376,7 +428,9 @@ const runOpenCode = ({ cmd, args, cwd, env, timeoutMs, credentials, spawnImpl = 
         credentials, exitCode: code, limit: 500,
       }));
     }
-    resolve({ sessionId: events.sessionId, text: events.text, usage: events.usage });
+    resolve({
+      sessionId: events.sessionId, text: events.text, usage: events.usage, toolErrors: events.toolErrors,
+    });
   });
 });
 
@@ -783,6 +837,10 @@ export default {
         credentials,
         spawnImpl: ctx._spawnImpl,
       });
+      if (isPublic) {
+        const failure = publicToolFailure(result.toolErrors, ctx.environment?.mcp);
+        if (failure) throw publicToolFailedError(failure);
+      }
       return {
         text: result.text.trim(),
         newSessionId: result.sessionId || ctx.sessionId || null,

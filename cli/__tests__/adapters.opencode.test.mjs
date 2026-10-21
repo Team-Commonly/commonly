@@ -28,6 +28,8 @@ const {
   buildMcpConfig,
   buildProviderConfig,
   makeEventParser,
+  PUBLIC_TOOL_FAILED_CODE,
+  publicToolFailure,
   publicPermissions,
   qualifiedProviderModel,
   resolveProviderKeyFile,
@@ -293,6 +295,139 @@ describe('opencode MCP config', () => {
         expect(buildSeatbeltProfile(profileOptions)).toContain(`(subpath "${realpathSync(versionDir)}")`);
       });
     });
+  });
+});
+
+// 2026-10-21: a canary of Commonly HQ's support seat (this adapter, its prompt,
+// an unreachable API) told the asker "every Commonly tool call (`list_pods`,
+// `list_artifacts`) is returning `fetch failed`". A public seat withholds such a
+// turn: nothing is posted and the event stays unacked. Events are the shape
+// OpenCode 1.19.0 emits, captured from that canary.
+// Vera's HOLD on #2374 (79595): matching connection failures let an API 5xx
+// through, because the shipped MCP reports it as `{ status, body, message }`.
+// The rule is now inverted: only named answerable errors leave the turn to post.
+describe('opencode public seat withholds a turn whose Commonly tools failed', () => {
+  const toolError = (tool, error) => event('tool_use', 'ses_test', {
+    type: 'tool', tool, state: { status: 'error', input: {}, error, time: {} },
+  });
+  const narration = 'Every Commonly call is returning fetch failed, so the backend is unreachable.';
+  const turn = (...extra) => [
+    event('step_start', 'ses_test', { type: 'step-start' }),
+    ...extra,
+    event('text', 'ses_test', { type: 'text', text: narration }),
+    event('step_finish', 'ses_test', { type: 'step-finish', tokens: { input: 1, output: 1 } }),
+  ];
+  const COMMONLY_MCP = [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }];
+
+  const runSeat = async (chunks, { trust = 'public', mcp = COMMONLY_MCP } = {}) => {
+    let outcome;
+    await withTemp(async (root) => {
+      const home = join(root, 'mcp-home');
+      const versionDir = join(home, '0.3.13');
+      const pkgDir = join(versionDir, 'node_modules', '@commonlyai', 'mcp');
+      await mkdir(join(pkgDir, 'src'), { recursive: true });
+      await writeFile(join(pkgDir, 'package.json'), JSON.stringify({
+        name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+      }));
+      await writeFile(join(pkgDir, 'src', 'index.js'), '');
+      await writeFile(join(home, 'current'), '0.3.13\n');
+      const workspace = join(root, 'workspace');
+      await mkdir(workspace);
+      const keyFile = join(root, 'provider-key');
+      await writeFile(keyFile, 'provider-secret', { mode: 0o600 });
+      return withProcessEnv('COMMONLY_MCP_HOME', home, () => opencode.spawn('a stranger asks which pods they are in', {
+        cwd: workspace,
+        env: { PATH: process.env.PATH },
+        environment: {
+          model: 'gpt-5.4',
+          ...(trust === 'public' ? { sandbox: { trust: 'public', mode: 'read-only' } } : {}),
+          provider: { id: 'local', baseURL: 'https://llm.example.test/v1', keyFile },
+          mcp,
+        },
+        agentName: 'hq-canary',
+        _opencodeHomeRoot: join(root, 'opencode-state'),
+        _binaryPath: '/usr/local/bin/opencode',
+        _platform: 'darwin',
+        _spawnImpl: makeSpawnImpl({ chunks }).impl,
+        _wrapArgvWithSeatbelt: (argv) => argv,
+      }).then((result) => { outcome = result; }));
+    });
+    return outcome;
+  };
+
+  // The shipped MCP's error payloads (commonly-mcp/src/tools.js `err`).
+  const http = (status, message, body = { message }) => JSON.stringify({ status, body, message });
+
+  test('a Commonly tool that could not connect withholds the reply, and the narration is not in the error', async () => {
+    const outcome = runSeat(turn(toolError('commonly_commonly_list_pods', '{"message":"fetch failed"}')));
+    await expect(outcome).rejects.toMatchObject({ code: PUBLIC_TOOL_FAILED_CODE });
+    await expect(runSeat(turn(toolError('commonly_commonly_list_pods', '{"message":"fetch failed"}'))))
+      .rejects.toThrow(/^(?!.*backend is unreachable).*commonly_commonly_list_pods failed in a way the model must not narrate/);
+  });
+
+  test.each([
+    ['an ingress 503 page while the socket connects', http(503, '<html><body>503 Service Temporarily Unavailable</body></html>', '<html><body>503 Service Temporarily Unavailable</body></html>')],
+    ['a 502 with only its status', http(502, 'HTTP 502', null)],
+    ['a backend 500 with its own message', http(500, 'Internal server error')],
+    ['a 504 whose text names no timeout', http(504, 'Bad gateway upstream')],
+    ['a rejected seat token', http(401, 'Invalid agent token')],
+    ['a rate limit', http(429, 'Too many requests')],
+    ['an MCP transport failure', 'MCP error -32000: Connection closed'],
+    ['an error-flagged result with no text', 'MCP tool returned an error'],
+    ['an empty error', ''],
+    ['text this guard does not recognise', 'something unexpected happened'],
+  ])('%s withholds the reply', async (_label, error) => {
+    await expect(runSeat(turn(toolError('commonly_commonly_list_pods', error))))
+      .rejects.toMatchObject({ code: PUBLIC_TOOL_FAILED_CODE });
+  });
+
+  test.each([
+    ['a 403 the person can be told about', http(403, 'You are not a member of this pod')],
+    ['a 404', http(404, 'Pod not found')],
+    ['a 422 validation refusal', http(422, 'content is required')],
+    ['a 400', http(400, 'podId must be an ObjectId')],
+    ['a 409', http(409, 'Already claimed')],
+    ['OpenCode\'s own schema check', 'The commonly_commonly_post_message tool was called with invalid arguments: podId: Required. Please rewrite the input so it satisfies the expected schema.'],
+  ])('%s is still answered', async (_label, error) => {
+    const result = await runSeat(turn(toolError('commonly_commonly_post_message', error)));
+    expect(result.text).toBe(narration);
+  });
+
+  test('one answerable error does not excuse another that is not', async () => {
+    await expect(runSeat(turn(
+      toolError('commonly_commonly_get_context', http(404, 'Pod not found')),
+      toolError('commonly_commonly_list_pods', http(503, 'HTTP 503', null)),
+    ))).rejects.toMatchObject({ code: PUBLIC_TOOL_FAILED_CODE });
+  });
+
+  test('a connection failure in a tool that is not Commonly\'s is still answered', async () => {
+    const result = await runSeat(turn(toolError('webfetch', 'fetch failed')));
+    expect(result.text).toBe(narration);
+  });
+
+  test('a private seat is not affected', async () => {
+    const result = await runSeat(turn(toolError('commonly_commonly_list_pods', '{"message":"fetch failed"}')), { trust: 'private' });
+    expect(result.text).toBe(narration);
+  });
+
+  test('the parser records failed tool calls, whether the error is text or an object', () => {
+    const parser = makeEventParser();
+    parser.consume(toolError('commonly_commonly_list_pods', '{"message":"fetch failed"}'));
+    parser.consume(toolError('commonly_commonly_get_context', { message: 'connect ECONNREFUSED 127.0.0.1:9' }));
+    parser.consume(event('tool_use', 'ses_test', { type: 'tool', tool: 'read', state: { status: 'completed', output: 'ok' } }));
+    parser.flush();
+    expect(parser.toolErrors).toEqual([
+      { tool: 'commonly_commonly_list_pods', error: '{"message":"fetch failed"}' },
+      { tool: 'commonly_commonly_get_context', error: '{"message":"connect ECONNREFUSED 127.0.0.1:9"}' },
+    ]);
+  });
+
+  test('only the shipped Commonly server counts, under whatever name it was declared', () => {
+    const failed = [{ tool: 'hq_commonly_list_pods', error: 'fetch failed' }];
+    expect(publicToolFailure(failed, [{ name: 'hq', command: ['npx', '-y', '@commonlyai/mcp@0.3.13'] }]))
+      .toEqual(failed[0]);
+    expect(publicToolFailure(failed, [{ name: 'hq', command: ['node', '/elsewhere/server.js'] }])).toBeNull();
+    expect(publicToolFailure(failed, undefined)).toBeNull();
   });
 });
 
