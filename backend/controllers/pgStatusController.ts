@@ -4,6 +4,8 @@ import type { Request, Response } from 'express';
 const { pool } = require('../config/db-pg');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
+// eslint-disable-next-line global-require
+const AgentIdentityService = require('../services/agentIdentityService');
 
 exports.checkStatus = async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -42,9 +44,12 @@ exports.syncUser = async (req: Request & { userId?: string }, res: Response): Pr
       RETURNING *
     `;
 
+    // The chat name, not the handle. Every signed-in page load calls this
+    // (SocketContext), so writing `user.username` here put a person's handle
+    // back in chat on their next load after they chose a display name.
     const result = await pool.query(query, [
       user._id.toString(),
-      user.username,
+      AgentIdentityService.chatUsernameFor(user),
       user.profilePicture || null,
     ]);
 
