@@ -134,6 +134,15 @@ test('explains why a seat reached by grants in multiple pods cannot post', async
   expect(await screen.findByText(/Scout cannot post while connectors reach more than one of their pods/)).toBeInTheDocument();
 });
 
+test('does not imply agent posting is available when the roster read fails', async () => {
+  const baseGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url) => (
+    url === '/api/registry/pods/p1/agents' ? Promise.reject(new Error('roster unavailable')) : baseGet(url)
+  ));
+  renderTools();
+  expect(await screen.findByText(/Could not check whether connector grants limit agent posting/)).toBeInTheDocument();
+});
+
 test('a sole join-policy refusal offers the owner an in-place fix and then allows retry', async () => {
   axios.post.mockRejectedValueOnce({ response: { data: {
     error: 'outsider_grant_pod_joinable', message: 'Agents can self-install into this pod. Make it invite-only to use this connector.',
