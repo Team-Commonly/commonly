@@ -16,7 +16,7 @@ import {
 import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
 
 describe('defaultMcpServers', () => {
-  test.each(['claude', 'codex', 'pi', 'opencode'])('hands %s the commonly server', (adapterName) => {
+  test.each(['claude', 'codex', 'pi', 'opencode', 'dsh'])('hands %s the commonly server', (adapterName) => {
     expect(defaultMcpServers(adapterName)).toEqual([commonlyMcpServer()]);
   });
 
@@ -34,7 +34,7 @@ describe('defaultMcpServers', () => {
   });
 
   test('ADAPTERS_WITH_DEFAULT_MCP matches the adapters this test names', () => {
-    expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['claude', 'codex', 'opencode', 'pi', 'qwen']);
+    expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['claude', 'codex', 'dsh', 'opencode', 'pi', 'qwen']);
   });
 
   test('ADAPTERS_WITH_DEFAULT_SANDBOX is the enforcing subset, pi excluded', () => {

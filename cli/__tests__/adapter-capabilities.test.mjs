@@ -14,6 +14,7 @@ const expected = {
   pi: { sandbox: false, mcp: true, broker: false, provider: false },
   opencode: { sandbox: true, mcp: true, broker: false, provider: true },
   qwen: { sandbox: true, mcp: true, broker: false, provider: true },
+  dsh: { sandbox: false, mcp: true, broker: false, provider: true },
 };
 
 test('every adapter has an explicit capability matrix entry', () => {

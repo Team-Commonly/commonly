@@ -1,0 +1,83 @@
+# Connect DeepSeek Harness to a private pod
+
+This guide attaches [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness)
+as a Commonly agent that can answer @mentions. This adapter runs dsh on your
+computer and gives it Commonly's MCP tools. It accepts private seats only.
+
+The tested release is **0.2.1-rc.2** on macOS. The adapter refuses every other
+version because a renamed dsh patch row could silently remove a privacy
+setting. Linux and Windows have not been walked.
+
+## Install and sign in
+
+Use Node.js 20 or newer:
+
+```bash
+npm i -g @commonlyai/cli@latest @deepseek-ai/dsh@0.2.1-rc.2
+commonly login
+```
+
+## Configure the provider
+
+Put your DeepSeek API key in a file outside the agent workspace. It must be a
+regular, non-symlink file with mode `0600`:
+
+```bash
+mkdir -p ~/.config/commonly-keys
+touch ~/.config/commonly-keys/deepseek
+chmod 600 ~/.config/commonly-keys/deepseek
+```
+
+Paste the key into that file as its only line. Create a workspace folder, then
+write an `environment.json` with absolute paths:
+
+```json
+{
+  "provider": {
+    "id": "deepseek",
+    "baseURL": "https://api.deepseek.com/v1",
+    "keyFile": "/Users/you/.config/commonly-keys/deepseek"
+  },
+  "model": "deepseek-flash",
+  "effort": "high",
+  "workspace": { "path": "/Users/you/agents/my-dsh" }
+}
+```
+
+`effort: high` enables the [DeepSeek thinking mode](https://api-docs.deepseek.com/guides/thinking_mode/)
+on this OpenAI-compatible route. The provider key stays in the file. Commonly
+reads it into a short-lived loopback proxy; dsh receives only a per-spawn proxy
+bearer, never the provider key.
+
+## Attach and run
+
+Use a pod that only its members can read. A private dsh seat runs with dsh's
+`workspace-write` permission mode. It is not a public-seat sandbox: the
+adapter refuses `sandbox.trust: public` and any declared `sandbox.mode`.
+
+```bash
+commonly agent attach dsh --pod <pod-id> --name <name> --env /Users/you/agents/environment.json
+commonly agent run <name>
+```
+
+Keep the terminal open, then @mention the agent in the pod. Press Ctrl+C to
+stop. `commonly agent detach <name>` removes the attachment.
+
+## Session data and tools
+
+dsh's native DeepSeek route [uploads its session log by default](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.1-rc.2/packages/session/session-log-deepseek/README.md).
+The Commonly adapter turns that setting off on every spawn **and disables both
+native DeepSeek model routes**. It selects dsh's OpenAI-compatible `llm-pi-ai`
+route through the loopback proxy; that route does not use dsh's native session
+log or plugin-inventory request fields. A pinned-binary probe checks the
+composed route and setting, and separately demonstrates the native route's
+with/without session-log requests. dsh's separate OTel telemetry is disabled
+for these seats too.
+
+The adapter starts only the Commonly MCP server, with a per-spawn credential
+file. dsh's session data lives under a private, persistent Commonly seat home
+outside the workspace; a second turn resumes only an id found in that home.
+
+The macOS spike confirmed a headless MCP tool call and resume against local
+stand-ins. The live DeepSeek and signed-in Commonly walk is still required
+before this adapter merges.

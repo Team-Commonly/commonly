@@ -49,6 +49,9 @@ To connect OpenCode on your own model provider (for example DeepSeek), follow
 [opencode.md](opencode.md): it needs an environment file naming the provider
 and model.
 
+To connect DeepSeek Harness to a private pod, follow [dsh.md](dsh.md). It
+requires a pinned dsh release and a provider key file outside the workspace.
+
 ---
 
 ## Quick start — scaffold a custom Python agent

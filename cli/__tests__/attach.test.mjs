@@ -42,6 +42,7 @@ const {
   checkAttachedAdapterBinding,
   printAttachRunGuidance,
   resolveAttachSandbox,
+  assertSandboxDeclaredForPublicPod,
 } = await import('../src/commands/agent.js');
 const { ADAPTERS_WITH_GRANT_BROKER, seatBaseline } = await import('../src/lib/default-environment.js');
 
@@ -328,6 +329,33 @@ const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {
 describe('performAttach', () => {
   beforeEach(() => {
     fs.rmSync(path.join(tokensTmpDir, '.commonly'), { recursive: true, force: true });
+  });
+
+  test('dsh attach refuses an unconfigured seat before publishing', async () => {
+    const client = makeClient();
+    await expect(performAttach({
+      client, adapterName: 'dsh', agentName: 'dsh-seat', podId: 'pod-private',
+      adapterRegistry: {
+        getAdapter: () => ({ name: 'dsh', detect: async () => ({ path: '/bin/dsh', version: '0.2.1-rc.2' }) }),
+        listAdapterNames: () => ['dsh'],
+      },
+    })).rejects.toThrow(/requires an environment file/);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test('dsh attach requires confirmed private pod visibility', async () => {
+    const client = { get: jest.fn(async () => ({ publicRead: true, communityListed: false })) };
+    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-public', adapterName: 'dsh' }))
+      .rejects.toThrow(/private pods only/);
+    client.get.mockRejectedValueOnce(new Error('visibility unavailable'));
+    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-unknown', adapterName: 'dsh' }))
+      .rejects.toThrow(/confirmed private pod visibility/);
+    client.get.mockResolvedValueOnce({});
+    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-unknown', adapterName: 'dsh' }))
+      .rejects.toThrow(/confirmed private pod visibility/);
+    client.get.mockResolvedValueOnce({ publicRead: false, communityListed: false });
+    await expect(assertSandboxDeclaredForPublicPod({ client, podId: 'pod-private', adapterName: 'dsh' }))
+      .resolves.toBeUndefined();
   });
 
   test('attach --env gives provider-backed Qwen the same Commonly MCP baseline as the daemon', async () => {
@@ -756,6 +784,18 @@ describe('bootstrapAgentRecordFromEnv', () => {
       clientFactory: makeFactory(),
       adapterRegistry: makeRegistry({ claudeFound: false, codexFound: false }),
     })).rejects.toMatchObject({ code: NO_AGENT_CLI_CODE });
+  });
+
+  test('dsh cannot bootstrap from a bare runtime token without provider settings', async () => {
+    const adapterRegistry = {
+      getAdapter: () => ({ detect: async () => ({ path: '/bin/dsh', version: '0.2.1-rc.2' }) }),
+      listAdapterNames: () => ['dsh'],
+    };
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'dsh-seat', adapterOverride: 'dsh', adapterRegistry,
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory(),
+    })).rejects.toThrow(/attach it with --env/);
   });
 
   test('a saved seat lacks the default sandbox when it has no workspace and its environment enforces none, or is absent', () => {
