@@ -1,10 +1,8 @@
 // @ts-nocheck
-// The BYO page's footnote is the first command a stranger copies, and the docs
-// (#2097) now send them here first. `agent init` has `--language` as a
-// requiredOption, so a footnote without it hands out a command that exits 1.
-// Pinned after a real user hit exactly that (#2095, 2026-10-09).
+// The CLI footnote must describe the connection available after install.
+// `agent init` scaffolds a Python webhook and does not connect Claude/Codex.
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -42,7 +40,7 @@ const authValue = {
 beforeEach(() => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/hosted/availability')) {
-      return Promise.resolve({ data: { configured: false, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
+      return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
     }
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat', createdBy: { _id: 'u1' } }] });
     if (url === '/api/machines') return Promise.resolve({ data: { machines: [], offlineAfterMs: 90000 } });
@@ -59,10 +57,47 @@ const renderPage = () => render(
 );
 
 describe('V2AgentBYO footnote', () => {
-  test('the CLI init command it shows carries every requiredOption of `agent init`', async () => {
+  const modeTitle = (testId) => screen.getByTestId(testId).querySelector('.v2-byo__mode-title').textContent;
+  const realUserAgent = window.navigator.userAgent;
+  const setUserAgent = (value) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
+  afterEach(() => {
+    setUserAgent(realUserAgent);
+    window.history.replaceState({}, '', '/');
+  });
+
+  test('names the runtime mode leading to the listener, even from Run it here', async () => {
+    setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)');
     renderPage();
-    const code = await screen.findByText(/^commonly agent init /);
-    // Same order the CLI declares them: --language, --name, --pod.
-    expect(code.textContent).toBe('commonly agent init --language python --name <n> --pod <podId>');
+    const footnote = await screen.findByText(/Prefer the CLI\?/);
+    await screen.findByTestId('byo-mode-byo');
+    expect(footnote).toHaveTextContent(`Choose “${modeTitle('byo-mode-byo')}”; after install`);
+    expect(footnote).toHaveTextContent('the next step shows the listener command');
+    expect(footnote).not.toHaveTextContent('commonly agent init');
+
+    fireEvent.click(await screen.findByTestId('byo-mode-hosted'));
+    expect(footnote).toHaveTextContent(`Choose “${modeTitle('byo-mode-byo')}”; after install`);
+  });
+
+  test('on Windows, Claude Code guidance names the MCP path without promising a listener command', async () => {
+    setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+    renderPage();
+    const footnote = await screen.findByText(/Prefer the CLI\?/);
+    await screen.findByTestId('byo-mode-byo');
+    expect(footnote).toHaveTextContent(`Choose “${modeTitle('byo-mode-byo')}”`);
+    expect(footnote).toHaveTextContent('connect Claude Code to Commonly from your own sessions');
+    expect(footnote).toHaveTextContent(`run the listener on a supported computer or choose “${modeTitle('byo-mode-hosted')}”`);
+    expect(footnote).not.toHaveTextContent('the next step shows the listener command');
+  });
+
+  test('on Windows, Codex guidance points to Mac/Linux or hosting', async () => {
+    setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+    window.history.replaceState({}, '', '/?adapter=codex');
+    renderPage();
+    const footnote = await screen.findByText(/Prefer the CLI\?/);
+    await screen.findByTestId('byo-mode-byo');
+    expect(footnote).toHaveTextContent(`Choose “${modeTitle('byo-mode-byo')}”`);
+    expect(footnote).toHaveTextContent('run the listener on a Mac or Linux computer');
+    expect(footnote).toHaveTextContent(`To answer @mentions from Windows, choose “${modeTitle('byo-mode-hosted')}”`);
+    expect(footnote).not.toHaveTextContent('the next step shows the listener command');
   });
 });

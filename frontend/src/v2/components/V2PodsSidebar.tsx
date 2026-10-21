@@ -364,7 +364,11 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         ) : (
           <span className="v2-pods__row-mark" aria-hidden="true">{podInitials(pod.name)}</span>
         )}
-        <span className="v2-pods__row-name">{pod.name}</span>
+        <span className="v2-pods__row-name">
+          {pod.name === 'My Workspace' && pod.createdBy?._id && String(pod.createdBy._id) !== String(currentUser?._id)
+            ? t('podNames.otherWorkspace', { name: pod.name, owner: pod.createdBy.username || t('podNames.shared') })
+            : pod.name}
+        </span>
         <span className="v2-pods__row-meta">
           {count > 0 && (
             <span className="v2-pods__row-pill" aria-label={t('podsSidebar.workspace.needsYouCount', { count })}>
