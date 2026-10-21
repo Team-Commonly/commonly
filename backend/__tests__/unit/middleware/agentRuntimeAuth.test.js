@@ -212,7 +212,7 @@ describe('TASK-213 runtime token narrowing', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  test('two grant pods refuse a private memory write too', async () => {
+  test('two grant pods still permit a private-only memory update', async () => {
     setupLegacy();
     mockInstallationFind.mockResolvedValue([
       { podId: { toString: () => 'pod-a' } },
@@ -226,18 +226,17 @@ describe('TASK-213 runtime token narrowing', () => {
     const res = buildRes();
     const next = jest.fn();
     await agentRuntimeAuth(req, res, next);
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
   });
 
-  test('spawn maintenance is available in one grant pod, but not across two', async () => {
+  test('spawn maintenance and event acknowledgement remain available across two grant pods', async () => {
     setupLegacy();
     mockInstallationFind.mockResolvedValue([
       { podId: { toString: () => 'pod-a' } },
       { podId: { toString: () => 'pod-b' } },
     ]);
-    mockNarrowedPods.mockResolvedValueOnce(new Set(['pod-a']))
-      .mockResolvedValueOnce(new Set(['pod-a', 'pod-b']));
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a', 'pod-b']));
     const req = buildReq('cm_agent_test');
     Object.assign(req, { method: 'POST', baseUrl: '/api/agents/runtime/spawn-credentials',
       route: { path: '/' }, params: {} });
@@ -245,9 +244,11 @@ describe('TASK-213 runtime token narrowing', () => {
     const next = jest.fn();
     await agentRuntimeAuth(req, res, next);
     expect(next).toHaveBeenCalledTimes(1);
+    req.baseUrl = '/api/agents/runtime';
+    req.route.path = '/events/:id/ack';
     await agentRuntimeAuth(req, res, next);
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).toHaveBeenCalledTimes(2);
+    expect(res.status).not.toHaveBeenCalled();
   });
 });
 

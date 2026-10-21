@@ -208,15 +208,24 @@ describe('per-spawn child credentials (TASK-094)', () => {
     expect(req.agentAuthorizedPodIds).toContain(String(podId));
   });
 
-  it('a minted child and its seat inherit the same live-grant refusal', async () => {
-    const { raw, seat } = await makeSeat();
+  it('a minted child and its seat keep own-state calls while two grant pods refuse outward and pod writes', async () => {
+    const { raw, bot, seat } = await makeSeat();
     const { AgentInstallation } = require('../../../models/AgentRegistry');
     const installation = await AgentInstallation.findOne({ agentName: 'testbot', instanceId: 'default' });
+    const otherPodId = new mongoose.Types.ObjectId();
+    await AgentInstallation.create({
+      agentName: 'testbot', instanceId: 'default', podId: otherPodId,
+      version: '1.0.0', installedBy: bot._id,
+    });
     const grantPolicy = require('../../../services/nativeOutsiderGrantPolicy');
     const spy = jest.spyOn(grantPolicy, 'podsWithOutsiderWritableGrants')
-      .mockResolvedValue(new Set([String(installation.podId)]));
-    const route = { method: 'POST', baseUrl: '/api/agents/runtime',
+      .mockResolvedValue(new Set([String(installation.podId), String(otherPodId)]));
+    const outward = { method: 'POST', baseUrl: '/api/agents/runtime',
       route: { path: '/agent-dm' }, params: {} };
+    const podWrite = { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/pods/:podId/messages' }, params: { podId: String(installation.podId) } };
+    const ownAck = { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/events/:id/ack' }, params: { id: 'event-1' } };
     try {
       const express = require('express');
       const request = require('supertest');
@@ -230,12 +239,15 @@ describe('per-spawn child credentials (TASK-094)', () => {
       expect(child.scopes).toEqual(['spawn']);
       expect(String(child.parentId)).toBe(String(seat._id));
       for (const token of [raw, minted.body.token]) {
-        const { res, nexted } = await runAuth(token, route);
-        expect(nexted).toBe(false);
-        expect(res.statusCode).toBe(403);
-        expect(res.body.code).toBe('outsider_grant_runtime_narrowed');
+        expect((await runAuth(token, ownAck)).nexted).toBe(true);
+        for (const route of [outward, podWrite]) {
+          const { res, nexted } = await runAuth(token, route);
+          expect(nexted).toBe(false);
+          expect(res.statusCode).toBe(403);
+          expect(res.body.code).toBe('outsider_grant_runtime_narrowed');
+        }
       }
-      expect(spy).toHaveBeenCalledTimes(3);
+      expect(spy).toHaveBeenCalledTimes(7);
     } finally { spy.mockRestore(); }
   });
 

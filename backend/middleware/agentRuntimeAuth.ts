@@ -98,8 +98,8 @@ const checkOutsiderGrantRuntimeNarrowing = async (
     console.error('Outsider grant runtime route resolution failed:', error);
     route = { routeClass: 'unknown', podId: null };
   }
-  const allowed = (route.routeClass === 'read'
-      && (narrowedPods.size === 1 || req.method.toUpperCase() === 'GET'))
+  const allowed = route.routeClass === 'read'
+    || route.routeClass === 'own_state'
     || route.routeClass === 'grant'
     || (route.routeClass === 'pod_write' && narrowedPods.size === 1
       && route.podId === [...narrowedPods][0]);

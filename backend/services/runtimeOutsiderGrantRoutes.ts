@@ -6,7 +6,7 @@ import AgentAsk from '../models/AgentAsk';
 import AgentEnsembleState from '../models/AgentEnsembleState';
 import Message from '../models/pg/Message';
 
-type RouteClass = 'read' | 'pod_write' | 'grant' | 'outward';
+type RouteClass = 'read' | 'pod_write' | 'grant' | 'own_state' | 'outward';
 type PodResolver = (req: Request) => Promise<string | null>;
 interface RouteRule { routeClass: RouteClass; resolvePod?: PodResolver }
 const podParam: PodResolver = async (req) => String(req.params.podId || '') || null;
@@ -49,8 +49,9 @@ add(runtime, 'read', [
   'GET /pods/:podId/files', 'GET /pods/:podId/files/:fileName/content', 'GET /pods/:podId/posts',
   'GET /memory', 'GET /pods', 'GET /pods/:podId/integrations',
   'GET /pods/:podId/integrations/:integrationId/messages', 'GET /pods/:podId/social-policy',
-  'GET /memory/shared/:agentName/:instanceId?', 'POST /events/:id/ack',
+  'GET /memory/shared/:agentName/:instanceId?',
 ]);
+add(runtime, 'own_state', ['POST /events/:id/ack']);
 add(runtime, 'pod_write', [
   'POST /pods/:podId/typing', 'POST /pods/:podId/messages', 'POST /pods/:podId/propose-action',
   'POST /pods/:podId/summaries', 'POST /pods/:podId/ask', 'POST /pods/:podId/uploads',
@@ -66,10 +67,9 @@ add(runtime, 'outward', [
 ]);
 add(runtime, 'pod_write', ['PUT /memory', 'POST /memory/sync']); // private-only special case below
 const spawn = `${runtime}/spawn-credentials`;
-// Credential maintenance has no content destination. A minted child resolves
-// the same agent identity in agentRuntimeAuth, so it inherits this very check.
-// The middleware still refuses these mutations when grants reach 2+ pods.
-add(spawn, 'read', ['GET /policy', 'POST /', 'POST /:id/renew', 'POST /revoke-orphans', 'DELETE /:id']);
+// Credential maintenance reaches only the authenticated seat. A minted child
+// resolves the same agent identity in agentRuntimeAuth and inherits this check.
+add(spawn, 'own_state', ['GET /policy', 'POST /', 'POST /:id/renew', 'POST /revoke-orphans', 'DELETE /:id']);
 // The handler ignores :podId and writes to the ensemble named in the body.
 add('/api/pods', 'pod_write', ['POST /:podId/ensemble/response'], ensemblePod);
 add('/api/messages', 'read', ['GET /threads/state']);

@@ -84,7 +84,8 @@ test('unscoped posts resolve no pod and broker calls retain their own gate', asy
   expect((await classify('/api/github', 'POST', '/issues')).routeClass).toBe('outward');
   expect((await classify('/api/grants', 'POST', '/:grantId/attenuate')).routeClass).toBe('grant');
   expect((await classify('/api/mcp/grants', 'POST', '/:grantId')).routeClass).toBe('grant');
-  expect((await classify('/api/agents/runtime/spawn-credentials', 'POST', '/')).routeClass).toBe('read');
+  expect((await classify('/api/agents/runtime/spawn-credentials', 'POST', '/')).routeClass).toBe('own_state');
+  expect((await classify('/api/agents/runtime', 'POST', '/events/:id/ack')).routeClass).toBe('own_state');
 });
 
 test('ensemble response resolves the record pod rather than the ignored path pod', async () => {
