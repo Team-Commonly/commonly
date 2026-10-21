@@ -52,7 +52,7 @@ import MessageContent from './common/MessageContent';
 import { markPodReadFromMessages } from '../utils/podReadState';
 import AgentEnsemblePanel from './agents/AgentEnsemblePanel';
 import axios from 'axios';
-import getApiBaseUrl, { normalizeUploadUrl } from '../utils/apiBaseUrl';
+import getApiBaseUrl, { getApiAliasUrl, normalizeUploadUrl } from '../utils/apiBaseUrl';
 import EmojiPicker from 'emoji-picker-react';
 import * as nodeEmoji from 'node-emoji';
 import {
@@ -1144,7 +1144,8 @@ const ChatRoom = () => {
 
     const getDiscordOAuthUrl = (podId, guildId = null) => {
         const clientId = process.env.REACT_APP_DISCORD_CLIENT_ID;
-        const redirectUri = encodeURIComponent(`${getApiBaseUrl()}/api/discord/callback`);
+        // The callback the backend exchanges with is on the API's own host (discord.ts, BACKEND_URL).
+        const redirectUri = encodeURIComponent(`${getApiAliasUrl()}/api/discord/callback`);
         const scopes = encodeURIComponent('bot applications.commands');
         const permissions = '536873984';
         const state = `pod_${podId}`;

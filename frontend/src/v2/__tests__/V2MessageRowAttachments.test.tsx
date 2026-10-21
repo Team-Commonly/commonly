@@ -136,6 +136,33 @@ describe('V2MessageRow attachments (direction C)', () => {
     expect(screen.getByRole('link', { name: /outside\.example/ })).toBeInTheDocument();
   });
 
+  // Same-origin build (2026-10): the base is commonly.me, but agents and older messages write
+  // absolute upload URLs on api.commonly.me (8 such messages from 4 authors on prod, 10-20).
+  // Those still render as images; anything that is not one of the two instance origins does not.
+  test('in a same-origin build an upload on the API host still renders and a foreign host does not', () => {
+    const saved = { base: process.env.REACT_APP_API_URL, alias: process.env.REACT_APP_API_ALIAS_URL };
+    process.env.REACT_APP_API_URL = 'https://commonly.me';
+    process.env.REACT_APP_API_ALIAS_URL = 'https://api.commonly.me';
+    try {
+      expect(messageImageUrl('https://api.commonly.me/api/uploads/one.png')).toBe('https://api.commonly.me/api/uploads/one.png');
+      expect(messageImageUrl('https://commonly.me/api/uploads/one.png')).toBe('https://commonly.me/api/uploads/one.png');
+      expect(messageImageUrl('/api/uploads/one.png')).toBe('https://commonly.me/api/uploads/one.png');
+      expect(messageImageUrl('https://outside.example/api/uploads/one.png')).toBeNull();
+      expect(messageImageUrl('https://api.commonly.me.evil.test/api/uploads/one.png')).toBeNull();
+      expect(messageImageUrl('https://commonly.me.evil.test/api/uploads/one.png')).toBeNull();
+
+      const { container, unmount } = render(<MessageMarkdownImage src="https://api.commonly.me/api/uploads/report.png" alt="report" />);
+      expect(container.querySelector('img')).toHaveAttribute('src', 'https://api.commonly.me/api/uploads/report.png');
+      unmount();
+      const foreign = render(<MessageMarkdownImage src="https://outside.example/api/uploads/report.png" alt="report" />);
+      expect(foreign.container.querySelector('img')).toBeNull();
+      expect(screen.getByRole('link', { name: 'report' })).toHaveAttribute('href', 'https://outside.example/api/uploads/report.png');
+    } finally {
+      if (saved.base === undefined) delete process.env.REACT_APP_API_URL; else process.env.REACT_APP_API_URL = saved.base;
+      if (saved.alias === undefined) delete process.env.REACT_APP_API_ALIAS_URL; else process.env.REACT_APP_API_ALIAS_URL = saved.alias;
+    }
+  });
+
   test('image URL guard accepts only this instance upload origin and path', () => {
     expect(messageImageUrl('https://api.commonly.me/api/uploads/one.png')).toBe('https://api.commonly.me/api/uploads/one.png');
     expect(messageImageUrl('https://api.commonly.me.evil.test/api/uploads/one.png')).toBeNull();
