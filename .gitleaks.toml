@@ -17,6 +17,11 @@ regexes = [
   # (shared on the landing page, README, and Discord). Tests pin it as the
   # REACT_APP_COMMUNITY_INVITE_TOKEN fixture; it is not a secret.
   '''7b91255f18ae3c0ae3721707a6613731''',
+  # A fake ChatGPT JWT in agentProvisionerServiceK8s.test.js (#2213): the
+  # base64 of {"alg":"RS256"} followed by the literal ".jwt", no payload and no
+  # signature. generic-api-key matched it, and main's Secret Scan was red on
+  # every push from 2026-10-16. The exact literal only, so a real token still fails.
+  '''eyJhbGciOiJSUzI1NiJ9\.jwt''',
 ]
 
 paths = [
