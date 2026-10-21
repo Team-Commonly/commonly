@@ -1293,7 +1293,26 @@
       "name": "Tool call",
       "loading": "Loading the exact tool call…",
       "unavailable": "Can't show what you'd approve — refresh before deciding.",
-      "ownerOnly": "Arguments are visible to the approval owner only."
+      "ownerOnly": "Arguments are visible to the approval owner only.",
+      "verb": {
+        "mergePullRequest": "Merge pull request #{{number}}",
+        "createIssue": "Open an issue",
+        "commentOnIssue": "Comment on issue #{{number}}",
+        "closeIssue": "Close issue #{{number}}"
+      },
+      "label": {
+        "repository": "Repository",
+        "pullRequest": "Pull request",
+        "issue": "Issue",
+        "head": "Head commit",
+        "mergeMethod": "Merge method",
+        "commitTitle": "Commit title",
+        "commitMessage": "Commit message",
+        "title": "Title",
+        "body": "Body",
+        "labels": "Labels"
+      },
+      "exactArgs": "Exact arguments"
     },
     "approve": "Approve",
     "decline": "Decline",

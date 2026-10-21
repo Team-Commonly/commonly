@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import V2ApprovalCard from '../components/V2ApprovalCard';
 import en from '../../i18n/locales/en.json';
@@ -218,6 +218,50 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.getByTestId('approval-action')).toHaveTextContent('github.merge_pull_request');
     expect(screen.getByText(en.approvalCard.approve)).toBeEnabled();
     expect(mockGet).toHaveBeenCalledWith('/api/approvals/pending?podId=pod-1');
+  });
+
+  test('the owner reads the call as a verb and rows, with the exact arguments one click away', async () => {
+    const headSha = 'abc1234def5678abc1234def5678abc1234def56';
+    mockGet.mockResolvedValue({
+      approvals: [{
+        approvalId: 'tool-2',
+        messageId: 'm1',
+        toolCall: {
+          tool: 'github.merge_pull_request',
+          canonicalArgs: { pullNumber: 4, mergeMethod: 'squash', headSha, owner: 'Team-Commonly', repo: 'demo-day' },
+        },
+      }],
+    });
+
+    renderCard({
+      kind: 'approval-card',
+      approvalId: 'tool-2',
+      status: 'flagged',
+      ownerUserId: 'viewer-1',
+      actionType: 'tool_call',
+      summary: 'Merge the pull request',
+    });
+
+    await waitFor(() => expect(screen.getByTestId('approval-args')).toBeInTheDocument());
+    const action = screen.getByTestId('approval-action');
+    expect(action).toHaveTextContent('Merge pull request #4');
+    expect(action).toHaveTextContent('github.merge_pull_request');
+
+    const repoLink = within(screen.getByTestId('approval-arg-owner-repo')).getByRole('link', { name: 'Team-Commonly/demo-day' });
+    expect(repoLink).toHaveAttribute('href', 'https://github.com/Team-Commonly/demo-day');
+    expect(repoLink).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(within(screen.getByTestId('approval-arg-pullNumber')).getByRole('link', { name: '#4' }))
+      .toHaveAttribute('href', 'https://github.com/Team-Commonly/demo-day/pull/4');
+    const head = screen.getByTestId('approval-arg-headSha');
+    expect(head).toHaveTextContent(en.approvalCard.toolCall.label.head);
+    expect(head).toHaveTextContent('abc1234');
+    expect(head.querySelector('dd')).toHaveAttribute('title', headSha);
+    expect(screen.getByTestId('approval-arg-mergeMethod')).toHaveTextContent('squash');
+
+    // The exact JSON is still on the card, behind a disclosure, never dropped.
+    expect(screen.getByText(en.approvalCard.toolCall.exactArgs).closest('details')).not.toBeNull();
+    expect(screen.getByTestId('approval-tool-call')).toHaveTextContent(`"headSha": "${headSha}"`);
+    expect(screen.getByText(en.approvalCard.approve)).toBeEnabled();
   });
 
   test('a non-owner never fetches or renders canonical args', () => {
