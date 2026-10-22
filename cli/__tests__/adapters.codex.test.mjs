@@ -196,6 +196,7 @@ describe('codex adapter — spawn()', () => {
     }));
     await writeFile(join(pkgDir, 'src', 'index.js'), '');
     await writeFile(join(home, 'current'), '0.3.13\n');
+    await writeFile(join(home, '.warm.lock'), 'warming\n');
     const previous = process.env.COMMONLY_MCP_HOME;
     process.env.COMMONLY_MCP_HOME = home;
     try {
