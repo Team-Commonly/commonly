@@ -1,6 +1,7 @@
 const fs = require('fs');
 const LiteLLMClient = require('../shared/litellm-client');
 const { ackBodyForEvent } = require('../shared/delivery-nonce');
+const { parseJsonBlock, podSummaryFromLlmReply } = require('../shared/summary-text');
 const baseUrl = process.env.COMMONLY_BASE_URL || 'http://localhost:5000';
 const token = process.env.COMMONLY_AGENT_TOKEN;
 const userToken = process.env.COMMONLY_USER_TOKEN;
@@ -202,22 +203,6 @@ const lexicalOverlap = (aText, bText) => {
     if (b.has(word)) intersection += 1;
   });
   return intersection / Math.min(a.size, b.size);
-};
-
-const parseJsonBlock = (raw) => {
-  const text = String(raw || '').trim();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    try {
-      return JSON.parse(match[0]);
-    } catch {
-      return null;
-    }
-  }
 };
 
 const rephraseSocialPost = async ({ post, podName }) => {
@@ -514,44 +499,17 @@ const buildLlmPodSummary = async ({ messages = [], podName = 'this pod' } = {}) 
   ].join('\n');
 
   try {
+    // 380 tokens cut the JSON envelope mid-string often enough that the stored
+    // summary was the envelope (#2406); podSummaryFromLlmReply recovers prose
+    // from a cut reply, and this cap makes the cut rare rather than routine.
     const raw = await llmClient.chat(
       'You produce terse operational summaries for team chat.',
       prompt,
-      { model: SOCIAL_REPHRASE_MODEL, temperature: 0.2, maxTokens: 380 },
+      { model: SOCIAL_REPHRASE_MODEL, temperature: 0.2, maxTokens: 900 },
     );
-    const parsed = parseJsonBlock(raw);
-    if (!parsed?.summary) {
-      const plain = String(raw || '').trim();
-      if (plain) {
-        return {
-          type: 'chat-summary',
-          source: 'pod',
-          sourceLabel: 'Commonly',
-          channel: 'pod-chat',
-          messageCount: meaningful.length,
-          summary: plain.substring(0, 700),
-        };
-      }
-      return null;
-    }
-    const highlights = Array.isArray(parsed.highlights)
-      ? parsed.highlights.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 5)
-      : [];
-    const highlightText = highlights.length
-      ? highlights.map((line) => `- ${line}`).join('\n')
-      : '- No major developments in this window.';
-    return {
-      type: 'chat-summary',
-      source: 'pod',
-      sourceLabel: 'Commonly',
-      channel: 'pod-chat',
-      messageCount: meaningful.length,
-      summary: [
-        String(parsed.summary).trim(),
-        'Highlights:',
-        highlightText,
-      ].filter(Boolean).join('\n\n'),
-    };
+    // Returns null rather than a JSON body, so the caller's heuristic prose
+    // summary takes over instead of a brace reaching the reader.
+    return podSummaryFromLlmReply(raw, { messageCount: meaningful.length });
   } catch {
     return null;
   }
