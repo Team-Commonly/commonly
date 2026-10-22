@@ -331,6 +331,9 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
       }));
       await writeFile(join(pkgDir, 'src', 'index.js'), '');
       await writeFile(join(home, 'current'), '0.3.13\n');
+      // The selected MCP is already installed for this fixture. Keep the
+      // detached warmer from racing with withTemp's teardown.
+      await writeFile(join(home, '.warm.lock'), 'warming\n');
       const workspace = join(root, 'workspace');
       await mkdir(workspace);
       const keyFile = join(root, 'provider-key');
