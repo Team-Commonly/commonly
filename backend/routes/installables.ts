@@ -8,6 +8,8 @@ const auth = require('../middleware/auth');
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
+// eslint-disable-next-line global-require
+const User = require('../models/User');
 const InstallableInstallation = require('../models/InstallableInstallation');
 // eslint-disable-next-line global-require
 const { isConnectorTargetPod } = require('../services/connectorRelayPolicy');
@@ -124,6 +126,24 @@ const hasPendingBind = (config: any): boolean => Boolean(config?.pendingBind?.bo
 
 const slackError = (res: Res, status: number, code: string, error: string): void => {
   res.status(status).json({ code, error });
+};
+
+const activeSlackDm = (teamId: string, chatId: string, exceptId: unknown) => ({
+  type: 'slack',
+  isActive: true,
+  'config.teamId': teamId,
+  'config.chatId': chatId,
+  'config.chatType': 'im',
+  _id: { $ne: exceptId },
+});
+
+const slackBindConflict = async (res: Res, existing: any): Promise<void> => {
+  const owner = existing?.createdBy ? await User.findById(existing.createdBy).select('username').lean() : null;
+  const account = owner?.username ? `@${owner.username}` : 'another Commonly account';
+  slackError(
+    res, 409, 'slack_dm_already_bound',
+    `This Slack DM is already connected to ${account}. Disconnect it there before connecting it here.`,
+  );
 };
 
 const publicAppUrl = (): string => {
@@ -323,8 +343,18 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
       return slackCallbackRedirect(res, 'error', 'invalid_state');
     }
     const { accessToken, ...binding } = await exchangeCode(code);
-    const dm = await new SlackApi(accessToken).openConversation(binding.slackUserId);
+    const slack = new SlackApi(accessToken);
+    const dm = await slack.openConversation(binding.slackUserId);
     if (!dm.ok || !dm.channel?.id) throw new SlackOAuthExchangeError();
+    // oauth.v2.access identifies the user by id, but does not provide a name.
+    // The owner must see which Slack identity they are about to confirm.
+    try {
+      const info = await slack.userInfo(binding.slackUserId);
+      binding.slackUserName = info.ok && info.user?.name?.trim()
+        ? info.user.name.trim() : binding.slackUserId;
+    } catch {
+      binding.slackUserName = binding.slackUserId;
+    }
     const botTokenRef = await connectorSecrets.put(String(integration._id), SLACK_BOT_TOKEN, accessToken);
     const committed = await Integration.findOneAndUpdate(
       {
@@ -409,36 +439,60 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
   if (!pod || !isConnectorTargetPod(pod, userId)) {
     return slackError(res, 403, 'slack_pod_access_denied', 'You no longer have access to this pod.');
   }
-  const confirmed = await Integration.findOneAndUpdate(
-    {
-      _id: owned.integration._id,
-      type: 'slack',
-      isActive: true,
-      'config.pendingBind.botTokenRef': pending.botTokenRef,
-      'config.pendingBind.expiresAt': { $gt: new Date() },
-      'config.chatId': { $exists: false },
-    },
-    {
-      $set: {
-        status: 'connected',
-        // A reconnect is the only thing that proves this connector works again,
-        // so it is the only thing that clears the reason an earlier flip left on
-        // the row — the same shape as the Telegram bind (wren 73838). The flag
-        // goes with the message: it is what the page reads before rendering it.
-        errorMessage: null,
-        errorMessageUserFacing: false,
-        'config.teamId': pending.teamId,
-        'config.teamName': pending.teamName,
-        'config.slackUserId': pending.slackUserId,
-        'config.slackUserName': pending.slackUserName,
-        'config.chatId': pending.chatId,
-        'config.chatType': 'im',
-        'config.botTokenRef': pending.botTokenRef,
+  // A preflight lookup alone cannot prevent two replicas confirming the same
+  // DM at once. Refuse new binds until the unique index has been installed.
+  const unavailable = 'Slack connections are temporarily unavailable. Try again later.';
+  try {
+    if (!await Integration.collection.indexExists('unique_active_slack_dm')) {
+      return slackError(res, 503, 'slack_bind_unavailable', unavailable);
+    }
+  } catch {
+    return slackError(res, 503, 'slack_bind_unavailable', unavailable);
+  }
+  const bindingSelector = activeSlackDm(String(pending.teamId), String(pending.chatId), owned.integration._id);
+  const existing = await Integration.findOne(bindingSelector);
+  if (existing && String(existing._id) !== String(owned.integration._id)) return slackBindConflict(res, existing);
+  let confirmed: any;
+  try {
+    confirmed = await Integration.findOneAndUpdate(
+      {
+        _id: owned.integration._id,
+        type: 'slack',
+        isActive: true,
+        'config.pendingBind.botTokenRef': pending.botTokenRef,
+        'config.pendingBind.expiresAt': { $gt: new Date() },
+        'config.chatId': { $exists: false },
       },
-      $unset: { 'config.pendingBind': 1 },
-    },
-    { new: true },
-  );
+      {
+        $set: {
+          status: 'connected',
+          // A reconnect is the only thing that proves this connector works again,
+          // so it is the only thing that clears the reason an earlier flip left on
+          // the row — the same shape as the Telegram bind (wren 73838). The flag
+          // goes with the message: it is what the page reads before rendering it.
+          errorMessage: null,
+          errorMessageUserFacing: false,
+          'config.teamId': pending.teamId,
+          'config.teamName': pending.teamName,
+          'config.slackUserId': pending.slackUserId,
+          'config.slackUserName': pending.slackUserName,
+          'config.chatId': pending.chatId,
+          'config.chatType': 'im',
+          'config.botTokenRef': pending.botTokenRef,
+        },
+        $unset: { 'config.pendingBind': 1 },
+      },
+      { new: true },
+    );
+  } catch (error) {
+    // The unique index closes the gap between the lookup and the write when
+    // two different owners confirm the same Slack DM concurrently.
+    if ((error as { code?: number }).code === 11000) {
+      const raced = await Integration.findOne(bindingSelector);
+      if (raced && String(raced._id) !== String(owned.integration._id)) return slackBindConflict(res, raced);
+    }
+    throw error;
+  }
   if (!confirmed) return slackError(res, 409, 'slack_bind_missing', 'Slack authorization is no longer available.');
   // Confirmation is the point at which this DM becomes a real attention
   // surface. Send the one explicit round-trip marker the stranger smoke uses;

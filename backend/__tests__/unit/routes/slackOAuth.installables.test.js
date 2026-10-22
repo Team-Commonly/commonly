@@ -13,8 +13,10 @@ jest.mock('../../../middleware/integrationRateLimit', () => ({
   listIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({
   findOne: jest.fn(), findOneAndUpdate: jest.fn(), findById: jest.fn(), updateOne: jest.fn(),
+  collection: { indexExists: jest.fn() },
 }));
 jest.mock('../../../models/InstallableInstallation', () => ({ findOne: jest.fn() }));
 jest.mock('../../../utils/secret', () => ({ randomSecret: jest.fn(() => 'nonce-value') }));
@@ -53,6 +55,7 @@ jest.mock('../../../services/installable/installableInstallationService', () => 
 
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
+const User = require('../../../models/User');
 const InstallableInstallation = require('../../../models/InstallableInstallation');
 const connectorSecrets = require('../../../services/connectorSecrets');
 const { mintConnectCode } = require('../../../services/telegramConnectCode');
@@ -100,6 +103,7 @@ describe('Slack installable OAuth routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    Integration.collection.indexExists.mockResolvedValue(true);
     own();
   });
 
@@ -170,12 +174,15 @@ describe('Slack installable OAuth routes', () => {
       .mockResolvedValueOnce({ ...integration, config: { pendingBind: { botTokenRef: 'secret-ref' } } });
     slackOAuth.exchangeCode.mockResolvedValue({
       accessToken: 'xoxb-never-store-on-integration',
-      teamId: 'T1', teamName: 'Example', slackUserId: 'U1', slackUserName: 'sam',
+      teamId: 'T1', teamName: 'Example', slackUserId: 'U1',
     });
     SlackApi.mock.instances[0]?.openConversation?.mockResolvedValue({ ok: true, channel: { id: 'D1' } });
     // Constructor instance is created inside the handler; set its method via
     // the default implementation's return object after construction below.
-    SlackApi.mockImplementationOnce(() => ({ openConversation: jest.fn().mockResolvedValue({ ok: true, channel: { id: 'D1' } }) }));
+    SlackApi.mockImplementationOnce(() => ({
+      openConversation: jest.fn().mockResolvedValue({ ok: true, channel: { id: 'D1' } }),
+      userInfo: jest.fn().mockResolvedValue({ ok: true, user: { name: 'sam' } }),
+    }));
     connectorSecrets.put.mockResolvedValue('secret-ref');
 
     const response = await request(app)
@@ -193,7 +200,7 @@ describe('Slack installable OAuth routes', () => {
       'xoxb-never-store-on-integration',
     );
     const [, commit] = Integration.findOneAndUpdate.mock.calls[1];
-    expect(commit.$set['config.pendingBind']).toMatchObject({ teamId: 'T1', chatId: 'D1', botTokenRef: 'secret-ref' });
+    expect(commit.$set['config.pendingBind']).toMatchObject({ teamId: 'T1', chatId: 'D1', slackUserName: 'sam', botTokenRef: 'secret-ref' });
     expect(JSON.stringify(commit)).not.toContain('xoxb-never-store-on-integration');
   });
 
@@ -269,6 +276,65 @@ describe('Slack installable OAuth routes', () => {
     expect(JSON.stringify(response.body)).not.toContain('secret-ref');
     expect(JSON.stringify(response.body)).not.toContain('nonce-never-return');
     expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith('D1', '[&lt;Evil|pod&gt;] connected');
+  });
+
+  test('refuses a Slack DM already bound to another Commonly account by name', async () => {
+    const pending = {
+      teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    Integration.findOne
+      .mockResolvedValueOnce({ ...integration, config: { pendingBind: pending } })
+      .mockResolvedValueOnce({ _id: 'older', createdBy: 'lily-id' });
+    Pod.findById.mockResolvedValue({ type: 'team', members: [ownerId] });
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({ username: 'lily-shen' }) }) });
+
+    const response = await request(app).post('/api/installables/slack/confirm');
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('slack_dm_already_bound');
+    expect(response.body.error).toContain('@lily-shen');
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(Integration.findOne.mock.calls[1][0]).toEqual(expect.objectContaining({
+      'config.teamId': 'T1', 'config.chatId': 'D1', 'config.chatType': 'im',
+      isActive: true, _id: { $ne: 'integration-1' },
+    }));
+  });
+
+  test('refuses confirmation while the unique Slack DM index is absent', async () => {
+    const pending = {
+      teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    Integration.findOne.mockResolvedValue({ ...integration, config: { pendingBind: pending } });
+    Pod.findById.mockResolvedValue({ type: 'team', members: [ownerId] });
+    Integration.collection.indexExists.mockResolvedValue(false);
+
+    const response = await request(app).post('/api/installables/slack/confirm');
+
+    expect(response.status).toBe(503);
+    expect(response.body.code).toBe('slack_bind_unavailable');
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('maps a concurrent duplicate-key bind to the same named refusal', async () => {
+    const pending = {
+      teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    Integration.findOne
+      .mockResolvedValueOnce({ ...integration, config: { pendingBind: pending } })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: 'winner', createdBy: 'lily-id' });
+    Pod.findById.mockResolvedValue({ type: 'team', members: [ownerId] });
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({ username: 'lily-shen' }) }) });
+    Integration.findOneAndUpdate.mockRejectedValueOnce(Object.assign(new Error('duplicate'), { code: 11000 }));
+
+    const response = await request(app).post('/api/installables/slack/confirm');
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('slack_dm_already_bound');
+    expect(response.body.error).toContain('@lily-shen');
   });
 
   test('refuses to confirm a bind whose pod the caller created and left', async () => {

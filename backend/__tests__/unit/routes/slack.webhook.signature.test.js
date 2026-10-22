@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const request = require('supertest');
 const express = require('express');
 
-jest.mock('../../../models/Integration', () => ({ findOne: jest.fn(), findById: jest.fn() }));
+jest.mock('../../../models/Integration', () => ({ find: jest.fn(), findById: jest.fn() }));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../models/WebhookDelivery', () => ({ create: jest.fn(), deleteOne: jest.fn() }));
 jest.mock('../../../services/slackBridgeService', () => ({ relaySlackMessageToPod: jest.fn() }));
@@ -101,11 +101,11 @@ describe('installable Slack webhook signature and acknowledgement', () => {
     const response = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(body)).send(body);
     expect(response.status).toBe(200);
     expect(deliveries.create).not.toHaveBeenCalled();
-    expect(Integration.findOne).not.toHaveBeenCalled();
+    expect(Integration.find).not.toHaveBeenCalled();
   });
 
   test('acknowledges a claimed DM event and resolves only its bound team/channel', async () => {
-    Integration.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+    Integration.find.mockReturnValue({ limit: () => ({ lean: async () => [] }) });
 
     const response = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(eventBody)).send(eventBody);
     expect(response.status).toBe(200);
@@ -113,7 +113,7 @@ describe('installable Slack webhook signature and acknowledgement', () => {
     expect(deliveries.create).toHaveBeenCalledWith(expect.objectContaining({
       provider: 'slack', deliveryId: 'T1:Ev1',
     }));
-    expect(Integration.findOne).toHaveBeenCalledWith(expect.objectContaining({
+    expect(Integration.find).toHaveBeenCalledWith(expect.objectContaining({
       type: 'slack', 'config.teamId': 'T1', 'config.chatId': 'D1', 'config.chatType': 'im', isActive: true,
     }));
   });
@@ -134,10 +134,10 @@ describe('installable Slack webhook signature and acknowledgement', () => {
     const resumedIntegration = { ...pausedIntegration, config: { ...pausedIntegration.config } };
     delete resumedIntegration.config.adminPause;
     let paused = true;
-    Integration.findOne.mockImplementation((query) => ({
-      lean: jest.fn().mockResolvedValue(
-        query['config.adminPause']?.$exists === false && paused ? null : resumedIntegration,
-      ),
+    Integration.find.mockImplementation((query) => ({
+      limit: () => ({ lean: async () => (
+        query['config.adminPause']?.$exists === false && paused ? [] : [resumedIntegration]
+      ) }),
     }));
     const bridge = require('../../../services/slackBridgeService');
     bridge.relaySlackMessageToPod.mockResolvedValue({ relayed: true });
@@ -153,7 +153,7 @@ describe('installable Slack webhook signature and acknowledgement', () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(resumed.status).toBe(200);
-    expect(Integration.findOne).toHaveBeenCalledWith(expect.objectContaining({
+    expect(Integration.find).toHaveBeenCalledWith(expect.objectContaining({
       'config.adminPause': { $exists: false },
     }));
     expect(bridge.relaySlackMessageToPod).toHaveBeenCalledTimes(1);
@@ -163,9 +163,9 @@ describe('installable Slack webhook signature and acknowledgement', () => {
   });
 
   test('keeps the claim when relay reports a post-write failure', async () => {
-    Integration.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({
+    Integration.find.mockReturnValue({ limit: () => ({ lean: async () => [{
       _id: 'integration-1', type: 'slack', config: { teamId: 'T1', chatId: 'D1', chatType: 'im', liveRelay: true },
-    }) });
+    }] }) });
     const bridge = require('../../../services/slackBridgeService');
     bridge.relaySlackMessageToPod.mockRejectedValueOnce(Object.assign(new Error('write completed'), { postWrite: true }));
 
@@ -174,5 +174,34 @@ describe('installable Slack webhook signature and acknowledgement', () => {
 
     expect(response.status).toBe(200);
     expect(deliveries.deleteOne).not.toHaveBeenCalled();
+  });
+
+  test('never attributes an inbound DM when two active bindings match', async () => {
+    Integration.find.mockReturnValue({ limit: () => ({ lean: async () => [
+      { _id: 'older', createdBy: 'lily' },
+      { _id: 'newer', createdBy: 'sam' },
+    ] }) });
+    const bridge = require('../../../services/slackBridgeService');
+
+    const response = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(eventBody)).send(eventBody);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(response.status).toBe(200);
+    expect(bridge.relaySlackMessageToPod).not.toHaveBeenCalled();
+  });
+
+  test('refuses commands for an ambiguously bound DM', async () => {
+    Integration.find.mockReturnValue({ limit: () => ({ lean: async () => [
+      { _id: 'older' }, { _id: 'newer' },
+    ] }) });
+    const body = { team_id: 'T1', channel_id: 'D1', user_id: 'U1', text: 'mode mirror' };
+
+    const response = await request(app).post('/api/webhooks/slack/commands').set(signatureHeaders(body)).send(body);
+
+    expect(response.status).toBe(409);
+    expect(response.body.text).toContain('more than one Commonly connection');
+    expect(Integration.find).toHaveBeenCalledWith(expect.objectContaining({
+      'config.teamId': 'T1', 'config.chatId': 'D1', 'config.slackUserId': 'U1',
+    }));
   });
 });

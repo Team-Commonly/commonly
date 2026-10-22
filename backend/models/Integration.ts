@@ -469,6 +469,24 @@ IntegrationSchema.index({ 'ingestTokens.tokenHash': 1 });
 // Installable Slack Events API lookup: a global endpoint resolves a bound DM
 // solely by its workspace and channel, then still checks isActive.
 IntegrationSchema.index({ type: 1, 'config.teamId': 1, 'config.chatId': 1, isActive: 1 });
+// A Slack DM is one attention surface. Two active rows for the same
+// workspace/channel make inbound attribution nondeterministic. Partial so
+// unbound or inactive rows do not reserve the DM. Existing live
+// duplicates must be resolved before this index is created in production.
+IntegrationSchema.index(
+  { 'config.teamId': 1, 'config.chatId': 1 },
+  {
+    name: 'unique_active_slack_dm',
+    unique: true,
+    partialFilterExpression: {
+      type: 'slack',
+      isActive: true,
+      'config.chatType': 'im',
+      'config.teamId': { $type: 'string' },
+      'config.chatId': { $type: 'string' },
+    },
+  },
+);
 
 // Only Discord keeps platform state in a collection of its own; every other
 // connector carries it in `config`. A ref naming a model nothing registers is
