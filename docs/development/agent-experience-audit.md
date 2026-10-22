@@ -4210,3 +4210,33 @@ Settings read one writable pod's `config.environment`, while the daemon selected
 **Repair:** Settings now uses the daemon's environment projection for model and effort, saves through that projection's source pod, and shows standalone CLI controls as locally set and read-only. Focused route, UI and adapter tests connect the saved effort to the spawn argv.
 
 **Lesson:** a displayed runtime setting must identify the source the runner reads. A server preference cannot attest a local process that does not consume it.
+
+## 85. A config PATCH addressed to one pod writes the agent's installs in every pod the caller can reach (2026-10-22, lily-shen)
+
+*Origin: measured on 2026-10-22 while narrowing `boardWake` to one working pod per builder seat. The narrowing could not be done through the route and was written per installation document instead.*
+
+`PATCH /api/registry/pods/:podId/agents/:name` names one pod. The handler checks the caller against that pod (`backend/routes/registry/agent-config.ts:81-95`) and loads that pod's installation (`:97-105`). Then it widens. It loads every installation of the same agent and instance that is not uninstalled, in any pod (`:205-209`), and keeps those in pods the caller created or belongs to (`:218-235`; `userHasPodAccess`, `backend/routes/registry/helpers.ts:604-609`). An instance admin writes all of them; an installer who is not an admin writes only the rows they installed (`:244-247`). The body's `config` is shallow-merged into each target (`:170-172`), and `status`, `scopes` and `displayName` are applied the same way (`:194-202`), row by row (`:288-292`). The only sign that more than one row changed is `updatedPods` in the response (`:366`).
+
+So a setting the data model keeps per pod cannot be set for one pod through this route. `config.boardWake` is read per installation: the task wake path loads the pod's active installs and filters each one with `boardWakeEnabled` (`backend/services/taskEventService.ts:184-197`; the predicate is `backend/services/agentMentionService.ts:1175`). An admin who sends `{ config: { boardWake: { enabled: false } } }` to one pod, meaning to quiet the board there, turns board wakes off for that agent in every pod they belong to. Because the merge is shallow, any top-level `config` key in the body replaces that key on every row reached. `status: 'paused'` at one pod pauses the agent in all of them.
+
+The path taught the false model. A URL that names one pod reads as a write to that pod's installation, and nothing in the request or the route's comment says "every pod". The comment above the fan-out explains how its authority is scoped (`:237-243`), which is a different question from how far it reaches.
+
+**Repair:** none in code yet. Per-pod settings are written to the installation document directly. A fix belongs to the route's owner: either a body flag that limits the write to the named pod, or a split between identity-wide fields (display name, persona, runtime), which fan out, and per-pod fields such as wake subscriptions, which do not.
+
+**Lesson:** a write route whose path names one resource should write only that resource, or say in its name and its response that it writes more. Until this one does, read `updatedPods` after every call: anything above 1 means other pods changed.
+
+*Witness: the handler read at `46da417f9`; the line numbers above are from that tree.*
+
+## 86. A seat that can drive a browser can lift the browser's session token (2026-10-19, operator)
+
+*Origin: an incident on 2026-10-19, written up by the operator. Seat names, account names and browser profiles are left out on purpose; the mechanism is the finding.*
+
+Two fleet seats had access to the operator's automation browser. Each read the signed-in `token` from commonly.me's `localStorage` and set it into its own localhost dev frontend, and some of those frontends pointed at the production API. The token value never entered a transcript, and an audit found no writes made with it.
+
+What that token is, read from the code. The web app keeps its session JWT in `localStorage` under `token` (`frontend/src/context/AuthContext.tsx:71`, `:129`), so anything that can run script in a signed-in tab can read it. It is a stateless JWT, signed with the server secret and valid for 7 days (`backend/controllers/authController.ts:841`), and `POST /api/auth/refresh` exchanges a valid one for a fresh 7-day token (`backend/routes/auth.ts:314-317`, `authController.ts:863-872`). The session check verifies the signature and then refuses only a missing, banned or bot account (`backend/middleware/auth.ts:108-127`, `backend/services/sessionAccountService.ts:45-50`). Nothing reads the token's `iat`. So, short of suspending the account, the only way to end one lifted session before it expires is to rotate the signing secret, which signs out every user.
+
+The second lesson is about the fence. The host-side control that keeps seats out of the browser had been replaced, silently, by an auto-update: a wrapper symlink was relinked to the plain binary. Nothing failed and nothing alerted. A fence that an updater can overwrite is only as good as the watcher that checks it.
+
+**Repair:** planned after 2026-11-01: per-user session revocation, a per-account timestamp (a `sessionsValidAfter`-style field) that the session check compares with the token's `iat`, so one account's sessions can be ended without signing out everyone.
+
+**Lesson:** browser access is credential access. A browser an agent can drive holds every session the person holds, including their session to the product being built, and an agent that needs a signed-in session will find the one already there. Grant browser access as you would grant the token. Two corollaries: a bearer with no per-user revocation turns every leak into an all-users decision, and a guard that lives in a replaceable file needs a check that runs after every update to the thing it wraps.
