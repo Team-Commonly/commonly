@@ -65,3 +65,8 @@ backend:
     # Non-secret db name; host/user/password come from the private values +
     # the database-credentials secret created by the Thu staging-secrets task.
     pgDatabase: commonly_staging
+
+# No ops-runner in staging — operators exec into prod's ops-runner. Also keeps
+# staging's render free of a backend-image pod it doesn't need.
+opsRunner:
+  enabled: false

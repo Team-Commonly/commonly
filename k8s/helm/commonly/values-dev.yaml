@@ -445,3 +445,16 @@ hostedMcp:
 # turning this on doesn't fail the api-keys sync (see values.yaml).
 internalAccounts:
   fromSecret: true
+
+# ops-runner (docs/runbooks/ops-runner-and-no-exec-into-backend.md): on spot — it
+# serves no traffic and a reclaim just reschedules it, and this keeps it OFF the
+# on-demand dev pool where backend/redis live, so an operator script's load can't
+# starve them (the 2026-10-22 11:42Z backend+litellm readiness flap on 5nmv).
+opsRunner:
+  nodeSelector:
+    workload-tier: spot
+  tolerations:
+    - key: "workload-tier"
+      operator: "Equal"
+      value: "spot"
+      effect: "NoSchedule"
