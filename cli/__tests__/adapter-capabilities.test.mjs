@@ -17,6 +17,7 @@ const expected = {
   dsh: { sandbox: false, mcp: true, broker: false, provider: true },
   goose: { sandbox: false, mcp: true, broker: false, provider: true },
   hermes: { sandbox: false, mcp: false, broker: false, provider: false },
+  openclaw: { sandbox: false, mcp: true, broker: false, provider: true },
 };
 
 test('every adapter has an explicit capability matrix entry', () => {
