@@ -27,6 +27,12 @@ interface ConversationOpenResponse {
   error?: string;
 }
 
+interface UserInfoResponse {
+  ok: boolean;
+  user?: { name?: string; real_name?: string };
+  error?: string;
+}
+
 class SlackApi {
   private client: AxiosInstance;
 
@@ -81,6 +87,11 @@ class SlackApi {
     const res = await this.client.post<ConversationOpenResponse>('/conversations.open', {
       users: userId,
     });
+    return res.data;
+  }
+
+  async userInfo(userId: string): Promise<UserInfoResponse> {
+    const res = await this.client.get<UserInfoResponse>('/users.info', { params: { user: userId } });
     return res.data;
   }
 }

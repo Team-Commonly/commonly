@@ -82,7 +82,7 @@ const finishEvent = async (deliveryId: string, teamId: string, event: any): Prom
     if (!safeTeamId || !channelId) {
       return;
     }
-    const integration = await Integration.findOne({
+    const integrations = await Integration.find({
       type: 'slack',
       isActive: true,
       'config.teamId': safeTeamId,
@@ -91,7 +91,12 @@ const finishEvent = async (deliveryId: string, teamId: string, event: any): Prom
       'config.liveRelay': true,
       'config.adminPause': { $exists: false },
       status: { $ne: 'error' },
-    }).lean();
+    }).limit(2).lean();
+    if (integrations.length > 1) {
+      console.error('[slack-events] ambiguous active DM binding:', safeTeamId, channelId);
+      return;
+    }
+    const integration = integrations[0];
     if (integration) {
       relayStarted = true;
       await relaySlackMessageToPod({ integration, event });
@@ -153,7 +158,7 @@ router.post('/commands', slackWebhookIpRateLimit, slackWebhookRateLimit, signed,
   if (!teamId || !channelId || !slackUserId) {
     return res.status(400).json({ response_type: 'ephemeral', text: 'Invalid Slack command context.' });
   }
-  const integration = await Integration.findOne({
+  const integrations = await Integration.find({
     type: 'slack',
     isActive: true,
     'config.teamId': teamId,
@@ -162,7 +167,14 @@ router.post('/commands', slackWebhookIpRateLimit, slackWebhookRateLimit, signed,
     'config.slackUserId': slackUserId,
     'config.adminPause': { $exists: false },
     status: { $ne: 'error' },
-  });
+  }).limit(2).lean();
+  if (integrations.length > 1) {
+    return res.status(409).json({
+      response_type: 'ephemeral',
+      text: 'This Slack DM has more than one Commonly connection. Disconnect one in Commonly before using commands.',
+    });
+  }
+  const integration = integrations[0];
   if (!integration) {
     return res.status(404).json({
       response_type: 'ephemeral',
