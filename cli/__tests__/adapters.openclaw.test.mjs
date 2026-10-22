@@ -1,10 +1,12 @@
 import { EventEmitter } from 'node:events';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { jest } from '@jest/globals';
 import openclaw, { TESTED_OPENCLAW_VERSIONS, parseOpenClawVersion } from '../src/lib/adapters/openclaw.js';
 import { commonlyMcpServer } from '../src/lib/default-environment.js';
+import { prepareCommitAttribution } from '../src/lib/commit-attribution.js';
 
 // Captured with OpenClaw 2026.10.5 under fnm Node 24.16.0 on 2026-10-22.
 // An isolated --config used a local OpenAI-compatible fake provider and an
@@ -74,6 +76,39 @@ test('recorded exec envelope yields final and cost without exposing credentials 
   expect(launched.config.mcp.servers.commonly.env.COMMONLY_TOKEN_FILE).toBeTruthy();
   expect(launched.options.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
   expect(launched.options.env.HOME).not.toBe(process.env.HOME);
+});
+
+test('the child retains the supplied Git attribution hook and both commit trailers', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'pa2-git-'));
+  const git = (args, env = process.env) => execFileSync('git', args, {
+    cwd: repo, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  git(['init', '--quiet']);
+  git(['config', 'user.name', 'Fixture Author']);
+  git(['config', 'user.email', 'fixture@example.test']);
+  const attribution = prepareCommitAttribution({
+    cwd: repo, agentName: 'pa2-test', displayName: 'PA2 Test', instanceId: 'local',
+    adapter: 'openclaw', model: 'probe/pong', effort: 'default',
+  });
+  try {
+    const ctx = context();
+    await openclaw.spawn('commit', {
+      ...ctx, cwd: repo, env: attribution.env, commitAttributionEnv: attribution.sandboxEnv,
+      _spawnImpl: (_binary, _args, { env }) => {
+        expect(git(['config', '--get', 'core.hooksPath'], env).trim()).toBe(attribution.hooksDirectory);
+        writeFileSync(join(repo, 'change.txt'), 'seat change\n');
+        git(['add', 'change.txt'], env);
+        git(['commit', '-m', 'seat change'], env);
+        return childWith(success);
+      },
+    });
+    const message = git(['show', '-s', '--format=%B', 'HEAD']);
+    expect(message).toContain('Co-authored-by: PA2 Test <');
+    expect(message).toContain('Agent-Model: openclaw/probe/pong/default');
+  } finally {
+    attribution.cleanup();
+    rmSync(repo, { recursive: true, force: true });
+  }
 });
 
 test.each(['public', 'internal'])('refuses %s trust before a model launch', async (trust) => {

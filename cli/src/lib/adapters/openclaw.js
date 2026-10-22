@@ -199,6 +199,15 @@ export default {
       const configPath = join(home, 'config.json');
       await writeFile(configPath, JSON.stringify(config), { mode: 0o600 });
       const env = Object.fromEntries(Object.entries(sourceEnv).filter(([name]) => SAFE_ENV.test(name)));
+      // The run loop supplies a per-spawn Git hook proxy. Preserve only that
+      // hook's config overlay and metadata; the rest of the operator env stays
+      // outside the isolated OpenClaw process.
+      if (ctx.commitAttributionEnv) {
+        Object.assign(env, Object.fromEntries(Object.entries(sourceEnv).filter(([name]) => (
+          /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/.test(name)
+          || /^COMMONLY_AGENT_(?:GIT_CONFIG_(?:INDEX|BASE_COUNT)|HOOKS_PATH|ORIGINAL_HOOKS_PATH|SEAT_NAME|SEAT_ID|ADAPTER|MODEL|EFFORT)$/.test(name)
+        ))));
+      }
       Object.assign(env, { HOME: home, XDG_CONFIG_HOME: join(home, 'config'), XDG_DATA_HOME: join(home, 'data'),
         [PROVIDER_KEY_ENV]: key });
       const requested = Number(ctx.timeoutMs);
