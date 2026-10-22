@@ -246,12 +246,13 @@ describe('hosted-MCP tool definitions', () => {
 
   it('carries a bounded vendor 400 line to the broker without its token or body', async () => {
     const deps = makeDeps({ fetcher: jest.fn(async () => new Response(
-      'session required: access-token-1\nprivate second line', { status: 400, headers: { 'content-type': 'text/plain' } },
+      'session required: access-token-1 vendor-secret-12345678901234567890\nprivate second line',
+      { status: 400, headers: { 'content-type': 'text/plain' } },
     )) });
     deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
     await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).rejects.toMatchObject({
       code: 'provider_error',
-      details: { vendorStatus: 400, vendorError: 'session required: [redacted]' },
+      details: { vendorStatus: 400, vendorError: 'session required: [redacted] [redacted]' },
     });
   });
 

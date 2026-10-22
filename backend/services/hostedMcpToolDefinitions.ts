@@ -126,6 +126,7 @@ const sanitizeVendorError = (value: string, token: string): string | undefined =
   .split(token).join('[redacted]')
   .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
   .replace(/(access_token|refresh_token|client_secret)\s*[:=]\s*[^\s,}]+/gi, '$1=[redacted]')
+  .replace(/\b[A-Za-z0-9_-]{24,}\b/g, '[redacted]')
   .slice(0, 200) || undefined;
 
 const vendorErrorLine = async (response: Response, token: string): Promise<string | undefined> => {
