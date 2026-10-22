@@ -80,7 +80,7 @@ The profile is a `delivery` field on one `AgentInstallation` row whose `runtimeT
 ```
 delivery: {
   version: 1,
-  origin:   string,                                             // set by the server (§3.4)
+  origin:   string,                                             // named by the write, checked by the server (§3.4)
   auth?:    { header: string, scheme: 'bearer' | 'raw', ref },  // ref to a write-only secret (§3.2)
   signing?: { scheme: 'standard-webhooks-v1', ref },            // ref to a write-only secret (§3.2)
   ack:      'response' | 'accept',                              // default 'response'
@@ -98,16 +98,17 @@ delivery: {
 
 ### 3.2 Secrets
 
-- **Write.** A client sends a secret once, in the write that sets `auth` or `signing`. The server stores it encrypted in the connector-secret store (`connectorSecrets.put`, AES-256-GCM under the instance key ring) and keeps only the ref, in the installation's profile. The secret never sits in `config`, and the CLI reads it from stdin or a file, never from an argument.
+- **Write.** A client sends a secret once, in the write that sets `auth` or `signing`. The server stores it encrypted in the connector-secret store (`connectorSecrets.put`, AES-256-GCM under the instance key ring), bound to the origin the write names (§3.4), and keeps only the ref, in the installation's profile. The secret never sits in `config`, and the CLI reads it from stdin or a file, never from an argument.
 - **Read.** No response returns a secret or a ref. A profile reads back, from its own route only, as `{origin, auth: {header, scheme, set: true}, signing: {scheme, set: true}, ack}`, built from an allowlist.
   - `select: false` keeps the field out of every other read, so no serializer has to strip it. A strip would not do anyway: `sanitizeRuntimeConfig` drops named top-level keys, `webhookSecret` among them (`registry/helpers.ts:159`, :195–196), and would pass a nested ref through.
   - The three serializers (`registry/admin.ts:136`, `helpers.ts:427`, `install.ts:1004`) stay as they are, and so does the agent's own `GET /installations`, which returns only `runtimeAdapter` (`agentsRuntime.ts:544`). Test 5 runs each on an install with a profile.
-- **Owner.** A profile secret is owned by its installation, one store row per installation and kind. The store has to learn that owner before the first profile write.
+- **Owner.** A profile secret is owned by its installation, one store row per installation, kind and origin. The store has to learn that owner before the first profile write.
   - **The trap.** Its kinds know one owner, an `Integration` row. The reconciler's orphan sweep revokes a secret of a known kind unless an active `Integration` references it, once the secret is ten minutes old (`installableReconciler.ts:272`, :298–301; `ORPHAN_SECRET_GRACE_MS` at :30). Registered as two more kinds as things stand, every profile secret would be revoked ten minutes after it was set.
   - **The owner model.** A kind declares its owner, `integration` or `agent-installation`. The sweep keeps an installation-owned secret while its installation exists, is not `uninstalled`, and its profile references it (test 6).
   - **A profile does not survive an uninstall.** Each write that marks an installation `uninstalled` (`models/AgentRegistry.ts:355`, `registry/admin.ts:275`) removes its profile in the same update and then revokes its secrets; the sweep revokes any it misses. `install` reactivates an inactive row in place and keeps its `installedBy` (`models/AgentRegistry.ts:309–316`), so a profile left on that row would keep sending the first installer's credential after another user reinstalls the agent. The reuse path removes any profile it finds as well, as the install route already revokes a dormant install's old tokens (`registry/install.ts:729–739`). Test 15.
-  - **The index.** The unique `(integrationId, kind)` index (`models/ConnectorSecret.ts:51`) would read every installation-owned secret as `integrationId: null` and refuse the second. The key becomes the owner and the kind, and `put` keeps upserting on exactly that key (`connectorSecrets.ts:127–139`), so one installation and kind always has one row. The migration follows #1963: the new index is live before the old one drops.
-- **Set or replace.** `put` the new value, then save the returned ref in the profile if it does not hold it already. One installation and kind has one row, so a replace gets back the ref the profile already holds: the value changes in place, nothing is swapped and nothing is revoked. The usual swap-then-revoke would delete the new secret here, because the old ref and the new are the same row.
+  - **The index.** The unique `(integrationId, kind)` index (`models/ConnectorSecret.ts:51`) would read every installation-owned secret as `integrationId: null` and refuse the second. The key becomes the owner, the kind and, for an installation's secret, the origin it is bound to. `put` keeps upserting on exactly that key (`connectorSecrets.ts:127–139`), so one installation, kind and origin always has one row. An integration's secret has no origin and keeps one row per kind. The migration follows #1963: the new index is live before the old one drops.
+- **Bound to an origin.** An installation's secret is encrypted with its owner, kind and origin as AES-GCM associated data. One read returns the value and its origin together, and a row whose origin, owner or kind was changed apart from its value does not decrypt. `rewrap` re-encrypts under the same associated data, so a key rotation keeps the binding. A push sends a value only to the origin it is bound to (§3.4).
+- **Set or replace.** `put` the new value for the origin the write names, then save the returned ref in the profile if it does not hold it already. Within one origin, a replace gets back the ref the profile already holds: the value changes in place, nothing is swapped and nothing is revoked. The usual swap-then-revoke would delete the new secret here, because the old ref and the new are the same row. A value for another origin is another row with its own ref, so no write for one origin changes what a ref bound to another holds.
 - **Clear** (`auth: null` or `signing: null`). Save the profile without the ref, then revoke it. Stopped between the two, the row is an orphan, and the sweep revokes it.
 - **Failure and concurrency.**
   - A put is one document update (`connectorSecrets.ts:130–139`). A put that fails leaves the old value readable, and the write stops before the profile is saved.
@@ -115,6 +116,8 @@ delivery: {
   - Two replaces at once leave one whole value, the last written, because each put rewrites the whole row in one update. `rewrap` checks only that a row still holds the key it read (:170), and a replica still on the previous key ring encrypts a put under that same key, so PA-5 makes `rewrap` check the row's `iv` as well. Every put draws a new `iv`, so no rewrap brings an older value back.
   - A set and a clear at once can leave the profile holding a ref the clear revoked. That push sends nothing and records `secret_unavailable` until the next write.
   - A set can reuse an orphan row older than the grace, and a sweep pass between its put and its save would revoke it: the grace counts from `createdAt` (`installableReconciler.ts:274`), and a revoke deletes by id alone (`connectorSecrets.ts:159–162`). The grace counts from `updatedAt` instead, and the sweep's delete repeats that condition, so no pass deletes a row written within the grace, even one that selected the row before the write.
+  - A write whose save finds the row's URL changed since its read saves nothing (§3.4). Its puts are bound to the origin it named, so no push to another origin sends them, and once no profile references them the sweep revokes them.
+  - A revoke held back past a later write for the same origin can delete that write's value, if the URL moves away and back, or the agent is uninstalled and reinstalled, while it waits. That push records `secret_unavailable` until the next write, and nothing reaches another origin.
   - **Fail closed.** A ref that does not resolve, or a secret that will not decrypt, sends nothing and records `secret_unavailable`. A profiled push never goes out without the header or signature its profile names.
 
 ### 3.3 What a delivery sends
@@ -132,7 +135,9 @@ delivery: {
 ### 3.4 Redirects, a changed URL, and logs
 
 - **A profiled delivery follows no redirect.** A redirect (a 301, 302, 303, 307 or 308, `outboundUrlGuard.ts:54`) gets the outcome `redirect_refused`, and nothing is sent to its `Location`. A credential must reach only the origin its installer named, and §2 shows that a redirect carries the headers along and can replay the POST. PA-5 passes `postToPublicAddress` a redirect limit of 0 rather than adding a second client. Test 3.
-- **The profile is bound to an origin.** Its write stores the origin (scheme, host and port) of the row's `webhookUrl`. A push to a URL with any other origin sends nothing and records `origin_changed`. Test 4.
+- **The profile and its secrets are bound to an origin.** A profile write names the origin (scheme, host and port) it is for. The profile stores that origin, and each secret the write sets is bound to it (§3.2). The server serializes every origin as the WHATWG URL parser does (`new URL(url).origin`), so one origin spelled two ways compares unequal and is refused rather than sent to. A URL whose origin is opaque serializes as `null` whatever the URL, so it gets no profile. Tests 4, 16 and 17.
+  - **At push.** The destination is the origin of the URL the push will POST to, taken from the same read as its profile. A profiled push follows no redirect, so no other origin receives it. A profile whose origin is not the destination's sends nothing and records `origin_changed` before any secret is read. Otherwise the push reads each secret once, getting its value and its bound origin from one store read. If that origin is not the destination's, it sends nothing and records `origin_changed`. If it is, it sends the value from that same read. So a push that read its profile before a move sends each origin only values bound to it, whatever the move and any later write did to the store meanwhile, on any replica (test 16).
+  - **At write.** A write is refused with 409 `origin_changed` unless the row's URL has the origin the write names. Its save is conditioned on the row's `webhookUrl` still being the URL it read. A write that read the row before its URL moved to another origin therefore saves nothing and returns 409, and what it put is bound to the old origin, where no push to the new one can send it (test 17). Should the URL come back to the one it read before the save, the save lands, as a write for that origin.
   - This holds for every writer of the URL, the settings route (`registry/agent-config.ts:154–166`) and the install route (`registry/install.ts:445`), and for any interleaving of a URL write with a profile write.
   - Ownership checks do not cover it. Admins are exempt from the sole-installer rule, so that rule alone would let the URL move while the old vendor's credential stayed attached. A new origin is a new receiver, and both secrets were issued to the old one.
   - A change within the same origin keeps the profile.
@@ -172,18 +177,21 @@ The plan asked for an optional body template, but the ruling's scope names an au
 1. **Legacy, byte for byte.** Without a profile, the URL, headers and body bytes equal today's, with and without a legacy `webhookSecret`.
 2. **Standard Webhooks known answer.** The spec's published test vector produces its published signature, and a profiled delivery passes the spec's reference verifier at its exact bytes. One changed byte fails it.
 3. **No redirect.** A profiled 3xx is `redirect_refused`, and a listener at its `Location` receives nothing. A 307 to the delivery's own URL is refused too, so the receiver gets one request per event.
-4. **Origin binding.** After the URL moves to another origin, through the settings route or the install route, a profiled push sends nothing and records `origin_changed`. A settings save that moves or clears a row's URL also removes that row's profile and revokes its secrets, whether the installer or an admin makes it. A same-origin change keeps them. After a move, a profile write that would keep a secret is refused, and one that sets or clears each secret binds the profile to the new origin.
+4. **Origin binding.**
+   - **A retained profile.** On a row that kept its profile while its URL moved to another origin, written directly since neither route leaves one, a push sends nothing and records `origin_changed` before it reads a secret, and a profile write that would keep a secret is refused. A push in flight across a move is test 16.
+   - **A removed profile.** A settings save that moves or clears a row's URL removes that row's profile and revokes its secrets, whether the installer or an admin makes it. The row's next push is test 1's legacy push: no `auth` header, no signature and no `origin_changed`. A same-origin change keeps the profile and its secrets.
+   - **A write after a move.** A profile write naming the old origin is refused and changes nothing. One naming the new origin binds the profile, and each secret it sets, to that origin.
 5. **No secret or ref leaves.** Each serializer (`registry/admin.ts:136`, `helpers.ts:427`, `install.ts:1004`) and the agent's `GET /installations`, run on an install with a profile, returns neither a secret nor a ref, and an installation read that does not name `delivery` does not load it.
 6. **The sweep keeps a live secret.** A profile secret survives past `ORPHAN_SECRET_GRACE_MS` while its installation exists, is not `uninstalled`, and its profile references it. It is revoked once any of the three stops being true.
 7. **Accept mode posts nothing.** Under `ack: 'accept'`, a 2xx whose body is `{outcome: 'posted', content}` posts nothing and records `accepted`.
-8. **Failures close.** A 500, a server that never answers, a 3xx, a private address, a refused connection, a ref that does not resolve and a moved origin each end `failed` with their outcome. The last two send nothing.
-9. **Validation.** The write refuses each of these: a forbidden header name, a non-token name, a 65-character name, an auth secret containing CR, LF or NUL, and a signing secret outside 24–64 bytes or without `whsec_`.
+8. **Failures close.** A 500, a server that never answers, a 3xx, a private address, a refused connection, a ref that does not resolve, a moved origin and a secret bound to another origin each end `failed` with their outcome. The last three send nothing.
+9. **Validation.** The write refuses each of these: a forbidden header name, a non-token name, a 65-character name, an auth secret containing CR, LF or NUL, a signing secret outside 24–64 bytes or without `whsec_`, and a profile on a URL whose origin is opaque.
 10. **Template, if (ii).** The write refuses a string that mixes a placeholder with other text, and `{{event.text}}` holding quotes and newlines renders as one valid JSON string.
 11. **Logs.** No log line holds a URL path, a query string or a header value, legacy lines included.
 12. **Rotation.**
-    - A replace keeps the profile's ref, and after a sweep pass past the grace the new value is readable through it.
+    - A replace within one origin keeps the profile's ref, and after a sweep pass past the grace the new value is readable through it.
     - A put that fails leaves the old value readable and the profile unchanged.
-    - Two concurrent replaces leave one whole value, and a rewrap that read the row before a replace does not overwrite it.
+    - Two concurrent replaces leave one whole value, and a rewrap that read the row before a replace does not overwrite it. A rewrapped value keeps its origin.
     - A clear stopped between its save and its revoke leaves an orphan, which the sweep revokes.
     - A set racing a clear ends with the set's value, or with nothing sent and `secret_unavailable`.
     - A set that reuses an orphan row is not swept between its put and its save, even by a pass that selected the row before the put.
@@ -193,12 +201,16 @@ The plan asked for an optional body template, but the ruling's scope names an au
     - with rows from two installers, a non-admin moves the URL and removes the profile only on the rows they installed;
     - a save interrupted part way leaves each row whole: a moved row has no profile and its secrets are revoked or swept, an unmoved row keeps its own, and repeating the save completes the rest.
 15. **Reinstall.** Uninstalling through either writer removes the profile, and its secrets are revoked or swept. Another user reinstalling the agent, on an uninstalled row or a `stale` one, starts it with no profile.
+16. **The value carries its origin.**
+    - **The interleaving.** Hold a push after it reads its profile and before it reads its secrets. Meanwhile a settings save moves the URL to another origin and removes the profile, its revoke is held back, and a profile write for the new origin sets that origin's credential. Then resume the push. Neither origin receives the other's credential: the old origin gets at most its own, and the new origin gets nothing from that push. Run it for `auth` and for `signing`, and again with the revoke released before the push resumes, which sends nothing and records `secret_unavailable`.
+    - **The check itself.** A ref whose row holds a value bound to another origin, written there directly, sends nothing and records `origin_changed`. A row whose origin, owner or kind was changed apart from its value does not decrypt: nothing is sent, and the outcome is `secret_unavailable`.
+17. **A stale writer.** Hold a profile write naming the old origin, once after its read and once after its puts, while the URL moves to another origin and a write for the new origin completes; then release it. Either way it returns 409 and saves nothing, the new origin's profile and secrets are unchanged, a push to the new origin sends only the new origin's credential, and what the held write put is revoked or swept. After an admin moves the URL, an installer's write naming the origin they read is refused before it puts anything.
 
 ### 3.9 Before PA-5 merges
 
 - **The CTO's ADR-011 status note,** as ruled.
 - **An amendment to ADR-006 that adopts this section's contract.** ADR-006 is Accepted and leaves push to "a different ADR". Without the amendment, an Accepted ADR still says the profile's subject does not exist, and the next reader follows it. The PA-5 PR carries the amendment, and Rhea gates it with the code.
-- **The store changes in §3.2,** landed before or with the first profile write: the owner model and its index migration, the sweep's grace from `updatedAt` with a delete that repeats it, and `rewrap`'s `iv` check.
+- **The store changes in §3.2,** landed before or with the first profile write: the owner model and its index migration, the origin in the key and in the associated data with `get` returning it beside the value, the sweep's grace from `updatedAt` with a delete that repeats it, and `rewrap`'s `iv` check.
 
 ## 4. The W-PA walk
 
@@ -241,6 +253,6 @@ Every personal agent passes this walk before anything about it is claimed in pub
 - **The body template** (§3.7) is the CTO's call.
 - **Retries** (§3.6) wait for PA-3's measurement of Devin's dedupe.
 - **Legacy push failures close as `failed`** with outcomes, as profiled ones do. This is its own row, because it changes the admin stale-pending count.
-- **The legacy `webhookSecret` moves into the store,** and `register --secret` reads from stdin or a file. This is its own row, and it inherits the read-back rule in §3.2.
+- **The legacy `webhookSecret` moves into the store,** and `register --secret` reads from stdin or a file. This is its own row, and it inherits the read-back rule in §3.2 and the origin binding in §3.4.
 - **The store changes** (§3.2, §3.9) are a prerequisite of PA-5, landed inside its PR or just before it.
 - **A second signing scheme.** Hermes's webhooks are reported to check a header of their own, `X-Webhook-Signature-V2`, rather than Standard Webhooks (unverified here). Its push path comes after its adapter (§1.1), so the choice between a second `signing.scheme` value and a Standard Webhooks check on the Hermes side waits for that row.
