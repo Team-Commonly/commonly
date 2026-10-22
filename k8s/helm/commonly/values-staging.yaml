@@ -1,0 +1,54 @@
+# values-staging.yaml — the staging release of Commonly.
+#
+# Staging is a SECOND Helm release of this same chart, in its own namespace
+# (commonly-staging), reading its own secrets, with its own Cloudflare tunnel.
+# It exists so we can build and deploy recklessly without touching prod
+# (commonly-dev). It is layered on the OSS base: `helm ... -f values.yaml
+# -f values-staging.yaml` (applied last). It deliberately does NOT inherit
+# values-dev.yaml — the prod overrides stay prod's.
+#
+# PUBLIC-REPO HYGIENE (R12): this file carries NO project ID, NO Workload
+# Identity service-account email, and NO Aiven/Atlas host. Those are supplied at
+# deploy time from .dev/values-private*.yaml (materialized from GitHub Actions
+# secrets), exactly as the prod deploy does. Image tags are injected per merged
+# SHA by deploy-staging.yml, so none are pinned here.
+#
+# The Cloudflare tunnel (staging.commonly.me / api-staging.commonly.me routing
+# straight to the staging Services, no ingress-nginx) is provisioned by the
+# dedicated Thu tunnel task; cloudflared is left disabled here until that lands.
+
+global:
+  namespace: commonly-staging
+
+externalSecrets:
+  enabled: true
+  # Staging reads commonly-staging-NAME keys, disjoint from prod's commonly-dev-.
+  keyPrefix: commonly-staging-
+  # Staging's cloudflared runs in its own namespace, so it uses the namespaced
+  # SecretStore — no cross-namespace ClusterSecretStore is rendered.
+  clusterSecretStore:
+    enabled: false
+
+# No Discord app for staging: the backend gets no DISCORD_* env and api-keys
+# references none of the commonly-staging-discord-* keys.
+discord:
+  enabled: false
+
+# Staging renders NO Ingress object. A staging Ingress would be picked up by the
+# single shared ingress-nginx controller and reload prod routing (R1). Staging
+# is reached only through its own cloudflared tunnel, straight to Services.
+ingress:
+  enabled: false
+
+# Tunnel provisioned by the Thu tunnel task; keep cloudflared (and therefore its
+# ClusterSecretStore) out of the render until then.
+cloudflared:
+  enabled: false
+
+backend:
+  env:
+    # Smaller Postgres pool for staging's Aiven db (fewer connections than prod).
+    pgPoolMax: 5
+    # Non-secret db name; host/user/password come from the private values +
+    # the database-credentials secret created by the Thu staging-secrets task.
+    pgDatabase: commonly_staging
