@@ -4221,7 +4221,8 @@ Nothing in the seat broke a rule it could see: the wrapper reads as "you may not
 
 **Repair (pending SRE):** on the affected machine, limit the credential's store entry to the CLI's own binary in its access list, so other processes, a seat's included, are refused. This line is rewritten to what was actually applied before the entry merges. Such a lock is an interim mitigation, not the fix: the root cause is that seats run as the same OS user as the operator, and the proposed durable fix, a separate OS user for seats, is ADR-031 (#2428). The local-wrapper docs now say that a private seat's reach includes the OS credential store (`docs/agents/LOCAL_CLI_WRAPPER.md`, "Public and private seats").
 
-**Lesson:** put the boundary where the credential lives, not in front of the program that uses it. A shim, an alias or an allowlisted wrapper is a habit guard for a cooperative caller; it stops nothing that can read the token. Two corollaries:
+**Lesson:** put the boundary where the credential lives, not in front of the program that uses it. A shim, an alias or an allowlisted wrapper is a habit guard for a cooperative caller; it stops nothing that can read the token. Three corollaries:
 - a redaction pattern has to match every form the value can take (raw, base64, URL-encoded), or it fails exactly when a tool returns a stored blob;
 - once a value has entered a model's context it has left the machine, so "it was never written to a file" is not a reason to skip rotation.
+- a refusal to hand over a credential should not say where the credential lives. Here, another agent correctly declined to copy the token, but its refusal named the store it sat in, and the seat read it from there. A refusal that names the location works as a map.
 
