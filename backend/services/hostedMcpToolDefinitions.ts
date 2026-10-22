@@ -95,27 +95,58 @@ const jsonRpcReply = async (response: Response): Promise<Record<string, unknown>
       body = await response.json() as Record<string, unknown>;
     } catch {
       throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned invalid JSON', 502,
-        { failure: 'invalid_json' });
+        { failure: 'invalid_json', vendorStatus: response.status });
     }
     if (body && (body.result !== undefined || body.error !== undefined)) return body;
     throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned no JSON-RPC reply', 502,
-      { failure: 'missing_rpc_reply' });
+      { failure: 'missing_rpc_reply', vendorStatus: response.status });
   }
-  const text = await response.text();
-  for (const line of text.split('\n')) {
+  const reader = response.body?.getReader();
+  if (!reader) throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned no JSON-RPC reply', 502,
+    { failure: 'missing_rpc_reply', vendorStatus: response.status });
+  const decoder = new TextDecoder();
+  let pending = '';
+  let bytes = 0;
+  const readLine = (line: string): Record<string, unknown> | undefined => {
     const trimmed = line.trim();
-    if (!trimmed.startsWith('data:')) continue;
+    if (!trimmed.startsWith('data:')) return undefined;
     const payload = trimmed.slice('data:'.length).trim();
-    if (!payload) continue;
+    if (!payload) return undefined;
     try {
       const parsed = JSON.parse(payload) as Record<string, unknown>;
       if (parsed && (parsed.result !== undefined || parsed.error !== undefined)) return parsed;
     } catch {
       // A frame this parser cannot read is not the reply; keep looking.
     }
+    return undefined;
+  };
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        const last = readLine(pending + decoder.decode());
+        if (last) return last;
+        break;
+      }
+      bytes += value.byteLength;
+      if (bytes > 4 * 1024 * 1024) {
+        throw new RoomGrantError('provider_error', 'hosted-MCP vendor reply exceeded 4 MiB', 502,
+          { failure: 'reply_too_large', vendorStatus: response.status });
+      }
+      pending += decoder.decode(value, { stream: true });
+      let newline = pending.indexOf('\n');
+      while (newline !== -1) {
+        const reply = readLine(pending.slice(0, newline));
+        if (reply) return reply;
+        pending = pending.slice(newline + 1);
+        newline = pending.indexOf('\n');
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => {});
   }
   throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned no JSON-RPC reply', 502,
-    { failure: 'missing_rpc_reply' });
+    { failure: 'missing_rpc_reply', vendorStatus: response.status });
 };
 
 const MCP_PROTOCOL_VERSION = '2025-11-25';
@@ -199,7 +230,8 @@ const openHostedMcpSession = async (
     if (reply.error || typeof result?.protocolVersion !== 'string'
       || !MCP_HANDSHAKE_VERSIONS.has(result.protocolVersion)) {
       throw new RoomGrantError('provider_error', 'hosted-MCP vendor did not negotiate a supported protocol', 502,
-        { failure: 'unsupported_protocol', rpcCode: (reply.error as { code?: unknown } | undefined)?.code });
+        { failure: 'unsupported_protocol', vendorStatus: initialized.status,
+          rpcCode: (reply.error as { code?: unknown } | undefined)?.code });
     }
     version = result.protocolVersion;
     const notification = await send({ jsonrpc: '2.0', method: 'notifications/initialized' }, true);

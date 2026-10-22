@@ -413,6 +413,21 @@ describe('hosted-MCP tool definitions', () => {
       .resolves.toEqual({ content: [{ type: 'text', text: 'ok' }] });
   });
 
+  it('returns an SSE reply before the vendor closes the stream', async () => {
+    let cancelled = false;
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(okReply)}\n`));
+      },
+      cancel() { cancelled = true; },
+    });
+    const deps = makeDeps({ fetcher: jest.fn(async () => new Response(stream, {
+      status: 200, headers: { 'content-type': 'text/event-stream' },
+    })) });
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual(okReply.result);
+    expect(cancelled).toBe(true);
+  });
+
   it('skips SSE frames that are not the reply, and refuses a stream that never carries one', async () => {
     const deps = makeDeps({
       fetcher: jest.fn(async () => sseResponse([
