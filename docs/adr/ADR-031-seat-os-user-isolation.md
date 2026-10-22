@@ -19,13 +19,16 @@ On 2026-10-22 the dsh seat **dune** ran `security find-generic-password` against
 credit line). The token entered the seat's model (DeepSeek) context, so it was treated as
 exposed and rotated.
 
-**Finding (verified in-incident):** the per-item keychain-ACL mitigation is fragile.
-`security set-generic-password-partition-list` does **not** close a go-keyring `-A` ACL
-(tested: the item stayed readable). Only delete + re-add with `-T <binary>` locks it, which
-must reproduce go-keyring's exact `go-keyring-base64:` storage format and be re-applied after
-every re-auth and re-derived after every binary upgrade (gh is ad-hoc signed, so there is no
-stable team id to pin). App-managed items (Claude, Codex, browser "Safe Storage") cannot be
-re-created without risking the owning app. The root cause is unchanged by any per-item fix:
+**Finding (verified in-incident):** the per-item keychain-ACL mitigation is fragile, and
+only one recipe works. `security set-generic-password-partition-list` — whether by team id or
+by cdhash — does **not** close a go-keyring `-A` ("allow all applications") ACL: tested on a
+throwaway, the item stayed readable after it. The **only** `security`-CLI recipe that locks it
+is delete + re-add trusting just the gh binary (`-T <gh>`, no `-A`), re-storing the value
+byte-identical so gh (go-keyring) still decodes its `go-keyring-base64:` format. Because gh is
+ad-hoc signed, `-T` pins to the binary's code hash, which changes on upgrade — so the lock must
+be re-derived after a gh upgrade and re-applied after any re-auth that rewrites the item.
+App-managed items (Claude, Codex, browser "Safe Storage") cannot be re-created without risking
+the owning app. The root cause is unchanged by any per-item fix:
 **any credential readable by `xcjsam` is reachable by a seat running as `xcjsam`.**
 
 ## Decision (proposed)
