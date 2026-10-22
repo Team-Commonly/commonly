@@ -576,9 +576,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(detail).toContain('display: -webkit-box');
     expect(detail).toContain('-webkit-line-clamp: 2');
     expect(detail).toContain('overflow: hidden');
-    const reveal = selectorRuleBody(v2, '.v2-activity__queue-detail:hover');
+    const reveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail:focus-visible');
     expect(reveal).toContain('display: block');
     expect(reveal).toContain('-webkit-line-clamp: unset');
+    const decisionDetail = selectorRuleBody(v2, '.v2-root .v2-activity__queue-row--decision .v2-activity__queue-detail');
+    expect(decisionDetail).toContain('color: var(--v2-ink)');
+    expect(v2).toContain('.v2-root:lang(zh) .v2-activity__queue-detail,');
+    expect(v2).toContain('.v2-root .v2-activity__queue-detail:hover:not(:focus)');
+    expect(v2).toContain('@media (hover: hover)');
     expect(activityPage).toContain('aria-expanded={expandedDetailIds.has(item.id)}');
     expect(activityPage).toContain('v2-activity__queue-detail');
     expect(activityPage).toContain('aria-label={t(\'activity.compose.placeholder\')}');

@@ -10117,12 +10117,27 @@ body.modern-ui.v2-canvas {
   -webkit-line-clamp: 2;
 }
 
-.v2-root .v2-activity__queue-detail:hover,
-.v2-root .v2-activity__queue-detail:focus,
+.v2-root .v2-activity__queue-row--decision .v2-activity__queue-detail,
+.v2-root .v2-activity__queue-row--approval .v2-activity__queue-detail {
+  color: var(--v2-ink);
+}
+
+.v2-root .v2-activity__queue-detail:focus-visible,
 .v2-root .v2-activity__queue-detail--expanded {
   display: block;
   overflow: visible;
   -webkit-line-clamp: unset;
+}
+
+/* Pointer hover is only a reveal affordance on devices that have hover. A
+   focused button is intentionally excluded: after a pointer click the focus
+   must not keep a second click from collapsing the detail again. */
+@media (hover: hover) {
+  .v2-root .v2-activity__queue-detail:hover:not(:focus) {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+  }
 }
 
 .v2-activity__queue-actions,
@@ -10610,6 +10625,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-pods__discover-description,
 .v2-root:lang(zh) .v2-pods__community-copy,
 .v2-root:lang(zh) .v2-activity__queue-copy p,
+.v2-root:lang(zh) .v2-activity__queue-detail,
 .v2-root:lang(zh) .v2-activity__board-row p,
 .v2-root:lang(zh) .v2-activity__agent-recap,
 .v2-root:lang(zh) .v2-activity__empty,
