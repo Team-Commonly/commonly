@@ -3,6 +3,7 @@ import { spawn as childSpawn, spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { effectiveSandboxTrust, validateEnvironmentSpec } from '../environment.js';
 import { writeCredentialFile } from '../credential-file.js';
@@ -119,6 +120,7 @@ export const readGooseStream = (stdout) => {
 const runGoose = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
   const child = spawnImpl(binary, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
+  const stdoutDecoder = new StringDecoder('utf8');
   let stderr = '';
   let timedOut = false;
   let streamOverflow = false;
@@ -139,7 +141,7 @@ const runGoose = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = 
   }, timeoutMs);
   child.stdout?.on('data', (chunk) => {
     if (streamOverflow) return;
-    stdout += chunk.toString();
+    stdout += stdoutDecoder.write(chunk);
     if (stdout.length > 2 * 1024 * 1024) {
       streamOverflow = true;
       stdout = '';
@@ -155,6 +157,7 @@ const runGoose = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = 
   });
   child.on('error', (error) => finish(error));
   child.on('close', (code) => {
+    stdout += stdoutDecoder.end();
     if (timedOut) return finish(new Error(`goose adapter: timed out after ${timeoutMs}ms`));
     if (streamOverflow) return finish(new Error('goose adapter: stream exceeded 2 MiB'));
     const result = readGooseStream(stdout);

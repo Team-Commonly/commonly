@@ -129,6 +129,29 @@ test('parser keeps final visible assistant text, not tool data or Goose banner',
   expect(readGooseStream(output)).toEqual({ text: 'final answer', error: null, complete: true });
 });
 
+test('Goose stdout preserves UTF-8 characters split across data chunks', async () => {
+  const ctx = baseCtx();
+  const output = Buffer.from(reply('你好🙂'));
+  const split = output.indexOf(Buffer.from('你')) + 1;
+  expect(split).toBeGreaterThan(0);
+  const result = await goose.spawn('hello', {
+    ...ctx,
+    _spawnImpl: () => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = jest.fn();
+      queueMicrotask(() => {
+        child.stdout.emit('data', output.subarray(0, split));
+        child.stdout.emit('data', output.subarray(split));
+        child.emit('close', 0);
+      });
+      return child;
+    },
+  });
+  expect(result).toEqual({ text: '你好🙂', newSessionId: null });
+});
+
 test('oversized stream terminates Goose and fails after the child closes', async () => {
   const ctx = baseCtx();
   let child;
