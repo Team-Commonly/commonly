@@ -166,7 +166,7 @@ describe('V2ConnectorsPage', () => {
       if (url === '/api/integrations/user/all') return Promise.resolve({ data: [connectors[1]] });
       if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Launch pod', type: 'chat' }] });
       if (url === '/api/installables') return Promise.resolve({ data: { installables: [toolsEntry] } });
-      if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { podId: 'p1', grants: [grant] } });
+      if (url === '/api/grants') return Promise.resolve({ data: { grants: [grant] } });
       if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
       if (url.includes('/calls')) {
         return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });

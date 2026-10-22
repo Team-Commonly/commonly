@@ -132,7 +132,6 @@ interface GithubAppIntegrationResponse {
 }
 
 const USED_RECENTLY_MS = 10 * 60 * 1000;
-const MAX_PODS = 20;
 const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm': 1, write: 2 };
 // The two option sets the aside renders as buttons. They live here, not inline in the
 // JSX, because eslint's i18next/no-literal-string (jsx-only) reads an array literal in
@@ -232,36 +231,24 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
 
   const isAdmin = currentUser?.role === 'admin';
 
-  const podIds = useMemo(() => pods.slice(0, MAX_PODS).map((pod) => String(pod._id)), [pods]);
+  const podIds = useMemo(() => pods.map((pod) => String(pod._id)), [pods]);
 
   const load = useCallback(async () => {
     const catalogRes = await api.get<{ installables?: ToolCatalogEntry[]; hiddenToolConnections?: HiddenToolConnection[] }>('/api/installables').catch(() => null);
     setCatalog((catalogRes?.installables || []).filter((entry) => entry.list === 'tools'));
     setHiddenConnections(catalogRes?.hiddenToolConnections || []);
-    if (podIds.length === 0) { setGrants([]); return; }
-    const results = await Promise.all(podIds.map(async (podId) => {
-      const [grantsRes, seatsRes] = await Promise.all([
-        api.get<{ grants: ToolGrant[] }>(`/api/pods/${podId}/grants`).catch(() => null),
-        api.get<{ agents?: PodSeat[] }>(`/api/registry/pods/${podId}/agents`).catch(() => null),
-      ]);
-      return { podId, grants: grantsRes?.grants ?? [], seats: (seatsRes?.agents ?? []).filter((seat) => !seat.internal) };
-    }));
-    const seen = new Set<string>();
-    const merged: ToolGrant[] = [];
-    const seatMap: Record<string, PodSeat[]> = {};
-    for (const result of results) {
-      seatMap[result.podId] = result.seats;
-      for (const grant of result.grants) {
-        if (seen.has(grant.grantId)) continue; // a seat grant can surface from two pods
-        seen.add(grant.grantId);
-        merged.push(grant);
-      }
-    }
-    merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    setGrants(merged);
-    setSeats(seatMap);
+    const [grantRes, seatResults] = await Promise.all([
+      api.get<{ grants: ToolGrant[] }>('/api/grants', { params: { connectionOwner: 'me' } }).catch(() => null),
+      Promise.all(podIds.map(async (podId) => {
+        const res = await api.get<{ agents?: PodSeat[] }>(`/api/registry/pods/${podId}/agents`).catch(() => null);
+        return [podId, (res?.agents ?? []).filter((seat) => !seat.internal)] as const;
+      })),
+    ]);
+    const ownedGrants = grantRes?.grants || [];
+    setGrants(ownedGrants);
+    setSeats(Object.fromEntries(seatResults));
     // "used in the last 10 min" reads the newest trail row's `at` (§6).
-    const uses = await Promise.all(merged.filter((grant) => !isDead(grant)).map(async (grant) => {
+    const uses = await Promise.all(ownedGrants.filter((grant) => !isDead(grant)).map(async (grant) => {
       const res = await api.get<ToolTrail>(`/api/grants/${grant.grantId}/calls`, { params: { limit: 1 } }).catch(() => null);
       return [grant.grantId, res?.calls?.[0]?.at ?? null] as const;
     }));
