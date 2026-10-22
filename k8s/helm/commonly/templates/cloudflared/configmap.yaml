@@ -12,9 +12,16 @@ data:
     credentials-file: /etc/cloudflared/credentials.json
 
     ingress:
+{{- if .Values.cloudflared.ingressRules }}
+{{- range .Values.cloudflared.ingressRules }}
+      - hostname: {{ .hostname }}
+        service: {{ .service }}
+{{- end }}
+{{- else }}
 {{- range .Values.cloudflared.hostnames }}
       - hostname: {{ . }}
         service: http://{{ $.Values.cloudflared.ingressService }}:{{ $.Values.cloudflared.ingressPort }}
+{{- end }}
 {{- end }}
       - service: http_status:404
 {{- end }}
