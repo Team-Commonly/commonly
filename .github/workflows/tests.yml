@@ -48,30 +48,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  paths:
-    name: Select test paths
-    runs-on: ubuntu-latest
-    outputs:
-      backend: ${{ steps.select.outputs.backend }}
-      frontend: ${{ steps.select.outputs.frontend }}
-      tools: ${{ steps.select.outputs.tools }}
-      chart: ${{ steps.select.outputs.chart }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - id: select
-        name: Classify changed paths
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-        run: python3 scripts/ci/select_test_paths.py
-      - run: python3 -m unittest discover -s scripts/ci -p 'test_select_test_paths.py'
-
   backend-tests:
     name: Backend tests (${{ matrix.shard }}/3)
-    needs: paths
-    if: needs.paths.outputs.backend == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -99,8 +77,6 @@ jobs:
 
   backend-checks:
     name: Backend typecheck and lint
-    needs: paths
-    if: needs.paths.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -116,8 +92,6 @@ jobs:
 
   frontend-tests:
     name: Frontend tests
-    needs: paths
-    if: needs.paths.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -137,8 +111,6 @@ jobs:
 
   tool-tests:
     name: CLI, MCP and hosted runtime tests
-    needs: paths
-    if: needs.paths.outputs.tools == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -169,30 +141,15 @@ jobs:
   test-gate:
     name: Test & Coverage
     if: always()
-    needs: [paths, backend-tests, backend-checks, frontend-tests, tool-tests, service-test, chart-lint]
+    needs: [backend-tests, backend-checks, frontend-tests, tool-tests, service-test, chart-lint]
     runs-on: ubuntu-latest
     env:
       NEEDS_JSON: ${{ toJSON(needs) }}
     steps:
-      - name: Verify every selected check passed
+      - name: Verify every check passed
         run: |
           echo "$NEEDS_JSON" | jq -e '
-            . as $jobs |
-            $jobs.paths.result == "success" and
-            $jobs["service-test"].result == "success" and
-            ($jobs["chart-lint"].result == "success" or
-              ($jobs.paths.outputs.chart == "false" and $jobs["chart-lint"].result == "skipped")) and
-            (if $jobs.paths.outputs.backend == "true" then
-              $jobs["backend-tests"].result == "success" and $jobs["backend-checks"].result == "success"
-             else
-              $jobs["backend-tests"].result == "skipped" and $jobs["backend-checks"].result == "skipped"
-             end) and
-            (if $jobs.paths.outputs.frontend == "true" then
-              $jobs["frontend-tests"].result == "success"
-             else $jobs["frontend-tests"].result == "skipped" end) and
-            (if $jobs.paths.outputs.tools == "true" then
-              $jobs["tool-tests"].result == "success"
-             else $jobs["tool-tests"].result == "skipped" end)
+            [.[].result] | all(. == "success")
           '
 
   legacy-test:
@@ -387,16 +344,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # This job has no needs, so it starts with the other suites. Classify here
-      # independently; a docs-only PR still starts the job but runs no tests.
-      - id: select
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-        run: python3 scripts/ci/select_test_paths.py
-
       - name: Set up Node.js
-        if: steps.select.outputs.backend == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -404,19 +352,15 @@ jobs:
           cache-dependency-path: '**/package-lock.json'
 
       - name: Install backend dependencies
-        if: steps.select.outputs.backend == 'true'
         run: cd backend && npm ci --include=dev
 
       - name: Run service tests (Tier 1)
-        if: steps.select.outputs.backend == 'true'
         run: |
           cd backend
           npx jest --testPathPattern="__tests__/service" --forceExit --runInBand
 
   chart-lint:
     name: Chart Lint (Tier 1.5)
-    needs: paths
-    if: needs.paths.outputs.chart == 'true'
     runs-on: ubuntu-latest
 
     env:
