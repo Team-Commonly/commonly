@@ -70,7 +70,23 @@ describe('i18n configuration', () => {
     language.mockRestore();
   });
 
+  it('pins the shipped languages', () => {
+    // The registry is the source of truth for every language surface, so its
+    // membership is a product decision and has to be written down somewhere
+    // that does not read it back from the registry. Without this pin, dropping
+    // a language (or adding a bogus one) stays green everywhere: the assertion
+    // below restates the implementation. Labels and short codes are pinned too
+    // because the rail, landing and Settings menus render them directly.
+    expect(LANGUAGE_REGISTRY.map(({ code, label, short }) => ({ code, label, short }))).toEqual([
+      { code: 'en', label: 'English', short: 'EN' },
+      { code: 'zh-CN', label: '中文', short: '中文' },
+    ]);
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'zh-CN']);
+  });
+
   it('uses each registered language for the document and i18next', async () => {
+    // Derivation check, not a membership check: SUPPORTED_LANGUAGES must stay
+    // the registry's codes in order. Membership is pinned above.
     expect(SUPPORTED_LANGUAGES).toEqual(LANGUAGE_REGISTRY.map(({ code }) => code));
     for (const { code } of LANGUAGE_REGISTRY) {
       await act(async () => { await i18n.changeLanguage(code); });

@@ -1,6 +1,6 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import i18n, { i18nReady } from '../../i18n';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import i18n, { i18nReady, LANGUAGE_REGISTRY } from '../../i18n';
 import axios from '../../utils/axiosConfig';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
@@ -83,8 +83,30 @@ describe('V2SettingsPage', () => {
     const view = renderSettings();
 
     expect(screen.getByRole('radiogroup', { name: '语言' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'English' })).toBeInTheDocument();
+    expect(screen.getAllByRole('radio').map((radio) => radio.textContent))
+      .toEqual(LANGUAGE_REGISTRY.map(({ label }) => label));
     expect(screen.getByRole('radio', { name: '中文' })).toHaveAttribute('aria-checked', 'true');
+
+    view.unmount();
+    await act(async () => { await i18n.changeLanguage('en'); });
+  });
+
+  test('switches the app language from Settings', async () => {
+    await i18nReady;
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    await act(async () => { await i18n.changeLanguage('en'); });
+    const view = renderSettings();
+
+    const group = screen.getByRole('radiogroup', { name: 'Language' });
+    expect(within(group).getAllByRole('radio').map((radio) => radio.textContent))
+      .toEqual(LANGUAGE_REGISTRY.map(({ label }) => label));
+
+    for (const { code, label } of LANGUAGE_REGISTRY) {
+      fireEvent.click(within(group).getByRole('radio', { name: label }));
+
+      await waitFor(() => expect(i18n.resolvedLanguage).toBe(code));
+      expect(within(group).getByRole('radio', { name: label })).toHaveAttribute('aria-checked', 'true');
+    }
 
     view.unmount();
     await act(async () => { await i18n.changeLanguage('en'); });
