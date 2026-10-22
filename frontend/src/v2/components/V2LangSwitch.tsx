@@ -1,12 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { LANGUAGE_REGISTRY, LanguageCode } from '../../i18n';
 
-// Language names are self-labels, not localized chrome — every reader must
-// recognize their own language regardless of the active locale.
-const LANGUAGES = [
-  { code: 'en' as const, label: 'English', short: 'EN' },
-  { code: 'zh-CN' as const, label: '中文', short: '中文' },
-];
 const CHECK_ICON = '✓';
 
 // Dropdown language menu (Sam's call 2026-07-22: reads like the other nav
@@ -17,7 +12,7 @@ const V2LangSwitch: React.FC = () => {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const active = LANGUAGES.find((l) => l.code === i18n.resolvedLanguage) || LANGUAGES[0];
+  const active = LANGUAGE_REGISTRY.find((l) => l.code === i18n.resolvedLanguage) || LANGUAGE_REGISTRY[0];
 
   useEffect(() => {
     if (!open) return undefined;
@@ -35,7 +30,7 @@ const V2LangSwitch: React.FC = () => {
     };
   }, [open]);
 
-  const selectLanguage = (code: 'en' | 'zh-CN') => {
+  const selectLanguage = (code: LanguageCode) => {
     void i18n.changeLanguage(code);
     setOpen(false);
   };
@@ -54,7 +49,7 @@ const V2LangSwitch: React.FC = () => {
       </button>
       {open && (
         <ul className="v2-lang-switch__menu" role="listbox" aria-label={t('common.language.label')}>
-          {LANGUAGES.map((lang) => (
+          {LANGUAGE_REGISTRY.map((lang) => (
             <li key={lang.code} role="option" aria-selected={lang.code === active.code}>
               <button
                 type="button"

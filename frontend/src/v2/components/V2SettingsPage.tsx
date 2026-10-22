@@ -10,6 +10,7 @@ import V2DevicesPanel from './V2DevicesPanel';
 import V2Avatar from './V2Avatar';
 import V2AvatarCropDialog from './V2AvatarCropDialog';
 import { nextPaperAvatarPreset } from '../utils/avatarPresets';
+import { LANGUAGE_REGISTRY } from '../../i18n';
 
 type TokenStatus = {
   hasToken?: boolean;
@@ -24,11 +25,6 @@ const formatTokenCreatedAt = (value: string) => {
   const month = date.toLocaleDateString('en-US', { month: 'short' });
   return `Created ${date.getDate()} ${month} ${date.getFullYear()}`;
 };
-
-const LANGUAGE_OPTIONS = [
-  { code: 'en' as const, label: 'English' },
-  { code: 'zh-CN' as const, label: '中文' },
-];
 
 interface SettingsSectionProps {
   id: string;
@@ -383,12 +379,12 @@ const V2ApiTokenSection: React.FC = () => {
 };
 
 const V2LanguageSection: React.FC = () => {
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   const active = i18n.resolvedLanguage || i18n.language || 'en';
 
   return (
-    <div className="v2-settings__language" role="radiogroup" aria-label="Language">
-      {LANGUAGE_OPTIONS.map((language) => (
+    <div className="v2-settings__language" role="radiogroup" aria-label={t('common.language.label')}>
+      {LANGUAGE_REGISTRY.map((language) => (
         <button
           key={language.code}
           type="button"

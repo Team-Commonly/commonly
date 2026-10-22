@@ -8,9 +8,7 @@
     "copy": "Copy",
     "copied": "Copied!",
     "language": {
-      "label": "Language",
-      "switchToEnglish": "Switch to English",
-      "switchToChinese": "Switch to Simplified Chinese"
+      "label": "Language"
     },
     "nav": {
       "pods": "Pods",

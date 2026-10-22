@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { LANGUAGE_REGISTRY } from '..';
 
 type TranslationTree = { [key: string]: string | TranslationTree };
 
@@ -11,10 +12,6 @@ const flattenKeys = (tree: TranslationTree, prefix = ''): string[] => (
     const fullKey = prefix ? `${prefix}.${key}` : key;
     return typeof value === 'string' ? [fullKey] : flattenKeys(value, fullKey);
   })
-);
-
-const readJson = (fileName: string): TranslationTree => JSON.parse(
-  fs.readFileSync(path.join(__dirname, '..', 'locales', fileName), 'utf8'),
 );
 
 const literalTranslationKeys = (source: string): string[] => {
@@ -38,26 +35,30 @@ describe('i18n migration manifest', () => {
     (override: { rules?: Record<string, unknown> }) => override.rules?.['i18next/no-literal-string'],
   );
   const migratedFiles: string[] = manifestOverride?.files || [];
-  const enKeys = new Set(flattenKeys(readJson('en.json')));
-  const zhKeys = new Set(flattenKeys(readJson('zh-CN.json')));
+  const languageKeys = LANGUAGE_REGISTRY.map(({ code, translation }) => ({
+    code,
+    keys: new Set(flattenKeys(translation)),
+  }));
   const hasKey = (keys: Set<string>, key: string): boolean => (
     keys.has(key) || [...keys].some((candidate) => candidate.replace(PLURAL_SUFFIX, '') === key)
   );
 
-  it('keeps English and Simplified Chinese base key paths identical', () => {
+  it('keeps every registered language base key path identical', () => {
     const normalize = (keys: Set<string>) => [...new Set([...keys].map((key) => key.replace(PLURAL_SUFFIX, '')))];
-    expect(normalize(zhKeys).sort()).toEqual(normalize(enKeys).sort());
+    const baseKeys = normalize(languageKeys[0].keys).sort();
+    for (const { keys } of languageKeys) expect(normalize(keys).sort()).toEqual(baseKeys);
   });
 
   it('provides every CLDR plural form required by each language', () => {
-    const pluralBases = new Set([...enKeys, ...zhKeys].filter((key) => PLURAL_SUFFIX.test(key)).map((key) => key.replace(PLURAL_SUFFIX, '')));
+    const pluralBases = new Set(languageKeys.flatMap(({ keys }) => [...keys])
+      .filter((key) => PLURAL_SUFFIX.test(key)).map((key) => key.replace(PLURAL_SUFFIX, '')));
     const missing = (language: string, keys: Set<string>) => [...pluralBases].flatMap((base) => (
       new Intl.PluralRules(language).resolvedOptions().pluralCategories
         .filter((category) => !keys.has(`${base}_${category}`))
         .map((category) => `${language}:${base}_${category}`)
     ));
 
-    expect([...missing('en', enKeys), ...missing('zh-CN', zhKeys)]).toEqual([]);
+    expect(languageKeys.flatMap(({ code, keys }) => missing(code, keys))).toEqual([]);
   });
 
   it('resolves every literal translation key used by a migrated component', () => {
@@ -67,8 +68,9 @@ describe('i18n migration manifest', () => {
     for (const relativePath of migratedFiles) {
       const source = fs.readFileSync(path.join(__dirname, '../../..', relativePath), 'utf8');
       for (const key of literalTranslationKeys(source)) {
-        if (!hasKey(enKeys, key)) missing.push(`${relativePath}: en:${key}`);
-        if (!hasKey(zhKeys, key)) missing.push(`${relativePath}: zh-CN:${key}`);
+        for (const { code, keys } of languageKeys) {
+          if (!hasKey(keys, key)) missing.push(`${relativePath}: ${code}:${key}`);
+        }
       }
     }
 

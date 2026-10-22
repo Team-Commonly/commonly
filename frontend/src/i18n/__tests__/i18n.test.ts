@@ -1,5 +1,5 @@
 import { act } from '@testing-library/react';
-import i18n, { i18nReady, LANGUAGE_STORAGE_KEY } from '..';
+import i18n, { i18nReady, LANGUAGE_REGISTRY, LANGUAGE_STORAGE_KEY, SUPPORTED_LANGUAGES } from '..';
 
 describe('i18n configuration', () => {
   beforeAll(async () => {
@@ -68,6 +68,15 @@ describe('i18n configuration', () => {
     expect(document.documentElement.lang).toBe('en');
     languages.mockRestore();
     language.mockRestore();
+  });
+
+  it('uses each registered language for the document and i18next', async () => {
+    expect(SUPPORTED_LANGUAGES).toEqual(LANGUAGE_REGISTRY.map(({ code }) => code));
+    for (const { code } of LANGUAGE_REGISTRY) {
+      await act(async () => { await i18n.changeLanguage(code); });
+      expect(i18n.resolvedLanguage).toBe(code);
+      expect(document.documentElement.lang).toBe(code);
+    }
   });
 
   it('interpolates Phase 1B auth and invite chrome in both locales', () => {    expect(i18n.t('auth.oauth.continueWith', {

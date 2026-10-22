@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import '../../i18n';
+import i18n, { i18nReady } from '../../i18n';
 import axios from '../../utils/axiosConfig';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
@@ -76,6 +76,20 @@ const renderSettings = (currentUser = auth.currentUser) => render(
 afterEach(() => jest.clearAllMocks());
 
 describe('V2SettingsPage', () => {
+  test('names the language choices in the active language', async () => {
+    await i18nReady;
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    const view = renderSettings();
+
+    expect(screen.getByRole('radiogroup', { name: '语言' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'English' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: '中文' })).toHaveAttribute('aria-checked', 'true');
+
+    view.unmount();
+    await act(async () => { await i18n.changeLanguage('en'); });
+  });
+
   test('keeps every folded settings concern visible on one page', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     renderSettings();

@@ -5,22 +5,25 @@ import en from './locales/en.json';
 import zhCN from './locales/zh-CN.json';
 
 export const LANGUAGE_STORAGE_KEY = 'v2.lang';
-export const SUPPORTED_LANGUAGES = ['en', 'zh-CN'] as const;
+// Self-labels let readers find their language regardless of the active locale.
+export const LANGUAGE_REGISTRY = [
+  { code: 'en', label: 'English', short: 'EN', translation: en },
+  { code: 'zh-CN', label: '中文', short: '中文', translation: zhCN },
+] as const;
+export type LanguageCode = typeof LANGUAGE_REGISTRY[number]['code'];
+export const SUPPORTED_LANGUAGES = LANGUAGE_REGISTRY.map(({ code }) => code);
 
 const setDocumentLanguage = (language: string): void => {
   if (typeof document === 'undefined') return;
-  document.documentElement.lang = language === 'zh-CN' ? 'zh-CN' : 'en';
+  document.documentElement.lang = LANGUAGE_REGISTRY.find(({ code }) => code === language)?.code || 'en';
 };
 
 export const i18nReady = i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    resources: {
-      en: { translation: en },
-      'zh-CN': { translation: zhCN },
-    },
-    supportedLngs: [...SUPPORTED_LANGUAGES],
+    resources: Object.fromEntries(LANGUAGE_REGISTRY.map(({ code, translation }) => [code, { translation }])),
+    supportedLngs: SUPPORTED_LANGUAGES,
     fallbackLng: 'en',
     interpolation: { escapeValue: false },
     detection: {
