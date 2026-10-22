@@ -7,15 +7,21 @@ Do **not** run operator scripts with `kubectl exec deploy/backend -c backend -- 
 isolated `ops-runner` pod instead:
 
 ```
-kubectl exec -n commonly-dev deploy/ops-runner -- env NODE_PATH=/app/node_modules node - < your-script.js
+kubectl exec -i -n commonly-dev deploy/ops-runner -- env NODE_PATH=/app/node_modules node - < your-script.js
 ```
 
 `ops-runner` carries the **same image, env, and secret mounts as backend**
 (so `process.env.MONGO_URI`, `PG_*`, `JWT_SECRET`, the `api-keys` secret, the
 Postgres CA cert, etc. are all present), but it runs `sleep infinity`, serves no
-traffic, has no readiness/liveness probe, and sits on the **spot pool** — a
-different node from the on-demand `dev` pool where `backend` and `redis` live.
-So a heavy or runaway operator script competes with nothing that serves users.
+traffic, and has no readiness/liveness probe. It sits on the **spot pool**, off
+the on-demand `dev` pool where `backend` and `redis` live. So a heavy or runaway
+operator script runs **outside backend's cgroup/CPU limit and off the dev pool**
+— the exact mechanism behind the 11:42Z incident. It is **not** fully isolated
+from everything users touch: `frontend` is also pinned to the spot pool
+(ADR-015), `ops-runner`'s `50m` is a CPU *request* and not a limit, and it has no
+anti-affinity from the frontend replicas — so a runaway script can still contend
+for CPU with `frontend` on a shared spot node. (A CPU *limit* on `ops-runner`
+would close that remaining gap.)
 
 ## Why — the mechanism
 
