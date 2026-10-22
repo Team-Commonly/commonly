@@ -97,6 +97,20 @@ const hostedRow = (entryId) => ({ type: 'hosted-mcp', config: { entryId } });
 describe('resolveBrokerFor on a hosted-mcp connection', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  test('an existing hidden connection keeps its pinned broker tools', async () => {
+    const prior = process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+    process.env.HOSTED_MCP_HIDDEN_ENTRIES = '["linear"]';
+    try {
+      await expect(resolveBrokerFor(hostedRow('linear'), [ENTRY])).resolves.toEqual({
+        installableId: 'linear', brokerId: GRANT_BROKER_ID,
+        enabledTools: ['linear.list_issues', 'linear.get_issue'],
+      });
+    } finally {
+      if (prior === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+      else process.env.HOSTED_MCP_HIDDEN_ENTRIES = prior;
+    }
+  });
+
   test("the broker is the row's own entry's tools, read from the entry and not from a seeded row", async () => {
     await expect(resolveBrokerFor(hostedRow('linear'), [ENTRY, OTHER_ENTRY])).resolves.toEqual({
       installableId: 'linear',

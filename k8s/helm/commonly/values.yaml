@@ -63,8 +63,11 @@ slack:
 # hostedMcpClientConfigKeys('google-calendar') derives. Same gating rule as
 # Slack: create both `commonly-dev-google-calendar-client-*` secrets, each with
 # an enabled version, before enabling this in an environment. Until then the
-# entry reads not_configured and the Tools page offers no Connect.
+# entry reads not_configured and the Tools catalogue omits it.
 hostedMcp:
+  # Entry IDs omitted from Tools offerings. Existing connections remain listed
+  # for removal; grants and revocation continue to use the pinned entry.
+  hiddenEntries: []
   googleCalendar:
     enabled: false
 

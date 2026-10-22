@@ -736,6 +736,27 @@ test('a hosted connector shows vendor setup guidance before connect', async () =
   expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
 });
 
+test('a hidden hosted entry has no offering while its existing connection can be removed', async () => {
+  mockApi([]);
+  const prior = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, config) => {
+    if (url === '/api/installables') return Promise.resolve({ data: {
+      installables: [],
+      hiddenToolConnections: [{ connectionId: 'conn-hidden', entryId: 'airtable', label: 'Airtable', status: 'connected', revokePage: 'https://airtable.com/account' }],
+    } });
+    return prior(url, config);
+  });
+  axios.delete.mockResolvedValue({ data: { message: 'removed' } });
+  renderTools();
+  expect(await screen.findByText('Airtable')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Remove connection' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, remove' }));
+  await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/conn-hidden', expect.anything()));
+  expect(await screen.findByText(/Connection removed. Review Commonly access at Airtable/)).toBeInTheDocument();
+});
+
 test('a hosted connect start error uses fixed copy instead of response text', async () => {
   mockApi([{ ...linearEntry, connections: [] }]);
   axios.post.mockRejectedValue({

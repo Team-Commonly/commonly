@@ -85,6 +85,14 @@ export interface ToolCatalogEntry {
   connections: Array<{ connectionId: string; owner: string; repo: string }>;
 }
 
+interface HiddenToolConnection {
+  connectionId: string;
+  entryId: string;
+  label: string;
+  status: string;
+  revokePage: string | null;
+}
+
 export interface HostedMcpManualRevokeNotice {
   connectionId: string;
   entryId: string;
@@ -200,6 +208,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const isGranter = (grant: ToolGrant): boolean => Boolean(viewerId) && grant.grantedBy === viewerId;
   const [grants, setGrants] = useState<ToolGrant[] | null>(null);
   const [catalog, setCatalog] = useState<ToolCatalogEntry[]>([]);
+  const [hiddenConnections, setHiddenConnections] = useState<HiddenToolConnection[]>([]);
   const [seats, setSeats] = useState<Record<string, PodSeat[]>>({});
   const [lastUse, setLastUse] = useState<Record<string, string | null>>({});
   const [trail, setTrail] = useState<ToolTrail | null>(null);
@@ -210,6 +219,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   // Change access minted the new grant but the revoke of the old one failed: only the revoke is retried.
   const [staleAfterChange, setStaleAfterChange] = useState<{ oldGrantId: string; newGrantId: string } | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+  const [confirmHiddenRemoval, setConfirmHiddenRemoval] = useState<string | null>(null);
+  const [removedHiddenNotice, setRemovedHiddenNotice] = useState<{ label: string; revokePage: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [joinPolicyFixPodId, setJoinPolicyFixPodId] = useState<string | null>(null);
@@ -225,8 +236,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const podIds = useMemo(() => pods.slice(0, MAX_PODS).map((pod) => String(pod._id)), [pods]);
 
   const load = useCallback(async () => {
-    const catalogRes = await api.get<{ installables?: ToolCatalogEntry[] }>('/api/installables').catch(() => null);
+    const catalogRes = await api.get<{ installables?: ToolCatalogEntry[]; hiddenToolConnections?: HiddenToolConnection[] }>('/api/installables').catch(() => null);
     setCatalog((catalogRes?.installables || []).filter((entry) => entry.list === 'tools'));
+    setHiddenConnections(catalogRes?.hiddenToolConnections || []);
     if (podIds.length === 0) { setGrants([]); return; }
     const results = await Promise.all(podIds.map(async (podId) => {
       const [grantsRes, seatsRes] = await Promise.all([
@@ -603,6 +615,49 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
       setBusy(false);
     }
   };
+
+  const removeHiddenConnection = async (connection: HiddenToolConnection) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.del(`/api/integrations/${encodeURIComponent(connection.connectionId)}`);
+      setConfirmHiddenRemoval(null);
+      if (connection.revokePage) setRemovedHiddenNotice({ label: connection.label, revokePage: connection.revokePage });
+      await load();
+    } catch {
+      setError(t('tools.removeConnectionError', { defaultValue: 'Could not remove the connection.' }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renderHiddenConnection = (connection: HiddenToolConnection) => (
+    <article key={connection.connectionId} className="v2-connector-row">
+      <span className="v2-connector-row__name">
+        <span className="v2-connector-row__dot v2-connector-row__dot--empty" aria-hidden="true" />
+        <span>{connection.label}</span>
+      </span>
+      <span className="v2-connector-row__details">
+        <span className="v2-connector-row__kicker">{t('tools.existingConnection', { defaultValue: 'existing connection' })}</span>
+        <strong>{t('tools.noLongerOffered', { defaultValue: 'This connector is no longer offered here.' })}</strong>
+        {connection.revokePage && <a href={connection.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.reviewProviderAccess', { defaultValue: 'Review access at {{label}}', label: connection.label })}</a>}
+      </span>
+      {confirmHiddenRemoval === connection.connectionId ? (
+        <>
+          <button type="button" className="v2-connector-row__action" disabled={busy} onClick={() => { void removeHiddenConnection(connection); }}>
+            {t('tools.confirmRemoveConnection', { defaultValue: 'Yes, remove' })}
+          </button>
+          <button type="button" className="v2-connector-row__action v2-connector-row__action--secondary" onClick={() => setConfirmHiddenRemoval(null)}>
+            {t('tools.keep', { defaultValue: 'Keep' })}
+          </button>
+        </>
+      ) : (
+        <button type="button" className="v2-connector-row__action v2-connector-row__action--secondary" onClick={() => setConfirmHiddenRemoval(connection.connectionId)}>
+          {t('tools.removeConnection', { defaultValue: 'Remove connection' })}
+        </button>
+      )}
+    </article>
+  );
 
   const renderRow = (grant: ToolGrant) => {
     const dead = isDead(grant, now);
@@ -1010,7 +1065,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   if (grants === null) {
     return <div className="v2-connectors__loading">{t('tools.loading', { defaultValue: 'Loading tools…' })}</div>;
   }
-  if (grants.length === 0 && catalog.length === 0) return null; // nothing the server has to show
+  if (grants.length === 0 && catalog.length === 0 && hiddenConnections.length === 0 && !removedHiddenNotice) return null;
 
   return (
     <div className="v2-connectors__content v2-tools">
@@ -1046,10 +1101,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         {error && !draft && !selected && !githubAppSetup && (
           <p className="v2-connector-aside__note" role="alert">{error}</p>
         )}
+        {removedHiddenNotice && <p className="v2-connector-aside__note" role="status">{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review Commonly access at {{label}}.', label: removedHiddenNotice.label })} <a href={removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></p>}
         <div className="v2-connectors__rows">
           {rows.map(renderRow)}
           {notYet.map(renderNotYet)}
-          {rows.length === 0 && notYet.length === 0 && (
+          {segment !== 'not-yet' && hiddenConnections.filter((connection) => !query || connection.label.toLowerCase().includes(q)).map(renderHiddenConnection)}
+          {rows.length === 0 && notYet.length === 0 && hiddenConnections.length === 0 && (
             <p className="v2-tools__empty">{t('tools.nothingMatches', { defaultValue: 'Nothing matches.' })}</p>
           )}
         </div>

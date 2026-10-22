@@ -436,6 +436,10 @@ slack:
 # hit an error on the first call. Turning this back on is the switch once the
 # project is enrolled and a list_calendars call succeeds.
 hostedMcp:
+  hiddenEntries:
+    - airtable
+    # Client secrets exist, but Workspace MCP enrollment is still off.
+    - google-calendar
   googleCalendar:
     enabled: false
 

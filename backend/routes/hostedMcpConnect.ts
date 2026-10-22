@@ -37,6 +37,7 @@ const { revokeConnectionGrants } = require('../services/roomGrantService');
 const { revokeTokenAtVendor } = require('../services/connectionRemovalService');
 // eslint-disable-next-line global-require
 const { HOSTED_MCP_ENTRIES, findHostedMcpEntry, hostedMcpRevokeTarget } = require('../integrations/hostedMcp/entries');
+const { isHostedMcpEntryHidden } = require('../integrations/hostedMcp/visibility');
 // eslint-disable-next-line global-require
 const {
   HOSTED_MCP_NONCE_COOKIE,
@@ -246,6 +247,7 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
   if (!entry) {
     return res.status(404).json({ error: 'unknown_entry' });
   }
+  if (isHostedMcpEntryHidden(entry.id)) return res.status(404).json({ error: 'unknown_entry' });
 
   let client: { clientId: string; clientSecret?: string } | null = null;
   if (entry.client !== 'dcr') {

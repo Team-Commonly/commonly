@@ -129,6 +129,22 @@ describe('hosted-mcp connect: the client metadata document', () => {
 });
 
 describe('hosted-mcp connect: start', () => {
+  it('does not start a new connection for an instance-hidden entry', async () => {
+    const prior = process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+    process.env.HOSTED_MCP_HIDDEN_ENTRIES = '["linear"]';
+    try {
+      const hidden = await start();
+      expect(hidden.status).toBe(404);
+      expect(hidden.body).toEqual({ error: 'unknown_entry' });
+      expect(intake.discoverAuthorizationServer).not.toHaveBeenCalled();
+      expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+      process.env.HOSTED_MCP_HIDDEN_ENTRIES = '[]';
+      expect((await start()).status).toBe(200);
+    } finally {
+      if (prior === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+      else process.env.HOSTED_MCP_HIDDEN_ENTRIES = prior;
+    }
+  });
   it('uses and snapshots the one registered DCR client for authorization', async () => {
     FIXTURE_ENTRY.client = 'dcr';
     dcr.ensureDcrClient.mockResolvedValue({ clientId: 'registered-public-client' });

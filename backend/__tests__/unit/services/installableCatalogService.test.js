@@ -23,6 +23,7 @@ const Integration = require('../../../models/Integration');
 const { catalogFor } = require('../../../services/installable/installableCatalogService');
 const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
 const { buildHostedMcpToolInstallable } = require('../../../services/installable/toolInstallables');
+const { hiddenHostedMcpEntryIds } = require('../../../integrations/hostedMcp/visibility');
 
 const userId = '64b64c48c4f37a6b2f34c111';
 const installationId = '64b64c48c4f37a6b2f34c222';
@@ -304,4 +305,62 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
   } finally {
     HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
   }
+});
+
+it('hides an instance-listed hosted entry from offerings while keeping its connection removable', async () => {
+  const prior = process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+  process.env.HOSTED_MCP_HIDDEN_ENTRIES = '["airtable"]';
+  try {
+    const linear = HOSTED_MCP_ENTRIES.find((entry) => entry.id === 'linear');
+    const airtable = HOSTED_MCP_ENTRIES.find((entry) => entry.id === 'airtable');
+    mockInstallables([], [buildHostedMcpToolInstallable(linear), buildHostedMcpToolInstallable(airtable)]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    Integration.find.mockImplementation((query) => lean(query['config.entryId']
+      ? [{ _id: 'airtable-connection', type: 'hosted-mcp', status: 'disconnected', config: { entryId: 'airtable', credentialRef: 'private-credential-ref' } }]
+      : []));
+    const catalog = await catalogFor(userId);
+    expect(catalog.installables.filter((entry) => entry.list === 'tools').map((entry) => entry.installableId)).toEqual(['linear']);
+    expect(catalog.hiddenToolConnections).toEqual([{
+      connectionId: 'airtable-connection', entryId: 'airtable', label: 'Airtable', status: 'disconnected',
+      revokePage: 'https://airtable.com/account',
+    }]);
+    expect(Integration.find).toHaveBeenCalledWith(expect.objectContaining({
+      createdBy: userId, 'config.entryId': { $in: ['airtable'] },
+    }));
+    expect(JSON.stringify(catalog)).not.toContain('private-credential-ref');
+  } finally {
+    if (prior === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+    else process.env.HOSTED_MCP_HIDDEN_ENTRIES = prior;
+  }
+});
+
+it('omits an unconfigured hosted entry instead of offering a not-enabled row', async () => {
+  const google = HOSTED_MCP_ENTRIES.find((entry) => entry.id === 'google-calendar');
+  mockInstallables([], [buildHostedMcpToolInstallable(google)]);
+  InstallableInstallation.find.mockReturnValue(lean([]));
+  Integration.find.mockImplementation((query) => lean(query['config.entryId']
+    ? [{ _id: 'google-connection', type: 'hosted-mcp', status: 'connected', config: { entryId: 'google-calendar' } }]
+    : []));
+  const priorId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
+  const priorSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+  delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+  delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+  try {
+    const catalog = await catalogFor(userId);
+    expect(catalog.installables.filter((entry) => entry.list === 'tools')).toEqual([]);
+    expect(catalog.hiddenToolConnections).toEqual([expect.objectContaining({
+      connectionId: 'google-connection', entryId: 'google-calendar', label: 'Google Calendar',
+    })]);
+  } finally {
+    if (priorId === undefined) delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    else process.env.GOOGLE_CALENDAR_CLIENT_ID = priorId;
+    if (priorSecret === undefined) delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    else process.env.GOOGLE_CALENDAR_CLIENT_SECRET = priorSecret;
+  }
+});
+
+it('validates the instance hidden-entry setting', () => {
+  expect([...hiddenHostedMcpEntryIds({ HOSTED_MCP_HIDDEN_ENTRIES: '["airtable"]' })]).toEqual(['airtable']);
+  expect([...hiddenHostedMcpEntryIds({})]).toEqual([]);
+  expect(() => hiddenHostedMcpEntryIds({ HOSTED_MCP_HIDDEN_ENTRIES: 'airtable' })).toThrow();
 });
