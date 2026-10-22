@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [ main, v1.0.x ]
+    branches: [ v1.0.x ]
   # No branches filter on pull_request: stacked PRs (base = another feature
   # branch) previously got ZERO test runs — every number on them was
   # single-sourced to the author's local sweep, and the 2026-08-22 threading
@@ -22,16 +22,15 @@ permissions:
   contents: read
 
 # The push fallback is github.sha, NOT github.ref. On a push event `github.ref`
-# is the *branch*, so every commit merged to main shared one concurrency group
-# and each merge cancelled the previous commit's still-running verification.
-# Measured across 39 Tests runs on main (2026-08-04 → 08-06): 18 cancelled.
+# is the branch, so concurrent commits would cancel each other. This caused
+# 18 of 39 Tests runs on main to be cancelled (2026-08-04 → 08-06).
 #
 # The loss is ordered by job depth, not random, which is what makes it worth
 # fixing rather than tolerating:
 #
 #   Chart Lint        no needs,  ~8s      survived 12 of 14
-#   Test & Coverage   no needs,  ~5.5min  survived  3 of 14
-#   Service Tests     needs:test, starts ~5.5min in   survived 0 of 14
+#   old Test & Coverage   no needs,  ~5.5min  survived  3 of 14
+#   Service Tests         formerly needs:test          survived 0 of 14
 #
 # Service Tests is the ADR-009 Tier 1 real-DB tier — the deepest job, and the
 # only one that never once completed in a cancelled run. So the tier main was
@@ -44,8 +43,149 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  paths:
+    name: Select test paths
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.select.outputs.backend }}
+      frontend: ${{ steps.select.outputs.frontend }}
+      tools: ${{ steps.select.outputs.tools }}
+      chart: ${{ steps.select.outputs.chart }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: select
+        name: Classify changed paths
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: python3 scripts/ci/select_test_paths.py
+      - run: python3 -m unittest discover -s scripts/ci -p 'test_select_test_paths.py'
+
+  backend-tests:
+    name: Backend tests (${{ matrix.shard }}/3)
+    needs: paths
+    if: needs.paths.outputs.backend == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    runs-on: ubuntu-latest
+    env:
+      JWT_SECRET: test-jwt-secret
+      SENDGRID_API_KEY: fake-api-key
+      SENDGRID_FROM_EMAIL: test@example.com
+      FRONTEND_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: cd backend && npm ci --include=dev
+      - name: Run backend tests with coverage
+        run: cd backend && npx jest --coverage --forceExit --shard=${{ matrix.shard }}/3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-${{ matrix.shard }}
+          path: backend/coverage/
+
+  backend-checks:
+    name: Backend typecheck and lint
+    needs: paths
+    if: needs.paths.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: cd backend && npm ci --include=dev
+      - run: cd backend && npm run tsc:check
+      - run: cd packages/types && ../../backend/node_modules/.bin/tsc --noEmit -p tsconfig.json
+      - run: cd backend && npm run lint:ts
+
+  frontend-tests:
+    name: Frontend tests
+    needs: paths
+    if: needs.paths.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: cd frontend && npm install --legacy-peer-deps
+      - run: cd frontend && npm run typecheck
+      - run: cd frontend && npx jest --coverage --watchAll=false --forceExit
+      - run: cd frontend && node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs
+
+  tool-tests:
+    name: CLI, MCP and hosted runtime tests
+    needs: paths
+    if: needs.paths.outputs.tools == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            commonly-mcp/package-lock.json
+            cli/package-lock.json
+            workers/agent-runtime/package-lock.json
+      - run: npm ci --include=dev
+      - run: cd commonly-mcp && npm ci --include=dev
+      - run: cd cli && npm ci --include=dev
+      - run: cd workers/agent-runtime && npm ci --include=dev
+      - run: npm run verify:moltbot-tools
+      - run: npm run verify:litellm-patch-runner
+      - run: cd commonly-mcp && npm test
+      - run: cd cli && npm run lint && npm test
+      - run: cd workers/agent-runtime && npm run typecheck && npm test
+
+  test-gate:
     name: Test & Coverage
+    if: always()
+    needs: [paths, backend-tests, backend-checks, frontend-tests, tool-tests, service-test, chart-lint]
+    runs-on: ubuntu-latest
+    env:
+      NEEDS_JSON: ${{ toJSON(needs) }}
+    steps:
+      - name: Verify every selected check passed
+        run: |
+          echo "$NEEDS_JSON" | jq -e '
+            . as $jobs |
+            $jobs.paths.result == "success" and
+            $jobs["service-test"].result == "success" and
+            ($jobs["chart-lint"].result == "success" or
+              ($jobs.paths.outputs.chart == "false" and $jobs["chart-lint"].result == "skipped")) and
+            (if $jobs.paths.outputs.backend == "true" then
+              $jobs["backend-tests"].result == "success" and $jobs["backend-checks"].result == "success"
+             else
+              $jobs["backend-tests"].result == "skipped" and $jobs["backend-checks"].result == "skipped"
+             end) and
+            (if $jobs.paths.outputs.frontend == "true" then
+              $jobs["frontend-tests"].result == "success"
+             else $jobs["frontend-tests"].result == "skipped" end) and
+            (if $jobs.paths.outputs.tools == "true" then
+              $jobs["tool-tests"].result == "success"
+             else $jobs["tool-tests"].result == "skipped" end)
+          '
+
+  legacy-test:
+    # Retire only after the new gate passes a real merge_group run.
+    name: Legacy test and coverage
     runs-on: ubuntu-latest
 
     env:
@@ -172,7 +312,6 @@ jobs:
   service-test:
     name: Service Tests (Tier 1 — real DBs)
     runs-on: ubuntu-latest
-    needs: test
 
     services:
       mongo:
@@ -214,8 +353,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      # This job has no needs, so it starts with the other suites. Classify here
+      # independently; a docs-only PR still starts the job but runs no tests.
+      - id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: python3 scripts/ci/select_test_paths.py
 
       - name: Set up Node.js
+        if: steps.select.outputs.backend == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -223,15 +373,19 @@ jobs:
           cache-dependency-path: '**/package-lock.json'
 
       - name: Install backend dependencies
+        if: steps.select.outputs.backend == 'true'
         run: cd backend && npm ci --include=dev
 
       - name: Run service tests (Tier 1)
+        if: steps.select.outputs.backend == 'true'
         run: |
           cd backend
           npx jest --testPathPattern="__tests__/service" --forceExit --runInBand
 
   chart-lint:
     name: Chart Lint (Tier 1.5)
+    needs: paths
+    if: needs.paths.outputs.chart == 'true'
     runs-on: ubuntu-latest
 
     env:

@@ -8,7 +8,7 @@ on:
         default: '300'
         required: false
   workflow_run:
-    workflows: ["Tests"]
+    workflows: ["Deploy Dev"]
     branches: [main]
     types: [completed]
   # ADR-009 Phase 2: gate Tier 2 on PRs that touch deployment surfaces.
@@ -46,7 +46,7 @@ jobs:
     name: kind cluster smoke test
     runs-on: ubuntu-latest
     # Run on manual dispatch, on any PR that passed the path filter above,
-    # or on a successful Tests workflow_run on main.
+    # or after a successful Deploy Dev run on main.
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
