@@ -229,6 +229,19 @@ describe('native turn with commonly_web_search', () => {
         .toEqual([['before', false], ['after', true]]);
     });
 
+    test('a second broker call carries the outbound marker needed by a parked card', async () => {
+      axios.post
+        .mockResolvedValueOnce(toolCalls(
+          call('c1', 'linear_list_issues', {}),
+          call('c2', 'linear_list_issues', {}),
+        ))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      expect(mockBrokerDispatch.mock.calls.map(([args]) => args.noOutboundRelay)).toEqual([false, true]);
+    });
+
     test('re-reads the bridge before each later post, including two in one response', async () => {
       mockBridged.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValue(true);
       axios.post

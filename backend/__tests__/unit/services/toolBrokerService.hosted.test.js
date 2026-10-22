@@ -763,6 +763,7 @@ describe('a hosted-MCP grant through the broker', () => {
       agentUserId: 'agent-a',
       agentName: 'openclaw',
       instanceId: 'aria',
+      noOutboundRelay: true,
       tool: 'linear.create_issue',
       args: { title: 'x' },
     })).rejects.toMatchObject({ code: 'approval_required' });
@@ -773,6 +774,7 @@ describe('a hosted-MCP grant through the broker', () => {
       expect.objectContaining({ agentName: 'openclaw' }),
     );
     expect(mockProposeAction).toHaveBeenCalledTimes(1);
+    expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({ noOutboundRelay: true }));
     // A parked write is assessed by tools/list but never sends tools/call.
     expect(toolCalls()).toHaveLength(0);
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'pending_approval' }));

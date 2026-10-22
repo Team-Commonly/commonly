@@ -1933,6 +1933,7 @@ export async function runAgent(
             agentUserId: seatUserId,
             agentName,
             instanceId,
+            noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
           });
           const elapsed = Date.now() - toolStart;
           if (brokerCall) {

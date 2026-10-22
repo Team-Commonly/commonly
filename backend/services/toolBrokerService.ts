@@ -97,6 +97,8 @@ export interface BrokerCallInput {
    * one this flag must not answer.
    */
   hostedTurn?: boolean;
+  /** Server-set native turn marker. A parked approval card must stay in the pod. */
+  noOutboundRelay?: boolean;
 }
 
 export interface BrokerCallResult {
@@ -1198,6 +1200,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
           summary: `${definition.description} (approval required)`,
           ownerUserId: connection.ownerUserId,
           agentUserId: input.agentUserId,
+          noOutboundRelay: input.noOutboundRelay,
           toolCall: {
             grantId: String((grant as Record<string, unknown>).grantId || input.grantId),
             callId,
