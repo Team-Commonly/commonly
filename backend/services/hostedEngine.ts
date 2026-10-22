@@ -174,6 +174,7 @@ export const HOSTED_NATIVE_TOOLS: readonly string[] = [
   'commonly_web_search',
   'commonly_run_code',
   'commonly_fetch_url',
+  'commonly_offer_local_agent',
 ];
 
 /** Recent messages a hosted turn sees, as Scout does. */
@@ -243,6 +244,12 @@ export const hostedNativeSystemPrompt = (
     // no hosted tool can do.
     + 'not on it. You can add tasks and read the board, but you cannot change a task\'s status or '
     + 'mark one done: if asked to, say so and point them to the pod\'s board. '
+    + 'If someone asks you to inspect or change code, files, or a repository on their own computer, '
+    + 'you cannot reach that computer. Ask which local tool they use (Claude Code, Codex, OpenCode, '
+    + 'or DeepSeek Harness) and which operating system if either is unknown. Once both are known, '
+    + 'call commonly_offer_local_agent instead of posting shell directions yourself. It posts one '
+    + 'handoff card with the exact commands and a Copy command button; do not post a second prose '
+    + 'handoff about the commands. '
     // QA walk 2026-10-16: asked to summarize the pod, a hosted agent also
     // searched the web and ran code, and the reply took 19 s instead of 7.
     + 'Answer a question about this pod from the pod itself; reach for the tools below '

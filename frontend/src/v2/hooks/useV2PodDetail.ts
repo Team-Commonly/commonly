@@ -72,7 +72,7 @@ export interface V2Message {
     users?: Array<{ id: string; username: string; displayName?: string }>;
   }>;
   // ADR-020 D3: structured component payload. `kind` discriminates renderers
-  // (approval-card first). Server-composed; survives normalizeMessage via
+  // (approval-card and byo-handoff). Server-composed; survives normalizeMessage via
   // the `...raw` spread — declared here so consumers can read it typed.
   payload?: {
     kind?: string;
@@ -92,6 +92,14 @@ export interface V2Message {
     expiresAt?: string;
     executionResult?: { podId?: string; podName?: string } | Record<string, unknown>;
     executionError?: string;
+    // kind 'byo-handoff': server-composed, token-free commands for a local
+    // runtime. The card copies commands[os] verbatim; it never rebuilds or
+    // interpolates a shell command in the browser.
+    adapter?: 'claude' | 'codex' | 'opencode' | 'dsh' | string;
+    podId?: string;
+    os?: 'mac' | 'linux' | 'windows' | string;
+    commands?: Partial<Record<'mac' | 'linux' | 'windows', string>>;
+    supportedOs?: Array<'mac' | 'linux' | 'windows' | string>;
     // Raw tool-call arguments are intentionally absent from the shared card
     // payload. The owner fetches this field from /api/approvals/pending while
     // the action is flagged; the backend scopes it to ownerUserId.
