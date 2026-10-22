@@ -12,6 +12,24 @@
 - **Amends, if accepted:** ADR-021 Part A.1 (the `agent-runtime` build spec). Everything else in ADR-021 — pi as the turn engine, staged OpenClaw retirement, the M1–M4 ladder, the fallback discipline — stands unchanged.
 - **Does NOT touch:** the shell (Express, MongoDB, PostgreSQL, Socket.io, the v2 frontend). See "What this is not" below, which is the most important section in this document.
 
+## Amendment, 2026-10-15: hosted turns run on the native runtime, and tools run in a sandbox
+
+- **Status:** **Accepted** 2026-10-15, ruled by Cofounder under Sam's delegation; Sam may overrule. Acknowledged unknowns this does not settle: per-user usage was measured on Scout as a proxy, because hosted agents write no run records yet (re-measured two weeks after Stage 2); how hosted turns behave under a spot-node reclaim; and E2B as an outside dependency.
+- **Scope-boundary note:** [ADR-011](ADR-011-shell-first-pre-gtm.md) paused the Tier 2 cloud sandbox. Its 2026-10-15 status update lifts that pause for the out-of-the-box goal only, and A2 below depends on that lift. [ADR-026](ADR-026-local-agent-daemon.md) (local execution) is unchanged.
+
+**Why.** W2 shipped as D1 selected: one Durable Object per hosted agent. Measured from a fresh account on 2026-10-15, it is fast (agent ready 26 s after signup, first useful reply about 10 s later) and honest, but its only tool reads pod context. It has no web, no code, no files, no connectors and no run records. It answered one of four basic asks (summarize the pod) and declined web lookup, running a script and reading a repo. Making it useful needs the connector broker, an `AgentRun` per turn, the per-user daily ceiling ([ADR-022](ADR-022-persona-colleagues.md) D5), the tool gate and the connector eligibility rule. `nativeRuntimeService` already has all five; the Durable Object has none.
+
+**A1. Hosted turns run on `nativeRuntimeService`** (Stage 1, about 2026-10-22). A `runtimeType: 'hosted'` install answers through the native loop, with DeepSeek through LiteLLM, so the platform fallbacks apply. It sits behind a per-install flag, and the Durable Object stays as the fallback until the native path reaches parity, then retires. This narrows D2: hosted agents move instead of the runtime being strangled in place, because the one-loop rule (CLAUDE.md design rule 6) outweighs keeping a second loop that would need the same five features.
+
+**A2. Tools run in an E2B sandbox** (Stage 2, about 2026-10-29). Each turn gets one Firecracker microVM, stopped when the turn ends so there is no idle billing. Outbound traffic is limited to listed hosts, and credentials come from the broker, never the prompt. Web lookup goes through the same egress path or a search API, whichever costs less per turn.
+- **Rejected:** the Cloudflare Sandbox SDK runs inside Workers, so the backend would need a proxy, and a sandbox left idle bills memory for 10 minutes. gVisor on our own cluster needs warm slots we would run, with no TypeScript SDK. Daytona shares the host kernel by default and has been closed source since June 2026.
+- **The exit:** E2B's runtime is Apache-2.0 and can be self-hosted.
+
+**A3. Cost is recorded and bounded.** Every hosted turn writes an `AgentRun`, and an alarm fires when any one user passes $2 in a day. The plan line ships with tools: 30 turns a day for free or individual, 200 for team or paid. DeepSeek stays the default, and a premium model is a paid add-on.
+- **Measured on 2026-10-15,** on DeepSeek V4.1-Flash at $0.30/$1.20 per million tokens, with Scout runs averaging 5,468 tokens: about $1–2.30 per user a month at the 90th percentile of use, and at most $6.70 at the 30-turn cap.
+- **The 200-turn cap is the tail,** at $14–44.
+- **The model sets the price, not the sandbox:** about $0.0004 per 20-second turn on E2B.
+
 ## Context
 
 Four things converged on 2026-08-15.
