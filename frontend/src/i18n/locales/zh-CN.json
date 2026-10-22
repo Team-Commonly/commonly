@@ -1937,7 +1937,7 @@
       "answer": "回答",
       "talk": "对话",
       "podsAria": "Pod",
-      "morePodsAria": "还有 {{count}} 个 Pod",
+      "morePodsAria": "还有{{count}}个 Pod",
       "age": {
         "now": "刚刚",
         "minutes": "{{count}}分",
