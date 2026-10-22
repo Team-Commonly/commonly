@@ -201,6 +201,12 @@ export interface IUser extends Document {
     firstStartId?: string;
     firstStartAt?: Date;
     byoOpenedAt?: Date;
+    /** First BYO setup command copied in the browser, never overwritten. */
+    byoCommandCopiedAt?: Date;
+    /** Fixed kind only; command contents and tokens are never stored. */
+    byoCommandType?: 'mcp' | 'cli';
+    /** First authenticated BYO runtime request, never overwritten. */
+    byoFirstConnectionAttemptAt?: Date;
     // The first-touch ref code the signup arrived with (?ref=x), set once at
     // account creation (utils/signupRef.ts).
     signupRef?: string;
@@ -417,6 +423,9 @@ const userSchema = new Schema<IUser>({
     firstStartId: { type: String },
     firstStartAt: { type: Date },
     byoOpenedAt: { type: Date },
+    byoCommandCopiedAt: { type: Date },
+    byoCommandType: { type: String, enum: ['mcp', 'cli'] },
+    byoFirstConnectionAttemptAt: { type: Date },
     signupRef: { type: String },
   },
   lastDigestSent: { type: Date },

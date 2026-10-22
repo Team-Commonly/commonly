@@ -11,6 +11,11 @@ jest.mock('../../models/User', () => ({
   updateOne: jest.fn(),
 }));
 
+const mockMarkByoConnectionAttempt = jest.fn();
+jest.mock('../../services/onboardingMarks', () => ({
+  markByoConnectionAttempt: (...args) => mockMarkByoConnectionAttempt(...args),
+}));
+
 // ADR-026 Phase 0: WS validation consults the credential ledger first.
 // Default null = legacy token with no row (the fallback the older cases
 // exercise); the revoked-credential case overrides per test.
@@ -38,6 +43,7 @@ describe('agentWebSocketService', () => {
     AgentCredential = require('../../models/AgentCredential');
     AgentCredential.findOne.mockResolvedValue(null);
     AgentCredential.findById.mockResolvedValue(null);
+    mockMarkByoConnectionAttempt.mockReset();
   });
 
   describe('validateAgentToken', () => {
@@ -123,6 +129,33 @@ describe('agentWebSocketService', () => {
         instanceId: 'cuz',
         agentUserId: 'user-1',
       });
+    });
+
+    it('marks the first BYO WebSocket connection for the human installer', async () => {
+      User.findOne.mockResolvedValue({
+        _id: 'user-1',
+        isBot: true,
+        username: 'my-byo-agent',
+        botMetadata: { agentName: 'my-byo-agent', instanceId: 'default' },
+        agentRuntimeTokens: [{ tokenHash: hash('cm_agent_first') }],
+      });
+      User.updateOne.mockResolvedValue({});
+      AgentInstallation.find.mockReturnValue({
+        select: () => ({
+          lean: async () => [{
+            podId: 'pod-123',
+            installedBy: 'human-1',
+            config: { runtime: { runtimeType: 'webhook', host: 'byo' } },
+          }],
+        }),
+      });
+
+      await agentWebSocketService.validateAgentToken('cm_agent_first');
+
+      expect(mockMarkByoConnectionAttempt).toHaveBeenCalledWith(
+        'human-1',
+        expect.objectContaining({ installedBy: 'human-1', podId: 'pod-123' }),
+      );
     });
 
     it('rejects a User-row token after the last installation is gone', async () => {

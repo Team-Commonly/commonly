@@ -78,6 +78,8 @@ router.get('/public', statsPublicLimit, async (_req: unknown, res: { json: (d: u
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
+const { markByoCommandCopied } = require('../services/onboardingMarks');
+// eslint-disable-next-line global-require
 const { rateLimit } = require('express-rate-limit');
 // eslint-disable-next-line global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
@@ -100,10 +102,17 @@ router.post('/byo-step', rateLimit({
 }), auth, async (req: any, res: any) => {
   const step = String(req.body?.step || '');
   if (!BYO_STEPS.has(step)) return res.status(400).json({ error: 'unknown step' });
+  if (step === 'mcp-command-copied' || step === 'cli-command-copied') {
+    // Keep the durable funnel mark small and fixed-enum. Never accept or store
+    // the copied command, which contains a runtime token.
+    markByoCommandCopied(req.userId, step === 'mcp-command-copied' ? 'mcp' : 'cli');
+  }
   try {
     await mongoose.connection.db.collection('byo_telemetry').insertOne({
       userId: req.userId,
       step,
+      ...(step === 'mcp-command-copied' ? { commandType: 'mcp' } : {}),
+      ...(step === 'cli-command-copied' ? { commandType: 'cli' } : {}),
       at: new Date(),
     });
   } catch (err: any) {

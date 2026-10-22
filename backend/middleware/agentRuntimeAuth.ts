@@ -7,6 +7,7 @@ import User, { IUser } from '../models/User';
 import { touchLastActive } from './auth';
 import Pod from '../models/Pod';
 import AgentCredential from '../models/AgentCredential';
+import { markByoConnectionAttempt } from '../services/onboardingMarks';
 import { isSpawnCredential } from '../services/spawnCredentialService';
 
 // eslint-disable-next-line global-require
@@ -181,6 +182,9 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       req.agentInstallation = (installations[0] as never) || null;
 
       if (isFirstTokenUse) {
+        for (const installationRow of installations) {
+          markByoConnectionAttempt(installationRow.installedBy, installationRow);
+        }
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
         void completeConnectAgentStarterTask({
@@ -237,6 +241,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       .filter(Boolean) as string[];
 
     if (isFirstLegacyTokenUse) {
+      markByoConnectionAttempt(installation.installedBy, installation);
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
       void completeConnectAgentStarterTask({

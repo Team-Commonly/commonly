@@ -9,7 +9,8 @@ jest.mock('../../../models/User', () => ({
 }));
 
 const {
-  markPodOpened, markStartPicked, markByoOpened, markWelcomeHostedStart, resetOnboardingMarksForTest,
+  markPodOpened, markStartPicked, markByoOpened, markByoCommandCopied,
+  markByoConnectionAttempt, markWelcomeHostedStart, resetOnboardingMarksForTest,
 } = require('../../../services/onboardingMarks');
 
 const flush = () => new Promise((r) => setImmediate(r));
@@ -161,25 +162,75 @@ describe('markByoOpened', () => {
   });
 });
 
-describe('the three marks together', () => {
+describe('BYO setup marks', () => {
+  test('records the first copied command as a fixed kind, never its contents', () => {
+    markByoCommandCopied('u1', 'mcp');
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'u1', isBot: { $ne: true }, 'onboarding.byoCommandCopiedAt': { $exists: false } },
+      { $set: {
+        'onboarding.byoCommandCopiedAt': expect.any(Date),
+        'onboarding.byoCommandType': 'mcp',
+      } },
+    );
+    expect(JSON.stringify(mockUpdateOne.mock.calls[0])).not.toMatch(/cm_agent|command text/i);
+  });
+
+  test('keeps only the first command kind and refuses invalid kinds', () => {
+    markByoCommandCopied('u1', 'cli');
+    markByoCommandCopied('u1', 'mcp');
+    markByoCommandCopied('u1', 'shell');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+  });
+
+  test('records a first BYO runtime attempt for the human installer, not the bot', () => {
+    markByoConnectionAttempt('u1', { config: { runtime: { host: 'byo', runtimeType: 'webhook' } } });
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'u1', isBot: { $ne: true }, 'onboarding.byoFirstConnectionAttemptAt': { $exists: false } },
+      { $set: { 'onboarding.byoFirstConnectionAttemptAt': expect.any(Date) } },
+    );
+  });
+
+  test('records the computer-placement runtime as BYO', () => {
+    markByoConnectionAttempt('u1', { config: { runtime: { runtimeType: 'wrapper' } } });
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not mark hosted, native, or push-webhook attempts', () => {
+    markByoConnectionAttempt('u1', { config: { runtime: { runtimeType: 'hosted' } } });
+    markByoConnectionAttempt('u2', { config: { runtime: { runtimeType: 'native' } } });
+    markByoConnectionAttempt('u3', { config: { runtime: { runtimeType: 'webhook', webhookUrl: 'https://example.test' } } });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+});
+
+describe('the onboarding marks together', () => {
   const fieldOf = ([filter]) => Object.keys(filter)[2];
 
   test('they are independent: having one never skips another', () => {
     markPodOpened('u1', { createdBy: 'u1' });
     markStartPicked('u1', { createdBy: 'u1' }, 'Connect an agent I already use');
     markByoOpened('u1');
+    markByoCommandCopied('u1', 'cli');
+    markByoConnectionAttempt('u1', { config: { runtime: { host: 'byo' } } });
     expect(mockUpdateOne.mock.calls.map(fieldOf))
-      .toEqual(['onboarding.podOpenedAt', 'onboarding.firstStartAt', 'onboarding.byoOpenedAt']);
+      .toEqual([
+        'onboarding.podOpenedAt', 'onboarding.firstStartAt', 'onboarding.byoOpenedAt',
+        'onboarding.byoCommandCopiedAt', 'onboarding.byoFirstConnectionAttemptAt',
+      ]);
   });
 
-  test('the reset seam forgets all three', () => {
+  test('the reset seam forgets all onboarding marks', () => {
     markPodOpened('u1', { createdBy: 'u1' });
     markStartPicked('u1', { createdBy: 'u1' }, 'Connect an agent I already use');
     markByoOpened('u1');
+    markByoCommandCopied('u1', 'cli');
+    markByoConnectionAttempt('u1', { config: { runtime: { host: 'byo' } } });
     resetOnboardingMarksForTest();
     markPodOpened('u1', { createdBy: 'u1' });
     markStartPicked('u1', { createdBy: 'u1' }, 'Connect an agent I already use');
     markByoOpened('u1');
-    expect(mockUpdateOne).toHaveBeenCalledTimes(6);
+    markByoCommandCopied('u1', 'cli');
+    markByoConnectionAttempt('u1', { config: { runtime: { host: 'byo' } } });
+    expect(mockUpdateOne).toHaveBeenCalledTimes(10);
   });
 });

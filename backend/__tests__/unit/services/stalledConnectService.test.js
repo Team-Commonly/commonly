@@ -122,6 +122,51 @@ describe('stalledConnectService.scan', () => {
     expect(posted.content).toContain("I'll post here the moment I connect");
   });
 
+  it('uses the copied-command mark to tell the installer what happened', async () => {
+    setup();
+    mockUserFindById.mockReturnValue({
+      select: () => ({
+        lean: () => Promise.resolve({
+          username: 'alice',
+          onboarding: {
+            byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+            byoCommandType: 'cli',
+          },
+        }),
+      }),
+    });
+
+    await scan({ now: NOW });
+
+    const posted = mockPost.mock.calls[0][0];
+    expect(posted.content).toContain(
+      'copied the listener command a few minutes after you created the seat',
+    );
+    expect(posted.content).toContain('no connection arrived');
+    expect(posted.content).toContain('one thing to check for your OS');
+  });
+
+  it('explains that an MCP-only client cannot answer mentions', async () => {
+    setup();
+    mockUserFindById.mockReturnValue({
+      select: () => ({
+        lean: () => Promise.resolve({
+          username: 'alice',
+          onboarding: {
+            byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+            byoCommandType: 'mcp',
+          },
+        }),
+      }),
+    });
+
+    await scan({ now: NOW });
+
+    expect(mockPost.mock.calls[0][0].content).toContain(
+      'MCP-only clients can call Commonly, but they do not answer @mentions',
+    );
+  });
+
   it('holds fire inside the patience window', async () => {
     setup({ installs: [install({ runtimeTokens: [{ createdAt: FRESH_TOKEN }] })] });
     const r = await scan({ now: NOW });

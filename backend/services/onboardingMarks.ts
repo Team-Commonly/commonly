@@ -32,6 +32,8 @@ import { SCOUT_STARTS } from '../config/native-agents/scout';
 const podOpenedMarked = new Set<string>();
 const startPickedMarked = new Set<string>();
 const byoOpenedMarked = new Set<string>();
+const byoCommandCopiedMarked = new Set<string>();
+const byoConnectionAttemptMarked = new Set<string>();
 
 export function markPodOpened(userId: unknown, pod: { createdBy?: unknown } | null | undefined): void {
   const id = String(userId || '');
@@ -108,9 +110,81 @@ export function markByoOpened(userId: unknown): void {
   }
 }
 
+/**
+ * Record that a person copied one of the BYO setup commands.
+ *
+ * Only the fixed command kind is kept. The command itself contains a runtime
+ * token, so it must never cross this boundary or be written to telemetry.
+ */
+export function markByoCommandCopied(userId: unknown, commandType: 'mcp' | 'cli'): void {
+  const id = String(userId || '');
+  if (!id || !['mcp', 'cli'].includes(commandType)) return;
+  if (byoCommandCopiedMarked.has(id)) return;
+  byoCommandCopiedMarked.add(id);
+  try {
+    User.updateOne(
+      { _id: id, isBot: { $ne: true }, 'onboarding.byoCommandCopiedAt': { $exists: false } },
+      {
+        $set: {
+          'onboarding.byoCommandCopiedAt': new Date(),
+          'onboarding.byoCommandType': commandType,
+        },
+      },
+    ).catch(() => {
+      byoCommandCopiedMarked.delete(id);
+    });
+  } catch {
+    // Telemetry fails open: it must never break the copy flow.
+    byoCommandCopiedMarked.delete(id);
+  }
+}
+
+/**
+ * Record the first authenticated request from a BYO/local runtime.
+ *
+ * The caller supplies the installation so hosted/native seats do not look
+ * like BYO activation. The installer is the human signup whose funnel this
+ * mark describes; the agent User row is deliberately not used here.
+ */
+export function markByoConnectionAttempt(
+  userId: unknown,
+  installation?: { config?: unknown },
+): void {
+  const config = installation?.config;
+  const runtime = config && typeof config === 'object' && 'get' in config
+    && typeof (config as { get?: unknown }).get === 'function'
+    ? (config as { get: (key: string) => unknown }).get('runtime') as {
+      runtimeType?: string;
+      host?: string;
+      webhookUrl?: string;
+    } || {}
+    : (config as { runtime?: { runtimeType?: string; host?: string; webhookUrl?: string } } | undefined)?.runtime || {};
+  const runtimeType = String(runtime.runtimeType || '').trim().toLowerCase();
+  const isByo = runtime.host === 'byo'
+    || runtimeType === 'wrapper'
+    || runtimeType === 'local-cli'
+    || (runtimeType === 'webhook' && !runtime.host && !runtime.webhookUrl);
+  const id = String(userId || '');
+  if (!id || !isByo || byoConnectionAttemptMarked.has(id)) return;
+  byoConnectionAttemptMarked.add(id);
+  try {
+    User.updateOne(
+      { _id: id, isBot: { $ne: true }, 'onboarding.byoFirstConnectionAttemptAt': { $exists: false } },
+      { $set: { 'onboarding.byoFirstConnectionAttemptAt': new Date() } },
+    ).catch(() => {
+      byoConnectionAttemptMarked.delete(id);
+    });
+  } catch {
+    // Telemetry fails open: auth must not fail because the mark cannot write.
+    byoConnectionAttemptMarked.delete(id);
+  }
+}
+
 /** Test seam: forget which people this process has marked. */
 export function resetOnboardingMarksForTest(): void {
   podOpenedMarked.clear();
   startPickedMarked.clear();
   byoOpenedMarked.clear();
+  byoCommandCopiedMarked.clear();
+  byoConnectionAttemptMarked.clear();
 }
