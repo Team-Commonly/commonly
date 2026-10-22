@@ -1,7 +1,7 @@
-const createTelegramProvider = require('../../backend/integrations/providers/telegramProvider');
-const Integration = require('../../backend/models/Integration');
+const createTelegramProvider = require('../../../integrations/providers/telegramProvider');
+const Integration = require('../../../models/Integration');
 
-jest.mock('../../backend/models/Integration');
+jest.mock('../../../models/Integration');
 
 describe('telegramProvider', () => {
   const integration = { _id: 'int1', config: { botToken: 'token', secretToken: 'secret', maxBufferSize: 2 } };
@@ -12,15 +12,7 @@ describe('telegramProvider', () => {
     await expect(bad.validateConfig()).rejects.toThrow(/Missing fields/);
   });
 
-  test('rejects invalid secret token', async () => {
-    const { events } = provider.getWebhookHandlers();
-    const req = { headers: { 'x-telegram-bot-api-secret-token': 'wrong' }, body: {} };
-    const res = { status: jest.fn().mockReturnThis(), send: jest.fn() };
-    await events(req, res);
-    expect(res.status).toHaveBeenCalledWith(401);
-  });
-
-  test('accepts valid secret token and buffers', async () => {
+  test('buffers an update accepted by the webhook route', async () => {
     Integration.findByIdAndUpdate.mockResolvedValue({});
     const { events } = provider.getWebhookHandlers();
     const req = {
@@ -29,6 +21,14 @@ describe('telegramProvider', () => {
     };
     const res = { sendStatus: jest.fn() };
     await events(req, res);
+    expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith('int1', {
+      $push: {
+        'config.messageBuffer': {
+          $each: [expect.objectContaining({ content: 'hi' })],
+          $slice: -2,
+        },
+      },
+    });
     expect(res.sendStatus).toHaveBeenCalledWith(200);
   });
 

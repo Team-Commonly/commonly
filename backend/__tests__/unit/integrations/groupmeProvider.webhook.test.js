@@ -1,7 +1,12 @@
-const createGroupMeProvider = require('../../backend/integrations/providers/groupmeProvider');
-const Integration = require('../../backend/models/Integration');
+const createGroupMeProvider = require('../../../integrations/providers/groupmeProvider');
+const Integration = require('../../../models/Integration');
 
-jest.mock('../../backend/models/Integration');
+jest.mock('../../../models/Integration');
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  Integration.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+});
 
 describe('groupmeProvider', () => {
   const integration = { _id: 'int1', config: { botId: 'bot', groupId: '123', maxBufferSize: 2 } };
@@ -18,6 +23,7 @@ describe('groupmeProvider', () => {
     const res = { status: jest.fn().mockReturnThis(), send: jest.fn() };
     await events(req, res);
     expect(res.status).toHaveBeenCalledWith(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
   test('events ignores bot messages and succeeds', async () => {
@@ -27,6 +33,7 @@ describe('groupmeProvider', () => {
     const res = { sendStatus: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
     await events(req, res);
     expect(res.sendStatus).toHaveBeenCalledWith(200);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
   test('ingestEvent normalizes user message', async () => {
