@@ -18,6 +18,9 @@ def select(paths):
         return {suite: True for suite in SUITES}
 
     for path in paths:
+        if path == "docs/runbooks/alerting.md":
+            selected["chart"] = True
+            continue
         if path.startswith("docs/") or ("/" not in path and path.endswith(".md")):
             continue
         if path.startswith("backend/"):

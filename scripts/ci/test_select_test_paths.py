@@ -14,6 +14,11 @@ class SelectTestPathsTest(unittest.TestCase):
             "backend": False, "frontend": True, "tools": False, "chart": False,
         })
 
+    def test_alerting_runbook_checks_chart_policy(self):
+        self.assertEqual(select(["docs/runbooks/alerting.md"]), {
+            "backend": False, "frontend": False, "tools": False, "chart": True,
+        })
+
     def test_backend_change_also_checks_chart(self):
         self.assertEqual(select(["backend/src/server.ts"]), {
             "backend": True, "frontend": False, "tools": False, "chart": True,
