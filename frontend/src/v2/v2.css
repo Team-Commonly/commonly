@@ -522,10 +522,8 @@ body.modern-ui.v2-canvas {
 
 .v2-pane--rail {
   background: var(--v2-shell-bg);
-  /* The rail is only 76px wide, so its language dropdown (a wider floating
-     menu) must be allowed to escape the pane instead of being clipped by the
-     base .v2-pane `overflow: hidden`. The rail's own content is self-contained
-     (brand centered, nav scrolls internally), so only the menu overflows. */
+  /* The 56px rail lets the language menu, attention badge and nav hover labels
+     escape the pane instead of clipping them at its edge. */
   overflow: visible;
 }
 
@@ -670,8 +668,17 @@ body.modern-ui.v2-canvas {
   flex-direction: column;
   gap: 4px;
   min-height: 0;
-  overflow-y: auto;
+  overflow: visible;
   padding-right: 0;
+}
+
+/* Below the rail's fixed chrome (245px) plus six nav items (212px), scroll
+   the nav vertically while keeping its horizontal overflow hidden. */
+@media (max-height: 460px) {
+  .v2-rail__nav {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
 }
 
 .v2-root button.v2-rail__item {
