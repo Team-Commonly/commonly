@@ -52,7 +52,11 @@ describe('V2BYOHandoffCard', () => {
     );
 
     expect(screen.getByTestId('byo-handoff-card')).toBeInTheDocument();
-    expect(screen.getByTestId('byo-handoff-command')).toHaveTextContent(command);
+    expect(screen.getByRole('link', { name: 'OpenCode setup guide' })).toHaveAttribute(
+      'href',
+      'https://github.com/Team-Commonly/commonly/blob/main/docs/cli/opencode.md',
+    );
+    expect(screen.getByTestId('byo-handoff-command').textContent).toBe(command);
     fireEvent.click(screen.getByTestId('byo-handoff-copy'));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
@@ -84,6 +88,6 @@ describe('V2BYOHandoffCard', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Linux' }));
-    expect(screen.getByTestId('byo-handoff-command')).toHaveTextContent(linux);
+    expect(screen.getByTestId('byo-handoff-command').textContent).toBe(linux);
   });
 });

@@ -9,6 +9,11 @@ const OS_OPTIONS: Array<{ os: HandoffOs; label: string }> = [
   { os: 'windows', label: 'byoHandoff.osWindows' },
 ];
 
+const ADAPTER_GUIDES: Record<string, string> = {
+  opencode: 'https://github.com/Team-Commonly/commonly/blob/main/docs/cli/opencode.md',
+  dsh: 'https://github.com/Team-Commonly/commonly/blob/main/docs/cli/dsh.md',
+};
+
 const browserOs = (): HandoffOs => {
   if (typeof navigator === 'undefined') return 'mac';
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
@@ -44,6 +49,7 @@ const V2BYOHandoffCard: React.FC<V2BYOHandoffCardProps> = ({ message, authorLabe
   const command = payload.commands?.[os] || payload.commands?.[availableOs[0]] || '';
   const adapter = payload.adapter || 'local';
   const adapterLabel = t(`byoHandoff.adapters.${adapter}`, { defaultValue: adapter });
+  const adapterGuide = ADAPTER_GUIDES[adapter];
 
   const copyCommand = async () => {
     if (!command) return;
@@ -105,7 +111,17 @@ const V2BYOHandoffCard: React.FC<V2BYOHandoffCardProps> = ({ message, authorLabe
           {copied ? t('byoHandoff.copied') : t('byoHandoff.copy')}
         </button>
         {availableOs.length === 1 && (
-          <div className="v2-byo-handoff__note">{t('byoHandoff.availableOn')}</div>
+          <div className="v2-byo-handoff__note">
+            {t('byoHandoff.availableOn')}
+            {adapterGuide && (
+              <>
+                {' '}
+                <a href={adapterGuide} target="_blank" rel="noopener noreferrer">
+                  {t('byoHandoff.setupGuide', { adapter: adapterLabel })}
+                </a>
+              </>
+            )}
+          </div>
         )}
       </div>
     </div>

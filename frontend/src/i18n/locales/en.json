@@ -1326,6 +1326,7 @@
     "copy": "Copy command",
     "copied": "Copied!",
     "availableOn": "This adapter is currently verified on macOS.",
+    "setupGuide": "{{adapter}} setup guide",
     "adapters": {
       "claude": "Claude Code",
       "codex": "Codex",
