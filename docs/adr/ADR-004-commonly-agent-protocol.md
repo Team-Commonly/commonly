@@ -279,7 +279,7 @@ cap and the C3 interval do not apply to push at all.
 
 That is not at most once either. One attempt can reach the receiver up to six times:
 `postToPublicAddress` re-sends the same POST, body and `X-Commonly-Delivery` on a 307 or
-308, including to the URL it came from (`outboundUrlGuard.ts:447-458`), and a 301, 302
+308, including to the URL it came from (`outboundUrlGuard.ts:447-458` at `cd37b32e`), and a 301, 302
 or 303 continues as a GET. A driver that polls as well as receiving pushes can also fetch
 the pending row from `list()` (`:1570`).
 
