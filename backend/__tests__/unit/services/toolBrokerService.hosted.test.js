@@ -609,7 +609,8 @@ describe('a hosted-MCP grant through the broker', () => {
       const args = approved ? { title: 'approved issue' } : {};
       const invocation = approved ? executeApprovedToolCall({
         grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.create_issue', args,
-        expectedArgsDigest: digestArgs(args), approvalId: 'approval-private-body',
+        expectedArgsDigest: digestArgs(args), expectedDefinitionDigest: currentWriteDigest(),
+        approvalId: 'approval-private-body',
       }) : callTool({
         grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args, hostedTurn: true,
       });
