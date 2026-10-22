@@ -77,11 +77,13 @@ export interface ToolCallRecord {
   at?: Date;
   outcome: ToolCallOutcome;
   reason?: string;
+  vendorStatus?: number;
+  vendorError?: string;
   approvalId?: string;
   durationMs?: number;
 }
 
-const DDL = `
+export const TOOL_CALL_DDL = `
 CREATE TABLE IF NOT EXISTS tool_call_budgets (
   grant_id VARCHAR(255) PRIMARY KEY,
   calls_used INTEGER NOT NULL DEFAULT 0,
@@ -100,13 +102,17 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   reason VARCHAR(255),
   approval_id VARCHAR(255),
   duration_ms INTEGER,
-  credential_owner_id VARCHAR(255)
+  credential_owner_id VARCHAR(255),
+  vendor_status INTEGER,
+  vendor_error VARCHAR(200)
 );
 CREATE INDEX IF NOT EXISTS idx_tool_calls_grant_at ON tool_calls(grant_id, occurred_at DESC);
 -- The table self-bootstraps rather than being part of schema.sql, so an
 -- instance that created it before the trail carried a credential owner needs
 -- the retrofitted column; CREATE TABLE IF NOT EXISTS alone never adds one.
 ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS credential_owner_id VARCHAR(255);
+ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS vendor_status INTEGER;
+ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS vendor_error VARCHAR(200);
 `;
 
 let ensured = false;
@@ -121,7 +127,7 @@ const ensureTables = async (): Promise<PgPool> => {
   const db = ensurePool();
   if (ensured) return db;
   if (!ensureInFlight) {
-    ensureInFlight = db.query(DDL)
+    ensureInFlight = db.query(TOOL_CALL_DDL)
       .then(() => {
         ensured = true;
         return db;
@@ -239,8 +245,8 @@ class ToolCall {
       `INSERT INTO tool_calls
        (call_id, grant_id, pod_id, installation_id, agent_user_id, tool,
         args_digest, occurred_at, outcome, reason, approval_id, duration_ms,
-        credential_owner_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        credential_owner_id, vendor_status, vendor_error)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
       [
         record.callId,
         record.grantId,
@@ -255,6 +261,8 @@ class ToolCall {
         record.approvalId || null,
         record.durationMs ?? null,
         record.credentialOwnerId || null,
+        record.vendorStatus ?? null,
+        record.vendorError || null,
       ],
     );
   }
@@ -265,7 +273,7 @@ class ToolCall {
       `SELECT tc.call_id, tc.grant_id, tc.pod_id, tc.installation_id, tc.agent_user_id,
               tc.tool, tc.args_digest, tc.occurred_at, tc.credential_owner_id,
               ${EFFECTIVE_OUTCOME} AS effective_outcome,
-              tc.reason, tc.approval_id, tc.duration_ms
+              tc.reason, tc.approval_id, tc.duration_ms, tc.vendor_status, tc.vendor_error
        FROM tool_calls tc
        LEFT JOIN ${RESOLVED_SIBLINGS}
          ON resolved.grant_id = tc.grant_id AND resolved.approval_id = tc.approval_id
@@ -285,6 +293,9 @@ class ToolCall {
       at: new Date(String(row.occurred_at)),
       outcome: String(row.effective_outcome) as ToolCallDisplayOutcome,
       reason: row.reason ? String(row.reason) : undefined,
+      vendorStatus: row.vendor_status === null || row.vendor_status === undefined
+        ? undefined : Number(row.vendor_status),
+      vendorError: row.vendor_error ? String(row.vendor_error) : undefined,
       approvalId: row.approval_id ? String(row.approval_id) : undefined,
       durationMs: row.duration_ms === null || row.duration_ms === undefined
         ? undefined : Number(row.duration_ms),

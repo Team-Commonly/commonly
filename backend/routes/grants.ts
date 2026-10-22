@@ -540,6 +540,8 @@ router.get('/:grantId/calls', grantRateLimit, dualAuth, async (req: Authenticate
         tool: row.tool,
         outcome: row.outcome,
         reason: row.reason ?? null,
+        vendorStatus: row.vendorStatus ?? null,
+        vendorError: row.vendorError ?? null,
         approvalId: row.approvalId ?? null,
         argsDigest: row.argsDigest,
         at: row.at ?? null,

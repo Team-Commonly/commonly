@@ -42,10 +42,11 @@ jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
 }));
 jest.mock('../../../services/roomGrantService', () => {
   class MockRoomGrantError extends Error {
-    constructor(code, message, statusCode = 400) {
+    constructor(code, message, statusCode = 400, details) {
       super(message);
       this.code = code;
       this.statusCode = statusCode;
+      this.details = details;
     }
   }
   return {
@@ -71,7 +72,7 @@ jest.mock('../../../services/roomGrantService', () => {
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const { callTool } = require('../../../services/toolBrokerService');
 // eslint-disable-next-line import/no-unresolved, import/extensions
-const { assertGrantUsable, getGrantLineage } = require('../../../services/roomGrantService');
+const { assertGrantUsable, getGrantLineage, RoomGrantError } = require('../../../services/roomGrantService');
 
 // The row a grant was minted for always predates the grant; the guard compares
 // these two, so both fixtures carry the field the models always write.
@@ -430,6 +431,23 @@ describe('tool broker guard rails', () => {
     });
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
       credentialOwnerId: 'owner-2',
+    }));
+  });
+
+  it('copies bounded vendor diagnostics into the failed call trail', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+    mockGithub.listOpenIssues.mockRejectedValue(new RoomGrantError(
+      'provider_error', 'vendor refused', 502,
+      { vendorStatus: 400, vendorError: `session required\n${'private detail'.repeat(30)}` },
+    ));
+    const call = callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {},
+    });
+    await expect(call).rejects.toMatchObject({ code: 'provider_error' });
+    await expect(call).rejects.not.toHaveProperty('details.vendorError');
+    await expect(call).rejects.not.toHaveProperty('details.vendorStatus');
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failed', reason: 'provider_error', vendorStatus: 400, vendorError: 'session required',
     }));
   });
 

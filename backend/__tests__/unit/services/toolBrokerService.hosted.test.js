@@ -186,9 +186,19 @@ const listReply = () => ({
   jsonrpc: '2.0', id: 'list-1',
   result: { tools: upstreamTools },
 });
+const sessionFetch = (answer) => jest.fn(async (url, init) => {
+  if (init.method === 'DELETE') return new Response(null, { status: 204 });
+  const body = JSON.parse(init.body);
+  if (body.method === 'initialize') return new Response(JSON.stringify({
+    jsonrpc: '2.0', id: body.id,
+    result: { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'fixture', version: '1' } },
+  }), { status: 200, headers: { 'content-type': 'application/json', 'mcp-session-id': 'fixture-session' } });
+  if (body.method === 'notifications/initialized') return new Response(null, { status: 202 });
+  return answer(url, init);
+});
 const vendorFetch = (answer = async () => new Response(JSON.stringify(okReply), {
   status: 200, headers: { 'content-type': 'application/json' },
-})) => jest.fn(async (url, init) => {
+})) => sessionFetch(async (url, init) => {
   if (JSON.parse(init.body).method === 'tools/list') {
     return new Response(JSON.stringify(listReply()), {
       status: 200, headers: { 'content-type': 'application/json' },
@@ -196,7 +206,9 @@ const vendorFetch = (answer = async () => new Response(JSON.stringify(okReply), 
   }
   return answer(url, init);
 });
-const toolCalls = () => global.fetch.mock.calls.filter(([, init]) => JSON.parse(init.body).method === 'tools/call');
+const toolCalls = () => global.fetch.mock.calls.filter(([, init]) => (
+  init.method === 'POST' && JSON.parse(init.body).method === 'tools/call'
+));
 
 // The shipped catalogue, kept so this suite can put it back: the fixtures below
 // pin their own entry, and since step 7 the real Linear entry is a member of
@@ -458,7 +470,7 @@ describe('a hosted-MCP grant through the broker', () => {
     mockCredentialFor.mockImplementation(async (row) => ({
       token: row._id === otherId ? 'tok-b' : 'tok-a',
     }));
-    global.fetch = jest.fn(async (_url, init) => {
+    global.fetch = sessionFetch(async (_url, init) => {
       const method = JSON.parse(init.body).method;
       const tools = init.headers.Authorization === 'Bearer tok-b'
         ? [{ ...upstreamTools[0], inputSchema: { type: 'object', properties: { extra: { type: 'string' } } } }, upstreamTools[1]]
@@ -474,7 +486,9 @@ describe('a hosted-MCP grant through the broker', () => {
     await expect(callTool({
       grantId: 'grant-b', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
     })).rejects.toMatchObject({ code: 'tool_drift' });
-    const lists = global.fetch.mock.calls.filter(([, init]) => JSON.parse(init.body).method === 'tools/list');
+    const lists = global.fetch.mock.calls.filter(([, init]) => (
+      init.method === 'POST' && JSON.parse(init.body).method === 'tools/list'
+    ));
     expect(lists).toHaveLength(2);
     expect(lists.map(([, init]) => init.headers.Authorization)).toEqual(['Bearer tok-a', 'Bearer tok-b']);
     require('../../../services/hostedMcpToolDefinitions').forgetHostedMcpDrift(otherId);
@@ -555,6 +569,53 @@ describe('a hosted-MCP grant through the broker', () => {
       reason: 'provider_error',
     }));
     expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused' }));
+  });
+
+  it('persists no quoted JSON credential fields from a vendor 400', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    global.fetch = sessionFetch(async (_url, init) => {
+      const method = JSON.parse(init.body).method;
+      if (method === 'tools/list') return new Response(JSON.stringify({
+        access_token: 'SECOND_ACCESS_SENTINEL',
+        refresh_token: 'REFRESH_SENTINEL',
+        client_secret: 'CLIENT_SECRET_SENTINEL',
+      }), { status: 400, headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify(okReply), { headers: { 'content-type': 'application/json' } });
+    });
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'provider_error' });
+    const [record] = mockToolCall.create.mock.calls[0];
+    expect(record).toMatchObject({ outcome: 'failed', vendorStatus: 400 });
+    expect(record.vendorError).toBeUndefined();
+    expect(JSON.stringify(record)).not.toContain('SENTINEL');
+  });
+
+  it('excludes private fields from oversized JSON in direct and approved ToolCall writes', async () => {
+    const body = JSON.stringify({ private_note: 'PRIVATE_BODY_SENTINEL', padding: 'x'.repeat(5000) });
+    for (const approved of [false, true]) {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant(approved ? {
+        tools: ['linear.create_issue'], writeMode: 'write-with-confirm',
+      } : {}));
+      global.fetch = sessionFetch(async (_url, init) => {
+        if (JSON.parse(init.body).method === 'tools/list') {
+          return new Response(body, { status: 400, headers: { 'content-type': 'application/json' } });
+        }
+        return new Response(JSON.stringify(okReply), { headers: { 'content-type': 'application/json' } });
+      });
+      const args = approved ? { title: 'approved issue' } : {};
+      const invocation = approved ? executeApprovedToolCall({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.create_issue', args,
+        expectedArgsDigest: digestArgs(args), approvalId: 'approval-private-body',
+      }) : callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args, hostedTurn: true,
+      });
+      await expect(invocation).rejects.toMatchObject({ code: 'provider_error' });
+      const [record] = mockToolCall.create.mock.calls.at(-1);
+      expect(record).toMatchObject({ outcome: 'failed', vendorStatus: 400 });
+      expect(record.vendorError).toBeUndefined();
+      expect(JSON.stringify(record)).not.toContain('PRIVATE_BODY_SENTINEL');
+    }
   });
 
   it('records a vendor tool error after owner approval as failed with its approval id', async () => {

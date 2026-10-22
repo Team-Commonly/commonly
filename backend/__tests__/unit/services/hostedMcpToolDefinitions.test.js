@@ -59,8 +59,23 @@ const sseResponse = (frames, status = 200) => new Response(frames.join('\n'), {
 
 const okReply = { jsonrpc: '2.0', id: 'call-1', result: { content: [{ type: 'text', text: 'ok' }] } };
 
+const sessionFetcher = (handler) => jest.fn(async (url, init) => {
+  if (init.method === 'DELETE') return new Response(null, { status: 204 });
+  const body = JSON.parse(init.body);
+  if (body.method === 'initialize') return new Response(JSON.stringify({
+    jsonrpc: '2.0', id: body.id, result: { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'fixture', version: '1' } },
+  }), { status: 200, headers: { 'content-type': 'application/json', 'mcp-session-id': 'session-1' } });
+  if (body.method === 'notifications/initialized') return new Response(null, { status: 202 });
+  return handler(url, init);
+});
+
+const toolCalls = (deps) => deps.fetcher.mock.calls.filter(([, init]) => {
+  if (init.method !== 'POST') return false;
+  return !['initialize', 'notifications/initialized'].includes(JSON.parse(init.body).method);
+});
+
 const makeDeps = (overrides = {}) => ({
-  fetcher: jest.fn(async () => jsonResponse(okReply)),
+  fetcher: sessionFetcher(overrides.fetcher || jest.fn(async () => jsonResponse(okReply))),
   loadRow: jest.fn(async () => ({
     _id: ROW_ID,
     type: 'hosted-mcp',
@@ -74,7 +89,7 @@ const makeDeps = (overrides = {}) => ({
       state: 'assessed', entryId: entry.id, tools: entry.tools.map((tool) => ({ name: tool.name, verdict: 'ok' })),
     })),
   },
-  ...overrides,
+  ...Object.fromEntries(Object.entries(overrides).filter(([key]) => key !== 'fetcher')),
 });
 
 const definitionFor = (name, deps, entries) => {
@@ -89,6 +104,276 @@ const expectRefusal = async (promise, code) => {
 };
 
 describe('hosted-MCP tool definitions', () => {
+  it('initializes and carries the negotiated session through tools/list and tools/call', async () => {
+    let nextSession = 0;
+    const initialized = new Set();
+    const calls = [];
+    const fetcher = jest.fn(async (_url, init) => {
+      const session = init.headers['Mcp-Session-Id'];
+      if (init.method === 'DELETE') {
+        expect(initialized.has(session)).toBe(true);
+        return new Response(null, { status: 204 });
+      }
+      const body = JSON.parse(init.body);
+      calls.push({ method: body.method, session, version: init.headers['MCP-Protocol-Version'] });
+      if (body.method === 'initialize') {
+        expect(session).toBeUndefined();
+        expect(body.params).toMatchObject({ protocolVersion: '2025-11-25', capabilities: {} });
+        nextSession += 1;
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {
+          protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'fake', version: '1' },
+        } }), { headers: { 'content-type': 'application/json', 'mcp-session-id': `s-${nextSession}` } });
+      }
+      if (!session || init.headers['MCP-Protocol-Version'] !== '2025-06-18') {
+        return jsonResponse({ error: { code: -32000 } }, 400);
+      }
+      if (body.method === 'notifications/initialized') {
+        initialized.add(session);
+        return new Response(null, { status: 202 });
+      }
+      if (!initialized.has(session)) return jsonResponse({ error: { code: -32000 } }, 400);
+      if (body.method === 'tools/list') return jsonResponse({ jsonrpc: '2.0', id: body.id, result: {
+        tools: [{ name: 'list_issues', inputSchema: ENTRY.tools[0].inputSchema }],
+      } });
+      if (body.method === 'tools/call') return jsonResponse(okReply);
+      throw new Error(`unexpected ${body.method}`);
+    });
+    const deps = makeDeps();
+    deps.fetcher = fetcher;
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual(okReply.result);
+    expect(calls.map(({ method }) => method)).toEqual([
+      'initialize', 'notifications/initialized', 'tools/list',
+      'initialize', 'notifications/initialized', 'tools/call',
+    ]);
+    expect(calls[2].session).toBe('s-1');
+    expect(calls[5].session).toBe('s-2');
+    expect(fetcher.mock.calls.filter(([, init]) => init.method === 'DELETE')).toHaveLength(2);
+  });
+
+  it('records a tools/list JSON-RPC code without logging a token or vendor body', async () => {
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const deps = makeDeps({ fetcher: jest.fn(async () => jsonResponse({
+        jsonrpc: '2.0', id: 'call-1', error: { code: -32002, message: 'secret vendor detail' },
+      })) });
+      deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+      await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
+      const logged = warning.mock.calls.map(([value]) => String(value)).join(' ');
+      expect(logged).toContain('"rpcCode":-32002');
+      expect(logged).not.toContain('access-token-1');
+      expect(logged).not.toContain('secret vendor detail');
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
+  it('opens a fresh session after the vendor expires one before tools/list', async () => {
+    let opened = 0;
+    let listed = 0;
+    const fetcher = jest.fn(async (_url, init) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      const body = JSON.parse(init.body);
+      if (body.method === 'initialize') {
+        expect(init.headers['Mcp-Session-Id']).toBeUndefined();
+        opened += 1;
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {
+          protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'fake', version: '1' },
+        } }), { headers: { 'content-type': 'application/json', 'mcp-session-id': `s-${opened}` } });
+      }
+      if (body.method === 'notifications/initialized') return new Response(null, { status: 202 });
+      if (body.method === 'tools/list') {
+        listed += 1;
+        if (listed === 1) return jsonResponse({}, 404);
+        expect(init.headers['Mcp-Session-Id']).toBe('s-2');
+        return jsonResponse({ jsonrpc: '2.0', id: body.id, result: {
+          tools: [{ name: 'list_issues', inputSchema: ENTRY.tools[0].inputSchema }],
+        } });
+      }
+      throw new Error(`unexpected ${body.method}`);
+    });
+    const deps = makeDeps();
+    deps.fetcher = fetcher;
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expect(deps.driftCache.assess({ connectionId: ROW_ID }, ENTRY))
+      .resolves.toMatchObject({ state: 'assessed' });
+    expect(opened).toBe(2);
+    expect(listed).toBe(2);
+  });
+
+  it('uses the negotiated version without a session ID when the server assigns none', async () => {
+    const fetcher = jest.fn(async (_url, init) => {
+      if (init.method === 'DELETE') throw new Error('sessionless servers have no DELETE');
+      const body = JSON.parse(init.body);
+      expect(init.headers['Mcp-Session-Id']).toBeUndefined();
+      if (body.method === 'initialize') return jsonResponse({ jsonrpc: '2.0', id: body.id, result: {
+        protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'sessionless', version: '1' },
+      } });
+      expect(init.headers['MCP-Protocol-Version']).toBe('2025-06-18');
+      if (body.method === 'notifications/initialized') return new Response(null, { status: 202 });
+      if (body.method === 'tools/list') return jsonResponse({ jsonrpc: '2.0', id: body.id, result: {
+        tools: [{ name: 'list_issues', inputSchema: ENTRY.tools[0].inputSchema }],
+      } });
+      if (body.method === 'tools/call') return jsonResponse(okReply);
+      throw new Error(`unexpected ${body.method}`);
+    });
+    const deps = makeDeps();
+    deps.fetcher = fetcher;
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual(okReply.result);
+  });
+
+  it('refuses a second 404 rather than reinitializing again', async () => {
+    let opened = 0;
+    const fetcher = jest.fn(async (_url, init) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      const body = JSON.parse(init.body);
+      if (body.method === 'initialize') {
+        opened += 1;
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {
+          protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'fake', version: '1' },
+        } }), { headers: { 'content-type': 'application/json', 'mcp-session-id': `s-${opened}` } });
+      }
+      if (body.method === 'notifications/initialized') return new Response(null, { status: 202 });
+      return jsonResponse({}, 404);
+    });
+    const deps = makeDeps();
+    deps.fetcher = fetcher;
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
+    expect(opened).toBe(2);
+  });
+
+  it.each(['list', 'call'])('renews once when initialized notification gets a session-bound 404 on %s', async (path) => {
+    let opened = 0;
+    const fetcher = jest.fn(async (_url, init) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      const body = JSON.parse(init.body);
+      if (body.method === 'initialize') {
+        expect(init.headers['Mcp-Session-Id']).toBeUndefined();
+        opened += 1;
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {
+          protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'fixture', version: '1' },
+        } }), { headers: { 'content-type': 'application/json', 'mcp-session-id': `s-${opened}` } });
+      }
+      if (body.method === 'notifications/initialized') {
+        expect(init.headers['Mcp-Session-Id']).toBe(`s-${opened}`);
+        return new Response(null, { status: opened === 1 ? 404 : 202 });
+      }
+      expect(init.headers['Mcp-Session-Id']).toBe('s-2');
+      if (body.method === 'tools/list') return jsonResponse({ jsonrpc: '2.0', id: body.id, result: {
+        tools: [{ name: 'list_issues', inputSchema: ENTRY.tools[0].inputSchema }],
+      } });
+      if (body.method === 'tools/call') return jsonResponse(okReply);
+      throw new Error(`unexpected ${body.method}`);
+    });
+    const deps = makeDeps();
+    deps.fetcher = fetcher;
+    if (path === 'list') {
+      deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+      await expect(deps.driftCache.assess({ connectionId: ROW_ID }, ENTRY))
+        .resolves.toMatchObject({ state: 'assessed' });
+    } else {
+      await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual(okReply.result);
+    }
+    expect(opened).toBe(2);
+  });
+
+  it('does not keep renewing a notification that returns 404 twice', async () => {
+    let opened = 0;
+    const fetcher = jest.fn(async (_url, init) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      const body = JSON.parse(init.body);
+      if (body.method === 'initialize') {
+        opened += 1;
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {
+          protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'fixture', version: '1' },
+        } }), { headers: { 'content-type': 'application/json', 'mcp-session-id': `s-${opened}` } });
+      }
+      return new Response(null, { status: 404 });
+    });
+    const deps = makeDeps();
+    deps.fetcher = fetcher;
+    await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
+    expect(opened).toBe(2);
+  });
+
+  it('carries a bounded vendor 400 line to the broker without its token or body', async () => {
+    const deps = makeDeps({ fetcher: jest.fn(async () => new Response(
+      'session required: access-token-1 vendor-secret-12345678901234567890\nprivate second line',
+      { status: 400, headers: { 'content-type': 'text/plain' } },
+    )) });
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).rejects.toMatchObject({
+      code: 'provider_error',
+      details: { vendorStatus: 400, vendorError: 'session required: [redacted] [redacted]' },
+    });
+  });
+
+  it('does not keep a JSON error body containing short quoted credential values', async () => {
+    const body = JSON.stringify({
+      access_token: 'SECOND_ACCESS_SENTINEL', refresh_token: 'REFRESH_SENTINEL',
+      client_secret: 'CLIENT_SECRET_SENTINEL',
+    });
+    const deps = makeDeps({ fetcher: jest.fn(async () => new Response(body, {
+      status: 400, headers: { 'content-type': 'application/json' },
+    })) });
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).rejects.toMatchObject({
+      code: 'provider_error', details: { vendorStatus: 400 },
+    });
+    try {
+      await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
+    } catch (error) {
+      expect(JSON.stringify(error.details)).not.toContain('SENTINEL');
+      expect(error.details.vendorError).toBeUndefined();
+    }
+  });
+
+  it('discards an oversized structured vendor error before any private field can enter the trail', async () => {
+    const body = JSON.stringify({ private_note: 'PRIVATE_BODY_SENTINEL', padding: 'x'.repeat(5000) });
+    const deps = makeDeps({ fetcher: jest.fn(async () => new Response(body, {
+      status: 400, headers: { 'content-type': 'application/json' },
+    })) });
+    try {
+      await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
+      throw new Error('expected provider refusal');
+    } catch (error) {
+      expect(error.code).toBe('provider_error');
+      expect(error.details).toMatchObject({ vendorStatus: 400 });
+      expect(error.details.vendorError).toBeUndefined();
+      expect(JSON.stringify(error.details)).not.toContain('PRIVATE_BODY_SENTINEL');
+    }
+  });
+
+  it('discards malformed JSON instead of recording it as a plain-text vendor error', async () => {
+    const deps = makeDeps({ fetcher: jest.fn(async () => new Response(
+      '{"private_note":"PRIVATE_BODY_SENTINEL",',
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    )) });
+    try {
+      await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
+      throw new Error('expected provider refusal');
+    } catch (error) {
+      expect(error.code).toBe('provider_error');
+      expect(error.details.vendorError).toBeUndefined();
+      expect(JSON.stringify(error.details)).not.toContain('PRIVATE_BODY_SENTINEL');
+    }
+  });
+
+  it('redacts short quoted credentials inside a selected JSON-RPC error message', async () => {
+    const deps = makeDeps({ fetcher: jest.fn(async () => jsonResponse({
+      jsonrpc: '2.0', id: 'call-1', error: {
+        code: -32000,
+        message: 'session failed: {"access_token":"SHORT","client_secret":"TINY"}',
+      },
+    }, 400)) });
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).rejects.toMatchObject({
+      code: 'provider_error',
+      details: { vendorStatus: 400,
+        vendorError: 'JSON-RPC -32000: session failed: {access_token=[redacted],client_secret=[redacted]}' },
+    });
+  });
+
   it('refuses a drifted pin inside callHostedTool before tools/call', async () => {
     const deps = makeDeps({
       fetcher: jest.fn(async () => jsonResponse({
@@ -100,13 +385,13 @@ describe('hosted-MCP tool definitions', () => {
     });
     deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
     await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'tool_drift');
-    expect(deps.fetcher).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(deps.fetcher.mock.calls[0][1].body).method).toBe('tools/list');
+    expect(toolCalls(deps)).toHaveLength(1);
+    expect(JSON.parse(toolCalls(deps)[0][1].body).method).toBe('tools/list');
   });
 
   it('reads every tools/list page before deciding a pinned tool is missing', async () => {
     const deps = makeDeps();
-    deps.fetcher = jest.fn(async (_url, init) => {
+    deps.fetcher = sessionFetcher(jest.fn(async (_url, init) => {
       const body = JSON.parse(init.body);
       if (body.method === 'tools/call') return jsonResponse(okReply);
       if (!body.params.cursor) return jsonResponse({
@@ -117,12 +402,12 @@ describe('hosted-MCP tool definitions', () => {
           name: 'list_issues', inputSchema: ENTRY.tools[0].inputSchema,
         }] },
       });
-    });
+    }));
     deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
     await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual(okReply.result);
-    const methods = deps.fetcher.mock.calls.map(([, init]) => JSON.parse(init.body).method);
+    const methods = toolCalls(deps).map(([, init]) => JSON.parse(init.body).method);
     expect(methods).toEqual(['tools/list', 'tools/list', 'tools/call']);
-    expect(JSON.parse(deps.fetcher.mock.calls[1][1].body).params.cursor).toBe('page-2');
+    expect(JSON.parse(toolCalls(deps)[1][1].body).params.cursor).toBe('page-2');
   });
 
   it('classifies malformed tools/list JSON as a vendor error before tools/call', async () => {
@@ -133,8 +418,8 @@ describe('hosted-MCP tool definitions', () => {
     });
     deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
     await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
-    expect(deps.fetcher).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(deps.fetcher.mock.calls[0][1].body).method).toBe('tools/list');
+    expect(toolCalls(deps)).toHaveLength(1);
+    expect(JSON.parse(toolCalls(deps)[0][1].body).method).toBe('tools/list');
   });
 
   it('offers nothing when the catalogue is empty, and one definition per pinned tool otherwise', () => {
@@ -175,8 +460,8 @@ describe('hosted-MCP tool definitions', () => {
     const definition = definitionFor('linear.list_issues', deps);
     const result = await definition.call({ limit: 5 }, CONNECTION);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0];
+    expect(toolCalls(deps)).toHaveLength(1);
+    const [url, init] = toolCalls(deps)[0];
     expect(url).toBe('https://mcp.linear.app/mcp');
     expect(init.method).toBe('POST');
     expect(init.headers.Authorization).toBe('Bearer access-token-1');
@@ -220,7 +505,7 @@ describe('hosted-MCP tool definitions', () => {
     const deps = makeDeps();
     const definition = definitionFor('linear.create_issue', deps);
     await definition.call({}, CONNECTION).catch(() => {});
-    expect(JSON.parse(deps.fetcher.mock.calls[0][1].body).params.name).toBe('createIssue');
+    expect(JSON.parse(toolCalls(deps)[0][1].body).params.name).toBe('createIssue');
   });
 
   it('fetches the credential per call, for the row the connection names', async () => {
@@ -244,6 +529,21 @@ describe('hosted-MCP tool definitions', () => {
     });
     await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION))
       .resolves.toEqual({ content: [{ type: 'text', text: 'ok' }] });
+  });
+
+  it('returns an SSE reply before the vendor closes the stream', async () => {
+    let cancelled = false;
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(okReply)}\n`));
+      },
+      cancel() { cancelled = true; },
+    });
+    const deps = makeDeps({ fetcher: jest.fn(async () => new Response(stream, {
+      status: 200, headers: { 'content-type': 'text/event-stream' },
+    })) });
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual(okReply.result);
+    expect(cancelled).toBe(true);
   });
 
   it('skips SSE frames that are not the reply, and refuses a stream that never carries one', async () => {
@@ -347,6 +647,6 @@ describe('hosted-MCP tool definitions', () => {
     expect(HOSTED_MCP_CALL_TIMEOUT_MS).toBe(30 * 1000);
     const deps = makeDeps();
     await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
-    expect(deps.fetcher.mock.calls[0][1].signal).toBeDefined();
+    expect(toolCalls(deps)[0][1].signal).toBeDefined();
   });
 });

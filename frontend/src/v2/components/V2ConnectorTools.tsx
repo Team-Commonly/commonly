@@ -662,6 +662,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             <span className="v2-connector-row__kicker">
               {kicker}
               {!dead && <span className="v2-connector-row__kicker-mode"> · {asksFirst(grant)}</span>}
+              {entry?.entryId === 'atlassian' && <span> · {t('tools.readInTesting', { defaultValue: 'read in testing' })}</span>}
             </span>
             <strong>
               {/* Direction A: what the tool does is the not-yet row's and the aside's sentence, not the granted row's. */}
@@ -717,7 +718,10 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
           <span>{entry.label}</span>
         </span>
         <span className="v2-connector-row__details">
-          <span className="v2-connector-row__kicker">{t('tools.notGranted', { defaultValue: 'not granted' })}</span>
+          <span className="v2-connector-row__kicker">
+            {t('tools.notGranted', { defaultValue: 'not granted' })}
+            {entry.entryId === 'atlassian' && <span> · {t('tools.readInTesting', { defaultValue: 'read in testing' })}</span>}
+          </span>
           <strong>{entry.description}</strong>
           <span className="v2-connector-row__detail">
             {!entry.available

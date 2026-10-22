@@ -2165,6 +2165,7 @@
     "outcomeRefused": "已拒绝",
     "outcomeSuperseded": "已回答",
     "owner": "所有者",
+    "readInTesting": "只读功能测试中",
     "readOrWrite": "读取，或读取和写入",
     "refused": "拒绝",
     "repository": "仓库",
