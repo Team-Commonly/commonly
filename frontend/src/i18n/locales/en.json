@@ -493,18 +493,21 @@
     "newPod": {
       "label": "New pod starter actions",
       "title": "Your pod is ready",
-      "text": "Bring in people or an agent, or start the conversation yourself.",
       "dismiss": "Dismiss starter actions",
+      "runHere": "Run it here",
+      "bringOwn": "Bring your own",
+      "hosted": {
+        "installing": "Adding agent…",
+        "starting": "Starting agent…",
+        "running": "Agent running"
+      },
+      "hostedError": "The agent could not start. Try again.",
+      "hostedSlow": "The agent was added, but has not checked in yet.",
       "inviteTitle": "Invite people",
-      "inviteText": "Share this link to bring teammates in.",
       "preparingInvite": "Creating invite link…",
       "inviteLinkLabel": "Invite link for this pod",
       "inviteError": "The invite link could not be created.",
-      "tryAgain": "Try again",
-      "addAgentTitle": "Add an agent",
-      "addAgentText": "Choose an agent to add to this pod.",
-      "messageTitle": "Write the first message",
-      "messageText": "Start the conversation in the composer."
+      "tryAgain": "Try again"
     },
     "heartbeat": {
       "recent_one": "{{formattedCount}} recent heartbeat",

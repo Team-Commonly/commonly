@@ -3,7 +3,7 @@ import React from 'react';
 import {
   act, fireEvent, render, screen, waitFor,
 } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
@@ -72,10 +72,13 @@ const makeDetail = (overrides = {}) => ({
   ...overrides,
 });
 
+const CurrentPath = () => <div data-testid="current-path">{useLocation().pathname}{useLocation().search}</div>;
+
 const renderChat = (detail, props = {}) => render(
   <AuthContext.Provider value={authValue}>
     <MemoryRouter>
       <V2Thread detail={detail} {...props} />
+      <CurrentPath />
     </MemoryRouter>
   </AuthContext.Provider>,
 );
@@ -297,16 +300,22 @@ describe('V2Thread just-created Pod starter panel', () => {
     jest.clearAllMocks();
     sessionStorage.clear();
     axios.post.mockResolvedValue({ data: {} });
+    axios.get.mockResolvedValue({ data: {} });
   });
 
-  test('pre-generates a copyable invite and offers agent and composer actions', async () => {
+  test('renders one-click hosted and bring-your-own buttons with no subtitle copy', async () => {
     const token = 'd'.repeat(32);
-    const onOpenInvite = jest.fn();
     sessionStorage.setItem('v2.justCreated.p1', '1');
     axios.post.mockResolvedValueOnce({ data: { token } });
-    renderChat(makeDetail(), { onOpenInvite });
+    axios.get.mockImplementation((url) => Promise.resolve({
+      data: url === '/api/hosted/pod-start-availability' ? { configured: true } : {},
+    }));
+    renderChat(makeDetail());
 
     expect(await screen.findByText('Your pod is ready')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Run it here' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Bring your own' })).toBeInTheDocument();
+    expect(screen.queryByText('Bring in people or an agent, or start the conversation yourself.')).not.toBeInTheDocument();
     await waitFor(() => {
       expect(axios.post).toHaveBeenCalledWith(
         '/api/pods/p1/invites',
@@ -320,12 +329,75 @@ describe('V2Thread just-created Pod starter panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(inviteUrl));
 
-    fireEvent.click(screen.getByRole('button', { name: /^Add an agent/ }));
-    expect(onOpenInvite).toHaveBeenCalledWith('agent');
+    fireEvent.click(screen.getByRole('button', { name: 'Run it here' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/registry/install',
+      expect.objectContaining({
+        agentName: 'solo-user-p1', podId: 'p1', config: { runtime: { runtimeType: 'hosted' } },
+      }),
+      expect.any(Object),
+    ));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/hosted/provision', { agentName: 'solo-user-p1' }, expect.any(Object),
+    ));
+    expect(screen.getByRole('button', { name: 'Starting agent…' })).toBeDisabled();
+  });
 
-    const composer = screen.getByPlaceholderText('Message My Workspace…');
-    fireEvent.click(screen.getByRole('button', { name: /^Write the first message/ }));
-    expect(composer).toHaveFocus();
+  test('bring-your-own opens setup with this pod selected when hosting is unavailable', async () => {
+    sessionStorage.setItem('v2.justCreated.p1', '1');
+    axios.post.mockResolvedValueOnce({ data: { token: 'b'.repeat(32) } });
+    axios.get.mockResolvedValue({ data: { configured: false } });
+    renderChat(makeDetail());
+
+    expect(await screen.findByRole('button', { name: 'Bring your own' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Run it here' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Bring your own' }));
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/agents/byo?pod=p1');
+  });
+
+  test('native hosted status marks the agent running after the one-click start', async () => {
+    sessionStorage.setItem('v2.justCreated.p1', '1');
+    axios.post.mockResolvedValueOnce({ data: { token: 'c'.repeat(32) } });
+    axios.get.mockImplementation((url) => Promise.resolve({
+      data: url === '/api/hosted/pod-start-availability'
+        ? { configured: true }
+        : url.startsWith('/api/hosted/status?') ? { runtime: { ready: true } } : {},
+    }));
+    const detail = makeDetail();
+    renderChat(detail);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Run it here' }));
+    expect(await screen.findByRole('button', { name: 'Agent running' })).toBeInTheDocument();
+    expect(detail.refresh).toHaveBeenCalled();
+  });
+
+  test('a delayed hosted status from another pod cannot mark this pod running', async () => {
+    sessionStorage.setItem('v2.justCreated.p1', '1');
+    sessionStorage.setItem('v2.justCreated.p2', '1');
+    let resolveStatus;
+    const delayedStatus = new Promise((resolve) => { resolveStatus = resolve; });
+    axios.post.mockResolvedValue({ data: { token: 'f'.repeat(32) } });
+    axios.get.mockImplementation((url) => {
+      if (url === '/api/hosted/pod-start-availability') return Promise.resolve({ data: { configured: true } });
+      if (url.startsWith('/api/hosted/status?')) return delayedStatus;
+      return Promise.resolve({ data: {} });
+    });
+    const wrap = (detail) => (
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter><V2Thread detail={detail} /></MemoryRouter>
+      </AuthContext.Provider>
+    );
+    const view = render(wrap(makeDetail()));
+    fireEvent.click(await screen.findByRole('button', { name: 'Run it here' }));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(
+      '/api/hosted/status?agentName=solo-user-p1', expect.any(Object),
+    ));
+
+    view.rerender(wrap(makeDetail({ pod: { _id: 'p2', name: 'Second', type: 'chat' } })));
+    expect(await screen.findByRole('button', { name: 'Run it here' })).toBeEnabled();
+    await act(async () => { resolveStatus({ data: { runtime: { ready: true } } }); });
+    expect(screen.getByRole('button', { name: 'Run it here' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Agent running' })).not.toBeInTheDocument();
   });
 
   test('stays absent without the flag or after messages arrive', async () => {

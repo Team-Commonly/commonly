@@ -186,6 +186,17 @@ describe('/api/hosted', () => {
     expect(mockMarkByoOpened).toHaveBeenCalledWith('owner-1');
   });
 
+  it('checks new-pod hosted availability without marking Bring your own opened', async () => {
+    const on = await request(app).get('/api/hosted/pod-start-availability');
+    expect(on.status).toBe(200);
+    expect(on.body).toEqual({ configured: true });
+    expect(mockMarkByoOpened).not.toHaveBeenCalled();
+    expect(mockHosted.hostedCapsForOwner).not.toHaveBeenCalled();
+    mockHosted.isConfigured.mockReturnValue(false);
+    const off = await request(app).get('/api/hosted/pod-start-availability');
+    expect(off.body).toEqual({ configured: false });
+  });
+
   it('503s with a code when the runtime is not configured, before touching the DB', async () => {
     mockHosted.isConfigured.mockReturnValue(false);
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });

@@ -1475,8 +1475,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the new-pod starter panel shrinks and stacks inside the mobile chat pane', () => {
     const panel = ruleBody(v2, '.v2-chat__new-pod');
     const actions = ruleBody(v2, '.v2-chat__new-pod-actions');
+    const hosted = ruleBody(v2, '.v2-root button.v2-chat__new-pod-action--hosted');
     expect(panel).toContain('width: min(760px, 100%)');
-    expect(actions).toContain('repeat(2, minmax(0, 1fr))');
+    expect(actions).toContain('repeat(3, minmax(0, 1fr))');
+    expect(hosted).toContain('background: var(--v2-ink)');
     expect(v2).toContain('.v2-chat__new-pod-actions {\n    grid-template-columns: minmax(0, 1fr)');
   });
 
