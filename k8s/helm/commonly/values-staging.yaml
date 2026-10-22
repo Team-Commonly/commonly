@@ -20,6 +20,12 @@
 global:
   namespace: commonly-staging
 
+# First install runs `helm upgrade --install --create-namespace`, so the chart
+# must NOT also emit a Namespace object — it would fight helm for ownership of
+# commonly-staging. Same reason values-local.yaml disables it. Prod keeps its
+# chart-managed namespace (createNamespace defaults true in values.yaml).
+createNamespace: false
+
 externalSecrets:
   enabled: true
   # Staging reads commonly-staging-NAME keys, disjoint from prod's commonly-dev-.
