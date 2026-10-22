@@ -34,6 +34,16 @@ test('the pre-registered entries include Google Calendar, so the checks below ar
   expect(preRegistered.map((entry) => entry.id)).toContain('google-calendar');
 });
 
+// The environment-scoped Secret Manager key prefix is templated so a second
+// release (staging) can read commonly-staging-<key> from the same project. The
+// default must resolve to the prod prefix, which is what makes the templated
+// remoteRef asserted below resolve to commonly-dev-<key> in prod.
+test('api-keys defaults the SM key prefix to commonly-dev-', () => {
+  expect(apiKeys).toMatch(
+    /\$keyPrefix := \.Values\.externalSecrets\.keyPrefix \| default "commonly-dev-"/,
+  );
+});
+
 // A non-empty table even when the list empties, so the guard above is what
 // fails, by name, rather than jest refusing an empty `.each` at load time
 // (Vera, #2111). The placeholder id is mapped nowhere, so its arms fail too.
@@ -49,8 +59,10 @@ describe.each(wiringTable)('%s client wiring', (entryId) => {
     (envName) => {
       const key = apiKeysKeyForEnv(envName);
       expect(key).not.toBeNull();
+      // remoteRef key is templated `{{ $keyPrefix }}<key>`; $keyPrefix defaults
+      // to commonly-dev- (asserted above), so this resolves to commonly-dev-<key>.
       expect(apiKeys).toMatch(new RegExp(
-        `- secretKey: ${key}\\n\\s+remoteRef:\\n\\s+key: commonly-dev-${key}\\n`,
+        `- secretKey: ${key}\\n\\s+remoteRef:\\n\\s+key: \\{\\{ \\$keyPrefix \\}\\}${key}\\n`,
       ));
     },
   );
