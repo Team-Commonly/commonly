@@ -13,6 +13,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { getApiAliasUrl } from '../../utils/apiBaseUrl';
 import { useRelativeNow } from '../hooks/useRelativeNow';
 import { localizeRelativeTime, localizeWindow } from '../utils/localizeRelativeTime';
 import { useAuth } from '../../context/AuthContext';
@@ -520,10 +521,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     setBusy(true);
     setError(null);
     try {
+      // On the API's own host, not the shell's, for the same reason: the vendor's callback is
+      // registered there, so that is where the nonce cookie has to be set (getApiAliasUrl).
       const result = await api.post<{ authorizeUrl?: string }>(
         `/api/integrations/connect/hosted-mcp/${encodeURIComponent(entry.entryId)}/start`,
         {},
-        { withCredentials: true },
+        { withCredentials: true, baseURL: getApiAliasUrl() },
       );
       if (!result.authorizeUrl) throw new Error('authorization URL was missing');
       if (authorizationWindow) {

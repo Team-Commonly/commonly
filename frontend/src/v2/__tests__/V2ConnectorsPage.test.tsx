@@ -545,6 +545,40 @@ describe('V2ConnectorsPage', () => {
     expect(slackWindow.opener).toBeNull();
   });
 
+  // Same-origin build (2026-10): the shell calls its API on commonly.me, but this call sets the
+  // nonce cookie Slack's callback must carry, and that callback is registered on api.commonly.me.
+  // If it ever resolves to the shell's host, the cookie lands on the wrong host and every Slack
+  // connect fails its nonce check.
+  it('keeps the Slack authorization call on the API host in a same-origin build', async () => {
+    const saved = { base: process.env.REACT_APP_API_URL, alias: process.env.REACT_APP_API_ALIAS_URL };
+    process.env.REACT_APP_API_URL = 'https://commonly.me';
+    process.env.REACT_APP_API_ALIAS_URL = 'https://api.commonly.me';
+    try {
+      jest.mocked(window.open).mockReturnValue({ location: { assign: jest.fn() }, close: jest.fn(), opener: window } as unknown as Window);
+      mockGets([{
+        _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+        config: { connectCode: 'a'.repeat(32), connectCodeExpiresAt: new Date(Date.now() + 60_000).toISOString() },
+        podId: { _id: 'p1', name: 'Rewire Live Demo' },
+      }]);
+      axios.post.mockResolvedValue({ data: { authorizeUrl: 'https://slack.test/oauth?state=secret' } });
+      renderPage();
+
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Authorize in Slack' }))[0]);
+      await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+        '/api/installables/slack/authorize-url',
+        {},
+        expect.objectContaining({ withCredentials: true, baseURL: 'https://api.commonly.me' }),
+      ));
+      const call = axios.post.mock.calls.find((c: unknown[]) => c[0] === '/api/installables/slack/authorize-url');
+      const origin = new URL(call[0], call[2].baseURL).origin;
+      expect(origin).toBe('https://api.commonly.me');
+      expect(origin).not.toBe('https://commonly.me');
+    } finally {
+      if (saved.base === undefined) delete process.env.REACT_APP_API_URL; else process.env.REACT_APP_API_URL = saved.base;
+      if (saved.alias === undefined) delete process.env.REACT_APP_API_ALIAS_URL; else process.env.REACT_APP_API_ALIAS_URL = saved.alias;
+    }
+  });
+
   it('keeps an un-coded Slack authorization failure generic — the fallback, row and aside (Row C control)', async () => {
     mockGets([{
       _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
