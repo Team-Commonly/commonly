@@ -47,6 +47,15 @@ discord:
 email:
   enabled: false
 
+# No prod GitHub PAT on staging. The shared commonly-github-pat has write power over
+# prod repos, and staging auto-deploys every merge (the reckless lane), so the
+# api-keys render must not reference it (Cofounder's ruling, same principle as
+# keeping atlasAdmin off staging). The backend reads GITHUB_PAT lazily and degrades
+# (GitHub routes report not-configured). If staging agents ever need git, that is a
+# separate fine-grained PAT on a throwaway repo, post-11/1.
+githubPat:
+  enabled: false
+
 # Staging renders NO Ingress object. A staging Ingress would be picked up by the
 # single shared ingress-nginx controller and reload prod routing (R1). Staging
 # is reached only through its own cloudflared tunnel, straight to Services.

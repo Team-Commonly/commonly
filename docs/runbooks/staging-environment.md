@@ -15,12 +15,12 @@ Services.
 ## Secrets (External Secrets Operator)
 
 ESO syncs secrets from Secret Manager into the staging namespace. The staging
-render references **48** keys across three ExternalSecrets — **41 staging-prefixed**
+render references **47** keys across three ExternalSecrets — **41 staging-prefixed**
 (`commonly-staging-*`, disjoint from prod's `commonly-dev-*`, via
-`externalSecrets.keyPrefix: commonly-staging-`) and **7 shared with prod**
+`externalSecrets.keyPrefix: commonly-staging-`) and **6 shared with prod**
 (`commonly-*`):
 
-- **api-keys (44)** — 38 staging-prefixed + 6 shared.
+- **api-keys (43)** — 38 staging-prefixed + 5 shared.
   - Of the 38 staging-prefixed: model/search **API keys are copied** from the dev
     values (gemini, openrouter×2, openai, anthropic, brave×2); **JWT, session, and
     internal-connector** secrets (clawdbot-gateway, commonly-bot-runtime,
@@ -28,15 +28,18 @@ render references **48** keys across three ExternalSecrets — **41 staging-pref
     id + secret), **GitHub-App** (id, private-key, installation-id), **codex**, and
     **external-bot** (groupme, telegram) keys are **non-functional placeholders**,
     filled only when those integrations are configured for staging.
-  - The 6 shared (`commonly-*`, deliberately not staging-prefixed): the Cloudflare
+  - The 5 shared (`commonly-*`, deliberately not staging-prefixed): the Cloudflare
     Workers-AI token + account id (low power), the Git author name + email
-    (harmless), the shared DeepSeek API key (a spend risk, not access — a post-11/1
-    row swaps it for a capped staging key), and **`commonly-github-pat`** — the
-    **real prod GitHub PAT**, which lands as `api-keys.GITHUB_PAT` in the staging
-    backend and gateway. Staging auto-deploys every merge (the reckless lane), so a
-    prod PAT with write power there is an exposure, and it is **being removed from
-    the staging render in a follow-up PR** (Cofounder's ruling — the same principle
-    that keeps atlasAdmin off staging). The other five shared refs stay.
+    (harmless), and the shared DeepSeek API key (a spend risk, not access — a
+    post-11/1 row swaps it for a capped staging key).
+  - **Deliberately NOT shared — the prod GitHub PAT.** `commonly-github-pat` has
+    write power over prod repos, and staging auto-deploys every merge (the reckless
+    lane), so `githubPat.enabled: false` in values-staging omits the `GITHUB_PAT`
+    ref from the staging render entirely (Cofounder's ruling — the same principle
+    that keeps atlasAdmin off staging). The backend reads GITHUB_PAT lazily and
+    degrades (GitHub routes report not-configured) rather than crashing. Staging
+    agents that ever need git get a separate fine-grained PAT on a throwaway repo,
+    post-11/1.
 - **database-credentials (3, all staging-prefixed).** The Postgres role password,
   and the Mongo URI + password (see Databases).
 - **postgres-ca-cert (1, shared).** Reuses `commonly-pg-ca-cert`.
