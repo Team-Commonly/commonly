@@ -163,14 +163,22 @@ const sanitizeVendorError = (value: string, token: string): string | undefined =
 
 const vendorErrorLine = async (response: Response, token: string): Promise<string | undefined> => {
   try {
-    const body = (await response.text()).slice(0, 4096);
+    const body = await response.text();
+    // Never turn a truncated or malformed structured response into a plain-text
+    // diagnostic: it may contain unrelated private fields before the error.
+    if (body.length > 4096) return undefined;
+    const isStructured = response.headers.get('content-type')?.toLowerCase().includes('json')
+      || /^[\s]*[\[{]/.test(body);
     let line: string | undefined;
-    try {
-      const parsed = JSON.parse(body) as { error?: { code?: unknown; message?: unknown } };
-      if (typeof parsed.error?.message === 'string') {
+    if (isStructured) {
+      let parsed: { error?: { code?: unknown; message?: unknown } };
+      try { parsed = JSON.parse(body); } catch { return undefined; }
+      if (typeof parsed?.error?.message === 'string') {
         line = `JSON-RPC ${String(parsed.error.code ?? 'error')}: ${parsed.error.message}`;
       }
-    } catch { line = body; /* Plain-text vendor error. */ }
+    } else {
+      line = body;
+    }
     return line ? sanitizeVendorError(line, token) : undefined;
   } catch { return undefined; }
 };

@@ -329,6 +329,37 @@ describe('hosted-MCP tool definitions', () => {
     }
   });
 
+  it('discards an oversized structured vendor error before any private field can enter the trail', async () => {
+    const body = JSON.stringify({ private_note: 'PRIVATE_BODY_SENTINEL', padding: 'x'.repeat(5000) });
+    const deps = makeDeps({ fetcher: jest.fn(async () => new Response(body, {
+      status: 400, headers: { 'content-type': 'application/json' },
+    })) });
+    try {
+      await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
+      throw new Error('expected provider refusal');
+    } catch (error) {
+      expect(error.code).toBe('provider_error');
+      expect(error.details).toMatchObject({ vendorStatus: 400 });
+      expect(error.details.vendorError).toBeUndefined();
+      expect(JSON.stringify(error.details)).not.toContain('PRIVATE_BODY_SENTINEL');
+    }
+  });
+
+  it('discards malformed JSON instead of recording it as a plain-text vendor error', async () => {
+    const deps = makeDeps({ fetcher: jest.fn(async () => new Response(
+      '{"private_note":"PRIVATE_BODY_SENTINEL",',
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    )) });
+    try {
+      await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
+      throw new Error('expected provider refusal');
+    } catch (error) {
+      expect(error.code).toBe('provider_error');
+      expect(error.details.vendorError).toBeUndefined();
+      expect(JSON.stringify(error.details)).not.toContain('PRIVATE_BODY_SENTINEL');
+    }
+  });
+
   it('redacts short quoted credentials inside a selected JSON-RPC error message', async () => {
     const deps = makeDeps({ fetcher: jest.fn(async () => jsonResponse({
       jsonrpc: '2.0', id: 'call-1', error: {

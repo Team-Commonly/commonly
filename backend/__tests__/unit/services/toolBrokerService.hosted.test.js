@@ -591,6 +591,33 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(JSON.stringify(record)).not.toContain('SENTINEL');
   });
 
+  it('excludes private fields from oversized JSON in direct and approved ToolCall writes', async () => {
+    const body = JSON.stringify({ private_note: 'PRIVATE_BODY_SENTINEL', padding: 'x'.repeat(5000) });
+    for (const approved of [false, true]) {
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant(approved ? {
+        tools: ['linear.create_issue'], writeMode: 'write-with-confirm',
+      } : {}));
+      global.fetch = sessionFetch(async (_url, init) => {
+        if (JSON.parse(init.body).method === 'tools/list') {
+          return new Response(body, { status: 400, headers: { 'content-type': 'application/json' } });
+        }
+        return new Response(JSON.stringify(okReply), { headers: { 'content-type': 'application/json' } });
+      });
+      const args = approved ? { title: 'approved issue' } : {};
+      const invocation = approved ? executeApprovedToolCall({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.create_issue', args,
+        expectedArgsDigest: digestArgs(args), approvalId: 'approval-private-body',
+      }) : callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args, hostedTurn: true,
+      });
+      await expect(invocation).rejects.toMatchObject({ code: 'provider_error' });
+      const [record] = mockToolCall.create.mock.calls.at(-1);
+      expect(record).toMatchObject({ outcome: 'failed', vendorStatus: 400 });
+      expect(record.vendorError).toBeUndefined();
+      expect(JSON.stringify(record)).not.toContain('PRIVATE_BODY_SENTINEL');
+    }
+  });
+
   it('records a vendor tool error after owner approval as failed with its approval id', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
       tools: ['linear.create_issue'],
