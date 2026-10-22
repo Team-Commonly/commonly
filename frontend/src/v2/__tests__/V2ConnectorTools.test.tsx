@@ -139,6 +139,8 @@ test('one owner grant read shows the 21st pod and keeps revoked and expired labe
   expect(await screen.findAllByRole('button', { name: 'View GitHub in Pod 21' })).toHaveLength(3);
   expect(screen.getByText(/revoked by sam 10m/)).toBeInTheDocument();
   expect(screen.getByText(/expired 10m/)).toBeInTheDocument();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Grant again' })[0]);
+  expect(await screen.findByRole('option', { name: 'Pod 21' })).toBeInTheDocument();
   const grantReads = axios.get.mock.calls.filter(([url]) => url === '/api/grants');
   expect(grantReads).toHaveLength(1);
   expect(grantReads[0][1]).toMatchObject({ params: { connectionOwner: 'me' } });
