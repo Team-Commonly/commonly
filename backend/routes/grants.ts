@@ -280,6 +280,13 @@ const connectionOwnerId = (connection: any): string => String(
   connection?.createdBy || connection?.config?.linkedUserId || '',
 );
 
+/** Connection ids are stored as either the row id or its external installation id. */
+const connectionIdsOf = (connection: any): string[] => [
+  connection?._id,
+  connection?.installationId,
+  connection?.config?.installationId,
+].filter(Boolean).map(String);
+
 const getTargetMembers = async (target: { kind: 'pod' | 'seat'; id: string }): Promise<string[] | undefined> => {
   // Seat grants already identify their single target; there is no pod census
   // to intersect for them. The broker still checks the explicit audience.
@@ -586,6 +593,42 @@ router.get('/:grantId', dualGrantCredential, grantRateLimit, dualAuth, async (re
     const currentMembers = grant.target.kind === 'seat' ? grant.audience : gate.members;
     const confinements = await seatGrantRefusals([grant]);
     return res.json(projectGrant(grant, currentMembers, gate.granter, confinements.get(grant.grantId)));
+  } catch (error) {
+    return handleError(res, error);
+  }
+});
+
+/** The Tools page lists the caller's own connection grants across every pod. */
+router.get('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    const userId = callerId(req);
+    if (!userId) return res.status(401).json({ error: 'unauthorized' });
+    if (req.query.connectionOwner !== 'me') return res.status(400).json({ error: 'invalid_connection_owner' });
+
+    const connections = await Integration.find({ createdBy: userId })
+      .select('_id installationId config.installationId createdBy')
+      .lean();
+    const connectionIds = Array.from(new Set(connections
+      .filter((connection: any) => connectionOwnerId(connection) === userId)
+      .flatMap(connectionIdsOf)));
+    if (!connectionIds.length) return res.json({ grants: [] });
+
+    const grants = await RoomGrant.find({ connectionId: { $in: connectionIds } })
+      .sort({ createdAt: -1 }).lean();
+    const podIds = Array.from(new Set(grants
+      .filter((grant) => grant.target.kind === 'pod' && Types.ObjectId.isValid(grant.target.id))
+      .map((grant) => grant.target.id)));
+    const [pods, confinements] = await Promise.all([
+      podIds.length ? Pod.find({ _id: { $in: podIds } }).select('members').lean() : [],
+      seatGrantRefusals(grants),
+    ]);
+    const membersByPod = new Map(pods.map((pod: any) => [String(pod._id), memberIdsOf(pod)]));
+    return res.json({ grants: grants.map((grant) => projectGrant(
+      grant,
+      grant.target.kind === 'seat' ? grant.audience : membersByPod.get(grant.target.id) || [],
+      userId,
+      confinements.get(grant.grantId),
+    )) });
   } catch (error) {
     return handleError(res, error);
   }
