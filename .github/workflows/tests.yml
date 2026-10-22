@@ -128,6 +128,16 @@ jobs:
           npx jest --coverage --watchAll=false --forceExit
           node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs
 
+      # The node:test files under external/commonly-agent-services were run by
+      # no job, so the agent services' own helpers were ungated, including the
+      # one that decides what text reaches a pod summary surface (#2406).
+      # Listed by file, like the frontend scripts step above.
+      - name: Run agent service tests
+        run: |
+          node --test \
+            external/commonly-agent-services/shared/delivery-nonce.test.js \
+            external/commonly-agent-services/shared/summary-text.test.js
+
       - name: Run commonly-mcp tests
         run: |
           cd commonly-mcp
