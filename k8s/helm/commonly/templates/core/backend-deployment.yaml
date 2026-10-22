@@ -309,8 +309,8 @@ spec:
             secretKeyRef:
               name: api-keys
               key: discord-public-key
-        {{- end }}
               optional: true
+        {{- end }}
 
         # Social login (OAuth) providers — names match what
         # controllers/oauthController.ts reads. The old GITHUB_CLIENT_ID /
