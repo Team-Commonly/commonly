@@ -34,6 +34,13 @@ externalSecrets:
 discord:
   enabled: false
 
+# No SMTP2GO for staging. api-keys references none of the commonly-staging-SMTP2GO_*
+# keys; with SMTP2GO_API_KEY unset (the backend env refs are optional) the backend
+# auto-verifies new signups rather than waiting on a mail it cannot send. Deliberately
+# NOT placeholder values — a non-empty key would make the backend think email works.
+email:
+  enabled: false
+
 # Staging renders NO Ingress object. A staging Ingress would be picked up by the
 # single shared ingress-nginx controller and reload prod routing (R1). Staging
 # is reached only through its own cloudflared tunnel, straight to Services.
