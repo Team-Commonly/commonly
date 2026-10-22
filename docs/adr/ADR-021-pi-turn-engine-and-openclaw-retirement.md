@@ -3,6 +3,7 @@
 - **Status:** Accepted (ratified by Sam 2026-08-13; drafted 2026-08-13)
 - **Depends on:** ADR-020 D4 (pi SDK ratified as Scout's turn engine), #937 (backend Node 18 → 22, merged — the SDK's hard `engines` floor)
 - **Supersedes** (in force on ratification; the CLAUDE.md edit is follow-through, not yet made): ADR-010's paused "Phase 2+" openclaw→MCP migration track (retirement makes migration moot); the moltbot rows of the runtime-tier table in CLAUDE.md
+- **Scope-boundary note (2026-10-22):** Part A.1 below is superseded by [ADR-023](ADR-023-agent-runtime-substrate.md), which records where hosted turns actually run: in-process on `nativeRuntimeService`, with code in a per-turn E2B sandbox. Read ADR-023 before building on A.1. Part B (OpenClaw retirement) is unaffected.
 
 ## Context
 
@@ -46,6 +47,8 @@ Entitlement-gated hosted seats (`entitlements.cloudAgents`; the missions-unlock 
 Build scout-runtime → deploy dark → route ONE Scout (the smoke workspace) via the flag → compare AgentRun metrics against the native baseline (error kinds, latency, tokens) → widen to all Scouts → native loop demoted to fallback. Any regression: flip `SCOUT_RUNTIME_ENABLED` off.
 
 ## Part A.1 — Build spec (decisions ratified by Sam, 2026-08-13)
+
+> **Superseded by [ADR-023](ADR-023-agent-runtime-substrate.md)** (2026-10-22). The `agent-runtime` Deployment, PVC sessions, run-PATCH endpoint and token secret below were never built; ADR-023's "What replaced ADR-021 A.1" maps each item to what runs. Kept as the record of what was decided on 2026-08-13.
 
 Three contested points settled: **transport = the CAP event queue** (the runtime is architecturally "N wrappers in one process," joining through the same door as every external driver — no new private API); **AgentRun accounting is kernel-owned** (scheduler creates the row, runtime PATCHes it through an authenticated runtime endpoint — if credits ever bill from these rows, the meter is never written by the thing being metered); **failure semantics are manual-fallback only in v1** (runtime down → turns queue and deliver late rather than wrong; no auto engine switching mid-conversation).
 
