@@ -68,9 +68,16 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: cd backend && npm ci --include=dev
-      - name: Run backend tests with coverage
-        run: cd backend && npx jest --coverage --forceExit --shard=${{ matrix.shard }}/3
+      - name: Run backend tests (coverage on the nightly schedule only)
+        run: |
+          cd backend
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npx jest --coverage --forceExit --shard=${{ matrix.shard }}/3
+          else
+            npx jest --forceExit --shard=${{ matrix.shard }}/3
+          fi
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'schedule'
         with:
           name: backend-coverage-${{ matrix.shard }}
           path: backend/coverage/
@@ -106,7 +113,14 @@ jobs:
       - run: cd backend && npm ci --include=dev
       - run: cd frontend && npm install --legacy-peer-deps
       - run: cd frontend && npm run typecheck
-      - run: cd frontend && npx jest --coverage --watchAll=false --forceExit
+      - name: Run frontend tests (coverage on the nightly schedule only)
+        run: |
+          cd frontend
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npx jest --coverage --watchAll=false --forceExit
+          else
+            npx jest --watchAll=false --forceExit
+          fi
       - run: cd frontend && node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs
 
   tool-tests:
