@@ -16,6 +16,11 @@ on:
   # concurrency group below already falls back to github.sha for this event,
   # so each queue commit gets its own group.
   merge_group:
+  # Coverage is collected on this nightly schedule only — not on pull_request
+  # or merge_group, where --coverage added wall time to every required-check
+  # run for a report nobody reads on the PR. 08:00 UTC ~= 01:00 PT, off-peak.
+  schedule:
+    - cron: '0 8 * * *'
   workflow_dispatch:
 
 permissions:
@@ -117,15 +122,23 @@ jobs:
           cd packages/types
           ../../backend/node_modules/.bin/tsc --noEmit -p tsconfig.json
 
-      - name: Run backend tests with coverage
+      - name: Run backend tests (coverage on the nightly schedule only)
         run: |
           cd backend
-          npx jest --coverage --forceExit
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npx jest --coverage --forceExit
+          else
+            npx jest --forceExit
+          fi
 
-      - name: Run frontend tests with coverage
+      - name: Run frontend tests (coverage on the nightly schedule only)
         run: |
           cd frontend
-          npx jest --coverage --watchAll=false --forceExit
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npx jest --coverage --watchAll=false --forceExit
+          else
+            npx jest --watchAll=false --forceExit
+          fi
           node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs
 
       # The node:test files under external/commonly-agent-services were run by
@@ -174,6 +187,7 @@ jobs:
           npm test
 
       - name: Upload coverage report
+        if: github.event_name == 'schedule'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
