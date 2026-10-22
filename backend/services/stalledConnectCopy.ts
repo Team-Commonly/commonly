@@ -59,6 +59,14 @@ const copiedAtOffsetSeconds = (evidence: StalledConnectCopyEvidence): number | n
   return seconds >= 0 ? seconds : null;
 };
 
+const copiedAtDescription = (offsetSeconds: number): string => {
+  if (offsetSeconds < 30) return 'right after you created the seat';
+  if (offsetSeconds < 90) return 'about a minute after you created the seat';
+  if (offsetSeconds < 10 * 60) return 'a few minutes after you created the seat';
+  if (offsetSeconds < 60 * 60) return 'several minutes after you created the seat';
+  return 'more than an hour after you created the seat';
+};
+
 export const composeStalledConnectNudge = ({
   installerName, displayName, handle, fixCommand, evidence = {},
 }: {
@@ -74,7 +82,8 @@ export const composeStalledConnectNudge = ({
     const copiedThing = evidence.commandType === 'mcp'
       ? 'MCP command'
       : evidence.commandType === 'cli' ? 'listener command' : 'command';
-    return `@${installerName} — you copied the ${copiedThing} at +${offsetSeconds} s; `
+    return `@${installerName} — you copied the ${copiedThing} `
+      + `${copiedAtDescription(offsetSeconds)}; `
       + `no connection arrived — here is the one thing to check for your OS: `
       + `run \`${fixCommand}\` on the machine where I should live.`
       + (evidence.commandType === 'mcp'

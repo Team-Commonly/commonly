@@ -129,7 +129,7 @@ describe('stalledConnectService.scan', () => {
         lean: () => Promise.resolve({
           username: 'alice',
           onboarding: {
-            byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 69 * 1000),
+            byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
             byoCommandType: 'cli',
           },
         }),
@@ -139,7 +139,9 @@ describe('stalledConnectService.scan', () => {
     await scan({ now: NOW });
 
     const posted = mockPost.mock.calls[0][0];
-    expect(posted.content).toContain('copied the listener command at +69 s');
+    expect(posted.content).toContain(
+      'copied the listener command a few minutes after you created the seat',
+    );
     expect(posted.content).toContain('no connection arrived');
     expect(posted.content).toContain('one thing to check for your OS');
   });
@@ -151,7 +153,7 @@ describe('stalledConnectService.scan', () => {
         lean: () => Promise.resolve({
           username: 'alice',
           onboarding: {
-            byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 69 * 1000),
+            byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
             byoCommandType: 'mcp',
           },
         }),
