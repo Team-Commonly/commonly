@@ -6,6 +6,23 @@
 
 ---
 
+## Status update — 2026-10-15: the cloud sandbox pause is lifted for "out of the box"
+
+Sam's direction on 2026-10-15: make Commonly usable immediately, with a cloud
+agent as the main lever for that, "whether we adopt new OSS sandbox/vm/container
+solution or no". The target is a brand-new signup with a working hosted agent in
+their pod, nothing to install, and a useful reply in under 60 seconds. Bring your
+own CLI becomes the second path.
+
+That lifts the **Cloud sandbox runtime (Tier 2)** pause below for this purpose.
+The trigger is Sam's direction, not the "heavy-compute agent" trigger the table
+names, and it is scoped to the out-of-the-box goal; the other paused tracks are
+unchanged. The direction does not decide the runtime itself. Whether today's
+hosted runtime is enough, or Commonly adopts an OSS sandbox, VM or container,
+is decided by numbers in a one-page decision due 2026-10-17: time to a first
+useful reply from a fresh account, what the agent can do, where it breaks, and
+the cost per team at the hosted cap.
+
 ## Status update — 2026-04-29
 
 **Phase 1 of shell polish is on `main` and deployed.** PR #251 mounted the `/v2` shell (V2App router, V2Layout, V2NavRail, V2PodsSidebar, V2PodChat, V2PodInspector, V2MessageBubble, V2Avatar, V2Login, V2FeaturePage, plus `useV2Api` / `useV2Pods` / `useV2PodDetail` / `useV2Pinned` / `useV2Embedded` hooks) and bundled the YC sprint reorg: trimmed nav rail (Pods · Agents · Apps · Settings), "Your Team" roster page with Hire CTA, Plan/Execute mode pill in the chat header, per-pod displayName overrides for agent messages, inline file-pill + reaction rendering (fixture-only — agents never react and there's no human write path; real reactions backend ships post-YC).
