@@ -62,7 +62,7 @@ const welcome = {
   id: 'welcome',
   pod_id: 'pod-1',
   user_id: 'scout-1',
-  content: "I'm Scout. This pod is yours, and I work in it with you. Start with one of these, or tell me what you're working on.",
+  content: "I'm Scout. Pick a start or tell me your goal.",
   message_type: 'text',
   created_at: at(0),
   user: { username: 'scout', isBot: true },
@@ -270,7 +270,7 @@ describe("V2Thread — a new pod's next steps", () => {
 // Walk 4 (2026-10-16): two first-minute frictions on the hosted path.
 describe('Scout starts and the composer after a hosted agent goes live', () => {
   const axios = jest.requireMock('axios').default;
-  const HOSTED = 'Run an agent here, nothing to install';
+  const HOSTED = 'Run an agent here';
   const welcomeWithHosted = {
     ...welcome,
     payload: {
@@ -355,7 +355,7 @@ describe('Scout starts and the composer after a hosted agent goes live', () => {
 // gets the same agent, and anything refused falls back to the link.
 describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-290)', () => {
   const axios = jest.requireMock('axios').default;
-  const HOSTED = 'Run an agent here, nothing to install';
+  const HOSTED = 'Run an agent here';
   const HREF = '/v2/agents/byo?pod=pod-1&mode=hosted';
   const welcomeRunsHere = {
     ...welcome,
@@ -385,10 +385,12 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
   beforeEach(() => { axios.post.mockClear(); });
   afterEach(() => { axios.post.mockImplementation(() => Promise.resolve({ data: {} })); });
 
-  test('the beta limits sit under the button, and describe it', () => {
+  test('the welcome skips the beta limits even for older messages carrying caps', () => {
     renderThread([welcomeRunsHere]);
-    expect(screen.getByRole('button', { name: HOSTED }))
-      .toHaveAccessibleDescription('Beta: 1 hosted agent per account, 30 turns a day.');
+    const button = screen.getByRole('button', { name: HOSTED });
+    expect(button).not.toHaveAccessibleDescription();
+    expect(button).not.toHaveAttribute('aria-describedby');
+    expect(screen.queryByText('Beta: 1 hosted agent per account, 30 turns a day.')).not.toBeInTheDocument();
   });
 
   test('one click installs and starts the agent in this pod, sends nothing, and the start goes away', async () => {
@@ -397,10 +399,22 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
       '/api/registry/install': [{ success: true }],
       '/api/hosted/provision': [{ ready: true }],
     });
-    const sendSpy = renderThread([welcomeRunsHere]);
-    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    // A second payload with the same caps must not inherit this welcome's live note.
+    const otherStart = {
+      ...welcomeRunsHere,
+      id: 'other-start',
+      created_at: at(1),
+      user_id: 'u2',
+      user: { username: 'lee', isBot: false },
+    };
+    const sendSpy = renderThread([welcomeRunsHere, otherStart]);
+    fireEvent.click(screen.getAllByRole('button', { name: HOSTED })[0]);
     expect(await screen.findByRole('button', { name: 'Starting…' })).toBeDisabled();
     await waitFor(() => expect(screen.queryByRole('button', { name: /Run an agent here|Starting/ })).not.toBeInTheDocument());
+    expect(screen.getByText('maya-agent is listening. Beta: 1 hosted agent per account, 30 turns a day.'))
+      .toHaveAttribute('role', 'status');
+    expect(screen.getAllByText('maya-agent is listening. Beta: 1 hosted agent per account, 30 turns a day.'))
+      .toHaveLength(1);
 
     expect(calls('/api/hosted/welcome-start').map(([, body]) => body)).toEqual([{ messageId: 'welcome' }]);
     expect(calls('/api/registry/install')).toHaveLength(1);
@@ -410,7 +424,7 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     expect(calls('/api/hosted/provision').map(([, body]) => body)).toEqual([{ agentName: 'maya-agent' }]);
     expect(sendSpy).not.toHaveBeenCalled();
     expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
-    expect(screen.getByRole('button', { name: CONNECT })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: CONNECT })).toHaveLength(2);
   });
 
   test('a double click starts one agent', async () => {

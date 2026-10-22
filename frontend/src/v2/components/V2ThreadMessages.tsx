@@ -261,6 +261,9 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
       {emptyState}
       {threadView.map((item, index, view) => {
         const renderMessage = (message: V2Message, previous: ThreadViewItem | undefined) => {
+          const liveHostedCaps = hostedStart?.status === 'live' && hostedStart.messageId === String(message.id)
+            ? message.payload?.starts?.find((start) => start.action === WELCOME_HOSTED_ACTION)?.caps
+            : undefined;
           const settledRuling = settledDecisionByMessageId.get(String(message.id));
           const renderedMessage = settledRuling ? rulingMessage(message, settledRuling) : message;
           const previousMessage = previous && previous.kind === 'message'
@@ -293,7 +296,6 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     const hostedHere = start.action === WELCOME_HOSTED_ACTION
                       && hostedStart?.messageId === String(message.id) ? hostedStart : null;
                     const starting = hostedHere?.status === 'starting';
-                    const noteId = start.caps ? `v2-start-note-${message.id}-${start.id}` : undefined;
                     return (
                       <React.Fragment key={start.id}>
                         <button
@@ -301,16 +303,10 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                           className="v2-chat__start"
                           disabled={startsDisabled || starting}
                           aria-busy={starting || undefined}
-                          aria-describedby={noteId}
                           onClick={() => onStart(start, String(message.id))}
                         >
                           {starting ? t('agentByo.actions.starting') : start.label}
                         </button>
-                        {start.caps && (
-                          <p className="v2-chat__start-note" id={noteId}>
-                            {t('agentByo.compact.limits', { agents: start.caps.agentsPerUser, turns: start.caps.turnsPerDay })}
-                          </p>
-                        )}
                         {hostedHere?.status === 'failed' && (
                           <p className="v2-chat__start-note v2-chat__start-note--error" role="alert">{hostedHere.error}</p>
                         )}
@@ -318,6 +314,13 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     );
                   })}
                 </div>
+              )}
+              {liveHostedCaps && (
+                <p className="v2-chat__start-note" role="status">
+                  {t('agentByo.hosted.running', { name: hostedStart?.status === 'live' ? hostedStart.agentName : '' })}
+                  {' '}
+                  {t('agentByo.compact.limits', { agents: liveHostedCaps.agentsPerUser, turns: liveHostedCaps.turnsPerDay })}
+                </p>
               )}
               {agentDeliveryHint?.messageId === message.id && (
                 <div className="v2-chat__delivery-hint" role="status">

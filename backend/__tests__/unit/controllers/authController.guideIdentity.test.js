@@ -119,6 +119,7 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
 
     const welcome = mockPostMessage.mock.calls[0][0];
     expect(welcome.content).toBe(SCOUT_WELCOME);
+    expect(welcome.content.split(/\s+/)).toHaveLength(10);
     expect(welcome.payload).toEqual({
       kind: 'starts',
       starts: [
@@ -131,7 +132,7 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
 
   // QA walk 3 (2026-10-16): where the instance can host, the welcome leads with
   // hosting, nothing to install. It sends no message: on the person's own
-  // welcome it runs in place (TASK-290), with the beta limits under it, and its
+  // welcome it runs in place (TASK-290), and its
   // link opens Bring your own with hosting chosen, in this workspace, for
   // anyone it does not run for.
   test('leads the starts with Run an agent here, aimed at this workspace, where the instance can host', async () => {
@@ -144,15 +145,13 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
       const { SCOUT_STARTS, SCOUT_HOSTED_START } = require('../../../config/native-agents/scout');
       await authController.finishWorkspaceOnboarding({ _id: 'pod-123' }, 'User-1');
 
-      // eslint-disable-next-line global-require
-      const { hostedCaps } = require('../../../services/hostedRuntimeService');
       const { starts } = mockPostMessage.mock.calls[0][0].payload;
       expect(starts[0]).toEqual({
         id: 'run-hosted',
         label: SCOUT_HOSTED_START.label,
         href: '/v2/agents/byo?pod=pod-123&mode=hosted',
         action: 'run-hosted',
-        caps: hostedCaps(),
+        caps: { agentsPerUser: 1, turnsPerDay: 30 },
       });
       expect(starts.slice(1)).toEqual(SCOUT_STARTS.map(({ id, label }) => ({ id, label })));
     } finally {

@@ -10,7 +10,7 @@ export interface V2Start {
   label: string;
   href?: string;
   action?: string;
-  // The welcome's hosted start carries the beta limits shown under it.
+  // The first read omits caps; the thread shows them after the hosted start is live.
   caps?: { agentsPerUser: number; turnsPerDay: number };
 }
 

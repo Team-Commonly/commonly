@@ -304,9 +304,9 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any) => {
         const AgentMessageService = require('../services/agentMessageService');
         // Lead with hosting where this instance can host (QA walk 3, 10-16):
         // nothing to install. One click starts a hosted agent right here
-        // (TASK-290, services/welcomeHostedStart.ts), with the beta limits
-        // under the button. The href stays for anyone the thread will not
-        // run it for: it opens Bring your own with hosting chosen.
+        // (TASK-290, services/welcomeHostedStart.ts). The href stays for
+        // anyone the thread will not run it for: it opens Bring your own
+        // with hosting chosen.
         // eslint-disable-next-line global-require
         const { hostedEngineAvailable } = require('../services/nativeRuntimeService');
         // eslint-disable-next-line global-require
