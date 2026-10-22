@@ -1,6 +1,6 @@
 /**
- * The `call` half of a hosted-MCP tool: §4's credential, then one JSON-RPC
- * request to the entry's resource.
+ * The `call` half of a hosted-MCP tool: §4's credential, then a short-lived
+ * Streamable HTTP session with the entry's resource.
  *
  * `entryToolProjections` (slice 2) produces everything a tool definition needs
  * EXCEPT the call itself, because the call is the first thing in the flow that
@@ -94,10 +94,12 @@ const jsonRpcReply = async (response: Response): Promise<Record<string, unknown>
     try {
       body = await response.json() as Record<string, unknown>;
     } catch {
-      throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned invalid JSON', 502);
+      throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned invalid JSON', 502,
+        { failure: 'invalid_json' });
     }
     if (body && (body.result !== undefined || body.error !== undefined)) return body;
-    throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned no JSON-RPC reply', 502);
+    throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned no JSON-RPC reply', 502,
+      { failure: 'missing_rpc_reply' });
   }
   const text = await response.text();
   for (const line of text.split('\n')) {
@@ -112,7 +114,119 @@ const jsonRpcReply = async (response: Response): Promise<Record<string, unknown>
       // A frame this parser cannot read is not the reply; keep looking.
     }
   }
-  throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned no JSON-RPC reply', 502);
+  throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned no JSON-RPC reply', 502,
+    { failure: 'missing_rpc_reply' });
+};
+
+const MCP_PROTOCOL_VERSION = '2025-11-25';
+const MCP_HANDSHAKE_VERSIONS = new Set(['2025-03-26', '2025-06-18', MCP_PROTOCOL_VERSION]);
+
+/** One short-lived Streamable HTTP session, under one member's credential. */
+const openHostedMcpSession = async (
+  resource: string,
+  token: string,
+  fetcher: typeof fetch,
+  newCallId: () => string,
+  signal: AbortSignal,
+) => {
+  let sessionId: string | null = null;
+  let version = MCP_PROTOCOL_VERSION;
+  const send = async (body: Record<string, unknown>, initialized = false): Promise<Response> => {
+    let response: Response;
+    try {
+      response = await fetcher(resource, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+          Authorization: `Bearer ${token}`,
+          ...(initialized ? { 'MCP-Protocol-Version': version } : {}),
+          ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {}),
+        },
+        body: JSON.stringify(body),
+        signal,
+      });
+    } catch (error) {
+      throw new RoomGrantError('provider_unreachable', `hosted-MCP vendor unreachable: ${messageOf(error)}`, 502);
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new RoomGrantError(
+        'credential_rejected', 'the vendor rejected this connection’s credential — reconnect to continue', 403,
+      );
+    }
+    if (!response.ok) {
+      throw new RoomGrantError('provider_error', `hosted-MCP vendor answered ${response.status}`, 502,
+        { vendorStatus: response.status });
+    }
+    return response;
+  };
+
+  const initializeSession = async () => {
+    const initialized = await send({
+      jsonrpc: '2.0', id: newCallId(), method: 'initialize',
+      params: {
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: 'commonly-hosted-mcp', version: '1.0.0' },
+      },
+    });
+    sessionId = initialized.headers.get('mcp-session-id');
+    const reply = await jsonRpcReply(initialized);
+    const result = reply.result as { protocolVersion?: unknown } | undefined;
+    if (reply.error || typeof result?.protocolVersion !== 'string'
+      || !MCP_HANDSHAKE_VERSIONS.has(result.protocolVersion)) {
+      throw new RoomGrantError('provider_error', 'hosted-MCP vendor did not negotiate a supported protocol', 502,
+        { failure: 'unsupported_protocol', rpcCode: (reply.error as { code?: unknown } | undefined)?.code });
+    }
+    version = result.protocolVersion;
+    const notification = await send({ jsonrpc: '2.0', method: 'notifications/initialized' }, true);
+    if (notification.status !== 202) {
+      throw new RoomGrantError('provider_error', 'hosted-MCP vendor did not accept initialization', 502,
+        { vendorStatus: notification.status });
+    }
+  };
+  const close = async () => {
+    if (!sessionId) return;
+    try {
+      await fetcher(resource, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'MCP-Protocol-Version': version,
+          'Mcp-Session-Id': sessionId,
+        },
+        signal,
+      });
+    } catch {
+      // Session expiry and unsupported DELETE do not change the tool result.
+    }
+  };
+  try {
+    await initializeSession();
+  } catch (error) {
+    await close();
+    throw error;
+  }
+  return {
+    post: async (body: Record<string, unknown>) => {
+      try {
+        return await send(body, true);
+      } catch (error) {
+        if (!(error instanceof RoomGrantError) || error.details?.vendorStatus !== 404 || !sessionId) throw error;
+        // A stateful server can expire a session between initialization and a
+        // request. The spec requires a new initialize without the stale ID.
+        sessionId = null;
+        try {
+          await initializeSession();
+        } catch (initializationError) {
+          await close();
+          throw initializationError;
+        }
+        return send(body, true);
+      }
+    },
+    close,
+  };
 };
 
 const listUpstreamTools = async (
@@ -127,42 +241,27 @@ const listUpstreamTools = async (
   const { token } = await deps.credentialFor(row);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HOSTED_MCP_CALL_TIMEOUT_MS);
+  let session: Awaited<ReturnType<typeof openHostedMcpSession>> | undefined;
   try {
+    session = await openHostedMcpSession(entry.resource, token, deps.fetcher, deps.newCallId, controller.signal);
     const allTools: HostedMcpUpstreamTool[] = [];
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
     for (let page = 0; page < 100; page += 1) {
-      let response: Response;
-      try {
-        response = await deps.fetcher(entry.resource, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json, text/event-stream',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            jsonrpc: '2.0', id: deps.newCallId(), method: 'tools/list', params: cursor ? { cursor } : {},
-          }),
-          signal: controller.signal,
-        });
-      } catch (error) {
-        throw new RoomGrantError('provider_unreachable', `hosted-MCP vendor unreachable: ${messageOf(error)}`, 502);
-      }
-      if (response.status === 401 || response.status === 403) {
-        throw new RoomGrantError('credential_rejected', 'the vendor rejected this connection’s credential', 403);
-      }
-      if (!response.ok) {
-        throw new RoomGrantError('provider_error', `hosted-MCP vendor answered ${response.status}`, 502);
-      }
+      const response = await session.post({
+        jsonrpc: '2.0', id: deps.newCallId(), method: 'tools/list', params: cursor ? { cursor } : {},
+      });
       const reply = await jsonRpcReply(response);
-      if (reply.error) throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned an error', 502);
+      if (reply.error) throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned an error', 502,
+        { rpcCode: (reply.error as { code?: unknown }).code });
       const result = reply.result as { tools?: unknown; nextCursor?: unknown } | undefined;
       if (!Array.isArray(result?.tools)) {
-        throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned no tools array', 502);
+        throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned no tools array', 502,
+          { failure: 'missing_tools' });
       }
       if (!result.tools.every((tool) => tool && typeof tool === 'object' && typeof tool.name === 'string')) {
-        throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned malformed tools', 502);
+        throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned malformed tools', 502,
+          { failure: 'malformed_tools' });
       }
       allTools.push(...result.tools as HostedMcpUpstreamTool[]);
       if (result.nextCursor === undefined || result.nextCursor === null) return allTools;
@@ -174,6 +273,7 @@ const listUpstreamTools = async (
     }
     throw new RoomGrantError('provider_error', 'hosted-MCP tools/list exceeded the page limit', 502);
   } finally {
+    await session?.close();
     clearTimeout(timer);
   }
 };
@@ -224,7 +324,20 @@ export const assertHostedToolUnchanged = async (
     // unchanged when tools/list fails before a vendor request can be made.
     if (outcome.cause instanceof HostedMcpCredentialError) throw outcome.cause;
     const reason = outcome.reason || 'provider_error';
-    throw new RoomGrantError(reason, 'hosted-MCP tools/list could not be verified', reason === 'credential_rejected' ? 403 : 502);
+    const cause = outcome.cause instanceof RoomGrantError ? outcome.cause : undefined;
+    const vendorStatus = cause?.details?.vendorStatus;
+    const rpcCode = cause?.details?.rpcCode;
+    const failure = cause?.details?.failure;
+    console.warn(JSON.stringify({
+      event: 'hosted_mcp_tools_list_failure', entryId: entry.id,
+      connectionId: connection.connectionId, reason,
+      ...(typeof vendorStatus === 'number' ? { vendorStatus } : {}),
+      ...(typeof rpcCode === 'number' ? { rpcCode } : {}),
+      ...(typeof failure === 'string' ? { failure } : {}),
+    }));
+    throw new RoomGrantError(
+      reason, 'hosted-MCP tools/list could not be verified', reason === 'credential_rejected' ? 403 : 502,
+    );
   }
   const assessed = outcome.tools.find((candidate) => candidate.name === tool.name);
   if (!assessed || assessed.verdict !== 'ok') {
@@ -276,56 +389,28 @@ const callHostedTool = async (
   const callId = deps.newCallId();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HOSTED_MCP_CALL_TIMEOUT_MS);
+  let session: Awaited<ReturnType<typeof openHostedMcpSession>> | undefined;
   let response: Response;
   try {
-    response = await deps.fetcher(entry.resource, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: callId,
-        method: 'tools/call',
-        params: { name: tool.upstreamName, arguments: args },
-      }),
-      signal: controller.signal,
+    session = await openHostedMcpSession(entry.resource, token, deps.fetcher, deps.newCallId, controller.signal);
+    response = await session.post({
+      jsonrpc: '2.0',
+      id: callId,
+      method: 'tools/call',
+      params: { name: tool.upstreamName, arguments: args },
     });
-  } catch (error) {
-    throw new RoomGrantError('provider_unreachable', `hosted-MCP vendor unreachable: ${messageOf(error)}`, 502);
+    const reply = await jsonRpcReply(response);
+    if (reply.error) {
+      const vendorError = reply.error as { message?: unknown; code?: unknown };
+      const detail = String(vendorError?.message || vendorError?.code || 'unknown error');
+      throw new RoomGrantError('provider_error', `hosted-MCP vendor refused the call: ${detail}`, 502,
+        { rpcCode: vendorError?.code });
+    }
+    return reply.result;
   } finally {
+    await session?.close();
     clearTimeout(timer);
   }
-
-  if (response.status === 401 || response.status === 403) {
-    // The token was live when it was read and refused by the vendor, so the
-    // grant behind it is gone: only a new consent restores this connection.
-    throw new RoomGrantError(
-      'credential_rejected',
-      'the vendor rejected this connection\'s credential — reconnect to continue',
-      403,
-    );
-  }
-  if (!response.ok) {
-    throw new RoomGrantError(
-      'provider_error',
-      `hosted-MCP vendor answered ${response.status}`,
-      502,
-    );
-  }
-
-  const reply = await jsonRpcReply(response);
-  if (reply.error) {
-    const vendorError = reply.error as { message?: unknown; code?: unknown };
-    const detail = String(vendorError?.message || vendorError?.code || 'unknown error');
-    throw new RoomGrantError('provider_error', `hosted-MCP vendor refused the call: ${detail}`, 502);
-  }
-  // MCP reports a tool that ran and failed as a result with `isError`, which is
-  // the model's to read: throwing here would hide the vendor's own explanation
-  // from the turn that asked for it.
-  return reply.result;
 };
 
 /**
