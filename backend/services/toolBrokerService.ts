@@ -976,6 +976,16 @@ const safeReason = (error: unknown): string => {
   return 'broker_error';
 };
 
+/** Vendor diagnostics belong only in the restricted ToolCall trail. */
+const stripVendorDiagnostics = (error: unknown): void => {
+  if (!(error instanceof RoomGrantError) || !error.details) return;
+  const publicDetails = { ...error.details };
+  delete publicDetails.vendorStatus;
+  delete publicDetails.vendorError;
+  delete publicDetails.rpcCode;
+  Object.assign(error, { details: publicDetails });
+};
+
 export const executionErrorOutcome = (error: unknown): 'refused' | 'failed' | 'pending_approval' => {
   if (error instanceof HostedMcpCredentialError) {
     return error.code === 'reconnect_required' || error.code === 'connection_mismatch' ? 'refused' : 'failed';
@@ -1031,6 +1041,8 @@ const recordCall = async (
      * their id on the error (see `refusedCredentialOwner`).
      */
     credentialOwnerId?: string;
+    vendorStatus?: number;
+    vendorError?: string;
   },
 ): Promise<string> => {
   const callId = overrides?.callId || `tool_call_${randomUUID()}`;
@@ -1046,6 +1058,8 @@ const recordCall = async (
     at: new Date(startedAt),
     outcome,
     reason,
+    vendorStatus: overrides?.vendorStatus,
+    vendorError: overrides?.vendorError?.split(/[\r\n]/, 1)[0].slice(0, 200),
     approvalId: overrides?.approvalId,
     durationMs: Math.max(0, Date.now() - startedAt),
   });
@@ -1282,10 +1296,15 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       ? String(error.details?.callId || '')
       : await recordCall(input, grant, outcome, startedAt, reason, {
         credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
+        vendorStatus: error instanceof RoomGrantError && typeof error.details?.vendorStatus === 'number'
+          ? error.details.vendorStatus : undefined,
+        vendorError: error instanceof RoomGrantError && typeof error.details?.vendorError === 'string'
+          ? error.details.vendorError : undefined,
       });
     if (error instanceof RoomGrantError) {
       Object.assign(error, { details: { ...(error.details || {}), ...(callId ? { callId } : {}) } });
     }
+    stripVendorDiagnostics(error);
     throw error;
   }
 };
@@ -1369,8 +1388,13 @@ export const executeApprovedToolCall = async (
         approvalId: input.approvalId,
         args: input.args,
         credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
+        vendorStatus: error instanceof RoomGrantError && typeof error.details?.vendorStatus === 'number'
+          ? error.details.vendorStatus : undefined,
+        vendorError: error instanceof RoomGrantError && typeof error.details?.vendorError === 'string'
+          ? error.details.vendorError : undefined,
       },
     );
+    stripVendorDiagnostics(error);
     throw error;
   }
 };

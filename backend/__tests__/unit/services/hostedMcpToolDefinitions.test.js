@@ -201,6 +201,60 @@ describe('hosted-MCP tool definitions', () => {
     expect(listed).toBe(2);
   });
 
+  it('uses the negotiated version without a session ID when the server assigns none', async () => {
+    const fetcher = jest.fn(async (_url, init) => {
+      if (init.method === 'DELETE') throw new Error('sessionless servers have no DELETE');
+      const body = JSON.parse(init.body);
+      expect(init.headers['Mcp-Session-Id']).toBeUndefined();
+      if (body.method === 'initialize') return jsonResponse({ jsonrpc: '2.0', id: body.id, result: {
+        protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'sessionless', version: '1' },
+      } });
+      expect(init.headers['MCP-Protocol-Version']).toBe('2025-06-18');
+      if (body.method === 'notifications/initialized') return new Response(null, { status: 202 });
+      if (body.method === 'tools/list') return jsonResponse({ jsonrpc: '2.0', id: body.id, result: {
+        tools: [{ name: 'list_issues', inputSchema: ENTRY.tools[0].inputSchema }],
+      } });
+      if (body.method === 'tools/call') return jsonResponse(okReply);
+      throw new Error(`unexpected ${body.method}`);
+    });
+    const deps = makeDeps();
+    deps.fetcher = fetcher;
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual(okReply.result);
+  });
+
+  it('refuses a second 404 rather than reinitializing again', async () => {
+    let opened = 0;
+    const fetcher = jest.fn(async (_url, init) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      const body = JSON.parse(init.body);
+      if (body.method === 'initialize') {
+        opened += 1;
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {
+          protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'fake', version: '1' },
+        } }), { headers: { 'content-type': 'application/json', 'mcp-session-id': `s-${opened}` } });
+      }
+      if (body.method === 'notifications/initialized') return new Response(null, { status: 202 });
+      return jsonResponse({}, 404);
+    });
+    const deps = makeDeps();
+    deps.fetcher = fetcher;
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
+    expect(opened).toBe(2);
+  });
+
+  it('carries a bounded vendor 400 line to the broker without its token or body', async () => {
+    const deps = makeDeps({ fetcher: jest.fn(async () => new Response(
+      'session required: access-token-1\nprivate second line', { status: 400, headers: { 'content-type': 'text/plain' } },
+    )) });
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).rejects.toMatchObject({
+      code: 'provider_error',
+      details: { vendorStatus: 400, vendorError: 'session required: [redacted]' },
+    });
+  });
+
   it('refuses a drifted pin inside callHostedTool before tools/call', async () => {
     const deps = makeDeps({
       fetcher: jest.fn(async () => jsonResponse({

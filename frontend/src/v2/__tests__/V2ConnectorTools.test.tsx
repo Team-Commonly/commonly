@@ -69,6 +69,15 @@ const linearEntry = {
 };
 const grantLinear = { ...grantLive, grantId: 'grant_lin', installationId: 'inst-2', writeMode: 'read', tools: ['linear.list_issues'] };
 
+test('Atlassian shows its read-in-testing state on an existing grant', async () => {
+  const atlassian = { ...linearEntry, installableId: 'atlassian', entryId: 'atlassian', label: 'Atlassian',
+    tools: [{ name: 'atlassian.get_accessible_atlassian_resources', requiredWriteMode: 'read', irreversible: false }] };
+  const grant = { ...grantLinear, grantId: 'grant_atl', tools: ['atlassian.get_accessible_atlassian_resources'] };
+  mockTwoEntries({ catalog: [atlassian], grants: { p1: [grant], p2: [] } });
+  render(<AuthContext.Provider value={authValue}><MemoryRouter><V2ConnectorTools pods={pods} /></MemoryRouter></AuthContext.Provider>);
+  expect(await screen.findByText(/read in testing/)).toBeInTheDocument();
+});
+
 // Two tools entries and one grant: the shape the page has to survive once a
 // second tool Installable ships. The old single-entry accounting hid the entry
 // it did not cover (and the header still subtracted exactly one).

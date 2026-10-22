@@ -121,6 +121,27 @@ const jsonRpcReply = async (response: Response): Promise<Record<string, unknown>
 const MCP_PROTOCOL_VERSION = '2025-11-25';
 const MCP_HANDSHAKE_VERSIONS = new Set(['2025-03-26', '2025-06-18', MCP_PROTOCOL_VERSION]);
 
+const sanitizeVendorError = (value: string, token: string): string | undefined => value
+  .split(/[\r\n]/, 1)[0]
+  .split(token).join('[redacted]')
+  .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+  .replace(/(access_token|refresh_token|client_secret)\s*[:=]\s*[^\s,}]+/gi, '$1=[redacted]')
+  .slice(0, 200) || undefined;
+
+const vendorErrorLine = async (response: Response, token: string): Promise<string | undefined> => {
+  try {
+    const body = (await response.text()).slice(0, 4096);
+    let line = body;
+    try {
+      const parsed = JSON.parse(body) as { error?: { code?: unknown; message?: unknown } };
+      if (typeof parsed.error?.message === 'string') {
+        line = `JSON-RPC ${String(parsed.error.code ?? 'error')}: ${parsed.error.message}`;
+      }
+    } catch { /* Plain-text vendor error. */ }
+    return sanitizeVendorError(line, token);
+  } catch { return undefined; }
+};
+
 /** One short-lived Streamable HTTP session, under one member's credential. */
 const openHostedMcpSession = async (
   resource: string,
@@ -155,8 +176,9 @@ const openHostedMcpSession = async (
       );
     }
     if (!response.ok) {
+      const vendorError = await vendorErrorLine(response, token);
       throw new RoomGrantError('provider_error', `hosted-MCP vendor answered ${response.status}`, 502,
-        { vendorStatus: response.status });
+        { vendorStatus: response.status, vendorError });
     }
     return response;
   };
@@ -187,13 +209,15 @@ const openHostedMcpSession = async (
   };
   const close = async () => {
     if (!sessionId) return;
+    const closingSessionId = sessionId;
+    sessionId = null;
     try {
       await fetcher(resource, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
           'MCP-Protocol-Version': version,
-          'Mcp-Session-Id': sessionId,
+          'Mcp-Session-Id': closingSessionId,
         },
         signal,
       });
@@ -252,8 +276,13 @@ const listUpstreamTools = async (
         jsonrpc: '2.0', id: deps.newCallId(), method: 'tools/list', params: cursor ? { cursor } : {},
       });
       const reply = await jsonRpcReply(response);
-      if (reply.error) throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned an error', 502,
-        { rpcCode: (reply.error as { code?: unknown }).code });
+      if (reply.error) {
+        const vendorError = reply.error as { code?: unknown; message?: unknown };
+        const rpcLine = `JSON-RPC ${String(vendorError.code ?? 'error')}: ${String(vendorError.message ?? '')}`;
+        throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned an error', 502,
+          { vendorStatus: response.status, rpcCode: vendorError.code,
+            vendorError: sanitizeVendorError(rpcLine, token) });
+      }
       const result = reply.result as { tools?: unknown; nextCursor?: unknown } | undefined;
       if (!Array.isArray(result?.tools)) {
         throw new RoomGrantError('provider_error', 'hosted-MCP tools/list returned no tools array', 502,
@@ -328,6 +357,7 @@ export const assertHostedToolUnchanged = async (
     const vendorStatus = cause?.details?.vendorStatus;
     const rpcCode = cause?.details?.rpcCode;
     const failure = cause?.details?.failure;
+    const vendorError = cause?.details?.vendorError;
     console.warn(JSON.stringify({
       event: 'hosted_mcp_tools_list_failure', entryId: entry.id,
       connectionId: connection.connectionId, reason,
@@ -337,6 +367,9 @@ export const assertHostedToolUnchanged = async (
     }));
     throw new RoomGrantError(
       reason, 'hosted-MCP tools/list could not be verified', reason === 'credential_rejected' ? 403 : 502,
+      { ...(typeof vendorStatus === 'number' ? { vendorStatus } : {}),
+        ...(typeof rpcCode === 'number' ? { rpcCode } : {}),
+        ...(typeof vendorError === 'string' ? { vendorError } : {}) },
     );
   }
   const assessed = outcome.tools.find((candidate) => candidate.name === tool.name);
@@ -403,8 +436,9 @@ const callHostedTool = async (
     if (reply.error) {
       const vendorError = reply.error as { message?: unknown; code?: unknown };
       const detail = String(vendorError?.message || vendorError?.code || 'unknown error');
-      throw new RoomGrantError('provider_error', `hosted-MCP vendor refused the call: ${detail}`, 502,
-        { rpcCode: vendorError?.code });
+      throw new RoomGrantError('provider_error', `hosted-MCP vendor refused the call: ${sanitizeVendorError(detail, token)}`, 502,
+        { vendorStatus: response.status, rpcCode: vendorError?.code,
+          vendorError: sanitizeVendorError(`JSON-RPC ${String(vendorError?.code ?? 'error')}: ${detail}`, token) });
     }
     return reply.result;
   } finally {
