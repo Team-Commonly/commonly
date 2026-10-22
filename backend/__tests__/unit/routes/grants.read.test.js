@@ -179,15 +179,18 @@ describe('GET /api/grants?connectionOwner=me', () => {
   test('requires a signed-in owner and never gives a different user or admin the owner’s grants', async () => {
     await RoomGrant.create(grant());
     Pod.find.mockImplementation(() => ({ select: () => ({ lean: async () => [] }) }));
-    Integration.find.mockImplementation(({ createdBy }) => ({ select: () => ({ lean: async () => (
-      createdBy === OWNER ? [{ _id: 'conn-1', createdBy: OWNER }] : []
-    ) }) }));
+    // Deliberately return a foreign row even for the admin caller. The route
+    // must enforce ownership after the query as well as in its predicate.
+    Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+      { _id: 'conn-1', createdBy: OWNER },
+    ] }) }));
     expect((await request(app).get('/api/grants?connectionOwner=me')).status).toBe(401);
     expect((await request(app).get('/api/grants').set('x-test-user', OWNER)).status).toBe(400);
     const other = await request(app).get('/api/grants?connectionOwner=me')
       .set('x-test-user', STRANGER).set('x-test-role', 'admin');
     expect(other.status).toBe(200);
     expect(other.body.grants).toEqual([]);
+    expect(Integration.find).toHaveBeenCalledWith({ createdBy: STRANGER });
   });
 });
 
