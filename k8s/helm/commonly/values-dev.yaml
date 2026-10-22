@@ -437,7 +437,6 @@ slack:
 # project is enrolled and a list_calendars call succeeds.
 hostedMcp:
   hiddenEntries:
-    - airtable
     # Client secrets exist, but Workspace MCP enrollment is still off.
     - google-calendar
   googleCalendar:
