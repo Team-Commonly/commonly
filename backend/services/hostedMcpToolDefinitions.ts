@@ -156,21 +156,22 @@ const sanitizeVendorError = (value: string, token: string): string | undefined =
   .split(/[\r\n]/, 1)[0]
   .split(token).join('[redacted]')
   .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
-  .replace(/(access_token|refresh_token|client_secret)\s*[:=]\s*[^\s,}]+/gi, '$1=[redacted]')
+  .replace(/(["']?)(access_token|refresh_token|client_secret|api_key)\1\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,}]+)/gi,
+    '$2=[redacted]')
   .replace(/\b[A-Za-z0-9_-]{24,}\b/g, '[redacted]')
   .slice(0, 200) || undefined;
 
 const vendorErrorLine = async (response: Response, token: string): Promise<string | undefined> => {
   try {
     const body = (await response.text()).slice(0, 4096);
-    let line = body;
+    let line: string | undefined;
     try {
       const parsed = JSON.parse(body) as { error?: { code?: unknown; message?: unknown } };
       if (typeof parsed.error?.message === 'string') {
         line = `JSON-RPC ${String(parsed.error.code ?? 'error')}: ${parsed.error.message}`;
       }
-    } catch { /* Plain-text vendor error. */ }
-    return sanitizeVendorError(line, token);
+    } catch { line = body; /* Plain-text vendor error. */ }
+    return line ? sanitizeVendorError(line, token) : undefined;
   } catch { return undefined; }
 };
 
@@ -240,6 +241,18 @@ const openHostedMcpSession = async (
         { vendorStatus: notification.status });
     }
   };
+  const initializeWithRenewal = async () => {
+    try {
+      await initializeSession();
+    } catch (error) {
+      if (!(error instanceof RoomGrantError) || error.details?.vendorStatus !== 404 || !sessionId) throw error;
+      // A server can expire its new session before the initialized
+      // notification. That notification carried the ID, so it earns the same
+      // one-time renewal as a session-bound tools request.
+      sessionId = null;
+      await initializeSession();
+    }
+  };
   const close = async () => {
     if (!sessionId) return;
     const closingSessionId = sessionId;
@@ -259,7 +272,7 @@ const openHostedMcpSession = async (
     }
   };
   try {
-    await initializeSession();
+    await initializeWithRenewal();
   } catch (error) {
     await close();
     throw error;

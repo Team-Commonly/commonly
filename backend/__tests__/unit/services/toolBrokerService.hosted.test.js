@@ -571,6 +571,26 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused' }));
   });
 
+  it('persists no quoted JSON credential fields from a vendor 400', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    global.fetch = sessionFetch(async (_url, init) => {
+      const method = JSON.parse(init.body).method;
+      if (method === 'tools/list') return new Response(JSON.stringify({
+        access_token: 'SECOND_ACCESS_SENTINEL',
+        refresh_token: 'REFRESH_SENTINEL',
+        client_secret: 'CLIENT_SECRET_SENTINEL',
+      }), { status: 400, headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify(okReply), { headers: { 'content-type': 'application/json' } });
+    });
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'provider_error' });
+    const [record] = mockToolCall.create.mock.calls[0];
+    expect(record).toMatchObject({ outcome: 'failed', vendorStatus: 400 });
+    expect(record.vendorError).toBeUndefined();
+    expect(JSON.stringify(record)).not.toContain('SENTINEL');
+  });
+
   it('records a vendor tool error after owner approval as failed with its approval id', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
       tools: ['linear.create_issue'],

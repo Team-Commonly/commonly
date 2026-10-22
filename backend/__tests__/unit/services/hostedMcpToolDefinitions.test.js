@@ -244,6 +244,60 @@ describe('hosted-MCP tool definitions', () => {
     expect(opened).toBe(2);
   });
 
+  it.each(['list', 'call'])('renews once when initialized notification gets a session-bound 404 on %s', async (path) => {
+    let opened = 0;
+    const fetcher = jest.fn(async (_url, init) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      const body = JSON.parse(init.body);
+      if (body.method === 'initialize') {
+        expect(init.headers['Mcp-Session-Id']).toBeUndefined();
+        opened += 1;
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {
+          protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'fixture', version: '1' },
+        } }), { headers: { 'content-type': 'application/json', 'mcp-session-id': `s-${opened}` } });
+      }
+      if (body.method === 'notifications/initialized') {
+        expect(init.headers['Mcp-Session-Id']).toBe(`s-${opened}`);
+        return new Response(null, { status: opened === 1 ? 404 : 202 });
+      }
+      expect(init.headers['Mcp-Session-Id']).toBe('s-2');
+      if (body.method === 'tools/list') return jsonResponse({ jsonrpc: '2.0', id: body.id, result: {
+        tools: [{ name: 'list_issues', inputSchema: ENTRY.tools[0].inputSchema }],
+      } });
+      if (body.method === 'tools/call') return jsonResponse(okReply);
+      throw new Error(`unexpected ${body.method}`);
+    });
+    const deps = makeDeps();
+    deps.fetcher = fetcher;
+    if (path === 'list') {
+      deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+      await expect(deps.driftCache.assess({ connectionId: ROW_ID }, ENTRY))
+        .resolves.toMatchObject({ state: 'assessed' });
+    } else {
+      await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).resolves.toEqual(okReply.result);
+    }
+    expect(opened).toBe(2);
+  });
+
+  it('does not keep renewing a notification that returns 404 twice', async () => {
+    let opened = 0;
+    const fetcher = jest.fn(async (_url, init) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      const body = JSON.parse(init.body);
+      if (body.method === 'initialize') {
+        opened += 1;
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {
+          protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'fixture', version: '1' },
+        } }), { headers: { 'content-type': 'application/json', 'mcp-session-id': `s-${opened}` } });
+      }
+      return new Response(null, { status: 404 });
+    });
+    const deps = makeDeps();
+    deps.fetcher = fetcher;
+    await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
+    expect(opened).toBe(2);
+  });
+
   it('carries a bounded vendor 400 line to the broker without its token or body', async () => {
     const deps = makeDeps({ fetcher: jest.fn(async () => new Response(
       'session required: access-token-1 vendor-secret-12345678901234567890\nprivate second line',
@@ -253,6 +307,39 @@ describe('hosted-MCP tool definitions', () => {
     await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).rejects.toMatchObject({
       code: 'provider_error',
       details: { vendorStatus: 400, vendorError: 'session required: [redacted] [redacted]' },
+    });
+  });
+
+  it('does not keep a JSON error body containing short quoted credential values', async () => {
+    const body = JSON.stringify({
+      access_token: 'SECOND_ACCESS_SENTINEL', refresh_token: 'REFRESH_SENTINEL',
+      client_secret: 'CLIENT_SECRET_SENTINEL',
+    });
+    const deps = makeDeps({ fetcher: jest.fn(async () => new Response(body, {
+      status: 400, headers: { 'content-type': 'application/json' },
+    })) });
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).rejects.toMatchObject({
+      code: 'provider_error', details: { vendorStatus: 400 },
+    });
+    try {
+      await definitionFor('linear.list_issues', deps).call({}, CONNECTION);
+    } catch (error) {
+      expect(JSON.stringify(error.details)).not.toContain('SENTINEL');
+      expect(error.details.vendorError).toBeUndefined();
+    }
+  });
+
+  it('redacts short quoted credentials inside a selected JSON-RPC error message', async () => {
+    const deps = makeDeps({ fetcher: jest.fn(async () => jsonResponse({
+      jsonrpc: '2.0', id: 'call-1', error: {
+        code: -32000,
+        message: 'session failed: {"access_token":"SHORT","client_secret":"TINY"}',
+      },
+    }, 400)) });
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).rejects.toMatchObject({
+      code: 'provider_error',
+      details: { vendorStatus: 400,
+        vendorError: 'JSON-RPC -32000: session failed: {access_token=[redacted],client_secret=[redacted]}' },
     });
   });
 

@@ -83,7 +83,7 @@ export interface ToolCallRecord {
   durationMs?: number;
 }
 
-const DDL = `
+export const TOOL_CALL_DDL = `
 CREATE TABLE IF NOT EXISTS tool_call_budgets (
   grant_id VARCHAR(255) PRIMARY KEY,
   calls_used INTEGER NOT NULL DEFAULT 0,
@@ -127,7 +127,7 @@ const ensureTables = async (): Promise<PgPool> => {
   const db = ensurePool();
   if (ensured) return db;
   if (!ensureInFlight) {
-    ensureInFlight = db.query(DDL)
+    ensureInFlight = db.query(TOOL_CALL_DDL)
       .then(() => {
         ensured = true;
         return db;
