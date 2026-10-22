@@ -25,6 +25,8 @@ def select(paths):
             continue
         if path.startswith("backend/"):
             selected["backend"] = True
+            # Frontend typecheck and catalogue tests import backend modules.
+            selected["frontend"] = True
             selected["chart"] = True
         elif path.startswith("frontend/"):
             selected["frontend"] = True

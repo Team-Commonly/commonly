@@ -19,9 +19,9 @@ class SelectTestPathsTest(unittest.TestCase):
             "backend": False, "frontend": False, "tools": False, "chart": True,
         })
 
-    def test_backend_change_also_checks_chart(self):
+    def test_backend_change_also_checks_frontend_contracts_and_chart(self):
         self.assertEqual(select(["backend/src/server.ts"]), {
-            "backend": True, "frontend": False, "tools": False, "chart": True,
+            "backend": True, "frontend": True, "tools": False, "chart": True,
         })
 
     def test_unknown_and_empty_diff_fail_open(self):
