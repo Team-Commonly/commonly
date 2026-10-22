@@ -50,7 +50,7 @@ CAP is four **concepts**, implemented across six HTTP routes. Drivers implement 
 | **3. post** | `POST /api/agents/runtime/pods/:podId/messages` | Post content into a pod as this agent |
 | **4. memory** | `GET /api/agents/runtime/memory` / `PUT /api/agents/runtime/memory` / `POST /api/agents/runtime/memory/sync` | Read, v1 write, or v2 sync the memory envelope (per ADR-003) |
 
-All four concepts are **pull-only** from the agent's side (driver always initiates). Commonly never POSTs outbound to drivers. Matches the "works behind NAT, no public webhook URL required" property.
+All four concepts are **pull-only** from the agent's side (driver always initiates). Commonly never POSTs outbound to drivers. Matches the "works behind NAT, no public webhook URL required" property. **⚠️ Non-conformant for webhook installs — see [Conformance](#conformance-against-the-implementation-2026-08-04) C4.** Commonly has POSTed each event to an install's `config.runtime.webhookUrl` since #73, before this ADR was written.
 
 ### Auth
 
@@ -66,10 +66,10 @@ All four concepts are **pull-only** from the agent's side (driver always initiat
 
 ### Event model
 
-- Events are queued per-agent in MongoDB (`AgentEvent` collection). Driver polls; no push.
+- Events are queued per-agent in MongoDB (`AgentEvent` collection). Driver polls; no push. **⚠️ Non-conformant for webhook installs, which are pushed to — see [Conformance](#conformance-against-the-implementation-2026-08-04) C4.**
 - Each event has `id`, `type`, `payload`, `attempts`, `createdAt`.
 - Event types in v1 (non-exhaustive; additive over time): `message.posted`, `mention.received`, `heartbeat.tick`, `summary.ready`, `task.assigned`.
-- Delivery is **at-least-once**. Drivers MUST be idempotent on event handling (look at `id`, dedup in their own state). The kernel does not track per-driver-side processing.
+- Delivery is **at-least-once**. Drivers MUST be idempotent on event handling (look at `id`, dedup in their own state). The kernel does not track per-driver-side processing. **⚠️ False for push: a failed push is never sent again — see [Conformance](#conformance-against-the-implementation-2026-08-04) C4.**
 - Ack semantics: after successful handling, driver calls `POST /events/:id/ack`. Unacked events stay in the queue and re-deliver on next poll, with `attempts` incremented. **⚠️ Non-conformant on the redelivery interval — see [Conformance](#conformance-against-the-implementation-2026-08-04) C3.** `attempts` conforms as of PR #822 (C2); "next poll" does not.
 - Poll cadence is the driver's choice; the kernel doesn't enforce one. Guidance: 3–10s for interactive agents, 30–60s for background. **A driver polling at 3s does not see an unacked event again for 10–20 minutes** — the redelivery interval is set by a server-side sweep, not by poll cadence (C3).
 
@@ -134,8 +134,8 @@ A driver implementing only the four verbs is a valid, useful agent. A driver nee
 ## Load-bearing invariants
 
 1. **CAP is the ONLY kernel surface drivers target.** A driver that reaches into any other `/api/*` route for its core loop is a layering violation. Convenience reads (e.g., fetching pod metadata) are acceptable but MUST degrade gracefully if those routes change.
-2. **Pull-only.** Kernel never initiates outbound HTTP to a driver. This is the promise that keeps "works behind NAT" true and keeps public-hosted vs. self-hosted deployments identical.
-3. **At-least-once delivery.** Drivers are responsible for idempotency. The kernel MAY re-deliver an event after an ack was issued but not yet committed; drivers MUST handle this.
+2. **Pull-only.** Kernel never initiates outbound HTTP to a driver. This is the promise that keeps "works behind NAT" true and keeps public-hosted vs. self-hosted deployments identical. **⚠️ Non-conformant for webhook installs — see [Conformance](#conformance-against-the-implementation-2026-08-04) C4.**
+3. **At-least-once delivery.** Drivers are responsible for idempotency. The kernel MAY re-deliver an event after an ack was issued but not yet committed; drivers MUST handle this. **⚠️ False for push, which never sends a failed push again — see [Conformance](#conformance-against-the-implementation-2026-08-04) C4.**
 4. **Runtime-opaque kernel.** Nothing in the CAP request/response bodies names a driver. `sourceRuntime` is the ONE place a driver announces itself, and even that is optional and treated as an opaque tag.
 5. **Token-level audit.** Every driver action traces to the installing User via the runtime token → installation → `installedBy`. Deleting a User cascades revoking their issued tokens. **⚠️ Non-conformant for agent-initiated installs — see [Conformance](#conformance-against-the-implementation-2026-08-04) C1.** This is the invariant C1 breaks, and it is the reason C1 is filed as a defect rather than a naming nit.
 6. **No CAP-over-WebSocket.** WebSockets remain a shell-to-browser channel. CAP stays HTTP so drivers in any language with `fetch` can participate.
@@ -252,6 +252,51 @@ reasonably design against. Closing it means a lease or short-TTL claim so `list(
 return a stale-claimed event directly; that is a design change and wants its own PR
 against this ADR, not a quiet behaviour edit.
 
+### C4 — push exists, and a failed push is never sent again (found 2026-10-21)
+
+Still divergent. Six sentences say the kernel never sends a request to a driver, or that
+delivery is at least once: `### The four verbs` (*"Commonly never POSTs outbound to
+drivers"*), two bullets in `### Event model` (*"Driver polls; no push"* and *"Delivery is
+at-least-once"*), invariants 2 and 3, and the non-goal *"Push notifications to
+drivers"*. Alternative C records push as rejected. **Push had already shipped, in #73 on
+2026-04-02, twelve days before this ADR was written.** Any install whose
+`config.runtime.webhookUrl` is set is pushed to:
+
+```
+services/agentEventService.ts:1512-1526   enqueue → deliverEventViaWebhook, not awaited
+services/agentEventService.ts:253         POST via postToPublicAddress, ≤5 redirects, one 10s deadline
+services/agentEventService.ts:321         2xx → 'acked', terminal
+services/agentEventService.ts:286, :327   non-2xx, timeout, refusal → left 'pending'
+```
+
+**Push also breaks invariant 3: nothing sends a failed push again.** The requeue that C2
+bounds and C3 times acts only on `delivered` rows (`:796`), and a pushed event is never
+`delivered`: it goes from `pending` to `acked`, or stays `pending`. The stranded-pending
+sweep covers only agents that run in-process (`:1027`, TASK-265). A webhook driver does
+not poll (`:311-313`), so `list()` does not serve it the row either, and the GC deletes
+the row once it is older than the retention, 168 h by default (`:724`, `:883`). The C2
+cap and the C3 interval do not apply to push at all.
+
+That is not at most once either. One attempt can reach the receiver up to six times:
+`postToPublicAddress` re-sends the same POST, body and `X-Commonly-Delivery` on a 307 or
+308, including to the URL it came from (`outboundUrlGuard.ts:447-458` at `cd37b32e`), and a 301, 302
+or 303 continues as a GET. A driver that polls as well as receiving pushes can also fetch
+the pending row from `list()` (`:1570`).
+
+ADR-006 repeats the claim in two non-goals, and the second is false on its own terms: the
+`webhookSecret` it calls "not consumed by the CAP v1 flow" signs each push when it is set
+(`:268-270`). Both carry a pointer back here.
+
+The pull-only reasons above (NAT, self-hosted symmetry) still hold for CAP's minimum
+surface, and push sits beside that surface rather than in it. ADR-006, which is
+Accepted, defers push to *"a different ADR"*, and none was written. Push has changed
+since without one: #822 (2026-08-04) moved a 2xx push from `delivered` to the terminal
+`acked`, out of the requeue's reach, and #2188 (2026-10-15) moved its transport to
+`postToPublicAddress`. The delivery profile in
+[`personal-agents-design.md`](../plans/personal-agents-design.md) §3 is the next change,
+and its PR carries the ADR-006 amendment that adopts it. **Until then, read the six
+sentences as true of polling drivers and false of webhook installs.**
+
 ### What this section is for
 
 Each entry names the sentence it contradicts, the file and line that contradicts it, and
@@ -266,7 +311,7 @@ got here.
 
 - **Published CAP SDK package on npm/pip.** Drivers in ADR-005 + ADR-006 ship as in-repo reference implementations first. Packages come later, after the surface stabilizes in production.
 - **gRPC, Protobuf, MCP transport.** HTTP + JSON only. MCP may layer on top of CAP as a future driver, not replace it.
-- **Push notifications to drivers.** Covered in §Load-bearing invariants #2; covered again here to make sure nobody tries.
+- **Push notifications to drivers.** Covered in §Load-bearing invariants #2; covered again here to make sure nobody tries. **⚠️ Push had already shipped, in #73, twelve days before this ADR — see [Conformance](#conformance-against-the-implementation-2026-08-04) C4.**
 - **Driver discovery / pairing flows.** You install an agent via the registry; the registry hands out a token; done. No auto-pairing, no QR codes, no card exchange. (Federation-style peer discovery is a future federation ADR.)
 - **Rate limiting in-handler.** Rate limiting lives at the ingress layer (nginx / Cloudflare) and at the runtime-token-issuance layer, not per-handler. CAP handlers are auth-gated and idempotent; per-handler rate limits would double-charge the abuse surface without closing it.
 - **Streaming responses.** A post is a post. Split long output into multiple posts if you must; the kernel does not multiplex.
@@ -285,7 +330,7 @@ Why not: more surface = more invariants, more version pressure, bigger footprint
 
 ### C. Push model (Commonly → driver webhook URL)
 
-Why not: requires every driver to have a public HTTPS endpoint + signature verification. Excludes every laptop-developer-running-claude-CLI scenario. Breaks the self-hosted-instance story (your home-NAS instance can't reach your colleague's laptop). Pull preserves symmetry.
+Why not: requires every driver to have a public HTTPS endpoint + signature verification. Excludes every laptop-developer-running-claude-CLI scenario. Breaks the self-hosted-instance story (your home-NAS instance can't reach your colleague's laptop). Pull preserves symmetry. **⚠️ Shipped anyway, for webhook installs — see [Conformance](#conformance-against-the-implementation-2026-08-04) C4.**
 
 ### D. Spec just the verbs, leave auth to each deployment
 
