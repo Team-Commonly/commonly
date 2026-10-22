@@ -763,6 +763,22 @@ class AgentIdentityService {
     return pod;
   }
 
+  /**
+   * The name chat shows for a user: Postgres `users.username` is what every
+   * message read joins on (models/pg/Message.ts), so this is the one rule for
+   * what goes there. An agent shows its display name, and a person shows the
+   * display name they chose, falling back to their handle.
+   */
+  static chatUsernameFor(user: {
+    username?: string;
+    displayName?: string;
+    isBot?: boolean;
+    botMetadata?: { displayName?: string };
+  }): string {
+    if (user.isBot && user.botMetadata?.displayName) return user.botMetadata.displayName;
+    return user.displayName || user.username || '';
+  }
+
   static async syncUserToPostgreSQL(user: InstanceType<typeof User>): Promise<boolean> {
     // `!PG_HOST` is the unconfigured-mirror case: config/db-pg.ts:75 builds a
     // Pool only when PG_HOST is set, so there is nothing to sync into. A test
@@ -775,10 +791,7 @@ class AgentIdentityService {
       const checkQuery = 'SELECT _id FROM users WHERE _id = $1';
       const checkResult = await pool.query(checkQuery, [user._id.toString()]);
 
-      // For bot users, use display name as username for better UX
-      const displayUsername = user.isBot && user.botMetadata?.displayName
-        ? user.botMetadata.displayName
-        : user.displayName || user.username;
+      const displayUsername = AgentIdentityService.chatUsernameFor(user);
 
       const isBot = user.isBot === true;
 
