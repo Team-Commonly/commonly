@@ -41,6 +41,17 @@ spec:
             port: http
           initialDelaySeconds: 10
           periodSeconds: 5
+        # Keep serving for 10 s after the pod is marked for deletion, as the backend does.
+        # ingress-nginx removes a pod from its upstreams a moment after the deletion, but
+        # nginx here stops at once: the image's stop signal is SIGQUIT, a graceful quit
+        # that exits as soon as no request is in flight. A request sent in that gap goes
+        # to an address that no longer answers and waits out proxy_connect_timeout (5 s)
+        # before the retry. Measured 2026-10-19: one such 5 s hang in each of that day's
+        # two rollouts.
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
       {{- if and .Values.frontend.nodeSelector (gt (len .Values.frontend.nodeSelector) 0) }}
       nodeSelector:
         {{- toYaml .Values.frontend.nodeSelector | nindent 8 }}
