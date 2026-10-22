@@ -159,6 +159,22 @@ backend:
   nodeSelector: {}
   tolerations: []
 
+# ops-runner: an isolated exec target for operator scripts (sleep infinity, no
+# traffic), so ad-hoc `kubectl exec ... node -` reads stop running inside the
+# serving backend's cgroup and starving its readiness probe — see
+# docs/runbooks/ops-runner-and-no-exec-into-backend.md (2026-10-22 11:42Z flap).
+# Its env + secret mounts mirror backend (same DBs/keys). Default on; staging off.
+opsRunner:
+  enabled: true
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      memory: "256Mi"
+  nodeSelector: {}
+  tolerations: []
+
 # Frontend service configuration
 frontend:
   enabled: true
