@@ -21,6 +21,6 @@ describe('adapter registry and grant-broker admission stay explicit', () => {
     const withheld = names.filter((name) => !eligible.has(name));
 
     expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex']);
-    expect(withheld.sort()).toEqual(['dsh', 'opencode', 'pi', 'qwen']);
+    expect(withheld.sort()).toEqual(['dsh', 'goose', 'opencode', 'pi', 'qwen']);
   });
 });

@@ -14,6 +14,7 @@ import pi from './pi.js';
 import opencode from './opencode.js';
 import qwen from './qwen.js';
 import dsh from './dsh.js';
+import goose from './goose.js';
 
 const ADAPTERS = {
   [stub.name]: stub,
@@ -23,6 +24,7 @@ const ADAPTERS = {
   [opencode.name]: opencode,
   [qwen.name]: qwen,
   [dsh.name]: dsh,
+  [goose.name]: goose,
 };
 
 export const listAdapterNames = () => Object.keys(ADAPTERS);
