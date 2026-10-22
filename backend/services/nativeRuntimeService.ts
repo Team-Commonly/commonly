@@ -2107,7 +2107,8 @@ export async function runAgent(
   // never reaches this. The per-user spend ceiling still counts the run.
   if (hostedNative && run.status === 'failed' && !postedViaTool && !finalMessage) {
     run.metered = false;
-    if (wasDirectlyAddressed(trigger) && !(dispatchCtx.webTainted && await podBridgedNow())) {
+    if (wasDirectlyAddressed(trigger)
+      && !((dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
       try {
         const AgentMessageService = require('./agentMessageService');
         await AgentMessageService.postMessage({
@@ -2119,7 +2120,7 @@ export async function runAgent(
           displayName,
           installationConfig: cfg,
           metadata: { source: 'native-runtime', runFailed: true },
-          noOutboundRelay: Boolean(dispatchCtx.webTainted),
+          noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
           answeringMessageId: dispatchCtx.answeringMessageId,
         });
       } catch (postErr) {

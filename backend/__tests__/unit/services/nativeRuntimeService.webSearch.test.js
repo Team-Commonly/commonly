@@ -17,6 +17,9 @@ jest.mock('../../../models/Pod', () => ({
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ _id: '507f1f77bcf86cd799439077' }) }) })),
+  findById: jest.fn(() => ({
+    select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: false }, isBot: false }) }),
+  })),
 }));
 jest.mock('../../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
 jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn().mockResolvedValue({ success: true }) }));
@@ -314,6 +317,24 @@ describe('native turn with commonly_web_search', () => {
       await runAgent(proposalInstall, mention);
 
       expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({ noOutboundRelay: true }));
+    });
+
+    test('a failed hosted turn after a broker call keeps its fixed line inside the pod', async () => {
+      const hostedInstall = {
+        ...install,
+        config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native', provisionedAt: new Date() } },
+      };
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {})))
+        .mockResolvedValueOnce({ status: 502, headers: {}, data: { error: 'upstream unavailable' } });
+
+      const result = await runAgent(hostedInstall, mention);
+
+      expect(result.status).toBe('failed');
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+        metadata: expect.objectContaining({ runFailed: true }),
+        noOutboundRelay: true,
+      }));
     });
 
     test.each([
