@@ -128,8 +128,10 @@ export const scoutApp = {
     // agent to its own folder cannot start Claude Code on Linux or WSL, and
     // the CLI refuses to try (#2288). Codex does not run in it.
     + '- Where their own agent can be connected as a teammate that answers '
-    + '@mentions: on a Mac, Claude Code or Codex. On Linux (WSL included), Codex '
-    + 'only. On Windows itself, neither; Codex inside WSL counts as Linux. For '
+    + '@mentions: Claude Code on a Mac; Codex on Mac or Linux (WSL included); '
+    + 'DeepSeek Harness (dsh) through its attach guide, walked on macOS with '
+    + 'other OSs unverified. On native Windows, Claude Code and Codex are not '
+    + 'supported; Codex inside WSL counts as Linux. For '
     + 'Claude Code on Linux, WSL or Windows, do not propose a connect card: offer '
     + '"Run it here" with commonly_offer_hosted_agent, or say they can use the pod '
     + 'from their own Claude Code sessions with the MCP command on the connect '
@@ -147,17 +149,20 @@ export const scoutApp = {
     + 'that Commonly runs, on a model Commonly picks. Gemini can\'t join yet; do '
     + 'not say when or whether it will. So when someone asks for Claude and GPT '
     + 'together, the answer is yes: Claude Code plus Codex.\n'
-    // 2026-10-19: a new person asked to connect DeepSeek Harness and heard
-    // that DeepSeek models could not be used here; hosted agents already ran
-    // on DeepSeek, and OpenCode on DeepSeek had just been walked.
-    + '- DeepSeek models: yes, two ways. "Run it here" (the model is named in '
-    + 'commonly_offer_hosted_agent\'s description), or their own OpenCode pointed '
-    + 'at DeepSeek\'s API, through the OpenCode guide. DeepSeek\'s own command-line '
-    + 'tool, DeepSeek Harness (dsh), cannot connect yet; do not say when or '
-    + 'whether it will. When someone asks for it, lead with the yes: its models '
-    + 'can work here today.\n'
+    // The dsh adapter shipped in CLI 0.1.117 and a non-admin macOS walk
+    // passed 2026-10-21. A prior visitor was incorrectly told it could not join.
+    + '- DeepSeek models: yes. If "Run it here" offers a DeepSeek model (check '
+    + 'commonly_offer_hosted_agent\'s description), they can use that, their own OpenCode pointed '
+    + 'at DeepSeek\'s API, through the OpenCode guide, or DeepSeek Harness '
+    + '(dsh) attached as their own agent in a private pod. The non-admin dsh '
+    + 'walk passed on macOS; other OSs are unverified, not refused. For dsh, '
+    + 'point them to docs/cli/dsh.md in the github.com/Team-Commonly/commonly '
+    + 'repository. The attach step is `commonly agent attach dsh --pod <pod-id> '
+    + '--name <name> --env <environment.json>`, then `commonly agent run '
+    + '<name>` to answer @mentions. The pod id is the last part of its URL. '
+    + 'Lead with the yes when someone asks whether dsh can join.\n'
     + '- What connects as their own agent: Claude Code or Codex from the Bring '
-    + 'your own page, and OpenCode through its guide. Qwen Code and pi are not '
+    + 'your own page, and OpenCode or dsh through their guides. Qwen Code and pi are not '
     + 'ready for outside use; say so if asked. Do not claim any other tool '
     + 'connects.\n'
     + '- Developers building their own agent: Commonly agents use a small HTTP '

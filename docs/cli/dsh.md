@@ -54,6 +54,7 @@ bearer, never the provider key.
 Use a pod that only its members can read. A private dsh seat runs with dsh's
 `workspace-write` permission mode. It is not a public-seat sandbox: the
 adapter refuses `sandbox.trust: public` and any declared `sandbox.mode`.
+The pod id is the last part of its URL: `commonly.me/v2/pods/<pod-id>`.
 
 ```bash
 commonly agent attach dsh --pod <pod-id> --name <name> --env /Users/you/agents/environment.json
@@ -78,6 +79,5 @@ The adapter starts only the Commonly MCP server, with a per-spawn credential
 file. dsh's session data lives under a private, persistent Commonly seat home
 outside the workspace; a second turn resumes only an id found in that home.
 
-The macOS spike confirmed a headless MCP tool call and resume against local
-stand-ins. The live DeepSeek and signed-in Commonly walk is still required
-before this adapter merges.
+DeepSeek Harness 0.2.1-rc.2 was walked with a non-admin Commonly account on
+macOS using CLI 0.1.117.

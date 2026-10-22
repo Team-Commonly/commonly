@@ -70,14 +70,27 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).not.toMatch(/v4[ -]?flash/i);
   });
 
-  // 2026-10-19: a new person asked to connect DeepSeek Harness, heard that
-  // DeepSeek models could not be used here, and left within two minutes.
-  test('says yes to DeepSeek models and names both paths, without promising dsh', () => {
-    expect(prompt).toMatch(/DeepSeek models: yes, two ways\. "Run it here"/);
+  // A dsh visitor was turned away after the adapter shipped and the non-admin
+  // macOS walk passed. Keep Scout and the install guide in agreement.
+  test('says yes to DeepSeek Harness and gives its attach path', () => {
+    expect(prompt).toMatch(/DeepSeek models: yes\. If "Run it here" offers a DeepSeek model/);
     expect(prompt).toMatch(/their own OpenCode pointed at DeepSeek's API, through the OpenCode guide/);
-    expect(prompt).toMatch(/DeepSeek Harness \(dsh\), cannot connect yet; do not say when or whether it will/);
-    expect(prompt).toMatch(/lead with the yes: its models can work here today/);
+    expect(prompt).toMatch(/DeepSeek Harness \(dsh\) attached as their own agent in a private pod/);
+    expect(prompt).toMatch(/other OSs are unverified, not refused/);
+    expect(prompt).toMatch(/commonly agent attach dsh --pod <pod-id> --name <name> --env <environment\.json>/);
+    expect(prompt).toMatch(/commonly agent run <name>` to answer @mentions/);
+    expect(prompt).toContain('docs/cli/dsh.md');
+    expect(prompt).not.toMatch(/DeepSeek Harness \(dsh\), cannot connect yet/);
     expect(prompt).toMatch(/name it only when someone asks which model or runtime it uses/);
+  });
+
+  test('the dsh guide gives the same attach step and the completed macOS walk', () => {
+    const guide = fs.readFileSync(path.resolve(__dirname, '../../../../docs/cli/dsh.md'), 'utf8');
+    expect(guide).toContain('commonly agent attach dsh --pod <pod-id> --name <name>');
+    expect(guide).toContain('commonly.me/v2/pods/<pod-id>');
+    expect(guide).toMatch(/DeepSeek Harness 0\.2\.1-rc\.2 was walked with a non-admin Commonly account/);
+    expect(guide).toMatch(/macOS using CLI 0\.1\.117/);
+    expect(guide).not.toContain('still required before this adapter merges');
   });
 
   test('connects OpenCode through its guide, never through the connect card', () => {
@@ -90,7 +103,9 @@ describe('Scout onboarding knowledge', () => {
   // Linux run 38982219348: a Claude Code listener cannot run on Linux, WSL or
   // Windows (#2288 refuses it), so a connect card for it there is a dead end.
   test('offers a connect card for Claude Code on a Mac only, and says what works elsewhere', () => {
-    expect(prompt).toMatch(/on a Mac, Claude Code or Codex\. On Linux \(WSL included\), Codex only\./);
+    expect(prompt).toMatch(/Claude Code on a Mac; Codex on Mac or Linux \(WSL included\)/);
+    expect(prompt).toMatch(/DeepSeek Harness \(dsh\) through its attach guide, walked on macOS with other OSs unverified/);
+    expect(prompt).not.toMatch(/On Linux \(WSL included\), Codex only/);
     expect(prompt).toMatch(/For Claude Code on Linux, WSL or Windows, do not propose a connect card/);
     expect(prompt).toMatch(/commonly_offer_hosted_agent, or say they can use the pod from their own Claude Code sessions/);
     expect(prompt).not.toMatch(/Windows is not verified yet/);
@@ -109,7 +124,10 @@ describe('Scout onboarding knowledge', () => {
 
   test('cites developer docs that exist in the repository', () => {
     const repo = path.resolve(__dirname, '../../../..');
-    for (const doc of ['docs/agents/BUILDING_AN_AGENT.md', 'docs/api/openapi.yaml', 'docs/cli/opencode.md']) {
+    for (const doc of [
+      'docs/agents/BUILDING_AN_AGENT.md', 'docs/api/openapi.yaml',
+      'docs/cli/opencode.md', 'docs/cli/dsh.md',
+    ]) {
       expect(prompt).toContain(doc);
       expect(fs.existsSync(path.join(repo, doc))).toBe(true);
     }
