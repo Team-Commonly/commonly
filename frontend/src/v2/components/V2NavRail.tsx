@@ -103,7 +103,6 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav, needsYouCount })
                 type="button"
                 className={`v2-rail__item${isActive(item) ? ' v2-rail__item--active' : ''}`}
                 onClick={() => handleNavClick(item)}
-                title={navLabel(item)}
                 aria-label={item.key === 'activity' && count !== null && count > 0
                   ? `${navLabel(item)}: ${t('activity.needsYou.countLabel', { count })}` : navLabel(item)}
                 data-label={navLabel(item)}

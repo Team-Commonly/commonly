@@ -22,6 +22,25 @@ describe('V2FeedbackMenu', () => {
     localStorage.clear();
   });
 
+  test('nav items keep accessible and hover labels without duplicate native tooltips', () => {
+    render(
+      <MemoryRouter initialEntries={['/v2']}>
+        <div className="v2-root"><V2NavRail needsYouCount={3} /></div>
+      </MemoryRouter>,
+    );
+
+    const nav = screen.getByRole('navigation', { name: 'v2 navigation' });
+    const items = Array.from(nav.querySelectorAll('.v2-rail__item'));
+    expect(items).toHaveLength(6);
+    items.forEach((item) => {
+      expect(item).toHaveAttribute('data-label');
+      expect(item).toHaveAttribute('aria-label');
+      expect(item).not.toHaveAttribute('title');
+    });
+    expect(screen.getByRole('button', { name: 'Activity: 3 waiting on you' }))
+      .toHaveAttribute('data-label', 'Activity');
+  });
+
   test('Guide from a feature page saves the request and returns to the shell', () => {
     const LocationProbe = () => {
       const location = useLocation();

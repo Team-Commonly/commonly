@@ -885,11 +885,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('the nav rail pane lets its language dropdown escape the pane clip', () => {
-    // The rail is 76px wide; its language menu is a wider floating popover.
+    // The rail is 56px wide; its language menu is a wider floating popover.
     // Base `.v2-pane { overflow: hidden }` clips it to the rail edge, so the
     // menu rendered cut-off "outside the sidebar" (2026-07-23). `.v2-pane--rail`
     // must override to overflow: visible so the menu floats over the pods sidebar.
     expect(ruleBody(v2, '.v2-pane--rail')).toContain('overflow: visible');
+  });
+
+  test('the nav rail exposes badges and hover labels, scrolling only in short viewports', () => {
+    expect(ruleBody(v2, '.v2-rail__nav')).toContain('overflow: visible');
+    const shortViewport = mediaAt(v2, '@media (max-height: 460px)');
+    expect(shortViewport).not.toBe('');
+    const shortNav = ruleBody(v2, '.v2-rail__nav', { within: shortViewport });
+    expect(shortNav).toContain('overflow-y: auto');
+    expect(shortNav).toContain('overflow-x: hidden');
   });
 
   test('team-card actions wrap on narrow screens so the agent name keeps width', () => {
