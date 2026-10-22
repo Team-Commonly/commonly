@@ -75,7 +75,7 @@ export interface ByoHandoffPayload {
   agentName: string;
   podId: string;
   os: ByoHandoffOs;
-  commands: Record<ByoHandoffOs, string>;
+  commands: Partial<Record<ByoHandoffOs, string>>;
   supportedOs: ByoHandoffOs[];
 }
 
@@ -102,17 +102,20 @@ export const buildByoHandoffPayload = ({
   const supportedOs: ByoHandoffOs[] = adapter === 'opencode' || adapter === 'dsh'
     ? ['mac']
     : [...BYO_HANDOFF_OSES];
+  const selectedOs = supportedOs.includes(os) ? os : supportedOs[0];
+  const commands: Partial<Record<ByoHandoffOs, string>> = {};
+  for (const supported of supportedOs) {
+    commands[supported] = buildByoHandoffCommand({
+      adapter, os: supported, podId: normalizedPodId, agentName: normalizedName,
+    });
+  }
   return {
     kind: 'byo-handoff',
     adapter,
     agentName: normalizedName,
     podId: normalizedPodId,
-    os,
-    commands: {
-      mac: buildByoHandoffCommand({ adapter, os: 'mac', podId: normalizedPodId, agentName: normalizedName }),
-      linux: buildByoHandoffCommand({ adapter, os: 'linux', podId: normalizedPodId, agentName: normalizedName }),
-      windows: buildByoHandoffCommand({ adapter, os: 'windows', podId: normalizedPodId, agentName: normalizedName }),
-    },
+    os: selectedOs,
+    commands,
     supportedOs,
   };
 };

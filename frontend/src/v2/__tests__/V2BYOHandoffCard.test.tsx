@@ -1,4 +1,6 @@
 import React from 'react';
+import fs from 'fs';
+import path from 'path';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2MessageRow from '../components/V2MessageRow';
@@ -42,6 +44,18 @@ describe('V2BYOHandoffCard', () => {
       configurable: true,
       value: { writeText },
     });
+  });
+
+  it('points its adapter guides at checked-in documents', () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../components/V2BYOHandoffCard.tsx'),
+      'utf8',
+    );
+    const repoRoot = path.resolve(__dirname, '../../../..');
+    for (const doc of ['docs/cli/opencode.md', 'docs/cli/dsh.md']) {
+      expect(source).toContain(`blob/main/${doc}`);
+      expect(fs.existsSync(path.join(repoRoot, doc))).toBe(true);
+    }
   });
 
   it('renders the server command and copies the exact same bytes', async () => {

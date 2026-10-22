@@ -1,4 +1,6 @@
 // @ts-nocheck
+import fs from 'fs';
+import path from 'path';
 import {
   buildByoHandoffCommand,
   buildByoHandoffPayload,
@@ -24,10 +26,10 @@ describe('byoHandoffService', () => {
     expect(command).not.toMatch(/token|cm_agent|COMMONLY_/i);
   });
 
-  it('returns all selectable commands but limits OpenCode and dsh to verified macOS', () => {
+  it('normalizes unsupported OS choices and emits only verified dsh commands', () => {
     const payload = buildByoHandoffPayload({
       adapter: 'dsh',
-      os: 'mac',
+      os: 'windows',
       podId: 'pod-1',
       agentName: 'My DSH',
     });
@@ -38,11 +40,29 @@ describe('byoHandoffService', () => {
       adapter: 'dsh',
       agentName: 'my-dsh',
       podId: 'pod-1',
+      os: 'mac',
       supportedOs: ['mac'],
     });
     expect(payload.commands.mac).toContain('commonly agent attach dsh');
-    expect(payload.commands.linux).toContain('/home/you/agents/environment.json');
-    expect(payload.commands.windows).toContain('C:\\Users\\you\\agents\\environment.json');
+    expect(payload.commands.linux).toBeUndefined();
+    expect(payload.commands.windows).toBeUndefined();
+  });
+
+  it('keeps the dsh install command aligned with its smoke-tested adapter version', () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../../../../cli/src/lib/adapters/dsh.js'),
+      'utf8',
+    );
+    const match = source.match(/TESTED_DSH_VERSIONS = Object\.freeze\(\['([^']+)'\]\)/);
+    expect(match?.[1]).toBeTruthy();
+
+    const command = buildByoHandoffCommand({
+      adapter: 'dsh',
+      os: 'mac',
+      podId: 'pod-1',
+      agentName: 'my-dsh',
+    });
+    expect(command).toContain(`@deepseek-ai/dsh@${match?.[1]}`);
   });
 
   it('creates a safe default name from the account handle', () => {
