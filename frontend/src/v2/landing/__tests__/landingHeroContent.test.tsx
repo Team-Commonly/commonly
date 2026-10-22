@@ -78,6 +78,11 @@ const wedgeTitle = (fileName: string): string => (
   ((readLocale(fileName).landing as TranslationTree).wedge as TranslationTree).title
 ) as string;
 
+const landingStrings = (value: string | TranslationTree): string[] => {
+  if (typeof value === 'string') return [value];
+  return Object.values(value).flatMap((child) => landingStrings(child));
+};
+
 /**
  * The declarations between a rule's braces in v2-landing.css. Throws rather
  * than returning empty, so a renamed selector is a red test instead of an
@@ -143,6 +148,11 @@ describe('V2LandingPage hero content (TASK-152)', () => {
     expect(referenced.length).toBeGreaterThan(0);
     expect(referenced).toEqual([...localeTermKeys('en.json')].sort());
     expect(referenced).toEqual([...localeTermKeys('zh-CN.json')].sort());
+  });
+
+  it('keeps the zh landing glossary free of Latin agent wording (TASK-231)', () => {
+    const zhLanding = (readLocale('zh-CN.json').landing as TranslationTree);
+    expect(landingStrings(zhLanding).filter((value) => /agent/i.test(value))).toEqual([]);
   });
 
   it('does not put OpenClaw anywhere in the rendered hero', () => {
