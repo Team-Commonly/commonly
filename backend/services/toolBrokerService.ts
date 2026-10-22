@@ -300,9 +300,55 @@ const getPullRequest: GithubToolDefinition = {
   },
 };
 
+/**
+ * A review needs the code, not just the file names: each file's `patch` (its
+ * unified-diff hunks, as GitHub returns them) rides along, capped so one large
+ * pull request can't flood a turn. A cut patch ends on a whole line and says it
+ * was cut; a file left out says why. GitHub itself omits `patch` for binary
+ * files and very large diffs.
+ */
+export const PR_FILE_PATCH_MAX_BYTES = 8 * 1024;
+export const PR_FILES_PATCH_TOTAL_MAX_BYTES = 32 * 1024;
+
+/** At most `maxBytes` of UTF-8, never splitting a character, ending on a whole line when it can. */
+const truncatePatch = (text: string, maxBytes: number): string => {
+  const bytes = Buffer.from(text, 'utf8');
+  if (bytes.length <= maxBytes) return text;
+  let end = maxBytes;
+  // eslint-disable-next-line no-bitwise
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) end -= 1;
+  const cut = bytes.subarray(0, end).toString('utf8');
+  const lastLine = cut.lastIndexOf('\n');
+  return lastLine > 0 ? cut.slice(0, lastLine + 1) : cut;
+};
+
+const prFileView = (file: Record<string, unknown>, remainingBytes: number) => {
+  const base = {
+    filename: file.filename,
+    status: file.status,
+    additions: file.additions,
+    deletions: file.deletions,
+    changes: file.changes,
+    url: file.blob_url,
+  };
+  if (typeof file.patch !== 'string') return { ...base, patch: null, patchOmitted: 'not_provided_by_github' };
+  if (remainingBytes <= 0) return { ...base, patch: null, patchOmitted: 'total_cap' };
+  const limit = Math.min(PR_FILE_PATCH_MAX_BYTES, remainingBytes);
+  const patch = truncatePatch(file.patch, limit);
+  if (patch === file.patch) return { ...base, patch };
+  // What the total leaves is too small for one whole line: name the file, send no fragment.
+  if (limit < PR_FILE_PATCH_MAX_BYTES && !patch.endsWith('\n')) {
+    return { ...base, patch: null, patchOmitted: 'total_cap' };
+  }
+  return { ...base, patch, patchTruncated: true };
+};
+
 const listPullRequestFiles: GithubToolDefinition = {
   name: 'github.list_pull_request_files',
-  description: 'List files changed by a pull request in this instance\'s GitHub repository.',
+  description: 'List files changed by a pull request in this instance\'s GitHub repository, with each file\'s diff '
+    + `(\`patch\`). Patches are capped at ${PR_FILE_PATCH_MAX_BYTES / 1024} KB per file and `
+    + `${PR_FILES_PATCH_TOTAL_MAX_BYTES / 1024} KB in total; a cut patch has \`patchTruncated: true\`, `
+    + 'and a file whose patch is left out has `patch: null` with `patchOmitted` saying why.',
   requiredWriteMode: 'read',
   connectionType: 'github-app',
   inputSchema: {
@@ -320,15 +366,13 @@ const listPullRequestFiles: GithubToolDefinition = {
       forceApp: true,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
+    let remaining = PR_FILES_PATCH_TOTAL_MAX_BYTES;
     return {
-      files: (files || []).map((file: Record<string, unknown>) => ({
-        filename: file.filename,
-        status: file.status,
-        additions: file.additions,
-        deletions: file.deletions,
-        changes: file.changes,
-        url: file.blob_url,
-      })),
+      files: (files || []).map((file: Record<string, unknown>) => {
+        const view = prFileView(file, remaining);
+        if (typeof view.patch === 'string') remaining -= Buffer.byteLength(view.patch, 'utf8');
+        return view;
+      }),
     };
   },
 };
