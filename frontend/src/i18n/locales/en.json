@@ -2175,6 +2175,7 @@
     "outcomeRefused": "refused",
     "outcomeSuperseded": "answered",
     "owner": "owner",
+    "readInTesting": "read in testing",
     "readOrWrite": "read, or read and write",
     "refused": "refused",
     "repository": "repository",
