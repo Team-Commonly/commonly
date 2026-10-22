@@ -255,17 +255,14 @@ describe('claude adapter — spawn()', () => {
   });
 
   test('rejects on timeout and SIGTERMs the child', async () => {
-    // Child never emits close within the window.
+    // Child closes only after the timeout kills it, independent of host load.
     const proc = new EventEmitter();
     proc.stdout = new EventEmitter();
     proc.stderr = new EventEmitter();
-    proc.kill = jest.fn();
+    proc.kill = jest.fn(() => queueMicrotask(() => proc.emit('close', null)));
     const impl = () => proc;
 
     const p = claude.spawn('x', { sessionId: 'sid-1', timeoutMs: 20, _spawnImpl: impl });
-    // After kill, simulate the process closing so the adapter resolves its close handler.
-    setTimeout(() => proc.emit('close', null), 40);
-
     await expect(p).rejects.toThrow(/timed out after 20ms/);
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
   });
