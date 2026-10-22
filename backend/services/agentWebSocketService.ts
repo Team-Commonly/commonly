@@ -10,6 +10,8 @@ const Pod = require('../models/Pod');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret');
+// eslint-disable-next-line global-require
+const { markByoConnectionAttempt } = require('./onboardingMarks');
 
 interface AgentSocket {
   agentName: string;
@@ -74,8 +76,10 @@ interface InstallationDoc {
   agentName: string;
   instanceId?: string;
   podId?: unknown;
+  installedBy?: unknown;
   status?: string;
   displayName?: string;
+  config?: { runtime?: { runtimeType?: string; host?: string; webhookUrl?: string } };
   runtimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date }>;
 }
 
@@ -404,9 +408,16 @@ class AgentWebSocketService {
           if (agentName) {
             const installs = await AgentInstallation.find({
               agentName, instanceId, status: 'active',
-            }).select('podId').lean() as Array<{ podId?: { toString: () => string } }>;
+            }).select('podId installedBy config').lean() as Array<{
+              podId?: { toString: () => string };
+              installedBy?: unknown;
+              config?: { runtime?: { runtimeType?: string; host?: string; webhookUrl?: string } };
+            }>;
             if (!installs.length) return null;
             if (isFirstTokenUse) {
+              for (const installationRow of installs) {
+                markByoConnectionAttempt(installationRow.installedBy, installationRow);
+              }
               try {
                 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
                 const { completeConnectAgentStarterTask } = require('./starterTaskService');
@@ -442,6 +453,7 @@ class AgentWebSocketService {
           }
 
           if (isFirstLegacyUse) {
+            markByoConnectionAttempt(installation.installedBy, installation);
             try {
               // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
               const { completeConnectAgentStarterTask } = require('./starterTaskService');

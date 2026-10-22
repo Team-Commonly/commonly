@@ -19,9 +19,13 @@ const mockInstallationFindOne = jest.fn();
 const mockInstallationFind = jest.fn();
 const mockInstallationUpdateOne = jest.fn();
 const mockCompleteStarterTask = jest.fn();
+const mockMarkByoConnectionAttempt = jest.fn();
 
 jest.mock('../../../services/starterTaskService', () => ({
   completeConnectAgentStarterTask: (...args) => mockCompleteStarterTask(...args),
+}));
+jest.mock('../../../services/onboardingMarks', () => ({
+  markByoConnectionAttempt: (...args) => mockMarkByoConnectionAttempt(...args),
 }));
 
 jest.mock('../../../models/User', () => {
@@ -78,6 +82,7 @@ beforeEach(() => {
   mockInstallationUpdateOne.mockReset();
   mockCompleteStarterTask.mockReset();
   mockCompleteStarterTask.mockResolvedValue(undefined);
+  mockMarkByoConnectionAttempt.mockReset();
 });
 
 describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
@@ -87,7 +92,9 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
       _id: 'install-a',
       agentName: 'codex',
       instanceId: 'cody',
+      installedBy: 'human-a',
       podId: { toString: () => 'pod-a' },
+      config: { runtime: { host: 'byo', runtimeType: 'webhook' } },
       runtimeTokens: [{ tokenHash: 'hashed-token' }],
     };
     const otherInstall = {
@@ -122,6 +129,7 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
       podIds: ['pod-a', 'pod-b'],
       agentLabel: 'codex',
     });
+    expect(mockMarkByoConnectionAttempt).toHaveBeenCalledWith('human-a', matchedInstall);
   });
 
   test('does not fire the starter hook when the token was used before (#916)', async () => {
@@ -155,7 +163,12 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
     mockUserFindOne.mockResolvedValue(buildAgentUser(null));
     mockInstallationFind.mockReturnValue({
       lean: async () => [
-        { podId: { toString: () => 'pod-workspace' }, status: 'active' },
+        {
+          podId: { toString: () => 'pod-workspace' },
+          status: 'active',
+          installedBy: 'human-1',
+          config: { runtime: { host: 'byo', runtimeType: 'webhook' } },
+        },
       ],
     });
 
@@ -168,6 +181,10 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
       podIds: ['pod-workspace'],
       agentLabel: 'My BYO Agent',
     });
+    expect(mockMarkByoConnectionAttempt).toHaveBeenCalledWith(
+      'human-1',
+      expect.objectContaining({ podId: expect.anything(), installedBy: 'human-1' }),
+    );
   });
 
   test('stays silent on every subsequent authentication', async () => {

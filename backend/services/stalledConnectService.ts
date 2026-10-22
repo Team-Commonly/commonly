@@ -1,6 +1,9 @@
 import StalledConnectEpisode from '../models/StalledConnectEpisode';
 import { deriveAgentState } from './agentStateService';
-import { composeStalledConnectNudge, composeStalledConnectResolution } from './stalledConnectCopy';
+import {
+  composeStalledConnectNudge,
+  composeStalledConnectResolution,
+} from './stalledConnectCopy';
 
 /**
  * The stalled-connect nudge (W4 item 3). Spec: ux-lead, 2026-08-14.
@@ -230,8 +233,14 @@ const nudgeOnce = async ({
   const { buildAgentUsername } = require('./agentIdentityService');
 
   const podId = String(install.podId);
-  const installer = await User.findById(install.installedBy).select('username').lean() as
-    { username?: string } | null;
+  const installer = await User.findById(install.installedBy).select('username onboarding').lean() as
+    {
+      username?: string;
+      onboarding?: {
+        byoCommandCopiedAt?: Date;
+        byoCommandType?: 'mcp' | 'cli';
+      };
+    } | null;
   if (!installer?.username) return; // Nobody to address; a nameless nudge is noise.
 
   const handle = buildAgentUsername
@@ -272,6 +281,11 @@ const nudgeOnce = async ({
     displayName: derived.displayName,
     handle,
     fixCommand: derived.fixCommand || `commonly agent run ${derived.agentName}`,
+    evidence: {
+      commandCopiedAt: installer.onboarding?.byoCommandCopiedAt,
+      commandType: installer.onboarding?.byoCommandType,
+      tokenIssuedAt: issuedAt,
+    },
   });
 
   try {

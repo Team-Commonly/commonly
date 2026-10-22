@@ -37,19 +37,56 @@
  */
 export type NudgeLocale = 'en' | 'zh-CN';
 
+export type StalledConnectCopyEvidence = {
+  /** First setup-command copy for this signup. */
+  commandCopiedAt?: Date | string | null;
+  /** Fixed enum only; command contents and tokens never enter copy. */
+  commandType?: 'mcp' | 'cli' | null;
+  /** Token issue time for the current stalled episode. */
+  tokenIssuedAt?: Date | string | null;
+};
+
+const copiedAtOffsetSeconds = (evidence: StalledConnectCopyEvidence): number | null => {
+  if (!evidence.commandCopiedAt || !evidence.tokenIssuedAt) return null;
+  const copiedAt = evidence.commandCopiedAt instanceof Date
+    ? evidence.commandCopiedAt
+    : new Date(evidence.commandCopiedAt);
+  const issuedAt = evidence.tokenIssuedAt instanceof Date
+    ? evidence.tokenIssuedAt
+    : new Date(evidence.tokenIssuedAt);
+  if (Number.isNaN(copiedAt.getTime()) || Number.isNaN(issuedAt.getTime())) return null;
+  const seconds = Math.round((copiedAt.getTime() - issuedAt.getTime()) / 1000);
+  return seconds >= 0 ? seconds : null;
+};
+
 export const composeStalledConnectNudge = ({
-  installerName, displayName, handle, fixCommand,
+  installerName, displayName, handle, fixCommand, evidence = {},
 }: {
   installerName: string;
   displayName: string;
   handle: string;
   fixCommand: string;
   locale?: NudgeLocale;
-}): string =>
-  `@${installerName} — I'm installed here, but nothing has ever started me, `
-  + `so mentioning @${handle} won't reach anyone yet. `
-  + `Run \`${fixCommand}\` on the machine where I should live and I'll come online. `
-  + `I'll post here the moment I connect.`;
+  evidence?: StalledConnectCopyEvidence;
+}): string => {
+  const offsetSeconds = copiedAtOffsetSeconds(evidence);
+  if (offsetSeconds !== null) {
+    const copiedThing = evidence.commandType === 'mcp'
+      ? 'MCP command'
+      : evidence.commandType === 'cli' ? 'listener command' : 'command';
+    return `@${installerName} — you copied the ${copiedThing} at +${offsetSeconds} s; `
+      + `no connection arrived — here is the one thing to check for your OS: `
+      + `run \`${fixCommand}\` on the machine where I should live.`
+      + (evidence.commandType === 'mcp'
+        ? ' MCP-only clients can call Commonly, but they do not answer @mentions.'
+        : '')
+      + ` I'll post here the moment I connect.`;
+  }
+  return `@${installerName} — I'm installed here, but nothing has ever started me, `
+    + `so mentioning @${handle} won't reach anyone yet. `
+    + `Run \`${fixCommand}\` on the machine where I should live and I'll come online. `
+    + `I'll post here the moment I connect.`;
+};
 
 /**
  * The resolution post, and it is deliberately NOT time-bounded (ux-lead).
