@@ -8,9 +8,7 @@
     "copy": "复制",
     "copied": "已复制",
     "language": {
-      "label": "语言",
-      "switchToEnglish": "切换到英文",
-      "switchToChinese": "切换到简体中文"
+      "label": "语言"
     },
     "nav": {
       "pods": "Pod",
