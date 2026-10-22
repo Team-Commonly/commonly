@@ -11,23 +11,28 @@ import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 export const TESTED_HERMES_VERSION = '0.22.2';
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
-const VERSION_TIMEOUT_MS = 5000;
+const VERSION_TIMEOUT_MS = 15000;
 const MAX_STDERR_CHARS = 4096;
 const MAX_LINE_CHARS = 1024 * 1024;
 
 const readVersion = (env, spawnSyncImpl = spawnSync) => {
-  const probe = spawnSyncImpl('hermes', ['--version'], {
-    encoding: 'utf8', env, timeout: VERSION_TIMEOUT_MS,
-  });
-  if (probe.error?.code === 'ENOENT') return null;
-  if (probe.error || probe.status !== 0) {
-    throw new Error('Hermes version probe failed; install Hermes Agent 0.22.2');
+  let probe;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    probe = spawnSyncImpl('hermes', ['--version'], {
+      encoding: 'utf8', env, timeout: VERSION_TIMEOUT_MS,
+    });
+    if (probe.error?.code === 'ENOENT') return null;
+    if (probe.error || probe.status !== 0) continue;
+    const version = String(probe.stdout || '').match(/Hermes Agent v([^\s]+)/i)?.[1];
+    if (version !== TESTED_HERMES_VERSION) {
+      throw new Error(`Hermes ${version || 'unknown'} is unsupported; this adapter requires ${TESTED_HERMES_VERSION}`);
+    }
+    return version;
   }
-  const version = String(probe.stdout || '').match(/Hermes Agent v([^\s]+)/i)?.[1];
-  if (version !== TESTED_HERMES_VERSION) {
-    throw new Error(`Hermes ${version || 'unknown'} is unsupported; this adapter requires ${TESTED_HERMES_VERSION}`);
-  }
-  return version;
+  const status = probe.status ?? 'none';
+  const signal = probe.signal ?? 'none';
+  const code = probe.error?.code ?? 'none';
+  throw new Error(`Hermes version probe failed after 2 attempts (status=${status}, signal=${signal}, code=${code}, timeout=${VERSION_TIMEOUT_MS}ms); check the Hermes installation or startup log`);
 };
 
 export const readHermesJsonl = (line, state) => {

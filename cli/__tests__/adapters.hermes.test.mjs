@@ -102,6 +102,47 @@ test('refuses any Hermes version other than 0.22.2 before starting a turn', asyn
   });
 });
 
+test('retries a failed cold-home version probe before the first turn', async () => {
+  await withHome(async (home) => {
+    const probe = jest.fn()
+      .mockReturnValueOnce({ status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT' } })
+      .mockReturnValueOnce({ status: 0, stdout: 'Hermes Agent v0.22.2 (local build)\n' });
+    const recording = await fixture('first-turn');
+    await expect(hermes.spawn('hello', {
+      cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
+      _spawnSyncImpl: probe, _spawnImpl: recordedSpawn(recording),
+    })).resolves.toMatchObject({ text: 'PONG' });
+    expect(probe).toHaveBeenCalledTimes(2);
+    expect(probe.mock.calls[0][2].timeout).toBe(15000);
+  });
+});
+
+test('reports timeout, signal and status when a version probe fails twice', async () => {
+  await withHome(async (home) => {
+    const probe = jest.fn(() => ({
+      status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT' },
+    }));
+    const child = jest.fn();
+    await expect(hermes.spawn('hello', {
+      cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
+      _spawnSyncImpl: probe, _spawnImpl: child,
+    })).rejects.toThrow('status=none, signal=SIGTERM, code=ETIMEDOUT, timeout=15000ms');
+    expect(probe).toHaveBeenCalledTimes(2);
+    expect(child).not.toHaveBeenCalled();
+  });
+});
+
+test('reports a non-zero cold-home probe status without suggesting a reinstall', async () => {
+  await withHome(async (home) => {
+    const probe = jest.fn(() => ({ status: 1, signal: null }));
+    await expect(hermes.spawn('hello', {
+      cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
+      _spawnSyncImpl: probe, _spawnImpl: jest.fn(),
+    })).rejects.toThrow('status=1, signal=none, code=none, timeout=15000ms');
+    expect(probe).toHaveBeenCalledTimes(2);
+  });
+});
+
 test('refuses a public seat before probing or spawning Hermes', async () => {
   const probe = jest.fn();
   const child = jest.fn();
