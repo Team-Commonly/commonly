@@ -2,6 +2,15 @@
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-jwt-secret';
 
+// Fail buffered Mongoose model ops fast in unit tests. Mongoose's default
+// bufferTimeoutMS is 10 000 ms: in in-memory mode there is no Mongo connection,
+// so a model call that slips through buffers for the full 10 s before it
+// rejects. The hot path is agentProvisionerService.ts:941 ->
+// globalModelConfigService.ts:232, which reads a GlobalModelConfig document on
+// first use; 250 ms turns each ~10 s hang into a fast rejection the code
+// already handles. Measured in the CI study: the 7 worst files ~460 s -> ~8 s.
+require('mongoose').set('bufferTimeoutMS', 250);
+
 // Suppress console logs during tests unless needed
 if (process.env.TEST_VERBOSE !== 'true') {
   const originalConsole = console;
