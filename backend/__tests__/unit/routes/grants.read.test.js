@@ -171,7 +171,8 @@ describe('GET /api/grants/:grantId/calls', () => {
   test('the trail refuses a non-member and never returns args', async () => {
     const row = await RoomGrant.create(grant());
     ToolCall.listForGrant.mockResolvedValue([
-      trailRow({ grantId: row.grantId, credentialOwnerId: 'owner-1' }),
+      trailRow({ grantId: row.grantId, credentialOwnerId: 'owner-1', vendorStatus: 400,
+        vendorError: 'session required' }),
       trailRow({ grantId: row.grantId, callId: 'call-2', outcome: 'refused', reason: 'not_in_audience' }),
     ]);
     ToolCall.countsForGrant.mockResolvedValue({ total: 3, ok: 1, refused: 1, pending_approval: 1, failed: 0 });
@@ -193,6 +194,7 @@ describe('GET /api/grants/:grantId/calls', () => {
     // The trail names whose credential ran (plan §8) — and a row that recorded
     // none says so as null rather than dropping the key.
     expect(member.body.calls[0].credentialOwnerId).toBe('owner-1');
+    expect(member.body.calls[0]).toMatchObject({ vendorStatus: 400, vendorError: 'session required' });
     expect(member.body.calls[1]).toHaveProperty('credentialOwnerId', null);
     expect(ToolCall.listForGrant).toHaveBeenCalledWith(row.grantId, 100);
 
