@@ -45,6 +45,11 @@ import {
 import {
   hostedCaps, hostedCapsForOwner, isConfigured as hostedWorkerConfigured, listHostedInstallationsForUser, ownerIsPro,
 } from './hostedRuntimeService';
+import {
+  buildByoHandoffPayload,
+  defaultByoHandoffName,
+  type ByoHandoffAdapter,
+} from './byoHandoffService';
 
 // --- public surface --------------------------------------------------------
 
@@ -396,6 +401,39 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'commonly_offer_local_agent',
+      description:
+        'When someone asks you to inspect or change code, files, or a repository on their own computer, '
+        + 'you cannot reach that computer from a hosted turn. Ask which local tool they use (Claude Code, '
+        + 'Codex, OpenCode, or DeepSeek Harness) and which operating system if either is unknown. Once known, '
+        + 'call this tool instead of posting shell directions yourself. It posts one handoff card with the '
+        + 'exact install/login/attach/run commands for that OS and a Copy command button. The card contains '
+        + 'no token. Do not also post a prose handoff about the commands.',
+      parameters: {
+        type: 'object',
+        properties: {
+          adapter: {
+            type: 'string',
+            enum: ['claude', 'codex', 'opencode', 'dsh'],
+            description: 'The local tool the person said they use.',
+          },
+          os: {
+            type: 'string',
+            enum: ['mac', 'linux', 'windows'],
+            description: 'The operating system the person said they use.',
+          },
+          name: {
+            type: 'string',
+            description: 'Optional local agent name; defaults to the person username plus the adapter.',
+          },
+        },
+        required: ['adapter', 'os'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'commonly_run_code',
       description:
         'Run a short Python or JavaScript program in a fresh, isolated sandbox and get back '
@@ -465,7 +503,8 @@ export const NATIVE_TOOL_NAMES: readonly string[] = TOOLS.map((tool) => tool.fun
 // sandbox key on the instance, web search (TASK-267a), which needs a search
 // key, and reading a page (TASK-267b).
 const OPT_IN_TOOLS: ReadonlySet<string> = new Set([
-  'commonly_propose_action', 'commonly_offer_hosted_agent', 'commonly_run_code', 'commonly_web_search',
+  'commonly_propose_action', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent',
+  'commonly_run_code', 'commonly_web_search',
   'commonly_fetch_url',
 ]);
 const toolAvailable = (name: string): boolean => {
@@ -756,6 +795,51 @@ async function dispatchTool(
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime' },
           payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED_OFFER_LABEL, href }] },
+          noOutboundRelay: Boolean(ctx.webTainted),
+          answeringMessageId: ctx.answeringMessageId,
+        });
+        return { content: { ok: true, posted: true, result } };
+      }
+
+      case 'commonly_offer_local_agent': {
+        const adapter = String(args.adapter || '') as ByoHandoffAdapter;
+        let owner: { username?: string } | null = null;
+        if (ctx.installation?.installedBy) {
+          try {
+            owner = await (require('../models/User')).findById(ctx.installation.installedBy)
+              .select('username').lean() as { username?: string } | null;
+          } catch {
+            // A username is only a display-name seed. The handoff remains
+            // actionable with the stable "my-<adapter>" fallback if the
+            // account lookup is transiently unavailable.
+          }
+        }
+        const agentName = args.name
+          ? String(args.name)
+          : defaultByoHandoffName(owner?.username, adapter);
+        const payload = buildByoHandoffPayload({
+          adapter,
+          os: args.os,
+          podId: ctx.podId,
+          agentName,
+        });
+        if ('error' in payload) {
+          return { content: { ok: false, error: payload.error }, error: 'handoff_invalid' };
+        }
+        const AgentMessageService = require('./agentMessageService');
+        const result = await AgentMessageService.postMessage({
+          agentName: ctx.agentName,
+          instanceId: ctx.instanceId,
+          podId: ctx.podId,
+          // The structured payload is the handoff. This fixed content is a
+          // compatibility value for message storage and is not rendered as
+          // the instructions by the card.
+          content: 'Connect a local agent with the command below.',
+          messageType: 'card',
+          displayName: ctx.displayName,
+          installationConfig: ctx.installationConfig,
+          metadata: { source: 'native-runtime', handoff: 'byo' },
+          payload,
           noOutboundRelay: Boolean(ctx.webTainted),
           answeringMessageId: ctx.answeringMessageId,
         });
@@ -1989,6 +2073,9 @@ export async function runAgent(
             finalMessage = typeof (parsedArgs as any)?.content === 'string'
               ? String((parsedArgs as any).content)
               : undefined;
+          }
+          if (toolName === 'commonly_offer_local_agent' && !result.error) {
+            postedViaTool = true;
           }
           messages.push({
             role: 'tool',

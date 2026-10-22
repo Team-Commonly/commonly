@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
 import V2GithubPrCard, { parseGithubPrUrls } from './V2GithubPrCard';
 import V2ApprovalCard from './V2ApprovalCard';
+import V2BYOHandoffCard from './V2BYOHandoffCard';
 import V2DecisionCard, { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
 import V2MessageActions, { type V2RenderedReaction } from './V2MessageActions';
 import { V2Message } from '../hooks/useV2PodDetail';
@@ -441,6 +442,9 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // and `content` is only the plain-text fallback for legacy surfaces.
   if (message.payload?.kind === 'approval-card') {
     return <V2ApprovalCard message={message} authorLabel={author} time={time} />;
+  }
+  if (message.payload?.kind === 'byo-handoff') {
+    return <V2BYOHandoffCard message={message} authorLabel={author} time={time} />;
   }
 
   // §3.8 system event card. Detected by content shape (commonly-bot only

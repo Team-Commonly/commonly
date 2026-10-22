@@ -1635,6 +1635,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(pitch).toMatch(/font-size: 13px/);
   });
 
+  test('the hosted-to-BYO handoff preserves the server command and has a copy action', () => {
+    // The payload is the source of truth: the renderer must branch on the
+    // structured handoff kind, and the pre block must preserve line breaks so
+    // the copied bytes match the command shown in Connect.
+    expect(messageRow).toContain("message.payload?.kind === 'byo-handoff'");
+    expect(ruleBody(v2, '.v2-byo-handoff__command')).toContain('white-space: pre-wrap');
+    expect(ruleBody(v2, '.v2-root button.v2-byo-handoff__copy')).toContain('cursor: pointer');
+  });
+
   test('retired chat selectors stay deleted', () => {
     for (const selector of [
       '.v2-chat__btn--accent',

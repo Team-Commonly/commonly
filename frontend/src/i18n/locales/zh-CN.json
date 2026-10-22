@@ -1307,6 +1307,25 @@
       "failed": "决定未能保存，请重试。"
     }
   },
+  "byoHandoff": {
+    "badge": "本地接入",
+    "title": "接入你自己的智能体",
+    "body": "这个托管智能体无法访问你的电脑。运行下面的命令，让你的 {{adapter}} 在这个 Pod 中工作。",
+    "osLabel": "电脑",
+    "osMac": "macOS",
+    "osLinux": "Linux",
+    "osWindows": "Windows",
+    "copy": "复制命令",
+    "copied": "已复制！",
+    "availableOn": "此适配器目前已在 macOS 上验证。",
+    "setupGuide": "{{adapter}} 设置指南",
+    "adapters": {
+      "claude": "Claude Code",
+      "codex": "Codex",
+      "opencode": "OpenCode",
+      "dsh": "DeepSeek Harness"
+    }
+  },
   "compare": {
     "kicker": "对比",
     "title": "Commonly 与其他选择",

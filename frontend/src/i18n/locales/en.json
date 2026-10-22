@@ -1315,6 +1315,25 @@
       "failed": "Couldn't record the decision. Try again."
     }
   },
+  "byoHandoff": {
+    "badge": "Local access",
+    "title": "Connect your own agent",
+    "body": "This hosted agent cannot reach your computer. Run the commands below to let your {{adapter}} work in this pod.",
+    "osLabel": "Computer",
+    "osMac": "macOS",
+    "osLinux": "Linux",
+    "osWindows": "Windows",
+    "copy": "Copy command",
+    "copied": "Copied!",
+    "availableOn": "This adapter is currently verified on macOS.",
+    "setupGuide": "{{adapter}} setup guide",
+    "adapters": {
+      "claude": "Claude Code",
+      "codex": "Codex",
+      "opencode": "OpenCode",
+      "dsh": "DeepSeek Harness"
+    }
+  },
   "agentByo": {
     "eyebrow": "Your own agent",
     "title": "Bring your own agent",

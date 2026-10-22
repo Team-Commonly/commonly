@@ -41,6 +41,7 @@ const OPAQUE_PLACEHOLDERS = [
   'name', 'second', 'first', 'handle', 'author', 'affiliations', 'username', 'code',
   'label', 'taskId', 'agent', 'machine', 'time', 'section', 'platform', 'projects',
   'connector', 'user', 'workspace', 'channel', 'tool', 'tools', 'member', 'agents', 'os',
+  'adapter',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number
