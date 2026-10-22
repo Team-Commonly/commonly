@@ -168,6 +168,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const mobileTabs = read('../components/V2MobileTabs.tsx');
   const podBoard = read('../components/V2PodBoard.tsx');
   const activityPage = read('../components/V2ActivityPage.tsx');
+  const yourTeamPage = read('../components/V2YourTeamPage.tsx');
   const featurePage = read('../components/V2FeaturePage.tsx');
   const v2App = read('../V2App.tsx');
   const app = read('../../App.tsx');
@@ -257,6 +258,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).toContain('white-space: normal');
     expect(rule).toContain('-webkit-line-clamp: 2');
     expect(rule).not.toContain('white-space: nowrap');
+  });
+
+  test('Your Team keeps template copy out of cards and folds long pod lists', () => {
+    expect(yourTeamPage).toContain('isTemplateDescription(description, display)');
+    expect(yourTeamPage).toContain("(a.podNames || []).slice(0, 2)");
+    expect(yourTeamPage).toContain('v2-team-card__pod--more');
   });
 
   test('the workspace grid owns the measured 56 / 260 / fluid / 272 geometry', () => {
@@ -562,6 +569,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Every non-option card act is 32 tall at desktop, level with the options (ux-lead 67327):
     // Approve / Deny / Mark handled / Reply / Open read 30 from the shared row-button rule.
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('min-height: 32px');
+  });
+
+  test('Activity details clamp to two lines and reveal full copy on hover, focus, or expand', () => {
+    const detail = ruleBody(v2, '.v2-root .v2-activity__queue-detail');
+    expect(detail).toContain('display: -webkit-box');
+    expect(detail).toContain('-webkit-line-clamp: 2');
+    expect(detail).toContain('overflow: hidden');
+    const reveal = selectorRuleBody(v2, '.v2-activity__queue-detail:hover');
+    expect(reveal).toContain('display: block');
+    expect(reveal).toContain('-webkit-line-clamp: unset');
+    expect(activityPage).toContain('aria-expanded={expandedDetailIds.has(item.id)}');
+    expect(activityPage).toContain('v2-activity__queue-detail');
+    expect(activityPage).toContain('aria-label={t(\'activity.compose.placeholder\')}');
+    expect(activityPage).not.toContain('v2-activity__compose-label');
   });
 
   test('Activity pagination keeps the Show more affordance visible and keyboard-sized', () => {
@@ -1194,6 +1215,22 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const chip = ruleBody(v2, '.v2-root button.v2-board__card-move');
     expect(chip).toContain('min-height: 32px');
     expect(chip).toContain('font-size: 12px');
+  });
+
+  test('UI-STRUCT B3 uses ink for primary actions and mono counts without pills', () => {
+    const boardNew = ruleBody(v2, '.v2-root button.v2-board__new');
+    expect(boardNew).toContain('background: var(--v2-ink)');
+    expect(boardNew).toContain('color: var(--v2-on-ink)');
+
+    const columnCount = ruleBody(v2, '.v2-board__col-count');
+    expect(columnCount).toContain('var(--v2-font-mono)');
+    expect(columnCount).not.toContain('background:');
+    expect(columnCount).not.toContain('border-radius:');
+    expect(columnCount).not.toContain('padding:');
+
+    const connectCta = lastRuleBody(v2, '.v2-root .v2-connect__cta');
+    expect(connectCta).toContain('background: var(--v2-ink)');
+    expect(connectCta).toContain('color: var(--v2-on-ink)');
   });
 
   test('the board craft-pass buttons use icon components instead of unicode glyphs', () => {

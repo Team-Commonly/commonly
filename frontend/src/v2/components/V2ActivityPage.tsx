@@ -229,6 +229,7 @@ const V2ActivityPage: React.FC = () => {
   const historyOffsetRef = useRef(0);
   const pendingRefreshFocusRef = useRef<string | null>(null);
   const [replyOpenIds, setReplyOpenIds] = useState<Set<string>>(new Set());
+  const [expandedDetailIds, setExpandedDetailIds] = useState<Set<string>>(new Set());
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [composePodId, setComposePodId] = useState('');
   const [composeDraft, setComposeDraft] = useState('');
@@ -1124,9 +1125,8 @@ const V2ActivityPage: React.FC = () => {
         <>
           {/* The composer stays hidden while step 1 is open — nobody to wake — and returns the moment an agent exists. */}
           {!startSteps.includes('hire') && (
-          <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
+          <section className="v2-activity__compose" aria-label={t('activity.compose.placeholder')}>
             <div className="v2-activity__compose-top">
-              <h2 id="activity-compose-title" className="v2-activity__compose-label">{t('activity.compose.label')}</h2>
               <div className="v2-activity__compose-pod">
                 <span>{t('activity.compose.podLabel')}</span>
                 <div ref={composePickerRef} className="v2-activity__compose-picker">
@@ -1272,7 +1272,21 @@ const V2ActivityPage: React.FC = () => {
                       <div className="v2-activity__queue-topline">
                         <strong>{item.kind === 'mention' && item.actorName ? item.actorName : item.title}</strong>
                       </div>
-                      {item.detail && <p>{item.detail}</p>}
+                      {item.detail && (
+                        <button
+                          type="button"
+                          className={`v2-activity__queue-detail${expandedDetailIds.has(item.id) ? ' v2-activity__queue-detail--expanded' : ''}`}
+                          aria-expanded={expandedDetailIds.has(item.id)}
+                          onClick={() => setExpandedDetailIds((current) => {
+                            const next = new Set(current);
+                            if (next.has(item.id)) next.delete(item.id);
+                            else next.add(item.id);
+                            return next;
+                          })}
+                        >
+                          {item.detail}
+                        </button>
+                      )}
                     </div>
                     <div className="v2-activity__queue-actions">
                       {item.kind === 'approval' && (

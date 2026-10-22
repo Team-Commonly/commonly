@@ -1945,6 +1945,7 @@
       "answer": "Answer",
       "talk": "Talk",
       "podsAria": "Pods",
+      "morePodsAria": "{{count}} more pods",
       "age": {
         "now": "now",
         "minutes": "{{count}}m",
