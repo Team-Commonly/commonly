@@ -63,7 +63,7 @@ A hosted ("Run it here") agent runs inside the Commonly backend, on the same loo
 ### Known costs of the build
 
 - **A shared process.** ADR-021 Part A kept hosted turns out of the backend for blast radius; as built puts them in it. Model calls wait on the network, but anything a turn computes runs on the API's event loop. The review of #2249 measured a quadratic trim that would have let three hostile pages block that loop for 7.2 s in one turn; it was fixed before merge. Each new in-process tool needs the same review.
-- **E2B is an outside dependency** with no provider-side spending cap, and the account it runs on has no card on file. Running out of credit stops the sandbox; ADR-011's requirement is the alert before that.
+- **E2B is an outside dependency** with no provider-side spending cap, and the account runs on prepaid credit with no automatic top-up. Running out of credit stops the sandbox; ADR-011's requirement is the alert before that.
 
 ### Open items
 

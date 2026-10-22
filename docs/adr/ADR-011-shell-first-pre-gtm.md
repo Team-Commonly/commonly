@@ -52,8 +52,8 @@ Anthropic Managed Agents adapter stay paused under the **Cloud sandbox runtime
 real demand from a heavy-compute agent that cannot run on Tier 1.
 
 **Operational requirement: an alert before E2B credit runs out.** The E2B
-account has no card on file, so spending its credit does not produce an
-overage. The sandbox stops instead, and a turn that cannot get one hands the
+account runs on prepaid credit with no automatic top-up, so spending it does
+not produce an overage. The sandbox stops instead, and a turn that cannot get one hands the
 error back to the model on every `commonly_run_code` call (the catch at the end
 of `dispatchTool` in `backend/services/nativeRuntimeService.ts`). Nothing
 watches the balance today. The spend alarm prices sandbox seconds per user but
