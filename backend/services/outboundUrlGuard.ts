@@ -361,6 +361,12 @@ interface ReadPolicy {
   overflow: 'error' | 'truncate';
   /** Checked on a 2xx before any body byte is read; a refused type ends the request. */
   acceptContentType?: (mediaType: string) => boolean;
+  /**
+   * Read a non-2xx body too, against the same cap. Off by default: a webhook or
+   * a page only needs the status. A vendor's OAuth error body is how its caller
+   * tells `invalid_grant` from an outage, so the vendor mode turns it on.
+   */
+  readErrorBodies?: boolean;
 }
 
 const WEBHOOK_READ: ReadPolicy = { maxBytes: WEBHOOK_MAX_RESPONSE_BYTES, overflow: 'error' };
@@ -391,12 +397,12 @@ const requestPinned = (
     const status = res.statusCode || 0;
     const location = REDIRECT_STATUSES.has(status) ? res.headers.location : undefined;
     const contentType = mediaTypeOf(res.headers['content-type']);
-    if (location || status < 200 || status >= 300) {
+    if (location || ((status < 200 || status >= 300) && !read.readErrorBodies)) {
       res.resume();
       settle(() => resolve({ status, location, text: '', contentType, truncated: false }));
       return;
     }
-    if (read.acceptContentType && !read.acceptContentType(contentType)) {
+    if (read.acceptContentType && status >= 200 && status < 300 && !read.acceptContentType(contentType)) {
       settle(() => reject(new OutboundUrlRefusedError(`content type ${contentType || '(none)'} is not allowed`)));
       req.destroy();
       return;
@@ -521,4 +527,61 @@ export const getFromPublicAddress = async (rawUrl: string): Promise<PublicPageRe
     }
     destination = await toPublicDestination(response.location, destination.url, AGENT_FETCH_POLICY);
   }
+};
+
+// ── A credentialed request to a hosted-MCP vendor (TASK-253) ────────────────
+
+/** A vendor reply as the guard read it. `location` is set on a 3xx, which is never followed. */
+export interface VendorEndpointResult {
+  status: number;
+  contentType: string;
+  text: string;
+  location?: string;
+}
+
+/**
+ * One request to a hosted-MCP vendor's MCP or OAuth endpoint. Each one carries
+ * a credential: a bearer token, an authorization code and its verifier, a
+ * refresh token, or a client secret.
+ *
+ * Today every such URL is pinned in the catalog or served by the vendor's own
+ * metadata under a pinned issuer. It is held to the agent-fetch destination
+ * policy anyway, because a URL the catalog did not write (a by-URL entry, a
+ * metadata document) must not be able to aim a credential at an internal
+ * address:
+ *   - https on the default port, no credentials in the URL;
+ *   - every address the host resolves to must be public, and the socket is
+ *     pinned to the address that was checked;
+ *   - NO redirect is followed. A 3xx comes back as its status with its
+ *     `location`, because a 307 or 308 would re-send the credential in the body
+ *     to whatever host the Location names;
+ *   - the body, a non-2xx body included, is read to `maxBytes` and then fails.
+ * The caller's signal bounds the whole request.
+ */
+export const requestVendorEndpoint = async (
+  rawUrl: string,
+  {
+    method, headers, body, signal, maxBytes,
+  }: {
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+    signal: AbortSignal;
+    maxBytes: number;
+  },
+): Promise<VendorEndpointResult> => {
+  const destination = await toPublicDestination(rawUrl, undefined, AGENT_FETCH_POLICY);
+  const response = await requestPinned(
+    destination.url,
+    destination.address,
+    { method, headers, ...(body !== undefined ? { body } : {}) },
+    signal,
+    { maxBytes, overflow: 'error', readErrorBodies: true },
+  );
+  return {
+    status: response.status,
+    contentType: response.contentType,
+    text: response.text,
+    ...(response.location ? { location: response.location } : {}),
+  };
 };

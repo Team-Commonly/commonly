@@ -1,3 +1,5 @@
+import { hostedVendorFetch } from './hostedVendorFetch';
+
 /**
  * The deadline every outbound vendor call on the hosted-MCP path carries.
  *
@@ -34,7 +36,9 @@ export const isTimeoutError = (error: unknown): boolean => (
 export const upstreamFetch = (
   input: string,
   init: RequestInit = {},
-  fetchImpl: typeof fetch = fetch,
+  // Every caller's vendor request goes through the outbound guard (TASK-253);
+  // tests inject their own fetch here.
+  fetchImpl: typeof fetch = hostedVendorFetch,
   timeoutMs: number = UPSTREAM_TIMEOUT_MS,
 ): Promise<Response> => {
   const deadline = AbortSignal.timeout(timeoutMs);

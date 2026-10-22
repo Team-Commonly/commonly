@@ -56,8 +56,18 @@ const messageOf = (error: unknown): string => (
   error instanceof Error ? error.message : String(error)
 );
 
+// Through the outbound guard: public https only, no redirects (TASK-253).
+// Loaded lazily, like the model and the credential service below: the frontend
+// glyph-catalogue test imports this module for its pure projection, and must
+// not pull the guard's node:dns and node:http transport in with it.
+const guardedFetch: typeof fetch = (input, init) => {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { hostedVendorFetch } = require('./hostedVendorFetch');
+  return hostedVendorFetch(input, init);
+};
+
 const defaultDeps = (): HostedMcpToolDeps => ({
-  fetcher: (input, init) => fetch(input, init),
+  fetcher: guardedFetch,
   newCallId: () => `hosted_call_${randomUUID()}`,
   loadRow: async (connectionId) => {
     // A grant's connection id is an ObjectId string by construction, but an
@@ -373,7 +383,7 @@ export const createHostedMcpRuntimeDriftCache = (
 const productionDriftCache = createHostedMcpRuntimeDriftCache({
   loadRow: (connectionId) => defaultDeps().loadRow(connectionId),
   credentialFor: (row) => defaultDeps().credentialFor(row),
-  fetcher: (input, init) => fetch(input, init),
+  fetcher: guardedFetch,
   newCallId: () => `hosted_list_${randomUUID()}`,
 });
 

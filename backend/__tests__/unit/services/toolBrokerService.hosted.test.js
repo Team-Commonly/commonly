@@ -9,6 +9,15 @@
  * the definition came from, and that `ownerUserId` is what a parked write needs
  * to open an approval room.
  */
+// TASK-253: production vendor requests go through the outbound guard
+// (services/hostedVendorFetch). These arms stub the vendor at global.fetch, so
+// the guarded transport is mapped back to it, read at call time; the guard's
+// own rules are tested in outboundUrlGuard.vendorEndpoint.test.js.
+jest.mock('../../../services/hostedVendorFetch', () => ({
+  HOSTED_VENDOR_MAX_RESPONSE_BYTES: 4 * 1024 * 1024,
+  hostedVendorFetch: (...args) => global.fetch(...args),
+}));
+
 const mockRoomGrant = { findOne: jest.fn(), find: jest.fn() };
 const mockPod = { findById: jest.fn(), find: jest.fn() };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };

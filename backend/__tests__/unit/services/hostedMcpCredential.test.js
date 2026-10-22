@@ -13,6 +13,15 @@
  * other world so the difference shows up in an arm rather than in a comment.
  */
 
+// TASK-253: production vendor requests go through the outbound guard
+// (services/hostedVendorFetch). These arms stub the vendor at global.fetch, so
+// the guarded transport is mapped back to it, read at call time; the guard's
+// own rules are tested in outboundUrlGuard.vendorEndpoint.test.js.
+jest.mock('../../../services/hostedVendorFetch', () => ({
+  HOSTED_VENDOR_MAX_RESPONSE_BYTES: 4 * 1024 * 1024,
+  hostedVendorFetch: (...args) => global.fetch(...args),
+}));
+
 const {
   credentialFor,
   HostedMcpCredentialError,
