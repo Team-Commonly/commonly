@@ -70,3 +70,36 @@ backend:
 # staging's render free of a backend-image pod it doesn't need.
 opsRunner:
   enabled: false
+# In-cluster MongoDB for staging — staging must NEVER hold an Atlas credential.
+# The prod Mongo user is atlasAdmin (cluster-wide admin, including prod data), and
+# staging auto-deploys every merge and is the deliberately reckless lane, so a shared
+# Atlas credential is out of the question (incident 2026-10-22, AX-85 context). A
+# single-replica in-cluster mongod on the spot pool, small PVC, seeded fresh and
+# resettable, with a staging-only root password, replaces it. The root password is a
+# fresh value in commonly-staging-mongo-password; the backend's
+# commonly-staging-mongo-uri points at the in-cluster `mongodb` Service. Postgres
+# still uses the Aiven commonly_staging database + a db-scoped (non-admin) role.
+mongodb:
+  enabled: true
+  image:
+    repository: mongo
+    tag: "7"
+  persistence:
+    enabled: true
+    storageClass: standard-rwo
+    size: 5Gi
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  nodeSelector:
+    workload-tier: spot
+  tolerations:
+    - effect: NoSchedule
+      key: workload-tier
+      operator: Equal
+      value: spot
