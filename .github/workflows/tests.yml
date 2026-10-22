@@ -120,7 +120,11 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      # Frontend typecheck follows shared imports into backend TypeScript.
+      - run: cd backend && npm ci --include=dev
       - run: cd frontend && npm install --legacy-peer-deps
       - run: cd frontend && npm run typecheck
       - run: cd frontend && npx jest --coverage --watchAll=false --forceExit
@@ -141,10 +145,13 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
+            backend/package-lock.json
             commonly-mcp/package-lock.json
             cli/package-lock.json
             workers/agent-runtime/package-lock.json
       - run: npm ci --include=dev
+      # CLI tests load backend TypeScript through ts-node.
+      - run: cd backend && npm ci --include=dev
       - run: cd commonly-mcp && npm ci --include=dev
       - run: cd cli && npm ci --include=dev
       - run: cd workers/agent-runtime && npm ci --include=dev
