@@ -257,6 +257,17 @@ redis:
 # External Secrets Operator configuration
 externalSecrets:
   enabled: true
+  # Prefix on every environment-scoped Secret Manager key (commonly-dev-NAME).
+  # A second release (staging) overrides this to commonly-staging- so the two
+  # environments read disjoint secrets from the same project. Keys with no
+  # environment (commonly-NAME shared keys) are not prefixed and are untouched.
+  keyPrefix: commonly-dev-
+  # The cross-namespace ClusterSecretStore exists only for cloudflared, which in
+  # prod runs in ingress-nginx and must reach gcpsm-secret in this namespace. A
+  # release whose cloudflared runs in its own namespace (staging) sets this false
+  # and the cloudflared ExternalSecret is provisioned from the namespaced store.
+  clusterSecretStore:
+    enabled: true
   secretStore:
     name: gcpsm-secretstore
     projectId: YOUR_GCP_PROJECT_ID
@@ -383,6 +394,21 @@ rbac:
 # fails its whole sync on a missing key (templates/secrets/api-keys.yaml).
 internalAccounts:
   fromSecret: false
+
+# Discord integration. On (default) the backend gets the DISCORD_* env and the
+# api-keys ExternalSecret references the five commonly-dev-discord-* keys. A
+# release without a Discord app (staging) sets this false so neither renders.
+discord:
+  enabled: true
+
+# Email (SMTP2GO) delivery. On (default) the backend reads SMTP2GO_* and the
+# api-keys ExternalSecret references the commonly-dev-SMTP2GO_* keys. Off
+# (staging) renders neither: with SMTP2GO_API_KEY unset the backend auto-verifies
+# new signups (authController hasEmailDeliveryConfig → false) instead of waiting
+# on a verification mail it cannot send. Do NOT substitute placeholder values —
+# a non-empty SMTP2GO_API_KEY flips hasEmailDeliveryConfig true and hangs signup.
+email:
+  enabled: true
 
 # Ingress configuration
 ingress:

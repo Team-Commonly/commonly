@@ -128,6 +128,10 @@ spec:
           value: {{ .Values.backend.env.pgCaCertPath | default "/app/certs/ca.pem" | quote }}
         - name: PG_SSL_CA_PATH
           value: {{ .Values.backend.env.pgCaCertPath | default "/app/certs/ca.pem" | quote }}
+        {{- if .Values.backend.env.pgPoolMax }}
+        - name: PG_POOL_MAX
+          value: {{ .Values.backend.env.pgPoolMax | quote }}
+        {{- end }}
 
         # Redis for Socket.io
         - name: REDIS_HOST
@@ -276,6 +280,8 @@ spec:
               key: anthropic-api-key
               optional: true
 
+        {{- if .Values.discord.enabled }}
+
         # Discord Integration
         - name: DISCORD_BOT_TOKEN
           valueFrom:
@@ -304,6 +310,7 @@ spec:
               name: api-keys
               key: discord-public-key
               optional: true
+        {{- end }}
 
         # Social login (OAuth) providers — names match what
         # controllers/oauthController.ts reads. The old GITHUB_CLIENT_ID /
