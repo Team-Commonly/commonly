@@ -493,18 +493,21 @@
     "newPod": {
       "label": "新 Pod 开始操作",
       "title": "Pod 已就绪",
-      "text": "邀请队友、添加智能体，或自己开始对话。",
       "dismiss": "关闭开始操作",
+      "runHere": "在这里运行",
+      "bringOwn": "接入自己的智能体",
+      "hosted": {
+        "installing": "正在添加智能体…",
+        "starting": "正在启动智能体…",
+        "running": "智能体已运行"
+      },
+      "hostedError": "无法启动智能体，请重试。",
+      "hostedSlow": "智能体已添加，但尚未接入。",
       "inviteTitle": "邀请队友",
-      "inviteText": "分享链接，邀请队友加入。",
       "preparingInvite": "正在创建邀请链接…",
       "inviteLinkLabel": "这个 Pod 的邀请链接",
       "inviteError": "邀请链接创建失败。",
-      "tryAgain": "重试",
-      "addAgentTitle": "添加智能体",
-      "addAgentText": "选择要添加到这个 Pod 的智能体。",
-      "messageTitle": "发送第一条消息",
-      "messageText": "在输入框中开始对话。"
+      "tryAgain": "重试"
     },
     "heartbeat": {
       "none": "最近没有收到心跳",

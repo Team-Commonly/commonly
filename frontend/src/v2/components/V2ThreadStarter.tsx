@@ -2,15 +2,18 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface V2ThreadStarterProps {
+  hostedAvailable: boolean;
+  hostedState: 'idle' | 'installing' | 'starting' | 'running';
+  hostedError: string | null;
   inviteUrl: string;
   inviteLoading: boolean;
   inviteError: string | null;
   inviteCopied: boolean;
   onDismiss: () => void;
+  onRunHosted: () => void;
+  onBringOwn: () => void;
   onCopyInvite: () => void;
   onRetryInvite: () => void;
-  onOpenInvite: () => void;
-  onFocusComposer: () => void;
 }
 
 /**
@@ -18,15 +21,18 @@ interface V2ThreadStarterProps {
  * message list does not own pod creation, invite issuance, or focus control.
  */
 const V2ThreadStarter: React.FC<V2ThreadStarterProps> = ({
+  hostedAvailable,
+  hostedState,
+  hostedError,
   inviteUrl,
   inviteLoading,
   inviteError,
   inviteCopied,
   onDismiss,
+  onRunHosted,
+  onBringOwn,
   onCopyInvite,
   onRetryInvite,
-  onOpenInvite,
-  onFocusComposer,
 }) => {
   const { t } = useTranslation();
   return (
@@ -34,7 +40,6 @@ const V2ThreadStarter: React.FC<V2ThreadStarterProps> = ({
       <div className="v2-chat__new-pod-head">
         <div>
           <div className="v2-chat__new-pod-title">{t('podChat.newPod.title')}</div>
-          <div className="v2-chat__new-pod-text">{t('podChat.newPod.text')}</div>
         </div>
         <button
           type="button"
@@ -48,9 +53,21 @@ const V2ThreadStarter: React.FC<V2ThreadStarterProps> = ({
         </button>
       </div>
       <div className="v2-chat__new-pod-actions">
+        {hostedAvailable && (
+          <button
+            type="button"
+            className="v2-chat__new-pod-action v2-chat__new-pod-action--hosted"
+            onClick={onRunHosted}
+            disabled={hostedState !== 'idle'}
+          >
+            {hostedState === 'idle' ? t('podChat.newPod.runHere') : t(`podChat.newPod.hosted.${hostedState}`)}
+          </button>
+        )}
+        <button type="button" className="v2-chat__new-pod-action" onClick={onBringOwn}>
+          {t('podChat.newPod.bringOwn')}
+        </button>
         <div className="v2-chat__new-pod-action v2-chat__new-pod-action--invite">
           <div className="v2-chat__new-pod-action-title">{t('podChat.newPod.inviteTitle')}</div>
-          <div className="v2-chat__new-pod-action-text">{t('podChat.newPod.inviteText')}</div>
           {inviteLoading && <div className="v2-chat__new-pod-status">{t('podChat.newPod.preparingInvite')}</div>}
           {inviteUrl && (
             <div className="v2-invite-link-row">
@@ -74,15 +91,8 @@ const V2ThreadStarter: React.FC<V2ThreadStarterProps> = ({
             </div>
           )}
         </div>
-        <button type="button" className="v2-chat__new-pod-action" onClick={onOpenInvite}>
-          <span className="v2-chat__new-pod-action-title">{t('podChat.newPod.addAgentTitle')}</span>
-          <span className="v2-chat__new-pod-action-text">{t('podChat.newPod.addAgentText')}</span>
-        </button>
-        <button type="button" className="v2-chat__new-pod-action" onClick={onFocusComposer}>
-          <span className="v2-chat__new-pod-action-title">{t('podChat.newPod.messageTitle')}</span>
-          <span className="v2-chat__new-pod-action-text">{t('podChat.newPod.messageText')}</span>
-        </button>
       </div>
+      {hostedError && <div className="v2-chat__new-pod-error" role="alert">{hostedError}</div>}
     </section>
   );
 };

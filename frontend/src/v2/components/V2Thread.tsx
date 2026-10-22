@@ -245,6 +245,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const [starterInviteLoading, setStarterInviteLoading] = useState(false);
   const [starterInviteError, setStarterInviteError] = useState<string | null>(null);
   const [starterInviteCopied, setStarterInviteCopied] = useState(false);
+  const [starterHostedAvailable, setStarterHostedAvailable] = useState(false);
+  const [starterHostedState, setStarterHostedState] = useState<'idle' | 'installing' | 'starting' | 'running'>('idle');
+  const [starterHostedError, setStarterHostedError] = useState<string | null>(null);
   const [agentDeliveryHint, setAgentDeliveryHint] = useState<{
     messageId: string;
     mentionHandle: string;
@@ -264,6 +267,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const sentMessageIdRef = useRef<string | null>(null);
   const [sendFollowVersion, setSendFollowVersion] = useState(0);
   const activePodIdRef = useRef<string | null>(pod?._id || null);
+  const starterHostedGenerationRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const mentionDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -297,6 +301,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // next pod look like it came from this composer.
   useLayoutEffect(() => {
     activePodIdRef.current = pod?._id || null;
+    starterHostedGenerationRef.current += 1;
     sentMessageIdRef.current = null;
     setSendFollowVersion((version) => version + 1);
   }, [pod?._id]);
@@ -611,6 +616,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     setStarterInviteError(null);
     setStarterInviteLoading(false);
     setStarterInviteCopied(false);
+    setStarterHostedAvailable(false);
+    setStarterHostedState('idle');
+    setStarterHostedError(null);
     if (!podId) {
       setJustCreatedPodId(null);
       return;
@@ -664,6 +672,84 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     && !loading
     && !firstRunVisible,
   );
+
+  useEffect(() => {
+    if (!starterPanelVisible) return undefined;
+    let active = true;
+    void api.get<{ configured: boolean }>('/api/hosted/pod-start-availability').then((availability) => {
+      if (active) setStarterHostedAvailable(availability.configured === true);
+    }).catch(() => {
+      if (active) setStarterHostedAvailable(false);
+    });
+    return () => { active = false; };
+  }, [api, starterPanelVisible]);
+
+  const startHostedInPod = useCallback(async () => {
+    if (!pod?._id || !starterHostedAvailable || starterHostedState !== 'idle') return;
+    const podId = pod._id;
+    const generation = starterHostedGenerationRef.current;
+    const isActive = () => activePodIdRef.current === podId
+      && starterHostedGenerationRef.current === generation;
+    const handle = (currentUser?.username || 'my-agent').toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '').slice(0, 35) || 'my-agent';
+    // The pod id makes the global agent name stable across a retry and unique
+    // when the same person starts an agent in another pod.
+    const agentName = `${handle}-${podId}`;
+    setStarterHostedState('installing');
+    setStarterHostedError(null);
+    try {
+      try {
+        await api.post('/api/registry/install', {
+          agentName,
+          podId,
+          scopes: [
+            'context:read', 'summaries:read', 'messages:write', 'messages:read',
+            'posts:write', 'posts:read', 'memory:read', 'memory:write',
+          ],
+          config: { runtime: { runtimeType: 'hosted' } },
+          displayName: `${pod.name} agent`,
+        });
+      } catch (error) {
+        if (!isActive()) return;
+        const data = (error as { response?: { data?: { error?: string } } }).response?.data;
+        if (!/already installed/i.test(data?.error || '')) throw error;
+      }
+      if (!isActive()) return;
+      setStarterHostedState('starting');
+      await api.post('/api/hosted/provision', { agentName });
+      if (!isActive()) return;
+      try { await detail.refresh(); } catch { /* the runtime can still start */ }
+      if (!isActive()) return;
+      // Provision acceptance does not prove the runtime is polling. Keep the
+      // status honest until the runtime reports ready (native) or a poll
+      // (Durable Object). Check immediately so a native start is one click.
+      for (let attempt = 0; attempt < 15; attempt += 1) {
+        if (!isActive()) return;
+        try {
+          const status = await api.get<{ runtime?: { ready?: boolean; lastPollAt?: number | null } }>(
+            `/api/hosted/status?agentName=${encodeURIComponent(agentName)}`,
+          );
+          if (!isActive()) return;
+          if (status.runtime?.ready || status.runtime?.lastPollAt) {
+            setStarterHostedState('running');
+            try { await detail.refresh(); } catch { /* status is still running */ }
+            return;
+          }
+        } catch {
+          if (!isActive()) return;
+          // A transient status read must not offer a second install.
+        }
+        if (attempt < 14) await new Promise((resolve) => { window.setTimeout(resolve, 4000); });
+      }
+      if (!isActive()) return;
+      setStarterHostedError(t('podChat.newPod.hostedSlow'));
+    } catch (error) {
+      if (!isActive()) return;
+      const data = (error as { response?: { data?: { error?: string; message?: string } }; message?: string });
+      setStarterHostedState('idle');
+      setStarterHostedError(data.response?.data?.message || data.response?.data?.error || t('podChat.newPod.hostedError'));
+    }
+  }, [api, currentUser?.username, detail, pod, starterHostedAvailable, starterHostedState, t]);
 
   useEffect(() => {
     if (!starterPanelVisible || !pod?._id || starterInviteUrl) return;
@@ -1682,15 +1768,18 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             error={error}
             starterPanel={starterPanelVisible ? (
             <V2ThreadStarter
+              hostedAvailable={starterHostedAvailable}
+              hostedState={starterHostedState}
+              hostedError={starterHostedError}
               inviteUrl={starterInviteUrl}
               inviteLoading={starterInviteLoading}
               inviteError={starterInviteError}
               inviteCopied={starterInviteCopied}
               onDismiss={() => clearJustCreatedPod(pod._id)}
+              onRunHosted={() => { void startHostedInPod(); }}
+              onBringOwn={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(pod._id)}`)}
               onCopyInvite={() => { void handleStarterInviteCopy(); }}
               onRetryInvite={() => { void generateStarterInvite(pod._id); }}
-              onOpenInvite={() => onOpenInvite?.(AGENT_INVITE_TAB)}
-              onFocusComposer={() => composerInputRef.current?.focus()}
             />
             ) : undefined}
             emptyState={!starterPanelVisible && !firstRunVisible && !loading && messages.length === 0 ? (

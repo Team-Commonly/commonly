@@ -201,6 +201,13 @@ router.get('/availability', hostedRateLimit, auth, async (req: any, res: any) =>
   return res.json({ configured: engineAvailable(engine), engine, caps });
 });
 
+// The new-pod starter needs the same engine check without recording a visit
+// to the Bring your own page. Keep that onboarding mark owned by the page's
+// existing /availability call.
+router.get('/pod-start-availability', hostedRateLimit, auth, (_req: any, res: any) => (
+  res.json({ configured: engineAvailable(engineForNewHostedInstall()) })
+));
+
 /**
  * POST /api/hosted/welcome-start { messageId }
  * One click on Scout's signup welcome, "Run an agent here" (TASK-290): answers

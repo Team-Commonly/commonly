@@ -2390,7 +2390,7 @@ body.modern-ui.v2-canvas {
 
 .v2-chat__new-pod-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -2398,7 +2398,7 @@ body.modern-ui.v2-canvas {
 .v2-chat__new-pod-action {
   display: flex;
   min-width: 0;
-  min-height: 116px;
+  min-height: 88px;
   flex-direction: column;
   align-items: flex-start;
   gap: 5px;
@@ -2416,6 +2416,20 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-chat__new-pod-action:hover {
   background: var(--v2-surface-hover);
+}
+
+.v2-root button.v2-chat__new-pod-action--hosted {
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font-weight: 600;
+}
+
+.v2-root button.v2-chat__new-pod-action--hosted:hover {
+  background: var(--v2-ink-hover);
+}
+
+.v2-root button.v2-chat__new-pod-action--hosted:disabled {
+  opacity: 0.7;
 }
 
 .v2-chat__new-pod-action-title {
