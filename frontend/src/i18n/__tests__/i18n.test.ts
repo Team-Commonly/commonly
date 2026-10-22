@@ -71,7 +71,11 @@ describe('i18n configuration', () => {
   });
 
   it('uses each registered language for the document and i18next', async () => {
-    expect(SUPPORTED_LANGUAGES).toEqual(LANGUAGE_REGISTRY.map(({ code }) => code));
+    // Pinned as a literal, not derived from LANGUAGE_REGISTRY: comparing the
+    // list to the map that defines it passes however the map changes
+    // (Sprint Review 5611893458 on #2399). v2/__tests__/languageSurfaces.test.tsx
+    // carries the same pin for the three surfaces that read the registry.
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'zh-CN']);
     for (const { code } of LANGUAGE_REGISTRY) {
       await act(async () => { await i18n.changeLanguage(code); });
       expect(i18n.resolvedLanguage).toBe(code);

@@ -1,6 +1,6 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import i18n, { i18nReady } from '../../i18n';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import i18n, { i18nReady, LANGUAGE_REGISTRY } from '../../i18n';
 import axios from '../../utils/axiosConfig';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
@@ -88,6 +88,20 @@ describe('V2SettingsPage', () => {
 
     view.unmount();
     await act(async () => { await i18n.changeLanguage('en'); });
+  });
+
+  // Pinned as a literal AND compared with the registry: the first assertion
+  // fails when the shipped languages change, the second when this surface
+  // stops reading LANGUAGE_REGISTRY and drifts from it.
+  test('builds the language radios from the registry, and only those', async () => {
+    await i18nReady;
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    renderSettings();
+
+    const radios = within(screen.getByRole('radiogroup', { name: 'Language' })).getAllByRole('radio');
+    const labels = radios.map((radio) => radio.textContent);
+    expect(labels).toEqual(['English', '中文']);
+    expect(labels).toEqual(LANGUAGE_REGISTRY.map(({ label }) => label));
   });
 
   test('keeps every folded settings concern visible on one page', () => {
