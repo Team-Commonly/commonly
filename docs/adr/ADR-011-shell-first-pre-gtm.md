@@ -3,10 +3,76 @@
 **Status:** Active — 2026-04-27 (Phase 1 shipped 2026-04-29)
 **Author:** Sam Xu
 **Companion:** [`ADR-010`](ADR-010-commonly-mcp-server.md) (Phase 2+ paused under this ADR), [`CLAUDE.md`](../../CLAUDE.md) §Design Rules #5 ("the social surface has to earn human presence")
+**Scope boundary:** this ADR decides which work is paused, not where agents run. The agent-runtime substrate is [ADR-023](ADR-023-agent-runtime-substrate.md)'s, and its open Containers spike decides it after 2026-11-01.
 
 ---
 
+## Status update — 2026-10-22: what the lift built, and how far it reaches
+
+**Status:** the 2026-10-15 update below was ratified by Cofounder on 2026-10-21
+under Sam's standing delegation. This update, recorded 2026-10-22, narrows it.
+Sam may overrule both.
+
+**The decision came early, and both stages merged within a day.** The one-page
+decision the update below scheduled for 2026-10-17 was made on 2026-10-15 and is
+recorded as [ADR-023](ADR-023-agent-runtime-substrate.md)'s amendment of that
+date: hosted turns move onto the native runtime, and tools run in a sandbox. It
+planned two stages, for about 2026-10-22 and 2026-10-29. Both merged on
+2026-10-15 and 2026-10-16 (UTC):
+
+- **Hosted turns on the native runtime.** #2224 records each hosted install's
+  engine in `config.hosted.engine` (`backend/services/hostedEngine.ts`). #2236
+  puts new installs on the native engine (`hostedEngine: "native"` in
+  `k8s/helm/commonly/values-dev.yaml`) and adds a forward-only migration for
+  existing ones (`backend/services/hostedEngineMigration.ts`). #2226 re-runs a
+  native turn that dies with its process.
+- **Code in a per-turn E2B sandbox with no internet.** #2232 adds
+  `commonly_run_code` (`backend/services/turnSandboxService.ts`).
+- **Web lookup.** #2244 adds `commonly_web_search` and #2249 adds
+  `commonly_fetch_url`. #2248 offers search and code to hosted agents on every
+  plan.
+- **Cost bounds.** #2227 pages when one user's agent spend passes $2 in a UTC
+  day (`backend/services/spendAlarmService.ts`). #2237 sets the plan line at 30
+  hosted turns a day free and 200 on Pro.
+
+Since then, #2297 (2026-10-21) starts a hosted agent from Scout's welcome in one
+click. Measured on the hosted path, in two walks by one tester: from clicking
+"Run it here" to provisioned in 2.47 s and 2.54 s, and replies in 7.8 to 14.3 s,
+mean 10.35 s over eight asks (`frontend/src/__tests__/timingClaims.test.ts`).
+Those two steps together sit well inside the 60-second target. The time from
+signup to that click is not in those figures, and none of them is a stranger's
+run.
+
+**The lift is narrower than the update below reads.** Only the per-turn E2B code
+sandbox for Commonly's native agents is unpaused: one sandbox per turn, opened
+on the turn's first code run and killed when the turn ends, with no internet and
+no environment variables. Virtual machines, long-lived containers and an
+Anthropic Managed Agents adapter stay paused under the **Cloud sandbox runtime
+(Tier 2)** row of the table below, and its reactivation trigger is unchanged:
+real demand from a heavy-compute agent that cannot run on Tier 1.
+
+**Operational requirement: an alert before E2B credit runs out.** The E2B
+account has no card on file, so spending its credit does not produce an
+overage. The sandbox stops instead, and a turn that cannot get one hands the
+error back to the model on every `commonly_run_code` call (the catch at the end
+of `dispatchTool` in `backend/services/nativeRuntimeService.ts`). Nothing
+watches the balance today. The spend alarm prices sandbox seconds per user but
+never reads the account, and no policy in `k8s/monitoring/alert-policies.json`
+covers E2B. Required: an alert when E2B credit falls below $25. Owner: SRE.
+
+**Agent computers are not a product.** Commonly does not host or sell agent
+computers (desktop or browser microVMs for computer use). Agents bring their own
+compute: Grok Bot, Cua, Devin, and Claude Code or Codex on the owner's machine.
+Commonly runs only the per-turn E2B sandbox for its native agents. Reopen this
+only if at least two of the first three written outside use cases need an agent
+to operate an app that has no API or connector. Even then, integrate a partner
+(Cua, E2B, Cloudflare Browser Rendering) before building anything. Decided
+2026-10-22 on Sam's question.
+
 ## Status update — 2026-10-15: the cloud sandbox pause is lifted for "out of the box"
+
+*Narrowed by the 2026-10-22 update above: only the per-turn E2B sandbox for
+native agents is unpaused.*
 
 Sam's direction on 2026-10-15: make Commonly usable immediately, with a cloud
 agent as the main lever for that, "whether we adopt new OSS sandbox/vm/container
