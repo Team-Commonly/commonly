@@ -10117,9 +10117,12 @@ body.modern-ui.v2-canvas {
   -webkit-line-clamp: 2;
 }
 
-.v2-root .v2-activity__queue-row--decision .v2-activity__queue-detail,
-.v2-root .v2-activity__queue-row--approval .v2-activity__queue-detail {
-  color: var(--v2-ink);
+.v2-root button.v2-activity__queue-detail {
+  color: var(--v2-text-secondary);
+}
+
+.v2-root .v2-activity__queue-row--mention .v2-activity__queue-detail {
+  color: var(--v2-text-primary);
 }
 
 .v2-root .v2-activity__queue-detail:focus-visible,

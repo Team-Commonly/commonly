@@ -579,8 +579,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const reveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail:focus-visible');
     expect(reveal).toContain('display: block');
     expect(reveal).toContain('-webkit-line-clamp: unset');
-    const decisionDetail = selectorRuleBody(v2, '.v2-root .v2-activity__queue-row--decision .v2-activity__queue-detail');
-    expect(decisionDetail).toContain('color: var(--v2-ink)');
+    const baseDetail = selectorRuleBody(v2, '.v2-root button.v2-activity__queue-detail');
+    expect(baseDetail).toContain('color: var(--v2-text-secondary)');
+    const mentionDetail = selectorRuleBody(v2, '.v2-root .v2-activity__queue-row--mention .v2-activity__queue-detail');
+    expect(mentionDetail).toContain('color: var(--v2-text-primary)');
     expect(v2).toContain('.v2-root:lang(zh) .v2-activity__queue-detail,');
     expect(v2).toContain('.v2-root .v2-activity__queue-detail:hover:not(:focus)');
     expect(v2).toContain('@media (hover: hover)');
