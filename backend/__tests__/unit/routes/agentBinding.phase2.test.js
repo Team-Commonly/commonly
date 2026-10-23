@@ -33,6 +33,7 @@ beforeAll(async () => {
   app = express();
   app.use(express.json());
   app.use('/api/agent-binding', require('../../../routes/agentBinding'));
+  app.use('/api/machines', require('../../../routes/machines'));
 });
 
 afterAll(async () => { await mongoose.disconnect(); await mongod.stop(); });
@@ -538,6 +539,40 @@ describe('runtime-token mint', () => {
       parentId: daemonCredA._id,
       status: 'active',
     }));
+  });
+
+  it('refuses a mint paused across machine removal without leaving a live bearer', async () => {
+    await adopt(DAEMON_A);
+    let resumeLookup;
+    let lookupStarted;
+    const started = new Promise((resolve) => { lookupStarted = resolve; });
+    const resume = new Promise((resolve) => { resumeLookup = resolve; });
+    const originalFindOne = AgentCredential.findOne.bind(AgentCredential);
+    const spy = jest.spyOn(AgentCredential, 'findOne').mockImplementation((filter, ...args) => {
+      const query = originalFindOne(filter, ...args);
+      if (filter?.kind === 'daemon' && filter?.status === 'active' && filter?.machineId === 'machine-a') {
+        const originalLean = query.lean.bind(query);
+        query.lean = async (...leanArgs) => {
+          lookupStarted();
+          await resume;
+          return originalLean(...leanArgs);
+        };
+      }
+      return query;
+    });
+    try {
+      const pending = mint(DAEMON_A).then((response) => response);
+      await started;
+      const machine = await Machine.findOne({ machineId: 'machine-a' });
+      await request(app).delete(`/api/machines/${machine._id}`).expect(200);
+      resumeLookup();
+      expect((await pending).status).toBe(401);
+      expect(await AgentCredential.countDocuments({ kind: 'runtime', machineId: 'machine-a', status: 'active' })).toBe(0);
+      expect((await User.findById(bot._id)).agentRuntimeTokens).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+      resumeLookup();
+    }
   });
 
   // Rhea on #2224, Wren for plain native: a daemon cannot mint a token for an

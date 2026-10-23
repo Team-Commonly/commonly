@@ -46,13 +46,23 @@ router.post('/', machineRateLimit, auth, async (req: AuthReq, res: express.Respo
   try {
     const ownerUserId = req.user?.id;
     if (!ownerUserId) return res.status(401).json({ message: 'Unauthorized' });
-    const { machine, token } = await registerMachine({ ownerUserId, name: req.body?.name });
+    const { machine, token } = await registerMachine({
+      ownerUserId,
+      name: req.body?.name,
+      deviceTokenHash: req.deviceTokenHash,
+    });
     // The raw daemon credential is intentionally only ever returned here.
     return res.status(201).json({ machine, daemonToken: token });
   } catch (error) {
     const message = (error as Error).message;
     if (message.startsWith('Machine name') || message.startsWith('Machine limit')) {
       return res.status(400).json({ message });
+    }
+    if (message === 'Device token revoked during machine registration') {
+      return res.status(401).json({ message: 'Device token revoked' });
+    }
+    if (message === 'Machine removed during registration') {
+      return res.status(409).json({ message: 'Machine removed during registration' });
     }
     console.error('Error registering machine:', error);
     return res.status(500).json({ message: 'Server error' });

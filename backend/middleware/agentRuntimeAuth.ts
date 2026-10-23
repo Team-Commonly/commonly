@@ -9,6 +9,7 @@ import Pod from '../models/Pod';
 import AgentCredential from '../models/AgentCredential';
 import { markByoConnectionAttempt } from '../services/onboardingMarks';
 import { isSpawnCredential } from '../services/spawnCredentialService';
+import { machineHasLiveAuthorization } from '../services/machineService';
 
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
@@ -113,6 +114,11 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
         if (!parent || parent.status !== 'active') {
           return res.status(401).json({ message: 'Issuing credential revoked' });
         }
+      }
+      if (credential.machineId && !await machineHasLiveAuthorization(
+        credential.machineId, credential.ownerUserId,
+      )) {
+        return res.status(401).json({ message: 'Machine access revoked' });
       }
       AgentCredential.updateOne({ _id: credential._id }, { $set: { lastUsedAt: new Date() } })
         .catch((err: Error) => console.warn('Failed to update credential usage:', err.message));

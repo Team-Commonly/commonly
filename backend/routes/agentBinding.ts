@@ -21,6 +21,7 @@ import {
 } from '../services/seatEnvironmentProjection';
 import { ownsRuntimeIdentity, OwnershipFailure } from '../services/runtimeIdentityOwnership';
 import { logAgentInstallRefusal } from '../middleware/logAgentInstallRefusal';
+import { machineHasLiveAuthorization } from '../services/machineService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -389,14 +390,23 @@ router.post('/runtime-token', bindingRateLimit, daemonAuth('agents:adopt'), asyn
     const daemonCredential = await AgentCredential.findOne({
       kind: 'daemon', machineId: machine.machineId, ownerUserId: machine.ownerUserId, status: 'active',
     }).select('_id').lean();
+    if (!daemonCredential) return res.status(401).json({ message: 'Issuing daemon credential revoked' });
 
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { issueRuntimeTokenForAgent } = require('./registry/tokens');
+    const { issueRuntimeTokenForAgent, revokeRuntimeTokenEverywhere } = require('./registry/tokens');
     const minted = await issueRuntimeTokenForAgent(agentUser, `Daemon mint (${machine.machineId})`, null, {
       ownerUserId: machine.ownerUserId,
-      parentId: daemonCredential?._id || null,
+      parentId: daemonCredential._id,
       machineId: machine.machineId,
     });
+    const issuerStillActive = await AgentCredential.exists({
+      _id: daemonCredential._id, status: 'active',
+    });
+    const machineStillAuthorized = await machineHasLiveAuthorization(machine.machineId, machine.ownerUserId);
+    if (!issuerStillActive || !machineStillAuthorized) {
+      if (minted.token) await revokeRuntimeTokenEverywhere(createHash('sha256').update(minted.token).digest('hex'));
+      return res.status(401).json({ message: 'Machine access revoked during token mint' });
+    }
     return res.status(201).json({
       agentName, instanceId, token: minted.token, rotated: hasToken,
     });

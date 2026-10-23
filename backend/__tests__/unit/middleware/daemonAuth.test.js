@@ -4,6 +4,7 @@ const { hash } = require('../../../utils/secret');
 
 let mongod;
 let AgentCredential;
+let Machine;
 let daemonAuth;
 let agentRuntimeAuth;
 
@@ -11,12 +12,14 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
   AgentCredential = require('../../../models/AgentCredential');
+  Machine = require('../../../models/Machine');
   daemonAuth = require('../../../middleware/daemonAuth');
   agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth').default;
 });
 
 afterEach(async () => {
   await AgentCredential.deleteMany({});
+  await Machine.deleteMany({});
 });
 
 afterAll(async () => {
@@ -35,6 +38,7 @@ describe('daemonAuth', () => {
   it('authenticates only a scoped daemon credential and never assigns an agent identity', async () => {
     const token = `cm_daemon_${'a'.repeat(32)}`;
     const ownerUserId = new mongoose.Types.ObjectId();
+    await Machine.create({ ownerUserId, machineId: 'machine-1', name: 'Test machine' });
     await AgentCredential.create({
       tokenHash: hash(token),
       kind: 'daemon',
@@ -72,10 +76,12 @@ describe('daemonAuth', () => {
 
   it('requires the route scope before exposing a machine identity', async () => {
     const token = `cm_daemon_${'b'.repeat(32)}`;
+    const ownerUserId = new mongoose.Types.ObjectId();
+    await Machine.create({ ownerUserId, machineId: 'machine-2', name: 'Test machine' });
     await AgentCredential.create({
       tokenHash: hash(token),
       kind: 'daemon',
-      ownerUserId: new mongoose.Types.ObjectId(),
+      ownerUserId,
       machineId: 'machine-2',
       scopes: ['machine:heartbeat'],
     });

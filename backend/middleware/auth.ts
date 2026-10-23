@@ -83,6 +83,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
         role: user.role,
       };
       req.authType = isDeviceToken ? 'deviceToken' : 'apiToken';
+      if (isDeviceToken) req.deviceTokenHash = deviceTokenHash;
       req.apiTokenScopes = user.apiTokenScopes || [];
       req.apiTokenCreatedAt = user.apiTokenCreatedAt || null;
       if (isDeviceToken) {
