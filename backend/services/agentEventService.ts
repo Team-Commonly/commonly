@@ -926,6 +926,7 @@ class AgentEventService {
     const AgentRun = require('../models/AgentRun');
     const stuck = await AgentEvent.find({
       status: 'delivered',
+      deliveryMode: { $ne: 'digest' },
       deliveredAt: { $lt: threshold },
       $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }],
     }).sort({ deliveredAt: 1 }).limit(STUCK_REDISPATCH_BATCH).lean() as EventDoc[];
@@ -1031,7 +1032,7 @@ class AgentEventService {
     const targetFilter = { $or: targets };
     const ceiling = new Date(now.getTime() - STRANDED_PENDING_MAX_AGE_MS);
     const closedResult = await AgentEvent.updateMany(
-      { status: 'pending', createdAt: { $lt: ceiling }, ...targetFilter },
+      { status: 'pending', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: ceiling }, ...targetFilter },
       {
         $set: {
           status: 'failed',
@@ -1042,6 +1043,7 @@ class AgentEventService {
     ) as { modifiedCount?: number };
     const stranded = await AgentEvent.find({
       status: 'pending',
+      deliveryMode: { $ne: 'digest' },
       createdAt: {
         $lt: new Date(now.getTime() - STRANDED_PENDING_MIN_AGE_MS),
         $gte: ceiling,
@@ -1439,7 +1441,9 @@ class AgentEventService {
         (lookupErr as Error).message,
       );
     }
-    const routedToNative = Boolean(nativeInstallation);
+    // A digest is data for a later turn, not a turn on its own. Native
+    // installations must leave it pending just like external installations.
+    const routedToNative = Boolean(nativeInstallation) && deliveryMode === 'wake';
 
     const event = await AgentEvent.create({
       agentName: agentName.toLowerCase(),
@@ -1617,7 +1621,7 @@ class AgentEventService {
       inboxCount = await AgentEvent.countDocuments(batchQuery);
     }
 
-    const wakeQuery = onePod ? { ...batchQuery, deliveryMode: { $ne: 'digest' } } : batchQuery;
+    const wakeQuery = { ...batchQuery, deliveryMode: { $ne: 'digest' } };
     const wakeCandidates = await AgentEvent.find(wakeQuery)
       .sort({ createdAt: 1 })
       .limit(limit)

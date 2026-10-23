@@ -448,6 +448,23 @@ describe('driver paths reach a terminal state', () => {
       await flush();
     };
 
+    test('a digest for a native installation remains pending without starting a turn', async () => {
+      AgentInstallation.findOne.mockReturnValue({ lean: () => Promise.resolve(nativeInstall) });
+      AgentEvent.create.mockResolvedValue({
+        _id: 'evt-digest', agentName: 'clerk', instanceId: 'default', podId: POD_P1,
+        type: 'message.posted', payload: {}, status: 'pending', deliveryMode: 'digest',
+      });
+
+      await AgentEventService.enqueue({
+        agentName: 'clerk', instanceId: 'default', podId: POD_P1,
+        type: 'message.posted', payload: {}, deliveryMode: 'digest',
+      });
+
+      expect(AgentEvent.create).toHaveBeenCalledWith(expect.objectContaining({ deliveryMode: 'digest' }));
+      expect(AgentEvent.create.mock.calls[0][0]).not.toHaveProperty('status');
+      expect(runAgent).not.toHaveBeenCalled();
+    });
+
     test('a podId shaped like a query operator is never looked up or run in-process', async () => {
       AgentInstallation.findOne.mockReturnValue({ lean: () => Promise.resolve(nativeInstall) });
       AgentEvent.create.mockResolvedValue({ _id: 'evt-x', agentName: 'clerk', instanceId: 'default', type: 'chat.mention', payload: {} });

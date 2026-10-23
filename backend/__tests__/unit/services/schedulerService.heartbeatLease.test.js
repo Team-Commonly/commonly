@@ -11,6 +11,9 @@ const {
 } = require('../../utils/testUtils');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const SchedulerHeartbeatLease = require('../../../models/SchedulerHeartbeatLease');
+const AgentEvent = require('../../../models/AgentEvent');
+const AgentEventService = require('../../../services/agentEventService');
+const mongoose = require('mongoose');
 const schedulerServiceInstance = require('../../../services/schedulerService');
 
 const SchedulerService = schedulerServiceInstance.constructor;
@@ -95,5 +98,31 @@ describe('SchedulerService automatic heartbeat dispatch lease', () => {
       skippedByInterval: 0,
     });
     expect(AgentInstallation.find).toHaveBeenCalledWith({ status: 'active' });
+  });
+
+  it('only wakes a pod with digest unread for 60 minutes and no recent or pending wake', async () => {
+    const podId = new mongoose.Types.ObjectId();
+    const scope = { agentName: 'flint', instanceId: 'default', podId };
+    const enqueue = jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+    expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+    await AgentEvent.collection.insertOne({ ...scope, type: 'message.posted', status: 'pending',
+      deliveryMode: 'digest', attempts: 0, createdAt: new Date(NOW.getTime() - 61 * 60000) });
+    expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+    await AgentInstallation.collection.insertOne({ ...scope, status: 'active',
+      version: '1.0.0', installedBy: new mongoose.Types.ObjectId() });
+    expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(1);
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      ...scope, type: 'heartbeat', payload: expect.objectContaining({ trigger: 'unread-digest' }),
+    }));
+
+    enqueue.mockClear();
+    await AgentEvent.collection.insertOne({ ...scope, type: 'chat.mention', status: 'pending',
+      deliveryMode: 'wake', attempts: 0, createdAt: NOW });
+    expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+    await AgentEvent.deleteMany({ ...scope, type: 'chat.mention' });
+    await AgentEvent.collection.insertOne({ ...scope, type: 'chat.mention', status: 'acked',
+      deliveryMode: 'wake', attempts: 1, deliveredAt: new Date(NOW.getTime() - 30 * 60000), createdAt: NOW });
+    expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+    expect(enqueue).not.toHaveBeenCalled();
   });
 });

@@ -1120,7 +1120,54 @@ class SchedulerService {
     }
 
     const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now });
-    return { ...result, skippedByLease: false };
+    const unreadWakes = await SchedulerService.dispatchUnreadDigestHeartbeats(now);
+    return { ...result, enqueued: result.enqueued + unreadWakes, skippedByLease: false };
+  }
+
+  /** One slow wake for a pod with unread digest, never for an empty inbox. */
+  static async dispatchUnreadDigestHeartbeats(now: Date = new Date()): Promise<number> {
+    const threshold = new Date(now.getTime() - 60 * 60 * 1000);
+    const groups = await AgentEvent.aggregate([
+      { $match: { status: 'pending', deliveryMode: 'digest', createdAt: { $lte: threshold } } },
+      { $group: {
+        _id: { agentName: '$agentName', instanceId: '$instanceId', podId: '$podId' },
+      } },
+    ]) as Array<{ _id: { agentName: string; instanceId: string; podId: unknown } }>;
+    let enqueued = 0;
+    for (const row of groups) {
+      const scope = {
+        agentName: row._id.agentName,
+        instanceId: row._id.instanceId || 'default',
+        podId: row._id.podId,
+      };
+      // A retired projection has no listener. Its old digest remains for GC,
+      // but must not create a new wake every hour.
+      // eslint-disable-next-line no-await-in-loop
+      const active = await AgentInstallation.exists({ ...scope, status: 'active' });
+      if (!active) continue;
+      // An existing wake will carry the digest. A recent completed wake says
+      // the seat has already had a turn inside this 60-minute window.
+      // eslint-disable-next-line no-await-in-loop
+      const [pendingWake, recentWake] = await Promise.all([
+        AgentEvent.exists({ ...scope, status: 'pending', deliveryMode: { $ne: 'digest' } }),
+        AgentEvent.exists({ ...scope, status: { $in: ['delivered', 'acked'] },
+          deliveryMode: { $ne: 'digest' }, deliveredAt: { $gte: threshold } }),
+      ]);
+      if (pendingWake || recentWake) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await AgentEventService.enqueue({
+        ...scope,
+        type: 'heartbeat',
+        payload: {
+          trigger: 'unread-digest',
+          podId: String(scope.podId),
+          generatedAt: now.toISOString(),
+          content: '[Unread pod activity is waiting. Read the digest in this inbox batch; respond only if useful.]',
+        },
+      });
+      enqueued += 1;
+    }
+    return enqueued;
   }
 
   static async dispatchAgentHeartbeats(
