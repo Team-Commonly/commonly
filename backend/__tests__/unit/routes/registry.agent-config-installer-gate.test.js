@@ -249,6 +249,28 @@ describe('agent config PATCH — installer gate', () => {
     expect(AgentIdentityService.renameAgentDisplayName).not.toHaveBeenCalled();
   });
 
+  it('refuses a rename when the portable identity has an inaccessible sibling pod', async () => {
+    const primary = installation({ installedBy: MEMBER });
+    const sibling = installation({ podId: 'pod-2', installedBy: MEMBER });
+    setPod();
+    Pod.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([
+      { _id: 'pod-1', members: [{ userId: MEMBER }] },
+      { _id: 'pod-2', members: [] },
+    ]) }) });
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary, sibling]);
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', displayName: 'New name' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('identity_rename_scope_incomplete');
+    expect(primary.save).not.toHaveBeenCalled();
+    expect(sibling.save).not.toHaveBeenCalled();
+    expect(AgentIdentityService.renameAgentDisplayName).not.toHaveBeenCalled();
+  });
+
   it('does not claim a completed rename when the chat mirror is behind', async () => {
     const primary = installation({ installedBy: MEMBER });
     setPod();
@@ -299,7 +321,7 @@ describe('agent config PATCH — installer gate', () => {
       select: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue([
           { _id: 'pod-1', createdBy: 'someone-else', members: [{ userId: MEMBER }] },
-          { _id: 'pod-2', createdBy: 'someone-else', members: [{ userId: MEMBER }] },
+          { _id: 'pod-2', createdBy: 'someone-else', members: [] },
         ]),
       }),
     });
@@ -417,7 +439,6 @@ describe('agent config PATCH — installer gate', () => {
       .send({
         instanceId: 'curator',
         config: { environment: { version: 1, sandbox: { mode: 'workspace' } } },
-        displayName: 'Renamed',
       });
 
     expect(res.status).toBe(200);
@@ -425,9 +446,6 @@ describe('agent config PATCH — installer gate', () => {
     expect(primary.save).toHaveBeenCalledTimes(1);
     expect(otherOwnersRow.save).not.toHaveBeenCalled();
     expect(otherOwnersRow.config.get('environment')).toBeUndefined();
-    expect(AgentProfile.updateMany).toHaveBeenCalledWith(
-      { agentId: 'openclaw:curator', podId: { $in: ['pod-1'] } },
-      expect.objectContaining({ name: 'Renamed' }),
-    );
+    expect(AgentProfile.updateMany).not.toHaveBeenCalled();
   });
 });

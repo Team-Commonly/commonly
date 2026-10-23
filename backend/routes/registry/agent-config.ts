@@ -247,7 +247,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         .select('_id members createdBy')
         .lean();
       accessiblePodIds = peerPods
-        .filter((entry: any) => userHasPodAccess(entry, userId))
+        .filter((entry: any) => isInstanceAdmin || userHasPodAccess(entry, userId))
         .map((entry: any) => entry._id.toString());
       if (!accessiblePodIds.includes(podId.toString())) {
         accessiblePodIds.push(podId.toString());
@@ -270,6 +270,14 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     const installationsToUpdate: any[] = isInstanceAdmin
       ? accessibleInstallations
       : accessibleInstallations.filter(ownsInstallation);
+    // A rename changes the portable User label seen in every pod. Refuse it
+    // unless the same request will update every non-uninstalled projection.
+    if (displayName !== undefined && installationsToUpdate.length !== peerByPod.size) {
+      return res.status(409).json({
+        code: 'identity_rename_scope_incomplete',
+        error: 'This identity has installations outside your writable pods',
+      });
+    }
     const writablePodIds = Array.from(new Set(
       installationsToUpdate
         .map((entry: any) => entry.podId?.toString?.() || '')
