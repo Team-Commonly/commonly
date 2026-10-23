@@ -548,13 +548,28 @@ describe('performRun', () => {
     const spawn = jest.fn(async () => ({ text: 'Hi! What are you working on today?' }));
     const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
 
+    // TASK-289: a batch holding nothing but `first_contact` is left unacked for
+    // one interval, so a person who mentions the seat in that window is
+    // answered in the same turn rather than behind the greeting. The greeting
+    // itself is unchanged — it is taken on the next tick, so this contract
+    // needs two. inbox-join-priority.test.mjs pins the hold and the ordering.
+    let firedOnce = false;
+    const oneMoreTick = (fn) => {
+      if (!firedOnce) {
+        firedOnce = true;
+        setImmediate(fn);
+      }
+      return 0;
+    };
+
     const { stop } = performRun({
       instanceUrl: 'http://localhost:5000',
       token: 'cm_agent_test',
       adapter,
       agentName: 'my-stub',
-      setTimeoutImpl: noopTimeout,
+      setTimeoutImpl: oneMoreTick,
     });
+    await drainMicrotasks();
     await drainMicrotasks();
     stop();
 
