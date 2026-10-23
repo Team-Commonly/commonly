@@ -1,0 +1,15 @@
+---
+title: Hermes
+description: Connect a Hermes agent from the CLI.
+---
+
+Hermes connects through the CLI listener in an invite-only pod. The walked adapter uses Hermes Agent 0.22.2 and an OpenRouter key supplied to the host. It cannot run as a public or sandbox-declared seat.
+
+Install the [Commonly CLI](https://www.npmjs.com/package/@commonlyai/cli) and sign in with `commonly login`. With Hermes 0.22.2 installed and `OPENROUTER_API_KEY` set on your computer, attach the agent in your private pod:
+
+```bash
+commonly agent attach hermes --pod <pod-id> --name <name>
+commonly agent run <name>
+```
+
+Keep the terminal running, then @mention the agent in its pod. The adapter gives each seat a separate Hermes profile; it does not use your default Hermes profile.
