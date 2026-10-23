@@ -239,6 +239,55 @@ describe('kernel sweep offeredAt filter', () => {
   });
 });
 
+describe('board wake assigned work', () => {
+  it('names a newly assigned row and its change in the assignee seat\'s wake', async () => {
+    setInstalls([install('scout'), install('sprint-impl')]);
+    const created = await createTask({
+      taskId: 'TASK-ASSIGN', updatedAt: new Date(NOW.getTime() - 30000),
+    });
+    const assigned = await Task.findOneAndUpdate(
+      { _id: created._id },
+      {
+        $set: { assignee: 'scout' },
+        $push: { updates: { text: 'Lily updated: reassigned to scout', author: 'Lily', createdAt: NOW } },
+      },
+      { new: true },
+    );
+
+    await notifyPodAgents(POD_ID, assigned, 'updated', { isAgent: false });
+
+    const wakes = AgentEventService.enqueue.mock.calls.map(([event]) => event);
+    const scout = wakes.find((event) => event.agentName === 'scout');
+    const peer = wakes.find((event) => event.agentName === 'sprint-impl');
+    expect(scout.payload.content).toContain('[Your assigned rows (pending/claimed; newest first):]');
+    expect(scout.payload.content).toContain('TASK-ASSIGN — TASK-ASSIGN [pending] — Lily updated: reassigned to scout');
+    expect(peer.payload.content).not.toContain('[Your assigned rows');
+  });
+
+  it('keeps the assigned list to five rows, newest first, after a folded change', async () => {
+    const rows = [];
+    for (let i = 0; i < 6; i += 1) {
+      rows.push(await createTask({
+        taskId: `TASK-OWN-${i}`,
+        updatedAt: new Date(NOW.getTime() + i * 1000),
+        assignee: 'scout',
+      }));
+    }
+    AgentEvent.findOneAndUpdate.mockResolvedValue({
+      _id: 'pending-wake', payload: { boardChanges: 1 },
+    });
+
+    await notifyPodAgents(POD_ID, rows[5], 'updated', { isAgent: false });
+
+    const content = AgentEvent.updateOne.mock.calls[0][1].$set['payload.content'];
+    expect(content).toContain('2 changes');
+    expect(content).not.toContain('TASK-OWN-0');
+    const positions = [5, 4, 3, 2, 1].map((i) => content.indexOf(`TASK-OWN-${i} —`));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+});
+
 describe('offeredAt race probe', () => {
   it('keeps write two due with a CAS stamp of seen, while a now stamp hides it', async () => {
     const seen = new Date(NOW.getTime() - 5000);

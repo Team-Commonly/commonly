@@ -26,11 +26,13 @@ jest.mock('../../../models/AgentEvent', () => ({
 const mockTaskUpdateOne = jest.fn();
 jest.mock('../../../models/Task', () => ({
   updateOne: (...args) => mockTaskUpdateOne(...args),
+  find: jest.fn(),
 }));
 
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentEventService = require('../../../services/agentEventService');
 const AgentEvent = require('../../../models/AgentEvent');
+const Task = require('../../../models/Task');
 const { notifyPodAgents, notifyFoundWork } = require('../../../services/taskEventService');
 
 const POD_ID = new mongoose.Types.ObjectId().toString();
@@ -70,6 +72,9 @@ beforeEach(() => {
   AgentEvent.findOneAndUpdate.mockResolvedValue(null);
   AgentEvent.updateOne.mockResolvedValue({});
   mockTaskUpdateOne.mockResolvedValue({ matchedCount: 1 });
+  Task.find.mockReturnValue({
+    sort: () => ({ limit: () => ({ lean: async () => [] }) }),
+  });
 });
 
 describe('notifyPodAgents', () => {
