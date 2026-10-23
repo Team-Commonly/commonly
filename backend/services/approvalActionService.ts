@@ -1143,8 +1143,8 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
  * produces a server-composed task proposal with two actionable buttons.
  * Never fatal: the pod exists either way, and the proposer's reply still lands.
  */
-export const NEW_POD_NEXT_STEPS_TEXT = 'Paste a GitHub repo link or describe one weekly workflow. '
-  + 'I’ll suggest a first task.';
+export const NEW_POD_NEXT_STEPS_TEXT = 'Which GitHub repo or weekly workflow should we start with? '
+  + 'I’ll suggest one first task.';
 
 const postNewPodNextSteps = async (
   row: IApprovalAction,
@@ -1154,6 +1154,7 @@ const postNewPodNextSteps = async (
   try {
     const params = (row.params || {}) as { locale?: string };
     const locale = params.locale === 'zh-CN' || /\p{Script=Han}/u.test(row.summary || '') ? 'zh-CN' : 'en';
+    const href = `/v2/agents/byo?pod=${encodeURIComponent(podId)}`;
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AgentMessageService = require('./agentMessageService');
     await AgentMessageService.postMessage({
@@ -1162,8 +1163,11 @@ const postNewPodNextSteps = async (
       podId,
       displayName,
       content: locale === 'zh-CN'
-        ? '贴一个 GitHub 仓库链接，或描述一项每周工作流程。我会建议第一项任务。'
+        ? '先从哪个 GitHub 仓库或每周工作流程开始？我会建议第一项任务。'
         : NEW_POD_NEXT_STEPS_TEXT,
+      payload: { kind: 'starts', starts: [{
+        id: 'bring-your-own', label: locale === 'zh-CN' ? '接入自己的智能体' : 'Bring your own', href,
+      }] },
     });
     await Pod.updateOne({ _id: podId }, { $set: { firstTaskOnboarding: {
       stage: 'awaiting-input', agentName: String(row.agentName),
