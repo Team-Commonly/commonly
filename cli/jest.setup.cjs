@@ -9,12 +9,15 @@
  * adapter tests that pin the npx form would fail for a reason that has nothing
  * to do with the change.
  *
- * Pointing the home at a fresh empty dir per run restores that: the default
- * `COMMONLY_MCP_HOME` is the real `~/.commonly/mcp`, and tests that want a
- * warmed home set up their own temp dir and pass it in.
+ * Pointing the home at a fresh dir with no installed build per run restores
+ * that: the default `COMMONLY_MCP_HOME` is the real `~/.commonly/mcp`, and
+ * tests that want a warmed home set up their own temp dir and pass it in.
+ * The lock suppresses an unrelated detached warm child that could still write
+ * to this fixture after Jest has moved on to the next test file.
  */
-const { mkdtempSync } = require('node:fs');
+const { mkdtempSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 
 process.env.COMMONLY_MCP_HOME = mkdtempSync(join(tmpdir(), 'commonly-mcp-home-jest-'));
+writeFileSync(join(process.env.COMMONLY_MCP_HOME, '.warm.lock'), 'warming\n');

@@ -130,7 +130,7 @@ describe('claude adapter — ctx.environment', () => {
   test('TASK-174: a warmed MCP home makes claude execute the home build, not npx @latest', async () => {
     // The control for this arm is the rest of this file: every other test here
     // declares the shipped `npx -y @commonlyai/mcp@latest`, and the jest setup
-    // points COMMONLY_MCP_HOME at an EMPTY dir, so they all see it unchanged.
+    // points COMMONLY_MCP_HOME at a home with no installed build, so they all see it unchanged.
     // This arm is the same call with a populated home.
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-mcp-home-'));
     const pkgDir = path.join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
@@ -140,6 +140,7 @@ describe('claude adapter — ctx.environment', () => {
     }));
     fs.writeFileSync(path.join(pkgDir, 'src', 'index.js'), '');
     fs.writeFileSync(path.join(home, 'current'), '0.3.13\n');
+    fs.writeFileSync(path.join(home, '.warm.lock'), 'warming\n');
     const previous = process.env.COMMONLY_MCP_HOME;
     process.env.COMMONLY_MCP_HOME = home;
     try {
@@ -181,7 +182,7 @@ describe('claude adapter — ctx.environment', () => {
   });
 
   test('TASK-174: the cold path materialises an EXACT spec — the spawn never names @latest', async () => {
-    // The home holds nothing but the warm's registry cache: an empty home is the
+    // The home has no installed build, only the registry cache and warm lock: this is the
     // one state where the declaration still runs through npx, and `@latest` is
     // the one spec whose npx dir every seat shares and a publish rewrites in
     // place. So the config this adapter writes names the version the host
@@ -192,6 +193,7 @@ describe('claude adapter — ctx.environment', () => {
     fs.writeFileSync(path.join(home, '.registry.json'), JSON.stringify({
       version: '0.3.13', checkedAt: Date.now(),
     }));
+    fs.writeFileSync(path.join(home, '.warm.lock'), 'warming\n');
     const previous = process.env.COMMONLY_MCP_HOME;
     process.env.COMMONLY_MCP_HOME = home;
     try {
@@ -249,6 +251,7 @@ describe('claude adapter — ctx.environment', () => {
     }));
     fs.writeFileSync(path.join(pkgDir, 'src', 'index.js'), '');
     fs.writeFileSync(path.join(home, 'current'), '0.3.7\n');
+    fs.writeFileSync(path.join(home, '.warm.lock'), 'warming\n');
     const previous = process.env.COMMONLY_MCP_HOME;
     process.env.COMMONLY_MCP_HOME = home;
     try {

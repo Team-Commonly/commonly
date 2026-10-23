@@ -354,7 +354,7 @@ describe('helpers', () => {
   });
   test('TASK-174: a warmed MCP home makes pi exec the home build, not npx @latest', async () => {
     // Control: the helper tests in this file call resolveMcpServers with the
-    // empty home the jest setup installs, and see `npx -y @commonlyai/mcp@latest`
+    // home without an installed build from jest setup, and see `npx -y @commonlyai/mcp@latest`
     // carried through unchanged. This arm is the same call with a real home.
     const home = await mkdtemp(join(tmpdir(), 'cli-mcp-home-'));
     const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
@@ -364,6 +364,7 @@ describe('helpers', () => {
     }));
     await writeFile(join(pkgDir, 'src', 'index.js'), '');
     await writeFile(join(home, 'current'), '0.3.13\n');
+    await writeFile(join(home, '.warm.lock'), 'warming\n');
     const previous = process.env.COMMONLY_MCP_HOME;
     process.env.COMMONLY_MCP_HOME = home;
     try {
