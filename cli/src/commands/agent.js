@@ -327,7 +327,9 @@ export const bootstrapAgentRecordFromEnv = async ({
   }
 
   const installs = Array.isArray(identity?.installations) ? identity.installations : [];
-  const primary = installs.find((i) => i.type === 'installation' && i.status === 'active')
+  const primary = installs.find((i) => i.type === 'installation' && i.status === 'active'
+    && i.listenerEnvironment?.sandbox?.trust === 'private')
+    || installs.find((i) => i.type === 'installation' && i.status === 'active')
     || installs[0] || null;
 
   // The adapter names a binary on THIS machine — the one fact the server

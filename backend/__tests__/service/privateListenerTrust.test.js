@@ -160,6 +160,18 @@ test('a config edit cannot renew private trust after another human joins', async
   expect(row.config.get('environment').workspace.path).toBe('~/projects/example');
 });
 
+test('owner can promote a read-only listener in a sole-human invite pod', async () => {
+  await AgentInstallation.updateOne({ agentName: AGENT }, {
+    $set: { 'config.environment': { sandbox: { trust: 'public' } } },
+  });
+  const changed = await request(app).patch(`/api/registry/pods/${pod._id}/agents/${AGENT}`).send({
+    config: { environment: { workspace: { path: '~/projects/promoted' }, sandbox: { trust: 'private' } } },
+  });
+  expect(changed.status).toBe(200);
+  const row = await AgentInstallation.findOne({ agentName: AGENT });
+  expect(row.config.get('environment').workspace.path).toBe('~/projects/promoted');
+});
+
 test('owner can downgrade to read-only after a second human joins', async () => {
   const second = await User.create({ username: 'downgrade-second', email: 'downgrade-second@test.com', password: 'password123' });
   await Pod.updateOne({ _id: pod._id }, { $addToSet: { members: second._id } });
