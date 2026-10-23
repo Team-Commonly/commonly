@@ -340,6 +340,9 @@ test('selects an installation the owner can manage without exposing a foreign po
   expect(screen.getByRole('heading', { name: 'Key' }).compareDocumentPosition(
     screen.getByRole('heading', { name: 'Skills' }),
   ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Wake' }).compareDocumentPosition(
+    screen.getByRole('heading', { name: 'Skills' }),
+  ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
   fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
