@@ -4612,6 +4612,9 @@ describe('BYO command boxes wrap at spaces', () => {
     expect(active).toContain('background: var(--v2-surface-hover)');
     const hover = ruleBody(v2, '.v2-root button.v2-mention-item:hover');
     expect(hover).toContain('background: var(--v2-surface-hover)');
+    // The padding the reset erases (`padding: 0`, 0,2,1) comes back at 0,3,1.
+    const padded = ruleBody(v2, '.v2-root .v2-mention-dropdown button.v2-mention-item');
+    expect(padded).toContain('padding: 7px 9px');
     // The reset stays as it was: the fix is additive, not a rewrite of the reset.
     expect(ruleBody(v2, '.v2-root button:not(.MuiButtonBase-root)')).toContain('background: none');
   });

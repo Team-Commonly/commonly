@@ -2977,6 +2977,12 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 
+/* The same reset also sets `padding: 0` (0,2,1), which erased the item's 7px 9px.
+   Scoped to the dropdown so the selector is 0,3,1 and the reset itself is unchanged. */
+.v2-root .v2-mention-dropdown button.v2-mention-item {
+  padding: 7px 9px;
+}
+
 .v2-mention-item__text {
   display: flex;
   flex-direction: column;
