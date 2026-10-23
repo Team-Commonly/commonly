@@ -38,10 +38,33 @@ beforeEach(() => {
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
     } } });
+    if (url === '/api/registry/agents/maya-claude') return Promise.resolve({ data: {
+      status: 'active', registry: 'commonly-community', ephemeral: false, verified: true,
+    } });
     return Promise.resolve({ data: [{
       _id: 'tok-1', label: 'Laptop', createdAt: '2026-10-01T00:00:00Z', lastUsedAt: null, revokedAt: null, status: 'active',
     }] });
   });
+});
+
+test('Identity shows the listing state and links to the public profile without publishing', async () => {
+  renderPage();
+  expect(await screen.findByText('Published')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View public profile' }))
+    .toHaveAttribute('href', '/v2/agent/maya-claude/default');
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('an ephemeral registry row is not presented as a marketplace listing', async () => {
+  const defaultGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => (
+    url === '/api/registry/agents/maya-claude'
+      ? Promise.resolve({ data: { status: 'active', registry: 'commonly-community', ephemeral: true, verified: true } })
+      : defaultGet(url, options)
+  ));
+  renderPage();
+  expect(await screen.findByText('Not published')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View public profile' })).toBeInTheDocument();
 });
 
 test('wrapper key replacement cannot bypass the daemon reconnect flow', async () => {

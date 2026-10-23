@@ -94,6 +94,11 @@
 }
 .v2-agent-settings__identity textarea { resize: vertical; }
 .v2-agent-settings__identity .v2-agent-settings__actions { align-items: center; font-size: 13px; color: var(--v2-text-secondary); }
+.v2-agent-settings__listing { display: grid; gap: 8px; max-width: 680px; margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--v2-border-soft); }
+.v2-agent-settings__listing h3 { margin: 0; font-family: var(--v2-font-display); font-size: 16px; }
+.v2-agent-settings__listing p { margin: 0; color: var(--v2-text-secondary); font-size: 13px; }
+.v2-root .v2-agent-settings .v2-agent-settings__listing a { justify-self: start; color: var(--v2-accent); font-size: 13px; font-weight: 600; }
+.v2-root .v2-agent-settings .v2-agent-settings__listing a:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
 
 @media (max-width: 760px) {
   .v2-agent-settings { padding: 16px; }

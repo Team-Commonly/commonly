@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import axios from '../../utils/axiosConfig';
 import type { AgentSettingsInstallation, AgentSettingsPatch } from './useAgentSettings';
 
 interface Props {
@@ -35,6 +37,34 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [listingStatus, setListingStatus] = useState('listingLoading');
+
+  useEffect(() => {
+    let active = true;
+    setListingStatus('listingLoading');
+    void axios.get<{
+      status?: string; registry?: string; ephemeral?: boolean; verified?: boolean;
+    }>(`/api/registry/agents/${encodeURIComponent(installation.name)}`)
+      .then(({ data }) => {
+        if (!active) return;
+        if (data.ephemeral || data.registry === 'private' || data.status === 'unpublished') {
+          setListingStatus('listingNotPublished');
+        } else if (data.status === 'pending-review') {
+          setListingStatus('listingInReview');
+        } else if (data.status === 'deprecated') {
+          setListingStatus('listingDeprecated');
+        } else if (data.status === 'active') {
+          setListingStatus(data.verified ? 'listingPublished' : 'listingNotInCatalog');
+        } else {
+          setListingStatus('listingNotPublished');
+        }
+      }).catch((requestError) => {
+        if (!active) return;
+        const status = (requestError as { response?: { status?: number } })?.response?.status;
+        setListingStatus(status === 404 ? 'listingNotPublished' : 'listingUnavailable');
+      });
+    return () => { active = false; };
+  }, [installation.name]);
 
   useEffect(() => {
     setDisplayName(installation.displayName || '');
@@ -116,6 +146,14 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
       </div>
       {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}
     </form>
+    <div className="v2-agent-settings__listing">
+      <h3>{t('agentSettings.listingTitle')}</h3>
+      <p role="status">{t(`agentSettings.${listingStatus}`)}</p>
+      <Link to={`/v2/agent/${encodeURIComponent(installation.name)}/${encodeURIComponent(installation.instanceId)}`}>
+        {t('agentSettings.viewPublicProfile')}
+      </Link>
+      <p>{t('agentSettings.listingSeparate')}</p>
+    </div>
   </section>;
 };
 

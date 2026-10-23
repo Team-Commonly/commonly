@@ -4726,4 +4726,9 @@ describe('agent Identity editor', () => {
     expect(input).toContain('border: 1px solid var(--v2-border)');
     expect(input).toContain('background: var(--v2-surface)');
   });
+  test('listing status and public-profile link remain visible in the Settings flow', () => {
+    expect(ruleBody(css, '.v2-agent-settings__listing')).toContain('display: grid');
+    expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a')).toContain('color: var(--v2-accent)');
+    expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
+  });
 });
