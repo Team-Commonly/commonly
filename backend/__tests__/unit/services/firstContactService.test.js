@@ -81,6 +81,7 @@ describe('firstContactService', () => {
         kind: 'first-contact',
       },
     });
+    expect(AgentEventService.enqueue.mock.calls[0][0].payload.content).toContain('This is your one first impression.');
   });
 
   // QA walk 2026-10-16: a hosted agent sees only its mentions, so a plain
@@ -181,6 +182,21 @@ describe('firstContactService', () => {
     const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
     expect(cue).toContain('Japanese');
     expect(cue).toContain('Do not introduce yourself using a human name');
+  });
+
+  test.each([
+    ['hola, necesito ayuda', 'Europe/Madrid'],
+    ['bonjour, je cherche un assistant', 'Europe/Paris'],
+    ['안녕하세요, 도움이 필요합니다', 'Asia/Seoul'],
+  ])('unknown language is never instructed to greet in English: %s', async (words, timezone) => {
+    Message.recentContentByUser.mockResolvedValue([words]);
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({ timezone }) }) });
+
+    await maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' }));
+
+    const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    expect(cue).not.toContain("Use the person's language for this greeting: English");
+    expect(cue).not.toContain("Use the person's language for this greeting:");
   });
 
   test('concurrent installs enqueue exactly once when only one atomic upsert inserts', async () => {

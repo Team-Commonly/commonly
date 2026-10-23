@@ -43,7 +43,7 @@ const mentionLineCue = (handle: string): string => (
 const MENTION_HANDLE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const HOSTED_GREETING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-const greetingLanguage = async (userId: Types.ObjectId): Promise<string> => {
+const greetingLanguage = async (userId: Types.ObjectId): Promise<string | null> => {
   let zone = '';
   try {
     const user = await User.findById(userId).select('timezone').lean() as { timezone?: string } | null;
@@ -63,12 +63,12 @@ const greetingLanguage = async (userId: Types.ObjectId): Promise<string> => {
       if (zone === 'Asia/Tokyo') return 'Japanese';
       return ['Asia/Taipei', 'Asia/Hong_Kong'].includes(zone) ? 'Traditional Chinese' : 'Chinese';
     }
-    if (/[a-z]{3}/iu.test(words)) return 'English';
   }
   if (zone === 'Asia/Tokyo') return 'Japanese';
   if (['Asia/Taipei', 'Asia/Hong_Kong'].includes(zone)) return 'Traditional Chinese';
   if (['Asia/Shanghai', 'Asia/Chongqing'].includes(zone)) return 'Chinese';
-  return 'English';
+  // No language claim is safer than calling every Latin or unknown script English.
+  return null;
 };
 
 /**
@@ -162,13 +162,15 @@ export async function maybeFireFirstContact({
   const handle = String(mentionHandle || '').trim().toLowerCase();
 
   try {
+    const language = hostedAgentUserId ? await greetingLanguage(safeUserId) : null;
     const languageCue = hostedAgentUserId
-      ? ` Use the person's language for this greeting: ${await greetingLanguage(safeUserId)}. `
+      ? `${language ? ` Use the person's language for this greeting: ${language}.` : ''} `
         + 'Do not introduce yourself using a human name, including one inferred from your @handle. '
       : '';
     const opening = hostedAgentUserId
       ? 'A person just started you in this pod and has not seen you speak here recently. '
-      : 'A human just added you to this workspace and is seeing you for the first time. ';
+      : 'A human just added you to this workspace and is seeing you for the first time. '
+        + 'This is your one first impression. ';
     const mentionCue = MENTION_HANDLE.test(handle) ? mentionLineCue(handle) : '';
     await AgentEventService.enqueue({
       agentName: safeAgentName,
