@@ -50,6 +50,7 @@ describe('V2ConnectPage', () => {
     expect(screen.getByText(/COMMONLY_AGENT_TOKEN=cm_agent_…/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Manage connected CLI devices' })).toHaveAttribute('href', '/v2/settings');
     expect(document.querySelectorAll('.v2-connect__lane-heading p, .v2-connect__note')).toHaveLength(0);
+    expect(screen.getByRole('link', { name: 'Manage installed agents' })).toHaveAttribute('href', '/v2/agents');
     expect(screen.queryByRole('heading', { name: 'Instance keys' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open global integrations' })).not.toBeInTheDocument();
 

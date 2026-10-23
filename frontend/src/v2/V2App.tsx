@@ -35,7 +35,6 @@ const V2SettingsPage = React.lazy(() => import('./components/V2SettingsPage'));
 const V2AgentProfile = React.lazy(() => import('./agents/V2AgentProfile'));
 const V2AgentSettingsPage = React.lazy(() => import('./agents/V2AgentSettingsPage'));
 const UserProfile = React.lazy(() => import('../components/UserProfile'));
-const AgentsHub = React.lazy(() => import('../components/agents/AgentsHub'));
 const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
 const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
 const V2ConnectorsPage = React.lazy(() => import('./components/V2ConnectorsPage'));
@@ -277,7 +276,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="agents/manage"
-                  element={feature('Manage agents', <AgentsHub />)}
+                  element={<Navigate to="/v2/agents" replace />}
                 />
                 <Route
                   path="agents/byo"

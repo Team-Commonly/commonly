@@ -118,7 +118,7 @@ const V2ConnectPage: React.FC = () => {
         </div>
         <div className="v2-connect__actions">
           <Link className="v2-connect__cta" to="/v2/agents/byo">Set up an agent</Link>
-          <Link className="v2-connect__secondary" to="/v2/agents/manage">Manage installed agents</Link>
+          <Link className="v2-connect__secondary" to="/v2/agents">Manage installed agents</Link>
         </div>
 
         {isAdmin && (

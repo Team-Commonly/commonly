@@ -317,7 +317,7 @@ const V2YourTeamPage: React.FC = () => {
   };
 
   const handleHire = () => {
-    if (isEntitled) navigate('/v2/agents/manage');
+    if (isEntitled) navigate('/v2/agents/byo?mode=hosted');
     else setRedeemOpen(true);
   };
 

@@ -161,7 +161,7 @@ describe('V2Inspector', () => {
     fireEvent.click(screen.getByRole('button', { name: 'members' }));
     expect(onOpenInvite).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'manage' }));
-    expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/manage?podId=pod-1');
+    expect(mockNavigate).toHaveBeenCalledWith('/v2/agents');
   });
 
   test('does not render a stale attention item from another pod', async () => {

@@ -46,7 +46,7 @@ const renderPage = (over = {}) => {
     return Promise.resolve({ data: {} });
   });
   return render(
-    <AuthContext.Provider value={authValue}>
+    <AuthContext.Provider value={over.auth ?? authValue}>
       <MemoryRouter><V2YourTeamPage /></MemoryRouter>
     </AuthContext.Provider>,
   );
@@ -56,6 +56,12 @@ const cardOf = (name) => screen.getByText(name).closest('[data-testid="team-card
 afterEach(() => { jest.clearAllMocks(); window.localStorage.clear(); });
 
 describe('Your Team (direction C)', () => {
+  test('entitled Hire opens the hosted v2 setup', async () => {
+    renderPage({ auth: { ...authValue, currentUser: { ...authValue.currentUser, role: 'admin' }, user: { ...authValue.user, role: 'admin' } } });
+    await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Hire an agent' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo?mode=hosted');
+  });
   test('head: display title, one mono meta line with agents · working · needs you, Bring your own bordered + Hire an agent ink', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());

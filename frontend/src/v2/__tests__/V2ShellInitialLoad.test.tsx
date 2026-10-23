@@ -79,6 +79,11 @@ describe('first desktop shell load', () => {
 
   afterEach(() => localStorage.clear());
 
+  test('legacy manage-agents route redirects to Your Team', async () => {
+    renderShell('/v2/agents/manage?podId=workspace');
+    await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent(/^\/v2\/agents$/));
+  });
+
   test('auto-select navigation keeps one layout fetch and one auth fetch', async () => {
     renderShell('/v2');
 
