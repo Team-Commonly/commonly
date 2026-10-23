@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import V2AgentSettingsPage from '../agents/V2AgentSettingsPage';
 
 jest.mock('axios', () => {
@@ -84,6 +84,41 @@ test('regeneration waits for the explicit running-key replacement confirmation',
     { instanceId: 'default', label: 'Agent Settings replacement', force: true },
   ));
   expect(await screen.findByTestId('agent-one-time-key')).toHaveTextContent('cm_agent_once');
+});
+
+test('an in-flight replacement never reveals its key on another agent page', async () => {
+  let finishPost;
+  axios.post.mockImplementation(() => new Promise((resolve) => { finishPost = resolve; }));
+  axios.get.mockImplementation((url, options) => {
+    const other = url.includes('/other/') || options?.params?.agentName === 'other';
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: other ? 'Other agent' : 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: other ? 'other' : 'maya-claude', instanceId: 'default',
+      displayName: other ? 'Other agent' : 'Maya', runtime: { runtimeType: 'webhook' },
+    } } });
+    return Promise.resolve({ data: other ? [] : [{ _id: 'tok-1', label: 'Laptop', status: 'active' }] });
+  });
+  const NextAgent = () => {
+    const navigate = useNavigate();
+    return <button type="button" onClick={() => navigate('/v2/agents/other/default')}>Next agent</button>;
+  };
+  render(
+    <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+      <NextAgent />
+      <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+    </MemoryRouter>,
+  );
+  await screen.findByText('Laptop');
+  fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
+  fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Next agent' }));
+  await screen.findByText('Other agent');
+  await act(async () => { finishPost({ data: { token: 'cm_agent_old_identity' } }); });
+  expect(screen.queryByTestId('agent-one-time-key')).not.toBeInTheDocument();
+  expect(screen.queryByText('cm_agent_old_identity')).not.toBeInTheDocument();
 });
 
 test('a denied owner probe renders no key controls or metadata', async () => {

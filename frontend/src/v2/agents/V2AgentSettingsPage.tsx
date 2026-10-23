@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
@@ -38,6 +38,8 @@ const V2AgentSettingsPage: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [oneTimeKey, setOneTimeKey] = useState<string | null>(null);
   const identityKey = `${agentName}:${instanceId}:${podId || ''}`;
+  const currentIdentity = useRef(identityKey);
+  currentIdentity.current = identityKey;
 
   const keyUrl = useCallback((podId: string) => (
     `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`
@@ -57,6 +59,7 @@ const V2AgentSettingsPage: React.FC = () => {
     setError(null);
     setOneTimeKey(null);
     setPendingAction(null);
+    setBusy(false);
     if (access && podId) {
       void fetchKeys().then((rows) => {
         if (active) {
@@ -72,6 +75,7 @@ const V2AgentSettingsPage: React.FC = () => {
 
   const replaceKey = async () => {
     if (!access || !podId || pendingAction !== 'replace' || busy || installation?.runtime?.runtimeType === 'wrapper') return;
+    const requestIdentity = identityKey;
     setBusy(true);
     setError(null);
     try {
@@ -80,32 +84,37 @@ const V2AgentSettingsPage: React.FC = () => {
         label: 'Agent Settings replacement',
         force: true,
       });
+      if (currentIdentity.current !== requestIdentity) return;
       if (!response.data.token) throw new Error(t('agentSettings.missingReplacement'));
       setOneTimeKey(response.data.token);
       setPendingAction(null);
-      setKeys(await fetchKeys());
+      const rows = await fetchKeys();
+      if (currentIdentity.current === requestIdentity) setKeys(rows);
     } catch (requestError) {
-      setError(errorLabel(requestError, t('agentSettings.updateError')));
+      if (currentIdentity.current === requestIdentity) setError(errorLabel(requestError, t('agentSettings.updateError')));
     } finally {
-      setBusy(false);
+      if (currentIdentity.current === requestIdentity) setBusy(false);
     }
   };
 
   const revokeKey = async (tokenId: string) => {
     if (!access || pendingAction !== tokenId || busy) return;
+    const requestIdentity = identityKey;
     setBusy(true);
     setError(null);
     try {
       await axios.delete(`/api/credentials/${encodeURIComponent(tokenId)}`, {
         params: { agentName, instanceId },
       });
+      if (currentIdentity.current !== requestIdentity) return;
       setPendingAction(null);
       setOneTimeKey(null);
-      setKeys(await fetchKeys());
+      const rows = await fetchKeys();
+      if (currentIdentity.current === requestIdentity) setKeys(rows);
     } catch (requestError) {
-      setError(errorLabel(requestError, t('agentSettings.updateError')));
+      if (currentIdentity.current === requestIdentity) setError(errorLabel(requestError, t('agentSettings.updateError')));
     } finally {
-      setBusy(false);
+      if (currentIdentity.current === requestIdentity) setBusy(false);
     }
   };
 
