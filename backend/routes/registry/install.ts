@@ -276,7 +276,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       if (reserved) return res.status(409).json(reserved);
     }
 
-    // ADR-006 §Self-serve install: when a pod member installs a webhook-typed
+    // ADR-006 §Self-serve install: when a pod member installs a BYO or hosted
     // agent that has no published manifest, synthesize an ephemeral registry
     // row owned by them. Marketplace catalog excludes ephemeral rows; only
     // direct getByName() resolves them. Membership check above is the gate.
@@ -286,10 +286,9 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       const requestedRuntimeType = String(
         (config && config.runtime && (config.runtime as any).runtimeType) || '',
       ).toLowerCase();
-      // Self-serve identities: BYO webhook (ADR-006) and Commonly-hosted
-      // (ADR-023). Both synthesize an ephemeral row; the hosted one is metered
-      // by the cap gate below rather than by entitlement.
-      if (requestedRuntimeType !== 'webhook' && requestedRuntimeType !== HostedRuntime.HOSTED_RUNTIME_TYPE) {
+      // Self-serve identities: BYO webhook (ADR-006), local daemon wrapper
+      // (ADR-026), and Commonly-hosted (ADR-023). Only hosted is metered.
+      if (!SELF_SERVE_RUNTIME_TYPES.includes(requestedRuntimeType)) {
         return res.status(404).json({ error: 'Agent not found in registry' });
       }
       // The hosted cap is checked again below, where it is authoritative for
@@ -335,8 +334,8 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       }
       // manifest.runtime.type is the registry-level deployment shape
       // (enum: 'standalone' | 'commonly-hosted' | 'hybrid'). Self-serve
-      // webhook agents run outside Commonly so they map to 'standalone'.
-      // The actual webhook routing is driven by config.runtime.runtimeType
+      // BYO agents run outside Commonly so they map to 'standalone'.
+      // Event routing is driven by config.runtime.runtimeType
       // on the AgentInstallation, not on the registry manifest.
       const synthManifest = {
         name: String(agentName).toLowerCase(),

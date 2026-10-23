@@ -506,6 +506,7 @@ const V2AgentBYO: React.FC = () => {
       try {
         await api.post('/api/registry/install', {
           agentName: cleanName,
+          instanceId: 'default',
           podId,
           scopes: DEFAULT_INSTALL_SCOPES,
           config: {
