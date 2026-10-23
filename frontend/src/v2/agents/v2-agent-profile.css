@@ -58,6 +58,8 @@
 /* `.v2-root a { color: inherit }` (0,1,1) beats the single-class rules — re-assert. */
 .v2-root .v2-aprofile__btn--primary { color: #ffffff; }
 .v2-root .v2-aprofile__btn--ghost { color: var(--v2-text-primary); }
+.v2-root a.v2-aprofile__btn--reconnect { background: var(--v2-ink); border-color: var(--v2-ink); color: var(--v2-on-ink); }
+.v2-root a.v2-aprofile__btn--reconnect:hover { background: var(--v2-ink-hover); border-color: var(--v2-ink-hover); }
 .v2-root button.v2-aprofile__btn:disabled { cursor: wait; opacity: 0.72; }
 .v2-aprofile__room-error { margin: 12px 0 0; color: var(--v2-danger); font-size: 14px; }
 

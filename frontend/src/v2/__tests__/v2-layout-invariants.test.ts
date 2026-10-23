@@ -200,6 +200,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       .toContain('box-shadow: var(--v2-focus-ring)');
   });
 
+  test('agent profile Reconnect keeps ink chrome over the primary and link rules', () => {
+    const profile = read('../agents/v2-agent-profile.css');
+    const reconnect = ruleBody(profile, '.v2-root a.v2-aprofile__btn--reconnect');
+    expect(reconnect).toContain('background: var(--v2-ink)');
+    expect(reconnect).toContain('color: var(--v2-on-ink)');
+    expect(ruleBody(profile, '.v2-root a.v2-aprofile__btn--reconnect:hover'))
+      .toContain('background: var(--v2-ink-hover)');
+  });
+
   test('BYO hints do not add paragraph margins to flex gaps', () => {
     expect(ruleBody(v2, '.v2-byo__hint')).toContain('margin: 0');
   });

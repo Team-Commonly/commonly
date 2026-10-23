@@ -2335,7 +2335,7 @@
     "settings": "Settings",
     "key": "Key",
     "regenerate": "Regenerate key",
-    "wrapperReconnect": "Key replacement is unavailable here for locally connected agents.",
+    "wrapperReconnect": "Replace this computer's key from Control.",
     "copyNow": "Copy this key now. It will not be shown again.",
     "done": "Done",
     "empty": "No runtime keys yet.",
