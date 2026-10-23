@@ -14,12 +14,15 @@ jest.mock('axios', () => {
 const axios = jest.requireMock('axios').default;
 
 const Probe = () => {
-  const { installation, podId, update } = useAgentSettings('maya-claude', 'default');
+  const { installation, podId, update, updatePod } = useAgentSettings('maya-claude', 'default');
   return <div>
     <span>{installation?.displayName || 'loading'}</span>
     <button type="button" onClick={() => { void update({ displayName: 'Maya Updated' }); }}>
       Save
     </button>
+    <button type="button" onClick={() => { void updatePod('pod-2', {
+      wakeOnMessage: true, boardWake: false, heartbeatMinutes: 60,
+    }); }}>Save pod</button>
     <span data-testid="pod">{podId}</span>
   </div>;
 };
@@ -42,4 +45,10 @@ test('reads one accessible installation and patches it with the instance id', as
     { displayName: 'Maya Updated', instanceId: 'default' },
   ));
   expect(screen.getByTestId('pod')).toHaveTextContent('pod-1');
+  fireEvent.click(screen.getByRole('button', { name: 'Save pod' }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    '/api/registry/agents/maya-claude/manage-settings/pods/pod-2',
+    { wakeOnMessage: true, boardWake: false, heartbeatMinutes: 60 },
+    { params: { instanceId: 'default' } },
+  ));
 });

@@ -143,6 +143,23 @@ describe('revoking a runtime token kills it in every store', () => {
     expect((await AgentCredential.findById(credential._id).lean()).status).toBe('active');
   });
 
+  test('an instance admin can read a key-bearing installation without joining its pod', async () => {
+    const { workspace } = await seed();
+    const issued = await request(app)
+      .post(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`)
+      .send({ label: 'owner key' });
+    expect(issued.status).toBe(200);
+    const adminId = new mongoose.Types.ObjectId();
+    await User.create({ _id: adminId, username: 'settings-admin', email: 'settings-admin@example.test',
+      role: 'admin', authProviders: [{ provider: 'github', providerId: 'settings-admin' }] });
+    mockOwner.id = String(adminId);
+    const installation = await request(app)
+      .get(`/api/registry/pods/${workspace._id}/agents/${AGENT}?instanceId=default`);
+    expect(installation.status).toBe(200);
+    const keys = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(keys.status).toBe(200);
+  });
+
   test('the Settings credential revoke stops the agent token and keeps its history', async () => {
     const { workspace } = await seed();
     const issued = await request(app)
@@ -174,6 +191,20 @@ describe('revoking a runtime token kills it in every store', () => {
       .toEqual([expect.objectContaining({ label: 'Old CLI key', status: 'revoked' })]);
     expect((await User.findById(agentUser._id).lean()).agentRuntimeTokens).toHaveLength(1);
     expect((await AgentInstallation.findById(workspaceInstall._id).lean()).runtimeTokens).toHaveLength(1);
+  });
+
+  test('an installation-only legacy key remains visible for owner revocation', async () => {
+    const { workspaceInstall } = await seed();
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    const issued = await issueRuntimeTokenForAgent(agentUser, 'Installation key', workspaceInstall);
+    await User.updateOne({ _id: agentUser._id }, { $set: { agentRuntimeTokens: [] } });
+    expect((await probe(issued.token)).status).toBe(200);
+    const listed = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual([expect.objectContaining({ label: 'Installation key', status: 'active' })]);
+    const revoked = await request(app).delete(`/api/credentials/${listed.body[0]._id}?agentName=${AGENT}&instanceId=default`);
+    expect(revoked.status).toBe(200);
+    expect((await probe(issued.token)).status).toBe(401);
   });
 
   test('a copy on a sibling installation dies too, and so does a ledger row', async () => {

@@ -90,7 +90,8 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       return memberId && memberId === userId.toString();
     });
 
-    if (!membership && !isCreator) {
+    const isInstanceAdmin = req.user?.role === 'admin' || await isGlobalAdminUser(userId);
+    if (!membership && !isCreator && !isInstanceAdmin) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -104,7 +105,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
-    // Pod membership is a precondition, not an authority. Changing an installed
+    // For a non-admin, pod membership is a precondition, not an authority. Changing an installed
     // agent is the installer's or an instance admin's call, because `config`
     // reaches the owner's machine: agentBinding projects `config.environment`
     // to the owner's daemon as the seat's declared spec, so a member who can
@@ -118,8 +119,6 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     // have installed, and deriving it only on the non-installer path would
     // scope the same admin's PATCH differently depending on how they
     // authenticated.
-    const isInstanceAdmin = req.user?.role === 'admin'
-      || await isGlobalAdminUser(userId);
     if (!isInstaller && !isInstanceAdmin) {
       return res.status(403).json({
         error: 'Only the agent installer or an instance admin can change an installed agent',

@@ -22,6 +22,12 @@ export interface AgentSettingsPatch {
   [field: string]: unknown;
 }
 
+export interface AgentPodWakePatch {
+  wakeOnMessage: boolean;
+  boardWake: boolean;
+  heartbeatMinutes: number;
+}
+
 interface AgentAccess {
   displayName: string;
   pods: Array<{ id: string; name: string }>;
@@ -88,5 +94,14 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     return response.data;
   }, [instanceId, installationUrl, podId, refresh]);
 
-  return { access, installation, podId, loading, error, refresh, update };
+  const updatePod = useCallback(async (targetPodId: string, patch: AgentPodWakePatch) => {
+    const response = await axios.patch(
+      `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings/pods/${encodeURIComponent(targetPodId)}`,
+      patch,
+      { params: { instanceId } },
+    );
+    return response.data;
+  }, [agentName, instanceId]);
+
+  return { access, installation, podId, loading, error, refresh, update, updatePod };
 };

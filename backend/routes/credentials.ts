@@ -61,12 +61,19 @@ router.get('/', credentialRateLimit, auth, async (req: AuthReq, res: express.Res
       // Existing CLI keys were minted before the credential ledger became
       // authoritative. Import their metadata once so list/revoke can use the
       // same credential id and a later revoke remains visible in Settings.
-      const installation = await AgentInstallation.findOne({
-        agentName, instanceId, status: 'active',
-      }).select('installedBy').lean();
-      const ownerUserId = installation?.installedBy || req.user?.id;
-      await Promise.all((agent.agentRuntimeTokens || []).filter((token: { tokenHash?: string }) => token.tokenHash)
-        .map((token: { tokenHash: string; label?: string; createdAt?: Date; lastUsedAt?: Date }) => AgentCredential.updateOne(
+      const installations = await AgentInstallation.find({ agentName, instanceId })
+        .select('installedBy runtimeTokens').lean();
+      const ownerUserId = installations[0]?.installedBy || req.user?.id;
+      type EmbeddedToken = { tokenHash?: string; label?: string; createdAt?: Date; lastUsedAt?: Date };
+      const embedded: EmbeddedToken[] = [...(agent.agentRuntimeTokens || []),
+        ...installations.flatMap((entry: { runtimeTokens?: EmbeddedToken[] }) => entry.runtimeTokens || [])];
+      const seen = new Set<string>();
+      await Promise.all(embedded.filter((token) => {
+        if (!token.tokenHash || seen.has(token.tokenHash)) return false;
+        seen.add(token.tokenHash);
+        return true;
+      })
+        .map((token) => AgentCredential.updateOne(
           { tokenHash: token.tokenHash },
           { $setOnInsert: {
             kind: 'runtime', ownerUserId, agentUserId: agent._id,

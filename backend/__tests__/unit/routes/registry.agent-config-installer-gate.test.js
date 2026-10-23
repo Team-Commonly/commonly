@@ -273,7 +273,22 @@ describe('agent config PATCH — installer gate', () => {
     expect(primary.save).toHaveBeenCalledTimes(1);
   });
 
-  it('still refuses a non-member before any of that (membership is a precondition)', async () => {
+  it('lets an instance admin manage an installation without joining its pod', async () => {
+    const primary = installation();
+    setCallerRole('admin');
+    setPod({ members: [] });
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', config: { heartbeat: { enabled: false } } });
+
+    expect(res.status).toBe(200);
+    expect(primary.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('still refuses a non-admin non-member before any of that', async () => {
     const primary = installation();
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'someone-else', members: [] }),

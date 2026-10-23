@@ -347,7 +347,7 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
     });
-    if (!membership && !isCreator) {
+    if (!membership && !isCreator && !(await isGlobalAdminUser(userId))) {
       return res.status(403).json({ error: 'Access denied' });
     }
     if (!installation || installation.status === 'uninstalled') {

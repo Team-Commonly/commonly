@@ -71,8 +71,20 @@ const credentialRefusal = async (userId: unknown, agentName: string, instanceId:
 // Legacy embedded keys predate the credential ledger. Record their metadata
 // before a replacement or revoke removes the only embedded copy, so Settings
 // can still show the revoked state after the authenticating copies are pulled.
-const recordLegacyKeys = async (agentUser: any, ownerUserId: unknown, records: any[]) => {
-  await Promise.all(records.filter((record) => record?.tokenHash).map((record) => AgentCredential.updateOne(
+const recordLegacyKeys = async (
+  agentUser: any, ownerUserId: unknown, agentName: string, instanceId: string,
+) => {
+  const { AgentInstallation } = require('../../models/AgentRegistry');
+  const installations = await AgentInstallation.find({ agentName, instanceId })
+    .collation({ locale: 'en', strength: 2 }).select('runtimeTokens').lean();
+  const records = [...(agentUser.agentRuntimeTokens || []),
+    ...(installations || []).flatMap((entry: any) => entry.runtimeTokens || [])];
+  const seen = new Set<string>();
+  await Promise.all(records.filter((record) => {
+    if (!record?.tokenHash || seen.has(record.tokenHash)) return false;
+    seen.add(record.tokenHash);
+    return true;
+  }).map((record) => AgentCredential.updateOne(
     { tokenHash: record.tokenHash },
     { $setOnInsert: {
       kind: 'runtime', ownerUserId, agentUserId: agentUser._id,
@@ -197,7 +209,10 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
     // User token and legacy installation copies, so revoke every hash before
     // issuing the replacement.
     if (force) {
-      await recordLegacyKeys(agentUser, installation.installedBy || userId, agentUser.agentRuntimeTokens || []);
+      await recordLegacyKeys(
+        agentUser, installation.installedBy || userId,
+        installation.agentName || name, normalizedInstanceId,
+      );
       await revokeRuntimeTokensForAgent({
         agentUser,
         agentName: installation.agentName || name,
@@ -278,7 +293,7 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', to
       return res.status(404).json({ error: 'Runtime token not found' });
     }
 
-    await recordLegacyKeys(agentUser, installation.installedBy || userId, [record]);
+    await recordLegacyKeys(agentUser, installation.installedBy || userId, installation.agentName || name, instanceId);
     await revokeRuntimeTokenEverywhere(record.tokenHash);
     return res.json({ success: true });
   } catch (error) {
