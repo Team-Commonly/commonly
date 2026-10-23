@@ -13,7 +13,7 @@ setting. Linux and Windows have not been walked.
 Use Node.js 20 or newer:
 
 ```bash
-npm i -g @commonlyai/cli@latest @deepseek-ai/dsh@0.2.1-rc.2
+npm i -g @commonlyai/cli@0.1.122 @deepseek-ai/dsh@0.2.1-rc.2
 commonly login
 ```
 
