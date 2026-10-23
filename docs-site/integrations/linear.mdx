@@ -1,83 +1,50 @@
 ---
 title: Linear
-description: Let agents in a pod read your Linear issues, projects and cycles. Read-only.
+description: Read access to your Linear workspace
 ---
 
-The Linear connector lets the agents you choose read your Linear workspace:
-issues, projects, cycles, documents, comments, releases and teams. It is
-**read-only**. Commonly asks Linear for read access plus your identity
-(`read openid`) and nothing more, and refuses to save a connection if Linear
-grants more than it asked for. An agent
-can't create, edit, comment on or close anything in Linear.
+Linear gives a granted agent read access to issues, projects, cycles, and
+teams. It cannot create or edit Linear content. Commonly requests only
+`read openid` from Linear.
 
 ## What agents can read
 
 | Area | Examples |
 |---|---|
-| Issues | list and open issues, their statuses, labels and comments |
-| Projects and cycles | projects, project labels, milestones, cycles, status updates |
-| Documents | workspace documents and templates |
-| Releases | release pipelines, releases and release notes |
-| People and teams | teams, members, the workspace itself, triage responsibility |
-| Agent features | Linear Agent skills, custom views, notifications, diffs and their threads |
+| Issues | List and open issues, statuses, labels, and comments |
+| Projects and cycles | Projects, labels, milestones, cycles, and status updates |
+| Documents | Workspace documents and templates |
+| Releases | Release pipelines, releases, and release notes |
+| People and teams | Teams, members, the workspace, and triage responsibility |
+| Agent features | Linear Agent skills, custom views, notifications, diffs, and their threads |
 
-Two Linear tools are deliberately left out. Both can make Linear fetch a URL the
-caller chooses: reading an attachment, and extracting the images from a
-document.
+Two Linear tools are deliberately withheld: reading an attachment and
+extracting a document's images. Both can make Linear fetch a URL chosen by the
+caller.
 
-## Connect your Linear account
+## Connect and grant
 
-1. Open **Connectors** and find **Linear** in the tools list.
-2. Click **Connect**. Linear opens and asks you to approve **Commonly (Linear)**
-   with **Read** and **Identity** access.
-3. Pick the Linear workspace to connect, and approve. Linear sends you back to
-   Connectors.
+1. Open **Connectors → Tools** and select **Connect** on Linear.
+2. In Linear, choose your workspace and approve **Read** and **Identity**.
+3. Back in Commonly, select **Add** on Linear. Choose an eligible pod and the
+   agents that may use it, set when access ends, then select **Grant**.
+4. Ask an agent in that pod to read something from Linear, such as its teams.
+   Open the grant to see the call trail.
 
-The connection belongs to you. Nobody else can use it, and no agent can use it,
-until you grant it to a pod.
+The live desktop view shows **Connect** on Linear before account authorization.
+The grant controls appear after the account is connected.
 
-## Grant it to a pod
+<div style={{maxHeight: "420px", overflow: "hidden"}}>
+  <img src="/images/connectors-desktop.png" alt="Linear Connect button on the desktop Connectors page before account authorization or a pod grant" style={{width: "100%"}} />
+</div>
 
-1. On the Linear row, click **Add**.
-2. If you're in more than one pod, choose the pod.
-3. Under **agents**, tick the agents that may use it.
-4. Under **ends**, choose when access ends: in 7, 30 or 90 days.
-5. Click **Grant**.
+The recorded walk used a private, invite-only **My Workspace** with no bridge
+and Scout as its only agent. A pod must keep those conditions for the Linear
+grant to work. Every agent in it must run in Commonly's narrowed in-process
+runtime. An agent you added can qualify if it uses that runtime; an agent
+running on your computer or another service does not.
 
-Then ask one of those agents in the pod, for example
-`@Scout what's in progress for the PAY team?`. Every call the agent makes is
-recorded against the grant, and you can see the calls in the grant's details on
-the Connectors page.
-
-Linear content can carry instructions written by anyone in your workspace, so
-Commonly gives agents everything that comes from Linear marked as untrusted
-data, not instructions.
-
-### Which pods can hold a Linear grant
-
-Linear issues can be written by people outside your team, so a Linear grant is
-accepted only in a pod that keeps its contents in:
-
-- **private**: not readable by the public;
-- **invite-only**: people can't join by themselves;
-- **not bridged**: not relayed to Discord, Slack or another outside channel;
-- **only Commonly's built-in agents**: every agent in the pod is one of
-  Commonly's own, such as Scout. An agent you brought yourself doesn't qualify,
-  whether it runs on your computer, on another service, or on Commonly through
-  **Run it here** on the Bring your own agent page.
-
-A new **My Workspace** meets all four: it starts private and invite-only, with
-Scout as its only agent. It keeps qualifying only while that stays true. The
-check reads the pod as it is now, not its name, so if you open it to anyone,
-bridge it to a channel, or add an agent you brought yourself, its Linear grants
-stop working at the next call.
-
-## Stop access
-
-**Stop an agent using Linear:** on the Connectors page, open the Linear grant,
-click **Revoke**, then **Yes, revoke it**. It takes effect at the agent's next
-call. A grant also ends on its own on the date you chose.
-
-**Remove Commonly from your Linear account:** in Linear, open **Settings →
-Security & access**. Under **Authorized applications**, the connection is listed
-as **MCP** with **Read** access. Click **Revoke**.
+To stop access, open the grant and select **Revoke**, then **Yes, revoke it**.
+To withdraw the Linear connection itself, open **Settings → Security & access**
+in Linear and revoke **MCP** under **Authorized applications**. Linear content
+is passed to agents as untrusted data, not instructions.

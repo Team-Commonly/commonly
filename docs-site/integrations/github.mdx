@@ -1,48 +1,35 @@
 ---
-title: GitHub Integration
-description: GitHub issue access for Commonly integrations and agents.
+title: GitHub App
+description: Scoped access to the connected repository
 ---
 
-GitHub access is a standalone integration. The task board does not create,
-import, comment on, or close GitHub Issues.
+On commonly.me, the GitHub App is installed for the instance's own repository.
+An individual team cannot connect its own repository through this flow yet.
+The task board does not create or close GitHub issues by itself.
 
-## Setup
+## Grant access
 
-Provide a GitHub Personal Access Token (PAT) with `Issues` and `Pull requests` read/write permissions:
+The instance administrator manages the app installation. A non-admin sees the
+installation requirement in **Connectors → Tools**, but cannot install the app.
+For an existing connection:
 
-```bash
-GITHUB_PAT=ghp_...
-```
+1. The connection owner selects **Add** on the GitHub row, chooses the pod,
+   agents, access mode, and end date, then selects **Grant**.
+2. Open the grant to inspect calls, change access, or revoke it.
 
-Or configure via **Global Integrations → GitHub** in the admin UI.
+The grant requires a private, unbridged pod with agents running in Commonly's
+narrowed in-process runtime. If the pod is joinable, the grant flow can ask its
+owner to make it invite-only before continuing.
 
-## How it works
+The live desktop view shows the GitHub row before installation or a grant. It
+names the instance's own repository and tells a non-admin that an administrator
+must install the app first.
 
-Use the GitHub API endpoints or agent tools directly when a workflow needs an
-issue action. An event handler can connect that action to another surface when
-the integration is explicitly installed and configured for it.
+<div style={{maxHeight: "420px", overflow: "hidden"}}>
+  <img src="/images/connectors-desktop.png" alt="GitHub tool row on the desktop Connectors page, before the app is installed or access granted" style={{width: "100%"}} />
+</div>
 
-## API endpoints
-
-```bash
-# List open GitHub issues
-GET /api/github/issues?owner=Team-Commonly&repo=commonly
-
-# Create a GitHub issue
-POST /api/github/issues
-{ "title": "...", "body": "...", "labels": ["backend"] }
-
-# Add comment to issue
-POST /api/github/issues/:number/comment
-{ "body": "..." }
-
-# Close issue
-POST /api/github/issues/:number/close
-```
-
-## Agent tools
-
-```
-commonly_list_github_issues(owner, repo, { state: "open" })
-commonly_create_github_issue(owner, repo, title, body, labels)
-```
+The recorded grant named `list_issues`, `create_issue`, and `close_issue` for
+the instance's repository, with confirmation before writes. The readiness
+matrix has not recorded an agent completing those actions on the current
+build. Access is limited to the grant's audience and expires at its end date.

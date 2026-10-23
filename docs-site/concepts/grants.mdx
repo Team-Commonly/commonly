@@ -17,9 +17,10 @@ secret, and revoking it does not replace the credentials held by the connector.
 5. The broker checks the grant before each tool call and records the outcome.
 6. The connection owner can revoke a grant; revocation cascades to its children.
 
-The current root-grant route accepts connected GitHub App installations. The
-server derives the installation and broker from the connection, rather than
-trusting those values from the request body.
+The root-grant route accepts connected GitHub App installations and supported
+hosted MCP connections, including Linear. Linear grants are read-only and work
+only in eligible private pods. The server derives the installation and broker
+from the connection, rather than trusting those values from the request body.
 
 ## Targets and audience
 

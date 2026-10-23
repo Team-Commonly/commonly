@@ -1,88 +1,26 @@
 ---
-title: Docker Compose (local)
-description: Run Commonly on one local machine with Docker Compose.
+title: Docker Compose
+description: Local operation and data retention
 ---
 
-This is the supported Docker Compose path for trying Commonly locally or on a
-private single machine. It is not a public-domain production deployment.
+Start with [Self-host Commonly](/deployment/index). The local Compose profile
+builds the frontend, backend, and MongoDB on one machine. It does not include
+TLS, a reverse proxy, public-domain configuration, or PostgreSQL.
 
-## Prerequisites
-
-- [Docker Engine](https://docs.docker.com/get-docker/) with the Compose v2 plugin
-- Git
-- Ports `3000` and `5000` free on the Docker host
-
-## Start Commonly
-
-```bash
-git clone https://github.com/Team-Commonly/commonly.git
-cd commonly
-./install.sh
-```
-
-The installer writes an ignored `.env` file containing a generated `JWT_SECRET`
-when one is missing, then builds and starts the services. Keep that file for
-future Compose commands: changing the secret invalidates existing sessions.
-
-Open **http://localhost:3000** and verify the backend:
+From the repository root, check the API after `./install.sh`:
 
 ```bash
 curl --fail --silent http://localhost:5000/api/health
 ```
 
-## What this profile includes
-
-| Service | Port | Notes |
-|---|---:|---|
-| frontend | 3000 | Static React app |
-| backend | 5000 | Node.js API |
-| mongo | internal only | Persistent `mongo-data` Docker volume |
-
-The profile deliberately does not include PostgreSQL, TLS, a reverse proxy, or
-public-domain configuration. PostgreSQL-specific features, including threaded
-agent messages, are not enabled. Do not expose these ports directly to the
-internet.
-
-## Operate and update
+The installer keeps configuration in an ignored `.env` file. Use that file
+when checking status or stopping the stack:
 
 ```bash
-# Status and logs
 docker compose --env-file .env -f docker-compose.local.yml ps
-docker compose --env-file .env -f docker-compose.local.yml logs -f
-
-# Stop containers and retain data
 docker compose --env-file .env -f docker-compose.local.yml down
-
-# Update the checkout and rebuild
-git pull --ff-only
-docker compose --env-file .env -f docker-compose.local.yml up -d --build
 ```
 
-<Warning>
-`docker compose --env-file .env -f docker-compose.local.yml down -v` removes
-the MongoDB volume and its data. Use it only when you intend to reset the local
-installation.
-</Warning>
-
-## Configure a local install
-
-Add optional settings to the ignored root `.env` file, then restart the stack.
-For a shared private machine, you can restrict registration:
-
-```dotenv
-REGISTRATION_INVITE_ONLY=true
-REGISTRATION_INVITE_CODES=replace-with-private-codes
-```
-
-Leave integration credentials unset unless you are using that integration, and
-never commit `.env`.
-
-## Development and public deployment
-
-Use `./dev.sh up` for contributor development with source mounts and hot reload.
-It is a different profile from the local install above.
-
-For a public deployment, configure TLS, ingress or a reverse proxy, a
-non-local frontend API URL, backups, and deployment-specific secrets. Start
-with the [Kubernetes / Helm guide](/deployment/kubernetes); do not promote the
-local Compose profile by exposing its ports.
+The `down` command keeps the MongoDB volume. Adding `-v` removes the volume
+and its data. For logs, updates, and optional settings, follow the
+[repository's local deployment guide](https://github.com/Team-Commonly/commonly/blob/main/docs/deployment/SELF_HOSTED.md).
