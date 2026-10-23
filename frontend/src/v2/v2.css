@@ -5189,7 +5189,7 @@ body.modern-ui.v2-canvas {
     box-shadow: none;
   }
   .v2-page-head__identity .v2-hint__content,
-  .v2-thread__title-line .v2-hint__content { width: 100%; flex-basis: 100%; }
+  .v2-thread__title-line .v2-hint__content { width: 100%; flex-basis: 100%; order: 1; }
 }
 
 .v2-feature__body {
@@ -11915,7 +11915,7 @@ body.modern-ui.v2-canvas {
     align-items: flex-start;
   }
   .v2-pod-header__meta { display: none; }
-  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; }
+  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; }
 
   .v2-root button.v2-thread__back {
     display: inline-grid;
