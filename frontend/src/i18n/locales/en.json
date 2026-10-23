@@ -485,6 +485,9 @@
     "firstTask": {
       "addFailed": "Couldn’t add the task. Try again."
     },
+    "systemActions": {
+      "taskClaimed": "{{actor}} claimed {{taskId}}"
+    },
     "starts": {
       "label": "Ways to start"
     },

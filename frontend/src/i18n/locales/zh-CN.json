@@ -485,6 +485,9 @@
     "firstTask": {
       "addFailed": "添加任务失败，请重试。"
     },
+    "systemActions": {
+      "taskClaimed": "{{actor}} 认领了 {{taskId}}"
+    },
     "starts": {
       "label": "开始方式"
     },

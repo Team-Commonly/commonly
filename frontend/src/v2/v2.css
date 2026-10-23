@@ -2721,6 +2721,25 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-secondary);
 }
 
+/* TASK-406: quiet, non-interactive kernel action line in the pod timeline. */
+.v2-system-action-line {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 12px;
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.v2-system-action-line time {
+  flex: 0 0 auto;
+  color: var(--v2-text-placeholder);
+}
+
 /* §3.8 system event card — replaces the regular author/avatar bubble for
    commonly-bot announcements like "Pixel and codex started a DM". One-row,
    chrome-light, with a primary CTA that navigates internally. */
