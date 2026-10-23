@@ -25,6 +25,7 @@ interface AuthContextValue {
   signInWithToken: (token: string) => void;
   logout: () => void;
   updateProfile: (profile: FormData | Record<string, string>) => Promise<unknown>;
+  updateUsername?: (username: string) => Promise<unknown>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -179,6 +180,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const updateUsername = async (username: string): Promise<unknown> => {
+    try {
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      const res = await axios.put<User>('/api/users/username', { username }, { headers });
+      setCurrentUser(res.data);
+      setError(null);
+      return res.data;
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string; msg?: string } } };
+      setError(e.response?.data?.error || e.response?.data?.msg || 'Failed to update username');
+      throw err;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -192,6 +207,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         signInWithToken,
         logout,
         updateProfile,
+        updateUsername,
         isAuthenticated: !!token,
       }}
     >

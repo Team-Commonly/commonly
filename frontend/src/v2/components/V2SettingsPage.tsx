@@ -64,7 +64,7 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({ id, title, children }
 );
 
 const V2AccountSection: React.FC = () => {
-  const { currentUser, updateProfile } = useAuth();
+  const { currentUser, updateProfile, updateUsername } = useAuth();
   const { t } = useTranslation();
   const accountName = String(currentUser?.displayName || currentUser?.username || 'Your account');
   const accountUsername = String(currentUser?.username || '');
@@ -73,8 +73,10 @@ const V2AccountSection: React.FC = () => {
   const hasFaceOrPhoto = profilePicture.startsWith('bigsmile:')
     || (!profilePicture.startsWith('paper:') && Boolean(getAvatarSrc(profilePicture)));
   const [name, setName] = useState(accountName);
+  const [username, setUsername] = useState(accountUsername);
   const [email, setEmail] = useState(accountEmail);
   const [busy, setBusy] = useState(false);
+  const [usernameBusy, setUsernameBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -86,6 +88,7 @@ const V2AccountSection: React.FC = () => {
 
   useEffect(() => {
     setName(accountName);
+    setUsername(accountUsername);
     setEmail(accountEmail);
   }, [accountEmail, accountName, accountUsername]);
 
@@ -109,6 +112,36 @@ const V2AccountSection: React.FC = () => {
       setError(message?.error || message?.msg || 'Couldn’t save your account. Try again.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const saveUsername = async () => {
+    const nextUsername = username.trim().toLowerCase();
+    if (nextUsername === accountUsername.toLowerCase()) {
+      setNotice('No username changes to save.');
+      setError(null);
+      return;
+    }
+
+    setUsernameBusy(true);
+    setNotice(null);
+    setError(null);
+    try {
+      const response = updateUsername
+        ? await updateUsername(nextUsername)
+        : await axios.put('/api/users/username', { username: nextUsername });
+      const updatedUsername = String(
+        (response as { username?: string; data?: { username?: string } })?.username
+          || (response as { data?: { username?: string } })?.data?.username
+          || nextUsername,
+      );
+      setUsername(updatedUsername);
+      setNotice('Username saved.');
+    } catch (requestError) {
+      const message = (requestError as { response?: { data?: { error?: string; msg?: string } } })?.response?.data;
+      setError(message?.error || message?.msg || 'Couldn’t save your username. Try again.');
+    } finally {
+      setUsernameBusy(false);
     }
   };
 
@@ -184,7 +217,7 @@ const V2AccountSection: React.FC = () => {
         />
         <div className="v2-settings__account-copy">
           <div className="v2-settings__account-name">{name || accountName}</div>
-          <div className="v2-settings__meta">@{accountUsername}</div>
+          <div className="v2-settings__meta">@{username}</div>
         </div>
         <div className="v2-settings__account-type">{currentUser?.role === 'admin' ? 'administrator' : 'member'}</div>
       </div>
@@ -229,7 +262,30 @@ const V2AccountSection: React.FC = () => {
         </label>
         <label>
           <span>Username</span>
-          <input value={accountUsername} readOnly aria-readonly="true" />
+          <div className="v2-settings__username-control">
+            <input
+              id="v2-settings-username"
+              aria-label="Username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              minLength={2}
+              maxLength={40}
+              pattern="[a-z0-9][a-z0-9-]{1,39}"
+              autoComplete="off"
+              aria-describedby="v2-settings-username-help"
+            />
+            <button
+              className="v2-settings__secondary"
+              type="button"
+              onClick={() => { if (!usernameBusy) void saveUsername(); }}
+              disabled={usernameBusy}
+            >
+              {usernameBusy ? 'Saving…' : 'Save username'}
+            </button>
+          </div>
+          <span className="v2-settings__field-help" id="v2-settings-username-help">
+            2–40 lowercase letters, numbers, or hyphens. Your previous username stays reserved, but old mentions do not notify you.
+          </span>
         </label>
         <div className="v2-settings__account-email">
           <label htmlFor="v2-settings-email">Email</label>

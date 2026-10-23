@@ -136,6 +136,7 @@ describe('Auth Controller Tests', () => {
         $or: [
           { email: 'test@example.com' },
           { username: 'testuser' },
+          { previousUsernames: 'testuser' },
         ],
       });
       expect(saveMock).toHaveBeenCalled();

@@ -9,7 +9,7 @@ const { sendEmail } = require('../services/emailService');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
 const { cleanSignupRef } = require('../utils/signupRef');
-const { deriveUsernameFromEmail } = require('../services/derivedUsername');
+const { deriveUsernameFromEmail, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
 
 // The first-touch ref a signup arrived with (?ref=x), stored once on the new
 // account. Anything that is not a short plain code is dropped, not refused.
@@ -443,12 +443,19 @@ exports.register = async (req: any, res: any) => {
     }
 
     // Check if email or username already exists
-    const existingUser = await User.findOne({
+    const existingUserQuery = User.findOne({
       $or: [
         { email: normalizedEmail },
         { username: normalizedUsername },
+        { previousUsernames: normalizedUsername },
       ],
     });
+    // The production query is collation-aware; keeping the guard makes the
+    // controller's lightweight unit doubles behave like the real query.
+    if (existingUserQuery && typeof existingUserQuery.collation === 'function') {
+      existingUserQuery.collation(ACCOUNT_LABEL_COLLATION);
+    }
+    const existingUser = await existingUserQuery;
     if (existingUser) {
       if (String(existingUser.email || '').toLowerCase() === normalizedEmail) {
         return res.status(400).json({ error: 'User already exists' });

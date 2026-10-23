@@ -21,6 +21,7 @@ const { SIGNUP_INSTALLED_AGENT_NAMES } = require('../config/native-agents/apps')
 const {
   getCurrentProfile,
   updateProfile,
+  updateUsername,
   getUserById,
   getUserPublicActivity,
   followUser,
@@ -175,6 +176,7 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
 
 router.get('/profile', auth, getCurrentProfile);
 router.put('/profile', profileWriteIngressLimit, auth, profileWriteUserLimit, updateProfile);
+router.put('/username', profileWriteIngressLimit, auth, profileWriteUserLimit, updateUsername);
 router.get('/:id/public-activity', auth, getUserPublicActivity);
 router.get('/:id', auth, getUserById);
 router.post('/:id/follow', auth, followUser);
