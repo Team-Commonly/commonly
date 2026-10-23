@@ -47,23 +47,26 @@ describe('per-installation agent settings', () => {
       .set('Authorization', `Bearer ${token(owner)}`);
     expect(response.status).toBe(200);
     expect(response.body.installations).toEqual([expect.objectContaining({
-      podId: String(podA._id), wakeOnMessage: true, boardWake: false, heartbeatMinutes: 60,
+      podId: String(podA._id), wakeOnMessage: true, humanOnly: true, boardWake: false,
+      heartbeatEnabled: false, heartbeatMinutes: 60,
     })]);
+    expect(response.body.activePodCount).toBe(2);
   });
 
   it('writes one installation and preserves its human-only default and runtime', async () => {
     const response = await request(app)
       .patch(`/api/registry/agents/settings-agent/manage-settings/pods/${podA._id}?instanceId=same`)
       .set('Authorization', `Bearer ${token(owner)}`)
-      .send({ wakeOnMessage: false, boardWake: true, heartbeatMinutes: 90 });
+      .send({ wakeOnMessage: false, humanOnly: false, boardWake: true,
+        heartbeatEnabled: true, heartbeatMinutes: 90 });
     expect(response.status).toBe(200);
     const [a, b] = await Promise.all([
       AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' }),
       AgentInstallation.findOne({ podId: podB._id, agentName: 'settings-agent' }),
     ]);
-    expect(config(a).wakeOnMessage).toEqual({ enabled: false, humanOnly: true });
+    expect(config(a).wakeOnMessage).toEqual({ enabled: false, humanOnly: false });
     expect(config(a).boardWake).toEqual({ enabled: true });
-    expect(config(a).heartbeat).toEqual({ everyMinutes: 90 });
+    expect(config(a).heartbeat).toEqual({ enabled: true, everyMinutes: 90 });
     expect(config(a).runtime).toEqual({ runtimeType: 'wrapper' });
     expect(config(b).wakeOnMessage).toEqual({ enabled: false });
     expect(config(b).heartbeat).toBeUndefined();
@@ -71,7 +74,8 @@ describe('per-installation agent settings', () => {
 
   it('refuses another pod member and invalid intervals before writing', async () => {
     const url = `/api/registry/agents/settings-agent/manage-settings/pods/${podA._id}?instanceId=same`;
-    const body = { wakeOnMessage: false, boardWake: true, heartbeatMinutes: 30 };
+    const body = { wakeOnMessage: false, humanOnly: true, boardWake: true,
+      heartbeatEnabled: true, heartbeatMinutes: 30 };
     const denied = await request(app).patch(url).set('Authorization', `Bearer ${token(other)}`).send(body);
     const malformed = await request(app).patch(url).set('Authorization', `Bearer ${token(owner)}`)
       .send({ ...body, heartbeatMinutes: 0 });
@@ -89,10 +93,11 @@ describe('per-installation agent settings', () => {
     const saved = await request(app)
       .patch(`/api/registry/agents/settings-agent/manage-settings/pods/${podB._id}?instanceId=same`)
       .set('Authorization', `Bearer ${token(admin)}`)
-      .send({ wakeOnMessage: true, boardWake: false, heartbeatMinutes: 120 });
+      .send({ wakeOnMessage: true, humanOnly: false, boardWake: false,
+        heartbeatEnabled: true, heartbeatMinutes: 120 });
     expect(saved.status).toBe(200);
     expect(config(await AgentInstallation.findOne({ podId: podB._id, agentName: 'settings-agent' })).heartbeat)
-      .toEqual({ everyMinutes: 120 });
+      .toEqual({ enabled: true, everyMinutes: 120 });
   });
 
   it('removes one pod installation while keeping the agent identity and memory', async () => {

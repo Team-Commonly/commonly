@@ -168,7 +168,7 @@ const V2AgentProfile: React.FC = () => {
     setRemoving(podId);
     try {
       await getClient().delete(
-        `/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(podId)}`,
+        `/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(podId)}?instanceId=${encodeURIComponent(instanceId || 'default')}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       await Promise.all([fetchProfile(), fetchMemoryIndex()]);

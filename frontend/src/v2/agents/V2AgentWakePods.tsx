@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
@@ -8,7 +8,9 @@ interface InstallationSettings {
   podId: string;
   podName: string;
   wakeOnMessage: boolean;
+  humanOnly: boolean;
   boardWake: boolean;
+  heartbeatEnabled: boolean;
   heartbeatMinutes: number;
 }
 
@@ -22,24 +24,52 @@ const V2AgentWakePods: React.FC<{
   const [busyPod, setBusyPod] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activePodCount, setActivePodCount] = useState(0);
+  const [turnCap, setTurnCap] = useState<number | null>(null);
+  const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
+  const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
   const query = `instanceId=${encodeURIComponent(instanceId)}`;
   const base = `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`;
+  const identity = `${agentName}:${instanceId}`;
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
 
-  const load = useCallback(async () => {
-    try {
-      const response = await axios.get<{ installations: InstallationSettings[] }>(`${base}?${query}`);
-      setInstallations(Array.isArray(response.data.installations) ? response.data.installations : []);
-      setError(null);
-    } catch {
-      setError(t('agentSettings.loadError'));
-    } finally {
-      setLoading(false);
-    }
-  }, [base, query, t]);
-
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setInstallations([]);
+    setBusyPod(null);
+    setError(null);
+    setDraftMinutes({});
+    const load = async () => {
+      try {
+        const [settingsResult, capResult] = await Promise.allSettled([
+          axios.get<{ installations: InstallationSettings[]; activePodCount: number }>(`${base}?${query}`),
+          axios.get<{ caps?: { turnsPerDay?: number } }>('/api/hosted/availability'),
+        ]);
+        if (!active) return;
+        if (settingsResult.status === 'rejected') throw settingsResult.reason;
+        const rows = Array.isArray(settingsResult.value.data.installations) ? settingsResult.value.data.installations : [];
+        setInstallations(rows);
+        setActivePodCount(settingsResult.value.data.activePodCount ?? rows.length);
+        setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
+        setTurnCap(capResult.status === 'fulfilled' ? capResult.value.data.caps?.turnsPerDay ?? null : null);
+      } catch (requestError) {
+        if (active) setError((requestError as { response?: { status?: number } })?.response?.status === 403
+          ? t('agentSettings.forbidden') : t('agentSettings.loadError'));
+      } finally {
+        if (active) {
+          setLoadedIdentity(identity);
+          setLoading(false);
+        }
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [base, query, identity, t]);
 
   const save = async (entry: InstallationSettings, changes: Partial<InstallationSettings>) => {
+    const requestedIdentity = identity;
     setBusyPod(entry.podId);
     setError(null);
     try {
@@ -47,41 +77,55 @@ const V2AgentWakePods: React.FC<{
       await axios.patch(`${base}/pods/${encodeURIComponent(entry.podId)}?${query}`, {
         wakeOnMessage: next.wakeOnMessage,
         boardWake: next.boardWake,
+        humanOnly: next.humanOnly,
+        heartbeatEnabled: next.heartbeatEnabled,
         heartbeatMinutes: next.heartbeatMinutes,
       });
-      setInstallations((current) => current.map((item) => item.podId === entry.podId ? next : item));
-    } catch {
-      setError(t('agentSettings.saveError'));
+      if (identityRef.current === requestedIdentity) {
+        setInstallations((current) => current.map((item) => item.podId === entry.podId ? next : item));
+      }
+    } catch (requestError) {
+      if (identityRef.current === requestedIdentity) setError((requestError as { response?: { status?: number } })?.response?.status === 403
+        ? t('agentSettings.forbidden') : t('agentSettings.saveError'));
     } finally {
-      setBusyPod(null);
+      if (identityRef.current === requestedIdentity) setBusyPod(null);
     }
   };
 
   const remove = async (entry: InstallationSettings) => {
     // eslint-disable-next-line no-alert
-    if (!window.confirm(t('agentSettings.removeConfirm', { podName: entry.podName }))) return;
+    if (!window.confirm(t(activePodCount === 1 ? 'agentSettings.removeLastConfirm' : 'agentSettings.removeConfirm',
+      { podName: entry.podName }))) return;
+    const requestedIdentity = identity;
     setBusyPod(entry.podId);
     setError(null);
     try {
       await axios.delete(
         `/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(entry.podId)}?${query}`,
       );
-      setInstallations((current) => current.filter((item) => item.podId !== entry.podId));
-      onRemoved?.(entry.podId);
-    } catch {
-      setError(t('agentSettings.removeError'));
+      if (identityRef.current === requestedIdentity) {
+        setInstallations((current) => current.filter((item) => item.podId !== entry.podId));
+        setActivePodCount((count) => Math.max(0, count - 1));
+        onRemoved?.(entry.podId);
+      }
+    } catch (requestError) {
+      if (identityRef.current === requestedIdentity) setError((requestError as { response?: { status?: number } })?.response?.status === 403
+        ? t('agentSettings.forbidden') : t('agentSettings.removeError'));
     } finally {
-      setBusyPod(null);
+      if (identityRef.current === requestedIdentity) setBusyPod(null);
     }
   };
 
-  if (loading) return <div className="v2-agent-wake-pods__loading">{t('agentProfile.loading')}</div>;
+  if (loading || loadedIdentity !== identity) {
+    return <div className="v2-agent-wake-pods__loading">{t('agentProfile.loading')}</div>;
+  }
 
   return (
     <div className="v2-agent-wake-pods">
       {error && <p className="v2-agent-wake-pods__error" role="alert">{error}</p>}
       <section className="v2-agent-wake-pods__section" aria-labelledby="agent-wake-title">
         <h2 id="agent-wake-title">{t('agentSettings.wakeTitle')}</h2>
+        <p className="v2-agent-wake-pods__hint">{t('agentSettings.mentionsAlwaysWake')}</p>
         {installations.map((entry) => (
           <div className="v2-agent-wake-pods__pod" key={entry.podId}>
             <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
@@ -90,6 +134,11 @@ const V2AgentWakePods: React.FC<{
               <input type="checkbox" checked={entry.wakeOnMessage} disabled={busyPod === entry.podId}
                 onChange={(event) => { void save(entry, { wakeOnMessage: event.target.checked }); }} />
             </label>
+            {entry.wakeOnMessage && <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow">
+              <span>{t('agentSettings.humanOnly')}</span>
+              <input type="checkbox" checked={entry.humanOnly} disabled={busyPod === entry.podId}
+                onChange={(event) => { void save(entry, { humanOnly: event.target.checked }); }} />
+            </label>}
             <label className="v2-agent-wake-pods__row">
               <span>{t('agentSettings.boardWake')}</span>
               <input type="checkbox" checked={entry.boardWake} disabled={busyPod === entry.podId}
@@ -97,14 +146,32 @@ const V2AgentWakePods: React.FC<{
             </label>
             <label className="v2-agent-wake-pods__row">
               <span>{t('agentSettings.heartbeat')}</span>
-              <select value={entry.heartbeatMinutes} disabled={busyPod === entry.podId}
-                onChange={(event) => { void save(entry, { heartbeatMinutes: Number(event.target.value) }); }}>
+              <input type="checkbox" checked={entry.heartbeatEnabled} disabled={busyPod === entry.podId}
+                onChange={(event) => { void save(entry, { heartbeatEnabled: event.target.checked,
+                  heartbeatMinutes: draftMinutes[entry.podId] ?? entry.heartbeatMinutes }); }} />
+            </label>
+            <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow">
+              <span>{t('agentSettings.heartbeatInterval')}</span>
+              <select value={draftMinutes[entry.podId] ?? entry.heartbeatMinutes} disabled={busyPod === entry.podId}
+                onChange={(event) => { setDraftMinutes((current) => ({ ...current,
+                  [entry.podId]: Number(event.target.value) })); }}>
                 {[...new Set([15, 30, 60, 120, 360, 720, 1440, entry.heartbeatMinutes])]
                   .sort((a, b) => a - b).map((minutes) => (
                     <option value={minutes} key={minutes}>{t('agentSettings.everyMinutes', { count: minutes })}</option>
                   ))}
               </select>
             </label>
+            <p className="v2-agent-wake-pods__hint">
+              {t('agentSettings.turnsPerDay', { count: Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)),
+                cap: turnCap ?? t('agentSettings.capUnavailable') })}
+              {turnCap !== null && Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)) > turnCap
+                && ` ${t('agentSettings.overCap')}`}
+            </p>
+            {entry.heartbeatEnabled && draftMinutes[entry.podId] !== entry.heartbeatMinutes
+              && <button type="button" disabled={busyPod === entry.podId}
+                onClick={() => { void save(entry, { heartbeatMinutes: draftMinutes[entry.podId] }); }}>
+                {t('agentSettings.saveInterval')}
+              </button>}
           </div>
         ))}
       </section>

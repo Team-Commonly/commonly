@@ -30,8 +30,10 @@ const settings = (installation: any, podName: string) => {
     podId: String(installation.podId),
     podName,
     wakeOnMessage,
+    humanOnly: config.wakeOnMessage?.humanOnly === true,
     boardWake: typeof config.boardWake?.enabled === 'boolean'
       ? config.boardWake.enabled : wakeOnMessage,
+    heartbeatEnabled: config.heartbeat?.enabled === true,
     heartbeatMinutes: Number.isFinite(Number(config.heartbeat?.everyMinutes))
       && Number(config.heartbeat?.everyMinutes) > 0
       ? Math.max(1, Math.min(1440, Math.trunc(Number(config.heartbeat.everyMinutes)))) : 60,
@@ -52,7 +54,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
       .select('name').lean();
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
-    return res.json({ installations: manageable
+    return res.json({ activePodCount: installations.length, installations: manageable
       .filter((entry: any) => names.has(String(entry.podId)))
       .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod')) });
   } catch (error) {
@@ -65,8 +67,9 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const { wakeOnMessage, boardWake, heartbeatMinutes } = req.body || {};
+    const { wakeOnMessage, humanOnly, boardWake, heartbeatEnabled, heartbeatMinutes } = req.body || {};
     if (typeof wakeOnMessage !== 'boolean' || typeof boardWake !== 'boolean'
+      || typeof humanOnly !== 'boolean' || typeof heartbeatEnabled !== 'boolean'
       || !Number.isInteger(heartbeatMinutes) || heartbeatMinutes < 1 || heartbeatMinutes > 1440) {
       return res.status(400).json({ error: 'Invalid wake settings' });
     }
@@ -82,9 +85,9 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
     const config = normalizeConfigMap(installation.config) || {};
     installation.config = new Map(Object.entries({
       ...config,
-      wakeOnMessage: { ...config.wakeOnMessage, enabled: wakeOnMessage },
+      wakeOnMessage: { ...config.wakeOnMessage, enabled: wakeOnMessage, humanOnly },
       boardWake: { ...config.boardWake, enabled: boardWake },
-      heartbeat: { ...config.heartbeat, everyMinutes: heartbeatMinutes },
+      heartbeat: { ...config.heartbeat, enabled: heartbeatEnabled, everyMinutes: heartbeatMinutes },
     }));
     await installation.save();
     return res.json({ settings: settings(installation, '') });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentWakePods from '../agents/V2AgentWakePods';
 import i18n, { i18nReady } from '../../i18n';
@@ -24,9 +24,12 @@ describe('per-agent Wake and Pods settings', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    client.get.mockResolvedValue({ data: { installations: [{
-      podId: 'pod-1', podName: 'Launch', wakeOnMessage: true, boardWake: false, heartbeatMinutes: 60,
-    }] } });
+    client.get.mockImplementation((url: string) => Promise.resolve(url.includes('/hosted/availability')
+      ? { data: { caps: { turnsPerDay: 30 } } }
+      : { data: { activePodCount: 1, installations: [{
+        podId: 'pod-1', podName: 'Launch', wakeOnMessage: true, humanOnly: true,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
+      }] } }));
     client.patch.mockResolvedValue({ data: {} });
     client.delete.mockResolvedValue({ data: {} });
   });
@@ -36,7 +39,7 @@ describe('per-agent Wake and Pods settings', () => {
     fireEvent.click(await screen.findByLabelText('Wake on board changes'));
     await waitFor(() => expect(client.patch).toHaveBeenCalledWith(
       '/api/registry/agents/test-agent/manage-settings/pods/pod-1?instanceId=my-machine',
-      { wakeOnMessage: true, boardWake: true, heartbeatMinutes: 60 },
+      { wakeOnMessage: true, humanOnly: true, boardWake: true, heartbeatEnabled: false, heartbeatMinutes: 60 },
     ));
   });
 
@@ -49,5 +52,37 @@ describe('per-agent Wake and Pods settings', () => {
     ));
     expect(await screen.findByText('No pods to manage')).toBeInTheDocument();
     confirm.mockRestore();
+  });
+
+  it('does not show or restore the previous agent’s pod after identity changes', async () => {
+    let finishOld: (value: unknown) => void = () => {};
+    client.get.mockImplementation((url: string) => url.includes('old-agent')
+      ? new Promise((resolve) => { finishOld = resolve; })
+      : Promise.resolve(url.includes('/hosted/availability') ? { data: { caps: { turnsPerDay: 30 } } }
+        : { data: { installations: [{
+          podId: 'pod-new', podName: 'New pod', wakeOnMessage: false, humanOnly: false,
+          boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 30,
+        }] } }));
+    const view = render(
+      <MemoryRouter><V2AgentWakePods agentName="old-agent" instanceId="default" /></MemoryRouter>,
+    );
+    view.rerender(
+      <MemoryRouter><V2AgentWakePods agentName="new-agent" instanceId="default" /></MemoryRouter>,
+    );
+    expect((await screen.findAllByText('New pod')).length).toBe(2);
+    await act(async () => { finishOld({ data: { installations: [{
+      podId: 'pod-old', podName: 'Old pod', wakeOnMessage: true, boardWake: true, heartbeatMinutes: 60,
+    }] } }); });
+    expect(screen.queryByText('Old pod')).not.toBeInTheDocument();
+    expect(screen.getAllByText('New pod')).toHaveLength(2);
+  });
+
+  it('previews heartbeat turns against the plan cap before saving', async () => {
+    renderSettings();
+    expect(await screen.findByText('24 turns/day · 30 available')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Interval'), { target: { value: '30' } });
+    expect(screen.getByText(/48 turns\/day · 30 available/)).toBeInTheDocument();
+    expect(screen.getByText(/This exceeds the daily cap/)).toBeInTheDocument();
+    expect(client.patch).not.toHaveBeenCalled();
   });
 });
