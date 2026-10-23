@@ -21,9 +21,9 @@ last_updated: 2026-04-02
 
 | Document | Topics Covered |
 |----------|----------------|
-| [LINTING.md](../../../docs/development/LINTING.md) | ESLint setup, auto-fix, IDE integration |
-| [BACKEND.md](../../../docs/development/BACKEND.md) | Backend testing patterns |
-| [FRONTEND.md](../../../docs/development/FRONTEND.md) | Frontend testing patterns |
+| `docs/development/LINTING.md` | ESLint setup, auto-fix, IDE integration |
+| `docs/development/BACKEND.md` | Backend testing patterns |
+| `docs/development/FRONTEND.md` | Frontend testing patterns |
 
 ## Testing Commands
 
@@ -63,15 +63,15 @@ Override connection strings via env vars: `MONGO_URI`, `PG_HOST`, `PG_PORT`, `PG
 ## High-value Current Test Areas
 
 ### E2E Integration Tests
-- **Two-Way Integration E2E**: `backend/__tests__/integration/two-way-integration-e2e.test.js` (23 tests)
+- **Two-Way Integration E2E**: `backend/__tests__/service/two-way-integration-e2e.test.js` (23 tests)
   - Inbound flow: External platforms (GroupMe, Discord) → Commonly via ingest endpoint
   - Scheduler summarization: Buffer processing and agent event queuing
   - Agent posting: commonly-bot posting summaries to pods via runtime API
   - Outbound flow: Commonly → Discord webhooks / GroupMe bot API
   - Full round-trip: External → Commonly → External
   - Multi-agent: Clawdbot, custom agents, agent chaining
-- **Integrations E2E**: `backend/__tests__/integration/integrations-e2e.test.js`
-- **Clawdbot E2E**: `backend/__tests__/integration/clawdbot-e2e.test.js`
+- **Integrations E2E**: `backend/__tests__/service/integrations-e2e.test.js`
+- **Clawdbot E2E**: `backend/__tests__/service/clawdbot-e2e.test.js`
 
 ### Contract and Unit Tests
 - Integration provider contract tests: `backend/__tests__/contracts/integrationProvider.contract.test.js`.
@@ -232,7 +232,7 @@ module.exports = {
 
 ## Current Repo Notes (2026-02-08)
 
-Skill catalog is generated from `external/awesome-openclaw-skills` into `docs/skills/awesome-agent-skills-index.json`.
+Skill catalog is generated into `docs/skills/awesome-agent-skills-index.json`.
 Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
 Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
 OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.

@@ -52,11 +52,11 @@ This skill is a **thin pointer** — the actual design system lives in the commo
 
 ## Before you draw or build a screen (the process that made Signal land)
 
-1. **Canvas first.** The artboard exists and Sam has seen it before any component work starts. The canvas of record: https://claude.ai/code/artifact/3c07344a-86f2-4296-b3f0-a49a0b451503 — copy the nearest artboard, change only the content, keep the helmet block.
+1. **Canvas first.** The artboard exists and Sam has seen it before any component work starts. Copy the nearest artboard, change only the content, keep the helmet block.
 2. **Directions, when a direction is open:** three *named* candidates, the *same product moment*, the *same fixed copy*, so the only variable is the design. Then the chosen one gets clickable on the screen people live in.
 3. **One system, two volumes.** A new screen never needs a new colour, radius or face. If it seems to, the screen is wrong.
 4. **Ship with proof.** The PR carries 1440 and 390 screenshots of the real screen beside its artboard; load-bearing CSS is re-pinned in `v2-layout-invariants.test.ts`.
-5. **Survey what is left** every few weeks: screenshot every live route into one sheet (the canvas's *Coverage* page shows the shape) and give each uncovered screen a call — draw, fold, or delete (Sam rules on deletes).
+5. **Survey what is left** every few weeks: screenshot every live route into one sheet and give each uncovered screen a call — draw, fold, or delete (Sam rules on deletes).
 
 ## When you ship a change
 
@@ -72,17 +72,10 @@ The design system is meant to evolve. The way to evolve it:
 - **Propose changes through the same files.** Don't keep design rules in your head or in scratch docs.
 - **Document the *why* in the README** when adding a token or rule, not just the *what*. Someone in 6 months should understand the trade-off.
 - **Kill old patterns explicitly.** When a token is replaced, remove it from both files. Don't leave deprecated values around — agents will pick them up.
-- **Preview before merge.** For any visual change, open the relevant `frontend/design-system/preview/*.html` in a browser to see it in isolation, plus a v2 page on `app-dev.commonly.me` to see it in context.
+- **Preview before merge.** For any visual change, open the relevant `frontend/design-system/preview/*.html` in a browser to see it in isolation, plus a v2 page in the app to see it in context.
 
 ## When in doubt
 
 - **For mocks / throwaway prototypes**, use `frontend/design-system/tokens.css` + lucide icons via CDN. Output static HTML the user can open.
 - **For production v2 code**, use `var(--v2-*)` tokens from `v2.css`. Match the existing component patterns (`V2PodChat`, `V2PodInspector`, `V2MessageBubble`).
 - **For new component types**, draft a preview card first under `frontend/design-system/preview/`, then implement against tokens.
-
-## Related skills
-
-- `frontend-dev` — React/TypeScript patterns in this repo
-- `skillsui/` — opinionated named design recipes (skillsui.app free tier, installed 2026-08-22): exact hexes, font pairings, and section patterns per style. The tier process skills lack. Pick ONE per surface — see `skillsui/README.md` for the shell shortlist (clean / modern-saas / bento-grid).
-- `frontend-design` — Anthropic's official design-judgment skill (installed 2026-08-22 from anthropics/skills; the most-installed plugin in the official directory). Pull it ALONGSIDE this skill for any new surface or redesign work: this skill carries OUR tokens and rules; frontend-design carries the process that stops templated output (brainstorm→plan→critique→build, the generic-AI-look calibration list). The previously listed `ui-ux-pro-max` never existed on disk — dead pointer, removed.
-- `installable-taxonomy` — the shape of installable agents/apps/skills (this is the "skill" component category in v2)

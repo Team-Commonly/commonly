@@ -9,5 +9,5 @@ Rules for this directory:
 - Public, fleet-safe content only: no operator memory, no private repository
   names, no local filesystem paths, no tokens, no internal links.
 - One directory per skill, each with a `SKILL.md`.
-- A seat clone resolves its `.claude/skills` link to this directory, so an edit
+- A seat clone resolves its skills link to this directory, so an edit
   here reaches every seat on its next pull.
