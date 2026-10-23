@@ -68,7 +68,8 @@ describe('V2MessageRow', () => {
       );
       expect(await screen.findByRole('link', { name: 'Pull request #374101: Card loads' })).toBeInTheDocument();
       const text = container.querySelector('[data-testid="react-markdown"]').textContent;
-      expect(text).not.toContain('github.com/Team-Commonly/commonly/pull/374101');
+      // TASK-382: the sentence keeps a short ref (anchor asserted in realMarkdown); the card is the only anchor here.
+      expect(text).toContain('[Team-Commonly/commonly#374101](https://github.com/Team-Commonly/commonly/pull/374101)');
       expect(container.querySelectorAll('a[href*="pull/374101"]')).toHaveLength(1);
     } finally {
       global.fetch = previousFetch;

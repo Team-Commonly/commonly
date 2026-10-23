@@ -201,6 +201,17 @@ const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // so does a closing paren the URL does not open. Brackets are escaped in the link
 // text and percent-encoded in the destination, so a `]` or `(` in a URL cannot
 // close the markdown link early and leave the URL as plain text.
+// A PR URL that gets a card is replaced in the sentence by a short owner/repo#N
+// link, so the sentence keeps its words and punctuation ("Review: o/r#12.") and
+// the card below carries the detail. Removing the URL instead left stray
+// separators behind ("Review: ." and "see  for it").
+export const prUrlsToRefLinks = (text: string): string => text.replace(
+  /https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)(?=\b|$)/g,
+  (_match, owner: string, repo: string, num: string) => (
+    `[${owner}/${repo}#${num}](https://github.com/${owner}/${repo}/pull/${num})`
+  ),
+);
+
 const LINK_DEST_ENCODE: Record<string, string> = { '(': '%28', ')': '%29', '[': '%5B', ']': '%5D', '\\': '%5C' };
 export const linkifyBareUrls = (text: string): string => text.replace(
   /(?<![(<[])https?:\/\/[^\s<>"]+/g,
@@ -540,7 +551,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   const prRefs = imageUrl ? [] : parseGithubPrUrls(afterFiles);
   let stripped = afterFiles;
   if (prRefs.length > 0) {
-    stripped = afterFiles.replace(/https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+(?=\b|$)/g, '').trim();
+    stripped = prUrlsToRefLinks(afterFiles).trim();
   }
   // Auto-linkify bare http(s) URLs that aren't already inside markdown link
   // syntax. Without this, agents posting raw URLs render as plain text and

@@ -5,7 +5,7 @@
 // asserted here is the one a reader would click.
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { linkifyBareUrls } from '../components/V2MessageRow';
+import { linkifyBareUrls, prUrlsToRefLinks } from '../components/V2MessageRow';
 import V2GithubPrCard from '../components/V2GithubPrCard';
 
 const RealReactMarkdown = jest.requireActual('../../../node_modules/react-markdown/index.js').default;
@@ -54,5 +54,27 @@ describe('bare URL linkification through the real react-markdown', () => {
       warn.mockRestore();
       global.fetch = previousFetch;
     }
+  });
+
+  // TASK-382. A PR URL that gets a card is replaced by a short owner/repo#N link,
+  // so the sentence keeps its punctuation and words. Checked through the real renderer.
+  it('a PR URL in a sentence reads as a short ref, with its punctuation intact', () => {
+    const { container, unmount } = render(
+      <RealReactMarkdown>{prUrlsToRefLinks('Review: https://github.com/Team-Commonly/commonly/pull/12. Then merge.')}</RealReactMarkdown>,
+    );
+    const text = container.textContent;
+    const href = container.querySelector('a')?.getAttribute('href');
+    unmount();
+    expect(text).toBe('Review: Team-Commonly/commonly#12. Then merge.');
+    expect(href).toBe('https://github.com/Team-Commonly/commonly/pull/12');
+  });
+
+  it('a PR URL mid-sentence keeps the words around it', () => {
+    const { container, unmount } = render(
+      <RealReactMarkdown>{prUrlsToRefLinks('see https://github.com/Team-Commonly/commonly/pull/13 for the fix')}</RealReactMarkdown>,
+    );
+    const text = container.textContent;
+    unmount();
+    expect(text).toBe('see Team-Commonly/commonly#13 for the fix');
   });
 });
