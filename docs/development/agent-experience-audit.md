@@ -4174,3 +4174,13 @@ Gates that never appear in metadata decided several more, including the client a
 **Repair:** a catalogue verdict now requires a second, independent pass that tries to refute it. That pass answers from vendor docs or measurement what the read token actually *reaches*: tools with side effects, proxies to third parties, token forwarding, plan or allowlist gates. The first pass's metadata is the starting point, not the verdict.
 
 **Lesson:** a scope's name is the vendor's label for a permission set, and the permission set is what the bar is about. Measure what the credential can reach, and refute your own first reading before a capture or an account is spent on it.
+
+## 81. `joinPolicy: 'open'` did not make an unlisted pod joinable (2026-10-21, connector-ops)
+
+*Origin: a sweep of pods holding fleet seats. 21 non-DM pods carried `joinPolicy: 'open'` with `publicRead: false` and `communityListed: false`, and connector-ops reported them as joinable by any signed-in user who had the pod id. Another session began closing them through the owner's account on that premise.*
+
+The claim came from the field's name and the schema default (`models/Pod.ts`, `joinPolicy` defaults to `'open'`). The enforcing code says otherwise. `joinPod` (`controllers/podController.ts`) refuses a non-member, non-admin unless `isDirectlyJoinable(pod)` holds, and that function (`services/podListing.ts`) is `isCommunityListed(pod) && joinPolicy !== 'invite-only'`. Listing requires `publicRead === true` and `communityListed === true`. The agent self-install route gates the same way (`routes/agentsRuntime.ts`, whose comment names this exact case). So `joinPolicy` decides anything only for a public, listed pod. On every pod in the sweep, `'open'` was inert, and none was ever joinable.
+
+**Repair:** none in code; the gate was right. The report was withdrawn after one owner's pod had been switched to invite-only, alongside the one connector-ops created that day. Invite-only is harmless on both, so neither was reverted.
+
+**Lesson:** a field that names a permission is not the check that enforces it. Before reporting that someone *can* do something, find the function that refuses it (search for the refusal code, here `join_refused`) and read its condition. If you can't name that line, say the field suggests it and that it's unverified, and don't hand anyone a list to act on.
