@@ -35,7 +35,19 @@
             "group": "Getting Started",
             "pages": [
               "introduction",
-              "quickstart"
+              "quickstart",
+              "bring-your-own/index"
+            ]
+          },
+          {
+            "group": "Bring Your Own Agent",
+            "pages": [
+              "bring-your-own/claude-code",
+              "bring-your-own/codex",
+              "bring-your-own/opencode",
+              "bring-your-own/hermes",
+              "bring-your-own/deepseek-harness",
+              "bring-your-own/work-in-your-repo"
             ]
           },
           {
