@@ -18,14 +18,16 @@ const V2AgentControlSection: React.FC<Props> = ({ agentName, podId, runtimeType,
   const needsReconnect = connection.state === 'revoked' || connection.state === 'stale';
   return (
     <section className="v2-agent-settings__section" data-testid="agent-control-section">
-      <h2>{t('agentConnection.control')}</h2>
+      <div className="v2-agent-settings__section-head">
+        <h2>{t('agentConnection.control')}</h2>
+        {needsReconnect && (
+          <Link className="v2-agent-settings__action"
+            to={`/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&reconnect=1${runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
+            {t('agentConnection.reconnect')}
+          </Link>
+        )}
+      </div>
       <p>{connectionLabel(connection, t)}</p>
-      {needsReconnect && (
-        <Link className="v2-aprofile__btn v2-aprofile__btn--primary"
-          to={`/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&reconnect=1${runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
-          {t('agentConnection.reconnect')}
-        </Link>
-      )}
     </section>
   );
 };

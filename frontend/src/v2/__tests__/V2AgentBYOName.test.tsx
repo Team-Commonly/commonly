@@ -118,6 +118,18 @@ describe('BYO default agent name follows where it runs', () => {
     expect(await screen.findByTestId('byo-reconnect-result')).toHaveTextContent('Waiting for your computer');
   });
 
+  test('a Settings key link can proactively rekey a connected wrapper', async () => {
+    mockGet([{ name: 'local', installedBy: 'u1', runtime: { runtimeType: 'wrapper' },
+      connection: { state: 'connected', lastSeenAt: new Date().toISOString() } }]);
+    axios.post.mockResolvedValue({ data: { requestedAt: new Date().toISOString() } });
+    renderAt('/v2/agents/byo?pod=p1&name=local&mode=machine&reconnect=1');
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/agent-binding/reconnect',
+      { agentName: 'local', instanceId: 'default' }, expect.anything(),
+    ));
+  });
+
   test('a revoked computer key explains the registration step', async () => {
     mockGet([{ name: 'local', installedBy: 'u1', runtime: { runtimeType: 'wrapper' },
       connection: { state: 'revoked', lastSeenAt: null } }]);

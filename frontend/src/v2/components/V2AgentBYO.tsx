@@ -263,7 +263,8 @@ const V2AgentBYO: React.FC = () => {
   const [adapter, setAdapter] = useState<MachineAdapter>('');
   const [model, setModel] = useState<string>('');
   const canReconnect = Boolean(existingConnection
-    && ['revoked', 'stale'].includes(existingConnection.connection.state)
+    && (['revoked', 'stale'].includes(existingConnection.connection.state)
+      || (prefill.reconnect && existingConnection.runtimeType === 'wrapper'))
     && (existingConnection.installedBy === String(currentUser?._id) || currentUser?.role === 'admin'));
   const isOtherOwner = Boolean(existingConnection && existingConnection.installedBy
     && existingConnection.installedBy !== String(currentUser?._id) && currentUser?.role !== 'admin');
