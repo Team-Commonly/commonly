@@ -8,7 +8,8 @@ name: Deploy Staging
 #
 # Modelled on deploy-dev.yml: same WIF auth, same secret names, same private
 # values overlay pattern. Differences: namespace/release commonly-staging, a
-# staging-only private-values secret, two frontend variants per SHA, no
+# staging-only private-values secret, a single staging frontend variant per SHA
+# (the shared prod tag is NOT pushed from staging — see the build step), no
 # clawdbot-gateway (parked everywhere; staging never runs it), cancel-in-progress.
 #
 # DRAFT until the Thursday-night staging install lands — unmerged, this workflow
@@ -211,12 +212,18 @@ jobs:
             # staging-smoke=success.
             if ERR=$(kubectl get cronjob stranger-journey -n "$NAMESPACE" -o name 2>&1); then
               # CronJob exists — run the real stranger smoke against STAGING. The CronJob
-              # defaults JOURNEY_API to production, so create the job suspended, repoint
-              # JOURNEY_API at the staging API, then resume.
-              JOB="staging-smoke-${TAG}-${GITHUB_RUN_ATTEMPT}"
+              # defaults JOURNEY_API to production, so build the Job from it suspended,
+              # repoint JOURNEY_API at the staging API, `kubectl create` it (NOT apply),
+              # then resume. The name carries GITHUB_RUN_ID so it is unique per run: a
+              # repeat deploy at the same SHA (a push then a workflow_dispatch, both at
+              # attempt 1) gets its own Job, and `create` fails on any name collision
+              # rather than silently updating a prior run's completed Job — toggling
+              # suspend never reruns a finished Job, so a reused one would post a stale
+              # success.
+              JOB="staging-smoke-${TAG}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
               kubectl create job --from=cronjob/stranger-journey "$JOB" -n "$NAMESPACE" --dry-run=client -o json \
                 | jq '.spec.suspend=true | .spec.template.spec.containers |= map(.env = ((.env // []) | map(select(.name!="JOURNEY_API"))) + [{name:"JOURNEY_API",value:"https://api-staging.commonly.me"}])' \
-                | kubectl apply -n "$NAMESPACE" -f -
+                | kubectl create -n "$NAMESPACE" -f -
               kubectl patch job "$JOB" -n "$NAMESPACE" --type merge -p '{"spec":{"suspend":false}}'
               for _ in $(seq 1 60); do
                 DONE=$(kubectl get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}{.status.failed}')
