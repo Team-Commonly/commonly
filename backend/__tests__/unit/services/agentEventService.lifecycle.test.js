@@ -28,6 +28,7 @@ jest.mock('../../../models/AgentEvent', () => ({
   create: jest.fn(),
   findOneAndUpdate: jest.fn(),
   findByIdAndUpdate: jest.fn(),
+  updateOne: jest.fn(),
   find: jest.fn(),
   updateMany: jest.fn(),
   deleteMany: jest.fn(),
@@ -402,6 +403,36 @@ describe('driver paths reach a terminal state', () => {
     // population and re-POSTed it ~10-20 min later, indefinitely.
     expect(update.status).toBe('acked');
     expect(update['delivery.outcome']).toBe('no_action');
+  });
+
+  test('a webhook wake carries and settles ambient context only after accepted delivery', async () => {
+    const ambient = {
+      _id: 'ambient-1', agentName: 'hookbot', instanceId: 'default', podId: POD_P1,
+      payload: { username: 'Alice', messageId: '42', content: 'ambient note' },
+    };
+    AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [ambient] }) }) });
+    AgentEvent.updateOne.mockResolvedValue({ matchedCount: 1 });
+    AgentEvent.updateMany.mockResolvedValue({ modifiedCount: 1 });
+    AgentEvent.create.mockResolvedValue({
+      _id: 'evt-digest-wake', agentName: 'hookbot', instanceId: 'default', podId: POD_P1,
+      type: 'chat.mention', payload: {}, status: 'pending', attempts: 0,
+    });
+    AgentInstallation.find.mockReturnValue({
+      lean: async () => [{ config: { runtime: { webhookUrl: 'https://example.test/hook' } } }],
+    });
+    postToPublicAddress.mockResolvedValueOnce({ ok: true, status: 200, text: '{"outcome":"no_action"}' });
+
+    await AgentEventService.enqueue({
+      agentName: 'hookbot', instanceId: 'default', podId: POD_P1, type: 'chat.mention', payload: {},
+    });
+    await flush();
+
+    const body = JSON.parse(postToPublicAddress.mock.calls[0][1].body);
+    expect(body.payload.digestSummary).toContain('Alice (message 42): ambient note');
+    expect(AgentEvent.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: { $in: ['ambient-1'] }, deliveryMode: 'digest' }),
+      expect.objectContaining({ $set: expect.objectContaining({ status: 'acked' }) }),
+    );
   });
 
   test('a webhook URL the guard refuses gets no request, and the event is not acked', async () => {

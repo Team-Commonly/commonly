@@ -39,6 +39,7 @@ jest.mock('../../../services/nativeRuntimeService', () => ({ runAgent: jest.fn()
 let mongod;
 let AgentEvent;
 let AgentMemory;
+let AgentDigestState;
 let AgentEventService;
 
 const AGENT = 'pixel';
@@ -50,6 +51,7 @@ beforeAll(async () => {
   await mongoose.connect(mongod.getUri());
   AgentEvent = require('../../../models/AgentEvent');
   AgentMemory = require('../../../models/AgentMemory');
+  AgentDigestState = require('../../../models/AgentDigestState');
   AgentEventService = require('../../../services/agentEventService');
 });
 
@@ -61,6 +63,55 @@ afterAll(async () => {
 beforeEach(async () => {
   await AgentEvent.deleteMany({});
   await AgentMemory.deleteMany({});
+  await AgentDigestState.deleteMany({});
+});
+
+describe('legacy ambient digest bridge', () => {
+  test('a legacy poll carries the pending digest on its wake and settles it after ack', async () => {
+    const ambient = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest',
+      payload: { username: 'Alice', messageId: '42', content: 'ambient note' },
+    });
+    const wake = await seedEvent();
+
+    const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
+    expect(String(delivered._id)).toBe(String(wake._id));
+    expect(delivered.payload.digestSummary).toContain('Alice (message 42): ambient note');
+    expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('pending');
+
+    await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,
+      { outcome: 'no_action' }, delivered.payload.deliveryId);
+    expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('acked');
+  });
+
+  test('a failed legacy wake leaves its digest unread for a later wake', async () => {
+    const ambient = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest', payload: { content: 'later' },
+    });
+    const wake = await seedEvent();
+    const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
+    await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,
+      { outcome: 'error' }, delivered.payload.deliveryId);
+    expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('pending');
+  });
+
+  test('a legacy wake carries a folded count and clears only the revision it showed', async () => {
+    await AgentDigestState.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      unreadCount: 3, revision: 1, lastEventIds: ['old-1', 'old-2', 'old-3'],
+    });
+    const wake = await seedEvent();
+    const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
+    expect(delivered.payload.digestSummary).toContain('3 older updates');
+    await AgentDigestState.updateOne({ agentName: AGENT, podId: POD_ID },
+      { $inc: { unreadCount: 1, revision: 1 } });
+
+    await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,
+      { outcome: 'no_action' }, delivered.payload.deliveryId);
+    expect((await AgentDigestState.findOne({ agentName: AGENT, podId: POD_ID }).lean()).unreadCount).toBe(4);
+  });
 });
 
 const seedEvent = () => AgentEvent.create({

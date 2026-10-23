@@ -129,6 +129,7 @@ interface EventDoc {
   memoryRevisionAtDelivery?: number | null;
   deliveryNonce?: string | null;
   digestRollupRevision?: number | null;
+  digestEventIds?: unknown[];
 }
 
 interface InstallationDoc {
@@ -260,6 +261,12 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
   const { webhookUrl, webhookSecret } = runtimeConfig as { webhookUrl?: string; webhookSecret?: string };
   if (!webhookUrl) return;
 
+  // Webhook drivers never poll the inbox. Carry ambient context on their next
+  // waking POST, then settle it only after the endpoint accepts that POST.
+  await AgentEventService.attachLegacyDigest(event).catch((err: Error) => {
+    console.warn('[webhook] digest attachment failed:', err.message);
+  });
+
   const payload = JSON.stringify({
     _id: event._id,
     type: event.type,
@@ -329,6 +336,11 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
       'delivery.outcome': outcome,
       'delivery.updatedAt': new Date(),
     });
+    if (outcome !== 'error') {
+      await AgentEventService.settleLegacyDigest(event).catch((err: Error) => {
+        console.warn('[webhook] digest settle failed:', err.message);
+      });
+    }
   } catch (err) {
     if ((err as Error).name === 'AbortError') {
       console.warn(`[webhook] ${event.agentName} ${webhookUrl} timed out after 10s`);
@@ -1375,6 +1387,67 @@ class AgentEventService {
     return { unreadCount: state.unreadCount, lastEventIds: state.lastEventIds };
   }
 
+  /** Add one bounded ambient frame to a wake consumed by an older poller or webhook. */
+  static async attachLegacyDigest(event: EventDoc): Promise<void> {
+    if (!event._id || !event.podId || !event.agentName || event.deliveryMode === 'digest') return;
+    const scope = {
+      agentName: String(event.agentName).toLowerCase(),
+      instanceId: String(event.instanceId || 'default'),
+      podId: event.podId,
+    };
+    const [raw, rollup] = await Promise.all([
+      AgentEvent.find({ ...scope, status: 'pending', deliveryMode: 'digest' })
+        .sort({ createdAt: 1 }).limit(8).lean() as Promise<EventDoc[]>,
+      readFoldedDigest(scope),
+    ]);
+    if (!raw.length && !rollup?.unreadCount) return;
+    const ids = raw.map((row) => row._id);
+    const saved = await AgentEvent.updateOne(
+      {
+        _id: event._id,
+        status: { $in: ['pending', 'delivered'] },
+        deliveryMode: { $ne: 'digest' },
+        ...(event.deliveryNonce ? { deliveryNonce: event.deliveryNonce } : {}),
+      },
+      { $set: {
+        digestEventIds: ids,
+        digestRollupRevision: rollup?.revision ?? null,
+      } },
+    );
+    if (!saved.matchedCount) return;
+    event.digestEventIds = ids;
+    event.digestRollupRevision = rollup?.revision ?? null;
+    const lines = raw.map((row) => {
+      const who = String(row.payload?.username || 'member').replace(/\s+/g, ' ').slice(0, 40);
+      const body = String(row.payload?.content || '').replace(/\s+/g, ' ').slice(0, 160);
+      const messageId = row.payload?.messageId;
+      return `- ${who}${messageId ? ` (message ${String(messageId)})` : ''}: ${body}`;
+    });
+    if (rollup?.unreadCount) {
+      lines.unshift(`- ${rollup.unreadCount} older updates (last event IDs: ${rollup.lastEventIds.join(', ')})`);
+    }
+    event.payload = {
+      ...(event.payload || {}),
+      digestSummary: `[Since you last looked: ${raw.length + (rollup?.unreadCount || 0)} ambient updates; context only, no reply needed.]\n${lines.join('\n')}`,
+    };
+  }
+
+  static async settleLegacyDigest(event: EventDoc): Promise<void> {
+    if (!event.agentName || !event.podId) return;
+    const scope = {
+      agentName: String(event.agentName).toLowerCase(),
+      instanceId: String(event.instanceId || 'default'),
+      podId: event.podId,
+    };
+    if (event.digestEventIds?.length) {
+      await AgentEvent.updateMany(
+        { ...scope, _id: { $in: event.digestEventIds }, status: 'pending', deliveryMode: 'digest' },
+        { $set: { status: 'acked', deliveredAt: new Date() } },
+      );
+    }
+    if (event.digestRollupRevision) await settleFoldedDigest(scope, event.digestRollupRevision);
+  }
+
   /** Run a claimed native event and settle it without blocking enqueue. */
   static dispatchInProcess(
     event: EventDoc,
@@ -1639,7 +1712,18 @@ class AgentEventService {
     // Legacy consumers intentionally replay across every pod in their access
     // scope. The one-pod partition is opt-in through listInboxPage(), for any
     // HTTP poller whose batch becomes one pod-contextual model turn.
-    return (await this.claimPage(options)).events;
+    const events = (await this.claimPage(options)).events;
+    const seenPods = new Set<string>();
+    for (const event of events) {
+      const podKey = String(event.podId || '');
+      if (!podKey || seenPods.has(podKey)) continue;
+      seenPods.add(podKey);
+      // eslint-disable-next-line no-await-in-loop -- attach once per distinct pod
+      await this.attachLegacyDigest(event).catch((err: Error) => {
+        console.warn('[agent-event] legacy digest attachment failed:', err.message);
+      });
+    }
+    return events;
   }
 
   // The HTTP poller needs the true pending count for its inbox header even
@@ -1789,7 +1873,7 @@ class AgentEventService {
     }
 
     const firstWake = claimed.find((event) => event.deliveryMode !== 'digest');
-    const foldedRollup = firstWake
+    const foldedRollup = onePod && firstWake
       ? await this.attachFoldedDigest(firstWake).catch((err: Error) => {
         console.warn('[agent-event] folded digest attachment failed:', err.message);
         return null;
@@ -1894,13 +1978,19 @@ class AgentEventService {
       { new: true },
     ) as EventDoc | null;
 
-    if (result?.digestRollupRevision && normalizedDelivery?.outcome !== 'error') {
-      await settleFoldedDigest(
-        { agentName: safeAgentName, instanceId: safeInstanceId, podId: result.podId },
-        result.digestRollupRevision,
-      ).catch((err: Error) => {
-        console.warn('[agent-event] folded digest settle failed:', err.message);
-      });
+    if (result && normalizedDelivery?.outcome !== 'error') {
+      if (result.digestEventIds?.length) {
+        await this.settleLegacyDigest(result).catch((err: Error) => {
+          console.warn('[agent-event] legacy digest settle failed:', err.message);
+        });
+      } else if (result.digestRollupRevision) {
+        await settleFoldedDigest(
+          { agentName: safeAgentName, instanceId: safeInstanceId, podId: result.podId },
+          result.digestRollupRevision,
+        ).catch((err: Error) => {
+          console.warn('[agent-event] folded digest settle failed:', err.message);
+        });
+      }
     }
 
     // ADR-012 §3: bump lastSeenRevision exactly once per event via $max.

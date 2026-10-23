@@ -507,9 +507,15 @@ describe('AgentEventService', () => {
       agentName: 'inbox', instanceId: 'default', podIds: ['pod-a', 'pod-b'], limit: 10,
     });
 
-    expect(AgentEvent.find).toHaveBeenCalledTimes(1);
-    expect(AgentEvent.find).toHaveBeenCalledWith(expect.objectContaining({
+    expect(AgentEvent.find).toHaveBeenCalledTimes(3);
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(1, expect.objectContaining({
       podId: { $in: ['pod-a', 'pod-b'] },
+    }));
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      podId: 'pod-a', deliveryMode: 'digest',
+    }));
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      podId: 'pod-b', deliveryMode: 'digest',
     }));
     expect(events.map((event) => event.podId)).toEqual(['pod-a', 'pod-b']);
   });

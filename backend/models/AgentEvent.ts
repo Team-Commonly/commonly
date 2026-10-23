@@ -113,6 +113,9 @@ export interface IAgentEvent extends Document {
   // Snapshot of the folded digest state included in this wake. Ack clears it
   // only if no newer fold changed the state while the turn was running.
   digestRollupRevision?: number | null;
+  // Raw ambient rows presented inside a legacy wake or webhook delivery.
+  // They settle only when that wake succeeds.
+  digestEventIds?: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -132,6 +135,7 @@ const AgentEventSchema = new Schema<IAgentEvent>(
     memoryRevisionAtDelivery: { type: Number, default: null },
     deliveryNonce: { type: String, default: null },
     digestRollupRevision: { type: Number, default: null },
+    digestEventIds: [{ type: Schema.Types.ObjectId, ref: 'AgentEvent' }],
     delivery: {
       outcome: {
         type: String,
