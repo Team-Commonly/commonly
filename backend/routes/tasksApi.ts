@@ -96,6 +96,24 @@ function auth(req: AuthReq, res: Res, next: () => void) {
   return regularAuth(req, res, next);
 }
 
+/** A title is one line: a newline in it breaks every single-line surface that shows it. */
+const toSingleLineTitle = (raw: string): string => raw.replace(/\s*[\r\n\u2028\u2029]+\s*/g, ' ').trim();
+
+/**
+ * An assignee is one token: claims and the wake match the name verbatim, so an
+ * inner space or control character names someone else. Trimmed; case is kept.
+ * Blank after trimming means unassigned.
+ */
+const parseAssignee = (raw: string): { value: string | null; error?: string } => {
+  const value = raw.trim();
+  if (value === '') return { value: null };
+  const hasControl = [...value].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f);
+  if (/\s/.test(value) || hasControl) {
+    return { value: null, error: 'assignee must be one token: no inner spaces or control characters' };
+  }
+  return { value };
+};
+
 const router: ReturnType<typeof express.Router> = express.Router();
 
 // A pending unassigned row is offered again only when updatedAt advances past
@@ -301,8 +319,10 @@ router.post('/:podId', rateLimit({
     }
     // Materialize primitives after runtime validation so Mongo never receives
     // user-supplied query objects (for example, operator-shaped values).
-    const title = titleInput === undefined ? undefined : String(titleInput);
-    const assignee = assigneeInput === undefined ? undefined : String(assigneeInput);
+    const title = titleInput === undefined ? undefined : toSingleLineTitle(String(titleInput));
+    const assigneeParsed = assigneeInput === undefined ? undefined : parseAssignee(String(assigneeInput));
+    if (assigneeParsed?.error) return res.status(400).json({ error: assigneeParsed.error });
+    const assignee = assigneeParsed?.value ?? undefined;
     const dep = depInput === undefined ? undefined : String(depInput);
     const parentTask = parentTaskInput === undefined ? undefined : String(parentTaskInput);
     const source = sourceInput === undefined ? undefined : String(sourceInput);
@@ -958,6 +978,15 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     // happens to accept.
     if (typeof fieldUpdates.assignee === 'string' && fieldUpdates.assignee.trim() === '') {
       fieldUpdates.assignee = null;
+    }
+    if (typeof fieldUpdates.title === 'string') {
+      fieldUpdates.title = toSingleLineTitle(fieldUpdates.title);
+      if (!fieldUpdates.title) return res.status(400).json({ error: 'title is required' });
+    }
+    if (typeof fieldUpdates.assignee === 'string') {
+      const parsed = parseAssignee(fieldUpdates.assignee);
+      if (parsed.error) return res.status(400).json({ error: parsed.error });
+      fieldUpdates.assignee = parsed.value;
     }
     if (Object.keys(fieldUpdates).length === 0) return res.status(400).json({ error: 'No updatable fields provided' });
     if (fieldUpdates.status !== undefined) {
