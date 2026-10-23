@@ -205,3 +205,8 @@ mongodb:
       key: workload-tier
       operator: Equal
       value: spot
+
+# Staging-only connector key ring (commonly-staging-connector-secret-keys / -active-key in SM,
+# fresh keys, never prod's). Without it every hosted-MCP OAuth callback on staging threw.
+connectorSecrets:
+  enabled: true
