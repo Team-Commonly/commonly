@@ -34,6 +34,16 @@ agentProvisioning:
 
 backend:
   replicaCount: 1
+  worker:
+    enabled: false
+    # Cron and the Discord gateway must survive spot reclamation.
+    nodeSelector:
+      pool: dev
+    tolerations:
+      - key: "pool"
+        operator: "Equal"
+        value: "dev"
+        effect: "NoSchedule"
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
     tag: "20260417214615-r4"
