@@ -10,6 +10,8 @@ const Pod = require('../../models/Pod');
 const telegramBridgeService = require('../telegramBridgeService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const slackBridgeService = require('../slackBridgeService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { handleGithubGig } = require('../githubGigService');
 
 export interface ChatMessageEventPayload {
   podId: string;
@@ -32,6 +34,8 @@ export type InternalEventHandler = (
 export const eventHandlers: Record<string, InternalEventHandler> = {
   'telegram.relay': telegramBridgeService.relayAgentMessageToTelegram,
   'slack.relay': slackBridgeService.relayAgentMessageToSlack,
+  // Inbound App activity is selected by the webhook's indexed pod binding.
+  'github.gig': handleGithubGig,
 };
 
 export const hasEventHandler = (reference: string): boolean => (

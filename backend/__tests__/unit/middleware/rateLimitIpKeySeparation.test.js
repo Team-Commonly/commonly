@@ -101,6 +101,9 @@ const walked = [];
 const seen = new Set();
 
 const remainingOf = (res) => {
+  // The stub reads the limiter's request state, so a route can suppress public
+  // RateLimit headers without becoming invisible to this census.
+  if (res.headers['x-probe-remaining'] !== undefined) return Number(res.headers['x-probe-remaining']);
   if (res.headers['ratelimit-remaining'] !== undefined) return Number(res.headers['ratelimit-remaining']);
   const combined = res.headers.ratelimit;
   const m = combined && String(combined).match(/remaining=(\d+)/);
@@ -109,7 +112,12 @@ const remainingOf = (res) => {
 
 const single = (instance) => {
   const stub = express();
-  stub.all('/', instance, (_req, res) => res.status(204).end());
+  stub.all('/', instance, (req, res) => {
+    if (typeof req.rateLimit?.remaining === 'number') {
+      res.set('x-probe-remaining', String(req.rateLimit.remaining));
+    }
+    res.status(204).end();
+  });
   return stub;
 };
 
@@ -201,6 +209,19 @@ describe('TASK-126 ip key separation', () => {
       keyGenerator: (req) => cloudflareIpRateLimitKeyGenerator(req),
     });
     const rec = await observe(cf, 251);
+    expect(rec.r2).toBe(rec.r1 - 1);
+    expect(rec.r3).toBe(rec.r1);
+  });
+
+  it('reads a counted limiter even when public RateLimit headers are disabled', async () => {
+    const silent = rateLimit({
+      windowMs: 60000,
+      max: 5,
+      standardHeaders: false,
+      legacyHeaders: false,
+      keyGenerator: (req) => cloudflareIpRateLimitKeyGenerator(req),
+    });
+    const rec = await observe(silent, 252);
     expect(rec.r2).toBe(rec.r1 - 1);
     expect(rec.r3).toBe(rec.r1);
   });

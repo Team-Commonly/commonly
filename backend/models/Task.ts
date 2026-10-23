@@ -87,6 +87,10 @@ const TaskSchema = new Schema<ITask>(
 
 TaskSchema.index({ podId: 1, status: 1 });
 TaskSchema.index({ podId: 1, assignee: 1, status: 1 });
+TaskSchema.index(
+  { podId: 1, prUrl: 1, status: 1 },
+  { partialFilterExpression: { prUrl: { $type: 'string' } } },
+);
 TaskSchema.index({ podId: 1, taskId: 1 }, { unique: true });
 // Partial, NOT sparse: a compound sparse index still indexes any doc where
 // podId is present (i.e. all of them), so the second no-sourceRef task in a

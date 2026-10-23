@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GitHub activity card · Signal</title>
+  <link rel="stylesheet" href="../tokens.css">
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--c-bg-page); font: 14px/1.45 "IBM Plex Sans", sans-serif; color: var(--c-fg-primary); }
+    main { width: min(100% - 32px, 640px); }
+    .note { margin: 0 0 12px; color: var(--c-fg-tertiary); font: 11px "IBM Plex Mono", monospace; }
+    .card { background: var(--c-surface); border: 1px solid var(--c-border-soft); border-radius: var(--c-radius-lg); padding: 12px 16px; overflow-wrap: anywhere; }
+    .head, .stack, .row { display: flex; align-items: baseline; gap: 8px; }
+    .head { justify-content: space-between; color: var(--c-fg-tertiary); font: 11px "IBM Plex Mono", monospace; margin-bottom: 8px; }
+    .stack { flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    .badge { border: 1px solid var(--c-border); border-radius: var(--c-radius-sm); padding: 2px 5px; font: 11px "IBM Plex Mono", monospace; }
+    .title { font-weight: 600; }
+    .row { flex-wrap: wrap; font-size: 12px; margin-bottom: 8px; }
+    .row span { color: var(--c-fg-secondary); }
+    a { color: var(--c-accent-text); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
+    a:focus-visible { outline: none; box-shadow: var(--c-focus-ring); }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="note">Chat · activity card · sample values</p>
+    <div class="card">
+      <div class="head"><span>GitHub activity</span><time>3:17 AM</time></div>
+      <div class="stack"><span class="badge">Review submitted</span><span class="title">Pull request #2346</span></div>
+      <div class="row"><span>Repository</span><strong>Team-Commonly/commonly</strong></div>
+      <div class="row"><span>Review</span><strong>Changes requested</strong></div>
+      <a href="https://github.com/Team-Commonly/commonly/pull/2346">Open pull request #2346</a>
+    </div>
+  </main>
+</body>
+</html>

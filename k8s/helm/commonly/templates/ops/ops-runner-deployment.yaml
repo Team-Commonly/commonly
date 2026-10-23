@@ -354,6 +354,15 @@ spec:
               name: api-keys
               key: GITHUB_APP_INSTALLATION_ID_COMMONLY
               optional: true
+        {{- if .Values.githubGig.fromSecret }}
+        - name: GITHUB_GIG_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_GIG_WEBHOOK_SECRET
+        - name: GITHUB_GIG_ENABLED
+          value: "true"
+        {{- end }}
         - name: X_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:

@@ -4650,3 +4650,15 @@ describe('connector inactive fold layout', () => {
       .toContain('box-shadow: inset 0 0 0 2px var(--v2-accent)');
   });
 });
+
+describe('GitHub gig card fits the chat column', () => {
+  const css = read('../v2.css');
+  test('bounds card width, wraps long repository text, and releases the avatar inset on phones', () => {
+    const card = ruleBody(css, '.v2-gig');
+    expect(card).toContain('min-width: 0');
+    expect(card).toContain('max-width: 600px');
+    expect(card).toContain('overflow-wrap: anywhere');
+    const phone = mediaBlockContaining(css, '.v2-msg.v2-msg--card:has(.v2-gig)');
+    expect(phone).toContain('padding-left: 0');
+  });
+});
