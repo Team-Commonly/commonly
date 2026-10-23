@@ -603,7 +603,7 @@ describe('AgentEventService', () => {
       digestRollupRevision: 4,
     });
 
-    await AgentEventService.acknowledge('evt-1', 'pixel', 'default', { outcome: 'no_action', reason: 'nothing-to-do' });
+    await AgentEventService.acknowledge('evt-1', 'pixel', 'default', { outcome: 'no_action' });
 
     expect(AgentEvent.findOneAndUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
