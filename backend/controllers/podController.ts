@@ -37,13 +37,7 @@ const buildDefaultAgentProfileId = (agentName: any, instanceId = 'default') => (
   `${agentName.toLowerCase()}:${instanceId || 'default'}`
 );
 
-const isGlobalAdminRequest = async (req: any) => {
-  if (req.user?.role === 'admin') return true;
-  const userId = req.userId || req.user?.id || req.user?._id;
-  if (!userId) return false;
-  const user = await User.findById(userId).select('role').lean();
-  return Boolean(user && user.role === 'admin');
-};
+const isGlobalAdminRequest = (req: any) => req.user?.role === 'admin';
 
 const ensureDefaultAgentRegistryEntry = async (agentName: any) => {
   const normalized = String(agentName || '').trim().toLowerCase();
@@ -232,7 +226,7 @@ exports.getAllPods = async (req: any, res: any) => {
     let memberId: any = null;
     if (req.userId && !isCommunityScope && !isDiscoverScope) {
       const wantsAll = scope === 'all';
-      const isAdmin = wantsAll ? await isGlobalAdminRequest(req) : false;
+      const isAdmin = wantsAll ? isGlobalAdminRequest(req) : false;
       membershipFilterToMine = isPersonal || !wantsAll || !isAdmin;
       if (membershipFilterToMine) {
         const uid = String(req.userId);
@@ -543,7 +537,7 @@ exports.joinPod = async (req: any, res: any) => {
     // Repeated self-join requests are successful and side-effect free. This
     // keeps optimistic clients and retried requests idempotent.
     if (!isMember) {
-      const isAdmin = await isGlobalAdminRequest(req);
+      const isAdmin = isGlobalAdminRequest(req);
       const isJoinable = isDirectlyJoinable(pod);
       if (!isAdmin && !isJoinable) {
         return res.status(403).json({
@@ -722,7 +716,7 @@ exports.deletePod = async (req: any, res: any) => {
 
     const requesterId = req.userId || req.user?.id || req.user?._id;
     const isCreator = pod.createdBy.toString() === requesterId?.toString();
-    const isGlobalAdmin = await isGlobalAdminRequest(req);
+    const isGlobalAdmin = isGlobalAdminRequest(req);
 
     // Check if user is the creator or global admin
     if (!isCreator && !isGlobalAdmin) {

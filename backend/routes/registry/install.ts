@@ -354,7 +354,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         latestVersion: synthManifest.version,
         versions: [{ version: synthManifest.version, manifest: synthManifest, publishedAt: new Date() }],
         registry: 'private',
-        publisher: { userId, name: await resolveUsername(req) },
+        publisher: { userId, name: resolveUsername(req) },
         ephemeral: true,
       });
       console.log('[cap self-serve-install]', {

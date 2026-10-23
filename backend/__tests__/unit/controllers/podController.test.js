@@ -217,7 +217,7 @@ describe('podController', () => {
 
   it('deletePod denies delete if user is not creator', async () => {
     Pod.findById.mockResolvedValue({ createdBy: 'creator' });
-    const req = { params: { id: 'p1' }, userId: 'other' };
+    const req = { params: { id: 'p1' }, userId: 'other', user: { id: 'other', role: 'user' } };
     const res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
@@ -225,15 +225,11 @@ describe('podController', () => {
     };
     await podController.deletePod(req, res);
     expect(res.status).toHaveBeenCalledWith(401);
+    expect(User.findById).not.toHaveBeenCalled();
   });
 
   it('deletePod allows global admin to delete pod they did not create', async () => {
     Pod.findById.mockResolvedValue({ createdBy: 'creator' });
-    User.findById.mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ role: 'admin' }),
-      }),
-    });
     Pod.deleteOne.mockResolvedValue({ deletedCount: 1 });
     Message.deleteMany.mockResolvedValue({ deletedCount: 2 });
     Post.deleteMany.mockResolvedValue({ deletedCount: 0 });
@@ -243,7 +239,7 @@ describe('podController', () => {
     AgentInstallation.deleteMany.mockResolvedValue({ deletedCount: 0 });
     AgentProfile.deleteMany.mockResolvedValue({ deletedCount: 0 });
 
-    const req = { params: { id: 'p1' }, userId: 'global-admin' };
+    const req = { params: { id: 'p1' }, userId: 'global-admin', user: { id: 'global-admin', role: 'admin' } };
     const res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
@@ -255,6 +251,7 @@ describe('podController', () => {
     expect(Message.deleteMany).toHaveBeenCalledWith({ podId: 'p1' });
     expect(Pod.deleteOne).toHaveBeenCalledWith({ _id: 'p1' });
     expect(res.json).toHaveBeenCalledWith({ msg: 'Pod deleted' });
+    expect(User.findById).not.toHaveBeenCalled();
   });
 
   it('removeMember denies removal when user is not creator', async () => {
@@ -414,6 +411,40 @@ describe('podController', () => {
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
 
+  it('joinPod admits an admin into an invite-only chat pod using req.user.role', async () => {
+    const pod = { _id: 'private-1', type: 'chat', members: ['creator'], joinPolicy: 'invite-only' };
+    Pod.findById.mockResolvedValueOnce(pod).mockReturnValueOnce({
+      populate: jest.fn().mockReturnValue({
+        populate: jest.fn().mockResolvedValue({ ...pod, members: ['creator', 'admin'] }),
+      }),
+    });
+    const req = { params: { id: 'private-1' }, userId: 'admin', user: { id: 'admin', role: 'admin' } };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await podController.joinPod(req, res);
+
+    expect(Pod.updateOne).toHaveBeenCalledWith(
+      { _id: 'private-1' },
+      expect.objectContaining({ $addToSet: { members: 'admin' } }),
+    );
+    expect(res.status).not.toHaveBeenCalledWith(403);
+  });
+
+  it('joinPod refuses a non-admin for an invite-only chat pod', async () => {
+    Pod.findById.mockResolvedValue({
+      _id: 'private-1', type: 'chat', members: ['creator'], joinPolicy: 'invite-only',
+    });
+    const req = { params: { id: 'private-1' }, userId: 'member', user: { id: 'member', role: 'user' } };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await podController.joinPod(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'join_refused' }));
+    expect(User.findById).not.toHaveBeenCalled();
+    expect(Pod.updateOne).not.toHaveBeenCalled();
+  });
+
   it('joinPod refuses a bot before membership when its installation cannot enter a protected pod', async () => {
     const pod = {
       _id: 'chat-1', type: 'chat', members: ['human-id'],
@@ -445,11 +476,7 @@ describe('podController', () => {
     const populateSecond = jest.fn(() => ({ sort }));
     const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
     Pod.find.mockReturnValue({ populate: populateFirst });
-    User.findById.mockReturnValue({
-      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'user' }) }),
-    });
-
-    const req = { params: { type: 'agent-room' }, userId: 'me', user: {} };
+    const req = { params: { type: 'agent-room' }, userId: 'me', user: { id: 'me', role: 'user' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getPodsByType(req, res);
     expect(res.json).toHaveBeenCalledWith([myPod]);
@@ -467,11 +494,7 @@ describe('podController', () => {
     const populateSecond = jest.fn(() => ({ sort }));
     const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
     Pod.find.mockReturnValue({ populate: populateFirst });
-    User.findById.mockReturnValue({
-      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'admin' }) }),
-    });
-
-    const req = { params: { type: 'agent-room' }, userId: 'admin-id', user: {} };
+    const req = { params: { type: 'agent-room' }, userId: 'admin-id', user: { id: 'admin-id', role: 'admin' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getPodsByType(req, res);
     expect(res.json).toHaveBeenCalledWith([myPod]);
@@ -485,11 +508,7 @@ describe('podController', () => {
     const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
     const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
     Pod.find.mockReturnValue({ populate: populateFirst });
-    User.findById.mockReturnValue({
-      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'admin' }) }),
-    });
-
-    const req = { query: {}, userId: 'admin-id', user: {} };
+    const req = { query: {}, userId: 'admin-id', user: { id: 'admin-id', role: 'admin' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
     // 'admin-id' is not a castable ObjectId, so this exercises the JS fallback.
@@ -579,17 +598,14 @@ describe('podController', () => {
     const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
     const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
     Pod.find.mockReturnValue({ populate: populateFirst });
-    User.findById.mockReturnValue({
-      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'admin' }) }),
-    });
-
     const me = new mongoose.Types.ObjectId();
-    const req = { query: { scope: 'all' }, userId: String(me), user: {} };
+    const req = { query: { scope: 'all' }, userId: String(me), user: { id: String(me), role: 'admin' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
 
     expect(Pod.find).toHaveBeenCalledWith({ type: { $nin: [...DEFAULT_LISTING_HIDDEN_POD_TYPES] } });
     expect(res.json).toHaveBeenCalledWith([otherPod]);
+    expect(User.findById).not.toHaveBeenCalled();
   });
 
   it('getAllPods survives a member whose User row is gone (populate leaves null)', async () => {
@@ -666,14 +682,11 @@ describe('podController', () => {
     const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
     const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
     Pod.find.mockReturnValue({ populate: populateFirst });
-    User.findById.mockReturnValue({
-      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'admin' }) }),
-    });
-
-    const req = { query: { scope: 'all' }, userId: 'admin-id', user: {} };
+    const req = { query: { scope: 'all' }, userId: 'admin-id', user: { id: 'admin-id', role: 'admin' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
     expect(res.json).toHaveBeenCalledWith([otherPod, myPod]);
+    expect(User.findById).not.toHaveBeenCalled();
   });
 
   it('getAllPods scope=all is silently downgraded to scope=mine for non-admins', async () => {
@@ -684,14 +697,11 @@ describe('podController', () => {
     const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
     const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
     Pod.find.mockReturnValue({ populate: populateFirst });
-    User.findById.mockReturnValue({
-      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role: 'user' }) }),
-    });
-
-    const req = { query: { scope: 'all' }, userId: 'me', user: {} };
+    const req = { query: { scope: 'all' }, userId: 'me', user: { id: 'me', role: 'user' } };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
     expect(res.json).toHaveBeenCalledWith([myPod]);
+    expect(User.findById).not.toHaveBeenCalled();
   });
 
   it('getPodById returns 404 for personal pod types when caller is not a member', async () => {

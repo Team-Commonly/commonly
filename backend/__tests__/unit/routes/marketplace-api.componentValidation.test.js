@@ -45,11 +45,11 @@ const getRouteHandler = (path, method) => {
   return layer.route.stack[layer.route.stack.length - 1].handle;
 };
 
-const publish = async (components) => {
+const publish = async (components, user = { id: 'user-1', username: 'nova' }) => {
   const handler = getRouteHandler('/publish', 'post');
   const req = {
     userId: 'user-1',
-    user: { id: 'user-1', username: 'nova' },
+    user,
     body: {
       installableId: '@nova/my-agent',
       name: 'My Agent',
@@ -94,6 +94,25 @@ describe('marketplace publish validates inside the components array', () => {
 
     expect(res.status).toHaveBeenCalledWith(201);
     expect(Installable.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes from an admin session using req.user.username', async () => {
+    const res = await publish([], { id: 'user-1', username: 'nova', role: 'admin' });
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(Installable.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a caller without a username instead of re-reading the user row', async () => {
+    const res = await publish([], { id: 'user-1', role: 'user' });
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(Installable.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-admin publishing into another username namespace', async () => {
+    const res = await publish([], { id: 'user-1', username: 'mallory', role: 'user' });
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(errorOf(res)).toMatch(/namespace/i);
+    expect(Installable.create).not.toHaveBeenCalled();
   });
 
   it('accepts the ADR-001 McpServer component and bounds its variables field', async () => {

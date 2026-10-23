@@ -1,6 +1,5 @@
 const express = require('express');
 const auth = require('../middleware/auth');
-const User = require('../models/User');
 const Installable = require('../models/Installable');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const { validateMcpComponent } = require('../utils/pluginManifestParser');
@@ -9,13 +8,7 @@ const router = express.Router();
 
 const NAMESPACE_RE = /^@[a-z0-9-]+\/[a-z0-9-]+$/;
 
-const resolveUsername = async (req: any): Promise<string | null> => {
-  if (req.user?.username) return req.user.username;
-  const userId = req.userId || req.user?.id;
-  if (!userId) return null;
-  const user = await User.findById(userId).select('username').lean();
-  return user?.username || null;
-};
+const resolveUsername = (req: any): string | null => req.user?.username || null;
 
 const validateNamespace = (installableId: string, username: string) => {
   if (!NAMESPACE_RE.test(installableId)) {
@@ -233,7 +226,7 @@ const syncToAgentRegistry = async (installable: any, action: 'publish' | 'unpubl
 router.post('/publish', auth, async (req: any, res: any) => {
   try {
     const userId = req.userId || req.user?.id;
-    const username = await resolveUsername(req);
+    const username = resolveUsername(req);
     if (!userId || !username) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -522,7 +515,7 @@ router.delete('/manifests/:installableId(*)', auth, async (req: any, res: any) =
 router.post('/fork', auth, async (req: any, res: any) => {
   try {
     const userId = req.userId || req.user?.id;
-    const username = await resolveUsername(req);
+    const username = resolveUsername(req);
     if (!userId || !username) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
