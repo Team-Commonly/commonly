@@ -4,12 +4,15 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 // regex-sniffed out of `content`. The union and the schema enum below are
 // declared independently — change BOTH.
 export type MessageType = 'text' | 'image' | 'system' | 'card';
+export type MessageAuthorKind = 'kernel' | null;
 
 export interface IMessage extends Document {
   podId: Types.ObjectId;
   userId: Types.ObjectId;
   content: string;
   messageType: MessageType;
+  /** Trusted Commonly-authored prose posted beside an agent identity. */
+  authorKind?: MessageAuthorKind;
   // Structured component payload (approval cards). Mixed like
   // AgentEvent.payload; null/absent for ordinary messages.
   payload?: unknown;
@@ -31,6 +34,9 @@ const MessageSchema = new Schema<IMessage>({
     enum: ['text', 'image', 'system', 'card'],
     default: 'text',
   },
+  // Trusted server-authored prose that shares an agent seat's identity.
+  // Ordinary human and agent posts remain null.
+  authorKind: { type: String, enum: ['kernel', null], default: null },
   payload: { type: Schema.Types.Mixed },
   metadata: { type: Schema.Types.Mixed },
   createdAt: { type: Date, default: Date.now },

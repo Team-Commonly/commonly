@@ -109,6 +109,7 @@ beforeAll(async () => {
     user_id VARCHAR(255) NOT NULL,
     content TEXT,
     message_type VARCHAR(50) DEFAULT 'text',
+    author_kind VARCHAR(20),
     payload JSONB,
     reply_to_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
     thread_root_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,

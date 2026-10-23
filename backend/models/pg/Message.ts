@@ -14,6 +14,7 @@ interface MessageRow {
   user_id: string;
   content: string;
   message_type: string;
+  author_kind?: 'kernel' | null;
   // ADR-020 D3: structured component payload (approval cards). JSONB; null
   // for ordinary messages.
   payload?: unknown;
@@ -107,6 +108,7 @@ class Message {
     // The message the posting run is answering (agentAnswerService), handed to
     // the attention writer and never stored: not a column, not a reply edge.
     answeringMessageId: string | null = null,
+    authorKind: 'kernel' | null = null,
   ): Promise<MessageRow> {
     console.log('Creating message with params:', {
       podId, userId, content, messageType, podIdType: typeof podId,
@@ -131,7 +133,7 @@ class Message {
     // TWO SHAPES since @ux-lead's 56879 amendment. An ordinary in-thread post
     // carries NO reply edge — the composer sends thread_root_id explicitly, so
     // joining a thread never pings the root's author. Explicit replies and the
-    // backfill still derive. `COALESCE($7, <derivation>)` is that precedence in
+    // backfill still derive. `COALESCE($8, <derivation>)` is that precedence in
     // one line: explicit wins, derivation fills. Reconciling the two (and
     // rejecting a mismatch) happens in services/threadRootResolver, before
     // this runs — a model that silently picked a winner would hide a caller's
@@ -143,23 +145,26 @@ class Message {
     // tier instead of only against a real server. A cast that costs nothing in
     // production and buys a fast test everywhere is worth writing down.
     const query = `
-      INSERT INTO messages (pod_id, user_id, content, message_type, reply_to_message_id, payload, thread_root_id)
-      SELECT $1, $2, $3, $4, $5::int, $6,
+      INSERT INTO messages (
+        pod_id, user_id, content, message_type, author_kind, reply_to_message_id, payload, thread_root_id
+      )
+      SELECT $1, $2, $3, $4, $5, $6::int, $7,
              COALESCE(
-               $7::int,
+               $8::int,
                (SELECT COALESCE(parent.thread_root_id, parent.id)
                   FROM messages parent
-                 WHERE parent.id = $5::int)
+                 WHERE parent.id = $6::int)
              )::int
-       WHERE ($5::int IS NULL
-              OR $1::varchar IN (SELECT target.pod_id FROM messages target WHERE target.id = $5::int))
-         AND ($7::int IS NULL
-              OR $1::varchar IN (SELECT named.pod_id FROM messages named WHERE named.id = $7::int))
+       WHERE ($6::int IS NULL
+              OR $1::varchar IN (SELECT target.pod_id FROM messages target WHERE target.id = $6::int))
+         AND ($8::int IS NULL
+              OR $1::varchar IN (SELECT named.pod_id FROM messages named WHERE named.id = $8::int))
       RETURNING *
     `;
     try {
       const result = await (pool as PgPool).query(query, [
-        podId, userId, content || '', messageType, replyToMessageId || null,
+        podId, userId, content || '', messageType, authorKind,
+        replyToMessageId || null,
         payload == null ? null : JSON.stringify(payload),
         resolvedThreadRootId ?? null,
       ]);
@@ -218,7 +223,7 @@ class Message {
     try {
       let query = `
         SELECT
-          m.id, m.pod_id, m.user_id, m.content, m.message_type, m.payload,
+          m.id, m.pod_id, m.user_id, m.content, m.message_type, m.author_kind, m.payload,
           m.reply_to_message_id,
           -- MUST be selected. Late columns are easy to miss in an explicit
           -- projection, and this one is read by the wake path.
@@ -260,7 +265,7 @@ class Message {
     try {
       const query = `
         SELECT
-          m.id, m.pod_id, m.user_id, m.content, m.message_type, m.payload,
+          m.id, m.pod_id, m.user_id, m.content, m.message_type, m.author_kind, m.payload,
           m.reply_to_message_id,
           -- MUST be selected. The controller prefers THIS row over create()'s
           -- RETURNING * (message = populated || created) and hands it to

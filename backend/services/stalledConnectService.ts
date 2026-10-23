@@ -296,6 +296,7 @@ const nudgeOnce = async ({
       podId,
       content,
       metadata: { kind: 'stalled-connect-nudge' },
+      authorKind: 'kernel',
     });
     const messageId = extractMessageId(posted);
     if (!messageId) {

@@ -1438,6 +1438,18 @@ body {
   vertical-align: middle;
 }
 
+.kernel-author-badge {
+  background: #e8ecfb;
+  color: #4353b8;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.2px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 /* Bot message content styling */
 .bot-bubble {
   background: linear-gradient(135deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.96) 100%) !important;

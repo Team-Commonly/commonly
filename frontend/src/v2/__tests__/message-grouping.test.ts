@@ -47,6 +47,24 @@ describe('isGroupedWithPrevious', () => {
     ).toBe(false);
   });
 
+  it('never groups an agent row after a kernel-authored row', () => {
+    expect(
+      isGroupedWithPrevious(
+        msg({ author_kind: null, created_at: at(1000) }),
+        msg({ author_kind: 'kernel' }),
+      ),
+    ).toBe(false);
+  });
+
+  it('never groups a kernel-authored row after an agent row', () => {
+    expect(
+      isGroupedWithPrevious(
+        msg({ author_kind: 'kernel', created_at: at(1000) }),
+        msg({ author_kind: null }),
+      ),
+    ).toBe(false);
+  });
+
   it('replies keep their header — the quote needs an owner', () => {
     expect(
       isGroupedWithPrevious(

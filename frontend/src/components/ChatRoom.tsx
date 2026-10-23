@@ -4522,6 +4522,7 @@ const ChatRoom = () => {
                                         const mappedDisplayName = agentDisplayMap.get(normalizedUsername);
                                         const matchedAgent = resolvePodAgentByIdentity(username);
                                         const isAgentMessage = Boolean(matchedAgent) || Boolean(mappedDisplayName) || isAgentUsername(username);
+                                        const isKernelAuthored = msg.author_kind === 'kernel' || msg.authorKind === 'kernel';
                                         const displayName = mappedDisplayName || username;
                                         const messageSenderId = (msg.userId && typeof msg.userId === 'object' && msg.userId._id)
                                             || msg.user_id
@@ -4620,6 +4621,9 @@ const ChatRoom = () => {
                                                         <div className="message-user message-user-link" onClick={handleOpenSender}>
                                                             {displayName}
                                                             <span className="bot-badge">BOT</span>
+                                                            {isKernelAuthored && (
+                                                                <span className="kernel-author-badge" aria-label="Commonly system message">Commonly</span>
+                                                            )}
                                                         </div>
                                                         <div className="message-bubble received bot-bubble">
                                                             <div className="bot-content">
@@ -4701,6 +4705,9 @@ const ChatRoom = () => {
                                                     <div className="message-user message-user-link" onClick={handleOpenSender}>
                                                         {displayName}
                                                         {isAgentMessage && <AgentBadge username={username} size="small" />}
+                                                        {isKernelAuthored && (
+                                                            <span className="kernel-author-badge" aria-label="Commonly system message">Commonly</span>
+                                                        )}
                                                     </div>
 
                                                     {/* Quote bubble if this is a reply */}

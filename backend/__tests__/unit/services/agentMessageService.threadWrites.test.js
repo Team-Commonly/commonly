@@ -173,6 +173,53 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
     );
   });
 
+  it('marks trusted stalled-connect nudges as kernel-authored and leaves agent posts unmarked', async () => {
+    PGMessage.create.mockResolvedValueOnce({
+      id: '57604',
+      content: 'Your agent is waiting for a connection.',
+      message_type: 'text',
+      author_kind: 'kernel',
+      created_at: new Date('2026-08-23T00:00:00Z'),
+      thread_root_id: null,
+    });
+
+    await AgentMessageService.postMessage({
+      agentName: 'sprint-review',
+      instanceId: 'default',
+      podId: POD,
+      content: 'Your agent is waiting for a connection.',
+      metadata: { kind: 'stalled-connect-nudge' },
+      authorKind: 'kernel',
+    });
+
+    expect(PGMessage.create).toHaveBeenCalledWith(
+      POD, 'agent-user-1', 'Your agent is waiting for a connection.', 'text', null, null, null, undefined, 'kernel',
+    );
+    const kernelMessage = emitted.find((entry) => entry.payload.id === '57604');
+    expect(kernelMessage.payload.author_kind).toBe('kernel');
+
+    PGMessage.create.mockResolvedValueOnce({
+      id: '57605',
+      content: 'I am connected now.',
+      message_type: 'text',
+      author_kind: null,
+      created_at: new Date('2026-08-23T00:00:00Z'),
+      thread_root_id: null,
+    });
+    await AgentMessageService.postMessage({
+      agentName: 'sprint-review',
+      instanceId: 'default',
+      podId: POD,
+      content: 'I am connected now.',
+    });
+
+    expect(PGMessage.create).toHaveBeenLastCalledWith(
+      POD, 'agent-user-1', 'I am connected now.', 'text', null, null, null, undefined,
+    );
+    const agentMessage = emitted.find((entry) => entry.payload.id === '57605');
+    expect(agentMessage.payload.author_kind).toBeNull();
+  });
+
   it('forwards a relay-only decision card to the outbound dispatcher without persisting it', async () => {
     const card = {
       title: 'Choose a train',
@@ -248,6 +295,34 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
 
       expect(PGMessage.create).not.toHaveBeenCalled();
       expect(relayPayloads()).toEqual([expect.objectContaining({ podId: POD, noOutboundRelay: true })]);
+    });
+
+    it('serializes a Mongoose document before overlaying the kernel author kind', async () => {
+      delete process.env.PG_HOST;
+      const Message = require('../../../models/Message');
+      Message.mockImplementation((doc) => {
+        const persisted = { ...doc, _id: 'mongo-message-kernel' };
+        return {
+          $__: {},
+          _doc: persisted,
+          save: jest.fn().mockResolvedValue(undefined),
+          populate: jest.fn().mockResolvedValue(undefined),
+          toObject: jest.fn(() => persisted),
+        };
+      });
+
+      await AgentMessageService.postMessage({
+        agentName: 'scout', instanceId: 'default', podId: POD,
+        content: 'Your agent is waiting for a connection.',
+        authorKind: 'kernel',
+      });
+
+      const broadcast = emitted.find((entry) => entry.event === 'newMessage');
+      expect(broadcast.payload).toMatchObject({
+        _id: 'mongo-message-kernel',
+        content: 'Your agent is waiting for a connection.',
+        author_kind: 'kernel',
+      });
     });
 
     it('on the error-to-DM route, for the DM post and the source notice', async () => {

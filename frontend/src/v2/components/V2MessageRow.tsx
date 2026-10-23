@@ -657,6 +657,9 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           ) : (
             <span className="v2-msg__author">{author}</span>
           )}
+          {message.author_kind === 'kernel' && (
+            <span className="v2-msg__author-kind" aria-label="Commonly system message">Commonly</span>
+          )}
           {isLead && <span className="v2-msg__lead-badge">{t('podChat.leadBadge')}</span>}
           {runtimeTag && <span className="v2-msg__tag">{runtimeTag}</span>}
           {time && <span className="v2-msg__time">{time}</span>}

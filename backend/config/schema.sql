@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS messages (
   user_id VARCHAR(24) NOT NULL,
   content TEXT NOT NULL,
   message_type VARCHAR(20) DEFAULT 'text' NOT NULL,
+  -- Kernel-authored seat posts (install intros and stalled-connect nudges)
+  -- speak beside an agent without pretending to be that agent. NULL keeps
+  -- legacy human and agent rows unclassified until a trusted server path opts
+  -- into the marker.
+  author_kind VARCHAR(20),
   reply_to_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
   -- Threading (W-T, TASK-029). DELIBERATELY separate from reply_to_message_id,
   -- which is an ADDRESSING edge: it feeds `isRouted` and the implicit-reply
@@ -76,6 +81,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN DEFAULT false;
 -- server-defined message components). Self-applies at boot, same pattern
 -- as is_bot above. NULL for ordinary messages.
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS payload JSONB;
+
+-- FUNNEL-5: the CREATE TABLE declaration above reaches fresh databases; this
+-- retrofit reaches every instance whose messages table already exists.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS author_kind VARCHAR(20);
 
 -- Threading (W-T, TASK-029). MUST be retrofitted, not only declared in the
 -- CREATE TABLE above — `CREATE TABLE IF NOT EXISTS` is a no-op on an existing

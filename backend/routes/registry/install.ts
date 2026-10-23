@@ -986,6 +986,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
           podId,
           content: intro,
           metadata: { kind: 'install-intro' },
+          authorKind: 'kernel',
         });
       }
     } catch (introError: unknown) {

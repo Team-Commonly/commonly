@@ -45,10 +45,10 @@ describe('PG Message model', () => {
     expect(pool.query).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('INSERT INTO messages'),
-      // Seventh param is the RESOLVED thread root (@ux-lead 56879): null here
+      // Eighth param is the RESOLVED thread root (@ux-lead 56879): null here
       // because this call names none, which makes the SQL fall through to
       // deriving from the reply edge — the pre-existing behaviour.
-      ['p', 'u', 'c', 'text', null, null, null],
+      ['p', 'u', 'c', 'text', null, null, null, null],
     );
     expect(pool.query).toHaveBeenNthCalledWith(
       2,
@@ -83,7 +83,7 @@ describe('PG Message model', () => {
 
   // The message the posting run is answering (agentAnswerService) reaches the
   // attention writer with the row and is never stored: the INSERT carries the
-  // same seven parameters, and no reply edge.
+  // same eight parameters, and no reply edge.
   it("hands the run's answeringMessageId to the attention writer without storing it", async () => {
     pool.query
       .mockResolvedValueOnce({
@@ -98,7 +98,7 @@ describe('PG Message model', () => {
     expect(pool.query).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('INSERT INTO messages'),
-      ['pod-1', 'agent', '@lee done', 'text', null, null, null],
+      ['pod-1', 'agent', '@lee done', 'text', null, null, null, null],
     );
     expect(mockRecordMentionedUsers).toHaveBeenCalledWith(expect.objectContaining({
       id: '3', answeringMessageId: '78385',
@@ -122,6 +122,7 @@ describe('PG Message model', () => {
     });
     const res = await Message.findByPodId('p');
     expect(pool.query).toHaveBeenCalled();
+    expect(pool.query.mock.calls[0][0]).toContain('m.author_kind');
     expect(res[0]).toHaveProperty('_id', '1');
     expect(res[0]).toHaveProperty('userId');
     expect(res[0]).toHaveProperty('messageType', 'text');
@@ -156,6 +157,7 @@ describe('PG Message model', () => {
     });
     const msg = await Message.findById('1');
     expect(pool.query).toHaveBeenCalledWith(expect.any(String), ['1']);
+    expect(pool.query.mock.calls[0][0]).toContain('m.author_kind');
     expect(msg).toHaveProperty('id', '1');
     expect(msg).toHaveProperty('messageType');
   });
