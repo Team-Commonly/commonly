@@ -331,8 +331,8 @@ test('selects an installation the owner can manage without exposing a foreign po
 test('runtime editor writes environment controls through the shared settings hook', async () => {
   axios.patch.mockResolvedValue({ data: { updated: true } });
   axios.get.mockImplementation((url) => {
-    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
-      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
     if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {

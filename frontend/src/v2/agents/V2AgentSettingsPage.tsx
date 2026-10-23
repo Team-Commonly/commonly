@@ -163,7 +163,10 @@ const V2AgentSettingsPage: React.FC = () => {
   const controls = environment && typeof environment === 'object' && !Array.isArray(environment)
     ? environment as Record<string, unknown> : {};
   const runtime: Runtime = {
-    ...(installation?.runtime || {}),
+    runtimeType: installation?.runtime?.runtimeType,
+    ...(installation?.runtime?.host === 'cloud' || installation?.runtime?.host === 'byo'
+      ? { host: installation.runtime.host } : {}),
+    adapter: installation?.runtime?.adapter,
     ...(typeof controls.adapter === 'string' ? { adapter: controls.adapter } : {}),
     ...(typeof controls.model === 'string' ? { model: controls.model } : {}),
     ...(typeof controls.effort === 'string' ? { effort: controls.effort } : {}),
