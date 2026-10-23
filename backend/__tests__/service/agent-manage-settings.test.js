@@ -143,4 +143,14 @@ describe('per-installation agent settings', () => {
     expect(response.status).toBe(200);
     expect((await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' })).status).toBe('uninstalled');
   });
+
+  it('never removes another instance when the requested instance is missing', async () => {
+    const response = await request(app)
+      .delete(`/api/registry/agents/settings-agent/pods/${podA._id}?instanceId=missing`)
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.status).toBe(404);
+    expect((await AgentInstallation.findOne({
+      podId: podA._id, agentName: 'settings-agent', instanceId: 'same',
+    })).status).toBe('active');
+  });
 });
