@@ -206,7 +206,8 @@ const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // the card below carries the detail. Removing the URL instead left stray
 // separators behind ("Review: ." and "see  for it").
 export const prUrlsToRefLinks = (text: string): string => text.replace(
-  /https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)(?=\b|$)/g,
+  // A URL already inside link syntax (`[label](url)`, `<url>`, `[url]`) is left alone.
+  /(?<![(<[])https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)(?=\b|$)/g,
   (_match, owner: string, repo: string, num: string) => (
     `[${owner}/${repo}#${num}](https://github.com/${owner}/${repo}/pull/${num})`
   ),

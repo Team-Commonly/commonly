@@ -58,6 +58,20 @@ describe('bare URL linkification through the real react-markdown', () => {
 
   // TASK-382. A PR URL that gets a card is replaced by a short owner/repo#N link,
   // so the sentence keeps its punctuation and words. Checked through the real renderer.
+  // TASK-382 review: a PR URL already inside `[label](url)` must not be nested into a second link.
+  it('a PR URL that is already a markdown link keeps its label and href', () => {
+    const { container, unmount } = render(
+      <RealReactMarkdown>{prUrlsToRefLinks('see [the PR](https://github.com/Team-Commonly/commonly/pull/12) now')}</RealReactMarkdown>,
+    );
+    const links = Array.from(container.querySelectorAll('a'));
+    const text = container.textContent;
+    unmount();
+    expect(links).toHaveLength(1);
+    expect(links[0].textContent).toBe('the PR');
+    expect(links[0]).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly/pull/12');
+    expect(text).toBe('see the PR now');
+  });
+
   it('a PR URL in a sentence reads as a short ref, with its punctuation intact', () => {
     const { container, unmount } = render(
       <RealReactMarkdown>{prUrlsToRefLinks('Review: https://github.com/Team-Commonly/commonly/pull/12. Then merge.')}</RealReactMarkdown>,
