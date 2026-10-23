@@ -131,7 +131,7 @@ const githubToolNames = (): string[] => toolDefinitions()
 export const buildGithubToolInstallable = () => ({
   installableId: 'github',
   name: 'GitHub',
-  description: 'Issues and pull requests in this instance\'s own GitHub repository. Connecting your own GitHub is coming.',
+  description: 'Issues and pull requests in this instance\'s own GitHub repository.',
   version: '1.0.0',
   kind: 'app',
   source: 'builtin',

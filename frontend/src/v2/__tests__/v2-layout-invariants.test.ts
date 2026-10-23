@@ -4605,3 +4605,14 @@ describe('BYO command boxes wrap at spaces', () => {
     expect(rule).not.toContain('word-break: break-all');
   });
 });
+
+describe('connector inactive fold layout', () => {
+  const v2 = read('../v2.css');
+  test('the toggle stays a full-width row with a visible keyboard focus state', () => {
+    const rule = ruleBody(v2, '.v2-root button.v2-connectors__inactive-toggle');
+    expect(rule).toContain('width: 100%');
+    expect(rule).toContain('min-height: 44px');
+    expect(ruleBody(v2, '.v2-root button.v2-connectors__inactive-toggle:focus-visible'))
+      .toContain('box-shadow: inset 0 0 0 2px var(--v2-accent)');
+  });
+});

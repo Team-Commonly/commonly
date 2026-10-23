@@ -20,6 +20,7 @@ import { V2Pod } from '../hooks/useV2Pods';
 import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph } from '../icons/glyphs';
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
+import V2InactiveFold from './V2InactiveFold';
 
 export type GrantWriteMode = 'read' | 'write' | 'write-with-confirm';
 
@@ -137,7 +138,6 @@ const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-confirm
 // JSX, because eslint's i18next/no-literal-string (jsx-only) reads an array literal in
 // a JSX expression as copy — and these are ids, not words (TASK-164).
 const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'write'];
-const SEGMENTS = ['all', 'granted', 'not-yet'] as const;
 
 /** The age as a unit-suffixed number ("23d", "5m", "just now"), from the timestamp and keys. */
 export const shortAge = (date: string | null | undefined, now: number, t: (key: string, options?: Record<string, unknown>) => string): string => {
@@ -226,7 +226,6 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const [joinPolicyFixPodId, setJoinPolicyFixPodId] = useState<string | null>(null);
   const [policyFixedPodId, setPolicyFixedPodId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [segment, setSegment] = useState<'all' | 'granted' | 'not-yet'>('all');
   // Grants and trail rows carry relative ages; they must advance while the
   // page sits open and be re-read when the tab comes back (TASK-131).
   const now = useRelativeNow();
@@ -400,19 +399,20 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
 
   const q = query.trim().toLowerCase();
   const rows = useMemo(() => (grants || []).filter((grant) => {
-    if (segment === 'not-yet') return false;
     if (!q) return true;
     return toolLabel(grant).toLowerCase().includes(q) || grant.tools.some((tool) => tool.toLowerCase().includes(q));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [grants, q, segment, catalog]);
-  // A tool is "not yet" while no live grant on it exists anywhere the person can see.
-  // `now` is a dep: a grant that expires while the page sits open has to move
-  // back under Not yet on the same tick that drops the header count, or the
-  // count and the list disagree until a reload.
-  const notYet = useMemo(() => (segment === 'granted' ? [] : catalog.filter((entry) => (
+  }), [grants, q, catalog]);
+  // Catalogue entries without a live grant join the inactive fold. `now` is
+  // a dep so expiry moves a grant into the fold without a reload.
+  const notYet = useMemo(() => catalog.filter((entry) => (
     !entryIsGranted(entry, grants || [], now)
     && (!q || entry.label.toLowerCase().includes(q) || entry.tools.some((tool) => tool.name.toLowerCase().includes(q)))
-  ))), [catalog, grants, now, q, segment]);
+  )), [catalog, grants, now, q]);
+  const liveRows = rows.filter((grant) => !isDead(grant, now));
+  const inactiveRows = rows.filter((grant) => isDead(grant, now));
+  const matchedHiddenConnections = hiddenConnections.filter((connection) => !q || connection.label.toLowerCase().includes(q));
+  const inactiveCount = inactiveRows.length + notYet.length + matchedHiddenConnections.length;
   // Grants, not entries: a person may hold two live grants on one tool.
   const grantedCount = (grants || []).filter((grant) => !isDead(grant, now)).length;
   // Entries, from the same predicate the Not yet list filters on, so the header
@@ -739,7 +739,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         </button>
         {dead && entry && isGranter(grant) ? (
           // Grant again is the granter's too (Wren 67920): the mint 403s anyone but the Connection's owner.
-          <button type="button" className="v2-connector-row__action" onClick={() => openDraft(entry, grant)}>
+          <button type="button" className="v2-connector-row__action v2-connector-row__action--secondary" onClick={() => openDraft(entry, grant)}>
             {t('tools.grantAgain', { defaultValue: 'Grant again' })}
           </button>
         ) : (
@@ -780,13 +780,11 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
           </span>
           <strong>{entry.description}</strong>
           <span className="v2-connector-row__detail">
-            {!entry.available
-              ? t('tools.notEnabled', { defaultValue: 'not enabled on this instance · ask your operator' })
-              : entry.connections.length === 0
+            {entry.available && (entry.connections.length === 0
                 ? (isHosted
                   ? t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label })
                   : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' }))
-                : entryModeCopy(entry)}
+                : entryModeCopy(entry))}
           </span>
           {canConnectHosted && entry.connectNotice && (
             <span className="v2-connector-row__detail">{entry.connectNotice}</span>
@@ -1084,29 +1082,19 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             aria-label={t('tools.search', { defaultValue: 'Search tools' })}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <div className="v2-connector-aside__mode v2-tools__segment" role="group" aria-label={t('tools.filter', { defaultValue: 'Show' })}>
-            {SEGMENTS.map((key) => (
-              <button
-                key={key}
-                type="button"
-                className={segment === key ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'}
-                aria-pressed={segment === key}
-                onClick={() => setSegment(key)}
-              >
-                {key === 'all' ? t('tools.segAll', { defaultValue: 'All' }) : key === 'granted' ? t('tools.segGranted', { defaultValue: 'Granted' }) : t('tools.segNotYet', { defaultValue: 'Not yet' })}
-              </button>
-            ))}
-          </div>
         </div>
         {error && !draft && !selected && !githubAppSetup && (
           <p className="v2-connector-aside__note" role="alert">{error}</p>
         )}
         {removedHiddenNotice && <p className="v2-connector-aside__note" role="status">{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review Commonly access at {{label}}.', label: removedHiddenNotice.label })} <a href={removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></p>}
         <div className="v2-connectors__rows">
-          {rows.map(renderRow)}
-          {notYet.map(renderNotYet)}
-          {segment !== 'not-yet' && hiddenConnections.filter((connection) => !query || connection.label.toLowerCase().includes(q)).map(renderHiddenConnection)}
-          {rows.length === 0 && notYet.length === 0 && hiddenConnections.length === 0 && (
+          {liveRows.map(renderRow)}
+          <V2InactiveFold count={inactiveCount}>
+            {inactiveRows.map(renderRow)}
+            {notYet.map(renderNotYet)}
+            {matchedHiddenConnections.map(renderHiddenConnection)}
+          </V2InactiveFold>
+          {liveRows.length === 0 && inactiveCount === 0 && (
             <p className="v2-tools__empty">{t('tools.nothingMatches', { defaultValue: 'Nothing matches.' })}</p>
           )}
         </div>

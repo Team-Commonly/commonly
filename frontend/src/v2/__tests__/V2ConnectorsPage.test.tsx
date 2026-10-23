@@ -738,6 +738,7 @@ describe('V2ConnectorsPage', () => {
     }], [hostedLinearCatalogEntry()]);
     renderPage();
 
+    fireEvent.click(await screen.findByRole('button', { name: 'inactive · 1' }));
     const reviewLink = await screen.findByRole('link', { name: "Open Linear's connected apps" });
     expect(reviewLink).toHaveAttribute('href', revokePage);
     expect(reviewLink).toHaveAttribute('target', '_blank');
@@ -766,6 +767,7 @@ describe('V2ConnectorsPage', () => {
     try {
       renderPage();
 
+      fireEvent.click(await screen.findByRole('button', { name: '非活跃 · 1' }));
       const reviewLink = await screen.findByRole('link', { name: '打开 Linear 的已连接应用' });
       expect(reviewLink).toHaveAttribute('href', revokePage);
       const notice = screen.getByRole('status');
@@ -791,6 +793,7 @@ describe('V2ConnectorsPage', () => {
     }], [hostedLinearCatalogEntry()]);
     renderPage();
 
+    fireEvent.click(await screen.findByRole('button', { name: 'inactive · 1' }));
     const linearDescription = await screen.findByText('Read Linear issues and projects.');
     expect(linearDescription.closest('.v2-connector-row')).toBeInTheDocument();
     await waitFor(() => expect(window.location.search).toBe(''));
