@@ -15,10 +15,20 @@ on:
         description: 'Image tag override (defaults to short SHA of HEAD)'
         required: false
         default: ''
+      promote_sha:
+        description: 'Promote a prebuilt, staging-verified SHA to prod (no build). Takes precedence over image_tag.'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Resolve + run the gate checks and print the plan; no build, no deploy.'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   id-token: write     # required to mint the OIDC token for google-github-actions/auth
   contents: read
+  statuses: read      # read the staging-smoke commit status when promoting a SHA
 
 concurrency:
   group: deploy-dev
@@ -45,14 +55,24 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Compute image tag
+      - name: Compute image tag + mode
         id: tag
         run: |
-          if [ -n "${{ inputs.image_tag }}" ]; then
+          if [ -n "${{ inputs.promote_sha }}" ]; then
+            # Promote: deploy a prebuilt, staging-verified SHA to prod — no build.
+            echo "mode=promote" >> "$GITHUB_OUTPUT"
+            echo "tag=$(printf '%s' '${{ inputs.promote_sha }}' | cut -c1-8)" >> "$GITHUB_OUTPUT"
+            echo "sha=${{ inputs.promote_sha }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.image_tag }}" ]; then
+            echo "mode=build" >> "$GITHUB_OUTPUT"
             echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           else
+            echo "mode=build" >> "$GITHUB_OUTPUT"
             echo "tag=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           fi
+          echo "dry=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
 
       - name: Export PROJECT_ID from secret
         env:
@@ -70,6 +90,41 @@ jobs:
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      # Promote path (promote_sha): refuse unless the SHA is staging-verified and
+      # its prebuilt PROD images already exist, so promotion is a retag, never a
+      # rebuild — and never ships an unverified or staging-variant image to prod.
+      - name: Promote gate — staging-smoke + prod-variant images exist
+        if: steps.tag.outputs.mode == 'promote'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          SHA: ${{ steps.tag.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          # 1) The frontend being promoted is the PROD variant, by tag convention:
+          #    deploy-staging builds frontend:<sha8> (prod) and frontend:<sha8>-staging.
+          if printf '%s' "$TAG" | grep -q -- '-staging$'; then
+            echo "::error title=Refusing promote::tag $TAG is a staging variant, not the prod image"
+            exit 1
+          fi
+          # 2) The SHA must carry staging-smoke=success.
+          STATE=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/status" \
+            --jq '.statuses[] | select(.context=="staging-smoke") | .state' | tail -1)
+          echo "staging-smoke for ${SHA} = ${STATE:-<none>}"
+          if [ "$STATE" != "success" ]; then
+            echo "::error title=Refusing promote::${SHA} has no staging-smoke=success status"
+            exit 1
+          fi
+          # 3) The prebuilt prod images must already exist in AR at this tag.
+          for img in commonly-backend commonly-frontend commonly-bot; do
+            REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${img}
+            if ! gcloud artifacts docker images describe "$REPO:$TAG" >/dev/null 2>&1; then
+              echo "::error title=Refusing promote::missing prebuilt image $REPO:$TAG (promotion does not build)"
+              exit 1
+            fi
+          done
+          echo "Promote gate passed: $SHA is staging-verified and its prod images exist."
 
       - name: Install Helm
         uses: azure/setup-helm@v4
@@ -97,6 +152,7 @@ jobs:
       # than reading as "disabled".
       - name: Is clawdbot-gateway enabled in this release?
         id: gateway
+        if: steps.tag.outputs.mode == 'build' && steps.tag.outputs.dry != 'true'
         run: |
           set -uo pipefail
           if err=$(helm template commonly-dev k8s/helm/commonly \
@@ -114,6 +170,7 @@ jobs:
           fi
 
       - name: Build + push backend image
+        if: steps.tag.outputs.mode == 'build' && steps.tag.outputs.dry != 'true'
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
@@ -122,6 +179,7 @@ jobs:
           docker push "$REPO:$TAG"
 
       - name: Build + push frontend image
+        if: steps.tag.outputs.mode == 'build' && steps.tag.outputs.dry != 'true'
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           REACT_APP_SENTRY_DSN: ${{ secrets.DEV_SENTRY_FRONTEND_DSN }}
@@ -139,7 +197,7 @@ jobs:
           docker push "$REPO:$TAG"
 
       - name: Build + push clawdbot-gateway image
-        if: steps.gateway.outputs.enabled == 'true'
+        if: steps.tag.outputs.mode == 'build' && steps.tag.outputs.dry != 'true' && steps.gateway.outputs.enabled == 'true'
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
@@ -163,6 +221,7 @@ jobs:
           rm -rf _external/clawdbot/commonly-bundled-skills
 
       - name: Build + push commonly-bot image
+        if: steps.tag.outputs.mode == 'build' && steps.tag.outputs.dry != 'true'
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
@@ -196,7 +255,19 @@ jobs:
       # `deployed` went stale by days — and a bare `helm rollback` during an
       # incident silently reverts every deploy since, which by then included
       # two auth fixes. Rollback safety depends on this job telling the truth.
+      - name: Dry run — print the plan and stop
+        if: steps.tag.outputs.dry == 'true'
+        run: |
+          echo "DRY RUN — no build, no deploy."
+          echo "mode=${{ steps.tag.outputs.mode }} tag=${{ steps.tag.outputs.tag }} sha=${{ steps.tag.outputs.sha }}"
+          if [ "${{ steps.tag.outputs.mode }}" = "promote" ]; then
+            echo "Would promote ${{ steps.tag.outputs.sha }} to prod (retag commonly-{backend,frontend,bot}:${{ steps.tag.outputs.tag }}), no docker build."
+          else
+            echo "Would build + push commonly-{backend,frontend,bot}:${{ steps.tag.outputs.tag }} then helm upgrade commonly-dev."
+          fi
+
       - name: Helm upgrade commonly-dev
+        if: steps.tag.outputs.dry != 'true'
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           GATEWAY_ENABLED: ${{ steps.gateway.outputs.enabled }}
@@ -239,6 +310,7 @@ jobs:
       # which is correct: parked is not stuck.
       - name: Verify rollout of the deployed workloads
         id: rollout
+        if: steps.tag.outputs.dry != 'true'
         run: |
           set -uo pipefail
           FAILED=""
@@ -283,7 +355,7 @@ jobs:
         # with no 401-vs-404 discriminator attached. That discriminator is what
         # separates "readiness is lying about a working pod" from "the pod is
         # broken", and it was absent exactly when it was needed.
-        if: ${{ success() || steps.rollout.outcome == 'failure' }}
+        if: ${{ steps.tag.outputs.dry != 'true' && (success() || steps.rollout.outcome == 'failure') }}
         run: |
           set -uo pipefail
           POD=$(kubectl get pod -n "$NAMESPACE" -l app=backend \
@@ -315,7 +387,7 @@ jobs:
       # verdict, but never fails the deploy on it: the release is already
       # serving, and the alert is the response path.
       - name: Run the stranger journey against this release
-        if: success()
+        if: ${{ steps.tag.outputs.dry != 'true' && success() }}
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
@@ -343,7 +415,7 @@ jobs:
       # without anyone noticing; failing on it is how five good deploys got
       # marked bad. A notice is the correct middle.
       - name: Note any unhealthy workloads outside the deployed set
-        if: always()
+        if: ${{ always() && steps.tag.outputs.dry != 'true' }}
         run: |
           set -uo pipefail
           UNHEALTHY=$(kubectl get deploy -n "$NAMESPACE" \
