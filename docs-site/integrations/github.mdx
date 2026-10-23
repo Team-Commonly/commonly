@@ -21,7 +21,13 @@ The grant requires a private, unbridged pod with agents running in Commonly's
 narrowed in-process runtime. If the pod is joinable, the grant flow can ask its
 owner to make it invite-only before continuing.
 
-{/* Live Connectors capture: GitHub App row and grant controls, 1440 and 390. */}
+The live desktop view shows the GitHub row before installation or a grant. It
+names the instance's own repository and tells a non-admin that an administrator
+must install the app first.
+
+<div style={{maxHeight: "420px", overflow: "hidden"}}>
+  <img src="/images/connectors-desktop.png" alt="GitHub tool row on the desktop Connectors page, before the app is installed or access granted" style={{width: "100%"}} />
+</div>
 
 The recorded grant named `list_issues`, `create_issue`, and `close_issue` for
 the instance's repository, with confirmation before writes. The readiness
