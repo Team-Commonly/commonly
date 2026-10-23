@@ -563,7 +563,7 @@ const WEB_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat, so
 const BROKER_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat, so a turn that called a granted tool '
   + 'cannot post in it.';
 const POSTING_NATIVE_TOOLS: ReadonlySet<string> = new Set([
-  'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_propose_action',
+  'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent', 'commonly_propose_action',
 ]);
 
 export const toolsForConfig = (
@@ -853,53 +853,9 @@ async function dispatchTool(
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime', handoff: 'byo' },
           payload,
-          noOutboundRelay: Boolean(ctx.webTainted),
+          noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
-        });
-        return { content: { ok: true, posted: true, result } };
-      }
-
-      case 'commonly_offer_local_agent': {
-        const adapter = String(args.adapter || '') as ByoHandoffAdapter;
-        let owner: { username?: string } | null = null;
-        if (ctx.installation?.installedBy) {
-          try {
-            owner = await (require('../models/User')).findById(ctx.installation.installedBy)
-              .select('username').lean() as { username?: string } | null;
-          } catch {
-            // A username is only a display-name seed. The handoff remains
-            // actionable with the stable "my-<adapter>" fallback if the
-            // account lookup is transiently unavailable.
-          }
-        }
-        const agentName = args.name
-          ? String(args.name)
-          : defaultByoHandoffName(owner?.username, adapter);
-        const payload = buildByoHandoffPayload({
-          adapter,
-          os: args.os,
-          podId: ctx.podId,
-          agentName,
-        });
-        if ('error' in payload) {
-          return { content: { ok: false, error: payload.error }, error: 'handoff_invalid' };
-        }
-        const AgentMessageService = require('./agentMessageService');
-        const result = await AgentMessageService.postMessage({
-          agentName: ctx.agentName,
-          instanceId: ctx.instanceId,
-          podId: ctx.podId,
-          // The structured payload is the handoff. This fixed content is a
-          // compatibility value for message storage and is not rendered as
-          // the instructions by the card.
-          content: 'Connect a local agent with the command below.',
-          messageType: 'card',
-          displayName: ctx.displayName,
-          installationConfig: ctx.installationConfig,
-          metadata: { source: 'native-runtime', handoff: 'byo' },
-          payload,
-          noOutboundRelay: Boolean(ctx.webTainted),
-          answeringMessageId: ctx.answeringMessageId,
+          authorKind: 'kernel',
         });
         return { content: { ok: true, posted: true, result } };
       }
