@@ -103,6 +103,29 @@ describe('machine credential revocation', () => {
     await daemonCall(other.daemonToken, other.machine.id).expect(200);
   });
 
+  it('a failed revoke cleanup still denies daemon and runtime credentials immediately', async () => {
+    const user = await owner();
+    const device = await addDevice(user, 'q');
+    const first = (await register(device.token, 'cleanup-fails')).body;
+    const child = await addRuntimeChild(user, first.machine, first.daemonToken, 'cleanup');
+    const revokeSpy = jest.spyOn(AgentCredential, 'revokeCascade').mockRejectedValueOnce(new Error('cleanup failed'));
+    try {
+      await request(app).delete(`/api/auth/devices/${device.id}`)
+        .set('Authorization', `Bearer ${generateTestToken(user._id)}`).expect(500);
+    } finally {
+      revokeSpy.mockRestore();
+    }
+
+    expect(await Machine.findById(first.machine.id)).toBeTruthy();
+    expect(await AgentCredential.findById(child.child._id)).toMatchObject({ status: 'active' });
+    await daemonCall(first.daemonToken, first.machine.id).expect(401);
+    expect(await agentCall(child.token)).toBe(401);
+    // A retry completes the cleanup after the durable revoke.
+    await request(app).delete(`/api/auth/devices/${device.id}`)
+      .set('Authorization', `Bearer ${generateTestToken(user._id)}`).expect(200);
+    expect(await Machine.findById(first.machine.id)).toBeNull();
+  });
+
   it('removing a machine revokes every daemon and minted child, including a standalone machine credential', async () => {
     const user = await owner();
     const device = await addDevice(user, 'c');

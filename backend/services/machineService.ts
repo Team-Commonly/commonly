@@ -162,6 +162,32 @@ export async function getMachineForDaemon({
   return machine ? serializeMachine(machine) : null;
 }
 
+// A failed cleanup must not turn a durable device revoke into a live daemon.
+// New browser/API registrations carry explicit null; missing fields are
+// pre-binding rows and are conservatively denied after any device revoke.
+export async function machineHasLiveAuthorization(
+  machineId: string,
+  ownerUserId: Types.ObjectId | string,
+): Promise<boolean> {
+  const machine = await Machine.findOne({ machineId, ownerUserId })
+    .select('registeredByDeviceTokenHash').lean();
+  if (!machine) return false;
+  if (machine.registeredByDeviceTokenHash === null) return true;
+  if (machine.registeredByDeviceTokenHash) {
+    return Boolean(await User.exists({
+      _id: ownerUserId,
+      deviceTokens: { $elemMatch: {
+        tokenHash: machine.registeredByDeviceTokenHash,
+        revokedAt: { $in: [null] },
+      } },
+    }));
+  }
+  return !await User.exists({
+    _id: ownerUserId,
+    deviceTokens: { $elemMatch: { revokedAt: { $ne: null } } },
+  });
+}
+
 export async function recordMachineHeartbeat(
   machine: IMachine,
   agentStates?: unknown,
@@ -236,6 +262,7 @@ module.exports = {
   normalizeAgentStates,
   listMachinesForOwner,
   getMachineForDaemon,
+  machineHasLiveAuthorization,
   recordMachineHeartbeat,
   registerMachine,
   removeMachine,
