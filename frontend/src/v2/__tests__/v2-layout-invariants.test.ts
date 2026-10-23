@@ -4718,3 +4718,12 @@ describe('agent runtime and grants fit the Settings column', () => {
     expect(ruleBody(css, '.v2-agent-runtime-grants__list li p')).toContain('overflow-wrap: anywhere');
   });
 });
+
+describe('agent Identity editor', () => {
+  const css = read('../agents/v2-agent-settings.css');
+  test('form fields retain a visible boundary over the v2 input reset', () => {
+    const input = selectorRuleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__identity input,');
+    expect(input).toContain('border: 1px solid var(--v2-border)');
+    expect(input).toContain('background: var(--v2-surface)');
+  });
+});

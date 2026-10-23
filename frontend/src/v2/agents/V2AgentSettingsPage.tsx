@@ -7,6 +7,7 @@ import V2AgentRuntimeGrants, { Runtime } from '../components/V2AgentRuntimeGrant
 import { AgentControlLoader } from '../components/V2AgentControlSection';
 import { AgentConnection } from '../utils/agentConnection';
 import { useAgentSettings } from './useAgentSettings';
+import V2AgentIdentitySection from './V2AgentIdentitySection';
 import V2AgentWakePods from './V2AgentWakePods';
 import './v2-agent-settings.css';
 
@@ -228,6 +229,7 @@ const V2AgentSettingsPage: React.FC = () => {
           </ul>
         )}
       </section>
+      {installation && <V2AgentIdentitySection key={`${agentName}:${instanceId}`} installation={installation} update={update} />}
       <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
       <V2AgentRuntimeGrants
         key={`${agentName}:${instanceId}`}

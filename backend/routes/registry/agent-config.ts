@@ -4,6 +4,7 @@ const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
+const AgentIdentityService = require('../../services/agentIdentityService');
 const Pod = require('../../models/Pod');
 const {
   writeWorkspaceIdentityFile,
@@ -125,6 +126,22 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         code: 'installer_only',
         fields: INSTALLER_GATED_FIELDS.filter((field) => field in req.body),
       });
+    }
+
+    if (displayName !== undefined && (typeof displayName !== 'string'
+      || !displayName.trim() || displayName.trim().length > 80)) {
+      return res.status(400).json({ error: 'Display name must be 1–80 characters' });
+    }
+    // The visible name belongs to the portable User principal, not one pod.
+    // A partial installer must not rename an identity used by other owners.
+    if (displayName !== undefined && !isInstanceAdmin) {
+      const ownership = await ownsRuntimeIdentity(userId, name.toLowerCase(), normalizedInstanceId);
+      if (!ownership.owned) {
+        return res.status(403).json({
+          code: ownership.failure,
+          error: 'Only the sole installer or an instance admin can rename this agent identity',
+        });
+      }
     }
 
     // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is one of
@@ -293,8 +310,17 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       }
     }
 
+    // The User row is the name source for chat and the pod roster. An explicit
+    // rename must update that portable identity, not only per-pod projections.
+    const renamedIdentity = displayName === undefined ? undefined
+      : await AgentIdentityService.renameAgentDisplayName(name, normalizedInstanceId, displayName.trim());
+    if (renamedIdentity === null) {
+      return res.status(404).json({ error: 'Agent identity not found' });
+    }
+    const effectiveDisplayName = renamedIdentity?.displayName;
     for (const targetInstallation of installationsToUpdate) {
       applyInstallationSettings(targetInstallation);
+      if (effectiveDisplayName) targetInstallation.displayName = effectiveDisplayName;
       // eslint-disable-next-line no-await-in-loop
       await targetInstallation.save();
     }
@@ -311,7 +337,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       const updates: any = {};
       if (status) updates.status = status;
       if (modelPreferences) updates.modelPreferences = modelPreferences;
-      if (displayName) updates.name = displayName;
+      if (effectiveDisplayName) updates.name = effectiveDisplayName;
       if (instructions !== undefined) updates.instructions = instructions;
       if (persona !== undefined) updates.persona = persona;
       if (normalizedToolPolicy !== null) updates.toolPolicy = normalizedToolPolicy;
@@ -325,7 +351,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       );
 
       if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
-        const identityContent = buildIdentityContent(displayName || normalizedInstanceId, persona || {});
+        const identityContent = buildIdentityContent(effectiveDisplayName || normalizedInstanceId, persona || {});
         writeWorkspaceIdentityFile(normalizedInstanceId, identityContent).catch((err: any) => {
           console.warn('[registry] Failed to sync IDENTITY.md for', normalizedInstanceId, err.message);
         });
@@ -360,6 +386,12 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         podIds: podIdsToSync,
         mode,
         skillNames: Array.isArray(skillSync.skillNames) ? skillSync.skillNames : [],
+      });
+    }
+
+    if (renamedIdentity && !renamedIdentity.mirrorSynced) {
+      return res.status(503).json({
+        error: 'The name was saved, but chat is catching up. Save again in a moment.',
       });
     }
 

@@ -475,6 +475,26 @@ async function resolveCollisionFreeDisplayName(
 }
 
 class AgentIdentityService {
+  /** Explicitly rename the portable principal; routine installation refreshes preserve it. */
+  static async renameAgentDisplayName(agentType: string, instanceId: string, desiredName: string): Promise<{
+    displayName: string; mirrorSynced: boolean;
+  } | null> {
+    const resolvedType = AgentIdentityService.resolveAgentType(agentType);
+    const username = buildAgentUsername(resolvedType, instanceId);
+    const user = await User.findOne({
+      username,
+      isBot: true,
+      'botMetadata.agentName': resolvedType,
+      'botMetadata.instanceId': instanceId,
+    });
+    if (!user) return null;
+    const displayName = await resolveCollisionFreeDisplayName(desiredName, instanceId, user._id);
+    user.botMetadata = { ...user.botMetadata, displayName };
+    await user.save();
+    const mirrorSynced = await AgentIdentityService.syncUserToPostgreSQL(user);
+    return { displayName, mirrorSynced };
+  }
+
   /**
    * Get or create an agent user with proper bot metadata
    */

@@ -102,6 +102,33 @@ test('connected nondefault wrapper regenerates from Control without a second Key
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).toBeNull();
 });
 
+test('identity edits go through the shared installation PATCH with the exact instance', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
+      profile: { instructions: 'Old', persona: { tone: 'friendly', specialties: ['writing'] } },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  axios.patch.mockResolvedValue({ data: { success: true } });
+  renderPage();
+  await screen.findByRole('button', { name: 'Save identity' });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Maya 2' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Instructions' }), { target: { value: 'New instructions' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Tone' }), { target: { value: 'technical' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    '/api/registry/pods/pod-1/agents/maya-claude',
+    expect.objectContaining({
+      instanceId: 'default', displayName: 'Maya 2', instructions: 'New instructions',
+      persona: expect.objectContaining({ tone: 'technical', specialties: ['writing'] }),
+    }),
+  ));
+});
+
 test('nondefault wrapper instances never link to a default-instance reconnect', async () => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {

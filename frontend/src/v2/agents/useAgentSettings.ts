@@ -8,6 +8,10 @@ export interface AgentSettingsInstallation {
   installedBy?: string;
   runtime?: { runtimeType?: string };
   config?: Record<string, unknown> | null;
+  profile?: {
+    instructions?: string;
+    persona?: { tone?: string; specialties?: string[]; boundaries?: string[]; customInstructions?: string };
+  } | null;
   [field: string]: unknown;
 }
 
@@ -15,7 +19,7 @@ export interface AgentSettingsPatch {
   config?: Record<string, unknown>;
   displayName?: string;
   instructions?: string;
-  persona?: string;
+  persona?: { tone?: string; specialties?: string[]; boundaries?: string[]; customInstructions?: string };
   modelPreferences?: unknown;
   toolPolicy?: unknown;
   contextPolicy?: unknown;

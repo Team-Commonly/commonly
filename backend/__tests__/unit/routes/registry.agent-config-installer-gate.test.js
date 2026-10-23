@@ -38,11 +38,17 @@ jest.mock('../../../models/User', () => ({
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
 }));
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
+  ownsRuntimeIdentity: jest.fn().mockResolvedValue({ owned: true }),
+}));
 
 const Pod = require('../../../models/Pod');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentProfile = require('../../../models/AgentProfile');
 const User = require('../../../models/User');
+const AgentIdentityService = require('../../../services/agentIdentityService');
+const { ownsRuntimeIdentity } = require('../../../services/runtimeIdentityOwnership');
 const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
 const registryRoutes = require('../../../routes/registry');
 
@@ -89,9 +95,12 @@ const setPod = (over = {}) => {
 describe('agent config PATCH — installer gate', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(AgentIdentityService, 'renameAgentDisplayName').mockImplementation(async (_name, _instanceId, label) => ({ displayName: label, mirrorSynced: true }));
+    ownsRuntimeIdentity.mockResolvedValue({ owned: true });
     podHasOutsiderWritableGrant.mockResolvedValue(false);
     setCallerRole('user');
   });
+  afterEach(() => jest.restoreAllMocks());
 
   it('refuses a non-admin runtime switch before saving any fan-out row', async () => {
     podHasOutsiderWritableGrant.mockResolvedValue(true);
@@ -199,6 +208,63 @@ describe('agent config PATCH — installer gate', () => {
     expect(res.body.fields).toEqual(['status', 'displayName']);
     expect(primary.save).not.toHaveBeenCalled();
     expect(AgentProfile.updateMany).not.toHaveBeenCalled();
+    expect(AgentIdentityService.renameAgentDisplayName).not.toHaveBeenCalled();
+  });
+
+  it('persists identity edits in the installation, profile and portable User label', async () => {
+    const primary = installation({ installedBy: MEMBER, displayName: 'Old name' });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+    const persona = { tone: 'technical', specialties: ['research'], boundaries: [], customInstructions: 'Be precise' };
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', displayName: 'New name', instructions: 'Help the pod', persona });
+
+    expect(res.status).toBe(200);
+    expect(AgentIdentityService.renameAgentDisplayName).toHaveBeenCalledWith('openclaw', 'curator', 'New name');
+    expect(primary.displayName).toBe('New name');
+    expect(primary.save).toHaveBeenCalledTimes(1);
+    expect(AgentProfile.updateMany).toHaveBeenCalledWith(
+      { agentId: 'openclaw:curator', podId: { $in: ['pod-1'] } },
+      expect.objectContaining({ name: 'New name', instructions: 'Help the pod', persona }),
+    );
+  });
+
+  it('refuses an identity rename by an installer who shares that identity', async () => {
+    const primary = installation({ installedBy: MEMBER });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+    ownsRuntimeIdentity.mockResolvedValue({ owned: false, failure: 'another_installer' });
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', displayName: 'Wrong owner' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('another_installer');
+    expect(primary.save).not.toHaveBeenCalled();
+    expect(AgentIdentityService.renameAgentDisplayName).not.toHaveBeenCalled();
+  });
+
+  it('does not claim a completed rename when the chat mirror is behind', async () => {
+    const primary = installation({ installedBy: MEMBER });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+    AgentIdentityService.renameAgentDisplayName.mockResolvedValue({
+      displayName: 'New name', mirrorSynced: false,
+    });
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', displayName: 'New name' });
+
+    expect(res.status).toBe(503);
+    expect(primary.displayName).toBe('New name');
+    expect(primary.save).toHaveBeenCalledTimes(1);
   });
 
   it('lets the installer write config', async () => {
