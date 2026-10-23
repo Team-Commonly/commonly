@@ -201,7 +201,7 @@ const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // so does a closing paren the URL does not open. Brackets are escaped in the link
 // text and percent-encoded in the destination, so a `]` or `(` in a URL cannot
 // close the markdown link early and leave the URL as plain text.
-const LINK_DEST_ENCODE: Record<string, string> = { '(': '%28', ')': '%29', '[': '%5B', ']': '%5D' };
+const LINK_DEST_ENCODE: Record<string, string> = { '(': '%28', ')': '%29', '[': '%5B', ']': '%5D', '\\': '%5C' };
 export const linkifyBareUrls = (text: string): string => text.replace(
   /(?<![(<[])https?:\/\/[^\s<>"]+/g,
   (raw) => {
@@ -214,8 +214,8 @@ export const linkifyBareUrls = (text: string): string => text.replace(
       }
       if (url === before) break;
     }
-    const label = url.replace(/[[\]]/g, '\\$&');
-    const dest = url.replace(/[()[\]]/g, (c) => LINK_DEST_ENCODE[c]);
+    const label = url.replace(/[\\[\]]/g, '\\$&');
+    const dest = url.replace(/[()[\]\\]/g, (c) => LINK_DEST_ENCODE[c]);
     return `[${label}](${dest})${raw.slice(url.length)}`;
   },
 );
