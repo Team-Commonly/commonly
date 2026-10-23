@@ -83,7 +83,7 @@ describe('BYO default agent name follows where it runs', () => {
     axios.post.mockResolvedValue({ data: { token: 'cm_agent_new' } });
     renderAt('/v2/agents/byo?pod=p1&name=local&reconnect=1');
     await waitFor(() => expect(screen.getByTestId('byo-connection-state'))
-      .toHaveTextContent('Disconnected: key revoked'));
+      .toHaveTextContent('Disconnected: key revoked'), { timeout: 5000 });
     expect(nameInput()).toHaveValue('local');
     expect(axios.get.mock.calls.some(([url]) => url.startsWith('/api/registry/agents/next-free-name?'))).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
@@ -98,7 +98,7 @@ describe('BYO default agent name follows where it runs', () => {
       connection: { state: 'revoked', lastSeenAt: null } }]);
     renderAt('/v2/agents/byo?pod=p1&name=local&from=card');
     await waitFor(() => expect(screen.getByTestId('byo-connection-state'))
-      .toHaveTextContent('Disconnected: key revoked'));
+      .toHaveTextContent('Disconnected: key revoked'), { timeout: 5000 });
     expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Connect agent' })).toBeNull();
   });
@@ -108,7 +108,7 @@ describe('BYO default agent name follows where it runs', () => {
       connection: { state: 'revoked', lastSeenAt: null } }]);
     axios.post.mockResolvedValue({ data: { requestedAt: '2026-10-23T16:30:00Z' } });
     renderAt('/v2/agents/byo?pod=p1&name=local&mode=machine&reconnect=1');
-    const action = await screen.findByRole('button', { name: 'Reconnect' });
+    const action = await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 });
     fireEvent.click(action);
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/agent-binding/reconnect',

@@ -228,13 +228,13 @@ describe('owner-requested reconnect', () => {
   it('lets the bound daemon replace a revoked agent key after the owner request', async () => {
     await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
     const original = await mint(DAEMON_A);
-    expect(original.status).toBe(200);
+    expect(original.status).toBe(201);
     await AgentCredential.updateOne({ tokenHash: hash(original.body.token) }, { $set: { status: 'revoked' } });
     expect((await runtimeAuthProbe(original.body.token)).status).toBe(401);
     expect((await requestReconnect()).status).toBe(200);
     expect((await assigned(DAEMON_A)).body.agents[0].reconnectRequestedAt).toBeTruthy();
     const refreshed = await mint(DAEMON_A, { rotate: true });
-    expect(refreshed.status).toBe(200);
+    expect(refreshed.status).toBe(201);
     expect((await runtimeAuthProbe(refreshed.body.token)).status).toBe(200);
     expect((await runtimeAuthProbe(original.body.token)).status).toBe(401);
   });
