@@ -208,6 +208,20 @@ describe('V2PodBoard', () => {
     expect(within(done).getByText('Connect your first agent')).toBeInTheDocument();
   });
 
+  test('card shows the title alone, with the task id on hover and in the detail view', async () => {
+    renderBoard();
+
+    const pending = await screen.findByRole('region', { name: 'Pending' });
+    const card = within(pending).getByText('Give your agent its first task').closest('button');
+    expect(card).toHaveAttribute('title', 'TASK-002');
+    expect(card.querySelector('.v2-board__card-id')).toBeNull();
+    expect(card).not.toHaveTextContent('TASK-002');
+
+    fireEvent.click(card);
+    const dialog = await screen.findByRole('dialog', { name: 'Give your agent its first task' });
+    expect(within(dialog).getByText('TASK-002')).toBeInTheDocument();
+  });
+
   test('Start moves a pending task via PATCH with optimistic column change', async () => {
     axios.patch.mockResolvedValue({
       data: { task: { taskId: 'TASK-002', title: 'Give your agent its first task', status: 'claimed', updates: [] } },
