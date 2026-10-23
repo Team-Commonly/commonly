@@ -4603,4 +4603,16 @@ describe('BYO command boxes wrap at spaces', () => {
     expect(rule).toContain('overflow-wrap: anywhere');
     expect(rule).not.toContain('word-break: break-all');
   });
+
+  test('a mention item highlights on arrow-key and hover past the button reset', () => {
+    // `.v2-root button:not(.MuiButtonBase-root)` is 0,2,1 with background: none.
+    // The bare `.v2-mention-item--active` (0,1,0) and `:hover` (0,2,0) lose to it,
+    // so a <button> item never showed its highlight. The rules must be prefixed.
+    const active = ruleBody(v2, '.v2-root button.v2-mention-item--active');
+    expect(active).toContain('background: var(--v2-surface-hover)');
+    const hover = ruleBody(v2, '.v2-root button.v2-mention-item:hover');
+    expect(hover).toContain('background: var(--v2-surface-hover)');
+    // The reset stays as it was: the fix is additive, not a rewrite of the reset.
+    expect(ruleBody(v2, '.v2-root button:not(.MuiButtonBase-root)')).toContain('background: none');
+  });
 });
