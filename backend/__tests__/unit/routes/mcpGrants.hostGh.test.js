@@ -1,5 +1,7 @@
 const express = require('express');
 const request = require('supertest');
+const { readFileSync } = require('fs');
+const { join } = require('path');
 
 const mockCallTool = jest.fn();
 const mockListToolsForGrant = jest.fn();
@@ -22,6 +24,7 @@ jest.mock('../../../models/ToolCall', () => ({ reserveBudgetLineage: mockReserve
 const router = require('../../../routes/mcpGrants');
 
 const app = express();
+app.use('/api/mcp/grants/:grantId/push', express.json({ limit: '9mb' }));
 app.use(express.json());
 app.use('/api/mcp/grants', router);
 
@@ -150,5 +153,19 @@ describe('host GitHub push boundary', () => {
     const response = await request(app).post('/api/mcp/grants/grant-1/push').send(push);
     expect(response.status).toBe(429);
     expect(mockCallTool).not.toHaveBeenCalled();
+  });
+
+  it('preserves the larger push parser before the global JSON parser in the real server', async () => {
+    const source = readFileSync(join(__dirname, '../../../server.ts'), 'utf8');
+    expect(source.indexOf("app.use('/api/mcp/grants/:grantId/push', express.json({ limit: '9mb' }))"))
+      .toBeGreaterThan(-1);
+    expect(source.indexOf("app.use('/api/mcp/grants/:grantId/push'"))
+      .toBeLessThan(source.indexOf('app.use(express.json());'));
+    mockListToolsForGrant.mockResolvedValue([{ name: 'github.push_branch' }]);
+    const response = await request(app).post('/api/mcp/grants/grant-1/push').send({
+      ...push, bundle: 'A'.repeat(200_000),
+    });
+    expect(response.status).toBe(200);
+    expect(mockCallTool).toHaveBeenCalledTimes(1);
   });
 });
