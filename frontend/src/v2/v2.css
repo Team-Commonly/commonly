@@ -2737,7 +2737,10 @@ body.modern-ui.v2-canvas {
 .v2-system-action-line .v2-avatar {
   width: 16px;
   height: 16px;
-  font-size: 8px;
+  border-width: 1px;
+  font: 650 11px/1 var(--v2-font-mono);
+  letter-spacing: 0;
+  text-indent: 0;
 }
 
 .v2-system-action-line__name {
