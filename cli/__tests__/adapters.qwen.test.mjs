@@ -328,6 +328,7 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
     try {
       let profileOptions;
       let config;
+      let launchArgs;
       await qwen.spawn('hello', {
         ...ctx,
         environment: { ...ctx.environment, mcp: [{
@@ -335,10 +336,12 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
         }] },
         _wrapArgvWithSeatbelt: (argv, options) => { profileOptions = options; return argv; },
         _spawnImpl: (_cmd, args) => {
+          launchArgs = args;
           config = JSON.parse(readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8'));
           return fakeChild();
         },
       });
+      expect(launchArgs).not.toContain('--allowed-tools');
       expect(config.mcpServers.commonly).toMatchObject({
         command: 'node', args: [join(packageDir, 'src', 'index.js')],
       });
