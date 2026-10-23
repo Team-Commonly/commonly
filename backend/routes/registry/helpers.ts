@@ -508,13 +508,13 @@ const getPluginSpecBase = (spec: any) => {
 };
 
 const normalizeInstanceId = (raw: any) => {
-  const normalized = String(raw || '')
+  let normalized = String(raw || '')
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
+    .replace(/-+/g, '-');
+  if (normalized.startsWith('-')) normalized = normalized.slice(1);
+  if (normalized.endsWith('-')) normalized = normalized.slice(0, -1);
   return normalized || 'default';
 };
 
