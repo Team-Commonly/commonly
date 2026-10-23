@@ -6,6 +6,10 @@ const Pod = require('../models/Pod');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const { AgentInstallation } = require('../models/AgentRegistry');
+// eslint-disable-next-line global-require
+const AgentProfile = require('../models/AgentProfile');
+// eslint-disable-next-line global-require
+const { buildMentionMap } = require('./agentMentionService');
 
 export interface MentionNotice {
   code: 'MENTION_NOT_IN_POD';
@@ -23,16 +27,7 @@ const mentionedHandles = (content: string): string[] => {
   return [...handles];
 };
 
-const slug = (value: string): string => value.toLowerCase().trim()
-  .replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
-
 const exactHandle = (handle: string): RegExp => new RegExp(`^${handle}$`, 'i');
-
-const agentHandles = (installation: Record<string, unknown>): string[] => {
-  const name = String(installation.agentName || '').toLowerCase();
-  const instance = String(installation.instanceId || 'default').toLowerCase();
-  return [name, instance, `${name}-${instance}`, slug(String(installation.displayName || ''))].filter(Boolean);
-};
 
 export const findNonMemberMentionNotices = async (
   podId: string,
@@ -41,7 +36,7 @@ export const findNonMemberMentionNotices = async (
   const handles = mentionedHandles(content);
   if (handles.length === 0) return [];
 
-  const [pod, users, installations] = await Promise.all([
+  const [pod, users, installations, profiles] = await Promise.all([
     Pod.findById(podId).select('members').lean(),
     // Usernames retain their original case at write time. Mention parsing
     // lowercases them, so use the same anchored case-insensitive match as
@@ -52,6 +47,7 @@ export const findNonMemberMentionNotices = async (
     // inspect the same active installation records rather than only names.
     AgentInstallation.find({ status: 'active' })
       .select('podId agentName instanceId displayName').lean(),
+    AgentProfile.find({}).select('podId agentName instanceId name').lean(),
   ]);
   if (!pod) return [];
 
@@ -63,10 +59,21 @@ export const findNonMemberMentionNotices = async (
     known.add(handle);
     if (members.has(String(user._id))) inPod.add(handle);
   }
+  const installationsByPod = new Map<string, Array<Record<string, unknown>>>();
   for (const installation of installations || []) {
-    for (const handle of agentHandles(installation)) {
+    const installationPodId = String(installation.podId);
+    const list = installationsByPod.get(installationPodId) || [];
+    list.push(installation);
+    installationsByPod.set(installationPodId, list);
+  }
+  for (const [installationPodId, podInstallations] of installationsByPod) {
+    const podProfiles = (profiles || []).filter(
+      (profile: { podId: unknown }) => String(profile.podId) === installationPodId,
+    );
+    const { map } = buildMentionMap(podInstallations, podProfiles);
+    for (const handle of map.keys()) {
       known.add(handle);
-      if (String(installation.podId) === String(podId)) inPod.add(handle);
+      if (installationPodId === String(podId)) inPod.add(handle);
     }
   }
 
