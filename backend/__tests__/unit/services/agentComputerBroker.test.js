@@ -157,8 +157,11 @@ describe('agent computer broker (fake Steel and CDP)', () => {
     expect(mutating.continue).toHaveBeenCalledTimes(1);
     await expect(broker.snapshot(OWNER, FIRST)).rejects.toThrow('person has control');
     await broker.humanClick(OWNER, FIRST, 20, 30, status.frameRevision);
-    await broker.humanType(OWNER, FIRST, 'entered by the person', status.frameRevision);
-    await broker.humanPress(OWNER, FIRST, 'Enter', status.frameRevision);
+    await expect(broker.humanType(OWNER, FIRST, 'stale', status.frameRevision)).rejects.toThrow('Stale computer frame');
+    const afterClick = await broker.takeoverStatus(OWNER, FIRST);
+    await broker.humanType(OWNER, FIRST, 'entered by the person', afterClick.frameRevision);
+    const afterType = await broker.takeoverStatus(OWNER, FIRST);
+    await broker.humanPress(OWNER, FIRST, 'Enter', afterType.frameRevision);
     expect(pages[0].mouse.click).toHaveBeenCalledWith(20, 30);
     expect(pages[0].keyboard.insertText).toHaveBeenCalledWith('entered by the person');
     await broker.handBack(OWNER, FIRST);

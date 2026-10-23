@@ -364,8 +364,8 @@ export class AgentComputerBroker {
 
   private async requireFreshFrame(userId: string, installationId: string, revision: string): Promise<void> {
     const state = await this.user(userId);
-    const current = state.revisions.get(installationId);
-    if (!current || revision !== `${state.epoch}:${current}`) {
+    const frame = state.frames.get(installationId);
+    if (!frame || revision !== frame.revision) {
       throw new Error('Stale computer frame. Refresh before acting.');
     }
   }
@@ -383,16 +383,18 @@ export class AgentComputerBroker {
   }
 
   async humanType(userId: string, installationId: string, text: string, revision: string): Promise<void> {
+    const page = await this.humanTab(userId, installationId);
     await this.requireFreshFrame(userId, installationId, revision);
     if (text.length > 10_000) throw new Error('Text is too long.');
-    await (await this.humanTab(userId, installationId)).keyboard.insertText(text);
+    await page.keyboard.insertText(text);
     (await this.user(userId)).frames.delete(installationId);
   }
 
   async humanPress(userId: string, installationId: string, key: string, revision: string): Promise<void> {
+    const page = await this.humanTab(userId, installationId);
     await this.requireFreshFrame(userId, installationId, revision);
     if (!HUMAN_KEYS.has(key)) throw new Error('Unsupported key.');
-    await (await this.humanTab(userId, installationId)).keyboard.press(key);
+    await page.keyboard.press(key);
     (await this.user(userId)).frames.delete(installationId);
   }
 }
