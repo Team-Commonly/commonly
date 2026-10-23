@@ -248,6 +248,18 @@ describe("V2Thread — a new pod's first task", () => {
     expect(sendSpy).not.toHaveBeenCalled();
   });
 
+  test('a failed Add to board shows its alert as a block before the transcript', async () => {
+    axios.post.mockRejectedValueOnce(new Error('task write failed'));
+    renderThread([nextSteps([ADD, BRING_OWN])]);
+
+    fireEvent.click(within(startsGroup()).getByRole('button', { name: 'Add to board' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Couldn’t add the task. Try again.');
+    expect(alert.parentElement).toHaveClass('v2-chat');
+    expect(alert.nextElementSibling).toHaveClass('v2-thread__transcript');
+  });
+
   test('only the pod creator sees Add to board', () => {
     renderThread([nextSteps([ADD, BRING_OWN])], jest.fn(), { pod: { ...OWN_POD, createdBy: 'u2' } });
     expect(within(startsGroup()).queryByRole('button', { name: 'Add to board' })).not.toBeInTheDocument();

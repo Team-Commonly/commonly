@@ -1761,8 +1761,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
 
         <V2CatchUpStrip podId={pod._id} />
 
+        {firstTaskError && <div className="v2-chat__error" role="alert">{firstTaskError}</div>}
         <div className="v2-thread__transcript">
-          {firstTaskError && <div className="v2-chat__error" role="alert">{firstTaskError}</div>}
           <V2ThreadMessages
             messages={messages}
             threadView={threadView}

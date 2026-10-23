@@ -118,7 +118,7 @@ export const proposeNewPodFirstTask = async ({
         kind: 'starts',
         starts: [
           {
-            id: 'add-first-task', label: zh ? '添加到任务板' : 'Add to board',
+            id: 'add-first-task', label: zh ? '添加到看板' : 'Add to board',
             action: 'add-first-task', title, ...(sourceRef ? { sourceRef } : {}),
           },
           {

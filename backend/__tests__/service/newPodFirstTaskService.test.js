@@ -106,7 +106,7 @@ test('repo with no issues still proposes one first task in zh-CN', async () => {
   mockFetchText.mockResolvedValue({ ok: true, text: '[]' });
   expect(await propose('https://github.com/acme/widget')).toBe(true);
   expect(posted().payload.starts[0].title).toBe('找出 acme/widget 的第一项改进');
-  expect(posted().payload.starts.map((start) => start.label)).toEqual(['添加到任务板', '接入自己的智能体']);
+  expect(posted().payload.starts.map((start) => start.label)).toEqual(['添加到看板', '接入自己的智能体']);
 });
 
 test('only the owner can atomically claim the prompt; no second proposal is posted', async () => {
