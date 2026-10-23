@@ -360,7 +360,8 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
             agentId: buildAgentProfileId(name, normalizedInstanceId),
             podId: { $in: writablePodIds },
           },
-          updates,
+          { $set: updates },
+          { runValidators: true },
         );
 
         if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
