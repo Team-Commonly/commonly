@@ -27,6 +27,7 @@ import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PERSONA_CARDS } from '../agents/personaCatalogData';
 import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
+import { hostedCapNotice } from './hostedCapNotice';
 import { readPodVisits } from '../lib/podRecency';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
@@ -470,10 +471,10 @@ const V2AgentBYO: React.FC = () => {
           ...(personaCard ? { description: personaCard.card } : {}),
         });
       } catch (installErr) {
-        const data = (installErr as { response?: { data?: { error?: string; code?: string; cap?: number } } })
+        const data = (installErr as { response?: { data?: { error?: string; code?: string; cap?: number; holders?: Array<{ agentName?: string }> } } })
           ?.response?.data;
         if (data?.code === 'hosted_cap_reached') {
-          setError(t('agentByo.errors.hostedCap', { cap: data.cap ?? hosting?.caps.agentsPerUser ?? 1 }));
+          setError(hostedCapNotice(t, data, hosting?.caps.agentsPerUser));
           return;
         }
         if (!/already installed/i.test(data?.error || '')) throw installErr;
