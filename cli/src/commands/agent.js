@@ -12,7 +12,7 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
-import { join, dirname, resolve as pathResolve } from 'path';
+import { join, dirname, basename, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
@@ -1643,6 +1643,7 @@ export const performRun = ({
       };
     }
     let result;
+    let skillMount = null;
     let commitAttribution = null;
     try {
       // The local CLI is a wrapper for a Commonly seat, so its Git commits
@@ -1667,6 +1668,12 @@ export const performRun = ({
         commitAttributionEnv: commitAttribution?.sandboxEnv || null,
         memoryLongTerm,
         environment: seatEnvironment,
+        onSkillsLinked: ({ mounted, conflicted }) => {
+          skillMount = {
+            mounted: mounted.map((source) => basename(source)),
+            conflicted: conflicted.map(({ path }) => basename(path)),
+          };
+        },
         // Runtime context the Claude/Codex adapters expose only to their
         // per-spawn MCP environment. Claude keeps ${COMMONLY_*} placeholders
         // literal on disk and lets its native MCP parser expand them, so the
@@ -1682,6 +1689,13 @@ export const performRun = ({
       try {
         commitAttribution?.cleanup();
       } finally {
+        if (skillMount) {
+          try {
+            await client.post(`/api/agents/runtime/pods/${eventPodId}/skill-load`, skillMount);
+          } catch (error) {
+            log(`skill load status could not be recorded: ${error.message}`);
+          }
+        }
         // Best-effort by construction: `close` logs and returns on a failed
         // revoke, so a turn that already produced an answer is not failed by
         // cleanup. The boot sweep collects anything left behind.

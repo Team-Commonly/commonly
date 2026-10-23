@@ -28,6 +28,30 @@
       "text": "正在检查你的访问权限…"
     }
   },
+  "agentSkills": {
+    "title": "技能",
+    "pod": "Pod",
+    "addSkill": "添加技能",
+    "closeCatalog": "关闭目录",
+    "loading": "正在加载技能…",
+    "empty": "此代理尚未安装技能。",
+    "noReport": "暂无运行加载报告",
+    "loaded": "上次运行已加载",
+    "conflicted": "上次运行未能加载",
+    "notLoaded": "上次运行未加载",
+    "reported": "上次运行报告 · {{date}}",
+    "find": "查找技能",
+    "search": "搜索目录",
+    "add": "添加",
+    "addNamed": "添加 {{name}}",
+    "remove": "移除",
+    "removeNamed": "移除 {{name}}",
+    "noMatches": "没有匹配的技能。",
+    "loadError": "无法加载技能。",
+    "catalogError": "无法加载技能目录。",
+    "addError": "无法添加此技能。",
+    "removeError": "无法移除此技能。"
+  },
   "settings": {
     "username": {
       "save": "保存用户名",

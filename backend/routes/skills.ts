@@ -15,6 +15,8 @@ const Gateway = require('../models/Gateway');
 // eslint-disable-next-line global-require
 const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
+const User = require('../models/User');
+// eslint-disable-next-line global-require
 const PodAssetService = require('../services/podAssetService');
 // eslint-disable-next-line global-require
 const SkillsCatalogService = require('../services/skillsCatalogService');
@@ -109,6 +111,25 @@ const ensurePodAccess = async (podId: string, userId: unknown) => {
   const isMember = pod.members?.some((m) => (m.userId?.toString() || m.toString()) === userIdStr);
   if (!isCreator && !isMember) { const e = new Error('Access denied') as PodError; e.code = 'POD_ACCESS_DENIED'; throw e; }
   return pod;
+};
+
+const ensureAgentSkillEditor = async (podId: string, agentName: string, instanceId: string, userId: unknown) => {
+  const installation = await AgentInstallation.findOne({
+    podId, agentName: agentName.toLowerCase(), instanceId, status: 'active',
+  }).select('installedBy').lean() as { installedBy?: { toString: () => string } } | null;
+  if (!installation) { const e = new Error('Agent not installed in this pod') as PodError; e.code = 'AGENT_NOT_FOUND'; throw e; }
+  if (installation.installedBy?.toString() === userId?.toString()) return;
+  const user = await User.findById(userId).select('role').lean() as { role?: string } | null;
+  if (user?.role === 'admin') return;
+  const e = new Error('Only the agent installer or an instance admin can change its skills') as PodError;
+  e.code = 'INSTALLER_ONLY';
+  throw e;
+};
+
+const skillWriteStatus = (error: PodError): number => {
+  if (error.code === 'INSTALLER_ONLY' || error.code === 'POD_ACCESS_DENIED') return 403;
+  if (error.code === 'AGENT_NOT_FOUND' || error.code === 'POD_NOT_FOUND') return 404;
+  return 500;
 };
 
 const ensureDefaultGateway = async (userId: unknown) => {
@@ -270,7 +291,16 @@ router.get('/pods/:podId/imported', auth, async (req: AuthReq, res: Res) => {
       description: (asset?.metadata as Record<string, unknown>)?.description || null,
       license: (asset?.metadata as Record<string, unknown>)?.license || null,
     }));
-    return res.json({ items });
+    const installation = scope === 'agent'
+      ? await AgentInstallation.findOne({ podId, agentName: agentName.toLowerCase(), instanceId, status: 'active' })
+        .select('installedBy skillLoad').lean() as { installedBy?: { toString: () => string }; skillLoad?: unknown } | null
+      : null;
+    if (scope === 'agent' && !installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
+    const user = scope === 'agent' ? await User.findById(userId).select('role').lean() as { role?: string } | null : null;
+    const canEdit = scope === 'agent' && Boolean(installation && (
+      installation.installedBy?.toString() === userId?.toString() || user?.role === 'admin'
+    ));
+    return res.json({ items, canEdit, skillLoad: installation?.skillLoad || null });
   } catch (error) {
     console.error('Error loading imported skills:', error);
     return res.status(500).json({ error: 'Failed to load imported skills' });
@@ -288,6 +318,7 @@ router.delete('/pods/:podId/imported', auth, async (req: AuthReq, res: Res) => {
     if (!name) return res.status(400).json({ error: 'name is required' });
     await ensurePodAccess(podId || '', userId);
     if (scope === 'agent' && (!agentName || !instanceId)) return res.status(400).json({ error: 'agentName and instanceId are required for agent scope.' });
+    if (scope === 'agent') await ensureAgentSkillEditor(podId || '', agentName, instanceId, userId);
     const skillKey = PodAssetService.buildScopedSkillKey({ name, scope, agentName: scope === 'agent' ? agentName : undefined, instanceId: scope === 'agent' ? instanceId : undefined });
     const asset = await PodAsset.findOneAndUpdate({ podId, type: 'skill', status: 'active', 'metadata.skillKey': skillKey }, { $set: { status: 'archived' } }, { new: true }) as { _id: unknown } | null;
     if (!asset) return res.status(404).json({ error: 'Skill not found' });
@@ -295,7 +326,7 @@ router.delete('/pods/:podId/imported', auth, async (req: AuthReq, res: Res) => {
     return res.json({ success: true, assetId: asset._id, sync });
   } catch (error) {
     console.error('Error uninstalling skill:', error);
-    return res.status(500).json({ error: 'Failed to uninstall skill' });
+    return res.status(skillWriteStatus(error as PodError)).json({ error: (error as Error).message });
   }
 });
 
@@ -305,6 +336,10 @@ router.post('/import', auth, async (req: AuthReq, res: Res) => {
     const { podId, name, content, tags = [], sourceUrl, license, scope = 'pod', agentName, instanceId, description } = (req.body || {}) as { podId?: string; name?: string; content?: string; tags?: string[]; sourceUrl?: string; license?: string; scope?: string; agentName?: string; instanceId?: string; description?: string };
     if (!podId || !name) return res.status(400).json({ error: 'podId and name are required' });
     await ensurePodAccess(podId, userId);
+    if (scope === 'agent') {
+      if (!agentName || !instanceId) return res.status(400).json({ error: 'agentName and instanceId are required for agent scope.' });
+      await ensureAgentSkillEditor(podId, agentName, instanceId, userId);
+    }
     let skillContent = content;
     let resolvedSourceUrl = sourceUrl;
     let extraFiles: unknown[] = [];
@@ -340,7 +375,7 @@ router.post('/import', auth, async (req: AuthReq, res: Res) => {
       return sourceUnavailableReply(res, error as { missing: boolean; message: string }, 'import');
     }
     console.error('Error importing skill:', error);
-    return res.status(e.code === 'POD_ACCESS_DENIED' ? 403 : 500).json({ error: e.message || 'Failed to import skill' });
+    return res.status(skillWriteStatus(e)).json({ error: e.message || 'Failed to import skill' });
   }
 });
 

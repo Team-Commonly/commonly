@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const Pod = require('../../models/Pod');
 const PodAsset = require('../../models/PodAsset');
 const User = require('../../models/User');
+const { AgentInstallation } = require('../../models/AgentRegistry');
 const skillsRoutes = require('../../routes/skills');
 const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
@@ -80,5 +81,28 @@ describe('Skills Catalog Routes', () => {
     });
     expect(asset).toBeTruthy();
     expect(asset.metadata.license).toBe('MIT');
+  });
+
+  test('only the installer or instance admin can add and remove agent skills', async () => {
+    const member = await User.create({ username: 'skillmember', email: 'skillmember@example.com', password: 'password123' });
+    await Pod.updateOne({ _id: podId }, { $push: { members: member._id } });
+    const memberToken = jwt.sign({ id: member._id.toString() }, JWT_SECRET);
+    await AgentInstallation.create({ agentName: 'scout', instanceId: 'default', podId, version: '1.0.0', installedBy: userId });
+    const body = { podId, name: 'Review', content: '# Review', scope: 'agent', agentName: 'scout', instanceId: 'default' };
+
+    const deniedAdd = await request(app).post('/api/skills/import').set('Authorization', `Bearer ${memberToken}`).send(body);
+    expect(deniedAdd.status).toBe(403);
+    expect(await PodAsset.countDocuments({ podId, type: 'skill', 'metadata.skillName': 'Review' })).toBe(0);
+
+    const added = await request(app).post('/api/skills/import').set('Authorization', `Bearer ${authToken}`).send(body);
+    expect(added.status).toBe(201);
+    const url = `/api/skills/pods/${podId}/imported?scope=agent&agentName=scout&instanceId=default&name=Review`;
+    const deniedRemove = await request(app).delete(url).set('Authorization', `Bearer ${memberToken}`);
+    expect(deniedRemove.status).toBe(403);
+    expect(await PodAsset.countDocuments({ podId, status: 'active', 'metadata.skillName': 'Review' })).toBe(1);
+
+    const removed = await request(app).delete(url).set('Authorization', `Bearer ${authToken}`);
+    expect(removed.status).toBe(200);
+    expect(await PodAsset.countDocuments({ podId, status: 'active', 'metadata.skillName': 'Review' })).toBe(0);
   });
 });

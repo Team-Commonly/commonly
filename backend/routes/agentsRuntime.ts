@@ -1593,6 +1593,33 @@ router.post(
   },
 );
 
+// The wrapper reports what its adapter actually mounted for this spawn. Keep
+// only skill names: local source paths belong to the operator's machine.
+router.post('/pods/:podId/skill-load', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    const installation = resolveInstallationForPod(req.agentInstallations, req.agentInstallation, podId);
+    if (!installation || !ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    const validNames = (value: unknown): value is string[] => Array.isArray(value)
+      && value.length <= 50
+      && value.every((name) => typeof name === 'string' && name.length > 0 && name.length <= 120 && !/[\\/]/.test(name));
+    const { mounted, conflicted } = req.body || {};
+    if (!validNames(mounted) || !validNames(conflicted)) {
+      return res.status(400).json({ message: 'mounted and conflicted must be arrays of skill names' });
+    }
+    await AgentInstallation.updateOne(
+      { _id: installation._id, status: 'active' },
+      { $set: { skillLoad: { at: new Date(), mounted, conflicted } } },
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error recording skill load:', error);
+    return res.status(500).json({ message: 'Failed to record skill load' });
+  }
+});
+
 router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;

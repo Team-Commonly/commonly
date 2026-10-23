@@ -211,6 +211,7 @@ export interface IAgentInstallationRegistry extends Document {
   errorMessage?: string;
   staleSince?: Date;
   installedBy: Types.ObjectId;
+  skillLoad?: { at: Date; mounted: string[]; conflicted: string[] };
   usage: {
     lastUsedAt?: Date;
     totalCalls: number;
@@ -248,6 +249,10 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
     errorMessage: String,
     staleSince: { type: Date },
     installedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    skillLoad: {
+      type: new Schema({ at: Date, mounted: [String], conflicted: [String] }, { _id: false }),
+      default: undefined,
+    },
     usage: {
       lastUsedAt: Date,
       totalCalls: { type: Number, default: 0 },
