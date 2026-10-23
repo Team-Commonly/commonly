@@ -15,13 +15,35 @@ const reasonByMessage: Record<string, string> = {
   'machineId required (null to withdraw)': 'machine_id_required',
 };
 
-const logValue = (value: unknown): string | null => {
+const runtimeTypes = new Set([
+  'webhook', 'wrapper', 'hosted', 'native', 'moltbot', 'internal',
+  'managed-agents', 'claude-code', 'codex',
+]);
+
+const credentialPrefix = /^(?:cm[_-]agent[_-]|gh[opurs][_-]|github[_-]pat[_-]|sk-|xox[abprs]-|bearer|eyj)/i;
+
+const logIdentity = (value: unknown, allowScopedName = false): string | null => {
   if (typeof value !== 'string') return null;
-  return value.trim().replace(/[^a-zA-Z0-9@/_-]/g, '').slice(0, 120) || null;
+  const name = value.trim().toLowerCase();
+  const valid = allowScopedName
+    ? /^(@[a-z0-9-]+\/)?[a-z0-9-]+$/.test(name)
+    : /^[a-z0-9-]+$/.test(name);
+  // Refused requests can supply credentials in place of names. Never "clean"
+  // an invalid value into something that resembles a safe identity.
+  if (!valid || name.length > 64 || credentialPrefix.test(name)) return '[redacted]';
+  return name || null;
+};
+
+const logRuntimeType = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const runtimeType = value.trim().toLowerCase();
+  return runtimeTypes.has(runtimeType) ? runtimeType : 'unknown';
 };
 
 const reasonCode = (body: RefusalBody, status: number): string => {
-  if (typeof body.code === 'string' && /^[a-z][a-z0-9_]{0,79}$/.test(body.code)) return body.code;
+  if (typeof body.code === 'string'
+    && /^[a-z][a-z0-9_]{0,79}$/.test(body.code)
+    && !credentialPrefix.test(body.code)) return body.code;
   const message = body.error || body.message || body.msg;
   return typeof message === 'string' ? reasonByMessage[message] || `http_${status}` : `http_${status}`;
 };
@@ -39,9 +61,9 @@ export const logAgentInstallRefusal = (route: string, defaultRuntimeType?: strin
       const runtime = requestBody.config?.runtime?.runtimeType || requestBody.runtimeType || defaultRuntimeType;
       console.warn('[agent-install-refused]', JSON.stringify({
         route,
-        agentName: logValue(requestBody.agentName),
-        instanceId: logValue(res.locals.agentInstallInstanceId || requestBody.instanceId) || 'default',
-        runtimeType: logValue(runtime),
+        agentName: logIdentity(requestBody.agentName, true),
+        instanceId: logIdentity(res.locals.agentInstallInstanceId || requestBody.instanceId) || 'default',
+        runtimeType: logRuntimeType(runtime),
         reason: reasonCode(body && typeof body === 'object' ? body : {}, res.statusCode),
         userId: req.user?.id == null ? null : String(req.user.id),
       }));

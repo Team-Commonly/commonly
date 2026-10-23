@@ -195,7 +195,7 @@ describe('registry install — built-in names are reserved for self-serve instal
         route: '/api/registry/install',
         agentName: 'new-agent',
         instanceId: 'default',
-        runtimeType: 'unsupported',
+        runtimeType: 'unknown',
         reason: 'agent_not_found_in_registry',
         userId: 'user-1',
       });
