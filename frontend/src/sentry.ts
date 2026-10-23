@@ -49,6 +49,9 @@ if (sentryDsn) {
 
       if (event.request) {
         scrubbedEvent.request = { ...event.request };
+        if (typeof scrubbedEvent.request.url === 'string') {
+          scrubbedEvent.request.url = scrubInviteFromUrl(scrubbedEvent.request.url);
+        }
         delete scrubbedEvent.request.headers;
         delete scrubbedEvent.request.cookies;
         delete scrubbedEvent.request.data;
