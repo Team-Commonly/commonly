@@ -10,6 +10,7 @@ export const GROUPING_WINDOW_MS = 3 * 60 * 1000;
 // Kept loose so both the live V2Message and test literals satisfy it.
 export interface GroupableMessage {
   user_id?: string | null;
+  author_kind?: 'kernel' | null;
   user?: { username?: string | null } | null;
   created_at?: string;
   replyTo?: unknown;
@@ -23,6 +24,7 @@ export const isGroupedWithPrevious = (
 ): boolean => {
   if (!prev) return false;
   if (!m.user_id || m.user_id !== prev.user_id) return false;
+  if ((m.author_kind ?? null) !== (prev.author_kind ?? null)) return false;
   if ((m.user?.username || '') !== (prev.user?.username || '')) return false;
   if (m.replyTo || m.reply_content) return false;
   if (m.payload?.kind || prev.payload?.kind) return false;
