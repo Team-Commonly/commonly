@@ -175,6 +175,8 @@ jobs:
             <(printf '%s\n' "$NEEDS_JSON" | jq -r 'keys[]' | sort)
       - name: Verify every check passed
         run: |
+          # Suite jobs run unconditionally; a skipped result is a failed gate.
+          # Revisit this predicate if a later PR adds path-based job skipping.
           echo "$NEEDS_JSON" | jq -e '
             [.[].result] | all(. == "success")
           '
@@ -261,6 +263,13 @@ jobs:
         with:
           version: v3.14.0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --ignore-scripts --include=dev
+
       - name: Install kubeconform
         run: |
           curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" -o kc.tgz
@@ -287,6 +296,40 @@ jobs:
             --schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRDS_CATALOG_SHA}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
             --schema-location default \
             /tmp/dev-rendered.yaml
+
+      # The dev render has kubeconform coverage, but staging is otherwise first
+      # rendered at deploy time. Parse both values combinations before merge.
+      - name: Strictly parse dev and staging chart renders
+        run: |
+          set -o pipefail
+          for environment in dev staging; do
+            error_file="/tmp/${environment}-helm.err"
+            if ! helm template "commonly-${environment}" k8s/helm/commonly \
+              -f k8s/helm/commonly/values.yaml \
+              -f "k8s/helm/commonly/values-${environment}.yaml" \
+              2>"$error_file" | node -e '
+                const yaml = require("js-yaml");
+                let rendered = "";
+                process.stdin.setEncoding("utf8");
+                process.stdin.on("data", chunk => { rendered += chunk; });
+                process.stdin.on("end", () => {
+                  try {
+                    let objects = 0;
+                    yaml.loadAll(rendered, object => { if (object !== undefined) objects++; });
+                    if (objects === 0) throw new Error("Helm rendered no objects");
+                    console.log(`Parsed ${objects} objects`);
+                  } catch (error) {
+                    console.error(error.reason || error.message);
+                    if (error.mark?.snippet) console.error(error.mark.snippet);
+                    process.exitCode = 1;
+                  }
+                });
+              '; then
+              cat "$error_file"
+              exit 1
+            fi
+            cat "$error_file"
+          done
 
       - name: Validate alerting config (offline)
         # k8s/monitoring/ is applied by hand with scripts/monitoring/apply-alerting.py
