@@ -51,7 +51,7 @@ describe('derivation on write', () => {
   it('derives from the reply edge and nothing else', () => {
     const insert = SRC.slice(SRC.indexOf('INSERT INTO messages'), SRC.indexOf('RETURNING *'));
     expect(insert).toContain('thread_root_id');
-    expect(insert).toMatch(/WHERE parent\.id = \$5/); // $5 is replyToMessageId
+    expect(insert).toMatch(/WHERE parent\.id = \$6/); // $6 is replyToMessageId
   });
 
   it('a message with no reply edge gets a NULL root, not its own id', () => {

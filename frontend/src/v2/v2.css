@@ -3122,7 +3122,7 @@ body.modern-ui.v2-canvas {
   height: 16px;
   padding: 0 5px;
   border-radius: 3px;
-  background: var(--v2-accent-soft);
+  background: var(--v2-surface-hover);
   color: var(--v2-accent-text);
   font: 700 11px/16px var(--v2-font-mono);
   letter-spacing: 0.02em;
