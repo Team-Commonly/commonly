@@ -211,8 +211,11 @@ exports.getOAuthProviders = (_req: any, res: any) => {
 };
 
 // GET /api/auth/oauth/:provider/start?next=/v2&invite=CODE
+// POST /api/auth/oauth/:provider/start (form body: next, invite, ref): the register
+// page's form, which keeps an invite code out of the URL and so out of logs.
 exports.startOAuth = async (req: any, res: any) => {
   try {
+    const input = req.method === 'POST' ? (req.body || {}) : req.query;
     const provider = String(req.params.provider || '').toLowerCase();
     if (!isProviderConfigured(provider)) {
       return res.status(404).json({ error: 'Unknown or unconfigured OAuth provider.' });
@@ -222,9 +225,9 @@ exports.startOAuth = async (req: any, res: any) => {
     await OAuthLoginState.create({
       provider,
       state,
-      invitationCode: String(req.query.invite || '').trim(),
-      next: safeNextPath(req.query.next),
-      signupRef: cleanSignupRef(req.query.ref) || '',
+      invitationCode: String(input.invite || '').trim(),
+      next: safeNextPath(input.next),
+      signupRef: cleanSignupRef(input.ref) || '',
       expiresAt: new Date(Date.now() + STATE_TTL_MS),
     });
 

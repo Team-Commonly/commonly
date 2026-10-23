@@ -46,21 +46,54 @@ afterEach(() => {
 });
 
 describe('V2OAuthButtons', () => {
-  test('renders a button per configured provider with invite carried through', async () => {
+  test('renders a button per configured provider; an invite goes by POST, never in the URL', async () => {
     axios.get.mockResolvedValueOnce({
       data: { providers: [{ id: 'github', label: 'GitHub' }, { id: 'google', label: 'Google' }] },
+    });
+    const submitted = [];
+    const submit = jest.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(function record() {
+      submitted.push(this);
     });
 
     render(
       <MemoryRouter>
-        <V2OAuthButtons invite="CODE1" />
+        <V2OAuthButtons invite="CODE1" next="/v2/pods/abc" />
       </MemoryRouter>,
     );
 
     const github = await screen.findByRole('link', { name: /continue with github/i });
     expect(github).toHaveAttribute('href', expect.stringContaining('/api/auth/oauth/github/start'));
-    expect(github).toHaveAttribute('href', expect.stringContaining('invite=CODE1'));
+    expect(github.getAttribute('href')).not.toContain('CODE1');
     expect(screen.getByRole('link', { name: /continue with google/i })).toBeInTheDocument();
+
+    act(() => { github.click(); });
+
+    expect(submitted).toHaveLength(1);
+    const form = submitted[0];
+    expect(form.method).toBe('post');
+    expect(form.action).toContain('/api/auth/oauth/github/start');
+    expect(form.action).not.toContain('CODE1');
+    const fields = Object.fromEntries(Array.from(form.elements).map((el) => [el.name, el.value]));
+    expect(fields).toEqual({ next: '/v2/pods/abc', invite: 'CODE1' });
+    submit.mockRestore();
+  });
+
+  test('without an invite the button is a plain link and submits no form', async () => {
+    axios.get.mockResolvedValueOnce({ data: { providers: [{ id: 'github', label: 'GitHub' }] } });
+    const submit = jest.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {});
+
+    render(
+      <MemoryRouter>
+        <V2OAuthButtons />
+      </MemoryRouter>,
+    );
+
+    const github = await screen.findByRole('link', { name: /continue with github/i });
+    // jsdom can't follow the link; stop the navigation so only the form question is tested.
+    github.addEventListener('click', (e) => e.preventDefault());
+    act(() => { github.click(); });
+    expect(submit).not.toHaveBeenCalled();
+    submit.mockRestore();
   });
 
   test('carries the first-touch ref into the provider start', async () => {

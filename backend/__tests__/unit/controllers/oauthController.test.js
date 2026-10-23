@@ -111,6 +111,27 @@ describe('OAuth Controller', () => {
       expect(state.invitationCode).toBe('CODE1');
     });
 
+    it('a form POST start reads next, invite and ref from the body, so the code stays out of the URL', async () => {
+      const res = mockRes();
+      await oauthController.startOAuth({
+        method: 'POST',
+        params: { provider: 'github' },
+        // A query invite on a POST is ignored: only the body counts.
+        query: { invite: 'FROM-QUERY' },
+        body: { next: '/v2/pods/abc', invite: 'CODE2', ref: 'x' },
+        protocol: 'https',
+        get: () => 'api.test.local',
+      }, res);
+
+      expect(res.redirect).toHaveBeenCalledTimes(1);
+      const url = new URL(res.redirect.mock.calls[0][0]);
+      expect(url.toString()).not.toContain('CODE2');
+      const state = await OAuthLoginState.findOne({ state: url.searchParams.get('state') });
+      expect(state.invitationCode).toBe('CODE2');
+      expect(state.next).toBe('/v2/pods/abc');
+      expect(state.signupRef).toBe('x');
+    });
+
     it('serves consecutive starts — pending rows must not collide on the exchangeCode index', async () => {
       // Regression: exchangeCode had `default: null` + a sparse unique index.
       // Sparse skips MISSING fields but still indexes explicit nulls, so the

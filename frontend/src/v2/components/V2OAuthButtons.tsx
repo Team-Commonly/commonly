@@ -84,16 +84,39 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
 
   if (!providers.length) return null;
 
-  const startUrl = (id: string) => {
+  const startPath = (id: string) => `${getApiBaseUrl()}/api/auth/oauth/${id}/start`;
+  const startParams = () => {
     const params = new URLSearchParams();
     if (next) params.set('next', next);
-    if (invite) params.set('invite', invite);
     // A new account made through the provider keeps the first-touch ref too;
     // signing in to an existing account ignores it (oauthController).
     const ref = readFirstTouchRef();
     if (ref) params.set('ref', ref);
-    const qs = params.toString();
-    return `${getApiBaseUrl()}/api/auth/oauth/${id}/start${qs ? `?${qs}` : ''}`;
+    return params;
+  };
+  const startUrl = (id: string) => {
+    const qs = startParams().toString();
+    return `${startPath(id)}${qs ? `?${qs}` : ''}`;
+  };
+  // With an invite code, start the same flow as a form POST so the code rides
+  // in the request body and never appears in a URL (history, request logs).
+  const startWithInvite = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    if (!invite) return;
+    e.preventDefault();
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = startPath(id);
+    const params = startParams();
+    params.set('invite', invite);
+    params.forEach((value, name) => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
   };
 
   return (
@@ -101,7 +124,12 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
       <div className="v2-login__or"><span>{t('auth.oauth.or')}</span></div>
       <div className="v2-login__oauth">
         {providers.map((p) => (
-          <a key={p.id} className="v2-login__oauth-btn" href={startUrl(p.id)}>
+          <a
+            key={p.id}
+            className="v2-login__oauth-btn"
+            href={startUrl(p.id)}
+            onClick={(e) => startWithInvite(e, p.id)}
+          >
             {PROVIDER_ICONS[p.id]}
             {t('auth.oauth.continueWith', { provider: p.label })}
           </a>

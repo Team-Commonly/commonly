@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams, Navigate, Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import {
+  useNavigate, useSearchParams, useLocation, Navigate, Link,
+} from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import V2OAuthButtons from './V2OAuthButtons';
 import V2AuthBrand from './V2AuthBrand';
@@ -7,6 +9,9 @@ import { Trans, useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { safeNextPath } from '../utils/safeNextPath';
 import { readFirstTouchRef } from '../utils/firstTouch';
+import {
+  readInviteFromUrl, searchWithoutInvite, rememberInvite, recallInvite, forgetInvite,
+} from '../utils/pendingInvite';
 
 // v2-native sign-up. Pairs with V2Login (reuses the .v2-login styles) so the
 // auth surfaces match after v2 became the default. Mirrors the legacy
@@ -34,7 +39,12 @@ const V2Register: React.FC = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [invitationCode, setInvitationCode] = useState(searchParams.get('invite') || '');
+  const location = useLocation();
+  const inviteInUrl = readInviteFromUrl(location.search, location.hash);
+  const [invitationCode, setInvitationCode] = useState(() => inviteInUrl || recallInvite());
+  // Whether the visitor arrived holding a code, fixed at mount: clearing the
+  // field while typing must not bounce them to the invite-required page.
+  const [arrivedWithInvite] = useState(() => Boolean(inviteInUrl || recallInvite()));
   // Deep-link context (e.g. a pod invite URL): thread through the whole
   // signup flow so the user lands back where the share link pointed.
   // Through safeNextPath like login: a raw "starts with /" check let
@@ -55,9 +65,17 @@ const V2Register: React.FC = () => {
     return () => { active = false; };
   }, []);
 
-  const hasInviteFromUrl = useMemo(() => Boolean(searchParams.get('invite')), [searchParams]);
+  // Take the code out of the address bar once it's in state (see pendingInvite).
+  useEffect(() => {
+    if (!inviteInUrl) return;
+    rememberInvite(inviteInUrl);
+    navigate(
+      { pathname: location.pathname, search: searchWithoutInvite(location.search), hash: '' },
+      { replace: true },
+    );
+  }, [inviteInUrl, location.pathname, location.search, navigate]);
 
-  if (policy.loaded && policy.inviteOnly && !hasInviteFromUrl) {
+  if (policy.loaded && policy.inviteOnly && !arrivedWithInvite) {
     return <Navigate to="/v2/register/invite-required" replace />;
   }
 
@@ -76,6 +94,7 @@ const V2Register: React.FC = () => {
       });
       const data = res.data as { message?: string };
       const message = data?.message || t('auth.register.success.ready');
+      forgetInvite();
 
       // Registration succeeds before a session exists. Sign in immediately
       // with the credentials already supplied so a new user reaches the
