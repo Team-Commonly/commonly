@@ -69,8 +69,11 @@ only in their authenticated `type` request; it is not sent to an agent model,
 tool argument, or AgentRun. The person performs the final send in this UI.
 Each click, type, or press consumes its frame revision before the browser action;
 the UI fetches status and frame again before sending another action.
-Hand-back aborts pending writes and replaces the tab at its allowed origin
-before agent reads resume, removing human-entered values and queued page timers.
+Hand-back aborts pending writes, clears non-cookie storage on every allowed
+origin, and replaces the tab at its allowed origin before agent reads resume.
+This removes values a site copied into localStorage or IndexedDB as well as
+human-entered DOM values and queued page timers. Sites whose login depends on
+localStorage may require the person to log in again; the staging walk checks it.
 
 The broker does not use Steel's unauthenticated live-view URL. Forge's
 takeover UI calls the PNG and input bridge above. A full live browser walk is

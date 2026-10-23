@@ -388,6 +388,21 @@ export class AgentComputerBroker {
     const current = new URL(old.url());
     const landing = current.protocol === 'https:' && this.config.allowedHosts.has(current.hostname.toLowerCase())
       ? `${current.origin}/` : 'about:blank';
+    // A fresh tab alone does not remove an OTP that a site copied into
+    // localStorage and restores on load. Erase non-cookie origin storage for
+    // every host this trial can read before the agent receives the new tab.
+    // Cookies remain so ordinary logged-in sessions can survive hand-back.
+    const cdp = await state.context.newCDPSession(old);
+    try {
+      for (const host of this.config.allowedHosts) {
+        await cdp.send('Storage.clearDataForOrigin', {
+          origin: `https://${host}`,
+          storageTypes: 'local_storage,indexeddb,cache_storage,service_workers,websql',
+        });
+      }
+    } finally {
+      await cdp.detach();
+    }
     // Replacing the page destroys human-entered passwords/OTPs and all timers
     // queued by an earlier agent click before the agent can read again.
     await old.close();

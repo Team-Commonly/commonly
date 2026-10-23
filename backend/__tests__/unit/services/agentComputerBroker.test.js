@@ -48,13 +48,17 @@ const fakePage = () => {
 
 const setup = (status = 'absent') => {
   const pages = [];
+  const cdpCommands = [];
   const context = { route: jest.fn(), newPage: jest.fn(async () => {
     const page = fakePage();
     pages.push(page);
     return page;
   }), pages: () => pages.slice(0, 2),
   newCDPSession: jest.fn(async (page) => ({
-    send: jest.fn(async () => ({ targetInfo: { targetId: page.targetId } })),
+    send: jest.fn(async (command, args) => {
+      cdpCommands.push({ command, args });
+      return { targetInfo: { targetId: page.targetId } };
+    }),
     detach: jest.fn(),
   })) };
   const browser = { contexts: () => [context], on: jest.fn() };
@@ -92,7 +96,7 @@ const setup = (status = 'absent') => {
   };
   return {
     broker: new AgentComputerBroker(config, request, connect, wake, takeoverState),
-    pages, context, request, connect, wake, takeoverState, config,
+    pages, context, request, connect, wake, takeoverState, config, cdpCommands,
   };
 };
 
@@ -154,7 +158,7 @@ describe('agent computer broker (fake Steel and CDP)', () => {
   });
 
   test('login fields require takeover; takeover blocks agent actions until hand-back', async () => {
-    const { broker, pages, context, takeoverState } = setup();
+    const { broker, pages, context, takeoverState, cdpCommands } = setup();
     await broker.snapshot(OWNER, FIRST);
     await expect(broker.type(OWNER, FIRST, 'password', 'secret')).rejects.toThrow('require the person');
     expect(pages[0]._fill).not.toHaveBeenCalled();
@@ -186,6 +190,13 @@ describe('agent computer broker (fake Steel and CDP)', () => {
     await broker.decideWrite(OWNER, FIRST, pending[0].id, true);
     expect(mutating.fallback).toHaveBeenCalledTimes(1);
     await broker.handBack(OWNER, FIRST);
+    expect(cdpCommands).toContainEqual({
+      command: 'Storage.clearDataForOrigin',
+      args: {
+        origin: 'https://www.linkedin.com',
+        storageTypes: 'local_storage,indexeddb,cache_storage,service_workers,websql',
+      },
+    });
     expect(takeoverState.set).toHaveBeenCalledWith(OWNER, FIRST, false);
     await intercept(mutating);
     expect(mutating.abort).toHaveBeenCalledTimes(2);
