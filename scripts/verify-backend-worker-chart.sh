@@ -27,18 +27,21 @@ for lane in default dev staging; do
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.replicas' "$on")" = 1
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.replicas' "$on")" = 1
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.replicas' "$paused")" = 0
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.replicas' "$paused")" = 1
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$paused")" = 0
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$paused")" = 1
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.strategy.type' "$on")" = Recreate
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$off")" = ""
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$on")" = 0
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$on")" = 1
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.selector.matchLabels.app' "$on")" = backend-worker
   test "$("$yq_bin" -N 'select(.kind == "Service" and .metadata.name == "backend") | .spec.selector.app' "$on")" = backend
+  test "$("$yq_bin" -N 'select((.kind == "Service" or .kind == "Ingress") and .metadata.name == "backend-worker") | .kind' "$on")" = ""
 
   # With the worker enabled, no existing resource changes except the web
   # container's RUN_WORKER=0 env. The worker's env otherwise matches web.
   "$yq_bin" -N '.' "$off" > "$tmp_dir/$lane-normalized-off.yaml"
-  "$yq_bin" -N 'select(.metadata.name != "backend-worker") | del(.spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER"))' "$on" > "$tmp_dir/$lane-normalized-on.yaml"
+  "$yq_bin" -N 'select(.kind != "Deployment" or .metadata.name != "backend-worker") | del(.spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER"))' "$on" > "$tmp_dir/$lane-normalized-on.yaml"
   diff -u "$tmp_dir/$lane-normalized-off.yaml" "$tmp_dir/$lane-normalized-on.yaml"
   "$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env | map(select(.name != "RUN_WORKER"))' "$on" > "$tmp_dir/$lane-web-env.yaml"
   "$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env | map(select(.name != "RUN_WORKER"))' "$on" > "$tmp_dir/$lane-worker-env.yaml"
