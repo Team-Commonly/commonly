@@ -6,7 +6,8 @@
  * backend's byte-for-byte render — the env block has blank lines nindent would
  * re-indent). A "KEEP IN SYNC" banner alone drifts (recorded instances across
  * the chart), so this pins the contract: the two Deployments must declare the
- * SAME env entries — the same (name, source) tuples, where source is a
+ * SAME env entries except RUN_WORKER, which controls the serving process and
+ * is not read by the sleeping ops-runner — the same (name, source) tuples, where source is a
  * secretKeyRef name+key, a configMapKeyRef name+key, or a literal value. If
  * backend gains/loses an env var, or changes a var's source, and ops-runner
  * isn't updated to match, this fails.
@@ -93,7 +94,13 @@ if (typeof describe === 'function') {
     // ops-runner the same number of times, and vice versa. toEqual on the
     // sorted arrays reports exactly which env entry drifted.
     test('ops-runner declares the same env (name + source) tuples as backend', () => {
-      expect([...opsTuples].sort()).toEqual([...backendTuples].sort());
+      const withoutWorkerGate = (tuple) => !tuple.startsWith('RUN_WORKER\t');
+      expect([...opsTuples].filter(withoutWorkerGate).sort())
+        .toEqual([...backendTuples].filter(withoutWorkerGate).sort());
+      expect(backendTuples.filter((tuple) => !withoutWorkerGate(tuple))).toEqual([
+        'RUN_WORKER\tvalue:"1"',
+        'RUN_WORKER\tvalue:"0"',
+      ]);
     });
   });
 }

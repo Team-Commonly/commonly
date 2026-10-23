@@ -60,7 +60,7 @@ spec:
           mountPath: /catalog
       {{- end }}
       containers:
-      - name: {{ if .worker }}backend-worker{{ else }}backend{{ end }}
+      - name: backend
         image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
         imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
         ports:
