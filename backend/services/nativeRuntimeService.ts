@@ -552,16 +552,19 @@ const IN_POD_NATIVE_TOOLS = new Set(['commonly_read_context', 'commonly_post_mes
 // set because the address it may open is one the turn was given
 // (webAddressProvenance), so it cannot carry anything the turn holds.
 const WEB_LOOKUP_TOOLS: ReadonlySet<string> = new Set(['commonly_web_search', 'commonly_fetch_url']);
-// Computer reads carry the same third-party text as a web page. Keep only
-// same-tab inspection and drafting actions after one returns: navigation to a
-// model-chosen address remains closed, while actual writes still require the
-// person's takeover and explicit per-request decision in the broker.
+// Computer reads carry third-party text too, but they must not make the
+// ordinary web-tainted allowlist broader: a web search must never unlock this
+// person's browser, and computer text must never become a search query.
+// Same-tab drafting remains available after a computer read; navigation to a
+// model-chosen address stays closed. Writes require a human decision.
 const COMPUTER_AFTER_READ_TOOLS: ReadonlySet<string> = new Set([
   'computer_snapshot', 'computer_screenshot', 'computer_click', 'computer_type', 'computer_request_takeover',
 ]);
-const WEB_TAINTED_TOOLS: ReadonlySet<string> = new Set([
-  ...IN_POD_NATIVE_TOOLS, ...WEB_LOOKUP_TOOLS, ...COMPUTER_AFTER_READ_TOOLS,
-]);
+const WEB_TAINTED_TOOLS: ReadonlySet<string> = new Set([...IN_POD_NATIVE_TOOLS, ...WEB_LOOKUP_TOOLS]);
+const COMPUTER_TAINTED_TOOLS: ReadonlySet<string> = new Set([...IN_POD_NATIVE_TOOLS, ...COMPUTER_AFTER_READ_TOOLS]);
+const allowedAfterTaint = (name: string, computerReadSeen: boolean): boolean => (
+  (computerReadSeen ? COMPUTER_TAINTED_TOOLS : WEB_TAINTED_TOOLS).has(name)
+);
 const MAX_WEB_SEARCHES_PER_TURN = 3;
 // Load-bearing beyond cost: a page can offer many addresses, and which one a
 // steered model opens leaks about log2(N) bits a fetch (webAddressProvenance).
@@ -594,7 +597,8 @@ const POSTING_NATIVE_TOOLS: ReadonlySet<string> = new Set([
 export const toolsForConfig = (
   cfg: { tools?: unknown } | null | undefined,
   inPodOnly = false,
-  { webTainted = false, podBridged = false }: { webTainted?: boolean; podBridged?: boolean } = {},
+  { webTainted = false, computerReadSeen = false, podBridged = false }:
+  { webTainted?: boolean; computerReadSeen?: boolean; podBridged?: boolean } = {},
 ): readonly (typeof TOOLS)[number][] => {
   const declared = Array.isArray(cfg?.tools) ? (cfg?.tools as string[]) : null;
   return TOOLS.filter((t) => (declared
@@ -602,7 +606,7 @@ export const toolsForConfig = (
     : !OPT_IN_TOOLS.has(t.function.name))
     && toolAvailable(t.function.name)
     && (!inPodOnly || IN_POD_NATIVE_TOOLS.has(t.function.name))
-    && (!webTainted || WEB_TAINTED_TOOLS.has(t.function.name))
+    && (!webTainted || allowedAfterTaint(t.function.name, computerReadSeen))
     && (!podBridged || !WEB_LOOKUP_TOOLS.has(t.function.name)));
 };
 
@@ -622,6 +626,8 @@ interface DispatchContext {
   sandbox?: TurnSandbox;
   /** Set when a web search has returned in this turn (TASK-267a). */
   webTainted?: boolean;
+  /** A computer read returned this turn; do not offer search/fetch afterward. */
+  computerReadSeen?: boolean;
   /** A granted tool has returned in this turn; affects outbound posts only. */
   brokerCallSeen?: boolean;
   /** Whether the pod is bridged to an external chat, read just before dispatch. */
@@ -717,7 +723,7 @@ async function dispatchTool(
       error: 'outsider_writable_grant_tool_denied',
     };
   }
-  if (ctx.webTainted && !WEB_TAINTED_TOOLS.has(name)) {
+  if (ctx.webTainted && !allowedAfterTaint(name, Boolean(ctx.computerReadSeen))) {
     return {
       content: { ok: false, error: `${name} is unavailable for the rest of this turn because web results are in it` },
       error: 'web_tainted_tool_denied',
@@ -986,6 +992,7 @@ async function dispatchTool(
         if (name === 'computer_snapshot') {
           const page = await agentComputerBroker.snapshot(ownerId, installationId);
           ctx.webTainted = true;
+          ctx.computerReadSeen = true;
           return { content: page, untrustedSourceTitle: 'a computer page', recorded: { url: page.url, title: page.title } };
         }
         if (name === 'computer_click') {
@@ -999,6 +1006,7 @@ async function dispatchTool(
         if (name === 'computer_screenshot') {
           const png = await agentComputerBroker.screenshot(ownerId, installationId);
           ctx.webTainted = true;
+          ctx.computerReadSeen = true;
           return {
             content: { screenshot: 'attached to the next model input' },
             recorded: { bytes: png.length },
@@ -1979,7 +1987,7 @@ export async function runAgent(
       // offered only a post, and the run ends after it whatever it did.
       const recoveryRound = webSetAside;
       const offeredTools = [
-        ...toolsForConfig(cfg, inPodOnly, { webTainted, podBridged })
+        ...toolsForConfig(cfg, inPodOnly, { webTainted, computerReadSeen: dispatchCtx.computerReadSeen, podBridged })
           .filter((tool) => !recoveryRound || tool.function.name === 'commonly_post_message'),
         ...(webTainted || recoveryRound ? [] : broker.tools),
       ];
@@ -2087,7 +2095,8 @@ export async function runAgent(
           const toolName = tc.function?.name || '';
           // TASK-267a: once a search has returned, even a tool offered earlier
           // in this same model response does not run; dispatchTool refuses it.
-          const webTaintedAway = Boolean(dispatchCtx.webTainted) && !WEB_TAINTED_TOOLS.has(toolName);
+          const webTaintedAway = Boolean(dispatchCtx.webTainted)
+            && !allowedAfterTaint(toolName, Boolean(dispatchCtx.computerReadSeen));
           // Row B (TASK-132): a granted seat's broker tool, dispatched in
           // process. `null` means this is not a broker tool and the agent's own
           // dispatcher handles it below.
