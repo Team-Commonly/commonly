@@ -362,40 +362,42 @@ export class AgentComputerBroker {
     return page;
   }
 
-  private async requireFreshFrame(userId: string, installationId: string, revision: string): Promise<void> {
+  private async consumeFreshFrame(userId: string, installationId: string, revision: string): Promise<{
+    width: number; height: number;
+  }> {
     const state = await this.user(userId);
     const frame = state.frames.get(installationId);
     if (!frame || revision !== frame.revision) {
       throw new Error('Stale computer frame. Refresh before acting.');
     }
+    // Consume before awaiting CDP so two concurrent HTTP actions cannot both
+    // act on the same image, even if the first action is still in flight.
+    state.frames.delete(installationId);
+    return frame;
   }
 
   async humanClick(userId: string, installationId: string, x: number, y: number, revision: string): Promise<void> {
     const page = await this.humanTab(userId, installationId);
-    await this.requireFreshFrame(userId, installationId, revision);
-    const frame = (await this.user(userId)).frames.get(installationId);
-    if (!frame || !Number.isFinite(x) || !Number.isFinite(y)
+    const frame = await this.consumeFreshFrame(userId, installationId, revision);
+    if (!Number.isFinite(x) || !Number.isFinite(y)
       || x < 0 || y < 0 || x >= frame.width || y >= frame.height) {
       throw new Error('Invalid click coordinates.');
     }
     await page.mouse.click(x, y);
-    (await this.user(userId)).frames.delete(installationId);
   }
 
   async humanType(userId: string, installationId: string, text: string, revision: string): Promise<void> {
     const page = await this.humanTab(userId, installationId);
-    await this.requireFreshFrame(userId, installationId, revision);
     if (text.length > 10_000) throw new Error('Text is too long.');
+    await this.consumeFreshFrame(userId, installationId, revision);
     await page.keyboard.insertText(text);
-    (await this.user(userId)).frames.delete(installationId);
   }
 
   async humanPress(userId: string, installationId: string, key: string, revision: string): Promise<void> {
     const page = await this.humanTab(userId, installationId);
-    await this.requireFreshFrame(userId, installationId, revision);
     if (!HUMAN_KEYS.has(key)) throw new Error('Unsupported key.');
+    await this.consumeFreshFrame(userId, installationId, revision);
     await page.keyboard.press(key);
-    (await this.user(userId)).frames.delete(installationId);
   }
 }
 

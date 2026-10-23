@@ -186,4 +186,16 @@ describe('agent computer broker (fake Steel and CDP)', () => {
     await expect(restarted.humanClick(OWNER, FIRST, 10, 10, oldRevision)).rejects.toThrow('Stale computer frame');
     expect(fixture.request.mock.calls.filter(([, method]) => method === 'POST')).toHaveLength(0);
   });
+
+  test('concurrent human actions cannot reuse one frame revision', async () => {
+    const { broker, pages } = setup('live');
+    await broker.requestTakeover(OWNER, FIRST);
+    const { frameRevision } = await broker.takeoverStatus(OWNER, FIRST);
+    const results = await Promise.allSettled([
+      broker.humanClick(OWNER, FIRST, 10, 10, frameRevision),
+      broker.humanClick(OWNER, FIRST, 20, 20, frameRevision),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(pages[0].mouse.click).toHaveBeenCalledTimes(1);
+  });
 });
