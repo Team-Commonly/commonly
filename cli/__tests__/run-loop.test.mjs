@@ -302,6 +302,53 @@ describe('performRun', () => {
     );
   });
 
+  test('a wake carries compact digest context without claiming ambient messages', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-wake', type: 'chat.mention', payload: { content: 'please review' } }),
+      makeEvent({ _id: 'evt-digest', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'daily update', username: 'alice', messageId: '42' } }),
+    ];
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/memory')) return { sections: {} };
+      return { events, inboxCount: 2 };
+    });
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'reviewed' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0]).toContain('[Since you last looked: 1 ambient update');
+    expect(spawn.mock.calls[0][0]).toContain('- alice (message 42): daily update');
+    expect(spawn.mock.calls[0][0]).not.toContain('Event 2/2: message.posted');
+    expect(post.mock.calls.filter(([route]) => route.endsWith('/claim'))).toHaveLength(0);
+    expect(ackPosts(post)).toHaveLength(2);
+  });
+
+  test('a digest-only page never starts a turn or acknowledges the ambient event', async () => {
+    const event = makeEvent({ deliveryMode: 'digest', type: 'message.posted',
+      payload: { content: 'ambient', messageId: '42' } });
+    const get = jest.fn(async () => ({ events: [event], inboxCount: 1 }));
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'should not run' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ackPosts(post)).toHaveLength(0);
+  });
+
   test('a lost binding item stays read-only context while another batch item may run', async () => {
     const events = [
       makeEvent({

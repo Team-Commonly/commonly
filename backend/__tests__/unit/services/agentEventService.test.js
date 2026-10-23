@@ -319,7 +319,8 @@ describe('AgentEventService', () => {
     // covers pod-b too.
     AgentEvent.find
       .mockReturnValueOnce(query([{ _id: 'head', podId: 'pod-a' }]))
-      .mockReturnValueOnce(query([{ _id: 'head' }, { _id: 'same-pod' }]));
+      .mockReturnValueOnce(query([{ _id: 'head' }, { _id: 'same-pod' }]))
+      .mockReturnValueOnce(query([]));
     AgentEvent.countDocuments.mockResolvedValue(2);
     AgentMemory.findOne.mockReturnValue({
       select: () => ({ lean: jest.fn().mockResolvedValue({ revision: 1, lastSeenRevision: 0 }) }),
@@ -346,6 +347,7 @@ describe('AgentEventService', () => {
       $and: expect.arrayContaining([
         expect.objectContaining({ podId: { $in: ['pod-a', 'pod-b'] } }),
         { podId: { $exists: true, $ne: null } },
+        { deliveryMode: { $ne: 'digest' } },
       ]),
     }));
     expect(AgentEvent.find).toHaveBeenNthCalledWith(2, expect.objectContaining({ podId: 'pod-a' }));
@@ -378,10 +380,66 @@ describe('AgentEventService', () => {
           podId: { $in: ['pod-a', 'pod-b'] },
         },
         { podId: { $exists: true, $ne: null } },
+        { deliveryMode: { $ne: 'digest' } },
       ],
     });
     expect(AgentEvent.countDocuments).not.toHaveBeenCalled();
     expect(AgentEvent.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('digest-only inbox stays pending; a later wake claims it in the same pod', async () => {
+    const AgentMemory = require('../../../models/AgentMemory');
+    const query = (rows) => ({
+      sort: () => ({ limit: () => ({ select: () => ({ lean: jest.fn().mockResolvedValue(rows) }) }) }),
+    });
+    AgentEvent.find.mockReturnValueOnce(query([]));
+    expect(await AgentEventService.listInboxPage({ agentName: 'inbox', podId: 'pod-a' }))
+      .toEqual({ events: [], inboxCount: 0 });
+    expect(AgentEvent.findOneAndUpdate).not.toHaveBeenCalled();
+
+    AgentEvent.find
+      .mockReturnValueOnce(query([{ _id: 'wake', podId: 'pod-a' }]))
+      .mockReturnValueOnce(query([{ _id: 'wake' }]))
+      .mockReturnValueOnce(query([{ _id: 'digest' }]));
+    AgentEvent.countDocuments.mockResolvedValue(2);
+    AgentMemory.findOne.mockReturnValue({
+      select: () => ({ lean: jest.fn().mockResolvedValue({ revision: 1, lastSeenRevision: 0 }) }),
+    });
+    AgentEvent.findOneAndUpdate
+      .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue({
+        _id: 'wake', podId: 'pod-a', type: 'chat.mention', status: 'delivered', payload: {},
+      }) })
+      .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue({
+        _id: 'digest', podId: 'pod-a', type: 'message.posted', deliveryMode: 'digest',
+        status: 'delivered', payload: { messageId: '42' },
+      }) });
+    const page = await AgentEventService.listInboxPage({ agentName: 'inbox', podId: 'pod-a' });
+    expect(page.events.map((event) => event._id)).toEqual(['wake', 'digest']);
+    expect(page.inboxCount).toBe(2);
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      podId: 'pod-a', deliveryMode: { $ne: 'digest' },
+    }));
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      podId: 'pod-a', deliveryMode: 'digest',
+    }));
+  });
+
+  test('a sibling winning the wake leaves its digest companion unclaimed', async () => {
+    const AgentMemory = require('../../../models/AgentMemory');
+    const query = (rows) => ({
+      sort: () => ({ limit: () => ({ select: () => ({ lean: jest.fn().mockResolvedValue(rows) }) }) }),
+    });
+    AgentEvent.find
+      .mockReturnValueOnce(query([{ _id: 'wake', podId: 'pod-a' }]))
+      .mockReturnValueOnce(query([{ _id: 'wake' }]))
+      .mockReturnValueOnce(query([{ _id: 'digest' }]));
+    AgentMemory.findOne.mockReturnValue({
+      select: () => ({ lean: jest.fn().mockResolvedValue({ revision: 1, lastSeenRevision: 0 }) }),
+    });
+    AgentEvent.findOneAndUpdate.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+    const page = await AgentEventService.listInboxPage({ agentName: 'inbox', podId: 'pod-a' });
+    expect(page.events).toEqual([]);
+    expect(AgentEvent.findOneAndUpdate).toHaveBeenCalledTimes(1);
   });
 
   test('listInboxPage preserves its pre-claim count when a sibling wins every candidate', async () => {

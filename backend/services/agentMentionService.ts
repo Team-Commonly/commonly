@@ -1217,7 +1217,7 @@ const isWakeLoopDampened = async (
 
 /** `agentName:instanceId`, lowercased — the identity an install and a bot User row share. */
 const installKey = (inst: { agentName?: unknown; instanceId?: unknown }): string => `${
-  String(inst.agentName || '').toLowerCase()}:${String(inst.instanceId || 'default')}`;
+  String(inst.agentName || '').toLowerCase()}:${String(inst.instanceId || 'default').toLowerCase()}`;
 
 /** A thread root arrives from PG as either its numeric column or JSON spelling. */
 const resolveThreadRootId = (message: EnqueueMentionsOptions['message']): number | null => {
@@ -1346,14 +1346,13 @@ const followMentionedThreadUsers = async (
 };
 
 /**
- * Fan a message out to the pod's wake-on-message opt-ins. Skips the sender's
+ * Fan a message out to the pod's agent inboxes. Skips the sender's
  * own identity (an agent never wakes on its own post), anything the mention
  * path already enqueued this message (a mention is the stronger cue — double
  * delivery would burn a second model turn on the same trigger), and DM-shaped
  * pods (enqueueDmEvent already routes every message there).
  *
- * The zero-opt-in fast path costs nothing beyond the installations array the
- * caller already loaded — no queries, no pod lookup.
+ * Unaddressed activity for seats without wake-on-message becomes digest work.
  */
 const enqueueWakeOnMessage = async ({
   podId, message, rawContent, userId, username, source, installations, sender, excludeKeys, authorFrame, resolvedBotUserIds,
@@ -1373,27 +1372,21 @@ const enqueueWakeOnMessage = async ({
   replyToMessageId?: string | null;
 }): Promise<string[]> => {
   const woken: string[] = [];
-  let targets = (installations || []).filter(wakeOnMessageEnabled);
+  const senderKey = sender?.isBot
+    ? `${String(sender.botMetadata?.agentName || '').toLowerCase()}:${String(sender.botMetadata?.instanceId || 'default').toLowerCase()}`
+    : null;
+  let targets = (installations || []).filter((inst) => {
+    const key = installKey(inst);
+    return key !== senderKey && !excludeKeys?.has(key);
+  });
   if (targets.length === 0) return woken;
 
   // Ambient-only thread scoping (W-T 3/4, #1045). A reply inside a thread is
   // AMBIENT: it reaches the thread's effective followers, not the room.
   //
-  // Applied HERE, to the already-computed opt-in list, and nowhere else. Two
-  // consequences that are the point rather than side effects:
-  //  - it can only NARROW. A thread follower who never opted into
-  //    wake-on-message still gets nothing, because threading is additive and
-  //    must not start delivering to seats that opted into nothing.
-  //  - it cannot touch addressing. NOT because this branch is unreachable on
-  //    a routed message — it is reachable, via the second call site at the
-  //    tail of enqueueMentions, which runs unconditionally so a routed
-  //    message's ambient companion is scoped too. It cannot touch addressing
-  //    because the chat.mention has ALREADY been enqueued by the time this
-  //    runs, and the mentioned seat arrives here inside `excludeKeys`. A mute
-  //    scopes ambient activity; it never suppresses being addressed.
-  //    (An earlier version of this comment claimed the branch runs only when
-  //    `!isRouted`, contradicting the call-site comment below it and giving a
-  //    reader the right conclusion from a false mechanism.)
+  // Only non-addressed delivery is narrowed. A current thread author or
+  // claimant is addressed by this message; an explicit @mention was already
+  // routed and removed from this fan-out above.
   //
   // Keyed on the BOT's User row id, which is what thread_user_state.user_id
   // holds: the follow/mute routes are dualAuth, so an agent writing its own
@@ -1422,16 +1415,33 @@ const enqueueWakeOnMessage = async ({
   // narrowing and the reply-evidence stamp share this (a suite pins the
   // single User.find).
   let cachedBotUserIds: Map<string, string> | undefined = resolvedBotUserIds;
+  const needsOwnershipIds = Boolean(threadRootId) || /\bTASK-\d+\b|#\d+\b/i.test(rawContent);
+  if (needsOwnershipIds) cachedBotUserIds = cachedBotUserIds ?? await resolveBotUserIds(targets);
+  let addressedTargets: Set<string>;
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { addressedMessageTargets } = require('./messageDeliveryModeService');
+    addressedTargets = await addressedMessageTargets({
+      podId, content: rawContent, threadRootId, targets,
+      botUserIds: cachedBotUserIds ?? new Map<string, string>(),
+    });
+  } catch (error) {
+    console.warn('[message-delivery] addressed lookup failed (waking):', (error as Error).message);
+    addressedTargets = new Set(targets.map(installKey));
+  }
   if (threadRootId) {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const { narrowToThread } = require('./threadWakeScopeService');
     cachedBotUserIds = cachedBotUserIds ?? await resolveBotUserIds(targets);
     const botUserIds = cachedBotUserIds;
-    targets = await narrowToThread(
+    const addressed = targets.filter((inst) => addressedTargets.has(installKey(inst)));
+    const ambient = targets.filter((inst) => !addressedTargets.has(installKey(inst)));
+    const scopedAmbient = await narrowToThread(
       threadRootId,
-      targets,
+      ambient,
       (inst: Record<string, unknown>) => botUserIds.get(installKey(inst)) ?? null,
     );
+    targets = [...addressed, ...scopedAmbient];
     if (targets.length === 0) return woken;
   }
 
@@ -1451,10 +1461,6 @@ const enqueueWakeOnMessage = async ({
   // one-line change instead of a hunt for a call site that lied.
   const collaborativePod = isCollaborativePod(podRow?.type, installations);
 
-  const senderKey = sender?.isBot
-    ? `${String(sender.botMetadata?.agentName || '').toLowerCase()}:${String(sender.botMetadata?.instanceId || 'default').toLowerCase()}`
-    : null;
-
   // Reply-evidence flag (ADR-018 D6.3, interim). The #703 implicit-reply path
   // is gated on `sender.isBot === false`, so a BOT's reply to an agent's
   // message reaches its author as plain ambient activity — and the claim
@@ -1470,7 +1476,7 @@ const enqueueWakeOnMessage = async ({
   // seat+thread — is NOT implemented, so the dampener is the only loop bound.
   // Read the ADR before widening this: the decision is deliberately staged.
   const parentMessageId = String(
-    replyToMessageId || (message as { reply_to_message_id?: unknown })?.reply_to_message_id || threadRootId || '',
+    replyToMessageId || (message as { reply_to_message_id?: unknown })?.reply_to_message_id || '',
   ) || null;
   let parentAuthorUserId: string | null = null;
   if (parentMessageId) {
@@ -1503,23 +1509,28 @@ const enqueueWakeOnMessage = async ({
     if (excludeKeys?.has(key)) return;
     if (humanOnlyWake(inst) && sender?.isBot !== false) return;
     if (senderKey && await isWakeLoopDampened({ agentName, instanceId }, podId)) return;
+    const addressed = addressedTargets.has(key);
+    const deliveryMode = wakeOnMessageEnabled(inst) || addressed ? 'wake' : 'digest';
     const repliesToYou = !!(parentAuthorUserId
       && parentBotUserIds
       && parentBotUserIds.get(installKey(inst)) === parentAuthorUserId);
     try {
-      const built = buildContentForTarget(
-        podId,
-        rawContent,
-        'message.posted',
-        agentName,
-        collaborativePod,
-        authorFrame,
-      );
+      const built = deliveryMode === 'digest'
+        ? String(rawContent || '').replace(/\s+/g, ' ').slice(0, 200)
+        : buildContentForTarget(
+          podId,
+          rawContent,
+          'message.posted',
+          agentName,
+          collaborativePod,
+          authorFrame,
+        );
       await AgentEventService.enqueue({
         agentName,
         instanceId,
         podId,
         type: 'message.posted',
+        deliveryMode,
         payload: {
           messageId: authorFrame.messageId,
           // Inline cue, not only metadata — the flag below is for the
@@ -1530,7 +1541,8 @@ const enqueueWakeOnMessage = async ({
           source,
           messageType: message?.messageType || message?.message_type || 'text',
           createdAt: message?.createdAt || message?.created_at || new Date(),
-          wakeOnMessage: true,
+          wakeOnMessage: wakeOnMessageEnabled(inst),
+          ...(addressed ? { addressed: true } : {}),
           // Claim-decline handoff is deliberately human-only. This stamp is
           // the cross-layer proof the wrapper and kernel need; absent remains
           // non-human/unknown for old events rather than widening a bot loop.
@@ -1538,7 +1550,7 @@ const enqueueWakeOnMessage = async ({
           ...(repliesToYou ? { repliesToYourMessage: true } : {}),
         },
       });
-      woken.push(agentName);
+      if (deliveryMode === 'wake') woken.push(agentName);
     } catch (error) {
       console.warn('Failed to enqueue wake-on-message event:', (error as Error).message);
     }

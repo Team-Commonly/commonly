@@ -7,6 +7,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 // Existing rows without an `'acked'` value continue to read as `'delivered'`
 // indefinitely; the ack-gate below short-circuits if status is already `'acked'`.
 export type AgentEventStatus = 'pending' | 'delivered' | 'acked' | 'failed';
+export type AgentEventDeliveryMode = 'wake' | 'digest';
 export type DeliveryOutcome = 'acknowledged' | 'posted' | 'no_action' | 'skipped' | 'error';
 
 // ADR-003 Phase 4: cross-agent ask/respond payloads. The `type` field on
@@ -92,6 +93,8 @@ export interface IAgentEvent extends Document {
   type: string;
   payload?: unknown;
   status: AgentEventStatus;
+  // Independent of `delivery`, which records the eventual ack outcome.
+  deliveryMode: AgentEventDeliveryMode;
   attempts: number;
   deliveredAt?: Date;
   error?: string;
@@ -119,6 +122,7 @@ const AgentEventSchema = new Schema<IAgentEvent>(
     type: { type: String, required: true },
     payload: Schema.Types.Mixed,
     status: { type: String, enum: ['pending', 'delivered', 'acked', 'failed'], default: 'pending' },
+    deliveryMode: { type: String, enum: ['wake', 'digest'], default: 'wake' },
     attempts: { type: Number, default: 0 },
     deliveredAt: Date,
     error: String,

@@ -122,6 +122,7 @@ interface EventDoc {
   createdAt?: Date;
   payload?: Record<string, unknown>;
   status?: string;
+  deliveryMode?: 'wake' | 'digest';
   attempts?: number;
   delivery?: DeliveryMeta;
   memoryRevisionAtDelivery?: number | null;
@@ -219,6 +220,7 @@ interface EnqueueOptions {
   type: string;
   payload?: Record<string, unknown>;
   instanceId?: string;
+  deliveryMode?: 'wake' | 'digest';
 }
 
 interface ListOptions {
@@ -1399,7 +1401,7 @@ class AgentEventService {
   }
 
   static async enqueue({
-    agentName, podId, type, payload = {}, instanceId = 'default',
+    agentName, podId, type, payload = {}, instanceId = 'default', deliveryMode = 'wake',
   }: EnqueueOptions): Promise<EventDoc> {
     if (!agentName || !podId || !type) {
       throw new Error('agentName, podId, and type are required');
@@ -1445,6 +1447,7 @@ class AgentEventService {
       podId,
       type,
       payload: eventPayload,
+      ...(deliveryMode === 'digest' ? { deliveryMode } : {}),
       // Native runs resolve in-process, so the event is claimed at creation
       // rather than polled. `attempts: 1` because this IS its one delivery —
       // the claim in list() never runs for native events, and a native event
@@ -1483,7 +1486,7 @@ class AgentEventService {
     });
 
     const wsService = getWebSocketService();
-    if (wsService) {
+    if (wsService && deliveryMode === 'wake') {
       wsService.pushEvent({
         _id: event._id,
         agentName: event.agentName,
@@ -1509,7 +1512,7 @@ class AgentEventService {
     // if the gateway is dead." Typing_stop is still emitted when
     // AgentMessageService.postMessage runs.)
 
-    AgentInstallation.find({
+    if (deliveryMode === 'wake') AgentInstallation.find({
       agentName: event.agentName,
       instanceId,
       podId,
@@ -1594,7 +1597,7 @@ class AgentEventService {
       // behind a row no poller can process. Keep the caller's scope inside
       // the same `$and` so this exclusion only narrows access.
       const headQuery = {
-        $and: [query, { podId: { $exists: true, $ne: null } }],
+        $and: [query, { podId: { $exists: true, $ne: null } }, { deliveryMode: { $ne: 'digest' } }],
       };
       const [head] = await AgentEvent.find(headQuery)
         .sort({ createdAt: 1 })
@@ -1614,11 +1617,22 @@ class AgentEventService {
       inboxCount = await AgentEvent.countDocuments(batchQuery);
     }
 
-    const candidates = await AgentEvent.find(batchQuery)
+    const wakeQuery = onePod ? { ...batchQuery, deliveryMode: { $ne: 'digest' } } : batchQuery;
+    const wakeCandidates = await AgentEvent.find(wakeQuery)
       .sort({ createdAt: 1 })
       .limit(limit)
       .select({ _id: 1 })
       .lean() as Array<{ _id: unknown }>;
+    // Digest rows are only claimed alongside a wake in the same pod. Reserve
+    // a slot for wake work so a long digest backlog cannot starve the turn.
+    const digestCandidates = onePod && wakeCandidates.length > 0 && wakeCandidates.length < limit
+      ? await AgentEvent.find({ ...batchQuery, deliveryMode: 'digest' })
+        .sort({ createdAt: 1 })
+        .limit(limit - wakeCandidates.length)
+        .select({ _id: 1 })
+        .lean() as Array<{ _id: unknown }>
+      : [];
+    const candidates = [...wakeCandidates, ...digestCandidates];
 
     // A sibling poller can claim every candidate after our pre-claim count.
     // The page is empty, but the count still describes what this reader saw
@@ -1642,7 +1656,10 @@ class AgentEventService {
     const digestBundle = buildMemoryDigestBundle(memoryDoc || {}, lastSeenRevision);
 
     const claimed: EventDoc[] = [];
-    for (const candidate of candidates) {
+    for (const [index, candidate] of candidates.entries()) {
+      // Another poller may win every wake after our read. In that race the
+      // digest must remain pending instead of being claimed on its own.
+      if (onePod && index >= wakeCandidates.length && claimed.length === 0) break;
       // Coerce candidate _id to string before it lands in the query — Mongo
       // accepts both string and ObjectId, and `unknown`-typed values are the
       // CodeQL trip wire. The find() above scopes by agentName + instanceId

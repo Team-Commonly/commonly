@@ -257,7 +257,8 @@ describe('AgentMentionService', () => {
         username: 'theo',
       });
 
-      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(AgentEventService.enqueue.mock.calls.map(([args]) => args)
+        .filter((args) => args.deliveryMode !== 'digest')).toHaveLength(0);
       expect(User.findById).toHaveBeenCalledTimes(1);
       expect(result.implicit).toEqual([]);
     });
@@ -391,7 +392,8 @@ describe('AgentMentionService', () => {
         username: 'alice',
       });
 
-      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(AgentEventService.enqueue.mock.calls.map(([args]) => args)
+        .filter((args) => args.deliveryMode !== 'digest')).toHaveLength(0);
       expect(result.implicit).toEqual([]);
     });
 
@@ -2000,7 +2002,8 @@ describe('AgentMentionService', () => {
       });
 
       expect(res.enqueued).toEqual([]);
-      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(AgentEventService.enqueue.mock.calls.map(([args]) => args)
+        .filter((args) => args.deliveryMode !== 'digest')).toHaveLength(0);
     });
 
     test('the budget is shared, so alternating surfaces cannot each sit at half of it', async () => {

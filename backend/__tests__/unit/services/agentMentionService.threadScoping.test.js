@@ -29,6 +29,9 @@ jest.mock('../../../services/threadWakeScopeService', () => ({
   narrowToThread: jest.fn(async (_root, targets) => targets),
   effectiveFollowerIds: jest.fn(async () => new Set()),
 }));
+jest.mock('../../../services/messageDeliveryModeService', () => ({
+  addressedMessageTargets: jest.fn(async () => new Set()),
+}));
 
 const AgentMentionService = require('../../../services/agentMentionService');
 const AgentEventService = require('../../../services/agentEventService');
@@ -38,6 +41,7 @@ const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
 const { narrowToThread } = require('../../../services/threadWakeScopeService');
+const { addressedMessageTargets } = require('../../../services/messageDeliveryModeService');
 const ThreadUserState = require('../../../models/pg/ThreadUserState');
 const PGMessage = require('../../../models/pg/Message');
 
@@ -83,6 +87,7 @@ const send = (message, extra = {}) => AgentMentionService.enqueueMentions({
 beforeEach(() => {
   jest.clearAllMocks();
   narrowToThread.mockImplementation(async (_root, targets) => targets);
+  addressedMessageTargets.mockResolvedValue(new Set());
   AgentInstallation.find.mockReturnValue({
     lean: jest.fn().mockResolvedValue([
       optIn('seat-a', 'human-installer-a'), optIn('seat-b', 'human-installer-b'),
@@ -209,6 +214,14 @@ describe('scoping narrows delivery, and only delivery', () => {
     narrowToThread.mockImplementation(async () => []);
     await send({ id: 'm5', content: 'threaded', thread_root_id: 101 });
     expect(byType('message.posted')).toHaveLength(0);
+  });
+
+  test('a current thread author stays addressed when ambient scoping drops everyone', async () => {
+    addressedMessageTargets.mockResolvedValue(new Set(['seat-a:default']));
+    narrowToThread.mockImplementation(async () => []);
+    await send({ id: 'm5-addressed', content: 'threaded', thread_root_id: 101 });
+    expect(byType('message.posted').map((event) => [event.agentName, event.deliveryMode]))
+      .toEqual([['seat-a', 'wake']]);
   });
 
   test('CONTROL: the same message unthreaded still wakes both', async () => {

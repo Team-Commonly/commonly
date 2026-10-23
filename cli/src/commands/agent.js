@@ -463,7 +463,10 @@ const DEFERRABLE_SOLO_EVENT_TYPES = new Set(['first_contact']);
 // Inside one batch the person's item leads the prompt; the greeting follows it.
 const PERSON_WAITING_EVENT_TYPES = new Set(['chat.mention', 'message.posted', 'dm.message']);
 
-const inboxPriority = (event) => (PERSON_WAITING_EVENT_TYPES.has(event?.type) ? 0 : 1);
+const inboxPriority = (event) => {
+  if (event?.deliveryMode === 'digest') return 2;
+  return PERSON_WAITING_EVENT_TYPES.has(event?.type) ? 0 : 1;
+};
 
 // Consultations have a per-request private response channel, rather than a
 // pod-chat delivery. They stay on their existing single-event path; every
@@ -1506,7 +1509,7 @@ export const performRun = ({
         // own conversation (Sage stood down twice on Anvil's thread
         // replies, 2026-08-24). Interim for TASK-058.
         const repliesToThisSeat = event.payload?.repliesToYourMessage === true;
-        if (ADDRESSED_EVENT_TYPES.has(event.type) || repliesToThisSeat) {
+        if (ADDRESSED_EVENT_TYPES.has(event.type) || event.payload?.addressed === true || repliesToThisSeat) {
           log(
             `[${event.type}] message ${claimMessageId} held by ${claim.holder} — `
             + (repliesToThisSeat
@@ -2008,10 +2011,12 @@ export const performRun = ({
   // pull, rather than being silently consumed here.
   const buildInboxPrompt = (entries, inboxCount = entries.length) => {
     const BODY_LIMIT = batchLimit;
-    const bodies = entries.slice(0, BODY_LIMIT).map((entry, index) => {
+    const wakeEntries = entries.filter((entry) => entry.event.deliveryMode !== 'digest');
+    const digestEntries = entries.filter((entry) => entry.event.deliveryMode === 'digest');
+    const bodies = wakeEntries.slice(0, BODY_LIMIT).map((entry, index) => {
       const messageId = entry.event.payload?.messageId;
       const prefix = [
-        `Event ${index + 1}/${entries.length}: ${entry.event.type}`,
+        `Event ${index + 1}/${wakeEntries.length}: ${entry.event.type}`,
         messageId ? `message ${messageId}` : null,
       ].filter(Boolean).join(' — ');
       const claimContext = entry.readOnly
@@ -2021,11 +2026,21 @@ export const performRun = ({
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
       return `${prefix}\n${claimContext}${body}`;
     });
-    const omitted = Math.max(0, inboxCount - bodies.length);
+    const digestLines = digestEntries.slice(-8).map((entry) => {
+      const who = String(entry.event.payload?.username || 'member').replace(/\s+/g, ' ').slice(0, 40);
+      const body = String(entry.event.payload?.content || '').replace(/\s+/g, ' ').slice(0, 160);
+      const id = entry.event.payload?.messageId;
+      return `- ${who}${id ? ` (message ${id})` : ''}: ${body}`;
+    });
+    const omitted = Math.max(0, inboxCount - entries.length);
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
         + 'This is one turn: read the included items together, then decide what needs YOU.]',
       ...bodies,
+      ...(digestEntries.length > 0 ? [
+        `[Since you last looked: ${digestEntries.length} ambient update${digestEntries.length === 1 ? '' : 's'}; context only, no reply needed.]
+${digestLines.join('\n')}${digestEntries.length > 8 ? `\n- ${digestEntries.length - 8} earlier updates omitted` : ''}`,
+      ] : []),
       ...(omitted > 0
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
         : []),
@@ -2172,7 +2187,9 @@ export const performRun = ({
     const trigger = triggers.includes('human') ? 'human'
       : (triggers.includes('agent') ? 'agent' : 'unknown');
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
-    const admissionEvent = activeEntries.find((entry) => ADDRESSED_EVENT_TYPES.has(entry.event.type))
+    const admissionEvent = activeEntries.find((entry) => (
+      ADDRESSED_EVENT_TYPES.has(entry.event.type) || entry.event.payload?.addressed === true
+    ))
       || activeEntries[0];
     if (admissionEvent) {
       const admission = cascadeGovernor.admit(
@@ -2190,7 +2207,8 @@ export const performRun = ({
     }
 
     const bindingEntries = activeEntries.filter((entry) => (
-      entry.event.type === 'message.posted' && entry.event.payload?.messageId
+      entry.event.deliveryMode !== 'digest'
+      && entry.event.type === 'message.posted' && entry.event.payload?.messageId
     ));
     if (bindingEntries.length > 0) {
       const yieldMs = claimHandicap.yieldDelayMs(eventPodId);
@@ -2201,6 +2219,7 @@ export const performRun = ({
     }
 
     for (const entry of activeEntries) {
+      if (entry.event.deliveryMode === 'digest') continue;
       const messageId = entry.event.payload?.messageId;
       if (!messageId || !CLAIMABLE_EVENT_TYPES.has(entry.event.type)) continue;
       const claimKeeper = createClaimKeeper(client, {
@@ -2224,7 +2243,7 @@ export const performRun = ({
           // `message.posted`. Preserve the existing ADR-018/TASK-058
           // peer-aware exception; D3a otherwise partitions lost bindings as
           // read-only so a generic broadcast cannot widen itself after CAS.
-          if (entry.event.payload?.repliesToYourMessage === true) {
+          if (entry.event.payload?.repliesToYourMessage === true || entry.event.payload?.addressed === true) {
             entry.peerFrame = peerHoldsFrame(claim.holder, messageId);
             continue;
           }
@@ -2392,6 +2411,12 @@ export const performRun = ({
       }
       for (const group of eventGroups.values()) {
         if (!running) break;
+        // A current kernel never claims a digest-only page. Guard a mixed
+        // version rollout too: an ambient batch must not start a model turn.
+        if (group.every((event) => event.deliveryMode === 'digest')) {
+          log(`[inbox.batch] digest-only page (${group.length}) — no spawn or ack`);
+          continue;
+        }
         if ((group[0].podId || podId) && !PRIVATE_RESPONSE_EVENT_TYPES.has(group[0].type)) {
           // Nothing in this batch but the seat introducing itself: leave it
           // unacked for one interval so a person who mentions the agent in that

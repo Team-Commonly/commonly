@@ -3,7 +3,7 @@
  * exercised through enqueueMentions, the module boundary).
  *
  * The contract under test:
- *  - opt-in only: `config.wakeOnMessage.enabled === true`, default OFF
+ *  - opt-in wakes; default-off installations receive a pending digest
  *  - unrouted messages wake opt-ins as `message.posted` with the inline frame
  *  - mention-enqueued targets are NOT double-delivered
  *  - an agent never wakes on its own post
@@ -174,10 +174,12 @@ describe('wake-on-message (ADR-018 D8)', () => {
     });
 
     expect(res.woken).toEqual(['seat-a', 'seat-b']);
-    expect(wakeCalls().map((call) => call.agentName)).toEqual(['seat-a', 'seat-b']);
+    expect(wakeCalls().filter((call) => call.deliveryMode === 'wake').map((call) => call.agentName))
+      .toEqual(['seat-a', 'seat-b']);
+    expect(wakeCalls().find((call) => call.agentName === 'seat-c').deliveryMode).toBe('digest');
   });
 
-  test('default is OFF: installs without the flag are never woken', async () => {
+  test('default is OFF: installs without the flag get digest delivery without a wake', async () => {
     mockInstallations([install('seat-a'), install('seat-b')]);
 
     const res = await AgentMentionService.enqueueMentions({
@@ -188,11 +190,9 @@ describe('wake-on-message (ADR-018 D8)', () => {
     });
 
     expect(res.woken).toEqual([]);
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
-    // No pod-shape lookup: with no opt-in there is no wake fan-out, and D6.4
-    // adjacency looks at the pod only when the previous message is a recent
-    // agent post (here there is none).
-    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(wakeCalls().map((call) => [call.agentName, call.deliveryMode]))
+      .toEqual([['seat-a', 'digest'], ['seat-b', 'digest']]);
+    expect(wakeCalls()[0].payload.content).toBe('nobody asked anyone anything');
   });
 
   test('a mention-enqueued target is not double-delivered; other opt-ins still wake', async () => {
