@@ -63,6 +63,14 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({ id, title, children }
   </section>
 );
 
+const V2SettingsLinkRow: React.FC<{ to: string; label: string; detail: string }> = ({ to, label, detail }) => (
+  <Link className="v2-settings__link-row" to={to}>
+    <span className="v2-settings__link-row-label">{label}</span>
+    <span className="v2-settings__link-row-detail">{detail}</span>
+    <span className="v2-settings__link-row-arrow" aria-hidden="true">→</span>
+  </Link>
+);
+
 const V2AccountSection: React.FC = () => {
   const { currentUser, updateProfile, updateUsername } = useAuth();
   const { t } = useTranslation();
@@ -518,7 +526,17 @@ const V2SettingsPage: React.FC = () => {
           <SettingsSection id="plan" title="Plan"><V2BillingPanel showHeading={false} /></SettingsSection>
           <SettingsSection id="devices" title="Devices"><V2DevicesPanel showHeading={false} /></SettingsSection>
           <SettingsSection id="api-token" title="API token"><V2ApiTokenSection /></SettingsSection>
-          <SettingsSection id="connected-apps" title="Connected apps"><AppsManagement variant="settings" /></SettingsSection>
+          <SettingsSection id="connected-apps" title="Connected apps">
+            <V2SettingsLinkRow
+              to="/v2/connectors"
+              label="Connectors"
+              detail="Manage connected services and channels"
+            />
+            <details className="v2-settings__developer-disclosure">
+              <summary>Developer apps</summary>
+              <AppsManagement variant="settings" showIntegrations={false} />
+            </details>
+          </SettingsSection>
           <SettingsSection id="language" title="Language"><V2LanguageSection /></SettingsSection>
           {isAdmin && (
             <SettingsSection id={ADMIN_SECTION.id} title={ADMIN_SECTION.title}><V2AdminSection /></SettingsSection>

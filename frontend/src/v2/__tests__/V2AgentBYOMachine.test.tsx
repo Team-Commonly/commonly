@@ -78,29 +78,43 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-machine-select')).toHaveTextContent('Sam’s MacBook');
   });
 
-  test('the preview note names the daemon machine in "on my computer" mode (#TASK-163)', async () => {
-    // Before TASK-163 the note read "Appears in the pod once your runtime
-    // connects with the token" in EVERY non-hosted mode, and this mode issues
-    // no token at all — ux-lead measured it drawing README frame 5. The name
-    // is derived once from machines+machineId, so this pins that it FOLLOWS
-    // the picker rather than merely being present.
+  test('adapter and model edits do not clear an unrelated field error', async () => {
+    mockGet();
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+
+    fireEvent.change(screen.getByPlaceholderText('my-mcp-agent'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByText('Add to this computer'));
+
+    const nameField = screen.getByPlaceholderText('my-mcp-agent').closest('label');
+    expect(nameField).toHaveClass('v2-byo__field--error');
+
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'codex' } });
+    expect(nameField).toHaveClass('v2-byo__field--error');
+    fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'gpt-6-sol' } });
+    expect(nameField).toHaveClass('v2-byo__field--error');
+  });
+
+  test('the preview stays visual-only when the mode or machine changes', async () => {
     const second = { id: 'm2', machineId: 'mach-b', name: 'Studio', status: 'online', agentStates: [] };
     mockGet({ machines: [machineRow, second] });
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
 
-    // The preview's name and status carry the meaning until a machine is chosen.
-    expect(screen.getByTestId('byo-preview').querySelector('.v2-byo__preview-note')).toBeNull();
+    const preview = screen.getByTestId('byo-preview');
+    expect(preview).not.toHaveTextContent('This is how it will appear in the pod. The face follows the name.');
 
     // On "Bring your own runtime", the token wording is correct.
     fireEvent.click(screen.getByTestId('byo-mode-byo'));
-    expect(screen.getByTestId('byo-preview').querySelector('.v2-byo__preview-note')).toBeNull();
+    expect(preview).not.toHaveTextContent('Appears in the pod once the command is running.');
 
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
-    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears when the daemon on Sam’s MacBook starts it.');
+    expect(preview).not.toHaveTextContent('Appears in the pod once the daemon on Sam’s MacBook starts it.');
 
     fireEvent.change(screen.getByTestId('byo-machine-select'), { target: { value: 'mach-b' } });
-    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears when the daemon on Studio starts it.');
+    expect(preview).not.toHaveTextContent('Appears in the pod once the daemon on Studio starts it.');
   });
 
   test('no machines — no card, and the one-paste setup panel shows instead', async () => {

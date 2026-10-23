@@ -134,7 +134,6 @@ const ALLOWLIST: string[] = [
   // TASK-166 took `.v2-byo__mode-kicker` (10.0px, no family) and
   // `.v2-byo__preview-label` (11.0px, no family) to mono 500 11px, so both
   // entries left this burn-down list rather than being updated in place.
-  '.v2-byo__mode-meta', // 11.0px — no-mono-family
   // TASK-169 took `.v2-byo__stat-label` (11.0px, no family) to mono 500 11px
   // with item 2, so its entry left this burn-down list rather than being
   // updated in place.

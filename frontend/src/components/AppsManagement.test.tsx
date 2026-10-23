@@ -88,4 +88,19 @@ describe('AppsManagement ingest tokens', () => {
     expect(screen.getByText('Commonly Apps').parentElement?.querySelector('svg')).not.toBeInTheDocument();
     expect(screen.getByText('Existing Integrations').parentElement?.querySelector('svg')).not.toBeInTheDocument();
   });
+
+  it('skips the integrations fetch when Settings only needs developer apps', async () => {
+    render(
+      <AuthContext.Provider value={{ user: { role: 'member' } }}>
+        <AppsManagement variant="settings" showIntegrations={false} />
+      </AuthContext.Provider>,
+    );
+
+    await screen.findByText('Commonly Apps');
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/apps', {
+      headers: { Authorization: 'Bearer t' },
+    }));
+    expect(axios.get.mock.calls.some(([url]) => url === '/api/integrations/user/all')).toBe(false);
+    expect(screen.queryByText('Existing Integrations')).not.toBeInTheDocument();
+  });
 });

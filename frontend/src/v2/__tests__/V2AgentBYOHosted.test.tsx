@@ -77,6 +77,8 @@ describe('V2AgentBYO — Run it here', () => {
 
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
     expect(screen.getByRole('group', { name: 'Where should it run?' })).toBeInTheDocument();
+    expect(screen.getByText('Live in a few seconds · Beta: 200 turns a day')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('{{');
     expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByTestId('byo-mode-unchosen')).toHaveTextContent('Choose where it runs first');
@@ -128,7 +130,7 @@ describe('V2AgentBYO — Run it here', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
-    expect(screen.getByText(/beta: 200 turns a day/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/beta: 200 turns a day/i)).toHaveLength(2);
     fireEvent.click(screen.getByTestId('byo-mode-hosted'));
     fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
 

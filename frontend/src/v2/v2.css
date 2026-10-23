@@ -6025,6 +6025,12 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-tertiary);
   margin: 0;
 }
+/* Field guidance is available at the moment it is useful, not as a permanent
+   second label. Errors keep the relevant hint visible until the person edits
+   that field again. */
+.v2-byo__field > .v2-byo__hint { display: none; }
+.v2-byo__field:focus-within > .v2-byo__hint,
+.v2-byo__field--error > .v2-byo__hint { display: block; }
 /* §3 error — a white card with a border, ink text, no icon. The red fill was
    the pre-Signal shape: it read as a state of the page rather than a message
    beside the field it belongs to. */
@@ -6236,12 +6242,6 @@ body.modern-ui.v2-canvas {
 /* §3 connected / live — cobalt dot, muted text, no success colour and no fill. */
 .v2-byo__preview-status--live { color: var(--v2-text-muted); }
 .v2-byo__preview-status--live .v2-byo__preview-dot { background: var(--v2-accent); }
-.v2-byo__preview-note {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--v2-text-tertiary);
-  margin: 0;
-}
 @media (max-width: 940px) {
   .v2-byo__layout { grid-template-columns: minmax(0, 1fr); }
   .v2-byo__preview { display: none; }
@@ -6329,6 +6329,13 @@ body.modern-ui.v2-canvas {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
+.v2-byo__mode-option {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
 .v2-root button.v2-byo__mode {
   display: flex;
   flex-direction: column;
@@ -6358,13 +6365,13 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker {
   color: var(--v2-accent-text);
 }
-.v2-byo__mode-meta {
-  font-size: 11px;
-  color: var(--v2-text-muted);
-  margin-top: 3px;
-}
+.v2-byo__mode-option > .v2-hint { margin-top: 0; }
 .v2-root button.v2-byo__mode:hover {
   background: var(--v2-surface-hover);
+}
+.v2-root button.v2-byo__mode:focus-visible {
+  outline: 0;
+  box-shadow: var(--v2-focus-ring);
 }
 .v2-root button.v2-byo__mode[aria-pressed="true"] {
   /* 2px border in place of the 1px one, with 1px less padding per side so the
@@ -7519,6 +7526,38 @@ body.modern-ui.v2-canvas {
 .v2-settings__section-body {
   min-width: 0;
 }
+
+.v2-settings__link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-primary);
+  text-decoration: none;
+}
+.v2-settings__link-row:hover { background: var(--v2-surface-hover); }
+.v2-settings__link-row:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+}
+.v2-settings__link-row-label { font: 600 13px/18px var(--v2-font); }
+.v2-settings__link-row-detail { color: var(--v2-text-muted); font-size: 12px; }
+.v2-settings__link-row-arrow { color: var(--v2-accent-text); font-size: 18px; line-height: 18px; }
+
+.v2-settings__developer-disclosure {
+  margin-top: 20px;
+  border-top: 1px solid var(--v2-border-soft);
+  padding-top: 16px;
+}
+.v2-settings__developer-disclosure > summary {
+  color: var(--v2-text-primary);
+  cursor: pointer;
+  font: 600 13px/18px var(--v2-font);
+}
+.v2-settings__developer-disclosure[open] > summary { margin-bottom: 16px; }
 
 .v2-settings__content {
   grid-column: 2;
