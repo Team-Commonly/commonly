@@ -1,11 +1,20 @@
 // eslint-disable-next-line global-require
 const express = require('express');
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const GitHubAppService = require('../services/githubAppService');
+const githubIpRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 3000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+});
 
 interface AuthReq {
   user?: { role?: string };
@@ -154,7 +163,7 @@ router.get('/status', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/issues', anyAuth, async (req: AuthReq, res: Res) => {
+router.get('/issues', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
   try {
     if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
       return res.status(503).json({ error: 'No GitHub credentials configured' });
@@ -169,7 +178,7 @@ router.get('/issues', anyAuth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/issues', anyAuth, async (req: AuthReq, res: Res) => {
+router.post('/issues', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
   try {
     if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
       return res.status(503).json({ error: 'No GitHub credentials configured' });
@@ -185,7 +194,7 @@ router.post('/issues', anyAuth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/issues/:number/comment', anyAuth, async (req: AuthReq, res: Res) => {
+router.post('/issues/:number/comment', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
   try {
     const issueNumber = Number(req.params?.number);
     const { body } = (req.body || {}) as { body?: string };
@@ -199,7 +208,7 @@ router.post('/issues/:number/comment', anyAuth, async (req: AuthReq, res: Res) =
   }
 });
 
-router.post('/issues/:number/close', anyAuth, async (req: AuthReq, res: Res) => {
+router.post('/issues/:number/close', githubIpRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
   try {
     const issueNumber = Number(req.params?.number);
     const { comment } = (req.body || {}) as { comment?: string };

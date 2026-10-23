@@ -499,7 +499,7 @@ router.delete('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, a
   }
 });
 
-router.get('/installations', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installations = req.agentInstallations || [];
     const agentInstallation = req.agentInstallation;
@@ -1310,7 +1310,7 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
   }
 });
 
-router.post('/events/:id/ack', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/events/:id/ack', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installation = req.agentInstallation;
     const agentUser = req.agentUser;
@@ -1592,7 +1592,7 @@ router.post(
   },
 );
 
-router.get('/pods/:podId/context', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -1691,7 +1691,7 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req: any, res: any) 
   }
 });
 
-router.get('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -1919,7 +1919,7 @@ router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntime
  * Recent posts in a pod with comment counts and recent human comments.
  * postId doubles as threadId for commonly_post_thread_comment.
  */
-router.get('/pods/:podId/posts', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/posts', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
@@ -2196,7 +2196,7 @@ router.post('/pods/:podId/propose-action', phase4RateLimit, agentRuntimeAuth, as
   }
 });
 
-router.post('/pods/:podId/summaries', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/pods/:podId/summaries', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -2272,7 +2272,7 @@ router.post('/pods/:podId/summaries', agentRuntimeAuth, async (req: any, res: an
 /**
  * POST /threads/:threadId/comments (agent runtime token auth)
  */
-router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/threads/:threadId/comments', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { threadId } = req.params;
     const installation = req.agentInstallation;
@@ -2542,7 +2542,7 @@ function extractCyclesAppend(sections: Record<string, unknown>): CyclesAppendPay
  * Returns this agent's memory in both v1 (`content`) and v2 (`sections`)
  * shapes. v1 callers read `content`; v2 callers read `sections` directly.
  */
-router.get('/memory', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/memory', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {
@@ -2860,7 +2860,7 @@ router.post('/memory/sync', phase4RateLimit, agentRuntimeAuth, async (req: any, 
  * POST /posts (agent runtime token auth)
  * Create a post in the feed as the agent's bot user
  */
-router.post('/posts', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/posts', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const agentUser = req.agentUser;
     if (!agentUser) {
@@ -3366,7 +3366,7 @@ router.post('/pods/:podId/self-install', phase4RateLimit, agentRuntimeAuth, asyn
  * GET /pods/:podId/integrations (agent runtime token auth)
  * Get integration configs for a pod that agents can access
  */
-router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/integrations', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -3430,7 +3430,7 @@ router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req: any, res: 
  * GET /pods/:podId/integrations/:integrationId/messages (agent runtime token auth)
  * Fetch messages from Discord/GroupMe channel
  */
-router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId, integrationId } = req.params;
     const {
@@ -3517,7 +3517,7 @@ router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth
  * GET /pods/:podId/social-policy (agent runtime token auth)
  * Returns effective global social publish policy.
  */
-router.get('/pods/:podId/social-policy', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/social-policy', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -3540,7 +3540,7 @@ router.get('/pods/:podId/social-policy', agentRuntimeAuth, async (req: any, res:
  * POST /pods/:podId/integrations/:integrationId/publish (agent runtime token auth)
  * Publish curated content to an external integration (X/Instagram).
  */
-router.post('/pods/:podId/integrations/:integrationId/publish', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/pods/:podId/integrations/:integrationId/publish', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId, integrationId } = req.params;
     const {
@@ -3983,7 +3983,7 @@ router.post('/asks/:requestId/respond', phase4RateLimit, agentRuntimeAuth, async
 const { handleUpload, uploadSingle } = require('./uploads');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { validateOfficeContent } = require('../services/officeContentValidator');
-router.post('/pods/:podId/uploads', agentRuntimeAuth, uploadSingle('file'), async (req: any, res: any) => {
+router.post('/pods/:podId/uploads', phase4RateLimit, agentRuntimeAuth, uploadSingle('file'), async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
