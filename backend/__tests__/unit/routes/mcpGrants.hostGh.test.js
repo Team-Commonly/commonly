@@ -156,6 +156,7 @@ describe('host GitHub push boundary', () => {
   });
 
   it('preserves the larger push parser before the global JSON parser in the real server', async () => {
+    expect(typeof router.pushBodyRateLimit).toBe('function');
     const source = readFileSync(join(__dirname, '../../../server.ts'), 'utf8');
     expect(source.indexOf("app.use('/api/mcp/grants/:grantId/push', mcpGrantsRoutes.pushBodyRateLimit,"))
       .toBeGreaterThan(-1);

@@ -30,7 +30,8 @@ describe('confined Git remote helper', () => {
     await run(repo, ['commit', '-am', 'change'], env);
     forwarded = [];
     broker = await startSeatGhBroker({
-      runtimeToken: 'cm_agent_test', instanceUrl: 'http://localhost:5000', root: join(root, 'broker'),
+      runtimeToken: 'cm_agent_test', instanceUrl: 'http://localhost:5000',
+      root: join(root, 'broker'), shimRoot: root,
       fetchImpl: async (url, request) => {
         forwarded.push({ url: String(url), request: JSON.parse(request.body) });
         return { status: 200, text: async () => JSON.stringify({ result: { ref: seatRef } }) };

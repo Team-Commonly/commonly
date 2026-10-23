@@ -664,7 +664,11 @@ the next request. No generic URL, repository, method, header, or `gh api`
 passthrough is part of this interface.
 
 Each listener lives under a daemon-owned directory that the seat cannot read,
-write, enumerate, or replace. The Codex permission profile sets
+write, enumerate, or replace. The executable shims live in a distinct
+per-spawn, seat-visible directory supplied by the trusted launcher; that
+directory contains no socket or credential. The launcher must allow that shim
+directory through the filesystem profile while continuing to deny the listener
+directory. The Codex permission profile sets
 `features.network_proxy = true` and
 `network.unix_sockets.<exact seat path> = "allow"`, leaves
 `dangerously_allow_all_unix_sockets = false`, and has no sibling socket entry;

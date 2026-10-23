@@ -2,7 +2,6 @@ import { afterEach, beforeEach, expect, it, jest } from '@jest/globals';
 import { execFile } from 'child_process';
 import { mkdtemp, rm } from 'fs/promises';
 import { connect } from 'net';
-import { tmpdir } from 'os';
 import { join } from 'path';
 import { promisify } from 'util';
 import { startSeatGhBroker } from '../src/lib/host-gh-broker.js';
@@ -14,12 +13,14 @@ let broker;
 let fetchImpl;
 
 beforeEach(async () => {
-  testRoot = await mkdtemp(join(tmpdir(), 'commonly-host-gh-test-'));
+  // macOS AF_UNIX paths have a small byte limit.
+  testRoot = await mkdtemp('/tmp/hgt-');
   fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
     callId: 'call-1', outcome: 'ok', result: { number: 7 },
   }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
   broker = await startSeatGhBroker({
-    runtimeToken: TOKEN, instanceUrl: 'https://api.example.invalid', root: testRoot, fetchImpl,
+    runtimeToken: TOKEN, instanceUrl: 'https://api.example.invalid',
+    root: join(testRoot, 'sockets'), shimRoot: testRoot, fetchImpl,
   });
 });
 
@@ -75,6 +76,28 @@ it('rejects a removed seat endpoint after teardown', async () => {
     socket.on('error', reject);
   })).rejects.toMatchObject({ code: 'ENOENT' });
   expect(fetchImpl).not.toHaveBeenCalled();
+});
+
+it('keeps shims outside the protected socket directory', () => {
+  expect(broker.shimPath.startsWith(broker.socketDirectory)).toBe(false);
+  expect(broker.pushHelperPath.startsWith(broker.socketDirectory)).toBe(false);
+  expect(broker.socketPath.startsWith(broker.socketDirectory)).toBe(true);
+});
+
+it('forwards a bounded bundle larger than the command limit', async () => {
+  const response = await new Promise((resolve, reject) => {
+    const socket = connect(broker.socketPath);
+    const chunks = [];
+    socket.on('connect', () => socket.end(JSON.stringify({
+      grantId: 'grant-1', operation: 'push.branch', args: { bundle: 'A'.repeat(70 * 1024) },
+    })));
+    socket.on('data', (chunk) => chunks.push(chunk));
+    socket.on('end', () => resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))));
+    socket.on('error', reject);
+  });
+  expect(response.status).toBe(200);
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+  expect(String(fetchImpl.mock.calls[0][0])).toMatch(/\/api\/mcp\/grants\/grant-1\/push$/);
 });
 
 it('reports a parked write as pending approval without claiming it executed', async () => {

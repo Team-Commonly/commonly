@@ -7,7 +7,7 @@ import { createServer } from 'net';
 import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 128 * 1024;
@@ -20,7 +20,8 @@ const reply = (socket, status, body) => {
 };
 
 export const startSeatGhBroker = async ({
-  runtimeToken, instanceUrl, fetchImpl = fetch, root = join(homedir(), '.commonly', 'host-gh'),
+  runtimeToken, instanceUrl, shimRoot, fetchImpl = fetch,
+  root = join(homedir(), '.commonly', 'host-gh'),
 }) => {
   if (typeof runtimeToken !== 'string' || !runtimeToken.startsWith('cm_agent_')) {
     throw new Error('host GitHub broker requires a runtime token');
@@ -32,18 +33,32 @@ export const startSeatGhBroker = async ({
   if (endpoint.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname)) {
     throw new Error('host GitHub broker requires HTTPS outside localhost');
   }
+  if (typeof shimRoot !== 'string' || !shimRoot) {
+    throw new Error('host GitHub broker requires a seat-visible shim root');
+  }
+  if (resolve(shimRoot) === resolve(root)) {
+    throw new Error('host GitHub shims cannot share the protected socket root');
+  }
   await mkdir(root, { recursive: true, mode: 0o700 });
   const rootStats = await lstat(root);
   if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
     throw new Error('host GitHub broker root must be a real directory');
   }
   await chmod(root, 0o700);
-  const directory = await mkdtemp(join(root, 'seat-'));
-  const socketPath = join(directory, 'broker.sock');
-  const shimPath = join(directory, 'gh');
-  const pushHelperPath = join(directory, 'git-remote-commonly');
+  const shimRootStats = await lstat(shimRoot);
+  if (!shimRootStats.isDirectory() || shimRootStats.isSymbolicLink()) {
+    throw new Error('host GitHub shim root must be a real directory');
+  }
+  let socketDirectory;
+  let directory;
   let server;
+  const connections = new Set();
   try {
+    socketDirectory = await mkdtemp(join(root, 'seat-'));
+    directory = await mkdtemp(join(shimRoot, '.commonly-gh-'));
+    const socketPath = join(socketDirectory, 'broker.sock');
+    const shimPath = join(directory, 'gh');
+    const pushHelperPath = join(directory, 'git-remote-commonly');
     const shimSource = await readFile(SHIM_SOURCE, 'utf8');
     await writeFile(shimPath, `#!${process.execPath}\n${shimSource.replace(/^#![^\n]*\n/, '')}`, { mode: 0o500 });
     await chmod(shimPath, 0o555);
@@ -51,6 +66,8 @@ export const startSeatGhBroker = async ({
     await writeFile(pushHelperPath, `#!${process.execPath}\n${helperSource.replace(/^#![^\n]*\n/, '')}`, { mode: 0o500 });
     await chmod(pushHelperPath, 0o555);
     server = createServer({ allowHalfOpen: true }, (socket) => {
+      connections.add(socket);
+      socket.on('close', () => connections.delete(socket));
       let chunks = [];
       let size = 0;
       socket.setTimeout(15_000, () => socket.destroy());
@@ -65,7 +82,7 @@ export const startSeatGhBroker = async ({
         }
       });
       socket.on('end', async () => {
-        if (socket.destroyed || size > MAX_REQUEST_BYTES) return;
+        if (socket.destroyed || size > MAX_PUSH_REQUEST_BYTES) return;
         let request;
         try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch {
           reply(socket, 400, { error: 'invalid_request' });
@@ -117,14 +134,19 @@ export const startSeatGhBroker = async ({
       shimPath,
       pushHelperPath,
       directory,
+      socketDirectory,
       async close() {
+        for (const socket of connections) socket.destroy();
         await new Promise((resolve) => server.close(resolve));
         await rm(directory, { recursive: true, force: true });
+        await rm(socketDirectory, { recursive: true, force: true });
       },
     };
   } catch (error) {
+    for (const socket of connections) socket.destroy();
     if (server?.listening) await new Promise((resolve) => server.close(resolve));
-    await rm(directory, { recursive: true, force: true });
+    if (directory) await rm(directory, { recursive: true, force: true });
+    if (socketDirectory) await rm(socketDirectory, { recursive: true, force: true });
     throw error;
   }
 };

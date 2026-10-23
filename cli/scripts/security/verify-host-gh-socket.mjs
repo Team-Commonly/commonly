@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 /** Real macOS permission-profile probe; no provider credentials or model turn. */
 import { execFile } from 'child_process';
-import { mkdtemp, rm } from 'fs/promises';
-import { tmpdir } from 'os';
+import { mkdir, mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
 import { promisify } from 'util';
 import { startSeatGhBroker } from '../../src/lib/host-gh-broker.js';
 
 const runFile = promisify(execFile);
-const root = await mkdtemp(join(tmpdir(), 'commonly-gh-isolation-'));
+const root = await mkdtemp('/tmp/hgi-');
+const socketRoot = join(root, 'sockets');
+const shimRoot = join(root, 'shims');
+await mkdir(shimRoot);
 const calls = [];
 const seat = async (name) => startSeatGhBroker({
   runtimeToken: `cm_agent_${name.repeat(64)}`,
   instanceUrl: 'https://api.example.invalid',
-  root,
+  root: socketRoot,
+  shimRoot,
   fetchImpl: async () => {
     calls.push(name);
     return new Response(JSON.stringify({ callId: name, outcome: 'ok', result: { number: 1 } }), {
@@ -24,7 +27,7 @@ const seat = async (name) => startSeatGhBroker({
 
 const profile = (own, featureOn = true) => [
   '-c', 'default_permissions="host_gh_probe"',
-  '-c', `permissions.host_gh_probe.filesystem={":minimal"="read","/opt/homebrew"="read",${JSON.stringify(root)}="deny",${JSON.stringify(own.directory)}="read"}`,
+  '-c', `permissions.host_gh_probe.filesystem={":minimal"="read","/opt/homebrew"="read",${JSON.stringify(socketRoot)}="deny",${JSON.stringify(own.directory)}="read"}`,
   '-c', `features.network_proxy=${featureOn}`,
   '-c', 'permissions.host_gh_probe.network.enabled=true',
   '-c', `permissions.host_gh_probe.network.unix_sockets={${JSON.stringify(own.socketPath)}="allow"}`,
