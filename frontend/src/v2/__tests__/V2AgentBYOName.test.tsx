@@ -47,6 +47,7 @@ const pods = [{ _id: 'p1', name: 'Workspace', type: 'chat' }];
 // Hosting on, so the page asks where the agent runs.
 const mockGet = () => {
   axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 30 } } });
     }
@@ -70,10 +71,20 @@ const nameInput = () => screen.getByPlaceholderText('my-mcp-agent');
 
 afterEach(() => {
   jest.clearAllMocks();
+  authValue.currentUser.username = 'sam';
   window.history.pushState({}, '', '/');
 });
 
 describe('BYO default agent name follows where it runs', () => {
+  test('trims a long username before asking for a name suggestion', async () => {
+    authValue.currentUser.username = 'a'.repeat(60);
+    mockGet();
+    renderAt();
+    await waitFor(() => expect(axios.get.mock.calls.some(([url]) => url.startsWith('/api/registry/agents/next-free-name?'))).toBe(true));
+    const lookup = axios.get.mock.calls.find(([url]) => url.startsWith('/api/registry/agents/next-free-name?'))[0];
+    expect(new URLSearchParams(lookup.split('?')[1]).get('base')).toHaveLength(64);
+  });
+
   test('hosted keeps <user>-agent; your own agent is <user>-claude', async () => {
     mockGet();
     renderAt();
@@ -142,6 +153,7 @@ describe('BYO default agent name follows where it runs', () => {
     await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-byo'));
     fireEvent.change(nameInput(), { target: { value: 'sam-agent' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
     expect(await screen.findByText(/sam-agent is your hosted agent's name/)).toBeInTheDocument();
     expect(screen.queryByText(/has no runtime token/)).toBeNull();

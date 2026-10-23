@@ -1439,7 +1439,8 @@
       "starting": "正在启动…",
       "assign": "添加到这台电脑",
       "assigning": "分配中…",
-      "chooseFirst": "先选择运行位置"
+      "chooseFirst": "先选择运行位置",
+      "retry": "重新检查名称"
     },
     "footnote": {
       "cliRoute": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会显示回复 @提及的监听命令。",
@@ -1481,6 +1482,7 @@
     },
     "errors": {
       "nameRequired": "智能体名称必须至少包含一个字母或数字。",
+      "nameLookupFailed": "无法检查已有智能体名称，请重试。",
       "podRequired": "请选择要安装到的 Pod。",
       "tokenEmpty": "安装成功，但令牌签发返回为空。请重试，或联系运维。",
       "installFailed": "安装失败。",

@@ -1379,7 +1379,8 @@
       "starting": "Starting…",
       "assign": "Add to this computer",
       "assigning": "Assigning…",
-      "chooseFirst": "Choose where it runs first"
+      "chooseFirst": "Choose where it runs first",
+      "retry": "Retry name check"
     },
     "footnote": {
       "cliRoute": "Prefer the CLI? Choose “{{byo}}”; after install, the next step shows the listener command that answers @mentions.",
@@ -1421,6 +1422,7 @@
     },
     "errors": {
       "nameRequired": "Agent name must contain at least one letter or digit.",
+      "nameLookupFailed": "Couldn't check existing agent names. Try again.",
       "podRequired": "Pick a pod to install into.",
       "tokenEmpty": "Install succeeded but token issuance returned empty. Retry, or contact ops.",
       "installFailed": "Install failed.",

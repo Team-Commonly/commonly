@@ -44,6 +44,7 @@ const pods = [{ _id: 'p1', name: 'Workspace', type: 'chat', createdBy: { _id: 'u
 
 const mockGet = ({ configured, status }) => {
   axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
     }
@@ -95,6 +96,7 @@ describe('V2AgentBYO — Run it here', () => {
     let answerAvailability;
     let answerMachines;
     axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
       if (url.startsWith('/api/hosted/availability')) {
         return new Promise((resolve) => { answerAvailability = resolve; });
       }
@@ -116,7 +118,7 @@ describe('V2AgentBYO — Run it here', () => {
 
     // No computers either: bringing your own runtime is the only path.
     await act(async () => { answerMachines({ data: { machines: [] } }); });
-    expect(await screen.findByRole('button', { name: /get my connect command/i })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
     expect(screen.queryByTestId('byo-mode-unchosen')).not.toBeInTheDocument();
   });
 
@@ -256,6 +258,7 @@ describe('V2AgentBYO — Run it here', () => {
   test('a hosted offer link offers no act until the instance says it can host', async () => {
     let answerAvailability;
     axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
       if (url.startsWith('/api/hosted/availability')) {
         return new Promise((resolve) => { answerAvailability = resolve; });
       }
@@ -278,7 +281,7 @@ describe('V2AgentBYO — Run it here', () => {
     mockGet({ configured: false });
     renderAt('/v2/agents/byo?pod=p1&mode=hosted');
 
-    expect(await screen.findByRole('button', { name: /get my connect command/i })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
     expect(screen.queryByTestId('byo-mode-hosted')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^run it here$/i })).not.toBeInTheDocument();
     window.history.pushState({}, '', '/');
@@ -399,6 +402,7 @@ describe('V2AgentBYO — Run it here', () => {
     window.history.pushState({}, '', '/v2/agents/byo?persona=planner&pod=p1');
     renderPage();
     await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
     await waitFor(() => expect(axios.post.mock.calls.some(([url]) => url === '/api/registry/install')).toBe(true));
     const installCall = axios.post.mock.calls.find(([url]) => url === '/api/registry/install');
@@ -417,6 +421,7 @@ describe('V2AgentBYO — Run it here', () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
     expect(screen.queryByTestId('byo-mode-hosted')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
     await screen.findByText(/your connect command for/i);
     expect(axios.post.mock.calls[0][1]).toMatchObject({ config: { runtime: { runtimeType: 'webhook' } } });

@@ -1,5 +1,6 @@
 // Agent catalog browse routes — extracted from registry.js (GH#112)
 const express = require('express');
+const mongoose = require('mongoose');
 const auth = require('../../middleware/auth');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const Pod = require('../../models/Pod');
@@ -33,6 +34,43 @@ catalogRouter.use(rateLimit({
   keyGenerator: (req: any) => cloudflareIpRateLimitKeyGenerator(req),
   handler: (_req: any, res: any) => res.status(429).json({ code: 'rate_limited' }),
 }));
+
+/** Suggest a free BYO name across the caller's installable pods. */
+catalogRouter.get('/agents/next-free-name', auth, async (req: any, res: any) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const memberId = new mongoose.Types.ObjectId(String(userId));
+    const base = req.query.base;
+    if (typeof base !== 'string' || base.length < 1 || base.length > 64
+        || !/^[a-z0-9-]+$/.test(base)) {
+      return res.status(400).json({ error: 'Invalid agent name' });
+    }
+
+    // Match the BYO picker: member pods, excluding personal agent rooms and
+    // publicly readable pods. The roster endpoint counts active installs only.
+    const pods = await Pod.find({
+      members: memberId,
+      type: { $nin: ['agent-room', 'agent-dm', 'agent-admin'] },
+      publicRead: { $ne: true },
+    }).select('_id').lean();
+    const installations = pods.length ? await AgentInstallation.find({
+      podId: { $in: pods.map((pod: any) => pod._id) },
+      status: 'active',
+    }).select('agentName').lean() : [];
+    const taken = new Set(installations.map((row: any) => String(row.agentName).toLowerCase()));
+    let name = base;
+    for (let suffix = 2; taken.has(name); suffix += 1) {
+      name = `${base.slice(0, 64 - String(suffix).length - 1)}-${suffix}`;
+    }
+    return res.json({ name });
+  } catch (error) {
+    console.error('Error suggesting BYO agent name:', error);
+    return res.status(500).json({ error: 'Failed to suggest agent name' });
+  }
+});
 
 const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
   const installations = await AgentInstallation.find({
