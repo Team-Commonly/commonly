@@ -7,7 +7,7 @@ metadata:
   labels:
     {{- if .worker }}{{ include "commonly.backendWorker.labels" . | nindent 4 }}{{ else }}{{ include "commonly.backend.labels" . | nindent 4 }}{{ end }}
 spec:
-  replicas: {{ if .worker }}1{{ else }}{{ .Values.backend.replicaCount }}{{ end }}
+  replicas: {{ if .worker }}{{ if .Values.backend.worker.startPaused }}0{{ else }}1{{ end }}{{ else }}{{ .Values.backend.replicaCount }}{{ end }}
   {{- if .worker }}
   # A rolling surge would briefly run two schedulers and two Discord gateways.
   strategy:

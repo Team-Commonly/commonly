@@ -17,13 +17,17 @@ for lane in default dev staging; do
 
   helm template "commonly-$lane" "$chart" "${values[@]}" > "$tmp_dir/$lane-off.yaml"
   helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true > "$tmp_dir/$lane-on.yaml"
+  helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true --set backend.worker.startPaused=true > "$tmp_dir/$lane-paused.yaml"
 
   off="$tmp_dir/$lane-off.yaml"
   on="$tmp_dir/$lane-on.yaml"
+  paused="$tmp_dir/$lane-paused.yaml"
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .metadata.name' "$off")" = ""
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .metadata.name' "$on")" = backend-worker
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.replicas' "$on")" = 1
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.replicas' "$on")" = 1
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.replicas' "$paused")" = 0
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$paused")" = 0
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.strategy.type' "$on")" = Recreate
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$off")" = ""
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$on")" = 0
@@ -39,6 +43,9 @@ for lane in default dev staging; do
   "$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env | map(select(.name != "RUN_WORKER"))' "$on" > "$tmp_dir/$lane-web-env.yaml"
   "$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env | map(select(.name != "RUN_WORKER"))' "$on" > "$tmp_dir/$lane-worker-env.yaml"
   diff -u "$tmp_dir/$lane-web-env.yaml" "$tmp_dir/$lane-worker-env.yaml"
+  "$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].image' "$on" > "$tmp_dir/$lane-web-image.yaml"
+  "$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].image' "$on" > "$tmp_dir/$lane-worker-image.yaml"
+  diff -u "$tmp_dir/$lane-web-image.yaml" "$tmp_dir/$lane-worker-image.yaml"
 
   if [[ $lane != default ]]; then
     test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.nodeSelector.pool' "$on")" = dev

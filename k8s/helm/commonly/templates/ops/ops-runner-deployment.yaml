@@ -4,8 +4,7 @@
 # cgroup/CPU limit and starve its readiness probe (2026-10-22 11:42Z incident;
 # see docs/runbooks/ops-runner-and-no-exec-into-backend.md). Same image + env +
 # secret mounts as backend; replicas 1, spot-pool, no Service, no ingress, no
-# probes, `sleep infinity`. RUN_WORKER is reserved for the serving process.
-# Use: kubectl exec -i deploy/ops-runner --
+# probes, `sleep infinity`. Use: kubectl exec -i deploy/ops-runner --
 # env NODE_PATH=/app/node_modules node - < your-script.js
 apiVersion: apps/v1
 kind: Deployment
@@ -34,9 +33,8 @@ spec:
         # sleep so the container stays up as an exec target; it serves no traffic.
         command: ["/bin/sh", "-c", "sleep infinity"]
         # ===================================================================
-        # ENV + VOLUME MOUNTS below mirror backend's application dependencies
-        # from templates/core/backend-deployment.yaml -- KEEP IN SYNC WITH IT.
-        # RUN_WORKER is the server start gate, not an ops-runner dependency.
+        # ENV + VOLUME MOUNTS below are MIRRORED VERBATIM from
+        # templates/core/backend-deployment.yaml -- KEEP IN SYNC WITH IT.
         # A DRY helper extraction can't keep backend's render byte-identical:
         # the env block carries blank lines that `nindent` would re-indent.
         # Operator scripts here see the same MONGO_URI / PG_* / JWT_SECRET /
