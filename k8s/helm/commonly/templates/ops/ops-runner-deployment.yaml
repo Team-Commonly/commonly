@@ -33,8 +33,9 @@ spec:
         # sleep so the container stays up as an exec target; it serves no traffic.
         command: ["/bin/sh", "-c", "sleep infinity"]
         # ===================================================================
-        # ENV + VOLUME MOUNTS below are MIRRORED VERBATIM from
-        # templates/core/backend-deployment.yaml -- KEEP IN SYNC WITH IT.
+        # ENV + VOLUME MOUNTS below mirror backend's application dependencies
+        # from templates/core/backend-deployment.yaml -- KEEP IN SYNC WITH IT.
+        # RUN_WORKER is the server start gate, not an ops-runner dependency.
         # A DRY helper extraction can't keep backend's render byte-identical:
         # the env block carries blank lines that `nindent` would re-indent.
         # Operator scripts here see the same MONGO_URI / PG_* / JWT_SECRET /
