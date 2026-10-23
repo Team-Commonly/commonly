@@ -132,18 +132,6 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       || !displayName.trim() || displayName.trim().length > 80)) {
       return res.status(400).json({ error: 'Display name must be 1–80 characters' });
     }
-    // The visible name belongs to the portable User principal, not one pod.
-    // A partial installer must not rename an identity used by other owners.
-    if (displayName !== undefined && !isInstanceAdmin) {
-      const ownership = await ownsRuntimeIdentity(userId, name.toLowerCase(), normalizedInstanceId);
-      if (!ownership.owned) {
-        return res.status(403).json({
-          code: ownership.failure,
-          error: 'Only the sole installer or an instance admin can rename this agent identity',
-        });
-      }
-    }
-
     // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is one of
     // TWO backend writers of `config.environment` (the other is
     // POST /api/registry/install, which checks the same thing), and that field
@@ -232,6 +220,22 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       instanceId: normalizedInstanceId,
       status: { $ne: 'uninstalled' },
     });
+    // A display name belongs to the portable User principal. Check every
+    // installed projection, including paused ones: runtime-token ownership
+    // intentionally looks only at active rows and would reject a paused seat
+    // even when this caller is its sole installer.
+    if (displayName !== undefined && !isInstanceAdmin) {
+      const missingInstaller = peerInstallations.some((entry: any) => !entry.installedBy);
+      const anotherInstaller = peerInstallations.some(
+        (entry: any) => entry.installedBy && entry.installedBy.toString() !== userId.toString(),
+      );
+      if (missingInstaller || anotherInstaller) {
+        return res.status(403).json({
+          code: missingInstaller ? 'unknown_installer' : 'another_installer',
+          error: 'Only the sole installer or an instance admin can rename this agent identity',
+        });
+      }
+    }
 
     const peerByPod = new Map(
       peerInstallations.map((entry: any) => [entry.podId?.toString?.() || '', entry]),

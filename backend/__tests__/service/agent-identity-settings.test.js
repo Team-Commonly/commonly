@@ -123,4 +123,15 @@ describe('agent identity settings with stored installations', () => {
     const profiles = await AgentProfile.find({ agentName: 'identity-agent', instanceId: 'seat' });
     expect(profiles.map((row) => row.name)).toEqual(['New name', 'New name']);
   });
+
+  it('lets a sole installer rename a paused identity', async () => {
+    await AgentInstallation.updateOne({ podId: podB._id, agentName: 'identity-agent' }, { status: 'uninstalled' });
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'identity-agent' }, { status: 'paused' });
+    const response = await request(app).patch(url(podA._id)).set('Authorization', bearer(installer))
+      .send({ instanceId: 'seat', displayName: 'Paused name' });
+    expect(response.status).toBe(200);
+    expect((await User.findById(identity._id)).botMetadata.displayName).toBe('Paused name');
+    expect((await AgentInstallation.findOne({ podId: podA._id, agentName: 'identity-agent' })).displayName)
+      .toBe('Paused name');
+  });
 });

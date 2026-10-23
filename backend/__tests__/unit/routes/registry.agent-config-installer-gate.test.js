@@ -234,10 +234,10 @@ describe('agent config PATCH — installer gate', () => {
 
   it('refuses an identity rename by an installer who shares that identity', async () => {
     const primary = installation({ installedBy: MEMBER });
+    const peer = installation({ podId: 'pod-2', installedBy: 'other-installer' });
     setPod();
     AgentInstallation.findOne.mockResolvedValue(primary);
-    AgentInstallation.find.mockResolvedValue([primary]);
-    ownsRuntimeIdentity.mockResolvedValue({ owned: false, failure: 'another_installer' });
+    AgentInstallation.find.mockResolvedValue([primary, peer]);
 
     const res = await request(app)
       .patch('/api/registry/pods/pod-1/agents/openclaw')
