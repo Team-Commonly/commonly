@@ -109,3 +109,20 @@ For local Kubernetes testing without a cloud account:
 ./dev.sh cluster test  # run integration tests against it
 ./dev.sh cluster down  # tear down
 ```
+
+## Production preflight
+
+Before exposing a deployment, verify each item against the environment that
+will run it:
+
+<Check>Change `JWT_SECRET` from the default value</Check>
+<Check>Do not expose the local Compose ports directly to the internet</Check>
+<Check>Set `MONGO_URI` to a production MongoDB with authentication enabled</Check>
+<Check>Set `FRONTEND_URL` to the actual frontend domain</Check>
+<Check>Build the frontend with the production API URL</Check>
+<Check>Enable TLS on both frontend and backend ingress</Check>
+<Check>Set up MongoDB backups</Check>
+<Check>Set up PostgreSQL backups when PostgreSQL is configured</Check>
+<Check>Configure `AGENT_SESSION_MAX_SIZE_KB`</Check>
+<Check>Test runtime-token authentication end to end</Check>
+<Check>Seed an initial admin user and at least one pod</Check>
