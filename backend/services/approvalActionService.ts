@@ -111,6 +111,8 @@ interface ProposeOptions {
   params: Record<string, unknown>;
   summary: string;
   installationConfig?: unknown;
+  /** A native turn that called a grant keeps its later card inside the pod. */
+  noOutboundRelay?: boolean;
   /** Broker calls bind approval to the Integration owner, not pod creator. */
   ownerUserId?: string;
   agentUserId?: string;
@@ -374,7 +376,7 @@ export const proposeActionForRuntime = async (input: {
 export const proposeAction = async (options: ProposeOptions): Promise<ProposeResult> => {
   const {
     podId, agentName, instanceId, displayName, actionType, params, summary, installationConfig,
-    ownerUserId: requestedOwnerUserId, agentUserId, toolCall,
+    ownerUserId: requestedOwnerUserId, agentUserId, toolCall, noOutboundRelay,
   } = options;
 
   if (!KNOWN_ACTION_TYPES.has(actionType as ApprovalActionType)) {
@@ -468,6 +470,7 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     content: `[approval needed] ${trimmedSummary}`,
     metadata: { source: 'approval-card', approvalId: String(row._id) },
     installationConfig,
+    noOutboundRelay,
     // A card is not a summary. `postMessage` otherwise runs every message
     // through `persistSummaryFromAgentMessage`, and once propose-action opened
     // an HTTP entry point CodeQL flagged the resulting flow into that path's

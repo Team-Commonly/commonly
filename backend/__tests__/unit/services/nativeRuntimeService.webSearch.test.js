@@ -17,9 +17,16 @@ jest.mock('../../../models/Pod', () => ({
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ _id: '507f1f77bcf86cd799439077' }) }) })),
+  findById: jest.fn(() => ({
+    select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: false }, isBot: false }) }),
+  })),
 }));
 jest.mock('../../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
 jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn().mockResolvedValue({ success: true }) }));
+const mockProposeAction = jest.fn();
+jest.mock('../../../services/approvalActionService', () => ({
+  proposeAction: (...args) => mockProposeAction(...args),
+}));
 jest.mock('../../../services/messageClaimService', () => ({
   claim: jest.fn().mockResolvedValue({ claimed: true, expiresAt: new Date() }),
   release: jest.fn().mockResolvedValue({ released: true }),
@@ -114,6 +121,7 @@ describe('native turn with commonly_web_search', () => {
     mockBrokerDispatch.mockImplementation(async ({ name }) => (name === 'linear_list_issues'
       ? { callId: 'tc-1', outcome: 'ok', content: { issues: [] } }
       : null));
+    mockProposeAction.mockResolvedValue({ ok: true, approvalId: 'approval-1' });
   });
 
   test('results reach the model marked untrusted; the run keeps the count and the addresses only', async () => {
@@ -189,6 +197,188 @@ describe('native turn with commonly_web_search', () => {
 
     expect(mockBrokerDispatch.mock.calls.map(([args]) => args.name)).toContain('linear_list_issues');
     expect(mockSearchWeb).toHaveBeenCalledTimes(1);
+  });
+
+  describe('after a granted broker call', () => {
+    test('an unbridged post stays in the pod without narrowing the next tool offer', async () => {
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {})))
+        .mockResolvedValueOnce(toolCalls(call('c2', 'commonly_post_message', { content: 'issue result' })))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      expect(offeredIn(1)).toContain('linear_list_issues');
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+        content: 'issue result', noOutboundRelay: true,
+      }));
+    });
+
+    test('only posts after the broker call receive its outbound marker', async () => {
+      axios.post
+        .mockResolvedValueOnce(toolCalls(
+          call('c1', 'commonly_post_message', { content: 'before' }),
+          call('c2', 'linear_list_issues', {}),
+          call('c3', 'commonly_post_message', { content: 'after' }),
+        ))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      expect(AgentMessageService.postMessage.mock.calls.map(([args]) => [args.content, args.noOutboundRelay]))
+        .toEqual([['before', false], ['after', true]]);
+    });
+
+    test('a second broker call carries the outbound marker needed by a parked card', async () => {
+      axios.post
+        .mockResolvedValueOnce(toolCalls(
+          call('c1', 'linear_list_issues', {}),
+          call('c2', 'linear_list_issues', {}),
+        ))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      expect(mockBrokerDispatch.mock.calls.map(([args]) => args.noOutboundRelay)).toEqual([false, true]);
+    });
+
+    test('re-reads the bridge before each later post, including two in one response', async () => {
+      mockBridged.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValue(true);
+      axios.post
+        .mockResolvedValueOnce(toolCalls(
+          call('c1', 'linear_list_issues', {}),
+          call('c2', 'commonly_post_message', { content: 'first' }),
+          call('c3', 'commonly_post_message', { content: 'second' }),
+        ))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+      expect(AgentMessageService.postMessage.mock.calls[0][0]).toMatchObject({
+        content: 'first', noOutboundRelay: true,
+      });
+      expect(toolMessages(1)[2].content).toMatch(/turn that called a granted tool cannot post/);
+      // Initial offer, each of two posts, then the next model offer.
+      expect(mockBridged).toHaveBeenCalledTimes(4);
+    });
+
+    test('a bridge added only before the final-text fallback prevents its post', async () => {
+      mockBridged.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValue(true);
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {})))
+        .mockResolvedValueOnce(finalReply);
+
+      const result = await runAgent(install, mention);
+
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+      expect(result.finalMessage).toBeUndefined();
+      expect(savedRun.errorKind).toBe('guardrail_blocked');
+      expect(mockBridged).toHaveBeenCalledTimes(3);
+    });
+
+    test('an unbridged final-text fallback still carries noOutboundRelay', async () => {
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {})))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, mention);
+
+      expect(offeredIn(1)).toContain('linear_list_issues');
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+        content: 'Here is what shipped.', noOutboundRelay: true,
+      }));
+    });
+
+    test('a hosted offer also stays in the pod', async () => {
+      const priorEngine = process.env.HOSTED_ENGINE;
+      process.env.HOSTED_ENGINE = 'native';
+      const offerInstall = {
+        ...install,
+        installedBy: null,
+        config: { ...install.config, tools: [...install.config.tools, 'commonly_offer_hosted_agent'] },
+      };
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {}),
+          call('c2', 'commonly_offer_hosted_agent', { content: 'Run it here.' })))
+        .mockResolvedValueOnce(finalReply);
+
+      try {
+        await runAgent(offerInstall, mention);
+
+        expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+          content: 'Run it here.', noOutboundRelay: true,
+        }));
+      } finally {
+        if (priorEngine === undefined) delete process.env.HOSTED_ENGINE;
+        else process.env.HOSTED_ENGINE = priorEngine;
+      }
+    });
+
+    test('an approval card receives the outbound marker', async () => {
+      const proposalInstall = {
+        ...install,
+        config: { ...install.config, tools: [...install.config.tools, 'commonly_propose_action'] },
+      };
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {}),
+          call('c2', 'commonly_propose_action', {
+            actionType: 'create_pod', params: { name: 'Research' }, summary: 'Create a research pod',
+          })))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(proposalInstall, mention);
+
+      expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({ noOutboundRelay: true }));
+    });
+
+    test('a failed hosted turn after a broker call keeps its fixed line inside the pod', async () => {
+      const hostedInstall = {
+        ...install,
+        config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native', provisionedAt: new Date() } },
+      };
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {})))
+        .mockResolvedValueOnce({ status: 502, headers: {}, data: { error: 'upstream unavailable' } });
+
+      const result = await runAgent(hostedInstall, mention);
+
+      expect(result.status).toBe('failed');
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+        metadata: expect.objectContaining({ runFailed: true }),
+        noOutboundRelay: true,
+      }));
+    });
+
+    test.each([
+      ['commonly_offer_hosted_agent', { content: 'Run it here.' }],
+      ['commonly_propose_action', {
+        actionType: 'create_pod', params: { name: 'Research' }, summary: 'Create a research pod',
+      }],
+    ])('a newly bridged pod refuses a later %s post', async (postTool, args) => {
+      const priorEngine = process.env.HOSTED_ENGINE;
+      process.env.HOSTED_ENGINE = 'native';
+      mockBridged.mockResolvedValueOnce(false).mockResolvedValue(true);
+      const postingInstall = {
+        ...install,
+        installedBy: null,
+        config: { ...install.config, tools: [...install.config.tools, postTool] },
+      };
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {}), call('c2', postTool, args)))
+        .mockResolvedValueOnce(finalReply);
+
+      try {
+        await runAgent(postingInstall, mention);
+
+        expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+        expect(mockProposeAction).not.toHaveBeenCalled();
+        expect(toolMessages(1)[1].content).toMatch(/turn that called a granted tool cannot post/);
+      } finally {
+        if (priorEngine === undefined) delete process.env.HOSTED_ENGINE;
+        else process.env.HOSTED_ENGINE = priorEngine;
+      }
+    });
   });
 
   test('stops at three searches a turn and records three', async () => {

@@ -228,6 +228,7 @@ describe('a hosted run in a granted pod', () => {
       // A hosted turn has no shell, web or file tools, so the
       // seat-confinement refusal is out of scope for it (Wren, TASK-175).
       hostedTurn: true,
+      noOutboundRelay: false,
       tool: 'github.list_issues',
       args: { state: 'open' },
     });
