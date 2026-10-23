@@ -685,8 +685,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     const line2 = dead
       ? (grant.revokedAt
         ? (revokedBy
-          ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: localizeRelativeTime(grant.revokedAt, t, { now }) })
-          : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: localizeRelativeTime(grant.revokedAt, t, { now }) }))
+          ? t('tools.revokedByLine', { defaultValue: 'revoked by {{member}} {{rel}}', member: revokedBy, rel: localizeRelativeTime(grant.revokedAt, t, { now, pastEvent: true }) })
+          : t('tools.revokedLine', { defaultValue: 'revoked {{rel}}', rel: localizeRelativeTime(grant.revokedAt, t, { now, pastEvent: true }) }))
         : t('tools.expiredLine', { defaultValue: 'expired {{rel}}', rel: localizeRelativeTime(grant.expiresAt, t, { now }) }))
       // Direction A rule 1: the write mode is the glyph beside this line; its words ride the 390 kicker.
       // One interpolated key, not `{{agents}}` + a separate 'may use it': a language
@@ -971,13 +971,13 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
           <h2>{toolLabel(grant)} · {grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id)}</h2>
           <p>
             {granter
-              ? t('tools.grantedByOn', { defaultValue: 'Granted by {{member}} {{rel}}.', member: granter, rel: localizeRelativeTime(grant.createdAt, t, { now }) })
-              : t('tools.grantedOn', { defaultValue: 'Granted {{rel}}.', rel: localizeRelativeTime(grant.createdAt, t, { now }) })}
+              ? t('tools.grantedByOn', { defaultValue: 'Granted by {{member}} {{rel}}.', member: granter, rel: localizeRelativeTime(grant.createdAt, t, { now, pastEvent: true }) })
+              : t('tools.grantedOn', { defaultValue: 'Granted {{rel}}.', rel: localizeRelativeTime(grant.createdAt, t, { now, pastEvent: true }) })}
             {t('tools.sentenceSeparator', { defaultValue: ' ' })}
             {grant.revokedAt
               ? (revokedBy
-                ? t('tools.endedRevokedBy', { defaultValue: 'Revoked by {{member}} {{rel}}.', member: revokedBy, rel: localizeRelativeTime(grant.revokedAt, t, { now }) })
-                : t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: localizeRelativeTime(grant.revokedAt, t, { now }) }))
+                ? t('tools.endedRevokedBy', { defaultValue: 'Revoked by {{member}} {{rel}}.', member: revokedBy, rel: localizeRelativeTime(grant.revokedAt, t, { now, pastEvent: true }) })
+                : t('tools.endedRevoked', { defaultValue: 'Revoked {{rel}}.', rel: localizeRelativeTime(grant.revokedAt, t, { now, pastEvent: true }) }))
               : (isExpired(grant, now)
                 ? t('tools.endedExpired', { defaultValue: 'Expired {{rel}}.', rel: localizeRelativeTime(grant.expiresAt, t, { now }) })
                 : t('tools.endsRel', { defaultValue: 'Ends {{rel}}.', rel: localizeRelativeTime(grant.expiresAt, t, { now }) }))}
@@ -1050,7 +1050,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
               {trail.calls.map((line) => (
                 <li key={line.callId} className="v2-tools__trail-line">
                   <span><span className="v2-tools__outcome" title={outcomeLabel(line.outcome)} aria-hidden="true"><OutcomeGlyph outcome={line.outcome} /></span>{seatLabel(podId, line.agentUserId)} · {line.tool} · {outcomeLabel(line.outcome)}</span>
-                  <span className="v2-tools__trail-when">{localizeRelativeTime(line.at, t, { now })}</span>
+                  <span className="v2-tools__trail-when">{localizeRelativeTime(line.at, t, { now, pastEvent: true })}</span>
                 </li>
               ))}
             </ol>

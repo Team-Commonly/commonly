@@ -1,5 +1,52 @@
 import i18n, { i18nReady } from '../../i18n';
-import { localizeWindow } from './localizeRelativeTime';
+import { localizeRelativeTime, localizeWindow } from './localizeRelativeTime';
+
+// TASK-353: a past event a few seconds ahead of the browser clock used to read
+// "1m from now" (round(0.5) === 1). Past-event callers opt in with `pastEvent`,
+// and skew up to two minutes then reads "just now". Future times and deadlines
+// keep the default path, which is unchanged.
+describe('localizeRelativeTime past-event skew', () => {
+  beforeAll(async () => {
+    await i18nReady;
+  });
+
+  afterAll(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  // offsetMs > 0 is a past event; offsetMs < 0 is ahead of the browser clock.
+  const render = async (offsetMs: number, pastEvent: boolean) => {
+    const now = Date.parse('2026-10-23T07:30:00.000Z');
+    const date = new Date(now - offsetMs).toISOString();
+    await i18n.changeLanguage('en');
+    const en = localizeRelativeTime(date, i18n.t.bind(i18n), { now, pastEvent });
+    await i18n.changeLanguage('zh-CN');
+    const zh = localizeRelativeTime(date, i18n.t.bind(i18n), { now, pastEvent });
+    return { en, zh };
+  };
+
+  test('exactly now, and a normal past time, are unchanged in both locales', async () => {
+    await expect(render(0, true)).resolves.toMatchObject({ en: 'just now', zh: '刚刚' });
+    await expect(render(5 * 60_000, true)).resolves.toMatchObject({ en: '5m ago', zh: expect.not.stringMatching(/刚刚/) });
+  });
+
+  test('a past event up to two minutes ahead of the clock reads just now, in both locales', async () => {
+    await expect(render(-90_000, true)).resolves.toMatchObject({ en: 'just now', zh: '刚刚' });
+    // The boundary itself is still skew.
+    await expect(render(-120_000, true)).resolves.toMatchObject({ en: 'just now', zh: '刚刚' });
+  });
+
+  test('a past event more than two minutes ahead still reads as future', async () => {
+    await expect(render(-150_000, true)).resolves.toMatchObject({ en: '3m from now' });
+    await expect(render(-150_000, true)).resolves.toMatchObject({ zh: expect.not.stringMatching(/刚刚/) });
+  });
+
+  test('without the option, future times keep the default path', async () => {
+    await expect(render(-30_000, false)).resolves.toMatchObject({ en: '1m from now' });
+    await expect(render(-90_000, false)).resolves.toMatchObject({ en: '2m from now' });
+    await expect(render(-30_000, false)).resolves.toMatchObject({ zh: expect.not.stringMatching(/刚刚/) });
+  });
+});
 
 // localizeWindow had no test of its own, and the clamp inside it is the ONE
 // behaviour change in TASK-164: the English path used to read `just now` for a
