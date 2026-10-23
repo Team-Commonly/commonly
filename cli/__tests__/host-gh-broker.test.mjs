@@ -76,3 +76,12 @@ it('rejects a removed seat endpoint after teardown', async () => {
   })).rejects.toMatchObject({ code: 'ENOENT' });
   expect(fetchImpl).not.toHaveBeenCalled();
 });
+
+it('reports a parked write as pending approval without claiming it executed', async () => {
+  fetchImpl.mockResolvedValue(new Response(JSON.stringify({
+    status: 'pending_approval', approvalId: 'approval-1',
+  }), { status: 202, headers: { 'Content-Type': 'application/json' } }));
+  const { stdout } = await run('pr', 'create', '--title', 'Change', '--head', 'seat/agent-a/change',
+    '--base', 'main', '--grant-id', 'grant-1');
+  expect(JSON.parse(stdout)).toEqual({ status: 'pending_approval', approvalId: 'approval-1' });
+});

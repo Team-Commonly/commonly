@@ -85,7 +85,11 @@ const main = async () => {
       }
     });
   });
-  if (answer.status < 200 || answer.status >= 300 || answer.status === 202) {
+  if (answer.status === 202 && answer.body?.status === 'pending_approval') {
+    process.stdout.write(`${JSON.stringify(answer.body, null, 2)}\n`);
+    return;
+  }
+  if (answer.status < 200 || answer.status >= 300) {
     throw new Error(answer.body?.error || answer.body?.status || 'GitHub operation refused');
   }
   process.stdout.write(`${JSON.stringify(answer.body, null, 2)}\n`);

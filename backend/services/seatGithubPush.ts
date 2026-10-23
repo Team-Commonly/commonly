@@ -119,8 +119,9 @@ export const pushSeatBranch = async (
     const env = {
       PATH: '/usr/bin:/bin', HOME: directory, GIT_CONFIG_NOSYSTEM: '1',
       GIT_CONFIG_GLOBAL: '/dev/null', GIT_NO_REPLACE_OBJECTS: '1', GIT_TERMINAL_PROMPT: '0',
-      GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: `http.${url}.extraheader`,
+      GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: `http.${url}.extraheader`,
       GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`,
+      GIT_CONFIG_KEY_1: 'http.followRedirects', GIT_CONFIG_VALUE_1: 'false',
     };
     const git = async (args: string[], cwd = repo, failure?: SeatPushError) => {
       try {
