@@ -1277,7 +1277,7 @@ const resolveBotUserIds = async (
  * users. Escaping makes the guarantee local and survives the next widening.
  */
 const handleMatcher = (username: string): RegExp => new RegExp(
-  `^${String(username).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+  `^${escapeRegExp(String(username))}$`,
   'i',
 );
 
