@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import Pod from '../models/Pod';
 import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
@@ -18,13 +19,16 @@ const configOf = (installation: any): Record<string, any> => (
 
 /** A private listener may take instructions only from its owner. */
 export const privateListenerPodAllowed = async (podId: unknown, ownerUserId: unknown): Promise<boolean> => {
-  const pod = await Pod.findById(podId).select('createdBy members joinPolicy publicRead communityListed').lean();
+  const podIdString = id(podId);
+  if (!/^[0-9a-fA-F]{24}$/.test(podIdString)) return false;
+  const pod = await Pod.findById(new Types.ObjectId(podIdString))
+    .select('createdBy members joinPolicy publicRead communityListed').lean();
   if (!pod || pod.joinPolicy !== 'invite-only' || pod.publicRead || pod.communityListed
       || id(pod.createdBy) !== id(ownerUserId)
       || !(pod.members || []).some((member) => id(member) === id(ownerUserId))) return false;
   // A group bridge relays other people's words into the pod and can carry the
   // private seat's output out. It is a second human authority by proxy.
-  if (await podIsBridged(id(podId))) return false;
+  if (await podIsBridged(podIdString)) return false;
   const members = await User.find({ _id: { $in: pod.members } }).select('_id isBot botType').lean();
   // A missing member row has unknown authority. Refuse rather than assume bot.
   if (members.length !== new Set((pod.members || []).map(id)).size) return false;

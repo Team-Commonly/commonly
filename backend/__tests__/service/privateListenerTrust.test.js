@@ -22,6 +22,7 @@ const AgentCredential = require('../../models/AgentCredential');
 const { AgentInstallation, AgentRegistry } = require('../../models/AgentRegistry');
 const agentRuntimeAuth = require('../../middleware/agentRuntimeAuth');
 const { hash } = require('../../utils/secret');
+const { privateListenerPodAllowed } = require('../../services/privateListenerPolicy');
 
 const app = express();
 app.use(express.json());
@@ -73,6 +74,11 @@ beforeEach(async () => {
     tokenHash: hash(DAEMON), kind: 'daemon', ownerUserId: mockOwner.id,
     machineId: 'private-machine', scopes: ['agents:adopt'],
   });
+});
+
+test('a query-shaped pod id cannot broaden private-listener eligibility', async () => {
+  expect(await privateListenerPodAllowed({ $ne: null }, mockOwner.id)).toBe(false);
+  expect(await privateListenerPodAllowed(String(pod._id), mockOwner.id)).toBe(true);
 });
 
 test('sole owner can issue; runtime bootstrap receives only the selected path and trust', async () => {
