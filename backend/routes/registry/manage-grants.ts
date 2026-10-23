@@ -1,4 +1,7 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
+import { createHash } from 'crypto';
+import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 import { AgentInstallation } from '../../models/AgentRegistry';
 import RoomGrant from '../../models/RoomGrant';
 import Integration from '../../models/Integration';
@@ -14,9 +17,21 @@ const {
 } = require('./helpers');
 
 const router = express.Router();
+const grantManageLimit = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: express.Request): string => {
+    const bearer = req.get('Authorization');
+    if (bearer) return `grant-manage:${createHash('sha256').update(bearer).digest('hex').slice(0, 16)}`;
+    return cloudflareIpRateLimitKeyGenerator(req as never);
+  },
+  handler: (_req, res) => res.status(429).json({ code: 'rate_limited' }),
+});
 
 /** The manage page reads one identity, not every grant in a pod. */
-router.get('/agents/:name/instances/:instanceId/grants', auth, async (req: any, res: any) => {
+router.get('/agents/:name/instances/:instanceId/grants', grantManageLimit, auth, async (req: any, res: any) => {
   try {
     const userId = String(getUserId(req) || '');
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
