@@ -59,6 +59,7 @@ jest.mock('../../../services/dmService', () => ({
 
 jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: jest.fn((agentName, instanceId) => `${agentName}-${instanceId}`),
+  resolveAgentDisplayLabel: jest.fn((user, fallback) => user.botMetadata?.displayName || user.username || fallback),
   default: {
     getAgentTypeConfig: jest.fn().mockReturnValue(null),
   },
