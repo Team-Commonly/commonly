@@ -198,7 +198,7 @@ body.modern-ui.v2-canvas {
   scrollbar-color: var(--v2-border-strong) transparent;
 }
 
-.v2-root button:not(.MuiButtonBase-root) {
+.v2-root :where(button:not(.MuiButtonBase-root)) {
   font-family: inherit;
   cursor: pointer;
   border: none;
@@ -1104,9 +1104,10 @@ body.modern-ui.v2-canvas {
   overflow: visible;
 }
 
-/* `.v2-root button.` prefix is REQUIRED: the global button reset (0-1-1)
-   zeroes padding on any bare-class button rule (0-1-0). Third documented
-   hit of this trap — measured live as 25px chips hugging bare text. */
+/* Keep the explicit button prefix on the chip state rules so their visual
+   treatment remains intentional above the low-specificity default reset.
+   This used to be required to beat the reset; the reset is now scoped through
+   `:where()` so bare component rules can own their declarations. */
 .v2-root button.v2-pods__filter {
   height: 32px;
   min-width: 0;
@@ -1186,9 +1187,9 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 
-/* Specificity-matched against the global button reset
-   (.v2-root button:not(.MuiButtonBase-root)) which has 0,0,2,1.
-   Source order wins. Same pattern as .v2-inspector__btn. */
+/* The explicit root/button selector keeps the selected row treatment above
+   the low-specificity default reset. Source order then resolves the local
+   active-row variants. */
 .v2-root button.v2-pods__item--active {
   background: var(--v2-accent-soft);
   border-color: transparent;
@@ -1655,9 +1656,8 @@ body.modern-ui.v2-canvas {
   background: var(--v2-bg-subtle);
 }
 
-/* Specificity-prefix per feedback-v2-button-reset-specificity memory —
-   the global v2 button reset would otherwise flatten bg + color and the
-   active state would be visually identical to inactive. */
+/* Keep the explicit root/button selector on the mode control so the active
+   state owns its background and color rather than relying on reset order. */
 .v2-root button.v2-chat__mode-option {
   height: 26px;
   display: inline-flex;
@@ -2579,9 +2579,8 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-/* Specificity-matched against .v2-root button:not(.MuiButtonBase-root)
-   reset — prefix with .v2-root button.X. See
-   feedback-v2-button-reset-specificity memory. */
+/* Explicit root/button selector for the composer control; the global reset is
+   deliberately a low-specificity default and must not own this state. */
 .v2-root button.v2-chat__send {
   width: 36px;
   height: 36px;
@@ -2965,10 +2964,9 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 
-/* The global `.v2-root button:not(.MuiButtonBase-root)` reset (0,2,1) sets
-   background: none and outranks the two rules above (0,2,0 and 0,1,0), so the
-   arrow-key and hover highlight never painted on a <button> item. Prefixing
-   with `.v2-root button` lifts these to 0,3,1 — the reset itself stays. */
+/* Keep an explicit root/button selector for the interaction states. The reset
+   is a low-specificity default now, but these rules document the intended
+   highlight instead of relying on source order or browser defaults. */
 .v2-root button.v2-mention-item:hover {
   background: var(--v2-surface-hover);
 }
@@ -2977,8 +2975,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 
-/* The same reset also sets `padding: 0` (0,2,1), which erased the item's 7px 9px.
-   Scoped to the dropdown so the selector is 0,3,1 and the reset itself is unchanged. */
+/* The dropdown owns the item's 7px 9px padding explicitly. */
 .v2-root .v2-mention-dropdown button.v2-mention-item {
   padding: 7px 9px;
 }
@@ -3882,9 +3879,8 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Inspector: Members ---------- */
 
-/* Specificity-prefixed against the v2 button reset — agent rows are
-   <button>, the reset zeros their padding/background. Match its (0,0,2,1)
-   so per-row padding actually applies. See feedback-v2-button-reset-specificity. */
+/* Agent rows are buttons, so keep their row treatment explicit rather than
+   relying on the global default reset. */
 .v2-root button.v2-inspector__member-row,
 .v2-inspector__member-row {
   width: 100%;
@@ -4088,12 +4084,10 @@ body.modern-ui.v2-canvas {
 }
 
 /*
- * Specificity workaround: the v2 button reset
- * `.v2-root button:not(.MuiButtonBase-root)` (top of file) is 0,0,2,1
- * (one class + one type + one class for the :not arg) and would otherwise
- * flatten bg/border/padding. We match it 0,0,2,1 with `.v2-root button.X`
- * (two classes + one type) and win via source order. The `a.X` selector
- * covers the artifact "Open" link variant.
+ * Keep the explicit button selector for the inspector actions so their
+ * bg/border/padding remain component-owned. The global reset is intentionally
+ * low-specificity now; the `a.X` selector covers the artifact "Open" link
+ * variant.
  */
 .v2-root button.v2-inspector__btn,
 .v2-root a.v2-inspector__btn {
@@ -4956,9 +4950,8 @@ body.modern-ui.v2-canvas {
   border-color: var(--v2-accent);
 }
 
-/* Specificity-matched against the global .v2-root button:not(.MuiButtonBase-root)
-   reset (0,0,2,1) — prefix with .v2-root button.X so the accent fill wins.
-   Without this the submit button renders transparent (login + register). */
+/* Keep the explicit root/button selector so the accent fill remains owned by
+   the submit control (login + register). */
 .v2-root button.v2-login__submit {
   width: 100%;
   margin-top: 8px;
@@ -7339,10 +7332,9 @@ body.modern-ui.v2-canvas {
 }
 
 /* ---------- Billing panel (/v2/settings) ---------- */
-/* `.v2-root button.` prefix throughout: the global reset
- * (.v2-root button:not(.MuiButtonBase-root), specificity 0-2-1) strips
- * border/background/padding from any bare-class button — it ate the
- * create-pod options (#870) and the reaction chips (#867). */
+/* `.v2-root button.` prefix throughout keeps each billing action's visual
+ * treatment explicit. The global button reset is a low-specificity default,
+ * so ordinary component rules can now override it without a specificity hack. */
 .v2-billing {
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-md);
@@ -9322,12 +9314,10 @@ body.modern-ui.v2-canvas {
 
 /* ── Threading: headline card + reply rail (W-T 4/4) ────────────────────────
    Built to @ux-lead's render brief. Numbers here are theirs, not invented:
-   NOTE the `.v2-root button.` prefix on every button rule below. The global
-   reset `.v2-root button:not(.MuiButtonBase-root)` is 0-2-1 and sets
-   `color: inherit`, so a bare `.v2-thread-card__main` (0-1-0) loses and the
-   card renders at body colour with no accent on the follow state. Same trap
-   as #870, recorded in the note above that reset. Caught here by measuring in
-   a real browser — computed colour was rgb(17,24,39) while the rule said
+   NOTE the `.v2-root button.` prefix on every button rule below. It keeps the
+   card's interactive treatment explicit while the global reset remains a
+   low-specificity default. This used to be a specificity workaround for a
+   real-browser defect: computed colour was rgb(17,24,39) while the rule said
    #4b5563 — which no presence guard can see, because the rule IS present.
 
    card radius 10 / border #e5e7eb / hover #d7dce7 / no shadow; type 13px

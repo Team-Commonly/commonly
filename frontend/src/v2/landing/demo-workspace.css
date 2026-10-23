@@ -130,8 +130,8 @@
   color: var(--v2-text-placeholder);
 }
 
-/* Specificity-matched against the global button reset (0,0,2,1), same trap
-   v2.css documents for .v2-pods__item. */
+/* Keep the explicit root/button scope so this demo-row treatment is intentional
+   above the low-specificity global button default. */
 .v2-root button.v2-demo__pod {
   display: flex;
   align-items: center;
