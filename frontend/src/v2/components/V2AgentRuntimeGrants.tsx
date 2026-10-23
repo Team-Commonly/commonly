@@ -46,10 +46,10 @@ const WALKED_ADAPTERS: Record<string, string> = {
 
 export const describeRuntime = (runtime: Runtime): { mode: 'hosted' | 'daemon' | 'cli' | 'unknown'; adapter: string | null } => {
   const type = String(runtime.runtimeType || '').toLowerCase();
+  const adapterKey = String(runtime.adapter || type).toLowerCase();
   const mode = type === 'wrapper' ? 'daemon'
-    : type === 'hosted' || type === 'internal' || runtime.host === 'cloud' ? 'hosted'
-      : type === 'webhook' || runtime.host === 'byo' || WALKED_ADAPTERS[type] ? 'cli' : 'unknown';
-  const adapterKey = String(runtime.adapter || (mode === 'cli' ? type : '')).toLowerCase();
+    : type === 'hosted' || type === 'native' || type === 'internal' || runtime.host === 'cloud' ? 'hosted'
+      : runtime.host === 'byo' && WALKED_ADAPTERS[adapterKey] ? 'cli' : 'unknown';
   return { mode, adapter: WALKED_ADAPTERS[adapterKey] || null };
 };
 
@@ -102,6 +102,8 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   // The daemon reads runtime.model on its next assignment and restarts the
   // child when it changes. A single CLI chooses its own model locally.
   const mayEditRuntime = Boolean(onSaveRuntime && details.mode === 'daemon' && details.adapter);
+  const modelChanged = Boolean(modelDraft.trim() && modelDraft.trim() !== (runtime.model || ''));
+  const effortChanged = Boolean(effortDraft.trim() && effortDraft.trim() !== (runtime.effort || ''));
 
   const saveRuntime = async () => {
     if (!onSaveRuntime || !mayEditRuntime) return;
@@ -109,8 +111,8 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     setError('');
     try {
       await onSaveRuntime({
-        ...(modelDraft.trim() && modelDraft.trim() !== (runtime.model || '') ? { model: modelDraft.trim() } : {}),
-        ...(effortDraft.trim() && effortDraft.trim() !== (runtime.effort || '') ? { effort: effortDraft.trim() } : {}),
+        ...(modelChanged ? { model: modelDraft.trim() } : {}),
+        ...(effortChanged ? { effort: effortDraft.trim() } : {}),
       });
     } catch {
       setError(t('agentManage.runtime.saveError', { defaultValue: 'Could not save the model.' }));
@@ -135,7 +137,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
 
   return (
     <div className="v2-agent-runtime-grants">
-      <section aria-labelledby="agent-runtime-heading">
+      <section className="v2-agent-settings__section" aria-labelledby="agent-runtime-heading">
         <h2 id="agent-runtime-heading">{t('agentManage.runtime.title', { defaultValue: 'Runtime' })}</h2>
         <dl className="v2-agent-runtime-grants__facts">
           <div><dt>{t('agentManage.runtime.how', { defaultValue: 'How it runs' })}</dt><dd>{modeLabel}</dd></div>
@@ -148,14 +150,17 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
             <label htmlFor="agent-runtime-model">{t('agentManage.runtime.changeModel', { defaultValue: 'Change model on this computer' })}</label>
             <input id="agent-runtime-model" value={modelDraft} onChange={(event) => setModelDraft(event.target.value)} />
             <label htmlFor="agent-runtime-effort">{t('agentManage.runtime.changeEffort', { defaultValue: 'Effort' })}</label>
-            <input id="agent-runtime-effort" value={effortDraft} onChange={(event) => setEffortDraft(event.target.value)} />
-            <button type="button" disabled={busy || (!modelDraft.trim() && !effortDraft.trim()) || (modelDraft.trim() === (runtime.model || '') && effortDraft.trim() === (runtime.effort || ''))} onClick={() => { void saveRuntime(); }}>
+            <select id="agent-runtime-effort" value={effortDraft} onChange={(event) => setEffortDraft(event.target.value)}>
+              <option value="">{t('agentManage.runtime.effortUnset', { defaultValue: 'Choose effort' })}</option>
+              {['low', 'medium', 'high', 'xhigh', 'max'].map((level) => <option key={level} value={level}>{level}</option>)}
+            </select>
+            <button type="button" disabled={busy || (!modelChanged && !effortChanged)} onClick={() => { void saveRuntime(); }}>
               {t('agentManage.runtime.save', { defaultValue: 'Save runtime' })}
             </button>
           </div>
         )}
       </section>
-      <section aria-labelledby="agent-grants-heading">
+      <section className="v2-agent-settings__section" aria-labelledby="agent-grants-heading">
         <h2 id="agent-grants-heading">{t('agentManage.grants.title', { defaultValue: 'Connector grants' })}</h2>
         {loading && <p role="status">{t('agentManage.grants.loading', { defaultValue: 'Loading grants…' })}</p>}
         {!loading && grants.length === 0 && <p>{t('agentManage.grants.empty', { defaultValue: 'This agent has no connector grants.' })}</p>}

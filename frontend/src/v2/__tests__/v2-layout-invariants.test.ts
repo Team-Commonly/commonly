@@ -4692,3 +4692,12 @@ describe('agent Wake and Pods controls', () => {
     expect(remove).toContain('border: 1px solid var(--v2-border)');
   });
 });
+
+describe('agent runtime and grants fit the Settings column', () => {
+  const css = read('../components/V2AgentRuntimeGrants.css');
+  test('facts stack on phones and long grant details wrap', () => {
+    const phone = blockContaining(css, '@media (max-width: 760px)', '.v2-agent-runtime-grants__facts > div');
+    expect(phone).toContain('grid-template-columns: 1fr');
+    expect(ruleBody(css, '.v2-agent-runtime-grants__list li p')).toContain('overflow-wrap: anywhere');
+  });
+});
