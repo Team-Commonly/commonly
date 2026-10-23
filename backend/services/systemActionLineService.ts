@@ -5,6 +5,9 @@ export interface SystemActionLine {
   podId: string;
   actorUserId: string;
   actorName: string;
+  actorUsername: string;
+  actorAvatarUrl: string | null;
+  actorIsBot: boolean;
   action: 'task-claimed';
   taskId: string;
 }
@@ -54,7 +57,11 @@ export async function emitSystemActionLine(line: SystemActionLine): Promise<void
       payload,
       created_at: row.created_at,
       createdAt: row.created_at,
-      user: { username: line.actorName },
+      user: {
+        username: line.actorUsername,
+        profile_picture: line.actorAvatarUrl,
+        isBot: line.actorIsBot,
+      },
       thread_root_id: null,
       reply_to_message_id: null,
     });
