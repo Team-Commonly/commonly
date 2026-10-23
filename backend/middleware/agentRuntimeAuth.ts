@@ -196,15 +196,6 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       // once per seat.
       const isFirstTokenUse = Boolean(tokenRecord) && !tokenRecord?.lastUsedAt;
 
-      try {
-        await User.updateOne(
-          { _id: agentUser._id, 'agentRuntimeTokens.tokenHash': tokenHash },
-          { $set: { 'agentRuntimeTokens.$.lastUsedAt': new Date() } },
-        );
-      } catch (err: unknown) {
-        console.warn('Failed to update agent token usage on User:', (err as Error).message);
-      }
-
       const { agentName, instanceId } = resolveTokenAgentIdentity(agentUser);
 
       const installations = await AgentInstallation.find({
@@ -235,6 +226,15 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
 
       if (!await checkOutsiderGrantRuntimeNarrowing(req, res, installationPodIds)) return undefined;
 
+      try {
+        await User.updateOne(
+          { _id: agentUser._id, 'agentRuntimeTokens.tokenHash': tokenHash },
+          { $set: { 'agentRuntimeTokens.$.lastUsedAt': new Date() } },
+        );
+      } catch (err: unknown) {
+        console.warn('Failed to update agent token usage on User:', (err as Error).message);
+      }
+
       if (isFirstTokenUse) {
         for (const installationRow of installations) {
           markByoConnectionAttempt(installationRow.installedBy, installationRow);
@@ -263,15 +263,6 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       .find((t: { tokenHash?: string }) => t.tokenHash === tokenHash);
     const isFirstLegacyTokenUse = !legacyTokenRecord?.lastUsedAt;
 
-    try {
-      await AgentInstallation.updateOne(
-        { _id: installation._id, 'runtimeTokens.tokenHash': tokenHash },
-        { $set: { 'runtimeTokens.$.lastUsedAt': new Date() } },
-      );
-    } catch (err: unknown) {
-      console.warn('Failed to update agent token usage:', (err as Error).message);
-    }
-
     // Task #66: a token may be bound to one AgentInstallation row, but the
     // agent identity (agentName + instanceId) can have multiple active
     // installations across pods. Surface ALL of them so the /events
@@ -299,16 +290,6 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     req.agentAuthorizedPodIds = identityInstallations
       .map((inst: { podId?: { toString: () => string } }) => inst?.podId?.toString())
       .filter(Boolean) as string[];
-
-    if (isFirstLegacyTokenUse) {
-      markByoConnectionAttempt(installation.installedBy, installation);
-      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-      const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
-      void completeConnectAgentStarterTask({
-        podIds: req.agentAuthorizedPodIds,
-        agentLabel: installation.displayName || installation.agentName,
-      });
-    }
 
     // Also resolve and attach the bot User so downstream routes that derive
     // `req.agentUser._id` (file-upload uploaderId, message authorship) work
@@ -354,7 +335,18 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     if (!await checkOutsiderGrantRuntimeNarrowing(
       req, res, identityInstallations.map((inst: { podId?: unknown }) => String(inst.podId || '')),
     )) return undefined;
+
+    try {
+      await AgentInstallation.updateOne(
+        { _id: installation._id, 'runtimeTokens.tokenHash': tokenHash },
+        { $set: { 'runtimeTokens.$.lastUsedAt': new Date() } },
+      );
+    } catch (err: unknown) {
+      console.warn('Failed to update agent token usage:', (err as Error).message);
+    }
+
     if (isFirstLegacyTokenUse) {
+      markByoConnectionAttempt(installation.installedBy, installation);
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
       void completeConnectAgentStarterTask({

@@ -114,6 +114,70 @@ describe('TASK-213 runtime token narrowing', () => {
     return installation;
   };
 
+  test('a refused first legacy call does not consume first-use completion; an allowed call completes it once', async () => {
+    const installation = setupLegacy();
+    installation.installedBy = 'human-a';
+    installation.runtimeTokens[0].lastUsedAt = undefined;
+    mockInstallationUpdateOne.mockImplementation(async () => {
+      installation.runtimeTokens[0].lastUsedAt = new Date();
+    });
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/agent-dm' }, params: {} });
+    const res = buildRes();
+    const next = jest.fn();
+
+    await agentRuntimeAuth(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockInstallationUpdateOne).not.toHaveBeenCalled();
+    expect(mockMarkByoConnectionAttempt).not.toHaveBeenCalled();
+    expect(mockCompleteStarterTask).not.toHaveBeenCalled();
+
+    req.route.path = '/pods/:podId/messages';
+    req.params.podId = 'pod-a';
+    await agentRuntimeAuth(req, res, next);
+    await agentRuntimeAuth(req, res, next);
+    expect(next).toHaveBeenCalledTimes(2);
+    expect(mockMarkByoConnectionAttempt).toHaveBeenCalledTimes(1);
+    expect(mockCompleteStarterTask).toHaveBeenCalledTimes(1);
+  });
+
+  test('a refused first User-row call leaves its starter completion for an allowed call', async () => {
+    const bot = {
+      _id: 'bot-a', isBot: true,
+      botMetadata: { agentName: 'codex', instanceId: 'rivet' },
+      agentRuntimeTokens: [{ tokenHash: 'hashed-token' }],
+    };
+    mockUserFindOne.mockResolvedValue(bot);
+    mockUserUpdateOne.mockImplementation(async () => {
+      bot.agentRuntimeTokens[0].lastUsedAt = new Date();
+    });
+    mockInstallationFind.mockReturnValue({ lean: async () => [{
+      podId: { toString: () => 'pod-a' }, installedBy: 'human-a', status: 'active',
+    }] });
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/agent-dm' }, params: {} });
+    const res = buildRes();
+    const next = jest.fn();
+
+    await agentRuntimeAuth(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockUserUpdateOne).not.toHaveBeenCalled();
+    expect(mockMarkByoConnectionAttempt).not.toHaveBeenCalled();
+    expect(mockCompleteStarterTask).not.toHaveBeenCalled();
+
+    req.route.path = '/pods/:podId/messages';
+    req.params.podId = 'pod-a';
+    await agentRuntimeAuth(req, res, next);
+    await agentRuntimeAuth(req, res, next);
+    expect(next).toHaveBeenCalledTimes(2);
+    expect(mockMarkByoConnectionAttempt).toHaveBeenCalledTimes(1);
+    expect(mockCompleteStarterTask).toHaveBeenCalledTimes(1);
+  });
+
   test('allows a write into the one grant pod and refuses another pod', async () => {
     setupLegacy();
     mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
