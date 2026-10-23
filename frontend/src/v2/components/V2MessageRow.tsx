@@ -26,6 +26,13 @@ import { messageImageUrl } from '../utils/messageImageUrl';
 // match in `split()` output so we can render text + pill segments in order.
 const MENTION_RE = /(@[a-zA-Z0-9][a-zA-Z0-9_-]*)/g;
 
+// Markdown does not link raw URLs. Keep terminal sentence punctuation outside
+// the link while consuming the full dotted host and path.
+export const linkifyBareUrls = (content: string): string => content.replace(
+  /(?<![(<[])(https?:\/\/[^\s<>"]+[^\s<>".,!?;:])(?=[\s.,!?;:]|$)/g,
+  '[$1]($1)',
+);
+
 // Walk a React children tree and replace bare `@name` text segments with a
 // styled `<span>` pill. Recurses into arrays + cloned elements so mentions
 // inside `<strong>`, `<em>`, list items, etc. still render correctly. Code
@@ -69,9 +76,9 @@ export const MessageMarkdownImage = ({ src, alt }: React.ImgHTMLAttributes<HTMLI
   return <span>{alt || src}</span>;
 };
 
-const messageMarkdownComponents = {
+export const messageMarkdownComponents = {
   img: MessageMarkdownImage,
-  a: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+  a: ({ children, node: _node, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { node?: unknown }) => (
     <a {...props} target="_blank" rel="noopener noreferrer">{renderWithMentions(children)}</a>
   ),
   p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => (
@@ -84,7 +91,7 @@ const messageMarkdownComponents = {
   // `<pre>`. Both fall through to v2.css selectors `.v2-msg__content code`
   // and `.v2-msg__content pre`. Mentions inside code are NOT transformed.
   // Fenced code past six lines collapses (direction C).
-  pre: (props: React.HTMLAttributes<HTMLPreElement>) => <CollapsiblePre {...props} />,
+  pre: ({ node: _node, ...props }: React.HTMLAttributes<HTMLPreElement> & { node?: unknown }) => <CollapsiblePre {...props} />,
 };
 
 interface V2MessageRowProps {
@@ -522,10 +529,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // syntax. Without this, agents posting raw URLs render as plain text and
   // the user can't click them.
   if (stripped && !externalBareImage) {
-    stripped = stripped.replace(
-      /(?<![(<[])(https?:\/\/[^\s<>"]+?[^\s<>".,!?;:])(?=[\s.,!?;:]|$)/g,
-      '[$1]($1)',
-    );
+    stripped = linkifyBareUrls(stripped);
   }
 
   // Highlight messages that @-mention the current user. Word-boundary so

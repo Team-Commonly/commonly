@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2MessageRow from '../components/V2MessageRow';
+import V2MessageRow, { linkifyBareUrls, messageMarkdownComponents } from '../components/V2MessageRow';
 
 jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { username: 'viewer' } }),
@@ -12,6 +12,24 @@ describe('V2MessageRow', () => {
 
   afterEach(() => {
     process.env.REACT_APP_API_URL = previousApiUrl;
+  });
+
+  it('links a complete bare URL, keeps trailing punctuation outside, and leaves markdown links alone', () => {
+    expect(linkifyBareUrls('Full notes: https://docs.example.com/launch/guide. Then [open the pod](https://commonly.me/v2/pods/abc).'))
+      .toBe('Full notes: [https://docs.example.com/launch/guide](https://docs.example.com/launch/guide). Then [open the pod](https://commonly.me/v2/pods/abc).');
+    expect(linkifyBareUrls('See https://commonly.me/v2/pods/abc, then https://mail.example.com/a:b.'))
+      .toBe('See [https://commonly.me/v2/pods/abc](https://commonly.me/v2/pods/abc), then [https://mail.example.com/a:b](https://mail.example.com/a:b).');
+  });
+
+  it('does not pass markdown parser nodes to link or code block DOM elements', () => {
+    const { container } = render(
+      <MemoryRouter>
+        {React.createElement(messageMarkdownComponents.a, { href: 'https://docs.example.com', node: {} }, 'docs')}
+        {React.createElement(messageMarkdownComponents.pre, { node: {} }, <code>echo hello</code>)}
+      </MemoryRouter>,
+    );
+    expect(container.querySelector('a')).not.toHaveAttribute('node');
+    expect(container.querySelector('pre')).not.toHaveAttribute('node');
   });
 
   it('keeps the runtime beside the agent name before its timestamp', () => {
