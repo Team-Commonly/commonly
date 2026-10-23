@@ -10506,7 +10506,7 @@ body.modern-ui.v2-canvas {
 .v2-connectors__content { display: grid; grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px); gap: 40px; align-items: start; }
 .v2-connectors__main { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
 .v2-connectors__rows { overflow: hidden; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); }
-.v2-connectors__inactive-fold { border-top: 1px solid var(--v2-border-soft); }
+.v2-connectors__inactive-fold { min-width: 0; }
 .v2-root button.v2-connectors__inactive-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 10px 18px; border: 0; background: var(--v2-surface); color: var(--v2-text-tertiary); font: 500 12px/16px var(--v2-font-mono); text-align: left; cursor: pointer; }
 .v2-root button.v2-connectors__inactive-toggle:hover { background: var(--v2-surface-hover); }
 .v2-root button.v2-connectors__inactive-toggle:focus-visible { box-shadow: var(--v2-focus-ring); outline: none; }
