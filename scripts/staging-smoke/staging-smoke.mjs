@@ -119,16 +119,27 @@ async function main() {
     await page.close();
   }
 
-  // 6) connectors fold — guards the #2504 regression: a FRESH no-grants user must see at least one
-  //    connectable tool as a visible row, NOT buried in .v2-connectors__inactive-fold. Uses a
-  //    SEPARATE fresh account (kept grant-free) in its own context, so dead grants can't mask the bug.
+  // 6) connectors fold — guards the #2504 regression. A FRESH, grant-free account must see at least
+  //    one connectable TOOL as a real row outside the inactive fold. Fail-CLOSED: absent creds, a
+  //    failed login, or a non-grant-free account all FAIL (never skip-green). We match an actual
+  //    .v2-connector-row that has a .v2-connector-row__action (Connect) and is NOT contained by
+  //    .v2-connectors__inactive-fold — NOT an ancestor's textContent (that false-passed when GitHub
+  //    was only inside the fold).
   const FRESH_EMAIL = process.env.SMOKE_FRESH_EMAIL, FRESH_PW = process.env.SMOKE_FRESH_PW;
-  if (FRESH_EMAIL && FRESH_PW) {
+  if (!FRESH_EMAIL || !FRESH_PW) {
+    rec('connectors: fresh user sees a tool row outside the fold', false, 'SMOKE_FRESH_EMAIL/PW not set — fresh-account check could not run (fail-closed)');
+  } else {
     try {
       const { status, body } = await api('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: FRESH_EMAIL, password: FRESH_PW }) });
       const ftoken = body?.token || body?.accessToken || null;
-      if (!ftoken) { rec('connectors: fresh user sees tools outside the fold', false, `fresh login failed (status ${status})`); }
+      if (!ftoken) { rec('connectors: fresh user sees a tool row outside the fold', false, `fresh login failed (status ${status})`); }
       else {
+        // 6a) the account must be genuinely grant-free, else a stray grant could mask a fold regression
+        const g = await api('/api/integrations/user/all', { headers: { Authorization: `Bearer ${ftoken}` } });
+        const arr = Array.isArray(g.body) ? g.body : null;
+        const live = (arr || []).filter(it => it && (it.connected === true || it.isConnected === true || ['connected','active','granted'].includes(it.status)));
+        rec('connectors: fresh account has 0 live grants', arr !== null && arr.length === 0, arr === null ? 'unexpected grants shape' : `integrations=${arr.length} connected=${live.length}`);
+        // 6b) at least one connectable TOOL row visible OUTSIDE the inactive fold
         const fctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
         await fctx.addInitScript(t => { try { localStorage.setItem('token', t); } catch(e){} }, ftoken);
         const page = await fctx.newPage();
@@ -136,18 +147,19 @@ async function main() {
         await page.waitForTimeout(1800);
         const r = await page.evaluate(() => {
           const TOOLS = ['GitHub','Linear','Slack','Notion','Google','Jira','Atlassian','Gmail'];
-          const folds = [...document.querySelectorAll('.v2-connectors__inactive-fold')];
-          const inFold = el => folds.some(f => f.contains(el));
-          const all = [...document.querySelectorAll('.v2-connectors__main *, .v2-tools *')];
-          const visible = TOOLS.filter(name => all.some(el => el.offsetParent !== null && !inFold(el) && (el.textContent||'').includes(name) && el.children.length <= 4));
-          return { visible, foldCount: folds.length };
+          const fold = document.querySelector('.v2-connectors__inactive-fold');
+          const inFold = el => !!fold && fold.contains(el);
+          const rows = [...document.querySelectorAll('.v2-connector-row')];
+          const visibleToolRows = rows
+            .filter(row => row.offsetParent !== null && !inFold(row) && row.querySelector('.v2-connector-row__action'))
+            .map(row => TOOLS.find(t => (row.textContent || '').includes(t)))
+            .filter(Boolean);
+          return { visibleToolRows, rowsTotal: rows.length, foldedRows: fold ? fold.querySelectorAll('.v2-connector-row').length : 0 };
         });
-        rec('connectors: fresh user sees tools outside the fold', r.visible.length >= 1, `visible=[${r.visible.join(',')}] inactive-folds=${r.foldCount}`);
+        rec('connectors: fresh user sees a tool row outside the fold', r.visibleToolRows.length >= 1, `visible=[${[...new Set(r.visibleToolRows)].join(',')}] rows=${r.rowsTotal} foldedRows=${r.foldedRows}`);
         await fctx.close();
       }
-    } catch (e) { rec('connectors: fresh user sees tools outside the fold', false, e.message.slice(0,100)); }
-  } else {
-    console.log('SKIP  connectors fresh-user check — SMOKE_FRESH_EMAIL/PW not set');
+    } catch (e) { rec('connectors: fresh user sees a tool row outside the fold', false, e.message.slice(0,100)); }
   }
 
   // 7) hosted agent answers (skip until staging has an LLM key)

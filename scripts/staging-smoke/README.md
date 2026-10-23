@@ -20,7 +20,7 @@ SMOKE_EMAIL=... SMOKE_PW=... npm run smoke
 ## Env
 - `SMOKE_BASE` (default https://staging.commonly.me), `SMOKE_API` (default https://api-staging.commonly.me)
 - `SMOKE_EMAIL` / `SMOKE_PW` — a **non-admin** staging test user (in CI: secrets `STAGING_SMOKE_EMAIL` / `STAGING_SMOKE_PW`; locally a 0600 file, never printed)
-- `SMOKE_FRESH_EMAIL` / `SMOKE_FRESH_PW` — a **separate FRESH no-grants** account for the connectors-fold check, kept grant-free so dead grants can't mask the bug (in CI: secrets `STAGING_SMOKE_FRESH_EMAIL` / `STAGING_SMOKE_FRESH_PW`). If unset, that one check is skipped.
+- `SMOKE_FRESH_EMAIL` / `SMOKE_FRESH_PW` — a **separate FRESH no-grants** account for the connectors-fold check, kept grant-free so dead grants can't mask the bug (in CI: secrets `STAGING_SMOKE_FRESH_EMAIL` / `STAGING_SMOKE_FRESH_PW`, which `deploy-staging.yml` requires). **Required — if unset the check FAILS, never skips green.** The check first asserts the account has 0 live grants, then that at least one connectable tool renders as a real row outside the inactive fold.
 - `SMOKE_HOSTED=1` — also check a hosted-agent reply (needs a staging LLM key)
 
 Exit 0 = all green; non-zero = a blocking check failed → prod promotion must not proceed.
