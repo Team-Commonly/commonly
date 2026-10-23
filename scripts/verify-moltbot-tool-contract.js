@@ -429,7 +429,7 @@ const checkPinDirection = ({ exec = execFileSync } = {}) => {
   }
   // An empty success is not a real git answer — it is what a stub returns —
   // so treat it as nothing to compare and let containment judge.
-  if (!base) return { state: 'ok', pin: gitlink };
+  if (!base) return { state: 'ok', pin: gitlink, base: resolved };
 
   let basePin;
   try {
@@ -438,14 +438,14 @@ const checkPinDirection = ({ exec = execFileSync } = {}) => {
   } catch {
     return { state: 'undetermined', pin: gitlink, detail: `could not read the gitlink at the merge base ${base.slice(0, 12)}` };
   }
-  if (!basePin || basePin === gitlink) return { state: 'ok', pin: gitlink };
+  if (!basePin || basePin === gitlink) return { state: 'ok', pin: gitlink, base: resolved };
 
   try {
     sub(['merge-base', '--is-ancestor', gitlink, basePin]);
   } catch {
     // Not an ancestor (status 1) or the object is absent (128). Forward,
     // diverged and unknown all land here, and all are containment's problem.
-    return { state: 'ok', pin: gitlink };
+    return { state: 'ok', pin: gitlink, base: resolved };
   }
   return {
     state: 'rollback',
@@ -1055,6 +1055,12 @@ const main = () => {
 
   if (reach.state === 'contained') {
     console.log(`[moltbot-tool-contract] OK — ${reach.detail}, the branch .gitmodules declares.`);
+  }
+  // Say which base the direction check used, on the PASS path too. A check
+  // that prints nothing when it is happy is indistinguishable from a check
+  // that is not running, and that is how this one stayed dead for two months.
+  if (direction.state === 'ok') {
+    console.log(`[moltbot-tool-contract] OK — the pin did not move backward from ${direction.base}.`);
   }
 
   // Severity order: a proven violation (1) outranks an unrun check (2) only
