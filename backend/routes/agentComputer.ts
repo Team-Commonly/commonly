@@ -45,11 +45,13 @@ const run = (action: (userId: string, installationId: string, req: express.Reque
         res.type('png');
         return res.send(result);
       }
+      res.set('Cache-Control', 'no-store');
       return res.json(result ?? { ok: true });
     } catch (error) {
       const message = (error as Error).message;
       const code = message.startsWith('Stale computer frame') ? 'stale_frame'
-        : message.startsWith('No human takeover') ? 'takeover_not_active' : 'computer_unavailable';
+        : message.startsWith('No human takeover') ? 'takeover_not_active'
+          : message.startsWith('Pending write') ? 'pending_write_unavailable' : 'computer_unavailable';
       return res.status(409).json({ code, error: message });
     }
   }
@@ -70,6 +72,13 @@ router.post('/:installationId/press', run(async (owner, installation, req) => {
   await agentComputerBroker.humanPress(
     owner, installation, String(req.body?.key || ''), String(req.body?.frameRevision || ''),
   );
+}));
+router.post('/:installationId/decide-write', run(async (owner, installation, req) => {
+  const requestId = String(req.body?.requestId || '');
+  if (!/^[0-9a-f-]{36}$/i.test(requestId) || typeof req.body?.approve !== 'boolean') {
+    throw new Error('A pending request and a decision are required.');
+  }
+  await agentComputerBroker.decideWrite(owner, installation, requestId, req.body.approve);
 }));
 router.post('/:installationId/hand-back', run(async (owner, installation) => {
   await agentComputerBroker.handBack(owner, installation);

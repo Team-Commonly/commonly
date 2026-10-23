@@ -32,6 +32,7 @@ const mockBroker = {
   humanClick: jest.fn(async () => {}),
   humanType: jest.fn(async () => {}),
   humanPress: jest.fn(async () => {}),
+  decideWrite: jest.fn(async () => {}),
   handBack: jest.fn(async () => {}),
 };
 jest.mock('../../../services/agentComputerBroker', () => ({
@@ -88,5 +89,18 @@ describe('owner-only agent computer takeover route', () => {
       .send({ x: 10, y: 10, frameRevision: 'old' });
     expect(response.status).toBe(409);
     expect(response.body.code).toBe('stale_frame');
+  });
+
+  test('the owner alone can decide an intercepted write without exposing its body', async () => {
+    const requestId = '11111111-1111-4111-8111-111111111111';
+    const response = await request(app).post(`/api/agent-computer/${mockInstallation}/decide-write`)
+      .send({ requestId, approve: true });
+    expect(response.status).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(mockBroker.decideWrite).toHaveBeenCalledWith(mockOwner, mockInstallation, requestId, true);
+    mockViewer = mockOther;
+    expect((await request(app).post(`/api/agent-computer/${mockInstallation}/decide-write`)
+      .send({ requestId, approve: true })).status).toBe(403);
+    expect(mockBroker.decideWrite).toHaveBeenCalledTimes(1);
   });
 });

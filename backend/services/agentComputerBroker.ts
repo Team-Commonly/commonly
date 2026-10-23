@@ -3,7 +3,7 @@
  * broker owns its single live session and gives each native installation a
  * separate tab in that profile. Agents never receive a Steel URL or CDP port.
  */
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
+import { chromium, type Browser, type BrowserContext, type Page, type Route } from 'playwright-core';
 import { randomUUID } from 'crypto';
 import { AgentComputerTakeover } from '../models/AgentComputerTakeover';
 
@@ -26,6 +26,8 @@ type UserBrowser = {
   takeover: Set<string>;
   frames: Map<string, { bytes: Buffer; revision: string; width: number; height: number }>;
   revisions: Map<string, number>;
+  humanActionSeen: Set<string>;
+  pendingWrites: Map<string, { route: Route; installationId: string; method: string; url: string; timer: NodeJS.Timeout }>;
   epoch: string;
 };
 
@@ -35,6 +37,7 @@ const SESSION_TIMEOUT_MS = 20_000;
 const ACTION_TIMEOUT_MS = 15_000;
 const MAX_SNAPSHOT_CHARS = 18_000;
 const MAX_SCREENSHOT_BYTES = 1_000_000;
+const WRITE_APPROVAL_TIMEOUT_MS = 30_000;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const HUMAN_KEYS = new Set(['Enter', 'Tab', 'Escape', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const TAB_NAME_PREFIX = 'commonly-installation:';
@@ -130,26 +133,54 @@ export class AgentComputerBroker {
     private readonly takeoverState: TakeoverStore = takeoverStore,
   ) {} // eslint-disable-line no-empty-function
 
-  private async attachPage(page: Page, state: UserBrowser, installationId: string): Promise<void> {
+  private async attachPage(page: Page, installationId: string): Promise<void> {
     page.setDefaultTimeout(ACTION_TIMEOUT_MS);
     await page.addInitScript((name) => { window.name = name; }, `${TAB_NAME_PREFIX}${installationId}`);
-    await page.route('**/*', async (route) => {
-      const request = route.request();
-      // A draft can be typed locally. Only the person's takeover may cause
-      // third-party writes, regardless of how a site's send button is named.
-      if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method()) && !state.takeover.has(installationId)) {
-        return route.abort();
-      }
-      // Non-document resources and child frames are needed for the vendor UI.
-      // The top-level document is the navigation boundary.
-      if (!request.isNavigationRequest() || request.frame().parentFrame()) return route.continue();
+    // Request interception is installed on the shared context before any tab
+    // navigates; Page.route misses the first request of a new popup.
+  }
+
+  private async guardRequest(route: Route, state: UserBrowser): Promise<void> {
+    const request = route.request();
+    let page: Page;
+    try { page = request.frame().page(); } catch { await route.abort(); return; }
+    const installationId = [...state.tabs].find(([, tab]) => tab === page)?.[0];
+    // A popup is not an installation tab. Its first request must be denied.
+    if (!installationId) { await route.abort(); return; }
+    if (request.isNavigationRequest() && !request.frame().parentFrame()) {
       let target: URL;
-      try { target = new URL(request.url()); } catch { return route.abort(); }
+      try { target = new URL(request.url()); } catch { await route.abort(); return; }
       if (target.protocol !== 'https:' || !this.config.allowedHosts.has(target.hostname.toLowerCase())) {
-        return route.abort();
+        await route.abort(); return;
       }
-      return route.continue();
+    }
+    if (['GET', 'HEAD', 'OPTIONS'].includes(request.method())) { await route.fallback(); return; }
+    // A takeover request alone grants no write permission. A request after a
+    // human action pauses until the person explicitly approves that request.
+    if (!state.takeover.has(installationId) || !state.humanActionSeen.has(installationId)) {
+      await route.abort(); return;
+    }
+    if (state.pendingWrites.size >= 10) { await route.abort(); return; }
+    const id = randomUUID();
+    const timer = setTimeout(() => {
+      const pending = state.pendingWrites.get(id);
+      if (pending) {
+        state.pendingWrites.delete(id);
+        pending.route.abort().catch(() => {});
+      }
+    }, WRITE_APPROVAL_TIMEOUT_MS);
+    state.pendingWrites.set(id, {
+      route, installationId, method: request.method(), url: request.url(), timer,
     });
+  }
+
+  private async abortPendingWrites(state: UserBrowser, installationId: string): Promise<void> {
+    const pending = [...state.pendingWrites].filter(([, write]) => write.installationId === installationId);
+    await Promise.all(pending.map(async ([id, write]) => {
+      state.pendingWrites.delete(id);
+      clearTimeout(write.timer);
+      await write.route.abort().catch(() => {});
+    }));
   }
 
   private async openUser(userId: string): Promise<UserBrowser> {
@@ -170,8 +201,10 @@ export class AgentComputerBroker {
     if (!context) throw new Error('Steel did not expose its persistent browser context.');
     const state: UserBrowser = {
       browser, context, tabs: new Map(), takeover: new Set(), frames: new Map(), revisions: new Map(),
+      humanActionSeen: new Set(), pendingWrites: new Map(),
       epoch: randomUUID(),
     };
+    await context.route('**/*', (route) => this.guardRequest(route, state));
     for (const page of context.pages()) {
       let name = '';
       try { name = await page.evaluate(() => window.name); } catch { continue; }
@@ -180,7 +213,7 @@ export class AgentComputerBroker {
       if (!INSTALLATION_ID.test(installationId)) continue;
       if (state.tabs.has(installationId)) throw new Error('Duplicate agent computer tabs need operator recovery.');
       if (await this.takeoverState.get(userId, installationId)) state.takeover.add(installationId);
-      await this.attachPage(page, state, installationId);
+      await this.attachPage(page, installationId);
       state.tabs.set(installationId, page);
     }
     return state;
@@ -219,7 +252,7 @@ export class AgentComputerBroker {
           }
           const created = await state.context.newPage();
           await created.evaluate((name) => { window.name = name; }, `${TAB_NAME_PREFIX}${installationId}`);
-          await this.attachPage(created, state, installationId);
+          await this.attachPage(created, installationId);
           state.tabs.set(installationId, created);
           return created;
         })();
@@ -277,6 +310,7 @@ export class AgentComputerBroker {
       };
     });
     if (isCommitControl(control)) return 'person_required';
+    await this.tab(userId, installationId);
     await locator.click();
     return 'clicked';
   }
@@ -296,6 +330,7 @@ export class AgentComputerBroker {
     });
     if (secretField) throw new Error('Login and verification fields require the person to take control.');
     if (text.length > 10_000) throw new Error('Text is too long for this computer trial.');
+    await this.tab(userId, installationId);
     await locator.fill(text);
   }
 
@@ -310,12 +345,54 @@ export class AgentComputerBroker {
     const page = await this.tab(userId, installationId);
     await page.bringToFront();
     await this.takeoverState.set(userId, installationId, true);
-    (await this.user(userId)).takeover.add(installationId);
+    const state = await this.user(userId);
+    state.humanActionSeen.delete(installationId);
+    state.takeover.add(installationId);
   }
 
   async handBack(userId: string, installationId: string): Promise<void> {
+    const state = await this.user(userId);
+    if (!state.takeover.has(installationId)) throw new Error('No human takeover is active.');
+    await this.abortPendingWrites(state, installationId);
+    const old = await this.tab(userId, installationId, true);
+    const current = new URL(old.url());
+    const landing = current.protocol === 'https:' && this.config.allowedHosts.has(current.hostname.toLowerCase())
+      ? `${current.origin}/` : 'about:blank';
+    // Replacing the page destroys human-entered passwords/OTPs and all timers
+    // queued by an earlier agent click before the agent can read again.
+    await old.close();
+    state.tabs.delete(installationId);
+    state.frames.delete(installationId);
+    state.humanActionSeen.delete(installationId);
+    const fresh = await state.context.newPage();
+    await fresh.evaluate((name) => { window.name = name; }, `${TAB_NAME_PREFIX}${installationId}`);
+    await this.attachPage(fresh, installationId);
+    state.tabs.set(installationId, fresh);
+    if (landing !== 'about:blank') await fresh.goto(landing, { waitUntil: 'domcontentloaded', timeout: ACTION_TIMEOUT_MS });
     await this.takeoverState.set(userId, installationId, false);
-    (await this.user(userId)).takeover.delete(installationId);
+    state.takeover.delete(installationId);
+  }
+
+  async pendingWrites(userId: string, installationId: string): Promise<{
+    id: string; method: string; url: string;
+  }[]> {
+    const state = await this.user(userId);
+    if (!state.takeover.has(installationId)) return [];
+    return [...state.pendingWrites].filter(([, write]) => write.installationId === installationId)
+      .map(([id, write]) => {
+        const url = new URL(write.url);
+        return { id, method: write.method, url: `${url.origin}${url.pathname}` };
+      });
+  }
+
+  async decideWrite(userId: string, installationId: string, id: string, approve: boolean): Promise<void> {
+    const state = await this.user(userId);
+    if (!state.takeover.has(installationId)) throw new Error('No human takeover is active.');
+    const pending = state.pendingWrites.get(id);
+    if (!pending || pending.installationId !== installationId) throw new Error('Pending write is unavailable.');
+    state.pendingWrites.delete(id);
+    clearTimeout(pending.timer);
+    if (approve) await pending.route.fallback(); else await pending.route.abort();
   }
 
   private async frame(userId: string, installationId: string): Promise<{
@@ -342,12 +419,14 @@ export class AgentComputerBroker {
 
   async takeoverStatus(userId: string, installationId: string): Promise<{
     active: boolean; url: string; frameWidth: number; frameHeight: number; frameRevision: string;
+    pendingWrites: { id: string; method: string; url: string }[];
   }> {
     const page = await this.tab(userId, installationId, true);
     const frame = await this.frame(userId, installationId);
     return {
       active: (await this.user(userId)).takeover.has(installationId), url: page.url(),
       frameWidth: frame.width, frameHeight: frame.height, frameRevision: frame.revision,
+      pendingWrites: await this.pendingWrites(userId, installationId),
     };
   }
 
@@ -383,6 +462,7 @@ export class AgentComputerBroker {
       || x < 0 || y < 0 || x >= frame.width || y >= frame.height) {
       throw new Error('Invalid click coordinates.');
     }
+    (await this.user(userId)).humanActionSeen.add(installationId);
     await page.mouse.click(x, y);
   }
 
@@ -390,6 +470,7 @@ export class AgentComputerBroker {
     const page = await this.humanTab(userId, installationId);
     if (text.length > 10_000) throw new Error('Text is too long.');
     await this.consumeFreshFrame(userId, installationId, revision);
+    (await this.user(userId)).humanActionSeen.add(installationId);
     await page.keyboard.insertText(text);
   }
 
@@ -397,6 +478,7 @@ export class AgentComputerBroker {
     const page = await this.humanTab(userId, installationId);
     if (!HUMAN_KEYS.has(key)) throw new Error('Unsupported key.');
     await this.consumeFreshFrame(userId, installationId, revision);
+    (await this.user(userId)).humanActionSeen.add(installationId);
     await page.keyboard.press(key);
   }
 }

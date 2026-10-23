@@ -37,7 +37,10 @@ can navigate only to allowlisted HTTPS hosts with no URL query, read a bounded
 accessibility snapshot, click an inspectable non-commit control, fill a
 non-secret field, or view a bounded screenshot. Page text and screenshots are
 untrusted model input; the AgentRun records only their metadata. The broker
-blocks non-GET/HEAD/OPTIONS page requests while the agent controls the tab.
+intercepts the shared browser context, including the first popup request.
+Unknown tabs are denied. It blocks non-GET/HEAD/OPTIONS page requests while
+the agent controls the tab. During human takeover, writes remain blocked until
+a human action; each subsequent write is paused for a separate human decision.
 Send/submit controls and ambiguous clickable elements yield `person_required`.
 
 `computer_request_takeover` persists a pause for that installation. While it
@@ -45,11 +48,12 @@ is active, agent actions fail. The person's authenticated UI uses:
 
 | Endpoint | Response / input |
 | --- | --- |
-| `GET /api/agent-computer/:installationId/status` | `{active,url,frameWidth,frameHeight,frameRevision}`; status captures a current CSS-pixel frame |
+| `GET /api/agent-computer/:installationId/status` | `{active,url,frameWidth,frameHeight,frameRevision,pendingWrites}`; status captures a current CSS-pixel frame; pending writes show only an opaque ID, method and URL without query |
 | `GET /api/agent-computer/:installationId/frame` | no-store PNG for the last status capture |
 | `POST /api/agent-computer/:installationId/click` | `{x,y,frameRevision}` in frame pixels |
 | `POST /api/agent-computer/:installationId/type` | `{text,frameRevision}` into the focused field |
 | `POST /api/agent-computer/:installationId/press` | `{key,frameRevision}`; bounded key allowlist |
+| `POST /api/agent-computer/:installationId/decide-write` | `{requestId,approve}`; the person approves or rejects one paused request |
 | `POST /api/agent-computer/:installationId/hand-back` | returns control to the agent |
 
 Every route requires the human owner of an active, native installation whose
@@ -59,6 +63,8 @@ only in their authenticated `type` request; it is not sent to an agent model,
 tool argument, or AgentRun. The person performs the final send in this UI.
 Each click, type, or press consumes its frame revision before the browser action;
 the UI fetches status and frame again before sending another action.
+Hand-back aborts pending writes and replaces the tab at its allowed origin
+before agent reads resume, removing human-entered values and queued page timers.
 
 The broker does not use Steel's unauthenticated live-view URL. Forge's
 takeover UI calls the PNG and input bridge above. A full live browser walk is

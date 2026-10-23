@@ -10,6 +10,7 @@ const fakePage = () => {
   let tabName = '';
   const page = {
     isClosed: () => false,
+    close: jest.fn(),
     setDefaultTimeout: jest.fn(),
     route: jest.fn(),
     addInitScript: jest.fn(),
@@ -45,7 +46,7 @@ const fakePage = () => {
 
 const setup = (status = 'absent') => {
   const pages = [];
-  const context = { newPage: jest.fn(async () => {
+  const context = { route: jest.fn(), newPage: jest.fn(async () => {
     const page = fakePage();
     pages.push(page);
     return page;
@@ -55,7 +56,7 @@ const setup = (status = 'absent') => {
     ? { sessions: status === 'absent' ? [] : [{ id: 'one', status }] }
     : { id: 'one', status: 'live' }));
   const connect = jest.fn(async (endpoint) => (endpoint.includes(OWNER) ? browser : {
-    contexts: () => [{ newPage: async () => {
+    contexts: () => [{ route: jest.fn(), newPage: async () => {
       const page = fakePage();
       pages.push(page);
       return page;
@@ -140,7 +141,7 @@ describe('agent computer broker (fake Steel and CDP)', () => {
   });
 
   test('login fields require takeover; takeover blocks agent actions until hand-back', async () => {
-    const { broker, pages, takeoverState } = setup();
+    const { broker, pages, context, takeoverState } = setup();
     await broker.snapshot(OWNER, FIRST);
     await expect(broker.type(OWNER, FIRST, 'password', 'secret')).rejects.toThrow('require the person');
     expect(pages[0]._fill).not.toHaveBeenCalled();
@@ -149,12 +150,13 @@ describe('agent computer broker (fake Steel and CDP)', () => {
     const status = await broker.takeoverStatus(OWNER, FIRST);
     expect(status).toMatchObject({ active: true, frameWidth: 1280, frameHeight: 720 });
     expect(status.frameRevision).toMatch(/^[0-9a-f-]+:1$/);
-    const intercept = pages[0].route.mock.calls[0][1];
-    const mutating = { request: () => ({ method: () => 'POST', isNavigationRequest: () => false }),
-      abort: jest.fn(), continue: jest.fn() };
-    // Human takeover opens the write lane; outside takeover it is closed.
+    const intercept = context.route.mock.calls[0][1];
+    const mutating = { request: () => ({ method: () => 'POST', url: () => 'https://www.linkedin.com/send',
+      frame: () => ({ page: () => pages[0] }), isNavigationRequest: () => false }),
+      abort: jest.fn(), fallback: jest.fn() };
+    // Taking over alone does not authorize a queued request.
     await intercept(mutating);
-    expect(mutating.continue).toHaveBeenCalledTimes(1);
+    expect(mutating.abort).toHaveBeenCalledTimes(1);
     await expect(broker.snapshot(OWNER, FIRST)).rejects.toThrow('person has control');
     await broker.humanClick(OWNER, FIRST, 20, 30, status.frameRevision);
     await expect(broker.humanType(OWNER, FIRST, 'stale', status.frameRevision)).rejects.toThrow('Stale computer frame');
@@ -164,12 +166,20 @@ describe('agent computer broker (fake Steel and CDP)', () => {
     await broker.humanPress(OWNER, FIRST, 'Enter', afterType.frameRevision);
     expect(pages[0].mouse.click).toHaveBeenCalledWith(20, 30);
     expect(pages[0].keyboard.insertText).toHaveBeenCalledWith('entered by the person');
+    await intercept(mutating);
+    const pending = await broker.pendingWrites(OWNER, FIRST);
+    expect(pending).toMatchObject([{ method: 'POST', url: 'https://www.linkedin.com/send' }]);
+    expect(mutating.fallback).not.toHaveBeenCalled();
+    await broker.decideWrite(OWNER, FIRST, pending[0].id, true);
+    expect(mutating.fallback).toHaveBeenCalledTimes(1);
     await broker.handBack(OWNER, FIRST);
     expect(takeoverState.set).toHaveBeenCalledWith(OWNER, FIRST, false);
     await intercept(mutating);
-    expect(mutating.abort).toHaveBeenCalledTimes(1);
+    expect(mutating.abort).toHaveBeenCalledTimes(2);
     await expect(broker.humanType(OWNER, FIRST, 'no', status.frameRevision)).rejects.toThrow('No human takeover');
     expect((await broker.snapshot(OWNER, FIRST)).text).toContain('snapshot');
+    expect(pages[0].close).toHaveBeenCalledTimes(1);
+    expect(context.newPage).toHaveBeenCalledTimes(2);
   });
 
   test('a restarted broker reloads the human pause before opening an agent tab', async () => {
@@ -197,5 +207,42 @@ describe('agent computer broker (fake Steel and CDP)', () => {
     ]);
     expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected']);
     expect(pages[0].mouse.click).toHaveBeenCalledTimes(1);
+  });
+
+  test('the first request from an unowned popup is denied at the context boundary', async () => {
+    const { broker, context } = setup('live');
+    await broker.snapshot(OWNER, FIRST);
+    const intercept = context.route.mock.calls[0][1];
+    const popup = { request: () => ({ method: () => 'POST',
+      frame: () => ({ page: () => fakePage() }) }), abort: jest.fn() };
+    await intercept(popup);
+    expect(popup.abort).toHaveBeenCalledTimes(1);
+  });
+
+  test('takeover stops an agent click paused during target inspection', async () => {
+    const { broker, pages } = setup('live');
+    await broker.snapshot(OWNER, FIRST);
+    let entered;
+    let release;
+    const inspecting = new Promise((resolve) => { entered = resolve; });
+    const gate = new Promise((resolve) => { release = resolve; });
+    const originalLocator = pages[0].locator;
+    pages[0].locator = jest.fn((selector) => {
+      const locator = originalLocator(selector);
+      const originalEvaluate = locator.evaluate;
+      locator.evaluate = async (...args) => {
+        const result = await originalEvaluate(...args);
+        entered();
+        await gate;
+        return result;
+      };
+      return locator;
+    });
+    const clicking = broker.click(OWNER, FIRST, 'menu');
+    await inspecting;
+    await broker.requestTakeover(OWNER, FIRST);
+    release();
+    await expect(clicking).rejects.toThrow('person has control');
+    expect(pages[0]._click).not.toHaveBeenCalled();
   });
 });
