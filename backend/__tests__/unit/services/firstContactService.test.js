@@ -44,7 +44,7 @@ const baseOptions = (overrides = {}) => ({
 
 describe('firstContactService', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     AgentFirstContact.findOneAndUpdate.mockResolvedValue(firstInsert());
     AgentEventService.enqueue.mockResolvedValue({ _id: 'event-1' });
     Message.hasMessageByUserInPod.mockResolvedValue(false);
@@ -123,11 +123,13 @@ describe('firstContactService', () => {
       hostedAgentUserId: 'agent-user-1', mentionHandle: 'owner-agent',
     }))).resolves.toBe(true);
 
-    expect(Message.hasMessageByUserInPod).toHaveBeenCalledWith(
-      expect.any(mongoose.Types.ObjectId), 'agent-user-1',
-    );
-    expect(AgentFirstContact.findOneAndUpdate.mock.calls[1][0].greetedPodIds)
-      .toEqual({ $ne: expect.any(mongoose.Types.ObjectId) });
+    expect(Message.hasMessageByUserInPod).toHaveBeenCalledWith(expect.any(mongoose.Types.ObjectId), 'agent-user-1');
+    const claim = AgentFirstContact.findOneAndUpdate.mock.calls[1];
+    expect(claim[0].$or).toEqual([
+      { [`greetedAtByPod.${POD_ID}`]: { $exists: false } },
+      { [`greetedAtByPod.${POD_ID}`]: { $lt: expect.any(Date) } },
+    ]);
+    expect(claim[1].$set[`greetedAtByPod.${POD_ID}`]).toBeInstanceOf(Date);
     expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
     const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
     expect(cue).toContain('Traditional Chinese');
@@ -136,9 +138,7 @@ describe('firstContactService', () => {
   });
 
   test('a hosted seat that already spoke in this pod gets no second greeting', async () => {
-    AgentFirstContact.findOneAndUpdate
-      .mockResolvedValueOnce(existingMarker())
-      .mockResolvedValueOnce(existingMarker());
+    AgentFirstContact.findOneAndUpdate.mockResolvedValueOnce(existingMarker());
     Message.hasMessageByUserInPod.mockResolvedValue(true);
 
     await expect(maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' })))
@@ -146,14 +146,14 @@ describe('firstContactService', () => {
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
   });
 
-  test('the same hosted pod is not greeted twice even after chat retention', async () => {
-    const marker = existingMarker();
-    marker.value.greetedPodIds = [new mongoose.Types.ObjectId(POD_ID)];
-    AgentFirstContact.findOneAndUpdate.mockResolvedValue(marker);
+  test('a recent hosted greeting claim stops a repeat while its message is still absent', async () => {
+    AgentFirstContact.findOneAndUpdate
+      .mockResolvedValueOnce(existingMarker())
+      .mockResolvedValueOnce({ value: null });
 
     await expect(maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' })))
       .resolves.toBe(false);
-    expect(Message.hasMessageByUserInPod).not.toHaveBeenCalled();
+    expect(Message.hasMessageByUserInPod).toHaveBeenCalledTimes(1);
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
   });
 

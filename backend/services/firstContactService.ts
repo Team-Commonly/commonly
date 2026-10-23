@@ -21,7 +21,7 @@ interface FirstContactOptions {
 }
 
 interface RawUpsertResult {
-  value?: { greetedPodIds?: Types.ObjectId[] } | null;
+  value?: unknown;
   lastErrorObject?: {
     updatedExisting?: boolean;
   };
@@ -41,6 +41,7 @@ const mentionLineCue = (handle: string): string => (
   + 'messages that mention you, so without that line their answer would never reach you.'
 );
 const MENTION_HANDLE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const HOSTED_GREETING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 const greetingLanguage = async (userId: Types.ObjectId): Promise<string> => {
   let zone = '';
@@ -102,6 +103,8 @@ export async function maybeFireFirstContact({
   const safeUserId = new mongoose.Types.ObjectId(String(installedByUserId));
   const safePodId = new mongoose.Types.ObjectId(String(podId));
   const safeInstanceId = String(instanceId || 'default').trim().toLowerCase() || 'default';
+  const greetingClaimPath = `greetedAtByPod.${String(safePodId)}`;
+  const now = new Date();
 
   let result: RawUpsertResult;
   try {
@@ -113,8 +116,8 @@ export async function maybeFireFirstContact({
           agentName: safeAgentName,
           instanceId: safeInstanceId,
           firstPodId: safePodId,
-          ...(hostedAgentUserId ? { greetedPodIds: [safePodId] } : {}),
-          createdAt: new Date(),
+          ...(hostedAgentUserId ? { greetedAtByPod: { [String(safePodId)]: now } } : {}),
+          createdAt: now,
         },
       },
       {
@@ -136,20 +139,24 @@ export async function maybeFireFirstContact({
   const alreadyMet = result?.lastErrorObject?.updatedExisting === true || result?.value != null;
   if (alreadyMet) {
     if (!hostedAgentUserId) return false;
-    if (result.value?.greetedPodIds?.some((id) => String(id) === String(safePodId))) return false;
 
     // A legacy relationship marker can predate a new hosted start by months.
     // Recent speech in this pod means the person already met this seat here.
     const hasVisibleGreeting = await Message.hasMessageByUserInPod(safePodId, hostedAgentUserId);
+    if (hasVisibleGreeting) return false;
+    const expiredBefore = new Date(now.getTime() - HOSTED_GREETING_WINDOW_MS);
     const podClaim = await AgentFirstContact.findOneAndUpdate(
       {
         userId: safeUserId, agentName: safeAgentName, instanceId: safeInstanceId,
-        greetedPodIds: { $ne: safePodId },
+        $or: [
+          { [greetingClaimPath]: { $exists: false } },
+          { [greetingClaimPath]: { $lt: expiredBefore } },
+        ],
       },
-      { $addToSet: { greetedPodIds: safePodId } },
+      { $set: { [greetingClaimPath]: now } },
       { new: false, includeResultMetadata: true },
     ) as unknown as RawUpsertResult;
-    if (!podClaim?.value || hasVisibleGreeting) return false;
+    if (!podClaim?.value) return false;
   }
 
   const handle = String(mentionHandle || '').trim().toLowerCase();
