@@ -1,6 +1,12 @@
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
+const mongoose = require('mongoose');
+// eslint-disable-next-line global-require
+const { rateLimit } = require('express-rate-limit');
+// eslint-disable-next-line global-require
+const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+// eslint-disable-next-line global-require
 const JSON5 = require('json5');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
@@ -57,6 +63,15 @@ interface PodError extends Error {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+const importedSkillsReadLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: unknown) => cloudflareIpRateLimitKeyGenerator(req),
+  handler: (_req: unknown, res: Res) => res.status(429).json({ code: 'rate_limited' }),
+});
 
 const getUserId = (req: AuthReq): string | undefined => req.user?.id || req.userId;
 
@@ -104,7 +119,8 @@ const extractCredentialHints = (content: string | undefined, metadataOverride?: 
 };
 
 const ensurePodAccess = async (podId: string, userId: unknown) => {
-  const pod = await Pod.findById(podId).lean() as Record<string, unknown> & { createdBy?: { toString: () => string }; members?: Array<{ userId?: { toString: () => string }; toString: () => string }> } | null;
+  if (!mongoose.Types.ObjectId.isValid(podId)) { const e = new Error('Pod not found') as PodError; e.code = 'POD_NOT_FOUND'; throw e; }
+  const pod = await Pod.findById(new mongoose.Types.ObjectId(podId)).lean() as Record<string, unknown> & { createdBy?: { toString: () => string }; members?: Array<{ userId?: { toString: () => string }; toString: () => string }> } | null;
   if (!pod) { const e = new Error('Pod not found') as PodError; e.code = 'POD_NOT_FOUND'; throw e; }
   const userIdStr = userId?.toString();
   const isCreator = pod.createdBy?.toString() === userIdStr;
@@ -114,9 +130,10 @@ const ensurePodAccess = async (podId: string, userId: unknown) => {
 };
 
 const ensureAgentSkillEditor = async (podId: string, agentName: string, instanceId: string, userId: unknown) => {
-  const installation = await AgentInstallation.findOne({
-    podId, agentName: agentName.toLowerCase(), instanceId, status: 'active',
-  }).select('installedBy').lean() as { installedBy?: { toString: () => string } } | null;
+  const installations = await AgentInstallation.find({
+    podId: new mongoose.Types.ObjectId(podId), status: 'active',
+  }).select('agentName instanceId installedBy').lean() as Array<{ agentName: string; instanceId: string; installedBy?: { toString: () => string } }>;
+  const installation = installations.find((item) => item.agentName === agentName.toLowerCase() && item.instanceId === instanceId);
   if (!installation) { const e = new Error('Agent not installed in this pod') as PodError; e.code = 'AGENT_NOT_FOUND'; throw e; }
   if (installation.installedBy?.toString() === userId?.toString()) return;
   const user = await User.findById(userId).select('role').lean() as { role?: string } | null;
@@ -140,7 +157,8 @@ const ensureDefaultGateway = async (userId: unknown) => {
 };
 
 const syncOpenClawInstallationsForPodSkillChange = async ({ podId }: { podId: string }) => {
-  const installations = await AgentInstallation.find({ podId, agentName: 'openclaw', status: 'active' }).lean() as Array<Record<string, unknown>>;
+  const installations = (await AgentInstallation.find({ podId: new mongoose.Types.ObjectId(podId), status: 'active' }).lean() as Array<Record<string, unknown>>)
+    .filter((installation) => installation.agentName === 'openclaw');
   if (!installations.length) return { attempted: 0, synced: 0, failed: 0, items: [] };
   const items = await Promise.all(installations.map(async (installation) => {
     const instanceId = String(installation.instanceId || 'default').trim() || 'default';
@@ -268,7 +286,7 @@ router.get('/requirements', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/pods/:podId/imported', auth, async (req: AuthReq, res: Res) => {
+router.get('/pods/:podId/imported', importedSkillsReadLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const userId = getUserId(req);
     const { podId } = req.params || {};
