@@ -1594,21 +1594,6 @@
       "title": "其他接入方式"
     }
   },
-  "agentSettings": {
-    "wakeTitle": "唤醒",
-    "wakeOnMessage": "收到消息时唤醒",
-    "boardWake": "看板变更时唤醒",
-    "heartbeat": "心跳间隔",
-    "everyMinutes_one": "每分钟",
-    "everyMinutes_other": "每{{count}}分钟",
-    "podsTitle": "Pod",
-    "remove": "从 Pod 中移除",
-    "removeConfirm": "从 {{podName}} 移除此智能体？身份和记忆会保留。",
-    "noPods": "没有可管理的 Pod",
-    "loadError": "无法加载设置。",
-    "saveError": "无法保存唤醒设置。",
-    "removeError": "无法从此 Pod 移除智能体。"
-  },
   "agentProfile": {
     "loading": "加载中…",
     "nav": {
@@ -2261,6 +2246,19 @@
     "sentenceSeparator": ""
   },
   "agentSettings": {
+    "wakeTitle": "唤醒",
+    "wakeOnMessage": "收到消息时唤醒",
+    "boardWake": "看板变更时唤醒",
+    "heartbeat": "心跳间隔",
+    "everyMinutes_one": "每分钟",
+    "everyMinutes_other": "每{{count}}分钟",
+    "podsTitle": "Pod",
+    "remove": "从 Pod 中移除",
+    "removeConfirm": "从 {{podName}} 移除此智能体？身份和记忆会保留。",
+    "noPods": "没有可管理的 Pod",
+    "loadError": "无法加载设置。",
+    "saveError": "无法保存唤醒设置。",
+    "removeError": "无法从此 Pod 移除智能体。",
     "loading": "正在加载智能体设置…",
     "unavailable": "无法打开智能体设置。",
     "yourTeam": "你的团队",

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2PageHead from '../components/V2PageHead';
 import { useAgentSettings } from './useAgentSettings';
+import V2AgentWakePods from './V2AgentWakePods';
 import './v2-agent-settings.css';
 
 interface RuntimeKey {
@@ -30,7 +31,8 @@ const errorLabel = (error: unknown, fallback: string): string => (
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
-  const { access, installation, podId, loading, error: loadError } = useAgentSettings(agentName, instanceId);
+  const { access, installation, podId, loading, error: loadError, refresh } = useAgentSettings(agentName, instanceId);
+  const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
   const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +120,17 @@ const V2AgentSettingsPage: React.FC = () => {
     }
   };
 
+  const onRemoved = () => {
+    if (!access) return;
+    setKeys([]);
+    setPendingAction(null);
+    setOneTimeKey(null);
+    if (access.pods.length === 1) setRemovedLast(true);
+    else void refresh().catch((requestError) => setError(errorLabel(requestError, t('agentSettings.unavailable'))));
+  };
+
   if (loading) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.loading')}</div>;
+  if (removedLast) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.noPod')}</div>;
   if (!access || !podId) return <div className="v2-agent-settings__state" role="alert">
     {error || errorLabel(loadError, t('agentSettings.unavailable'))}
   </div>;
@@ -193,6 +205,7 @@ const V2AgentSettingsPage: React.FC = () => {
           </ul>
         )}
       </section>
+      <V2AgentWakePods agentName={agentName} instanceId={instanceId} onRemoved={onRemoved} />
     </main>
   );
 };

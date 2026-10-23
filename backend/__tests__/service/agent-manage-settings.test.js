@@ -114,12 +114,12 @@ describe('per-installation agent settings', () => {
     expect(await AgentMemory.exists({ _id: memory._id })).toBeTruthy();
   });
 
-  it('does not let a pod creator remove someone else’s installation', async () => {
+  it('keeps the pod creator’s authority to remove an installation', async () => {
     await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, { installedBy: other._id });
     const response = await request(app)
       .delete(`/api/registry/agents/settings-agent/pods/${podA._id}?instanceId=same`)
       .set('Authorization', `Bearer ${token(owner)}`);
-    expect(response.status).toBe(403);
-    expect((await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' })).status).toBe('active');
+    expect(response.status).toBe(200);
+    expect((await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' })).status).toBe('uninstalled');
   });
 });

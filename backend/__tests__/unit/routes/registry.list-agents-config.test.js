@@ -113,6 +113,8 @@ describe('registry list pod agents config payload', () => {
         installedBy: 'user-1',
         config: new Map(Object.entries({
           heartbeat: { enabled: true, everyMinutes: 60 },
+          wakeOnMessage: { enabled: true, humanOnly: true },
+          boardWake: { enabled: false },
           autonomy: { autoJoinAgentOwnedPods: true },
           errorRouting: { ownerDm: true },
           heartbeatChecklist: '- Check updates',
@@ -154,6 +156,8 @@ describe('registry list pod agents config payload', () => {
       customizations: null,
       environment: {},
       heartbeat: { enabled: true, everyMinutes: 60 },
+      wakeOnMessage: { enabled: true, humanOnly: true },
+      boardWake: { enabled: false },
       autonomy: { autoJoinAgentOwnedPods: true },
       errorRouting: { ownerDm: true },
       heartbeatChecklist: '- Check updates',

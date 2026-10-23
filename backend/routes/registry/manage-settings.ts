@@ -1,4 +1,6 @@
 // Owner/admin controls for one agent installation at a time.
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
@@ -7,6 +9,15 @@ const User = require('../../models/User');
 const { getUserId, normalizeConfigMap, normalizeInstanceId } = require('./helpers');
 
 const router = express.Router();
+const settingsRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: unknown) => cloudflareIpRateLimitKeyGenerator(req as never),
+  handler: (_req: unknown, res: any) => res.status(429).json({ code: 'rate_limited' }),
+});
 
 const canManage = (installation: any, userId: string, isAdmin: boolean) => (
   isAdmin || String(installation.installedBy) === String(userId)
@@ -27,7 +38,7 @@ const settings = (installation: any, podName: string) => {
   };
 };
 
-router.get('/agents/:name/manage-settings', auth, async (req: any, res: any) => {
+router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -50,7 +61,7 @@ router.get('/agents/:name/manage-settings', auth, async (req: any, res: any) => 
   }
 });
 
-router.patch('/agents/:name/manage-settings/pods/:podId', auth, async (req: any, res: any) => {
+router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });

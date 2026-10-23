@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import axios from 'axios';
+import axios from '../../utils/axiosConfig';
 import './v2-agent-wake-pods.css';
 
 interface InstallationSettings {
@@ -15,7 +15,7 @@ interface InstallationSettings {
 const V2AgentWakePods: React.FC<{
   agentName: string;
   instanceId: string;
-  onRemoved?: () => void;
+  onRemoved?: (podId: string) => void;
 }> = ({ agentName, instanceId, onRemoved }) => {
   const { t } = useTranslation();
   const [installations, setInstallations] = useState<InstallationSettings[]>([]);
@@ -28,7 +28,7 @@ const V2AgentWakePods: React.FC<{
   const load = useCallback(async () => {
     try {
       const response = await axios.get<{ installations: InstallationSettings[] }>(`${base}?${query}`);
-      setInstallations(response.data.installations);
+      setInstallations(Array.isArray(response.data.installations) ? response.data.installations : []);
       setError(null);
     } catch {
       setError(t('agentSettings.loadError'));
@@ -67,7 +67,7 @@ const V2AgentWakePods: React.FC<{
         `/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(entry.podId)}?${query}`,
       );
       setInstallations((current) => current.filter((item) => item.podId !== entry.podId));
-      onRemoved?.();
+      onRemoved?.(entry.podId);
     } catch {
       setError(t('agentSettings.removeError'));
     } finally {

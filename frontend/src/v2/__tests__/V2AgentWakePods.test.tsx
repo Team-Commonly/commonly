@@ -4,12 +4,14 @@ import { MemoryRouter } from 'react-router-dom';
 import V2AgentWakePods from '../agents/V2AgentWakePods';
 import i18n, { i18nReady } from '../../i18n';
 
-jest.mock('axios', () => ({
+jest.mock('../../utils/axiosConfig', () => ({
   __esModule: true,
   default: { get: jest.fn(), patch: jest.fn(), delete: jest.fn() },
 }));
 
-const client = (jest.requireMock('axios') as { default: { get: jest.Mock; patch: jest.Mock; delete: jest.Mock } }).default;
+const client = (jest.requireMock('../../utils/axiosConfig') as {
+  default: { get: jest.Mock; patch: jest.Mock; delete: jest.Mock };
+}).default;
 const renderSettings = () => render(
   <MemoryRouter><V2AgentWakePods agentName="test-agent" instanceId="my-machine" /></MemoryRouter>,
 );

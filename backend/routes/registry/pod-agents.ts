@@ -111,8 +111,8 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
 
     const isInstaller = installation.installedBy?.toString?.() === userId.toString();
 
-    if (!isInstaller && !isGlobalAdmin) {
-      return res.status(403).json({ error: 'Only the agent installer or an instance admin can remove an installed agent' });
+    if (!isCreator && !isInstaller && !isGlobalAdmin) {
+      return res.status(403).json({ error: 'Only pod admins or installers can remove agents' });
     }
 
     await AgentInstallation.uninstall(name, podId, instanceId);
