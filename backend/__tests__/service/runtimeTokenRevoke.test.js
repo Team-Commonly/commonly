@@ -21,7 +21,8 @@ process.env.NODE_ENV = 'test';
 
 // The signed-in human. A jest.mock factory may only reach `mock`-prefixed
 // bindings, read at call time.
-const mockOwner = { id: new mongoose.Types.ObjectId().toString() };
+const primaryOwnerId = new mongoose.Types.ObjectId().toString();
+const mockOwner = { id: primaryOwnerId };
 
 jest.mock('../../middleware/auth', () => {
   const auth = (req, _res, next) => {
@@ -46,6 +47,7 @@ const agentRuntimeAuth = require('../../middleware/agentRuntimeAuth');
 const app = express();
 app.use(express.json());
 app.use('/api/registry', require('../../routes/registry/agent-tokens'));
+app.use('/api/credentials', require('../../routes/credentials'));
 app.use('/api/registry', require('../../routes/registry/admin'));
 app.use('/api/registry', require('../../routes/registry/pod-agents'));
 // A limiter far above anything this suite sends: the probe is a test route,
@@ -85,6 +87,7 @@ describe('revoking a runtime token kills it in every store', () => {
   beforeAll(async () => { await setupMongoDb(); });
   afterAll(async () => { await closeMongoDb(); });
   beforeEach(async () => {
+    mockOwner.id = primaryOwnerId;
     await clearMongoDb();
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -111,6 +114,97 @@ describe('revoking a runtime token kills it in every store', () => {
 
     expect((await probe(token)).status).toBe(401);
     expect(await storesHolding(tokenHash)).toEqual({ users: 0, installations: 0 });
+    const history = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(history.status).toBe(200);
+    expect(history.body).toEqual([expect.objectContaining({
+      label: 'laptop', status: 'revoked', revokedAt: expect.any(String),
+    })]);
+    expect(JSON.stringify(history.body)).not.toContain(token);
+  });
+
+  test('a pod member who did not install the identity cannot list key metadata', async () => {
+    const { workspace } = await seed();
+    const issued = await request(app)
+      .post(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`)
+      .send({ label: 'private laptop' });
+    expect(issued.status).toBe(200);
+    const otherId = new mongoose.Types.ObjectId().toString();
+    const credential = await AgentCredential.findOne({ label: 'private laptop' }).lean();
+    await Pod.updateOne({ _id: workspace._id }, { $push: { members: otherId } });
+    mockOwner.id = otherId;
+    const listed = await request(app).get(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`);
+    expect(listed.status).toBe(403);
+    expect(JSON.stringify(listed.body)).not.toContain('private laptop');
+    const credentials = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(credentials.status).toBe(403);
+    expect(JSON.stringify(credentials.body)).not.toContain('private laptop');
+    const revoke = await request(app).delete(`/api/credentials/${credential._id}?agentName=${AGENT}&instanceId=default`);
+    expect(revoke.status).toBe(403);
+    expect((await AgentCredential.findById(credential._id).lean()).status).toBe('active');
+  });
+
+  test('an instance admin can read a key-bearing installation without joining its pod', async () => {
+    const { workspace } = await seed();
+    const issued = await request(app)
+      .post(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`)
+      .send({ label: 'owner key' });
+    expect(issued.status).toBe(200);
+    const adminId = new mongoose.Types.ObjectId();
+    await User.create({ _id: adminId, username: 'settings-admin', email: 'settings-admin@example.test',
+      role: 'admin', authProviders: [{ provider: 'github', providerId: 'settings-admin' }] });
+    mockOwner.id = String(adminId);
+    const installation = await request(app)
+      .get(`/api/registry/pods/${workspace._id}/agents/${AGENT}?instanceId=default`);
+    expect(installation.status).toBe(200);
+    const keys = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(keys.status).toBe(200);
+  });
+
+  test('the Settings credential revoke stops the agent token and keeps its history', async () => {
+    const { workspace } = await seed();
+    const issued = await request(app)
+      .post(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`)
+      .send({ label: 'Settings key' });
+    expect((await probe(issued.body.token)).status).toBe(200);
+    const listed = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual([expect.objectContaining({ label: 'Settings key', status: 'active' })]);
+    const revoked = await request(app).delete(`/api/credentials/${listed.body[0]._id}?agentName=${AGENT}&instanceId=default`);
+    expect(revoked.status).toBe(200);
+    expect((await probe(issued.body.token)).status).toBe(401);
+    const after = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(after.body).toEqual([expect.objectContaining({ label: 'Settings key', status: 'revoked' })]);
+  });
+
+  test('an existing embedded key is imported into Settings before it is revoked', async () => {
+    const { workspaceInstall } = await seed();
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    const issued = await issueRuntimeTokenForAgent(agentUser, 'Old CLI key', workspaceInstall);
+    expect(await AgentCredential.countDocuments({ agentUserId: agentUser._id })).toBe(0);
+    const listed = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual([expect.objectContaining({ label: 'Old CLI key', status: 'active' })]);
+    const revoked = await request(app).delete(`/api/credentials/${listed.body[0]._id}?agentName=${AGENT}&instanceId=default`);
+    expect(revoked.status).toBe(200);
+    expect((await probe(issued.token)).status).toBe(401);
+    expect((await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`)).body)
+      .toEqual([expect.objectContaining({ label: 'Old CLI key', status: 'revoked' })]);
+    expect((await User.findById(agentUser._id).lean()).agentRuntimeTokens).toHaveLength(1);
+    expect((await AgentInstallation.findById(workspaceInstall._id).lean()).runtimeTokens).toHaveLength(1);
+  });
+
+  test('an installation-only legacy key remains visible for owner revocation', async () => {
+    const { workspaceInstall } = await seed();
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    const issued = await issueRuntimeTokenForAgent(agentUser, 'Installation key', workspaceInstall);
+    await User.updateOne({ _id: agentUser._id }, { $set: { agentRuntimeTokens: [] } });
+    expect((await probe(issued.token)).status).toBe(200);
+    const listed = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual([expect.objectContaining({ label: 'Installation key', status: 'active' })]);
+    const revoked = await request(app).delete(`/api/credentials/${listed.body[0]._id}?agentName=${AGENT}&instanceId=default`);
+    expect(revoked.status).toBe(200);
+    expect((await probe(issued.token)).status).toBe(401);
   });
 
   test('a copy on a sibling installation dies too, and so does a ledger row', async () => {
@@ -179,6 +273,12 @@ describe('revoking a runtime token kills it in every store', () => {
 
     expect((await probe(first.token)).status).toBe(401);
     expect((await probe(second)).status).toBe(200);
+    const history = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(history.status).toBe(200);
+    expect(history.body).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'laptop', status: 'revoked', revokedAt: expect.any(String) }),
+      expect.objectContaining({ label: 'desktop', status: 'active', revokedAt: null }),
+    ]));
   });
 
   test('pod uninstall keeps a shared token until the last installation, then revokes it and preserves identity', async () => {

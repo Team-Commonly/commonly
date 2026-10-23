@@ -26,6 +26,8 @@ jest.mock('../../../models/AgentRegistry', () => ({
 }));
 jest.mock('../../../models/AgentCredential', () => ({
   updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+  updateOne: jest.fn().mockResolvedValue({ upsertedCount: 1 }),
+  create: jest.fn().mockResolvedValue({}),
 }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(),

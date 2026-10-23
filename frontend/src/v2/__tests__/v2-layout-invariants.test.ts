@@ -150,6 +150,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const v2 = read('../v2.css');
   const tokens = read('../../../design-system/tokens.css');
   const aprofile = read('../agents/v2-agent-profile.css');
+  const agentSettings = read('../agents/v2-agent-settings.css');
   const landing = read('../landing/v2-landing.css');
   const podChat = read('../components/V2Thread.tsx');
   const podsSidebar = read('../components/V2PodsSidebar.tsx');
@@ -177,6 +178,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const billingPanel = read('../components/V2BillingPanel.tsx');
   const appsManagement = read('../../components/AppsManagement.tsx');
   const podModel = read('../../../../backend/models/Pod.ts');
+
+  test('agent Settings key metadata wraps within the page at phone width', () => {
+    expect(ruleBody(agentSettings, '.v2-agent-settings')).toContain('width: min(100%, 960px)');
+    expect(ruleBody(agentSettings, '.v2-agent-settings__key-meta')).toContain('flex-wrap: wrap');
+    expect(mediaBlockContaining(agentSettings, '.v2-agent-settings__key-meta')).toContain('display: grid');
+  });
+
+  test('agent Settings buttons retain their chrome over the v2 button reset', () => {
+    const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root)');
+    expect(button).toContain('border: 1px solid var(--v2-border)');
+    expect(button).toContain('background: var(--v2-surface)');
+    expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__section-head button')).toContain('background: var(--v2-ink)');
+  });
 
   test('BYO hints do not add paragraph margins to flex gaps', () => {
     expect(ruleBody(v2, '.v2-byo__hint')).toContain('margin: 0');

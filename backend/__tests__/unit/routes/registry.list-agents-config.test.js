@@ -152,6 +152,7 @@ describe('registry list pod agents config payload', () => {
     expect(res.body.agents[0].config).toEqual({
       presetId: null,
       customizations: null,
+      environment: {},
       heartbeat: { enabled: true, everyMinutes: 60 },
       autonomy: { autoJoinAgentOwnedPods: true },
       errorRouting: { ownerDm: true },

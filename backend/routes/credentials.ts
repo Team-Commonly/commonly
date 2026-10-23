@@ -9,6 +9,8 @@ import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import AgentCredential from '../models/AgentCredential';
+import { AgentInstallation } from '../models/AgentRegistry';
+import { ownsRuntimeIdentity } from '../services/runtimeIdentityOwnership';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -40,7 +42,49 @@ type AuthReq = express.Request & { user?: { id?: string } };
 
 router.get('/', credentialRateLimit, auth, async (req: AuthReq, res: express.Response) => {
   try {
-    const rows = await AgentCredential.find({ ownerUserId: req.user?.id })
+    const agentName = String(req.query.agentName || '').trim().toLowerCase();
+    const instanceId = String(req.query.instanceId || '').trim();
+    let filter: Record<string, unknown> = { ownerUserId: req.user?.id };
+    if (agentName || instanceId) {
+      if (!agentName || !instanceId) return res.status(400).json({ message: 'Agent name and instance id are required' });
+      const caller = await User.findById(req.user?.id).select('role').lean();
+      if (caller?.role !== 'admin') {
+        const ownership = await ownsRuntimeIdentity(req.user?.id, agentName, instanceId);
+        if (!ownership.owned) return res.status(403).json({ message: 'Access denied' });
+      }
+      const agent = await User.findOne({
+        isBot: true,
+        'botMetadata.agentName': agentName,
+        'botMetadata.instanceId': instanceId,
+      }).select('_id agentRuntimeTokens').lean();
+      if (!agent) return res.status(404).json({ message: 'Agent not found' });
+      // Existing CLI keys were minted before the credential ledger became
+      // authoritative. Import their metadata once so list/revoke can use the
+      // same credential id and a later revoke remains visible in Settings.
+      const installations = await AgentInstallation.find({ agentName, instanceId })
+        .select('installedBy runtimeTokens').lean();
+      const ownerUserId = installations[0]?.installedBy || req.user?.id;
+      type EmbeddedToken = { tokenHash?: string; label?: string; createdAt?: Date; lastUsedAt?: Date };
+      const embedded: EmbeddedToken[] = [...(agent.agentRuntimeTokens || []),
+        ...installations.flatMap((entry: { runtimeTokens?: EmbeddedToken[] }) => entry.runtimeTokens || [])];
+      const seen = new Set<string>();
+      await Promise.all(embedded.filter((token) => {
+        if (!token.tokenHash || seen.has(token.tokenHash)) return false;
+        seen.add(token.tokenHash);
+        return true;
+      })
+        .map((token) => AgentCredential.updateOne(
+          { tokenHash: token.tokenHash },
+          { $setOnInsert: {
+            kind: 'runtime', ownerUserId, agentUserId: agent._id,
+            label: token.label || 'Runtime token', status: 'active',
+            createdAt: token.createdAt || new Date(), lastUsedAt: token.lastUsedAt || null,
+          } },
+          { upsert: true },
+        )));
+      filter = { agentUserId: agent._id, kind: 'runtime' };
+    }
+    const rows = await AgentCredential.find(filter)
       .select('-tokenHash')
       .sort({ createdAt: -1 })
       .lean();
@@ -58,8 +102,25 @@ router.delete('/:id', credentialRateLimit, auth, async (req: AuthReq, res: expre
     const credential = await AgentCredential.findById(id);
     if (!credential) return res.status(404).json({ message: 'Credential not found' });
     const caller = await User.findById(req.user?.id).select('role').lean();
+    const agentName = String(req.query.agentName || '').trim().toLowerCase();
+    const instanceId = String(req.query.instanceId || '').trim();
+    if (agentName || instanceId) {
+      if (!agentName || !instanceId) return res.status(400).json({ message: 'Agent name and instance id are required' });
+      const agent = await User.findOne({
+        isBot: true,
+        'botMetadata.agentName': agentName,
+        'botMetadata.instanceId': instanceId,
+      }).select('_id').lean();
+      if (!agent || String(credential.agentUserId) !== String(agent._id) || credential.kind !== 'runtime') {
+        return res.status(404).json({ message: 'Credential not found for this agent' });
+      }
+      if (caller?.role !== 'admin') {
+        const ownership = await ownsRuntimeIdentity(req.user?.id, agentName, instanceId);
+        if (!ownership.owned) return res.status(403).json({ message: 'Access denied' });
+      }
+    }
     const isOwner = String(credential.ownerUserId) === String(req.user?.id);
-    if (!isOwner && caller?.role !== 'admin') {
+    if (!agentName && !isOwner && caller?.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied' });
     }
     const revoked = await AgentCredential.revokeCascade(credential._id as Types.ObjectId);

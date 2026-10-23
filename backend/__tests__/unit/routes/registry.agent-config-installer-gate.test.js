@@ -273,7 +273,42 @@ describe('agent config PATCH — installer gate', () => {
     expect(primary.save).toHaveBeenCalledTimes(1);
   });
 
-  it('still refuses a non-member before any of that (membership is a precondition)', async () => {
+  it('lets an instance admin manage an installation without joining its pod', async () => {
+    const primary = installation();
+    setCallerRole('admin');
+    setPod({ members: [] });
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', config: { heartbeat: { enabled: false } } });
+
+    expect(res.status).toBe(200);
+    expect(primary.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('changes environment model controls without deleting hidden MCP or workspace declarations', async () => {
+    const existingEnvironment = {
+      model: 'old-model', workspace: { path: './seat' },
+      mcp: [{ name: 'trusted', command: ['true'] }],
+    };
+    const primary = installation({ installedBy: MEMBER, config: new Map([['environment', existingEnvironment]]) });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', config: { environment: { model: 'new-model', effort: 'high' } } });
+
+    expect(res.status).toBe(200);
+    expect(primary.config.get('environment')).toEqual({
+      ...existingEnvironment, model: 'new-model', effort: 'high',
+    });
+  });
+
+  it('still refuses a non-admin non-member before any of that', async () => {
     const primary = installation();
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'someone-else', members: [] }),

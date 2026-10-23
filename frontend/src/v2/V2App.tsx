@@ -33,6 +33,7 @@ const V2InviteRedeem = React.lazy(() => import('./components/V2InviteRedeem'));
 const V2CommunityRedirect = React.lazy(() => import('./components/V2CommunityRedirect'));
 const V2SettingsPage = React.lazy(() => import('./components/V2SettingsPage'));
 const V2AgentProfile = React.lazy(() => import('./agents/V2AgentProfile'));
+const V2AgentSettingsPage = React.lazy(() => import('./agents/V2AgentSettingsPage'));
 const UserProfile = React.lazy(() => import('../components/UserProfile'));
 const AgentsHub = React.lazy(() => import('../components/agents/AgentsHub'));
 const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
@@ -281,6 +282,10 @@ const V2App: React.FC = () => {
                 <Route
                   path="agents/byo"
                   element={<V2AgentBYO />}
+                />
+                <Route
+                  path="agents/:agentName/:instanceId"
+                  element={feature('Agent settings', <V2AgentSettingsPage />, false, false)}
                 />
                 <Route
                   path="connect"
