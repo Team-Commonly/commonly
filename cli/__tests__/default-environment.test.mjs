@@ -106,6 +106,10 @@ describe('withDefaultMcpServer', () => {
 // defaults to 'none' in the adapters, so "no sandbox block" and "mode: none"
 // are the same thing to the spawn.
 describe('withDefaultSandbox', () => {
+  test('keeps an explicit private listener unconfined after owner consent', () => {
+    const environment = { workspace: { path: '/repo' }, sandbox: { trust: 'private' } };
+    expect(withDefaultSandbox(environment)).toBe(environment);
+  });
   test('declares the default sandbox when there is none', () => {
     expect(withDefaultSandbox(null)).toEqual({ sandbox: defaultSeatSandbox() });
     expect(withDefaultSandbox({ model: 'opus' })).toEqual({

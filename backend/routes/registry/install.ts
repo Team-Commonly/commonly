@@ -51,6 +51,10 @@ const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../s
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
+const {
+  isPrivateListenerEnvironment, privateListenerConfigurationValid,
+  privateListenerPodAllowed, privateListenerIdentityAllowed,
+} = require('../../services/privateListenerPolicy');
 
 // Inlined per-route limiter. This comment used to attribute its clean CodeQL
 // status to `js/missing-rate-limiting` "only seeing express-rate-limit calls
@@ -248,6 +252,19 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     }
     if (res.locals) res.locals.agentInstallInstanceId = normalizedInstanceId;
 
+    const requestedEnvironment = normalizeConfigMap(config)?.environment;
+    if (isPrivateListenerEnvironment(requestedEnvironment)) {
+      const allowed = privateListenerConfigurationValid(requestedEnvironment)
+        && await privateListenerPodAllowed(podId, userId)
+        && ['wrapper', 'webhook'].includes(config?.runtime?.runtimeType);
+      if (!allowed) {
+        return res.status(403).json({
+          code: 'private_listener_not_allowed',
+          error: 'Full computer access requires your sole-human invite-only pod and an absolute repo path',
+        });
+      }
+    }
+
     let agent = await AgentRegistry.getByName(agentName);
 
     if (agent && agent.status === 'unpublished') {
@@ -420,6 +437,16 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     }
 
     const installConfig = normalizeConfigMap(config) || {};
+    if (isPrivateListenerEnvironment(installConfig.environment)) {
+      const eligible = !globalAgent.exists
+        || await privateListenerIdentityAllowed(safeAgentName, normalizedInstanceId, userId, true);
+      if (!eligible) {
+        return res.status(403).json({
+          code: 'private_listener_not_allowed',
+          error: 'Full computer access requires your sole-human invite-only pod and an absolute repo path',
+        });
+      }
+    }
     // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is the OTHER
     // backend writer of `config.environment` — the first is the agent-config
     // PATCH — and it stores the body's config unchecked. Same rule, same

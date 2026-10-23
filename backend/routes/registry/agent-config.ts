@@ -30,6 +30,10 @@ const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runti
 const { configWriteRefusal, runtimeKeepingType } = require('../../services/configWriteGuard');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
+const {
+  isPrivateListenerEnvironment, privateListenerConfigurationValid,
+  privateListenerPodAllowed, privateListenerIdentityAllowed,
+} = require('../../services/privateListenerPolicy');
 
 const agentConfigRouter = express.Router();
 
@@ -171,6 +175,19 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
           code: 'invalid_environment_spec',
           fields: environmentErrors,
         });
+      }
+      if (isPrivateListenerEnvironment(config.environment)) {
+        const existingConfig = normalizeConfigMap(installation.config) || {};
+        const runtimeType = config.runtime?.runtimeType || existingConfig.runtime?.runtimeType;
+        const eligible = privateListenerConfigurationValid(config.environment)
+          && await privateListenerPodAllowed(podId, userId)
+          && await privateListenerIdentityAllowed(name.toLowerCase(), normalizedInstanceId, userId, true);
+        if (!eligible || !['wrapper', 'webhook'].includes(runtimeType)) {
+          return res.status(403).json({
+            code: 'private_listener_not_allowed',
+            error: 'Full computer access requires your sole-human invite-only pod and an absolute repo path',
+          });
+        }
       }
     }
 

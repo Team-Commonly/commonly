@@ -45,6 +45,7 @@ const {
 } = require('./helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { ownsRuntimeIdentity, runtimeCredentialRefusal } = require('../../services/runtimeIdentityOwnership');
+const { privateListenerIdentityAllowed } = require('../../services/privateListenerPolicy');
 const {
   normalizeScopes,
   revokeRuntimeTokenEverywhere,
@@ -196,6 +197,9 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
 
     const refusal = await credentialRefusal(userId, installation.agentName || name, normalizedInstanceId);
     if (refusal) return res.status(403).json(refusal);
+    if (!await privateListenerIdentityAllowed(installation.agentName || name, normalizedInstanceId, userId)) {
+      return res.status(403).json({ code: 'private_listener_not_allowed', error: 'Private listener pod is no longer owner-only' });
+    }
 
     const resolvedType = AgentIdentityService.resolveAgentType(name);
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(resolvedType, {

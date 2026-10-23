@@ -47,7 +47,7 @@ const ALLOWED_TOP_KEYS = new Set([
 const ALLOWED_SANDBOX_MODES = new Set([
   'none', 'workspace', 'read-only', 'bwrap', 'firejail', 'container', 'managed',
 ]);
-const ALLOWED_SANDBOX_TRUST = new Set(['public']);
+const ALLOWED_SANDBOX_TRUST = new Set(['public', 'private']);
 const ALLOWED_NETWORK_POLICIES = new Set(['unrestricted', 'restricted']);
 const INLINE_PROVIDER_CREDENTIAL_FIELD = /(?:key|token|secret|password|authorization|header|credential|auth)/i;
 
@@ -301,10 +301,12 @@ export const validateEnvironmentSpec = (spec) => {
       }
       if (trust !== undefined && !ALLOWED_SANDBOX_TRUST.has(trust)) {
         errors.push(
-          "sandbox.trust must be 'public' — it marks a seat anyone in the pod can "
-          + 'talk to; omit it for your own seat '
+          "sandbox.trust must be 'public' or 'private' — private is an explicit full-tool owner choice "
           + `(got ${JSON.stringify(trust)})`,
         );
+      }
+      if (trust === 'private' && mode !== undefined) {
+        errors.push('sandbox.trust=private requires no sandbox.mode');
       }
       if (network !== undefined) {
         if (typeof network !== 'object' || network === null) {

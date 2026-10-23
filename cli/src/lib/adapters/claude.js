@@ -618,6 +618,12 @@ const prepareArgv = async (innerArgv, ctx) => {
 
   const sandboxTrust = env.sandbox?.trust;
   const sandboxMode = resolvePublicSandboxMode(env.sandbox);
+  if (sandboxTrust === 'private' && sandboxMode === undefined) {
+    // The Connect page obtained an explicit owner choice for full local tools.
+    // Print mode cannot prompt, so this is the only way that choice can run
+    // Bash/Edit without relying on a separately hand-edited Claude setting.
+    innerArgv = [...innerArgv, '--dangerously-skip-permissions'];
+  }
   const publicNativeSandbox = sandboxTrust === 'public'
     && PUBLIC_SANDBOX_MODES.has(sandboxMode);
   // A public trust is ONE contract on both platforms: the jail bounds the

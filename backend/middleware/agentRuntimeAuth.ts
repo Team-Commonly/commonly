@@ -10,6 +10,7 @@ import AgentCredential from '../models/AgentCredential';
 import { markByoConnectionAttempt } from '../services/onboardingMarks';
 import { isSpawnCredential } from '../services/spawnCredentialService';
 import { machineHasLiveAuthorization } from '../services/machineService';
+import { isPrivateListenerEnvironment, privateListenerIdentityAllowed } from '../services/privateListenerPolicy';
 
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
@@ -176,6 +177,13 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       if (installations.length === 0) {
         return res.status(401).json({ message: 'Agent not installed' });
       }
+      if (installations.some((installation: any) => isPrivateListenerEnvironment(
+        installation.config instanceof Map
+          ? installation.config.get('environment')
+          : installation.config?.environment,
+      )) && !await privateListenerIdentityAllowed(agentName, instanceId, installations[0].installedBy)) {
+        return res.status(403).json({ code: 'private_listener_paused', message: 'Private listener pod is no longer owner-only' });
+      }
       const installationPodIds = installations
         .map((inst) => inst?.podId?.toString())
         .filter(Boolean) as string[];
@@ -244,6 +252,13 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       instanceId: installation.instanceId || 'default',
       status: 'active',
     });
+    if (allActiveInstallations.some((row: any) => isPrivateListenerEnvironment(
+      row.config instanceof Map ? row.config.get('environment') : row.config?.environment,
+    )) && !await privateListenerIdentityAllowed(
+      installation.agentName, installation.instanceId || 'default', installation.installedBy,
+    )) {
+      return res.status(403).json({ code: 'private_listener_paused', message: 'Private listener pod is no longer owner-only' });
+    }
 
     req.agentInstallation = installation as never;
     req.agentInstallations = allActiveInstallations as never[];
