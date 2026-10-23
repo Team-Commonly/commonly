@@ -37,7 +37,7 @@ interface AgentDelivery {
   woken: number;
 }
 
-type DeliveredMessage<T> = T | (T & { mentionNotices: unknown[]; agentDelivery?: AgentDelivery });
+type DeliveredMessage<T> = T | (T & { mentionNotices?: unknown[]; agentDelivery?: AgentDelivery });
 
 const senderNotices = async (podId: string, message: { content?: string }): Promise<unknown[]> => {
   try {
@@ -110,7 +110,7 @@ export const deliverMessageToAgents = async <T extends MessageForAgentDelivery>(
 
   return {
     ...message,
-    mentionNotices,
+    ...(mentionNotices.length ? { mentionNotices } : {}),
     agentDelivery: {
       enqueued: mentionResult.enqueued.length,
       implicit: mentionResult.implicit || [],

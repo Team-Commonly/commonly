@@ -61,7 +61,6 @@ describe('messageAgentDeliveryService', () => {
     });
     expect(response).toEqual({
       ...message,
-      mentionNotices: [],
       agentDelivery: {
         enqueued: 1,
         implicit: ['recorder'],
@@ -91,7 +90,7 @@ describe('messageAgentDeliveryService', () => {
       const response = await deliverMessageToAgents({
         podId: 'p1', podType: 'chat', message: { id: 'm2', content: '@rhea' }, userId: 'u1',
       });
-      expect(response.mentionNotices).toEqual([]);
+      expect(response).not.toHaveProperty('mentionNotices');
       expect(AgentMentionService.enqueueMentions).toHaveBeenCalledTimes(1);
     } finally {
       warn.mockRestore();
