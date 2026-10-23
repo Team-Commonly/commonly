@@ -62,10 +62,30 @@ githubPat:
 ingress:
   enabled: false
 
-# Tunnel provisioned by the Thu tunnel task; keep cloudflared (and therefore its
-# ClusterSecretStore) out of the render until then.
+# Cloudflared routes staging's own hostnames straight to the staging Services on the
+# commonly-staging tunnel (no ingress-nginx; R1). Per-hostname ingressRules, so
+# staging.commonly.me -> frontend and api-staging.commonly.me -> backend. It runs IN
+# commonly-staging, so credentials come from a namespaced ExternalSecret sourcing
+# commonly-staging-cloudflared-credentials. The tunnelId is NOT committed (R12) — it
+# is supplied from the staging private values at deploy.
 cloudflared:
-  enabled: false
+  enabled: true
+  namespace: commonly-staging
+  credentialsSecretName: cloudflared-commonly-staging
+  credentialsKey: commonly-staging-cloudflared-credentials
+  replicas: 1
+  ingressRules:
+    - hostname: staging.commonly.me
+      service: http://frontend:80
+    - hostname: api-staging.commonly.me
+      service: http://backend:5000
+  nodeSelector:
+    workload-tier: spot
+  tolerations:
+    - effect: NoSchedule
+      key: workload-tier
+      operator: Equal
+      value: spot
 
 # clawdbot-gateway (openclaw moltbot) is OFF in staging. Prod has no clawdbot-gateway
 # Deployment either — prod runs backend, commonly-bot, frontend, litellm and redis — so

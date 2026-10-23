@@ -517,6 +517,16 @@ cloudflared:
   ingressService: nginx-ingress-ingress-nginx-controller.ingress-nginx.svc.cluster.local
   ingressPort: 80
   metricsPort: 2000
+  # Per-hostname ingress mapping. When set (a release whose cloudflared routes
+  # straight to its own Services, e.g. staging), each {hostname, service} routes
+  # directly and `hostnames`/`ingressService` are ignored. Empty (prod) keeps the
+  # hostnames-list -> ingressService behaviour below.
+  ingressRules: []
+  # SM key holding the tunnel credentials.json {AccountTag,TunnelID,TunnelSecret},
+  # used by the namespaced ExternalSecret path when cloudflared runs in its own
+  # namespace with clusterSecretStore off (staging). Empty (prod) uses the
+  # cluster-store path + commonly-cloudflare-tunnel-token.
+  credentialsKey: ""
   hostnames:
     - commonly.me
     - api.commonly.me
