@@ -36,6 +36,21 @@ const taskText = (value: string): string => value
   .trim()
   .slice(0, 150);
 
+// The first message can be a greeting, acknowledgement, or a message for a
+// different agent. Spend Scout's one-shot only on an answer to its question.
+const workflowFromMessage = (content: string): boolean => {
+  const words = content.toLowerCase().match(/[a-z]+/g) || [];
+  const verb = /\b(review|triage|plan|track|ship|publish|write|draft|summarize|organize|manage|check|monitor|send|prepare|update|handle|process|prioritize|schedule|collect|respond|follow up|build|deploy|fix|test|report)\b/i;
+  const frequency = /\b(daily|weekly|monthly|each|every|morning|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
+  const noun = /\b(issues?|tickets?|requests?|feedback|reports?|releases?|deployments?|posts?|emails?|messages?|customers?|users?|leads?|tasks?|bugs?|projects?|meetings?|updates?|docs?|content|code|pull requests?|prs?|inbox|workflow)\b/i;
+  if (words.length >= 3 && verb.test(content) && (frequency.test(content) || noun.test(content))) return true;
+  // Chinese has no spaces between words. Require an action plus an object or
+  // cadence in a phrase longer than a short acknowledgement.
+  return /[\u3400-\u9fff]{6,}/u.test(content)
+    && /(整理|处理|检查|跟进|汇总|发布|编写|更新|安排|回复|审查|规划|收集)/u.test(content)
+    && /(每周|每天|每月|问题|任务|客户|反馈|邮件|报告|项目|会议|工单|消息)/u.test(content);
+};
+
 const firstOpenIssue = async ({ owner, repo }: ProjectRepo): Promise<{ title: string; number: number } | null> => {
   const url = `https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=10`;
   const result = await fetchTextFromAllowedHost(url, {
@@ -56,6 +71,8 @@ export const proposeNewPodFirstTask = async ({
 }: { podId: string; userId: string; content: string }): Promise<boolean> => {
   const input = taskText(content);
   if (!input) return false;
+  const repo = repoFromMessage(content);
+  if (!repo && !workflowFromMessage(content)) return false;
   // Only the creator's first answer to Scout's new-project prompt is handled.
   // The compare-and-swap prevents duplicate proposals on concurrent sends.
   const pod = await Pod.findOneAndUpdate({
@@ -67,7 +84,6 @@ export const proposeNewPodFirstTask = async ({
 
   const onboarding = pod.firstTaskOnboarding as FirstTaskOnboarding;
   const zh = onboarding.locale === 'zh-CN';
-  const repo = repoFromMessage(content);
   let title: string;
   let sourceRef: string | undefined;
   let note: string;
@@ -97,6 +113,7 @@ export const proposeNewPodFirstTask = async ({
       podId,
       displayName: onboarding.displayName,
       content: `${note}${title}`,
+      noOutboundRelay: true,
       payload: {
         kind: 'starts',
         starts: [

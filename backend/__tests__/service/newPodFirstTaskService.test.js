@@ -46,6 +46,7 @@ test('public repo: ignores PR entries and proposes one open issue without creati
     expect.objectContaining({ allowedOrigins: new Map([['api.github.com', 'https://api.github.com/']]) }),
   );
   expect(posted().content).toContain('Fix login');
+  expect(posted().noOutboundRelay).toBe(true);
   expect(posted().payload.starts).toEqual([
     { id: 'add-first-task', label: 'Add to board', action: 'add-first-task', title: 'Fix login', sourceRef: 'https://github.com/acme/widget/issues/10' },
     { id: 'bring-your-own', label: 'Bring your own', href: '/v2/agents/byo?pod=pod-1' },
@@ -64,6 +65,23 @@ test('weekly workflow text proposes a task and offers the same two buttons', asy
     action: 'add-first-task',
   }));
   expect(posted().payload.starts[1].id).toBe('bring-your-own');
+});
+
+test.each(['thanks!', 'ok sounds good'])('acknowledgement %j leaves the prompt awaiting input', async (content) => {
+  expect(await propose(content)).toBe(false);
+  expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+  expect(mockPostMessage).not.toHaveBeenCalled();
+  expect(mockUpdateOne).not.toHaveBeenCalled();
+});
+
+test('an issue title is capped at 150 characters in both the card and message', async () => {
+  mockFetchText.mockResolvedValue({ ok: true, text: JSON.stringify([
+    { title: `Fix ${'x'.repeat(500)}`, number: 12 },
+  ]) });
+  expect(await propose('https://github.com/acme/widget')).toBe(true);
+  expect(posted().payload.starts[0].title).toHaveLength(150);
+  expect(posted().content).toContain(posted().payload.starts[0].title);
+  expect(posted().content).not.toContain('x'.repeat(151));
 });
 
 test('outside issue text remains data, never a pod mention or attachment directive', async () => {
@@ -93,7 +111,7 @@ test('repo with no issues still proposes one first task in zh-CN', async () => {
 
 test('only the owner can atomically claim the prompt; no second proposal is posted', async () => {
   mockFindOneAndUpdate.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
-  expect(await propose('weekly work')).toBe(false);
+  expect(await propose('review issues weekly')).toBe(false);
   expect(mockFindOneAndUpdate.mock.calls[0][0]).toEqual(expect.objectContaining({
     createdBy: 'owner-1', 'firstTaskOnboarding.stage': 'awaiting-input',
   }));

@@ -386,6 +386,26 @@ describe('installable event dispatcher', () => {
     expect(relay.mock.calls[0][0].content).toBe('An ordinary reply');
   });
 
+  it('does not relay Scout’s public-issue first-task proposal to a live Slack bridge', async () => {
+    const podId = freshId();
+    const ownerId = freshId();
+    await createPod(podId, ownerId);
+    await Integration.create({
+      podId, type: 'slack', status: 'connected', createdBy: ownerId, isActive: true,
+      config: { liveRelay: true, teamId: 'T1', chatId: 'C1', chatType: 'channel' },
+    });
+    const relay = jest.fn().mockResolvedValue(undefined);
+    eventHandlers['slack.relay'] = relay;
+
+    await dispatch('chat.message', {
+      podId, agentUsername: 'scout', displayName: 'Scout',
+      content: 'From acme/widget’s open issues: Fix private token handling',
+      podMessageId: 'first-task-proposal', noOutboundRelay: true,
+    });
+
+    expect(relay).not.toHaveBeenCalled();
+  });
+
   it('selects installed Slack and Telegram rows independently for one pod', async () => {
     const podId = freshId();
     const ownerId = freshId();

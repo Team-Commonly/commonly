@@ -143,7 +143,7 @@ describe('messageController', () => {
   });
 
   describe('createMessage', () => {
-    it('turns the creator\'s first answer into one task proposal without a duplicate agent wake', async () => {
+    it('turns the creator\'s first answer into one proposal while preserving explicit delivery', async () => {
       Pod.findById.mockResolvedValue({
         members: ['u1'], type: 'chat', createdBy: 'u1',
         firstTaskOnboarding: { stage: 'awaiting-input' },
@@ -158,7 +158,49 @@ describe('messageController', () => {
       expect(mockProposeNewPodFirstTask).toHaveBeenCalledWith({
         podId: 'p1', userId: 'u1', content: 'https://github.com/acme/widget',
       });
-      expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
+      expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith(expect.objectContaining({
+        onlyExplicitMentions: true,
+      }));
+    });
+
+    it.each(['thanks!', 'ok sounds good'])('passes %j to normal Scout wake when it is not an answer', async (content) => {
+      Pod.findById.mockResolvedValue({
+        members: ['u1'], type: 'chat', createdBy: 'u1',
+        firstTaskOnboarding: { stage: 'awaiting-input' },
+      });
+      PGMessage.create.mockResolvedValue({ id: 42, content });
+      mockProposeNewPodFirstTask.mockResolvedValue(false);
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.createMessage({
+        params: { podId: 'p1' }, body: { content }, user: { id: 'u1' },
+      }, res);
+      expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.objectContaining({ content }),
+      }));
+      expect(AgentMentionService.enqueueMentions.mock.calls.at(-1)[0]).not.toHaveProperty('onlyExplicitMentions');
+    });
+
+    it('delivers an explicit mention of another agent on the first answer', async () => {
+      const content = '@aria please review support tickets weekly';
+      Pod.findById.mockResolvedValue({
+        members: ['u1'], type: 'chat', createdBy: 'u1',
+        firstTaskOnboarding: { stage: 'awaiting-input' },
+      });
+      PGMessage.create.mockResolvedValue({ id: 42, content });
+      mockProposeNewPodFirstTask.mockResolvedValue(true);
+      AgentMentionService.enqueueMentions.mockResolvedValueOnce({
+        enqueued: ['aria'], implicit: [], skipped: [],
+      });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.createMessage({
+        params: { podId: 'p1' }, body: { content }, user: { id: 'u1' },
+      }, res);
+      expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.objectContaining({ content }), onlyExplicitMentions: true,
+      }));
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        agentDelivery: expect.objectContaining({ enqueued: 1 }),
+      }));
     });
 
     it('returns 400 if podId is missing', async () => {

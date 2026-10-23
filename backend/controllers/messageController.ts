@@ -199,7 +199,7 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       members: Array<{ toString(): string }>;
       type?: string;
       createdBy?: { toString(): string };
-      firstTaskOnboarding?: { stage?: string };
+      firstTaskOnboarding?: { stage?: string; agentName?: string; instanceId?: string };
     } | null;
     if (!pod) {
       res.status(404).json({ msg: 'Pod not found' });
@@ -364,9 +364,9 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       }
     }
 
-    // The onboarding answer has already produced Scout's structured reply.
-    // Do not wake Scout (or another mentioned agent) for the same input.
-    const responseMessage = firstTaskProposed ? message : await deliverMessageToAgents({
+    // The proposal owns Scout's implicit reply, but explicit mentions in the
+    // person's message still need normal delivery to their target agents.
+    const responseMessage = await deliverMessageToAgents({
       podId,
       podType: pod.type,
       message,
@@ -376,6 +376,10 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       // the existing enqueueMentions contract; the legacy PG route omits the
       // field altogether because it cannot receive one.
       replyToMessageId: replyToMessageId || null,
+      onlyExplicitMentions: firstTaskProposed,
+      suppressImplicitReplyTarget: firstTaskProposed && pod.firstTaskOnboarding?.agentName
+        ? { agentName: pod.firstTaskOnboarding.agentName, instanceId: pod.firstTaskOnboarding.instanceId }
+        : undefined,
     });
 
     // Live-broadcast the new message to every connected client in this pod's
