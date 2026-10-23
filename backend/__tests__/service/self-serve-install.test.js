@@ -1,12 +1,13 @@
 /**
- * ADR-006 Phase 1 — self-serve webhook install integration test.
+ * Self-serve webhook and local wrapper install integration tests.
  *
  * Walks the full self-serve flow:
  *   authed pod-member POSTs /install with runtimeType:'webhook' and NO
  *   pre-published manifest → backend synthesizes ephemeral AgentRegistry row
  *   → mints runtime token → token authorizes /events + posting messages
  *   → ephemeral row is excluded from marketplace catalog browse
- *   → non-webhook installs without manifest still 404.
+ *   → local wrapper can create the same owned identity and request placement
+ *   → unsupported runtimes without a manifest still 404.
  */
 
 const express = require('express');
@@ -19,15 +20,17 @@ const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile').default || require('../../models/AgentProfile');
+const Machine = require('../../models/Machine');
 
 const registryRoutes = require('../../routes/registry');
 const agentsRuntimeRoutes = require('../../routes/agentsRuntime');
+const agentBindingRoutes = require('../../routes/agentBinding');
 
 const JWT_SECRET = 'test-jwt-secret-self-serve-install';
 
 jest.setTimeout(60000);
 
-describe('ADR-006 self-serve webhook install', () => {
+describe('self-serve BYO install', () => {
   let app;
   let podMember;
   let outsider;
@@ -43,6 +46,7 @@ describe('ADR-006 self-serve webhook install', () => {
     app.use(express.json());
     app.use('/api/registry', registryRoutes);
     app.use('/api/agents/runtime', agentsRuntimeRoutes);
+    app.use('/api/agent-binding', agentBindingRoutes);
 
     podMember = await User.create({
       username: 'pod-member',
@@ -154,6 +158,71 @@ describe('ADR-006 self-serve webhook install', () => {
       .set('Authorization', `Bearer ${runtimeToken}`);
     expect(eventsRes.status).toBe(200);
     expect(Array.isArray(eventsRes.body.events)).toBe(true);
+  });
+
+  it('installs a new wrapper identity and accepts its machine placement request', async () => {
+    const machine = await Machine.create({
+      ownerUserId: podMember._id, machineId: 'self-serve-machine', name: 'My computer',
+    });
+    const installRes = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({
+        agentName: 'my-machine-agent',
+        instanceId: 'default',
+        displayName: 'Recorder',
+        podId: pod._id.toString(),
+        config: { runtime: { runtimeType: 'wrapper' }, persona: 'recorder' },
+        scopes: ['context:read'],
+      });
+    expect(installRes.status).toBe(200);
+    const registryRow = await AgentRegistry.findOne({ agentName: 'my-machine-agent' }).lean();
+    expect(registryRow).toMatchObject({ ephemeral: true, registry: 'private' });
+    expect(String(registryRow.publisher.userId)).toBe(String(podMember._id));
+    const installation = await AgentInstallation.findOne({ agentName: 'my-machine-agent' }).lean();
+    expect(installation.instanceId).toBe('default');
+    expect(installation.config.runtime.runtimeType).toBe('wrapper');
+
+    const placement = await request(app)
+      .post('/api/agent-binding/request')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ agentName: 'my-machine-agent', instanceId: 'default', machineId: machine.machineId });
+    expect(placement.status).toBe(200);
+    expect(placement.body).toMatchObject({ requested: true, machineId: machine.machineId });
+    const bot = await User.findOne({ isBot: true, 'botMetadata.agentName': 'my-machine-agent' }).lean();
+    expect(bot.botMetadata.requestedMachineId).toBe(machine.machineId);
+  });
+
+  it('refuses a reserved wrapper name before creating an ephemeral row', async () => {
+    const res = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({
+        agentName: 'claude-code', podId: pod._id.toString(),
+        config: { runtime: { runtimeType: 'wrapper' } }, scopes: [],
+      });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('agent_name_reserved');
+    expect(await AgentRegistry.findOne({ agentName: 'claude-code', ephemeral: true })).toBeNull();
+  });
+
+  it('keeps a wrapper ephemeral name owned by its original installer', async () => {
+    const name = 'my-wrapper-seat';
+    const ownerInstall = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ agentName: name, podId: pod._id.toString(), config: { runtime: { runtimeType: 'wrapper' } }, scopes: [] });
+    expect(ownerInstall.status).toBe(200);
+    const anotherPod = await Pod.create({
+      name: 'Other workspace', type: 'chat', createdBy: outsider._id, members: [outsider._id],
+    });
+    const refused = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${outsiderToken}`)
+      .send({ agentName: name, podId: anotherPod._id.toString(), config: { runtime: { runtimeType: 'wrapper' } }, scopes: [] });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('agent_name_taken');
+    expect(await AgentInstallation.countDocuments({ agentName: name, podId: anotherPod._id })).toBe(0);
   });
 
   it('non-webhook installs without published manifest still 404', async () => {

@@ -163,6 +163,7 @@ describe('BYO on-my-computer mode', () => {
     // hosted agent's `<user>-agent` (C14 rehearsal, 2026-10-20).
     expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
       agentName: 'sam-local',
+      instanceId: 'default',
       podId: 'p1',
       config: expect.objectContaining({ runtime: { runtimeType: 'wrapper' } }),
     }), expect.anything());
@@ -185,6 +186,7 @@ describe('BYO on-my-computer mode', () => {
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
     expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
       description: "The room's memory. Keeps decisions, corrections and who asked for what.",
+      instanceId: 'default',
       config: expect.objectContaining({ persona: 'recorder', runtime: { runtimeType: 'wrapper' } }),
     }), expect.anything());
     window.history.pushState({}, '', '/');
