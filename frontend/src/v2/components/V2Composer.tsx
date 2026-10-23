@@ -8,6 +8,8 @@ export interface V2ComposerMention {
   label: string;
   subtitle: string;
   avatar?: string | null;
+  kind?: 'agent' | 'human';
+  seed?: string;
   value: string;
 }
 
@@ -186,7 +188,14 @@ const V2Composer: React.FC<V2ComposerProps> = ({
                   role="option"
                   aria-selected={index === mentionIndex}
                 >
-                  <V2Avatar name={item.label} src={item.avatar || undefined} size="sm" />
+                  <V2Avatar
+                    name={item.label}
+                    src={item.avatar || undefined}
+                    size="sm"
+                    tone="flat"
+                    kind={item.kind}
+                    seed={item.seed}
+                  />
                   <span className="v2-mention-item__text">
                     <span className="v2-mention-item__label">@{item.value || item.label}</span>
                     <span className="v2-mention-item__sub">{item.subtitle}</span>

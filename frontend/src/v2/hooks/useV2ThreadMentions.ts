@@ -70,7 +70,7 @@ export const useV2ThreadMentions = ({
       if (name) agentByUsername.set(buildAgentUsername(name, agent.instanceId), agent);
     });
 
-    const itemFromAgent = (agent: V2Agent, fallbackAvatar: string | null = null): MentionItem | null => {
+    const itemFromAgent = (agent: V2Agent, member?: V2PodMember): MentionItem | null => {
       const name = rawAgentName(agent);
       if (!name) return null;
       const username = buildAgentUsername(name, agent.instanceId);
@@ -91,7 +91,12 @@ export const useV2ThreadMentions = ({
         label,
         labelLower: `${label} ${name} ${username} ${value}`.toLowerCase(),
         subtitle,
-        avatar: agent.profile?.avatarUrl || agent.profile?.iconUrl || agent.iconUrl || fallbackAvatar,
+        // The member is the agent's User row, which also supplies the thread's
+        // profile_picture and user_id. Keep those two surfaces on one identity.
+        avatar: member ? (member.profilePicture || null)
+          : (agent.profile?.avatarUrl || agent.profile?.iconUrl || agent.iconUrl || null),
+        kind: 'agent',
+        seed: member?._id || agent.userId || `${name}:${agent.instanceId || 'default'}`,
         isAgent: true,
         value,
         reach,
@@ -110,7 +115,7 @@ export const useV2ThreadMentions = ({
       seen.add(key);
       const agent = agentByUsername.get(key);
       if (agent) {
-        const item = itemFromAgent(agent, member.profilePicture || null);
+        const item = itemFromAgent(agent, member);
         if (item) items.push(item);
         return;
       }
@@ -120,6 +125,8 @@ export const useV2ThreadMentions = ({
         labelLower: username.toLowerCase(),
         subtitle: t('podChat.mentions.member'),
         avatar: member.profilePicture || null,
+        kind: 'human',
+        seed: member._id || username,
         isAgent: false,
         value: username,
       });
