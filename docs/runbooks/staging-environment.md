@@ -44,8 +44,12 @@ render references **47** keys across three ExternalSecrets — **41 staging-pref
   and the Mongo URI + password (see Databases).
 - **postgres-ca-cert (1, shared).** Reuses `commonly-pg-ca-cert`.
 
-No SMTP2GO or Discord keys — both are disabled for staging (`email.enabled: false`,
-`discord.enabled: false`), so the render references none.
+No SMTP2GO or Discord keys are **fetched** — both are disabled for staging
+(`email.enabled: false`, `discord.enabled: false`), so the `api-keys` ExternalSecret
+pulls none of the `commonly-staging-SMTP2GO_*` / Discord values. (The backend env still
+carries four *optional* `SMTP2GO_*` secretKeyRefs — the render does reference them — but
+with no keys fetched they resolve to nothing, and the backend auto-verifies new signups
+rather than waiting on mail it cannot send.)
 
 ## Databases
 
@@ -58,6 +62,11 @@ No SMTP2GO or Discord keys — both are disabled for staging (`email.enabled: fa
 - **MongoDB — in-cluster (NOT Atlas).** A single-replica `mongodb` StatefulSet in
   `commonly-staging` (`mongo:7`, spot pool, 5Gi PVC), with a **staging-only root
   password**. The backend connects to the in-cluster `mongodb` Service.
+  **On the spot pool (deliberate):** ADR-015 keeps availability-critical and
+  session-holding workloads on the on-demand pool for **prod**; neither applies to a
+  resettable staging database, so this stateful db runs on spot. A spot reclaim costs
+  only the StatefulSet's PVC-reattach + pod restart (brief downtime), which staging
+  tolerates. This is a staging-only exception and does not change the prod rule.
   **Why not Atlas:** the only Atlas credential available on the host is the prod
   user, which carries **`atlasAdmin`** — cluster-wide admin including prod data.
   Staging auto-deploys every merge and is the deliberately reckless lane, so sharing
@@ -68,6 +77,33 @@ No SMTP2GO or Discord keys — both are disabled for staging (`email.enabled: fa
   may be reset freely. (If a managed Atlas staging db is ever wanted, the clean path
   is a `commonly_staging`-scoped readWrite user via the Atlas Admin API/UI — a
   separate, deliberate step, never the admin credential.)
+
+## Reset staging's database
+
+Staging holds no production data and is meant to be wiped freely — but a **restart does
+not reset it**. Deleting the pod or `kubectl rollout restart statefulset/mongodb -n
+commonly-staging` reattaches the same `mongodb-data-mongodb-0` PVC, so the data
+survives. To truly reset you must delete the PVC (or drop the databases).
+
+**Full reset — fresh empty volume:**
+
+```
+kubectl scale statefulset/mongodb -n commonly-staging --replicas=0
+kubectl delete pvc mongodb-data-mongodb-0 -n commonly-staging
+kubectl scale statefulset/mongodb -n commonly-staging --replicas=1
+```
+
+The StatefulSet's volumeClaimTemplate provisions a new empty 5Gi PVC, and `mongo:7`
+re-initializes the root user from the staging-only password on first boot.
+
+**Drop the app databases only (keep the volume):** run `mongosh` in a throwaway pod on
+the `mongo:7` image (never exec into the serving backend), with the root URI injected
+from the `database-credentials` secret via `valueFrom.secretKeyRef` so it never lands in
+a command line, and call `dropDatabase()` over the non-system databases.
+
+**Postgres (`commonly_staging` on the shared Aiven instance):** drop and recreate the
+schema from a throwaway pod with the db-scoped role; never touch anything on the Aiven
+instance beyond the `commonly_staging` database.
 
 ## ESO authentication
 
