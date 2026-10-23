@@ -19,7 +19,7 @@ const llmClient = new LiteLLMClient({
   temperature: 0.55,
   maxTokens: 400,
 });
-const canUseLlm = () => Boolean(llmClient?.baseUrl || llmClient?.openRouterApiKey || llmClient?.geminiApiKey);
+const canUseLlm = (client = llmClient) => Boolean(client?.baseUrl || client?.openRouterApiKey || client?.geminiApiKey);
 
 const loadConfigAccounts = () => {
   if (!configPath) return [];
@@ -468,8 +468,8 @@ const buildHeuristicPodSummary = (messages = [], { podName = 'this pod' } = {}) 
   };
 };
 
-const buildLlmPodSummary = async ({ messages = [], podName = 'this pod' } = {}) => {
-  if (!canUseLlm()) return null;
+const buildLlmPodSummary = async ({ messages = [], podName = 'this pod', client = llmClient } = {}) => {
+  if (!canUseLlm(client)) return null;
   const meaningful = messages
     .filter((msg) => msg?.content && String(msg.content).trim())
     .filter((msg) => !isSystemLikeMessage(msg))
@@ -502,7 +502,7 @@ const buildLlmPodSummary = async ({ messages = [], podName = 'this pod' } = {}) 
     // 380 tokens cut the JSON envelope mid-string often enough that the stored
     // summary was the envelope (#2406); podSummaryFromLlmReply recovers prose
     // from a cut reply, and this cap makes the cut rare rather than routine.
-    const raw = await llmClient.chat(
+    const raw = await client.chat(
       'You produce terse operational summaries for team chat.',
       prompt,
       { model: SOCIAL_REPHRASE_MODEL, temperature: 0.2, maxTokens: 900 },
@@ -571,7 +571,7 @@ const ackEvent = async (runtimeToken, event) => {
   }
 };
 
-const handleEvent = async (account, event) => {
+const handleEvent = async (account, event, { summaryClient = llmClient } = {}) => {
   const runtimeToken = account?.runtimeToken;
   const silentDelivery = event?.payload?.silent === true;
   const accountUserToken = account?.userToken || userToken;
@@ -704,6 +704,7 @@ const handleEvent = async (account, event) => {
     const synthetic = await buildLlmPodSummary({
       messages,
       podName: context?.pod?.name || 'this pod',
+      client: summaryClient,
     }) || buildHeuristicPodSummary(messages, {
       podName: context?.pod?.name || 'this pod',
     });
@@ -770,63 +771,69 @@ const pollAccount = async (account) => {
   }
 };
 
-const intervalMs = parseInt(process.env.COMMONLY_AGENT_POLL_MS, 10) || 5000;
+const start = () => {
+  const intervalMs = parseInt(process.env.COMMONLY_AGENT_POLL_MS, 10) || 5000;
 
-console.log('Commonly Bot starting...');
-console.log(`  Commonly API: ${baseUrl}`);
-console.log(`  Poll interval: ${intervalMs}ms`);
-if (configPath) {
-  console.log(`  Config: ${configPath}`);
-}
-
-if (userToken) {
-  console.log('  User token: configured (single account)');
-} else {
-  console.log('  User token: not set (runtime-only mode)');
-}
-
-const initialAccounts = buildAccounts();
-if (initialAccounts.length === 0) {
-  if (optionalRuntime) {
-    logWaitingForAccounts();
-  } else {
-    console.error('No agent tokens configured. Set COMMONLY_AGENT_TOKEN or COMMONLY_AGENT_CONFIG_PATH.');
-    process.exit(1);
+  console.log('Commonly Bot starting...');
+  console.log(`  Commonly API: ${baseUrl}`);
+  console.log(`  Poll interval: ${intervalMs}ms`);
+  if (configPath) {
+    console.log(`  Config: ${configPath}`);
   }
-}
 
-if (initialAccounts.length > 0) {
-  Promise.all(
-    initialAccounts.map((account) => (
-      fetchEvents(account.runtimeToken)
-        .then((events) => {
-          console.log(`Commonly Bot connected (${account.id}). ${events.length} pending events.`);
-        })
-        .catch((err) => {
-          console.error(`Commonly Bot connection failed (${account.id}):`, err.message);
-        })
-    )),
-  ).catch(() => {});
-}
+  if (userToken) {
+    console.log('  User token: configured (single account)');
+  } else {
+    console.log('  User token: not set (runtime-only mode)');
+  }
 
-let isPolling = false;
-setInterval(async () => {
-  if (isPolling) return;
-  isPolling = true;
-  const accounts = buildAccounts();
-  if (accounts.length === 0) {
+  const initialAccounts = buildAccounts();
+  if (initialAccounts.length === 0) {
     if (optionalRuntime) {
       logWaitingForAccounts();
-      isPolling = false;
-      return;
+    } else {
+      console.error('No agent tokens configured. Set COMMONLY_AGENT_TOKEN or COMMONLY_AGENT_CONFIG_PATH.');
+      process.exit(1);
     }
-    console.error('No agent tokens configured. Set COMMONLY_AGENT_TOKEN or COMMONLY_AGENT_CONFIG_PATH.');
-    process.exit(1);
   }
-  logAccountsDetected(accounts.length);
-  for (const account of accounts) {
-    // eslint-disable-next-line no-await-in-loop
-    await pollAccount(account);
+
+  if (initialAccounts.length > 0) {
+    Promise.all(
+      initialAccounts.map((account) => (
+        fetchEvents(account.runtimeToken)
+          .then((events) => {
+            console.log(`Commonly Bot connected (${account.id}). ${events.length} pending events.`);
+          })
+          .catch((err) => {
+            console.error(`Commonly Bot connection failed (${account.id}):`, err.message);
+          })
+      )),
+    ).catch(() => {});
   }
-  isPolling = false;
-}, intervalMs);
+
+  let isPolling = false;
+  setInterval(async () => {
+    if (isPolling) return;
+    isPolling = true;
+    const accounts = buildAccounts();
+    if (accounts.length === 0) {
+      if (optionalRuntime) {
+        logWaitingForAccounts();
+        isPolling = false;
+        return;
+      }
+      console.error('No agent tokens configured. Set COMMONLY_AGENT_TOKEN or COMMONLY_AGENT_CONFIG_PATH.');
+      process.exit(1);
+    }
+    logAccountsDetected(accounts.length);
+    for (const account of accounts) {
+      // eslint-disable-next-line no-await-in-loop
+      await pollAccount(account);
+    }
+    isPolling = false;
+  }, intervalMs);
+};
+
+if (require.main === module) start();
+
+module.exports = { buildLlmPodSummary, handleEvent };
