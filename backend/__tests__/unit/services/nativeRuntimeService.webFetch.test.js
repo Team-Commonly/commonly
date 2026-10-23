@@ -526,6 +526,16 @@ describe('native turn with commonly_fetch_url', () => {
     expect(taskMessage.content).toMatch(/unavailable for the rest of this turn because web results are in it/);
   });
 
+  test('commonly_create_task refuses a display-name assignee before it writes a row (TASK-354)', async () => {
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_create_task', { title: 'Ship it', assignee: 'Sprint Impl' })))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention());
+
+    expect(toolMessages(1)[0].content).toMatch(/assign by handle/);
+  });
+
   test('a guard refusal reaches the model and does not narrow the turn', async () => {
     mockGetPage.mockRejectedValue(refusal('address 10.0.0.5 is not public'));
     axios.post

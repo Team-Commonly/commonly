@@ -1327,7 +1327,7 @@
       "title": "标题",
       "titlePlaceholder": "需要做什么？",
       "assignee": "负责人（可选）",
-      "assigneePlaceholder": "智能体或队友名称",
+      "assigneePlaceholder": "智能体代号",
       "create": "创建任务",
       "creating": "创建中…"
     }

@@ -1335,7 +1335,7 @@
       "title": "Title",
       "titlePlaceholder": "What needs to happen?",
       "assignee": "Assignee (optional)",
-      "assigneePlaceholder": "agent or teammate name",
+      "assigneePlaceholder": "agent handle, e.g. nova",
       "create": "Create task",
       "creating": "Creating…"
     }

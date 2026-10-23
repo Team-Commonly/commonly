@@ -70,7 +70,7 @@ describe('task title and assignee normalization on write (TASK-354)', () => {
         .post(`/api/v1/tasks/${POD}`)
         .send({ title: '  Fix the\r\n  board   lease\nrow  ' });
       expect(res.status).toBe(201);
-      expect(mockCreate.mock.calls[0][0].title).toBe('Fix the board   lease row');
+      expect(mockCreate.mock.calls[0][0].title).toBe('Fix the board lease row');
     });
 
     test('a title that is only a newline is refused as empty', async () => {
@@ -93,7 +93,7 @@ describe('task title and assignee normalization on write (TASK-354)', () => {
         .post(`/api/v1/tasks/${POD}`)
         .send({ title: 'Ship it', assignee: 'nova ops' });
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/one token/);
+      expect(res.body.error).toMatch(/assign by handle/);
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
@@ -101,6 +101,14 @@ describe('task title and assignee normalization on write (TASK-354)', () => {
       const res = await request(app)
         .post(`/api/v1/tasks/${POD}`)
         .send({ title: 'Ship it', assignee: 'nova\u0007' });
+      expect(res.status).toBe(400);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    test('a control character from the C1 range is refused too', async () => {
+      const res = await request(app)
+        .post(`/api/v1/tasks/${POD}`)
+        .send({ title: 'Ship it', assignee: 'nova\u0085' });
       expect(res.status).toBe(400);
       expect(mockCreate).not.toHaveBeenCalled();
     });
@@ -128,7 +136,7 @@ describe('task title and assignee normalization on write (TASK-354)', () => {
         .patch(`/api/v1/tasks/${POD}/${TASK}`)
         .send({ assignee: 'sprint impl' });
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/one token/);
+      expect(res.body.error).toMatch(/assign by handle/);
       expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
     });
 

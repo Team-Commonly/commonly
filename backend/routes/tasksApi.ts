@@ -22,6 +22,8 @@ const AgentSendFreshness = require('../services/agentSendFreshness');
 const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
 // eslint-disable-next-line global-require
 const { recordTaskAttention, resolveTaskAttention } = require('../services/attentionItemService');
+// eslint-disable-next-line global-require
+const { parseAssignee, toSingleLineTitle } = require('../utils/taskFieldNormalization');
 
 /**
  * Who made this board change, for the agent fan-out.
@@ -95,24 +97,6 @@ function auth(req: AuthReq, res: Res, next: () => void) {
   if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
   return regularAuth(req, res, next);
 }
-
-/** A title is one line: a newline in it breaks every single-line surface that shows it. */
-const toSingleLineTitle = (raw: string): string => raw.replace(/\s*[\r\n\u2028\u2029]+\s*/g, ' ').trim();
-
-/**
- * An assignee is one token: claims and the wake match the name verbatim, so an
- * inner space or control character names someone else. Trimmed; case is kept.
- * Blank after trimming means unassigned.
- */
-const parseAssignee = (raw: string): { value: string | null; error?: string } => {
-  const value = raw.trim();
-  if (value === '') return { value: null };
-  const hasControl = [...value].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f);
-  if (/\s/.test(value) || hasControl) {
-    return { value: null, error: 'assignee must be one token: no inner spaces or control characters' };
-  }
-  return { value };
-};
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
