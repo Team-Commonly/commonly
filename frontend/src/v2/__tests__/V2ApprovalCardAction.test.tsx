@@ -192,6 +192,65 @@ describe('both locales carry the action phrasings', () => {
 });
 
 describe('tool-call approval details stay owner-scoped', () => {
+  test('an aged parked call cannot be decided before the expiry sweep updates its card', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'tool-expired', status: 'flagged',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', toolCall: { tool: 'github.create_issue' },
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    expect(screen.getByText(en.approvalCard.toolCall.expiredPending)).toBeInTheDocument();
+    expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
+    expect(screen.getByText(en.approvalCard.decline)).toBeDisabled();
+  });
+
+  test('a resolved tool call renders its broker ending and code instead of generic success', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'tool-failed', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', toolCall: { tool: 'github.merge_pull_request' },
+      toolCallEnding: 'refused', toolCallCode: 'merge_head_mismatch',
+    });
+    expect(screen.getByText(/tool call refused \(merge_head_mismatch\)/i)).toBeInTheDocument();
+    expect(screen.queryByText(en.approvalCard.approved)).not.toBeInTheDocument();
+  });
+
+  test('pre-ending message payloads use their old execution fields without claiming a refusal', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'legacy-ran', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', executionResult: { id: 9 },
+    });
+    expect(screen.getByText(en.approvalCard.toolCall.ran)).toBeInTheDocument();
+    expect(screen.queryByText(/tool call refused/i)).not.toBeInTheDocument();
+  });
+
+  test('an ending-less approved card with no execution witness never claims a broker refusal', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'legacy-unwitnessed', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', toolCall: { tool: 'linear.create_issue' },
+    });
+    expect(screen.getByText(en.approvalCard.approved)).toBeInTheDocument();
+    expect(screen.queryByText(/tool call refused/i)).not.toBeInTheDocument();
+  });
+
+  test('a pre-ending failed tool call stays failed without showing vendor error text', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'legacy-failed', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', executionError: 'private vendor error',
+    });
+    expect(screen.getByText(/tool call failed \(legacy_execution_failed\)/i)).toBeInTheDocument();
+    expect(screen.queryByText(/private vendor error/i)).not.toBeInTheDocument();
+  });
+
+  test('a resolved definition mismatch tells the owner the tool changed and to ask again', () => {
+    // The resolver card shape for a trailed definition_digest_mismatch refusal.
+    renderCard({
+      kind: 'approval-card', approvalId: 'changed-pin', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', toolCall: { tool: 'linear.create_issue' },
+      toolCallEnding: 'refused', toolCallCode: 'definition_digest_mismatch', toolCallTrailId: 'trail-changed',
+    });
+    expect(screen.getByText(en.approvalCard.toolCall.pinChanged)).toBeInTheDocument();
+    expect(screen.queryByText(/tool call refused/i)).not.toBeInTheDocument();
+  });
+
   test('the owner fetches canonical args and must see them before approving', async () => {
     mockGet.mockResolvedValue({
       approvals: [{

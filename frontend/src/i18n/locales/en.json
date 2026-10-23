@@ -1298,7 +1298,12 @@
       "name": "Tool call",
       "loading": "Loading the exact tool call…",
       "unavailable": "Can't show what you'd approve — refresh before deciding.",
-      "ownerOnly": "Arguments are visible to the approval owner only."
+      "ownerOnly": "Arguments are visible to the approval owner only.",
+      "ran": "Approved — tool call ran.",
+      "failed": "Approved — tool call failed ({{code}}).",
+      "refused": "Approved — tool call refused ({{code}}).",
+      "pinChanged": "Approved, but the tool changed since this request. Ask again before running it.",
+      "expiredPending": "This tool-call approval has expired."
     },
     "approve": "Approve",
     "decline": "Decline",
