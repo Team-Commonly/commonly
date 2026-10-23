@@ -176,26 +176,38 @@ class Message {
         const { ThreadRootError } = require('../../services/threadRootResolver');
         throw new ThreadRootError('reply_target_unavailable', 'the message being replied to is not in this pod');
       }
-      await (pool as PgPool).query(
-        'UPDATE pods SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',
-        [podId],
-      );
       const row = result.rows[0] as unknown as MessageRow;
-      // eslint-disable-next-line global-require
-      const {
-        recordMentionedUsers,
-        resolveMentionAttentionForReply,
-      } = require('../../services/attentionItemService');
-      await recordMentionedUsers({
-        ...row, podId, userId, content, threadRootId: resolvedThreadRootId, answeringMessageId,
-      });
-      await resolveMentionAttentionForReply({
-        podId,
-        recipientUserId: userId,
-        repliedAt: row.created_at,
-        threadRootId: row.thread_root_id,
-        replyToMessageId: row.reply_to_message_id,
-      });
+      // The INSERT has committed. Nothing below may reject back to the caller:
+      // the controller's Mongo fallback would then write a second copy of a
+      // message that is already in Postgres (TASK-313). Each step is best
+      // effort and logged, the same way the post-write read is.
+      try {
+        await (pool as PgPool).query(
+          'UPDATE pods SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+          [podId],
+        );
+      } catch (touchErr) {
+        console.warn('[Message.create] pod touch failed after insert:', (touchErr as Error).message);
+      }
+      try {
+        // eslint-disable-next-line global-require
+        const {
+          recordMentionedUsers,
+          resolveMentionAttentionForReply,
+        } = require('../../services/attentionItemService');
+        await recordMentionedUsers({
+          ...row, podId, userId, content, threadRootId: resolvedThreadRootId, answeringMessageId,
+        });
+        await resolveMentionAttentionForReply({
+          podId,
+          recipientUserId: userId,
+          repliedAt: row.created_at,
+          threadRootId: row.thread_root_id,
+          replyToMessageId: row.reply_to_message_id,
+        });
+      } catch (attentionErr) {
+        console.warn('[Message.create] attention bookkeeping failed after insert:', (attentionErr as Error).message);
+      }
       return row;
     } catch (error) {
       const e = error as { message?: string };
