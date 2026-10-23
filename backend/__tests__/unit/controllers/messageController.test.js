@@ -31,6 +31,10 @@ jest.mock('../../../services/threadRootResolver', () => ({
   assertReplyTargetInPod: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../../services/onboardingMarks', () => ({ markPodOpened: jest.fn(), markStartPicked: jest.fn() }));
+const mockProposeNewPodFirstTask = jest.fn();
+jest.mock('../../../services/newPodFirstTaskService', () => ({
+  proposeNewPodFirstTask: (...args) => mockProposeNewPodFirstTask(...args),
+}));
 const { markPodOpened, markStartPicked } = require('../../../services/onboardingMarks');
 // The gate's own rules are pinned in services/welcomeHostedStart.test.js; here,
 // that every page served goes through it. Pass-through unless a test says so.
@@ -139,6 +143,24 @@ describe('messageController', () => {
   });
 
   describe('createMessage', () => {
+    it('turns the creator\'s first answer into one task proposal without a duplicate agent wake', async () => {
+      Pod.findById.mockResolvedValue({
+        members: ['u1'], type: 'chat', createdBy: 'u1',
+        firstTaskOnboarding: { stage: 'awaiting-input' },
+      });
+      PGMessage.create.mockResolvedValue({ id: 42, content: 'https://github.com/acme/widget' });
+      mockProposeNewPodFirstTask.mockResolvedValue(true);
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.createMessage({
+        params: { podId: 'p1' }, body: { content: 'https://github.com/acme/widget' },
+        user: { id: 'u1' },
+      }, res);
+      expect(mockProposeNewPodFirstTask).toHaveBeenCalledWith({
+        podId: 'p1', userId: 'u1', content: 'https://github.com/acme/widget',
+      });
+      expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
+    });
+
     it('returns 400 if podId is missing', async () => {
       const req = { params: {}, body: { content: 'test' }, user: { id: 'u1' } };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };

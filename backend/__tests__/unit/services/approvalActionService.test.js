@@ -230,10 +230,9 @@ describe('approved create_pod execution — D2: user authority owns', () => {
     expect(resolved.executionResult).toEqual(expect.objectContaining({ podId: 'newpod-1', agentJoined: true }));
   });
 
-  // A new pod's next steps (2026-10-15): the first message in the pod is the
-  // proposer offering two buttons, server-composed the #2194 way, so a new
-  // pod is one click from an agent of its own and one from a second person.
-  test('posts the new pod\'s next steps as buttons: connect an agent to THIS pod, invite a teammate', async () => {
+  // The first message asks one question; only the owner's answer can produce
+  // a task proposal, and the eventual button click creates the row.
+  test('asks for a repo or workflow in the new pod and arms the one-shot proposal', async () => {
     mockApprovalFindById.mockResolvedValue(flaggedRow());
     const resolved = flaggedRow({ status: 'resolved', decision: 'approved' });
     mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
@@ -248,16 +247,35 @@ describe('approved create_pod execution — D2: user authority owns', () => {
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
     const posted = mockPostMessage.mock.calls[0][0];
     expect(posted).toEqual(expect.objectContaining({ agentName: 'guide', podId: 'newpod-3', displayName: 'Scout' }));
-    expect(posted.content).toMatch(/agent you already use/);
-    expect(posted.content).toMatch(/invite a teammate/);
-    expect(posted.payload.kind).toBe('starts');
-    expect(posted.payload.starts.map(({ id }) => id)).toEqual(['connect-agent-here', 'invite-teammate']);
-    const [connect, invite] = posted.payload.starts;
-    expect(connect.label).toBe('Connect an agent to this pod');
-    // Aimed at the NEW pod, never the pod the card was approved in.
-    expect(connect.href.startsWith('/v2/agents/byo?pod=newpod-3')).toBe(true);
-    expect(invite).toEqual({ id: 'invite-teammate', label: 'Invite a teammate', action: 'invite' });
+    expect(posted.content).toMatch(/GitHub repo link or describe one weekly workflow/);
+    expect(posted.payload).toBeUndefined();
+    expect(mockPodUpdateOne).toHaveBeenCalledWith({ _id: 'newpod-3' }, {
+      $set: { firstTaskOnboarding: expect.objectContaining({
+        stage: 'awaiting-input', agentName: 'guide', locale: 'en',
+      }) },
+    });
     expect(resolved.executionResult).toEqual(expect.objectContaining({ nextStepsPosted: true }));
+  });
+
+  test('asks the project question in the chosen zh-CN locale', async () => {
+    mockApprovalFindById.mockResolvedValue(flaggedRow({
+      params: { name: '项目', type: 'chat', locale: 'zh-CN' },
+    }));
+    mockApprovalFindOneAndUpdate.mockResolvedValue(flaggedRow({
+      status: 'resolved', decision: 'approved', params: { name: '项目', type: 'chat', locale: 'zh-CN' },
+    }));
+    mockPodCreate.mockResolvedValue({ _id: 'newpod-zh', name: '项目', type: 'chat', members: [OWNER] });
+    mockInstallFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ displayName: 'Scout', config: {} }) });
+    mockInstallUpsert.mockResolvedValue({});
+    mockGetOrCreateAgentUser.mockResolvedValue({ _id: 'guide-bot-1' });
+    mockPodUpdateOne.mockResolvedValue({ modifiedCount: 1 });
+
+    await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+
+    expect(mockPostMessage.mock.calls[0][0].content).toMatch(/每周工作流程/);
+    expect(mockPodUpdateOne).toHaveBeenCalledWith({ _id: 'newpod-zh' }, {
+      $set: { firstTaskOnboarding: expect.objectContaining({ locale: 'zh-CN' }) },
+    });
   });
 
   test('a failed next-steps post never fails the pod: the result says so and the decision stands', async () => {

@@ -199,6 +199,7 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       members: Array<{ toString(): string }>;
       type?: string;
       createdBy?: { toString(): string };
+      firstTaskOnboarding?: { stage?: string };
     } | null;
     if (!pod) {
       res.status(404).json({ msg: 'Pod not found' });
@@ -348,7 +349,24 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       message = normalizeMongo(populated || mongoMsg);
     }
 
-    const responseMessage = await deliverMessageToAgents({
+    // Scout's first-task proposal is a deterministic handoff tied to the pod
+    // creator's answer. It is best effort: a failed fetch/post must not turn
+    // the person's already-persisted message into a failed send.
+    let firstTaskProposed = false;
+    if (pod.firstTaskOnboarding?.stage === 'awaiting-input'
+      && String(pod.createdBy || '') === userIdStr) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        const { proposeNewPodFirstTask } = require('../services/newPodFirstTaskService');
+        firstTaskProposed = await proposeNewPodFirstTask({ podId, userId: userIdStr, content: messageContent || '' });
+      } catch (firstTaskErr) {
+        console.warn('[messageController] first-task proposal failed:', (firstTaskErr as Error).message);
+      }
+    }
+
+    // The onboarding answer has already produced Scout's structured reply.
+    // Do not wake Scout (or another mentioned agent) for the same input.
+    const responseMessage = firstTaskProposed ? message : await deliverMessageToAgents({
       podId,
       podType: pod.type,
       message,

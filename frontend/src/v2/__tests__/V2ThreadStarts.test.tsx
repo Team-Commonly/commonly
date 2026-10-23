@@ -202,57 +202,65 @@ describe("V2Thread — Scout's starts", () => {
   });
 });
 
-// A new pod's next steps (2026-10-15): the proposer's first message in a pod
-// it just created offers two starts that act instead of sending text. One opens
-// Bring your own aimed at this pod; the other opens this pod's invite dialog.
+// Scout's first-task proposal is structured: the row is created only after a
+// person clicks Add to board, and Bring your own targets the new pod.
 const BYO_HREF = '/v2/agents/byo?pod=pod-1&name=maya-agent';
 const nextSteps = (starts) => ({
   id: 'next-steps',
   pod_id: 'pod-1',
   user_id: 'scout-1',
-  content: 'This pod is ready. Two ways to get it going: bring in an agent you already use, or invite a teammate.',
+  content: 'Suggested first task: Fix login',
   message_type: 'text',
   created_at: at(1),
   user: { username: 'scout', isBot: true },
   payload: { kind: 'starts', starts },
 });
-const CONNECT_HERE = { id: 'connect-agent-here', label: 'Connect an agent to this pod', href: BYO_HREF };
-const INVITE = { id: 'invite-teammate', label: 'Invite a teammate', action: 'invite' };
+const ADD = { id: 'add-first-task', label: 'Add to board', action: 'add-first-task', title: 'Fix login', sourceRef: 'https://github.com/acme/widget/issues/10' };
+const BRING_OWN = { id: 'bring-your-own', label: 'Bring your own', href: BYO_HREF };
 
-describe("V2Thread — a new pod's next steps", () => {
-  test('the connect start navigates to Bring your own for this pod and sends no message', () => {
-    const sendSpy = renderThread([nextSteps([CONNECT_HERE, INVITE])], jest.fn(), { onOpenInvite: jest.fn() });
+describe("V2Thread — a new pod's first task", () => {
+  const axios = jest.requireMock('axios').default;
+  beforeEach(() => {
+    axios.post.mockClear();
+    axios.get.mockImplementation(() => Promise.resolve({ data: {} }));
+  });
+  test('Bring your own navigates to the new pod and sends no message', () => {
+    const sendSpy = renderThread([nextSteps([ADD, BRING_OWN])]);
 
-    fireEvent.click(within(startsGroup()).getByRole('button', { name: 'Connect an agent to this pod' }));
+    fireEvent.click(within(startsGroup()).getByRole('button', { name: 'Bring your own' }));
 
     expect(screen.getByTestId('location')).toHaveTextContent(BYO_HREF);
     expect(sendSpy).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalledWith(expect.stringContaining('/tasks/'), expect.anything(), expect.anything());
   });
 
-  test("the invite start opens this pod's invite dialog on the people tab and sends no message", () => {
-    const onOpenInvite = jest.fn();
-    const sendSpy = renderThread([nextSteps([CONNECT_HERE, INVITE])], jest.fn(), { onOpenInvite });
+  test('Add to board creates exactly one task on click and leaves Bring your own', async () => {
+    const sendSpy = renderThread([nextSteps([ADD, BRING_OWN])]);
+    expect(axios.post).not.toHaveBeenCalledWith(expect.stringContaining('/tasks/'), expect.anything(), expect.anything());
 
-    fireEvent.click(within(startsGroup()).getByRole('button', { name: 'Invite a teammate' }));
+    fireEvent.click(within(startsGroup()).getByRole('button', { name: 'Add to board' }));
 
-    expect(onOpenInvite).toHaveBeenCalledWith('people');
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/v1/tasks/pod-1', {
+      title: 'Fix login', sourceRef: 'https://github.com/acme/widget/issues/10',
+    }, expect.anything()));
+    await waitFor(() => expect(within(startsGroup()).queryByRole('button', { name: 'Add to board' })).not.toBeInTheDocument());
+    expect(within(startsGroup()).getByRole('button', { name: 'Bring your own' })).toBeInTheDocument();
     expect(sendSpy).not.toHaveBeenCalled();
   });
 
-  test('both stay after use: acting on one never takes the other away', () => {
-    renderThread([nextSteps([CONNECT_HERE, INVITE])], jest.fn(), { onOpenInvite: jest.fn() });
-
-    fireEvent.click(within(startsGroup()).getByRole('button', { name: 'Invite a teammate' }));
-
-    const labels = within(startsGroup()).getAllByRole('button').map((button) => button.textContent);
-    expect(labels).toEqual(['Connect an agent to this pod', 'Invite a teammate']);
+  test('only the pod creator sees Add to board', () => {
+    renderThread([nextSteps([ADD, BRING_OWN])], jest.fn(), { pod: { ...OWN_POD, createdBy: 'u2' } });
+    expect(within(startsGroup()).queryByRole('button', { name: 'Add to board' })).not.toBeInTheDocument();
+    expect(within(startsGroup()).getByRole('button', { name: 'Bring your own' })).toBeInTheDocument();
   });
 
-  test('an invite start is not shown where this thread cannot open the dialog', () => {
-    renderThread([nextSteps([CONNECT_HERE, INVITE])]);
-
-    const labels = within(startsGroup()).getAllByRole('button').map((button) => button.textContent);
-    expect(labels).toEqual(['Connect an agent to this pod']);
+  test('an already-added task keeps Add to board gone after a reload', async () => {
+    axios.get.mockImplementation((url) => (url === '/api/v1/tasks/pod-1'
+      ? Promise.resolve({ data: { tasks: [{ title: 'Fix login', sourceRef: ADD.sourceRef }] } })
+      : Promise.resolve({ data: {} })));
+    renderThread([nextSteps([ADD, BRING_OWN])]);
+    await waitFor(() => expect(within(startsGroup()).queryByRole('button', { name: 'Add to board' })).not.toBeInTheDocument());
+    expect(within(startsGroup()).getByRole('button', { name: 'Bring your own' })).toBeInTheDocument();
   });
 
   test('a start whose link leaves the app is never rendered', () => {
@@ -261,7 +269,7 @@ describe("V2Thread — a new pod's next steps", () => {
       { id: 'b', label: 'Absolute', href: 'https://evil.example/x' },
       { id: 'c', label: 'Double slash', href: '/v2//evil.example' },
       { id: 'd', label: 'Unknown action', action: 'delete-pod' },
-    ])], jest.fn(), { onOpenInvite: jest.fn() });
+    ])]);
 
     expect(startsGroup()).toBeNull();
   });

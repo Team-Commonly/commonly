@@ -76,6 +76,15 @@ export interface IPod extends Document {
     humanParticipation: HumanParticipation;
   };
   createdBy: Types.ObjectId;
+  // Only pods created through Scout's approved project flow enter this one-shot
+  // handoff. The stage is claimed atomically when the owner answers.
+  firstTaskOnboarding?: {
+    stage: 'awaiting-input' | 'proposing' | 'proposed';
+    agentName: string;
+    instanceId: string;
+    displayName?: string;
+    locale: 'en' | 'zh-CN';
+  };
   members: Types.ObjectId[];
   // Canonical unordered two-member key for agent-dm pods. The partial unique
   // index below is the storage-level backstop for concurrent DM creation.
@@ -154,6 +163,13 @@ const PodSchema = new Schema<IPod>(
       },
     },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    firstTaskOnboarding: {
+      stage: { type: String, enum: ['awaiting-input', 'proposing', 'proposed'] },
+      agentName: String,
+      instanceId: String,
+      displayName: String,
+      locale: { type: String, enum: ['en', 'zh-CN'] },
+    },
     members: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     agentDmPairKey: { type: String, trim: true },
     messages: [{ type: Schema.Types.ObjectId, ref: 'Message' }],
