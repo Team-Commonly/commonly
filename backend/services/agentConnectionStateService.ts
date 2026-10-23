@@ -7,9 +7,11 @@ type Credential = { status?: string; lastUsedAt?: Date | string | null; expiresA
 
 export const deriveAgentConnection = ({
   runtimeType, credentials, embeddedTokens = [], machineLastSeenAt = null, now = Date.now(),
+  machineCredentials = [],
 }: {
   runtimeType?: string;
   credentials: Credential[];
+  machineCredentials?: Credential[];
   embeddedTokens?: Credential[];
   machineLastSeenAt?: Date | string | null;
   now?: number;
@@ -17,9 +19,15 @@ export const deriveAgentConnection = ({
   const isMachine = runtimeType === 'wrapper';
   const active = credentials.filter((credential) => credential.status === 'active'
     && (!credential.expiresAt || new Date(credential.expiresAt).getTime() > now));
+  const activeMachine = machineCredentials.filter((credential) => credential.status === 'active'
+    && (!credential.expiresAt || new Date(credential.expiresAt).getTime() > now));
   // Embedded tokens predate the ledger. They remain valid on the auth path.
   const hasEmbedded = embeddedTokens.length > 0;
   if (!active.length && !hasEmbedded && credentials.some((credential) => credential.status === 'revoked')) {
+    return { state: 'revoked', lastSeenAt: null };
+  }
+  if (isMachine && !activeMachine.length
+    && machineCredentials.some((credential) => credential.status === 'revoked')) {
     return { state: 'revoked', lastSeenAt: null };
   }
   const dates = isMachine

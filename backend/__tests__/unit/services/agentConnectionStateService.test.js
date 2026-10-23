@@ -24,7 +24,14 @@ describe('agent connection verdict', () => {
   it('uses machine heartbeat for a wrapper', () => {
     expect(deriveAgentConnection({ runtimeType: 'wrapper', credentials: [
       { status: 'active' },
-    ], machineLastSeenAt: seen(2), now }).state).toBe('stale');
+    ], machineCredentials: [{ status: 'active' }], machineLastSeenAt: seen(2), now }).state).toBe('stale');
+  });
+
+  it('does not let a live machine mask the agent runtime key being revoked', () => {
+    expect(deriveAgentConnection({ runtimeType: 'wrapper', credentials: [
+      { status: 'revoked' },
+    ], machineCredentials: [{ status: 'active' }], machineLastSeenAt: seen(0), now }).state)
+      .toBe('revoked');
   });
 
   it('preserves pre-ledger embedded tokens', () => {

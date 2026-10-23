@@ -355,11 +355,9 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           ...payload,
           connection: deriveAgentConnection({
             runtimeType,
-            credentials: runtimeType === 'wrapper'
-              ? credentialByMachine.get(String(machineId)) || []
-              : credentialByAgent.get(String(user._id)) || [],
-            embeddedTokens: runtimeType === 'wrapper' ? []
-              : [...(user.agentRuntimeTokens || []), ...(i.runtimeTokens || [])],
+            credentials: credentialByAgent.get(String(user._id)) || [],
+            machineCredentials: credentialByMachine.get(String(machineId)) || [],
+            embeddedTokens: [...(user.agentRuntimeTokens || []), ...(i.runtimeTokens || [])],
             machineLastSeenAt: machineById.get(String(machineId))?.lastSeenAt || null,
           }),
         };

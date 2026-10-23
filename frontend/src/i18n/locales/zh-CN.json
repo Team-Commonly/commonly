@@ -1421,11 +1421,15 @@
     }
   },
   "agentConnection": {
+    "control": "控制",
     "connected": "已连接",
     "revoked": "密钥已撤销，连接已断开",
-    "stale": "已 {{count}} 分钟未连接",
+    "stale": "已{{count}}分钟未连接",
     "never": "尚未连接",
-    "reconnect": "重新连接"
+    "reconnect": "重新连接",
+    "reconnectWaiting": "正在等待电脑重新连接此智能体。",
+    "reconnectDone": "已连接。",
+    "reconnectSlow": "电脑尚未重新连接。请检查守护进程是否在运行。"
   },
   "agentByo": {
     "title": "接入你自己的智能体",

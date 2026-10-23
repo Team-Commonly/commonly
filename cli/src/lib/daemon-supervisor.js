@@ -208,6 +208,30 @@ export const createDaemonSupervisor = ({
 
     const existing = loadToken(row.agentName);
     if (existing) {
+      // A human owner can request a fresh key from Settings after revocation.
+      // The daemon owns its local token file, so the browser only stamps the
+      // directive; this host rotates the key and restarts its child once.
+      const requestedAt = row.reconnectRequestedAt && new Date(row.reconnectRequestedAt).getTime();
+      const appliedAt = existing.reconnectRequestAppliedAt
+        && new Date(existing.reconnectRequestAppliedAt).getTime();
+      if (Number.isFinite(requestedAt) && requestedAt > (appliedAt || 0)) {
+        try {
+          const minted = await client.post('/api/agent-binding/runtime-token', {
+            agentName: row.agentName, instanceId: row.instanceId, rotate: true,
+          });
+          if (!minted?.token) throw new Error('mint returned no token');
+          saveToken(row.agentName, {
+            ...existing,
+            runtimeToken: minted.token,
+            reconnectRequestAppliedAt: row.reconnectRequestedAt,
+          });
+          log(`[${row.agentName}] owner-requested key rotation applied; restarting the seat`);
+          return 'changed';
+        } catch (error) {
+          log(`[${row.agentName}] owner-requested key rotation failed: ${error.message}`);
+          return false;
+        }
+      }
       // A model changed in the UI reaches the seat here: update the record,
       // and let the caller restart the child (`agent run` reads its record
       // once at boot). A row with NO declared model leaves the record alone —

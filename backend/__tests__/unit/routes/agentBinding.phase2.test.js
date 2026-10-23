@@ -102,6 +102,10 @@ const requestPlacement = (machineId) => request(app)
   .post('/api/agent-binding/request')
   .send({ agentName: 'wren-test', instanceId: 'default', machineId });
 
+const requestReconnect = () => request(app)
+  .post('/api/agent-binding/reconnect')
+  .send({ agentName: 'wren-test', instanceId: 'default' });
+
 const adopt = (tok) => request(app)
   .post('/api/agent-binding/adopt')
   .set('Authorization', `Bearer ${tok}`)
@@ -207,6 +211,43 @@ describe('placement request', () => {
     const res = await requestPlacement('machine-a');
     expect(res.status).toBe(409);
     expect(res.body.boundTo).toBe('machine-b');
+  });
+});
+
+describe('owner-requested reconnect', () => {
+  it('projects one owner-approved rekey directive to the bound daemon', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    const requested = await requestReconnect();
+    expect(requested.status).toBe(200);
+    expect(requested.body.requested).toBe(true);
+    const assignedRow = (await assigned(DAEMON_A)).body.agents[0];
+    expect(new Date(assignedRow.reconnectRequestedAt).getTime()).toBeGreaterThan(0);
+    expect((await assigned(DAEMON_B)).body.agents).toEqual([]);
+  });
+
+  it('lets the bound daemon replace a revoked agent key after the owner request', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    const original = await mint(DAEMON_A);
+    expect(original.status).toBe(200);
+    await AgentCredential.updateOne({ tokenHash: hash(original.body.token) }, { $set: { status: 'revoked' } });
+    expect((await runtimeAuthProbe(original.body.token)).status).toBe(401);
+    expect((await requestReconnect()).status).toBe(200);
+    expect((await assigned(DAEMON_A)).body.agents[0].reconnectRequestedAt).toBeTruthy();
+    const refreshed = await mint(DAEMON_A, { rotate: true });
+    expect(refreshed.status).toBe(200);
+    expect((await runtimeAuthProbe(refreshed.body.token)).status).toBe(200);
+    expect((await runtimeAuthProbe(original.body.token)).status).toBe(401);
+  });
+
+  it('refuses a different human and a revoked daemon key', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    global.__CALLER_ID = String(new mongoose.Types.ObjectId());
+    expect((await requestReconnect()).status).toBe(403);
+    global.__CALLER_ID = String(owner._id);
+    await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { status: 'revoked' } });
+    const refused = await requestReconnect();
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('machine_key_revoked');
   });
 });
 

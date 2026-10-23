@@ -72,9 +72,34 @@ describe('Your Team (direction C)', () => {
     await waitFor(() => expect(screen.getByText('Local')).toBeInTheDocument());
     const card = cardOf('Local');
     expect(card).toHaveTextContent('Disconnected: key revoked');
+    expect(card).toHaveClass('v2-team-card--idle');
+    expect(card.querySelector('.v2-team-card__status--working')).toBeNull();
     expect(within(card).queryByRole('button', { name: /Talk to/ })).toBeNull();
     fireEvent.click(within(card).getByRole('button', { name: 'Reconnect' }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo?pod=p1&name=local&reconnect=1');
+  });
+
+  test('a never-connected agent is offered the normal Talk path, not Reconnect', async () => {
+    renderPage({ p1Agents: [{
+      name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user',
+      installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+      connection: { state: 'never', lastSeenAt: null },
+    }] });
+    await waitFor(() => expect(screen.getByText('Local')).toBeInTheDocument());
+    expect(cardOf('Local')).toHaveTextContent('Not connected yet');
+    expect(within(cardOf('Local')).queryByRole('button', { name: 'Reconnect' })).toBeNull();
+    expect(within(cardOf('Local')).getByRole('button', { name: 'Talk to Local one-to-one' })).toBeInTheDocument();
+  });
+
+  test('a stale BYO listener shows elapsed minutes and Reconnect', async () => {
+    renderPage({ p1Agents: [{
+      name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user',
+      installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+      connection: { state: 'stale', lastSeenAt: minutesAgo(8) },
+    }] });
+    await waitFor(() => expect(screen.getByText('Local')).toBeInTheDocument());
+    expect(cardOf('Local')).toHaveTextContent('Not seen in 8 min');
+    expect(within(cardOf('Local')).getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
   });
   test('head: display title, one mono meta line with agents · working · needs you, Bring your own bordered + Hire an agent ink', async () => {
     renderPage();

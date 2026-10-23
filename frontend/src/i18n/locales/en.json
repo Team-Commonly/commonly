@@ -1361,11 +1361,15 @@
     }
   },
   "agentConnection": {
+    "control": "Control",
     "connected": "Connected",
     "revoked": "Disconnected: key revoked",
     "stale": "Not seen in {{count}} min",
     "never": "Not connected yet",
-    "reconnect": "Reconnect"
+    "reconnect": "Reconnect",
+    "reconnectWaiting": "Waiting for your computer to reconnect this agent.",
+    "reconnectDone": "Connected.",
+    "reconnectSlow": "Your computer has not reconnected yet. Check that its daemon is running."
   },
   "agentByo": {
     "title": "Bring your own agent",

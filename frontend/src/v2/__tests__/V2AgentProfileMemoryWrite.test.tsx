@@ -106,6 +106,18 @@ describe('V2AgentProfile memory-write visibility', () => {
     expect(screen.queryByRole('button', { name: 'Talk to Observer' })).toBeNull();
   });
 
+  it('does not offer Reconnect to a signed-in pod member without management access', async () => {
+    window.localStorage.setItem('token', 'member-token');
+    renderProfile();
+    expect(await screen.findByRole('heading', { name: 'Observer' })).toBeInTheDocument();
+    await waitFor(() => expect(profileClient.get).toHaveBeenCalledWith(
+      '/api/agent-memory/claude-code/observer',
+      { headers: { Authorization: 'Bearer member-token' } },
+    ));
+    expect(profileClient.get.mock.calls.some(([url]) => url.startsWith('/api/registry/pods/'))).toBe(false);
+    expect(screen.queryByRole('link', { name: 'Reconnect' })).toBeNull();
+  });
+
   it('opens the same 1:1 room endpoint for a signed-in visitor', async () => {
     window.localStorage.setItem('token', 'viewer-token');
     renderProfile();

@@ -79,6 +79,30 @@ describe('backoff', () => {
 });
 
 describe('tick', () => {
+  test('an owner reconnect rotates the bound local key and restarts exactly once', async () => {
+    const tokens = { 'wren-test': {
+      agentName: 'wren-test', runtimeToken: 'cm_agent_revoked', adapter: 'claude',
+    } };
+    let reconnectRequestedAt = null;
+    const { supervisor, client, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ reconnectRequestedAt })],
+      tokens,
+      mintResponses: [{ token: 'cm_agent_fresh' }],
+    });
+    await supervisor.tick();
+    expect(children).toHaveLength(1);
+    reconnectRequestedAt = '2026-10-23T16:30:00.000Z';
+    await supervisor.tick();
+    expect(client.post).toHaveBeenCalledWith('/api/agent-binding/runtime-token', {
+      agentName: 'wren-test', instanceId: 'default', rotate: true,
+    });
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      runtimeToken: 'cm_agent_fresh', reconnectRequestAppliedAt: '2026-10-23T16:30:00.000Z',
+    }));
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    await supervisor.tick();
+    expect(client.post.mock.calls.filter(([path]) => path === '/api/agent-binding/runtime-token')).toHaveLength(1);
+  });
   test('adopts a requested row, mints its token, writes the record, and spawns', async () => {
     const { supervisor, client, children, saveToken } = makeHarness({
       rows: () => [boundRow({ state: 'requested' })],

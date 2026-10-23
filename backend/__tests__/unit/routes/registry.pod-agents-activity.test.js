@@ -153,6 +153,25 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
     expect(res.body.agents[0].connection).toEqual({ state: 'revoked', lastSeenAt: null });
   });
 
+  it('keeps a revoked wrapper key disconnected despite a live machine', async () => {
+    AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
+      agentName: 'local', config: new Map([['runtime', { runtimeType: 'wrapper' }]]),
+    })]);
+    User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      _id: 'bot-1', username: 'local-default', botMetadata: { machineId: 'machine-1' }, agentRuntimeTokens: [],
+    }]) }) });
+    AgentCredential.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([
+      { kind: 'runtime', agentUserId: 'bot-1', status: 'revoked' },
+      { kind: 'daemon', machineId: 'machine-1', status: 'active' },
+    ]) }) });
+    Machine.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      machineId: 'machine-1', lastSeenAt: new Date(),
+    }]) }) });
+    const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].connection.state).toBe('revoked');
+  });
+
   it('surfaces AgentRun activity for native agents with no heartbeats and no tokens', async () => {
     AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation()]);
     AgentRun.aggregate.mockResolvedValue([

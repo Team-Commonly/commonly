@@ -262,6 +262,11 @@ const V2AgentBYO: React.FC = () => {
   // back to Claude or auto-detect, and vice versa.
   const [adapter, setAdapter] = useState<MachineAdapter>('');
   const [model, setModel] = useState<string>('');
+  const canReconnect = Boolean(existingConnection
+    && ['revoked', 'stale'].includes(existingConnection.connection.state)
+    && (existingConnection.installedBy === String(currentUser?._id) || currentUser?.role === 'admin'));
+  const isOtherOwner = Boolean(existingConnection && existingConnection.installedBy
+    && existingConnection.installedBy !== String(currentUser?._id) && currentUser?.role !== 'admin');
   // The same roster verdict powers Your Team and this reconnection screen.
   // Limit the lookup to an intentional name to avoid probing suggested names.
   useEffect(() => {
@@ -317,6 +322,36 @@ const V2AgentBYO: React.FC = () => {
   }, [api, choicesKnown, defaultAgentName, nameLookupRetry, nameTouched, prefill.name, prefill.reconnect]);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
+  const [reconnectRequest, setReconnectRequest] = useState<{
+    agentName: string; requestedAt: string; state: 'waiting' | 'connected' | 'slow';
+  } | null>(null);
+
+  useEffect(() => {
+    if (!reconnectRequest || reconnectRequest.state !== 'waiting' || !podId) return undefined;
+    let cancelled = false;
+    let ticks = 0;
+    const check = async () => {
+      ticks += 1;
+      try {
+        const roster = await api.get<{ agents?: Array<{ name: string; connection?: AgentConnection }> }>(
+          `/api/registry/pods/${encodeURIComponent(podId)}/agents`,
+        );
+        if (cancelled) return;
+        const status = roster.agents?.find((agent) => agent.name === reconnectRequest.agentName)?.connection;
+        if (status?.state === 'connected' && status.lastSeenAt
+          && Date.parse(status.lastSeenAt) >= Date.parse(reconnectRequest.requestedAt)) {
+          setReconnectRequest((current) => current && { ...current, state: 'connected' });
+          return;
+        }
+      } catch { /* a transient roster error does not erase the request */ }
+      if (!cancelled && ticks >= MACHINE_STATUS_MAX_TICKS) {
+        setReconnectRequest((current) => current && { ...current, state: 'slow' });
+      }
+    };
+    void check();
+    const timer = setInterval(() => { void check(); }, MACHINE_STATUS_POLL_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [api, podId, reconnectRequest]);
 
   // Watch the placement come up: the machine heartbeat carries per-agent
   // supervisor states, so "live" here means the daemon actually spawned it.
@@ -576,6 +611,22 @@ const V2AgentBYO: React.FC = () => {
       setError(e.response?.data?.code === IN_PROCESS_NAME_CODE
         ? t('agentByo.errors.nameIsHosted', { name: cleanName })
         : e.response?.data?.message || e.response?.data?.error || e.message || t('agentByo.errors.installFailed'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const requestMachineReconnect = async (cleanName: string) => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const response = await api.post<{ requestedAt: string }>('/api/agent-binding/reconnect', {
+        agentName: cleanName, instanceId: 'default',
+      });
+      setReconnectRequest({ agentName: cleanName, requestedAt: response.requestedAt, state: 'waiting' });
+    } catch (err) {
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      setError(e.response?.data?.message || e.message || t('agentByo.errors.installFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -913,7 +964,7 @@ const V2AgentBYO: React.FC = () => {
           </button>
         </div>
       )}
-      {showCompactByo && !issued && !hosted && !placed && (
+      {showCompactByo && !issued && !hosted && !placed && !reconnectRequest && (
         <div className="v2-byo__form" data-testid="byo-card-compact">
           {pods.some((p) => p._id === podId) && (
             <p className="v2-byo__hint">
@@ -937,19 +988,20 @@ const V2AgentBYO: React.FC = () => {
           {/* Enabled once the pod list confirms the pod: a link's pod the person
               cannot install into is replaced by their own, and that is the line
               above the button, so the click never lands somewhere unshown. */}
-          <button
+          {!isOtherOwner && <button
             type="button"
             onClick={() => {
-              if (existingConnection?.connection.state === 'revoked' || existingConnection?.connection.state === 'stale') {
-                void replaceRunningKey({ agentName: sanitizeAgentName(name), podId });
+              if (canReconnect) {
+                if (existingConnection?.runtimeType === 'wrapper') void requestMachineReconnect(sanitizeAgentName(name));
+                else void replaceRunningKey({ agentName: sanitizeAgentName(name), podId });
               } else void submit();
             }}
             disabled={submitting || !namesReady || !pods.some((p) => p._id === podId)}
             className="v2-byo__submit"
           >
-            {submitting ? t('agentByo.actions.issuing') : existingConnection && existingConnection.connection.state !== 'connected'
+            {submitting ? t('agentByo.actions.issuing') : canReconnect
               ? t('agentConnection.reconnect') : t('agentByo.actions.install')}
-          </button>
+          </button>}
           <button
             type="button"
             className="v2-byo__link"
@@ -960,7 +1012,7 @@ const V2AgentBYO: React.FC = () => {
           </button>
         </div>
       )}
-      {!showCompactHosted && !showCompactByo && !issued && !hosted && !placed && (
+      {!showCompactHosted && !showCompactByo && !issued && !hosted && !placed && !reconnectRequest && (
         <div className="v2-byo__form">
           {(hosting?.configured || machines.length > 0) && (
             <>
@@ -1142,15 +1194,14 @@ const V2AgentBYO: React.FC = () => {
             <div className="v2-byo__unchosen" data-testid="byo-mode-unchosen">
               {t('agentByo.actions.chooseFirst')}
             </div>
-          ) : existingConnection && existingConnection.connection.state !== 'connected'
-            && (existingConnection.installedBy === String(currentUser?._id) || currentUser?.role === 'admin') ? (
+          ) : canReconnect ? (
               <button type="button" className="v2-byo__submit" disabled={submitting || !podId} onClick={() => {
-                if (existingConnection.runtimeType === 'wrapper') void submitMachine(sanitizeAgentName(name));
+                if (existingConnection.runtimeType === 'wrapper') void requestMachineReconnect(sanitizeAgentName(name));
                 else void replaceRunningKey({ agentName: sanitizeAgentName(name), podId });
               }}>
                 {t('agentConnection.reconnect')}
               </button>
-            ) : (
+            ) : isOtherOwner ? null : (
             <button
               type="button"
               onClick={submit}
@@ -1212,6 +1263,14 @@ const V2AgentBYO: React.FC = () => {
           <button type="button" className="v2-byo__link" onClick={() => setPendingReplacement(null)}>
             {t('agentByo.rekey.cancel')}
           </button>
+        </div>
+      )}
+
+      {reconnectRequest && (
+        <div className="v2-byo__result" data-testid="byo-reconnect-result">
+          <h2>{reconnectRequest.agentName}</h2>
+          <p>{t(`agentConnection.reconnect${reconnectRequest.state === 'connected' ? 'Done'
+            : reconnectRequest.state === 'slow' ? 'Slow' : 'Waiting'}`)}</p>
         </div>
       )}
 

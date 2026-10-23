@@ -329,8 +329,9 @@ const V2YourTeamPage: React.FC = () => {
     const key = agentKey(a);
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
     const task = claimedTaskFor(a);
-    const disconnected = a.connection && a.connection.state !== 'connected';
-    const statusText = disconnected
+    const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
+    const visualState = a.connection && a.connection.state !== 'connected' ? 'idle' : state;
+    const statusText = a.connection && a.connection.state !== 'connected'
       ? connectionLabel(a.connection!, t)
       : state === 'needsYou'
       ? `${t('yourTeam.card.needsYou')} · ${ask?.title || ''}`.replace(/ · $/, '')
@@ -340,14 +341,14 @@ const V2YourTeamPage: React.FC = () => {
     return (
       <article
         key={key}
-        className={`v2-team-card v2-team-card--${state}`}
+        className={`v2-team-card v2-team-card--${visualState}`}
         data-testid="team-card"
-        data-state={state}
+        data-state={visualState}
       >
         <div className="v2-team-card__head">
           <button
             type="button"
-            className={`v2-team-card__mark v2-team-card__mark--${state}`}
+            className={`v2-team-card__mark v2-team-card__mark--${visualState}`}
             onClick={() => goToProfile(a)}
             aria-label={t('yourTeam.card.viewProfileAria', { name: display })}
           >
@@ -355,9 +356,9 @@ const V2YourTeamPage: React.FC = () => {
           </button>
           <div className="v2-team-card__title">
             <div className="v2-team-card__name">{display}</div>
-            <div className={`v2-team-card__status v2-team-card__status--${state}`}>
-              {!disconnected && state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
-              {!disconnected && state !== 'idle' ? ' ' : ''}
+            <div className={`v2-team-card__status v2-team-card__status--${visualState}`}>
+              {(!a.connection || a.connection.state === 'connected') && state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
+              {(!a.connection || a.connection.state === 'connected') && state !== 'idle' ? ' ' : ''}
               {statusText}
             </div>
           </div>
@@ -371,17 +372,17 @@ const V2YourTeamPage: React.FC = () => {
           </div>
         )}
         <div className="v2-team-card__actions">
-          {disconnected && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
+          {needsReconnect && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
             <button type="button" className="v2-team-card__answer" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
               {t('agentConnection.reconnect')}
             </button>
           ) : null}
-          {!disconnected && state === 'needsYou' && (
+          {!needsReconnect && state === 'needsYou' && (
             <button type="button" className="v2-team-card__answer" onClick={() => handleAnswer(a)}>
               {t('yourTeam.card.answer')}
             </button>
           )}
-          {!disconnected && <button
+          {!needsReconnect && <button
             type="button"
             className="v2-team-card__talk"
             onClick={(e) => handleTalk(a, e)}
