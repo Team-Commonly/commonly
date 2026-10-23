@@ -113,6 +113,14 @@ backend:
     # Non-secret db name; host/user/password come from the private values +
     # the database-credentials secret created by the Thu staging-secrets task.
     pgDatabase: commonly_staging
+    # Staging's browser origin is staging.commonly.me, not prod's commonly.me. The backend
+    # builds its CORS allowlist from FRONTEND_URL (server.ts buildAllowedOrigins); the chart
+    # default (values.yaml) is https://commonly.me, so WITHOUT this override the staging backend
+    # rejects every cross-origin request from staging.commonly.me — the cors origin callback
+    # throws "Not allowed by CORS" and returns 500, so the frontend cannot load the user and
+    # every /v2 page errors. The same allowlist feeds the socket.io cors. Caught by the Tier-1
+    # staging smoke 2026-10-23 (all /v2 renders failed on CORS until this landed).
+    frontendUrl: "https://staging.commonly.me"
   # Staging backend runs on the SPOT pool at a fraction of prod's requests, so it fits
   # the nodes we already have (spot-pool sits at single-digit % CPU) without growing a
   # pool. Prod backend stays on dev-pool because it holds session state a spot
