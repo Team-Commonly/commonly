@@ -1,6 +1,7 @@
 import Pod from '../models/Pod';
 import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
+import { podIsBridged } from './outsiderGrantPodEligibility';
 
 const id = (value: unknown): string => String(value || '');
 
@@ -21,6 +22,9 @@ export const privateListenerPodAllowed = async (podId: unknown, ownerUserId: unk
   if (!pod || pod.joinPolicy !== 'invite-only' || pod.publicRead || pod.communityListed
       || id(pod.createdBy) !== id(ownerUserId)
       || !(pod.members || []).some((member) => id(member) === id(ownerUserId))) return false;
+  // A group bridge relays other people's words into the pod and can carry the
+  // private seat's output out. It is a second human authority by proxy.
+  if (await podIsBridged(id(podId))) return false;
   const members = await User.find({ _id: { $in: pod.members } }).select('_id isBot botType').lean();
   // A missing member row has unknown authority. Refuse rather than assume bot.
   if (members.length !== new Set((pod.members || []).map(id)).size) return false;

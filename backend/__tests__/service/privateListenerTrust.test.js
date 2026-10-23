@@ -17,6 +17,7 @@ jest.mock('../../services/starterTaskService', () => ({ completeConnectAgentStar
 
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
+const Integration = require('../../models/Integration');
 const AgentCredential = require('../../models/AgentCredential');
 const { AgentInstallation, AgentRegistry } = require('../../models/AgentRegistry');
 const agentRuntimeAuth = require('../../middleware/agentRuntimeAuth');
@@ -99,6 +100,20 @@ test('second human pauses existing token and daemon assignment; new issuance is 
   expect(refused.status).toBe(403);
   expect(refused.body.code).toBe('private_listener_not_allowed');
   expect(await User.countDocuments({ 'agentRuntimeTokens.tokenHash': hash(minted.body.token) })).toBe(1);
+});
+
+test('a live group bridge pauses a private listener and refuses new issuance', async () => {
+  const minted = await issue();
+  expect(minted.status).toBe(200);
+  await Integration.create({
+    podId: pod._id, scope: 'pod', type: 'slack', status: 'connected', isActive: true,
+    createdBy: mockOwner.id, config: {},
+  });
+  expect((await request(app).get('/probe').set('Authorization', `Bearer ${minted.body.token}`)).status).toBe(403);
+  expect((await assigned()).body.agents).toEqual([]);
+  const refused = await issue();
+  expect(refused.status).toBe(403);
+  expect(refused.body.code).toBe('private_listener_not_allowed');
 });
 
 test('second human also pauses an older installation-bound runtime token', async () => {
