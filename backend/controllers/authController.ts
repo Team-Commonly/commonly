@@ -11,6 +11,7 @@ const { normalizeAvatarUrl } = require('../services/avatarService');
 const { cleanSignupRef } = require('../utils/signupRef');
 const { deriveUsernameFromEmail, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
+const { issueEmailVerificationToken, verifyEmailVerificationToken } = require('../services/emailVerificationTokenService');
 const { disconnectUserSessionSockets } = require('../services/sessionSocketService');
 
 // The first-touch ref a signup arrived with (?ref=x), stored once on the new
@@ -88,9 +89,7 @@ const hasEmailDeliveryConfig = () => Boolean(process.env.SMTP2GO_API_KEY)
 // Registration and resend must produce the same link. Keeping the delivery
 // details here avoids a resend drifting to a different URL, TTL, or sender.
 const sendVerificationEmail = async (user: any) => {
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-    expiresIn: '1d',
-  });
+  const token = issueEmailVerificationToken(user._id);
   const verifyUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
 
   return sendEmail({
@@ -796,10 +795,12 @@ exports.resetPassword = async (req: any, res: any) => {
 exports.verifyEmail = async (req: any, res: any) => {
   try {
     const { token } = req.query;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Old email links used the same id-only JWT shape as legacy sessions.
+    // They cannot be distinguished safely, so the user must request a new link.
+    const userId = verifyEmailVerificationToken(String(token || ''));
 
     const user = await User.findByIdAndUpdate(
-      decoded.id,
+      userId,
       { verified: true },
       { new: true },
     );
