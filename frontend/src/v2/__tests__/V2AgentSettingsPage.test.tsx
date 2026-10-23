@@ -332,6 +332,7 @@ test('runtime editor writes environment controls through the shared settings hoo
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
       runtime: { runtimeType: 'wrapper' },
