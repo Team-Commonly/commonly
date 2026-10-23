@@ -116,7 +116,18 @@ export const classifySpawnFailure = (error) => {
   // Provider APIs commonly report an exhausted account quota as HTTP 429.
   // Prefer the more specific body/message over the generic status code so a
   // hard quota failure gets the long cooldown rather than a one-minute probe.
-  if (QUOTA_RE.test(text) || QUOTA_POSSESSIVE_RE.test(text)) return SPAWN_FAILURE_CLASS.QUOTA;
+  if (QUOTA_RE.test(text)) return SPAWN_FAILURE_CLASS.QUOTA;
+  // The possessive shape is deliberately loose about what sits between "your"
+  // and "limit", and its `(?!rate[ -]?limit)` lookahead only guards the word
+  // IMMEDIATELY after "your" — so "you've hit your API rate limit" walked past
+  // it into the 15-minute circuit, where main correctly gives the 60-second
+  // rate-limit probe (otto, gate on #2491; it was a regression, not a gap).
+  // A throttle wording anywhere in the text therefore wins over the shape.
+  // QUOTA_RE is still tested first, so an explicit quota word keeps QUOTA even
+  // when the same message also mentions rate limits.
+  if (QUOTA_POSSESSIVE_RE.test(text) && !RATE_LIMIT_RE.test(text)) {
+    return SPAWN_FAILURE_CLASS.QUOTA;
+  }
   if (error?.status === 429 || RATE_LIMIT_RE.test(text)) {
     return SPAWN_FAILURE_CLASS.RATE_LIMIT;
   }

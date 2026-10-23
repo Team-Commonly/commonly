@@ -236,8 +236,26 @@ describe('classifies the possessive-exhaustion phrase (2026-08-25, third miss)',
     "You've reached your rate-limit for this model",
     // Capitalised, because the lookahead's `i` is load-bearing and invisible.
     "you've hit your Rate Limit",
+    // The lookahead only guards the word IMMEDIATELY after "your", so these
+    // two walked past it into the 15-minute circuit while main correctly gave
+    // the 60-second probe — a regression this branch introduced and otto's
+    // gate on #2491 caught. The call site now refuses the possessive shape
+    // whenever a throttle wording appears anywhere in the text.
+    "You've hit your API rate limit",
+    "You've reached your per-model rate limit",
+    "You've hit your organisation's rate limit for this model",
   ])('a possessive RATE-limit string stays RATE_LIMIT: %s', (message) => {
     expect(classifySpawnFailure(new Error(message))).toBe(SPAWN_FAILURE_CLASS.RATE_LIMIT);
+  });
+
+  // The boundary of that refusal, in the other direction: an explicit quota
+  // WORD still wins, because QUOTA_RE is tested before the possessive shape.
+  // Otherwise a provider sentence that names both would lose the long cooldown
+  // it needs.
+  test('an explicit quota word beats a rate-limit mention in the same message', () => {
+    expect(classifySpawnFailure(new Error(
+      'Claude usage limit reached; standard rate limits also apply.',
+    ))).toBe(SPAWN_FAILURE_CLASS.QUOTA);
   });
 
   test('the phrase does not span a sentence boundary', () => {
