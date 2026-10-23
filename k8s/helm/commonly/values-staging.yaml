@@ -108,6 +108,10 @@ agents:
 
 backend:
   env:
+    agentComputerEnabled: "true"
+    agentComputerSteelApiUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:3000"
+    agentComputerSteelCdpUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:9223"
+    agentComputerAllowedHosts: "linkedin.com,www.linkedin.com"
     # Smaller Postgres pool for staging's Aiven db (fewer connections than prod).
     pgPoolMax: 5
     # Non-secret db name; host/user/password come from the private values +

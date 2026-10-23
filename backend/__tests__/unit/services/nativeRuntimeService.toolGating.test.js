@@ -6,7 +6,7 @@
  * filters exactly; an undeclared (legacy) config keeps the pre-gate surface
  * MINUS approval proposing, which is opt-in by declaration only.
  */
-const { toolsForConfig, TOOLS } = require('../../../services/nativeRuntimeService');
+const { toolsForConfig, TOOLS, NATIVE_TOOL_NAMES } = require('../../../services/nativeRuntimeService');
 const { hostedCaps } = require('../../../services/hostedRuntimeService');
 
 const names = (tools) => tools.map((t) => t.function.name);
@@ -38,6 +38,28 @@ const NO_HOSTING = {
 };
 
 describe('toolsForConfig', () => {
+  test('computer tools require both an install declaration and a live instance flag', () => {
+    expect(NATIVE_TOOL_NAMES.filter((name) => name.startsWith('computer_'))).toEqual([
+      'computer_navigate', 'computer_snapshot', 'computer_click', 'computer_type',
+      'computer_screenshot', 'computer_request_takeover',
+    ]);
+    const config = { tools: ['computer_navigate', 'computer_request_takeover'] };
+    const enabled = {
+      AGENT_COMPUTER_ENABLED: 'true',
+      AGENT_COMPUTER_STEEL_API_URL_TEMPLATE: 'http://steel-{userId}:3000',
+      AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE: 'http://steel-{userId}:9223',
+      AGENT_COMPUTER_WAKER_URL: 'http://waker:8080',
+      AGENT_COMPUTER_WAKER_TOKEN: 'test',
+    };
+    withEnv({ ...enabled, AGENT_COMPUTER_ENABLED: 'false' }, () => {
+      expect(names(toolsForConfig(config))).toEqual([]);
+    });
+    withEnv(enabled, () => {
+      expect(names(toolsForConfig(config))).toEqual(['computer_navigate', 'computer_request_takeover']);
+      expect(names(toolsForConfig({}))).not.toContain('computer_navigate');
+      expect(names(toolsForConfig({ tools: ['commonly_post_message'] }))).not.toContain('computer_navigate');
+    });
+  });
   test('a declared allowlist filters exactly', () => {
     const tools = toolsForConfig({ tools: ['commonly_post_message', 'commonly_propose_action'] });
     expect(names(tools).sort()).toEqual(['commonly_post_message', 'commonly_propose_action']);

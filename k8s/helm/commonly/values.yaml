@@ -128,6 +128,13 @@ backend:
     initialDelaySeconds: 10
     periodSeconds: 5
   env:
+    # Agent computer is an opt-in staging experiment. Empty endpoints keep it
+    # unavailable even when the flag is enabled.
+    agentComputerEnabled: "false"
+    agentComputerSteelApiUrlTemplate: ""
+    agentComputerSteelCdpUrlTemplate: ""
+    agentComputerAllowedHosts: ""
+    agentComputerWakerUrl: ""
     nodeEnv: development
     registrationInviteOnly: "1"
     agentProvisionerK8s: "1"
