@@ -21,6 +21,8 @@ const { ListToolsRequestSchema, CallToolRequestSchema, McpError, ErrorCode } = m
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 
 const router = express.Router();
 
@@ -34,6 +36,17 @@ const brokerRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: agentRateLimitKeyGenerator,
   handler: (_req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
+});
+// Mounted before the 9 MiB push parser in server.ts. An unauthenticated caller
+// can vary Authorization headers, so this early budget keys on the edge IP,
+// not the token header. The route separately applies the token-aware limiter.
+export const pushBodyRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: (_req, res) => res.status(429).json({ error: 'push_body_rate_limited' }),
 });
 
 const errorPayload = (error: unknown): Record<string, unknown> => {

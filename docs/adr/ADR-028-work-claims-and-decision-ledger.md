@@ -718,11 +718,12 @@ deletion, tags, second refs, protected branches, malformed framing and any
 client-supplied repo/prefix override. The backend reads the old OID from the
 provider's current ref (or zero for a fresh branch). It unbundles into a fresh
 backend-owned bare object store with no inherited Git config or hooks, checks
-connectivity, and verifies the old commit is an ancestor of the new
-commit; it refuses when ancestry cannot be established. A trusted server-side
-push then uses a compare-and-swap lease on that same old OID, so a concurrent
-ref move fails. The client has no control over this lease or fast-forward check:
-the remote-helper protocol does not attest to the client's `--force` choice. The App
+connectivity, and verifies the old commit is an ancestor of the new commit
+when the branch already exists; it refuses when ancestry cannot be established.
+A fresh branch instead uses an absence lease. A trusted server-side push uses
+a compare-and-swap lease on the provider's old OID, so a concurrent ref move
+fails. The client has no control over this lease or fast-forward check: the
+remote-helper protocol carries a force indicator, but it is untrusted. The App
 token stays only in the backend-to-GitHub request; the child never receives a
 credential helper that returns it. Acceptance covers fresh branch and existing
 fast-forward success, and divergent update with correct old OID, stale old OID,
