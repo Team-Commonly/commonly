@@ -70,7 +70,8 @@ export const startPoller = ({
       // A digest is received context, not a webhook invocation. The runtime
       // inbox claims it only alongside a wake from the same pod.
       const wakeEvents = events.filter((event) => event.deliveryMode !== 'digest');
-      const digestEvents = events.filter((event) => event.deliveryMode === 'digest');
+      const digestEvents = events.filter((event) => event.deliveryMode === 'digest'
+        && wakeEvents[0] && String(event.podId) === String(wakeEvents[0].podId));
       const frame = digestEvents.length > 0 ? digestFrame(digestEvents) : null;
       let digestConsumed = false;
       for (const [index, event] of wakeEvents.entries()) {

@@ -604,6 +604,29 @@ describe('poller.js', () => {
     ]);
   });
 
+  test('does not forward or acknowledge another pod\'s digest with a wake', async () => {
+    const events = [
+      { ...makeEvent('wake-1'), deliveryMode: 'wake', payload: { content: 'pod A' } },
+      { ...makeEvent('digest-2'), podId: 'pod-other', deliveryMode: 'digest', payload: { content: 'private pod B' } },
+    ];
+    const mockPost = jest.fn().mockResolvedValue({});
+    const onEvent = jest.fn().mockResolvedValue({ outcome: 'acknowledged' });
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events }), post: mockPost });
+    const { stop } = startPoller({
+      instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+      intervalMs: 100_000, onEvent,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    stop();
+
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      payload: { content: 'pod A' },
+    }));
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual([
+      '/api/agents/runtime/events/wake-1/ack',
+    ]);
+  });
+
   test('stops after stale_delivery instead of polling against the replacement', async () => {
     const events = [{ ...makeEvent('stale-1'), payload: { deliveryId: 'e'.repeat(32) } }];
     const stale = Object.assign(new Error('This delivery was superseded'), {
