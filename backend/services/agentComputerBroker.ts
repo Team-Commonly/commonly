@@ -406,6 +406,8 @@ export class AgentComputerBroker {
     // Replacing the page destroys human-entered passwords/OTPs and all timers
     // queued by an earlier agent click before the agent can read again.
     await old.close();
+    // Clearing storage may itself wake a page listener that tries a write.
+    await this.abortPendingWrites(state, installationId);
     state.tabs.delete(installationId);
     state.frames.delete(installationId);
     state.humanActionSeen.delete(installationId);
