@@ -373,7 +373,7 @@ const V2YourTeamPage: React.FC = () => {
         )}
         <div className="v2-team-card__actions">
           {needsReconnect && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
-            <button type="button" className="v2-team-card__answer" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
+            <button type="button" className="v2-team-card__answer" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
               {t('agentConnection.reconnect')}
             </button>
           ) : null}

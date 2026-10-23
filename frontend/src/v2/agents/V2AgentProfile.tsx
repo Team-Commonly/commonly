@@ -404,7 +404,7 @@ const V2AgentProfile: React.FC = () => {
           </div>
           {ownedConnection && ['revoked', 'stale'].includes(ownedConnection.connection.state) ? (
             <Link className="v2-aprofile__btn v2-aprofile__btn--primary"
-              to={`/v2/agents/byo?pod=${encodeURIComponent(ownedConnection.podId)}&name=${encodeURIComponent(agent.agentName)}&reconnect=1${ownedConnection.runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
+              to={`/v2/agents/byo?pod=${encodeURIComponent(ownedConnection.podId)}&name=${encodeURIComponent(agent.agentName)}&instanceId=${encodeURIComponent(instanceId || 'default')}&reconnect=1${ownedConnection.runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
               {t('agentConnection.reconnect')}
             </Link>
           ) : authed ? (

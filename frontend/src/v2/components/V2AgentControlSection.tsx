@@ -6,6 +6,7 @@ import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 
 interface Props {
   agentName: string;
+  instanceId: string;
   podId: string;
   runtimeType?: string;
   connection: AgentConnection;
@@ -13,7 +14,7 @@ interface Props {
 
 // Owner/admin-only: the parent must obtain these props from an authenticated
 // roster read after its server-gated Settings access check.
-const V2AgentControlSection: React.FC<Props> = ({ agentName, podId, runtimeType, connection }) => {
+const V2AgentControlSection: React.FC<Props> = ({ agentName, instanceId, podId, runtimeType, connection }) => {
   const { t } = useTranslation();
   const needsReconnect = connection.state === 'revoked' || connection.state === 'stale';
   return (
@@ -22,7 +23,7 @@ const V2AgentControlSection: React.FC<Props> = ({ agentName, podId, runtimeType,
         <h2>{t('agentConnection.control')}</h2>
         {needsReconnect && (
           <Link className="v2-agent-settings__action"
-            to={`/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&reconnect=1${runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
+            to={`/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&instanceId=${encodeURIComponent(instanceId)}&reconnect=1${runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
             {t('agentConnection.reconnect')}
           </Link>
         )}
@@ -60,7 +61,7 @@ export const AgentControlLoader: React.FC<{ agentName: string; instanceId: strin
         const match = roster.data.agents?.find((row) => row.name === agentName
           && row.instanceId === instanceId && row.connection);
         if (!match?.connection) throw new Error('No connection status');
-        if (active) setStatus({ agentName, podId, runtimeType: match.runtime?.runtimeType,
+        if (active) setStatus({ agentName, instanceId, podId, runtimeType: match.runtime?.runtimeType,
           connection: match.connection });
       } catch {
         if (active) setUnavailable(true);

@@ -47,7 +47,9 @@ const pods = [{ _id: 'p1', name: 'Workspace', type: 'chat' }];
 // Hosting on, so the page asks where the agent runs.
 const mockGet = (roster = []) => {
   axios.get.mockImplementation((url) => {
-    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: roster } });
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: {
+      agents: roster.map((row) => ({ instanceId: 'default', ...row })),
+    } });
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 30 } } });
@@ -89,7 +91,7 @@ describe('BYO default agent name follows where it runs', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/registry/pods/p1/agents/local/runtime-tokens',
-      { label: 'BYO MCP — replacement', force: true }, expect.anything(),
+      { label: 'BYO MCP — replacement', force: true, instanceId: 'default' }, expect.anything(),
     ));
   });
 
@@ -119,14 +121,14 @@ describe('BYO default agent name follows where it runs', () => {
   });
 
   test('a Settings key link can proactively rekey a connected wrapper', async () => {
-    mockGet([{ name: 'local', installedBy: 'u1', runtime: { runtimeType: 'wrapper' },
+    mockGet([{ name: 'local', instanceId: 'alpha', installedBy: 'u1', runtime: { runtimeType: 'wrapper' },
       connection: { state: 'connected', lastSeenAt: new Date().toISOString() } }]);
     axios.post.mockResolvedValue({ data: { requestedAt: new Date().toISOString() } });
-    renderAt('/v2/agents/byo?pod=p1&name=local&mode=machine&reconnect=1');
+    renderAt('/v2/agents/byo?pod=p1&name=local&instanceId=alpha&mode=machine&reconnect=1');
     fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/agent-binding/reconnect',
-      { agentName: 'local', instanceId: 'default' }, expect.anything(),
+      { agentName: 'local', instanceId: 'alpha' }, expect.anything(),
     ));
   });
 

@@ -76,7 +76,7 @@ describe('Your Team (direction C)', () => {
     expect(card.querySelector('.v2-team-card__status--working')).toBeNull();
     expect(within(card).queryByRole('button', { name: /Talk to/ })).toBeNull();
     fireEvent.click(within(card).getByRole('button', { name: 'Reconnect' }));
-    expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo?pod=p1&name=local&reconnect=1');
+    expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo?pod=p1&name=local&instanceId=default&reconnect=1');
   });
 
   test('a never-connected agent is offered the normal Talk path, not Reconnect', async () => {

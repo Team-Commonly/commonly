@@ -105,7 +105,7 @@ describe('V2AgentProfile memory-write visibility', () => {
     expect(await screen.findByTestId('agent-profile-connection'))
       .toHaveTextContent('Disconnected: key revoked');
     expect(screen.getByRole('link', { name: 'Reconnect' }))
-      .toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=claude-code&reconnect=1');
+      .toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=claude-code&instanceId=observer&reconnect=1');
     expect(screen.queryByRole('button', { name: 'Talk to Observer' })).toBeNull();
   });
 
@@ -127,7 +127,7 @@ describe('V2AgentProfile memory-write visibility', () => {
     });
     renderProfile();
     expect(await screen.findByRole('link', { name: 'Reconnect' }))
-      .toHaveAttribute('href', '/v2/agents/byo?pod=own-pod&name=claude-code&reconnect=1&mode=machine');
+      .toHaveAttribute('href', '/v2/agents/byo?pod=own-pod&name=claude-code&instanceId=observer&reconnect=1&mode=machine');
     expect(profileClient.get.mock.calls.some(([url]) => url === '/api/registry/pods/other-pod/agents')).toBe(false);
   });
 

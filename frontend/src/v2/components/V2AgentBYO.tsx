@@ -128,6 +128,7 @@ const V2AgentBYO: React.FC = () => {
     return {
       pod: (params.get('pod') || '').replace(/[^a-f0-9]/gi, ''),
       name: sanitizeAgentName(params.get('name') || ''),
+      instanceId: sanitizeAgentName(params.get('instanceId') || 'default') || 'default',
       persona: sanitizeAgentName(params.get('persona') || ''),
       // ?mode=hosted comes from Scout's "Run it here" button: the person
       // already asked Commonly to host their agent.
@@ -277,10 +278,11 @@ const V2AgentBYO: React.FC = () => {
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      api.get<{ agents?: Array<{ name: string; runtime?: { runtimeType?: string }; connection?: AgentConnection; installedBy?: string }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`)
+      api.get<{ agents?: Array<{ name: string; instanceId: string; runtime?: { runtimeType?: string }; connection?: AgentConnection; installedBy?: string }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`)
         .then((result) => {
           if (cancelled) return;
-          const match = result.agents?.find((agent) => agent.name === sanitizeAgentName(name) && agent.connection);
+          const match = result.agents?.find((agent) => agent.name === sanitizeAgentName(name)
+            && (!prefill.reconnect || agent.instanceId === prefill.instanceId) && agent.connection);
           setExistingConnection(match?.connection ? {
             connection: match.connection,
             runtimeType: match.runtime?.runtimeType || '',
@@ -290,7 +292,7 @@ const V2AgentBYO: React.FC = () => {
         .catch(() => { if (!cancelled) setExistingConnection(null); });
     }, 250);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [api, name, nameTouched, podId]);
+  }, [api, name, nameTouched, podId, prefill.instanceId, prefill.reconnect]);
   // Re-default while the person hasn't typed a name: when the user resolves
   // after mount, and when the mode or the runner changes.
   const defaultAgentName = defaultNameFor(mode, mode === 'machine' ? adapter : listenAdapter);
@@ -334,11 +336,12 @@ const V2AgentBYO: React.FC = () => {
     const check = async () => {
       ticks += 1;
       try {
-        const roster = await api.get<{ agents?: Array<{ name: string; connection?: AgentConnection }> }>(
+        const roster = await api.get<{ agents?: Array<{ name: string; instanceId: string; connection?: AgentConnection }> }>(
           `/api/registry/pods/${encodeURIComponent(podId)}/agents`,
         );
         if (cancelled) return;
-        const status = roster.agents?.find((agent) => agent.name === reconnectRequest.agentName)?.connection;
+        const status = roster.agents?.find((agent) => agent.name === reconnectRequest.agentName
+          && agent.instanceId === prefill.instanceId)?.connection;
         if (status?.state === 'connected' && status.lastSeenAt
           && Date.parse(status.lastSeenAt) >= Date.parse(reconnectRequest.requestedAt)) {
           setReconnectRequest((current) => current && { ...current, state: 'connected' });
@@ -352,7 +355,7 @@ const V2AgentBYO: React.FC = () => {
     void check();
     const timer = setInterval(() => { void check(); }, MACHINE_STATUS_POLL_MS);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [api, podId, reconnectRequest]);
+  }, [api, podId, prefill.instanceId, reconnectRequest]);
 
   // Watch the placement come up: the machine heartbeat carries per-agent
   // supervisor states, so "live" here means the daemon actually spawned it.
@@ -622,7 +625,7 @@ const V2AgentBYO: React.FC = () => {
     setError(null);
     try {
       const response = await api.post<{ requestedAt: string }>('/api/agent-binding/reconnect', {
-        agentName: cleanName, instanceId: 'default',
+        agentName: cleanName, instanceId: prefill.instanceId,
       });
       setReconnectRequest({ agentName: cleanName, requestedAt: response.requestedAt, state: 'waiting' });
     } catch (err) {
@@ -720,7 +723,7 @@ const V2AgentBYO: React.FC = () => {
       const { agentName, podId: targetPodId } = target;
       const tokenRes = await api.post<{ token?: string }>(
         `/api/registry/pods/${encodeURIComponent(targetPodId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`,
-        { label: 'BYO MCP — replacement', force: true },
+        { label: 'BYO MCP — replacement', force: true, instanceId: prefill.instanceId },
       );
       if (!tokenRes?.token) {
         setError(t('agentByo.errors.tokenEmpty'));
