@@ -40,6 +40,7 @@ import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills, parseSkillMeta } from '../lib/skills-import.js';
+import { compileServerSkills } from '../lib/server-skills.js';
 import {
   environmentForServer,
   normalizeSandboxTrust,
@@ -1589,6 +1590,20 @@ export const performRun = ({
       throw error;
     }
     const promptWithFocus = `${focusFrame}\n\n${prompt}`;
+    let serverSkills;
+    try {
+      const response = await client.get(`/api/agents/runtime/pods/${eventPodId}/skills`);
+      serverSkills = compileServerSkills(response?.items || []);
+    } catch (error) {
+      // A rolling deploy can put the CLI ahead of the runtime route. Existing
+      // agents keep working until the server catches up; other failures retry
+      // the event rather than silently omit installed instructions.
+      if (error?.status !== 404) throw error;
+      serverSkills = compileServerSkills();
+    }
+    const promptWithSkills = serverSkills.text
+      ? `${focusFrame}\n\n${serverSkills.text}\n\n${prompt}`
+      : promptWithFocus;
 
     log(`[${event.type}] spawning ${adapter.name}`);
     // TASK-102 part B. The CHILD gets a scoped credential; the wrapper keeps
@@ -1651,7 +1666,9 @@ export const performRun = ({
       };
     }
     let result;
-    let skillMount = null;
+    let skillMount = serverSkills.mounted.length || serverSkills.conflicted.length
+      ? { mounted: serverSkills.mounted, conflicted: serverSkills.conflicted }
+      : null;
     let commitAttribution = null;
     try {
       // The local CLI is a wrapper for a Commonly seat, so its Git commits
@@ -1669,7 +1686,7 @@ export const performRun = ({
           effort: seatEnvironment?.effort,
         });
       }
-      result = await adapter.spawn(frameDecisionForkRule(promptWithFocus), {
+      result = await adapter.spawn(frameDecisionForkRule(promptWithSkills), {
         sessionId,
         cwd: agentCwd,
         env: commitAttribution?.env || process.env,
@@ -1678,8 +1695,8 @@ export const performRun = ({
         environment: seatEnvironment,
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
-            mounted: mounted.map(reportedSkillName),
-            conflicted: conflicted.map(({ path }) => reportedSkillName(path)),
+            mounted: [...new Set([...serverSkills.mounted, ...mounted.map(reportedSkillName)])],
+            conflicted: [...new Set([...serverSkills.conflicted, ...conflicted.map(({ path }) => reportedSkillName(path))])],
           };
         },
         // Runtime context the Claude/Codex adapters expose only to their

@@ -120,9 +120,18 @@ describe('Skills Catalog Routes', () => {
   test('records mounted names for the authenticated agent and returns them to the page', async () => {
     await request(app).post('/api/skills/import').set('Authorization', `Bearer ${authToken}`)
       .send({ podId, name: 'review', content: '# Review', scope: 'agent', agentName: 'scout', instanceId: 'default' });
+    await request(app).post('/api/skills/import').set('Authorization', `Bearer ${authToken}`)
+      .send({ podId, name: 'local-only', content: '# Local', metadataOnly: true, scope: 'agent', agentName: 'scout', instanceId: 'default' });
     const installation = await AgentInstallation.findOne({ podId, agentName: 'scout' });
     const agentUser = await AgentIdentityService.getOrCreateAgentUser('scout', { instanceId: 'default' });
     const { token } = await issueRuntimeTokenForAgent(agentUser, 'test skill mount', installation);
+    const feed = await request(app).get(`/api/agents/runtime/pods/${podId}/skills`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(feed.status).toBe(200);
+    expect(feed.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'review', content: '# Review' }),
+    ]));
+    expect(feed.body.items.map((item) => item.name)).not.toContain('local-only');
     const path = `/api/agents/runtime/pods/${podId}/skill-load`;
     const posted = await request(app).post(path).set('Authorization', `Bearer ${token}`)
       .send({ mounted: ['review', 'private-operator-skill'], conflicted: ['draft'] });
@@ -143,5 +152,12 @@ describe('Skills Catalog Routes', () => {
     expect(invalid.status).toBe(400);
     expect((await AgentInstallation.findById(installation._id).lean()).skillLoad.mounted)
       .toEqual(['review', 'private-operator-skill']);
+
+    await request(app).delete(`/api/skills/pods/${podId}/imported?scope=agent&agentName=scout&instanceId=default&name=review`)
+      .set('Authorization', `Bearer ${authToken}`);
+    const afterRemove = await request(app).get(`/api/agents/runtime/pods/${podId}/skills`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(afterRemove.status).toBe(200);
+    expect(afterRemove.body.items.map((item) => item.name)).not.toContain('review');
   });
 });

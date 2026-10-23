@@ -35,6 +35,7 @@ const Activity = require('../models/Activity');
 const User = require('../models/User');
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
+const PodAsset = require('../models/PodAsset');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
@@ -1592,6 +1593,35 @@ router.post(
     }
   },
 );
+
+// Active catalog skills are delivered at turn start so an add or remove takes
+// effect on the next spawn without rewriting the operator's local environment.
+router.get('/pods/:podId/skills', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    const installation = resolveInstallationForPod(req.agentInstallations, req.agentInstallation, podId);
+    if (!installation || String(installation.podId) !== podId
+      || !ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    const assets = await PodAsset.find({ podId, type: 'skill', status: 'active', 'metadata.scope': 'agent' })
+      .select('content metadata').lean();
+    const items = assets.filter((asset: any) => {
+      const meta = asset.metadata || {};
+      return String(meta.agentName || '').toLowerCase() === String(installation.agentName).toLowerCase()
+        && String(meta.instanceId || 'default').toLowerCase() === String(installation.instanceId || 'default').toLowerCase()
+        && meta.metadataOnly !== true
+        && !String(asset.content || '').includes('Imported as metadata from a local agent');
+    }).map((asset: any) => ({
+      name: String(asset.metadata.skillName || ''),
+      content: String(asset.content || ''),
+    })).filter((item: { name: string; content: string }) => item.name && item.content);
+    return res.json({ items });
+  } catch (error) {
+    console.error('Error loading agent skills:', error);
+    return res.status(500).json({ message: 'Failed to load agent skills' });
+  }
+});
 
 // The wrapper reports what its adapter actually mounted for this spawn. Keep
 // only skill names: local source paths belong to the operator's machine.

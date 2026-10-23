@@ -101,6 +101,7 @@ export const importSkills = async (client, { skills, podId, agentName, instanceI
       podId,
       name: skill.name,
       content: skillStub(skill),
+      metadataOnly: true,
       description: skill.description || undefined,
       scope: 'agent',
       agentName,

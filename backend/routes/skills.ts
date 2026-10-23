@@ -343,7 +343,7 @@ router.delete('/pods/:podId/imported', auth, async (req: AuthReq, res: Res) => {
 router.post('/import', auth, async (req: AuthReq, res: Res) => {
   try {
     const userId = getUserId(req);
-    const { podId, name, content, tags = [], sourceUrl, license, scope = 'pod', agentName, instanceId, description } = (req.body || {}) as { podId?: string; name?: string; content?: string; tags?: string[]; sourceUrl?: string; license?: string; scope?: string; agentName?: string; instanceId?: string; description?: string };
+    const { podId, name, content, tags = [], sourceUrl, license, scope = 'pod', agentName, instanceId, description, metadataOnly = false } = (req.body || {}) as { podId?: string; name?: string; content?: string; tags?: string[]; sourceUrl?: string; license?: string; scope?: string; agentName?: string; instanceId?: string; description?: string; metadataOnly?: boolean };
     if (!podId || !name) return res.status(400).json({ error: 'podId and name are required' });
     await ensurePodAccess(podId, userId);
     if (scope === 'agent') {
@@ -371,7 +371,7 @@ router.post('/import', auth, async (req: AuthReq, res: Res) => {
     }
     if (!skillContent) return res.status(400).json({ error: 'Skill content is required (provide content or a SKILL.md source URL).' });
     const normalizedScope = scope === 'agent' ? 'agent' : 'pod';
-    const metadata = { scope: normalizedScope, agentName: normalizedScope === 'agent' ? agentName : undefined, instanceId: normalizedScope === 'agent' ? instanceId : undefined, sourceUrl: resolvedSourceUrl || null, license: license || null, description: description || null, importedAt: new Date().toISOString(), tags, extraFiles };
+    const metadata = { scope: normalizedScope, agentName: normalizedScope === 'agent' ? agentName : undefined, instanceId: normalizedScope === 'agent' ? instanceId : undefined, sourceUrl: resolvedSourceUrl || null, license: license || null, description: description || null, metadataOnly: metadataOnly === true, importedAt: new Date().toISOString(), tags, extraFiles };
     const asset = await PodAssetService.upsertImportedSkillAsset({ podId, name, markdown: skillContent, tags, metadata, createdBy: userId }) as { _id?: unknown } | null;
     const sync = await syncOpenClawInstallationsForPodSkillChange({ podId });
     return res.status(201).json({ assetId: asset?._id, podId, name, scope: normalizedScope, sync });
