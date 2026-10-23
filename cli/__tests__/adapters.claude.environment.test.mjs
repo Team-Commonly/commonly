@@ -1117,17 +1117,23 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     fs.mkdirSync(big);
     fs.writeFileSync(path.join(big, 'SKILL.md'), `---\nname: big-skill\n---\n\n${'x'.repeat(100 * 1024)}\n`, 'utf8');
     const { impl, calls } = makeSpawnImpl();
+    const onSkillsLinked = jest.fn();
     await publicSpawn(impl, {
       environment: {
         sandbox: { mode: 'workspace', trust: 'public' },
         skills: { claude: [big, skillSrc] },
       },
+      onSkillsLinked,
     });
 
     const text = appended(calls[0].args);
     expect(text).not.toContain('## Skill: big-skill');
     expect(text).toContain('## Skill: house-rules');
     expect(Buffer.byteLength(text, 'utf8')).toBeLessThan(128 * 1024);
+    expect(onSkillsLinked).toHaveBeenCalledWith({
+      mounted: [skillSrc],
+      conflicted: [{ path: big, reason: 'not-inlined' }],
+    });
   });
 
   test('the fresh-session retry carries the same skill text', async () => {

@@ -34,7 +34,7 @@
     "addSkill": "添加技能",
     "closeCatalog": "关闭目录",
     "loading": "正在加载技能…",
-    "empty": "此代理尚未安装技能。",
+    "empty": "此智能体尚未安装技能。",
     "noReport": "暂无运行加载报告",
     "loaded": "上次运行已加载",
     "conflicted": "上次运行未能加载",

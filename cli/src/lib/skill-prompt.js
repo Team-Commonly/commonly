@@ -35,7 +35,7 @@ const SECTION_SEPARATOR = '\n\n';
  * would cross the cap, is skipped with a warning naming the runtime (`label`)
  * rather than failing the spawn.
  */
-export const readSkillSections = async (skillSources, { maxBytes, label, trailer = '' }) => {
+export const readSkillSections = async (skillSources, { maxBytes, label, trailer = '', onIncluded }) => {
   const sections = [];
   let total = Buffer.byteLength(SKILLS_AS_TEXT_PREAMBLE, 'utf8') + Buffer.byteLength(trailer, 'utf8');
   for (const source of skillSources || []) {
@@ -60,6 +60,7 @@ export const readSkillSections = async (skillSources, { maxBytes, label, trailer
     }
     total += bytes;
     sections.push(section);
+    onIncluded?.(source);
   }
   return sections;
 };
