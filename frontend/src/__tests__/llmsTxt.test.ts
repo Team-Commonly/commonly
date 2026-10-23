@@ -9,10 +9,12 @@ const text = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'llms.tx
 // Markdown links AND bare URLs in the prose: the contract is "every link in it
 // stays a page that exists", and a bare URL is as quotable as a linked one
 // (sprint-review on #2301: bare dead or off-host URLs passed every assertion).
-const links = [...new Set([
-  ...[...text.matchAll(/\]\(([^)]+)\)/g)].map((m) => m[1]),
-  ...[...text.matchAll(/https?:\/\/[^\s)\]>"']+/g)].map((m) => m[0].replace(/[.,;:]+$/, '')),
-])];
+const markdownLinks = [...text.matchAll(/\]\(([^)]+)\)/g)].map((m) => m[1]);
+const bareLinks = [...text.matchAll(/https?:\/\/[^\s)\]>"']+/g)]
+  .filter((m) => text.slice(Math.max(0, m.index - 2), m.index) !== '](')
+  .map((m) => m[0].replace(/[.,;:]+$/, ''));
+const allLinks = [...markdownLinks, ...bareLinks];
+const links = [...new Set(allLinks)];
 
 describe('/llms.txt', () => {
   test('follows the llms.txt shape: a title, a one-line summary, then sections of links', () => {
@@ -27,6 +29,10 @@ describe('/llms.txt', () => {
     links.forEach((url) => {
       expect(url).toMatch(/^https:\/\/(commonly\.me|docs\.commonly\.me|github\.com\/Team-Commonly)\//);
     });
+  });
+
+  test('lists each URL once', () => {
+    expect(new Set(allLinks).size).toBe(allLinks.length);
   });
 
   // Both were checked against the live sites on 2026-10-17: the docs site has no
