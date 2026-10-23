@@ -4245,6 +4245,12 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     expect(topLevelRuleBody(landing, '.v2-landing__usecase-arrow')).toContain('grid-area: arrow');
   });
 
+  test('the use-case title keeps its weight and leading, not only its tracking', () => {
+    const title = topLevelRuleBody(landing, '.v2-landing__usecase-title');
+    expect(title).toContain('font-weight: 800');
+    expect(title).toContain('line-height: 24px');
+  });
+
   test('the marketplace case is gone from the page and from both locales', () => {
     expect(landingTsx).not.toContain('app-marketplace');
     for (const locale of ['en.json', 'zh-CN.json']) {
