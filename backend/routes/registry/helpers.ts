@@ -469,6 +469,8 @@ const buildAgentInstallationPayload = (installation: any, {
       presetId: normalizedConfig.presetId || null,
       customizations: normalizedConfig.customizations || null,
       heartbeat: normalizedConfig.heartbeat || null,
+      wakeOnMessage: normalizedConfig.wakeOnMessage || null,
+      boardWake: normalizedConfig.boardWake || null,
       autonomy: normalizedConfig.autonomy || null,
       errorRouting: normalizedConfig.errorRouting || null,
       heartbeatChecklist: normalizedConfig.heartbeatChecklist || '',
