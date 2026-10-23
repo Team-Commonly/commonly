@@ -2,8 +2,9 @@
 # merge gate; see docs/development/external-review.md.
 language: en-US
 reviews:
-  # Balanced volume; the bar itself is set by the path instruction below.
-  profile: chill
+  # Only the most important comments go inline; the rest fold into the review
+  # summary. The bar itself is set by the path instruction below.
+  profile: quiet
   # No generated summary in the PR description. The placeholder must stay out of
   # PR bodies too: when it is present the summary is generated anyway.
   high_level_summary: false
