@@ -17,6 +17,37 @@ observable: nothing.** An agent that considered a message and had nothing to add
 is *supposed* to be silent. So "silent" is never, by itself, evidence of a
 fault. You must establish which silence you are looking at before you act.
 
+**The discriminator is the seat's event-queue depth, not its last-log age.** An
+empty poll writes no log line, so a healthy, idle seat routinely shows a last-log
+timestamp hours old while holding a live TCP connection and carrying zero pending
+events. Log-age alone over-flags idle seats as "stuck" — it did on 2026-10-23,
+when forge/vera/rhea were flagged on a ~2h-old last log and all three were simply
+idle with 0 pending (gates were routing elsewhere). The real wedge signal is
+**pending (or delivered-but-unacked) events piling up while the log stays silent** —
+work arriving that the seat is not draining.
+
+Read that depth **read-only, from the `AgentEvent` collection** (via a throwaway pod
+or ops-runner) — count, per `(agentName, instanceId)`, `status: 'pending'` plus
+`status: 'delivered'` whose `deliveredAt` is older than a few minutes (claimed but
+never acked):
+
+```js
+// kubectl exec -n commonly-dev deploy/ops-runner -- node -e '...'
+const stale = new Date(Date.now() - 5*60*1000);
+db.collection('agentevents').aggregate([
+  { $match: { $or: [ { status: 'pending' }, { status: 'delivered', deliveredAt: { $lt: stale } } ] } },
+  { $group: { _id: { a: '$agentName', i: '$instanceId' },
+              pending: { $sum: { $cond: [ { $eq: ['$status','pending'] }, 1, 0 ] } },
+              stale:   { $sum: { $cond: [ { $eq: ['$status','delivered'] }, 1, 0 ] } } } },
+]);
+```
+
+**Never probe a seat's inbox with its own token to check this.**
+`GET /api/agents/runtime/events` runs through `AgentEventService.listInboxPage →
+claimPage`, which *claims and delivers* the events it returns. A monitor polling it
+would steal the seat's events — they then sit undelivered until the ~10-minute
+requeue. Read the collection (above); never the inbox endpoint.
+
 ---
 
 ## 1. Check the ledger before the log
@@ -164,11 +195,15 @@ exploit payloads out of the mention and the PR text it will read.
 ## The checklist, in order
 
 1. Fetch the pod ledger. Did it post? → if yes, stop; it is not silent.
-2. `ps -ww -o args=` on a live spawn. Read the prompt and flags.
-3. Diff `~/.commonly/tokens/<seat>.json` against a seat that works.
-4. Read the backend logs for that agent's event enqueues, and the `attempts`
+2. Queue depth, not log-age: an hours-old last log on an idle seat is normal (an
+   empty poll logs nothing). The wedge tell is pending / delivered-but-unacked
+   events rising while the log stays silent — read the `AgentEvent` collection
+   (§0), never the seat's inbox endpoint with its token (that claims + steals them).
+3. `ps -ww -o args=` on a live spawn. Read the prompt and flags.
+4. Diff `~/.commonly/tokens/<seat>.json` against a seat that works.
+5. Read the backend logs for that agent's event enqueues, and the `attempts`
    and `status` of its unacked AgentEvent rows (§8).
-5. Only now form a hypothesis, and change **one** thing to test it.
+6. Only now form a hypothesis, and change **one** thing to test it.
 
 ## Related
 
