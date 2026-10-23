@@ -18,6 +18,7 @@ let ioRef: SocketIOLike | null = null;
 
 export type TaskEventKind = 'created' | 'updated' | 'deleted';
 const MAX_NAMED_ITEMS = 5;
+const MAX_ASSIGNED_ROWS = 5;
 
 export interface TaskEventPayload {
   podId: string;
@@ -200,7 +201,7 @@ export async function notifyPodAgents(
     if (!installs.length) return;
 
     const taskId = String(task.taskId || task.id || task._id || 'unknown');
-    const title = String(task.title || '(untitled)');
+    const title = String(task.title || '(untitled)').replace(/\s+/g, ' ');
 
     const buildContent = (extraChanges: number, assignedRows: Array<Record<string, unknown>>): string => [
       extraChanges > 0
@@ -213,7 +214,7 @@ export async function notifyPodAgents(
           const updates = row.updates as Array<{ text?: string }> | undefined;
           const latest = updates?.[updates.length - 1]?.text;
           const change = latest || (String(row.taskId) === taskId ? kind : 'current assignment');
-          return `- ${String(row.taskId)} — ${String(row.title || '(untitled)').slice(0, 80)} [${String(row.status)}] — ${String(change).replace(/\s+/g, ' ').slice(0, 120)}`;
+          return `- ${String(row.taskId)} — ${String(row.title || '(untitled)').replace(/\s+/g, ' ').slice(0, 80)} [${String(row.status)}] — ${String(change).replace(/\s+/g, ' ').slice(0, 120)}`;
         }),
       ] : []),
       '',
@@ -264,10 +265,12 @@ export async function notifyPodAgents(
         // The compound (podId, assignee, status) index bounds this lookup.
         let assignedRows: Array<Record<string, unknown>> = [];
         try {
+          const assignees = instanceId === 'default' || instanceId === agentName
+            ? [agentName] : [agentName, instanceId];
           assignedRows = await Task.find(
-            { podId: normalizedPodId, assignee: agentName, status: { $in: ['pending', 'claimed'] } },
+            { podId: normalizedPodId, assignee: { $in: assignees }, status: { $in: ['pending', 'claimed'] } },
             { taskId: 1, title: 1, status: 1, updatedAt: 1, updates: { $slice: -1 } },
-          ).sort({ updatedAt: -1, _id: -1 }).limit(MAX_NAMED_ITEMS).lean();
+          ).sort({ updatedAt: -1, _id: -1 }).limit(MAX_ASSIGNED_ROWS).lean();
         } catch (err) {
           // A listing failure must not turn the entire board wake into silence.
           console.warn(`[task-event] assigned rows lookup failed for ${agentName}:`, (err as Error).message);
