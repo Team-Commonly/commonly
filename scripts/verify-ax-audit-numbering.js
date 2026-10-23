@@ -13,10 +13,13 @@
  *   1. every `## N.` entry heading has a unique number
  *   2. no heading sits with no body before the next heading (an empty stub is
  *      how a duplicate hides in plain sight)
+ *   3. every number from 1 to the highest is present, unless it is listed in
+ *      DOCUMENTED_GAPS. A skipped number on a new entry is how a reader later
+ *      mistakes a missing entry for a deleted one.
  *
- * Deliberately NOT checked: density. The file is not dense (entries 39-40 and
- * 44-46 are absent) and entries are appended in whatever order they were
- * written, so neither a gap nor a descending run is a defect here.
+ * Deliberately NOT checked: order. Entries are appended in whatever order they
+ * were written, so a descending run is not a defect here. Adding a gap means
+ * adding its number to DOCUMENTED_GAPS with a reason.
  *
  * Usage: node scripts/verify-ax-audit-numbering.js [path]
  */
@@ -27,15 +30,22 @@ const path = require('path');
 const DEFAULT_FILE = path.join(__dirname, '..', 'docs', 'development', 'agent-experience-audit.md');
 const HEADING = /^## (\d+)\. /;
 
+// Numbers that were never written. 39-40 and 44-46 predate this guard.
+const DOCUMENTED_GAPS = new Set([39, 40, 44, 45, 46]);
+
 function checkAuditNumbering(text) {
   const problems = [];
   const lines = text.split('\n');
   const seen = new Map();
   const headings = [];
+  let max = 0;
 
   lines.forEach((line, i) => {
     const m = HEADING.exec(line);
-    if (m) headings.push({ number: m[1], line: i + 1 });
+    if (m) {
+      headings.push({ number: m[1], line: i + 1 });
+      max = Math.max(max, Number(m[1]));
+    }
   });
 
   headings.forEach(({ number, line }, idx) => {
@@ -52,6 +62,12 @@ function checkAuditNumbering(text) {
       problems.push(`entry ${number} (line ${line}) has no body before the next heading`);
     }
   });
+
+  for (let k = 1; k <= max; k += 1) {
+    if (!seen.has(String(k)) && !DOCUMENTED_GAPS.has(k)) {
+      problems.push(`entry ${k} is missing and is not a documented gap (highest entry is ${max})`);
+    }
+  }
 
   return { entries: headings.length, problems };
 }
