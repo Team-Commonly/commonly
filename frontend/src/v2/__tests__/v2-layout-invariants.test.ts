@@ -2959,18 +2959,20 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     expect(hover['border-color']).toBe('var(--v2-ink-hover)');
   });
 
-  test('the chosen mode card is a 2px accent border that holds its box (item 2)', () => {
-    const base = cssDeclarations(ruleBody(v2, '.v2-byo__mode'));
+  test('the mode cards keep button-specific card styling (item 2)', () => {
+    const base = cssDeclarations(ruleBody(v2, '.v2-root button.v2-byo__mode'));
     expect(base['border-radius']).toBe('4px');
     // The 1px-per-side compensation is derived from the base shorthand, so it is
     // pinned to it rather than restated as a magic number.
     expect(base.padding).toBe('16px 18px 14px');
 
     const pressed = cssDeclarations(
-      ruleBody(v2, '.v2-byo__mode[aria-pressed="true"]'),
+      ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"]'),
     );
     expect(pressed.border).toBe('2px solid var(--v2-accent)');
     expect(pressed.padding).toBe('15px 17px 13px');
+    expect(v2).toContain('.v2-root button.v2-byo__mode:hover');
+    expect(v2).toContain('.v2-root button.v2-byo__mode:focus-visible');
     // (c) the ring belongs to :focus-visible, and a ring here is the defect.
     expect(pressed['box-shadow']).toBeUndefined();
     expect(
@@ -2984,7 +2986,7 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     expect(kicker['text-transform']).toBeUndefined();
     expect(kicker.color).toBe('var(--v2-text-muted)');
     const chosen = cssDeclarations(
-      ruleBody(v2, '.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker'),
+      ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker'),
     );
     expect(chosen.color).toBe('var(--v2-accent-text)');
     // The caps were data, not only CSS, so the data is where they must not come

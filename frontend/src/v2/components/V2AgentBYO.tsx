@@ -936,7 +936,7 @@ const V2AgentBYO: React.FC = () => {
                   <span className="v2-byo__hint">{t('agentByo.mode.hostedHint', { turns: hosting.caps.turnsPerDay })}</span>
                 </button>
                 <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.hosted') })}>
-                  {t('agentByo.mode.hostedMeta')}
+                  {t('agentByo.mode.hostedMeta', { turns: hosting.caps.turnsPerDay })}
                 </V2Hint>
               </div>
               {machines.length > 0 && (

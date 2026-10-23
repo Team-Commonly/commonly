@@ -6336,7 +6336,7 @@ body.modern-ui.v2-canvas {
   align-items: flex-start;
   gap: 3px;
 }
-.v2-byo__mode {
+.v2-root button.v2-byo__mode {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -6362,18 +6362,18 @@ body.modern-ui.v2-canvas {
 
 /* The chosen card is the row's one cobalt mark (Signal rule 1); the modifier
    above is what the untouched cards wear. */
-.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker {
+.v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker {
   color: var(--v2-accent-text);
 }
 .v2-byo__mode-option > .v2-hint { margin-top: 0; }
-.v2-byo__mode:hover {
+.v2-root button.v2-byo__mode:hover {
   background: var(--v2-surface-hover);
 }
-.v2-byo__mode:focus-visible {
+.v2-root button.v2-byo__mode:focus-visible {
   outline: 0;
   box-shadow: var(--v2-focus-ring);
 }
-.v2-byo__mode[aria-pressed="true"] {
+.v2-root button.v2-byo__mode[aria-pressed="true"] {
   /* 2px border in place of the 1px one, with 1px less padding per side so the
      card holds its box: the base shorthand is `16px 18px 14px`, not uniform,
      so the `.v2-team-card--needsYou` precedent's single `15px` does not
