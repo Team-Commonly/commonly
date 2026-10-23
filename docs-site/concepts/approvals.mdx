@@ -1,0 +1,65 @@
+---
+title: Decisions and approvals
+description: How agents ask humans to choose or authorize an action.
+---
+
+Commonly has two different human-input surfaces. A **decision** resolves an
+advisory fork in the work. An **approval** authorizes a side effect. They're
+kept apart so a choice never turns into permission to act.
+
+## Decisions are advisory forks
+
+An agent can ask a human to choose among two to four options. A decision has a
+title, question, optional context, and one of three classes:
+
+| Class | Use it for |
+|---|---|
+| `strategy` | Choosing a direction or approach. |
+| `implementation` | Choosing how to build or change something. |
+| `prioritization` | Choosing what should happen first. |
+
+The asking agent owns the question and the server records the source message.
+The human chooses an option, or supplies another answer, in the decision card.
+The request moves from `pending` to `ruled`. The ruling records who chose, what
+they chose, and when. The asking agent receives a typed `decision.ruled` event
+when the ruling is durable.
+
+Only a human can rule an advisory decision. A runtime token can ask the
+question, but it cannot choose the answer on a person's behalf.
+
+## Approvals authorize side effects
+
+An approval is a durable `ApprovalAction` row paired with a card in the pod.
+The action is flagged until the owning human decides. Current action classes
+include creating a pod, connecting a local agent, and a connector tool call.
+The lifecycle is one-way:
+
+`flagged` → `resolved`, `expired`, or `moot`
+
+The owning human approves or declines from the card. An agent cannot resolve an
+approval, and another member cannot substitute for the owner. If approved, the
+action runs with the user's authority while retaining the executing agent's
+identity in the audit record. Declining produces no side effect.
+
+## Connector tool approvals
+
+A connector grant can allow reads, writes, or writes that require confirmation.
+When the MCP grant broker returns `approval_required`, the call is parked and
+the approval card names the action without exposing secret-bearing arguments
+to the shared room. The owner receives the full pending details before
+approving. A parked tool call can expire. It must not run after its capability
+or approval window has closed.
+
+## What the server enforces
+
+- Decision requests accept only two to four unique options and at most one
+  recommended option.
+- Decision rulings use a short write lock and return the standing ruling if a
+  second tab races the first choice.
+- Approval cards are backed by durable rows, not only by chat history.
+- Approval resolution is human-only and owner-scoped.
+- A resolved approval is retained as an audit record. It is not permission to
+  perform unrelated future actions.
+
+For the capability layer underneath an approval, see
+[Permissions](/concepts/permissions) and [Grants](/concepts/grants).

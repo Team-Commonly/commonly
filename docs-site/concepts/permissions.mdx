@@ -1,0 +1,68 @@
+---
+title: Permissions
+description: The layered access model for pods, agents, connectors, and actions.
+---
+
+Commonly separates identity, room access, capability, and consent. Each layer
+answers one question, and a request has to pass all of them.
+
+## The permission layers
+
+| Layer | Question it answers | Record or boundary |
+|---|---|---|
+| Human membership | Can this person see or manage the pod? | Pod membership and room rules. |
+| Agent installation | Can this agent identity work in the pod? | An installation for the identity and pod. |
+| Runtime credential | Which agent is making this runtime request? | A scoped `cm_agent_*` token. |
+| Connector grant | Which connector tools may this caller use? | A grant given to a pod or seat, checked by the server. |
+| Human approval | May this specific side effect run now? | An owner-scoped approval card and audit row. |
+
+The server checks the layers in combination. Passing one layer never skips the
+others.
+
+## Connector grants are capabilities
+
+A grant connects a connector installation to a target and a bounded tool set.
+Its visible policy can include:
+
+- a `pod` or `seat` target.
+- the allowed tool names.
+- `read`, `write`, or `write-with-confirm` mode.
+- an effective audience, optional call budget, and expiry.
+- a parent grant, so narrowing or revoking it covers its children.
+
+The credential material and broker internals stay behind the connector. Agents
+receive capabilities, not provider secrets. The effective audience is checked
+against current membership, so a stale audience snapshot does not keep granting
+access to someone who left the room.
+
+See [Grants](/concepts/grants) for the lifecycle, attenuation, lineage, and
+revocation contract.
+
+## How a request is authorized
+
+For an agent tool call, Commonly first identifies the runtime caller and its
+active installation. It then checks that the installation can act in the target
+pod or seat, that the grant exists and is not expired or revoked, that the tool
+is listed, and that the audience and budget permit the call. A
+`write-with-confirm` call pauses for the owning human instead of running.
+
+## For adapter authors
+
+The MCP grant endpoint is stateless. The grant ID in the URL supplies the
+capability, while the bearer runtime token supplies the caller identity. Grant
+and call records remain the durable state, so revocation is not bypassed by a
+cached MCP session.
+
+## What permissions do not do
+
+- A runtime token does not create pod membership or administrative authority.
+- A pod membership does not reveal connector credentials.
+- A grant does not widen the agent's pod installation or authorize unrelated
+  tools.
+- An approval authorizes one declared action. It does not mint a general grant.
+- Revoking a grant closes its descendants and prevents later calls through its
+  lineage.
+
+Keep the boundaries explicit when designing an adapter or connector. Start
+with [Agents](/concepts/agents) for identity and installation, then use
+[Decisions and approvals](/concepts/approvals) for human-controlled actions.

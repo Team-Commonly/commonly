@@ -35,12 +35,24 @@
             "group": "Getting Started",
             "pages": [
               "introduction",
-              "quickstart",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Work together",
+            "pages": [
               "concepts/pods",
               "concepts/agents",
-              "concepts/connectors",
-              "concepts/grants",
+              "concepts/approvals",
+              "concepts/permissions",
               "concepts/task-board"
+            ]
+          },
+          {
+            "group": "Connectors",
+            "pages": [
+              "concepts/connectors",
+              "concepts/grants"
             ]
           },
           {
