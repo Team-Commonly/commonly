@@ -10,6 +10,9 @@ export interface V2Start {
   label: string;
   href?: string;
   action?: string;
+  // Present only on Scout's server-composed first-task proposal.
+  title?: string;
+  sourceRef?: string;
   // The first read omits caps; the thread shows them after the hosted start is live.
   caps?: { agentsPerUser: number; turnsPerDay: number };
 }
@@ -78,8 +81,7 @@ export interface V2Message {
     kind?: string;
     // kind 'starts': offers rendered as buttons under the message (first
     // session, direction B). A plain start sends its label as the person's own
-    // message; `href` (an in-app /v2/ path) navigates, and `action: 'invite'`
-    // opens the pod's invite dialog (a new pod's next steps, 2026-10-15).
+    // message; `href` navigates in-app, and supported actions act in place.
     starts?: V2Start[];
     approvalId?: string;
     actionType?: string;

@@ -139,7 +139,7 @@ describe('approving a proposal wakes the agent that proposed it', () => {
     expect(mockEnqueue.mock.calls[0][0].payload.content).toContain('The pod "Design Studio" now exists (pod-new).');
   });
 
-  test('create_pod: once the agent joined and posted the next steps, the cue says so and asks for one line', async () => {
+  test('create_pod: once Scout asked the project question, the cue points there in one line', async () => {
     mockPodCreate.mockResolvedValue({ _id: 'pod-new', name: 'Design Studio' });
     mockInstallFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ displayName: 'Scout', config: {} }) });
     mockInstallUpsert.mockResolvedValue({});
@@ -147,14 +147,15 @@ describe('approving a proposal wakes the agent that proposed it', () => {
     await decide('approved', { actionType: 'create_pod', params: { name: 'Design Studio', type: 'chat' }, summary: 'Create a pod for design work' });
     expect(jest.requireMock('../../../services/agentMessageService').postMessage).toHaveBeenCalledTimes(1);
     const cue = mockEnqueue.mock.calls[0][0].payload.content;
-    expect(cue).toContain('already posted there as buttons');
+    expect(cue).toContain('asked for a repo link or weekly workflow');
+    expect(cue).toContain('will propose one first task');
     expect(cue).toMatch(/one short line/);
   });
 
-  test('create_pod: an agent that could not join posted nothing, and the cue claims no posted steps', async () => {
+  test('create_pod: an agent that could not join posted nothing, and the cue claims no prompt', async () => {
     mockPodCreate.mockResolvedValue({ _id: 'pod-new', name: 'Design Studio' });
     await decide('approved', { actionType: 'create_pod', params: { name: 'Design Studio', type: 'chat' }, summary: 'Create a pod for design work' });
-    expect(mockEnqueue.mock.calls[0][0].payload.content).not.toContain('already posted there as buttons');
+    expect(mockEnqueue.mock.calls[0][0].payload.content).not.toContain('asked for a repo link');
   });
 
   test('a failed execution still wakes the proposer, with the failure to explain', async () => {

@@ -184,6 +184,29 @@ describe('AgentMentionService', () => {
     expect(res.enqueued).toEqual(['openclaw']);
   });
 
+  test('a structured first-task reply still delivers only the explicitly mentioned agent', async () => {
+    AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([
+      { agentName: 'openclaw', instanceId: 'scout', displayName: 'Scout' },
+      { agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' },
+    ]) });
+    AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+    Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type: 'team', members: ['user-1'] }) });
+
+    const result = await AgentMentionService.enqueueMentions({
+      podId: 'pod-1', userId: 'user-1', username: 'alice',
+      message: { id: 'first-answer', content: '@scout @aria please review tickets weekly' },
+      onlyExplicitMentions: true,
+      suppressImplicitReplyTarget: { agentName: 'openclaw', instanceId: 'scout' },
+    });
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      agentName: 'openclaw', instanceId: 'aria', type: 'chat.mention',
+    }));
+    expect(maybeFireWelcomeWake).not.toHaveBeenCalled();
+    expect(result.woken).toEqual([]);
+  });
+
   describe('implicit reply mentions', () => {
     const setupReplyTarget = ({ installed = true } = {}) => {
       AgentInstallation.find.mockReturnValue({

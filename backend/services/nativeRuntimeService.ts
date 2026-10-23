@@ -340,7 +340,8 @@ export const TOOLS = [
           params: {
             type: 'object',
             description: 'Action parameters. For create_pod: { name (required), description?, '
-              + 'type? ("chat"|"team") }. For connect_local_agent: { name (required — '
+              + 'type? ("chat"|"team"), locale? ("en"|"zh-CN", the person\'s language) }. '
+              + 'For connect_local_agent: { name (required — '
               + 'lowercase letters/digits/dashes, e.g. "sams-claude"), adapter? ("claude" for '
               + 'Claude Code, "codex" for Codex: what they told you they run) }',
             properties: {
@@ -348,6 +349,7 @@ export const TOOLS = [
               adapter: { type: 'string', enum: ['claude', 'codex'] },
               description: { type: 'string' },
               type: { type: 'string', enum: ['chat', 'team'] },
+              locale: { type: 'string', enum: ['en', 'zh-CN'] },
             },
           },
         },

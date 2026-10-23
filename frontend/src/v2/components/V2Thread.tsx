@@ -241,6 +241,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [addedFirstTaskMessages, setAddedFirstTaskMessages] = useState<Set<string>>(new Set());
+  const [firstTaskError, setFirstTaskError] = useState<string | null>(null);
+  const addingFirstTaskRef = useRef<Set<string>>(new Set());
   const [justCreatedPodId, setJustCreatedPodId] = useState<string | null>(null);
   const [starterInviteUrl, setStarterInviteUrl] = useState('');
   const [starterInviteLoading, setStarterInviteLoading] = useState(false);
@@ -373,6 +376,36 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // the agent was live, an offer the beta's one slot can no longer honour.
   const viewerHoldsHostedAgent = hostedStart.state?.status === 'live'
     || agentStates.some((agent) => agent.isOwner && agent.hosted);
+  const firstTaskProposalIds = messages
+    .filter((message) => message.payload?.kind === 'starts'
+      && message.payload.starts?.some((start) => start.action === 'add-first-task'))
+    .map((message) => String(message.id));
+  const firstTaskProposalKey = firstTaskProposalIds.join(',');
+  useEffect(() => {
+    if (!pod?._id || !firstTaskProposalKey || !viewerOwnsPod) return;
+    let active = true;
+    void api.get<{ tasks: Array<{ title?: string; sourceRef?: string }> }>(
+      `/api/v1/tasks/${encodeURIComponent(pod._id)}`,
+    ).then(({ tasks }) => {
+      if (!active || !Array.isArray(tasks)) return;
+      const existing = new Set(tasks.map((task) => `${task.sourceRef || ''}\u0000${task.title || ''}`));
+      setAddedFirstTaskMessages((previous) => {
+        const next = new Set(previous);
+        messages.forEach((message) => {
+          message.payload?.starts?.forEach((start) => {
+            if (start.action !== 'add-first-task' || !start.title) return;
+            const ref = start.sourceRef || `scout-first-task:${message.id}`;
+            if (existing.has(`${ref}\u0000${start.title}`)) next.add(String(message.id));
+          });
+        });
+        return next.size === previous.size ? previous : next;
+      });
+    }).catch(() => {});
+    return () => { active = false; };
+  // The message IDs identify proposal set changes; ordinary chat messages do
+  // not need to refetch the board.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, pod?._id, firstTaskProposalKey, viewerOwnsPod]);
   const startsByMessageId = useMemo(() => {
     // A start that navigates must stay inside the app: an in-app /v2/ path
     // only, never a protocol-relative or absolute URL from a payload. A start
@@ -380,6 +413,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     const isUsableStart = (start: V2Start) => {
       if (start.id === 'run-hosted' && viewerHoldsHostedAgent) return false;
       if (start.href !== undefined) return /^\/v2\/[^/\\]/.test(start.href);
+      if (start.action === 'add-first-task') return viewerOwnsPod && Boolean(start.title);
       if (start.action !== undefined) return start.action === 'invite' && Boolean(onOpenInvite);
       return true;
     };
@@ -392,11 +426,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         .filter((later) => later.user_id === viewerId)
         .map((later) => (later.content || '').trim()));
       const open = offered.filter((start) => start && start.label && isUsableStart(start)
+        && !(start.action === 'add-first-task' && addedFirstTaskMessages.has(String(message.id)))
         && !sentSince.has(start.label));
       if (open.length > 0) byMessage.set(String(message.id), open);
     });
     return byMessage;
-  }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent]);
+  }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages]);
 
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
@@ -1727,6 +1762,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
 
         <V2CatchUpStrip podId={pod._id} />
 
+        {firstTaskError && <div className="v2-chat__error" role="alert">{firstTaskError}</div>}
         <div className="v2-thread__transcript">
           <V2ThreadMessages
             messages={messages}
@@ -1745,6 +1781,20 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             onThread={isReadOnly ? undefined : aimAtMessageThread}
             startsByMessageId={isReadOnly ? undefined : startsByMessageId}
             onStart={isReadOnly ? undefined : (start, messageId) => {
+              if (start.action === 'add-first-task' && viewerOwnsPod && start.title) {
+                if (addingFirstTaskRef.current.has(messageId) || addedFirstTaskMessages.has(messageId)) return;
+                addingFirstTaskRef.current.add(messageId);
+                setFirstTaskError(null);
+                void api.post(`/api/v1/tasks/${encodeURIComponent(pod._id)}`, {
+                  title: start.title,
+                  sourceRef: start.sourceRef || `scout-first-task:${messageId}`,
+                }).then(() => {
+                  setAddedFirstTaskMessages((previous) => new Set(previous).add(messageId));
+                }).catch(() => {
+                  setFirstTaskError(t('podChat.firstTask.addFailed'));
+                }).finally(() => { addingFirstTaskRef.current.delete(messageId); });
+                return;
+              }
               if (start.action === WELCOME_HOSTED_ACTION && viewerOwnsPod) {
                 void hostedStart.run(messageId, start);
                 return;

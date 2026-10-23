@@ -449,6 +449,7 @@
     }
   },
   "podChat": {
+    "firstTask": { "addFailed": "Couldn’t add the task. Try again." },
     "starts": {
       "label": "Ways to start"
     },

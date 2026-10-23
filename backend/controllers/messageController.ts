@@ -199,6 +199,7 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       members: Array<{ toString(): string }>;
       type?: string;
       createdBy?: { toString(): string };
+      firstTaskOnboarding?: { stage?: string; agentName?: string; instanceId?: string };
     } | null;
     if (!pod) {
       res.status(404).json({ msg: 'Pod not found' });
@@ -348,6 +349,23 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       message = normalizeMongo(populated || mongoMsg);
     }
 
+    // Scout's first-task proposal is a deterministic handoff tied to the pod
+    // creator's answer. It is best effort: a failed fetch/post must not turn
+    // the person's already-persisted message into a failed send.
+    let firstTaskProposed = false;
+    if (pod.firstTaskOnboarding?.stage === 'awaiting-input'
+      && String(pod.createdBy || '') === userIdStr) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        const { proposeNewPodFirstTask } = require('../services/newPodFirstTaskService');
+        firstTaskProposed = await proposeNewPodFirstTask({ podId, userId: userIdStr, content: messageContent || '' });
+      } catch (firstTaskErr) {
+        console.warn('[messageController] first-task proposal failed:', (firstTaskErr as Error).message);
+      }
+    }
+
+    // The proposal owns Scout's implicit reply, but explicit mentions in the
+    // person's message still need normal delivery to their target agents.
     const responseMessage = await deliverMessageToAgents({
       podId,
       podType: pod.type,
@@ -358,6 +376,10 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       // the existing enqueueMentions contract; the legacy PG route omits the
       // field altogether because it cannot receive one.
       replyToMessageId: replyToMessageId || null,
+      onlyExplicitMentions: firstTaskProposed,
+      suppressImplicitReplyTarget: firstTaskProposed && pod.firstTaskOnboarding?.agentName
+        ? { agentName: pod.firstTaskOnboarding.agentName, instanceId: pod.firstTaskOnboarding.instanceId }
+        : undefined,
     });
 
     // Live-broadcast the new message to every connected client in this pod's

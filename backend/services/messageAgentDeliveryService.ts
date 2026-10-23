@@ -24,6 +24,7 @@ interface DeliveryOptions<T extends MessageForAgentDelivery> {
   // generic reply-edge event from waking that same agent a second time.
   suppressImplicitReply?: boolean;
   suppressImplicitReplyTarget?: { agentName: string; instanceId?: string };
+  onlyExplicitMentions?: boolean;
 }
 
 interface AgentDelivery {
@@ -62,6 +63,7 @@ export const deliverMessageToAgents = async <T extends MessageForAgentDelivery>(
   replyToMessageId,
   suppressImplicitReply = false,
   suppressImplicitReplyTarget,
+  onlyExplicitMentions = false,
 }: DeliveryOptions<T>): Promise<DeliveredMessage<T>> => {
   const username = authorUsername(message, requestUser);
 
@@ -79,6 +81,7 @@ export const deliverMessageToAgents = async <T extends MessageForAgentDelivery>(
     ...(replyToMessageId !== undefined ? { replyToMessageId } : {}),
     ...(suppressImplicitReply ? { suppressImplicitReply: true } : {}),
     ...(suppressImplicitReplyTarget ? { suppressImplicitReplyTarget } : {}),
+    ...(onlyExplicitMentions ? { onlyExplicitMentions: true } : {}),
   };
   const mentionResult = await AgentMentionService.enqueueMentions(mentionOptions);
   let agentsInPod = 0;

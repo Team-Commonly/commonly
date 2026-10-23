@@ -59,6 +59,9 @@ interface EnqueueMentionsOptions {
   // reply-edge wake. Explicit mentions and ambient delivery still work.
   suppressImplicitReply?: boolean;
   suppressImplicitReplyTarget?: MentionTarget;
+  // A server-owned structured response already handled the input. Preserve
+  // addressed @mentions without a second welcome, adjacent, or ambient wake.
+  onlyExplicitMentions?: boolean;
   message: {
     content?: string;
     text?: string;
@@ -1551,6 +1554,7 @@ const enqueueMentions = async ({
   replyToMessageId,
   suppressImplicitReply = false,
   suppressImplicitReplyTarget,
+  onlyExplicitMentions = false,
 }: EnqueueMentionsOptions): Promise<EnqueueResult> => {
   const rawContent = message?.content || message?.text || '';
   const source = message?.source || 'chat';
@@ -1579,6 +1583,9 @@ const enqueueMentions = async ({
     return {
       enqueued: [], implicit: [], skipped: [], woken: [],
     };
+  }
+  if (onlyExplicitMentions && rawMentions.length === 0) {
+    return { enqueued: [], implicit: [], skipped: [], woken: [] };
   }
   // "Routed" means the message already names its recipient — an @mention, or
   // a reply that the #703 path resolves. Everything else reaches nobody, and
@@ -1626,7 +1633,7 @@ const enqueueMentions = async ({
   // an agent's first post in a pod would otherwise seed a wake loop, the same
   // reasoning that gates the #703 implicit path on `isBot === false`.
   let welcomeWoke: string[] = [];
-  if (sender?.isBot === false) {
+  if (!onlyExplicitMentions && sender?.isBot === false) {
     try {
       const welcome = await maybeFireWelcomeWake({
         podId,
@@ -2120,7 +2127,7 @@ const enqueueMentions = async ({
   // does not repeat an @mention. Bot replies are deliberately excluded: if
   // A's reply to B implicitly notified B (and vice versa), two agents could
   // ping-pong forever despite the existing self-mention guard.
-  if (replyToMessageId && sender?.isBot === false) {
+  if (!onlyExplicitMentions && replyToMessageId && sender?.isBot === false) {
     try {
       const target = await resolveImplicitReplyTarget(replyToMessageId, message, installations);
       if (target && !enqueuedIdentityKeys.has(identityKey(target))) {
@@ -2182,12 +2189,14 @@ const enqueueMentions = async ({
   // chat.mention, while the ambient companion has no stronger claim here than
   // it does on an unrouted message.
   let woken: string[] = [];
-  try {
-    woken = await enqueueWakeOnMessage({
-      podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: enqueuedIdentityKeys, authorFrame, resolvedBotUserIds, replyToMessageId,
-    });
-  } catch (error) {
-    console.warn('[wake-on-message] fan-out failed:', (error as Error).message);
+  if (!onlyExplicitMentions) {
+    try {
+      woken = await enqueueWakeOnMessage({
+        podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: enqueuedIdentityKeys, authorFrame, resolvedBotUserIds, replyToMessageId,
+      });
+    } catch (error) {
+      console.warn('[wake-on-message] fan-out failed:', (error as Error).message);
+    }
   }
 
   return {

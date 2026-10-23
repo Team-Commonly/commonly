@@ -26,7 +26,7 @@ interface V2ThreadMessagesProps {
   onReply?: (message: V2Message) => void;
   onThread?: (message: V2Message) => void;
   // Scout's starts, keyed by the message that offers them; already filtered to
-  // the ones this person has not sent (V2Thread). A click sends the label.
+  // the ones still available to this person (V2Thread).
   startsByMessageId?: Map<string, V2Start[]>;
   onStart?: (start: V2Start, messageId: string) => void;
   startsDisabled?: boolean;

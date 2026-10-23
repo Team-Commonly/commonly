@@ -643,8 +643,8 @@ const describeApprovedOutcome = (row: IApprovalAction): string => {
       ? ` You could not be added to it: ${String(result.agentJoinError).slice(0, 200)}.`
       : '';
     const stepsNote = result.nextStepsPosted
-      ? ' Its next steps are already posted there as buttons: connect an agent to that pod, or invite a teammate.'
-        + ' Point them to the new pod in one short line; do not list the steps again.'
+      ? ' Scout has asked for a repo link or weekly workflow there and will propose one first task.'
+        + ' Point them to the new pod in one short line; do not repeat the prompt.'
       : '';
     const pod = `The pod "${String(result.podName || '')}" now exists (${String(result.podId || '')}).`;
     return `${pod}${joinNote}${stepsNote}`;
@@ -1138,18 +1138,13 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
 };
 
 /**
- * A new pod's first message offers its two next steps as buttons (2026-10-15).
- * A pod becomes a team when a second person and their agent arrive. Left to
- * free text, the proposer's reply pointed only at the task board, and the
- * first outside signup from outreach stopped exactly there. Server-composed,
- * the #2194 way, so the offers are structure and never model prose:
- * - connect an agent into THIS pod: the Bring your own link, aimed at it;
- * - invite a teammate: the pod's own invite dialog.
+ * The first outside project signup stopped at a prompt to put a task on the
+ * board. Scout now asks for one repo or workflow and the owner's answer
+ * produces a server-composed task proposal with two actionable buttons.
  * Never fatal: the pod exists either way, and the proposer's reply still lands.
  */
-export const NEW_POD_NEXT_STEPS_TEXT = 'This pod is ready. Two ways to get it going: '
-  + 'bring in an agent you already use, or invite a teammate. '
-  + 'Or @mention me with a first task and I\'ll put it on the board.';
+export const NEW_POD_NEXT_STEPS_TEXT = 'Which GitHub repo or weekly workflow should we start with? '
+  + 'I’ll suggest one first task.';
 
 const postNewPodNextSteps = async (
   row: IApprovalAction,
@@ -1157,8 +1152,9 @@ const postNewPodNextSteps = async (
   displayName: string | undefined,
 ): Promise<boolean> => {
   try {
-    const seat = await suggestLocalAgentName('agent', row.ownerUserId).catch(() => null);
-    const href = `/v2/agents/byo?pod=${encodeURIComponent(podId)}${seat ? `&name=${encodeURIComponent(seat)}` : ''}`;
+    const params = (row.params || {}) as { locale?: string };
+    const locale = params.locale === 'zh-CN' || /\p{Script=Han}/u.test(row.summary || '') ? 'zh-CN' : 'en';
+    const href = `/v2/agents/byo?pod=${encodeURIComponent(podId)}`;
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AgentMessageService = require('./agentMessageService');
     await AgentMessageService.postMessage({
@@ -1166,15 +1162,17 @@ const postNewPodNextSteps = async (
       instanceId: String(row.instanceId || 'default'),
       podId,
       displayName,
-      content: NEW_POD_NEXT_STEPS_TEXT,
-      payload: {
-        kind: 'starts',
-        starts: [
-          { id: 'connect-agent-here', label: 'Connect an agent to this pod', href },
-          { id: 'invite-teammate', label: 'Invite a teammate', action: 'invite' },
-        ],
-      },
+      content: locale === 'zh-CN'
+        ? '先从哪个 GitHub 仓库或每周工作流程开始？我会建议第一项任务。'
+        : NEW_POD_NEXT_STEPS_TEXT,
+      payload: { kind: 'starts', starts: [{
+        id: 'bring-your-own', label: locale === 'zh-CN' ? '接入自己的智能体' : 'Bring your own', href,
+      }] },
     });
+    await Pod.updateOne({ _id: podId }, { $set: { firstTaskOnboarding: {
+      stage: 'awaiting-input', agentName: String(row.agentName),
+      instanceId: String(row.instanceId || 'default'), displayName, locale,
+    } } });
     return true;
   } catch (err) {
     console.warn('[approval] create_pod next steps not posted:', (err as Error).message);
