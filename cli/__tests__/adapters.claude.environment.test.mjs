@@ -294,6 +294,7 @@ describe('claude adapter — ctx.environment', () => {
 
   test('mounts skills.claude entries into <cwd>/.claude/skills/ as read-only copies', async () => {
     const { impl } = makeSpawnImpl();
+    const onSkillsLinked = jest.fn();
     const skillSrc = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-skill-'));
     fs.writeFileSync(path.join(skillSrc, 'SKILL.md'), 'x', 'utf8');
 
@@ -301,6 +302,7 @@ describe('claude adapter — ctx.environment', () => {
       sessionId: null,
       cwd,
       environment: { skills: { claude: [skillSrc] } },
+      onSkillsLinked,
       _spawnImpl: impl,
     });
 
@@ -310,6 +312,7 @@ describe('claude adapter — ctx.environment', () => {
     // guardrail was lost from cli 0.1.4 exactly this way).
     expect(fs.lstatSync(slot).isSymbolicLink()).toBe(false);
     expect(fs.readFileSync(path.join(slot, 'SKILL.md'), 'utf8')).toBe('x');
+    expect(onSkillsLinked).toHaveBeenCalledWith({ mounted: [skillSrc], conflicted: [] });
 
     fs.rmSync(skillSrc, { recursive: true, force: true });
   });

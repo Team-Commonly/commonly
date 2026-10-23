@@ -5,6 +5,9 @@ const Pod = require('../../models/Pod');
 const PodAsset = require('../../models/PodAsset');
 const User = require('../../models/User');
 const { AgentInstallation } = require('../../models/AgentRegistry');
+const AgentIdentityService = require('../../services/agentIdentityService');
+const { issueRuntimeTokenForAgent } = require('../../routes/registry/tokens');
+const agentsRuntimeRoutes = require('../../routes/agentsRuntime');
 const skillsRoutes = require('../../routes/skills');
 const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
@@ -22,6 +25,7 @@ describe('Skills Catalog Routes', () => {
     app = express();
     app.use(express.json());
     app.use('/api/skills', skillsRoutes);
+    app.use('/api/agents/runtime', agentsRuntimeRoutes);
 
     const user = await User.create({
       username: 'skilluser',
@@ -94,6 +98,13 @@ describe('Skills Catalog Routes', () => {
     expect(deniedAdd.status).toBe(403);
     expect(await PodAsset.countDocuments({ podId, type: 'skill', 'metadata.skillName': 'Review' })).toBe(0);
 
+    const admin = await User.create({ username: 'skilladmin', email: 'skilladmin@example.com', password: 'password123', role: 'admin' });
+    await Pod.updateOne({ _id: podId }, { $push: { members: admin._id } });
+    const adminToken = jwt.sign({ id: admin._id.toString() }, JWT_SECRET);
+    const adminAdd = await request(app).post('/api/skills/import').set('Authorization', `Bearer ${adminToken}`)
+      .send({ ...body, name: 'Admin review' });
+    expect(adminAdd.status).toBe(201);
+
     const added = await request(app).post('/api/skills/import').set('Authorization', `Bearer ${authToken}`).send(body);
     expect(added.status).toBe(201);
     const url = `/api/skills/pods/${podId}/imported?scope=agent&agentName=scout&instanceId=default&name=Review`;
@@ -104,5 +115,29 @@ describe('Skills Catalog Routes', () => {
     const removed = await request(app).delete(url).set('Authorization', `Bearer ${authToken}`);
     expect(removed.status).toBe(200);
     expect(await PodAsset.countDocuments({ podId, status: 'active', 'metadata.skillName': 'Review' })).toBe(0);
+  });
+
+  test('records mounted names for the authenticated agent and returns them to the page', async () => {
+    const installation = await AgentInstallation.findOne({ podId, agentName: 'scout' });
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser('scout', { instanceId: 'default' });
+    const { token } = await issueRuntimeTokenForAgent(agentUser, 'test skill mount', installation);
+    const path = `/api/agents/runtime/pods/${podId}/skill-load`;
+    const posted = await request(app).post(path).set('Authorization', `Bearer ${token}`)
+      .send({ mounted: ['review'], conflicted: ['draft'] });
+    expect(posted.status).toBe(200);
+    const installAfter = await AgentInstallation.findById(installation._id).lean();
+    expect(installAfter.skillLoad).toMatchObject({ mounted: ['review'], conflicted: ['draft'] });
+    expect(installAfter.skillLoad.at).toBeInstanceOf(Date);
+
+    const read = await request(app).get(`/api/skills/pods/${podId}/imported?scope=agent&agentName=scout&instanceId=default`)
+      .set('Authorization', `Bearer ${authToken}`);
+    expect(read.status).toBe(200);
+    expect(read.body.skillLoad).toMatchObject({ mounted: ['review'], conflicted: ['draft'] });
+    expect(read.body.canEdit).toBe(true);
+
+    const invalid = await request(app).post(path).set('Authorization', `Bearer ${token}`)
+      .send({ mounted: ['/private/skill'], conflicted: [] });
+    expect(invalid.status).toBe(400);
+    expect((await AgentInstallation.findById(installation._id).lean()).skillLoad.mounted).toEqual(['review']);
   });
 });

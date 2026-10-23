@@ -10,6 +10,7 @@ import { useAgentSettings } from './useAgentSettings';
 import V2AgentIdentitySection from './V2AgentIdentitySection';
 import V2AgentWakePods from './V2AgentWakePods';
 import V2AgentPolicy from './V2AgentPolicy';
+import V2AgentSkills from '../components/V2AgentSkills';
 import './v2-agent-settings.css';
 
 interface RuntimeKey {
@@ -257,6 +258,9 @@ const V2AgentSettingsPage: React.FC = () => {
       />
       <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
         installation={installation} update={update} />
+      <div className="v2-agent-settings__section">
+        <V2AgentSkills pods={access.pods} agentName={agentName} instanceId={instanceId} />
+      </div>
     </main>
   );
 };
