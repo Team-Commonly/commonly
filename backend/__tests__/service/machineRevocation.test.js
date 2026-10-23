@@ -195,4 +195,66 @@ describe('machine credential revocation', () => {
       continueCheck();
     }
   });
+
+  it('a machine deletion racing registration refuses the new bearer', async () => {
+    const user = await owner();
+    const device = await addDevice(user, 'i');
+    let continueCheck;
+    let checkStarted;
+    const started = new Promise((resolve) => { checkStarted = resolve; });
+    const resume = new Promise((resolve) => { continueCheck = resolve; });
+    const originalExists = Machine.exists.bind(Machine);
+    const existsSpy = jest.spyOn(Machine, 'exists').mockImplementationOnce(async (...args) => {
+      checkStarted();
+      await resume;
+      return originalExists(...args);
+    });
+    try {
+      const registration = request(app).post('/api/machines')
+        .set('Authorization', `Bearer ${device.token}`).send({ name: 'racing-machine' });
+      const pending = registration.then((response) => response);
+      await started;
+      const machine = await Machine.findOne({ ownerUserId: user._id, name: 'racing-machine' });
+      await request(app).delete(`/api/machines/${machine._id}`)
+        .set('Authorization', `Bearer ${generateTestToken(user._id)}`).expect(200);
+      continueCheck();
+      expect((await pending).status).toBe(409);
+      expect(await AgentCredential.countDocuments({ machineId: machine.machineId, status: 'active' })).toBe(0);
+    } finally {
+      existsSpy.mockRestore();
+      continueCheck();
+    }
+  });
+
+  it('removal catches a credential inserted after its first scan', async () => {
+    const user = await owner();
+    const device = await addDevice(user, 'j');
+    const first = (await register(device.token, 'late-mint')).body;
+    let continueDelete;
+    let deleteStarted;
+    const started = new Promise((resolve) => { deleteStarted = resolve; });
+    const resume = new Promise((resolve) => { continueDelete = resolve; });
+    const originalDelete = Machine.deleteOne.bind(Machine);
+    const deleteSpy = jest.spyOn(Machine, 'deleteOne').mockImplementationOnce(async (...args) => {
+      deleteStarted();
+      await resume;
+      return originalDelete(...args);
+    });
+    try {
+      const deletion = request(app).delete(`/api/machines/${first.machine.id}`)
+        .set('Authorization', `Bearer ${generateTestToken(user._id)}`);
+      const pending = deletion.then((response) => response);
+      await started;
+      const late = await AgentCredential.create({
+        tokenHash: hash(`cm_daemon_${'k'.repeat(32)}`), kind: 'daemon', ownerUserId: user._id,
+        machineId: first.machine.machineId, scopes: ['machine:heartbeat'],
+      });
+      continueDelete();
+      expect((await pending).status).toBe(200);
+      expect(await AgentCredential.findById(late._id)).toMatchObject({ status: 'revoked' });
+    } finally {
+      deleteSpy.mockRestore();
+      continueDelete();
+    }
+  });
 });

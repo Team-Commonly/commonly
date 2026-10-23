@@ -61,6 +61,9 @@ router.post('/', machineRateLimit, auth, async (req: AuthReq, res: express.Respo
     if (message === 'Device token revoked during machine registration') {
       return res.status(401).json({ message: 'Device token revoked' });
     }
+    if (message === 'Machine removed during registration') {
+      return res.status(409).json({ message: 'Machine removed during registration' });
+    }
     console.error('Error registering machine:', error);
     return res.status(500).json({ message: 'Server error' });
   }

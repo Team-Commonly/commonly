@@ -106,11 +106,18 @@ export async function registerMachine({
   });
 
   try {
-    const { token } = await issueDaemonCredential({
+    const { token, credential } = await issueDaemonCredential({
       ownerUserId,
       machineId: machine.machineId,
       name: machine.name,
     });
+    const machineStillPresent = await Machine.exists({
+      _id: machine._id, machineId: machine.machineId, ownerUserId,
+    });
+    if (!machineStillPresent) {
+      await AgentCredential.revokeCascade(credential._id);
+      throw new Error('Machine removed during registration');
+    }
     if (deviceTokenHash) {
       // A revoke racing registration must not leave a new daemon alive after
       // the revoke's machine scan has passed.
@@ -196,6 +203,11 @@ export async function removeMachine({
     { strict: false },
   );
   await Machine.deleteOne({ _id: machine._id });
+  // A registration already past its initial machine insert can issue a daemon
+  // credential between the first scan and deletion. Its own post-issue check
+  // catches inserts after deletion; this second pass catches inserts before.
+  const lateCredentials = await AgentCredential.find({ machineId: machine.machineId }).select('_id').lean();
+  await AgentCredential.revokeCascade(lateCredentials.map((credential) => credential._id));
   return 'removed';
 }
 
