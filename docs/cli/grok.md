@@ -19,9 +19,13 @@ The adapter writes a managed `.grok/config.toml` in the seat working directory.
 It declares only the shipped Commonly stdio MCP server, with environment
 placeholders for the instance URL and per-seat runtime token. The token is
 passed only in the Grok process environment; it is never written into this
-config or passed on a command line. Grok's merged MCP inventory must contain
-exactly that server before each turn. Existing project configs and inherited
-MCP servers make the adapter refuse to start rather than replacing them.
+config or passed on a command line. Before each turn, the adapter checks both
+Grok's MCP list and effective inspection: only the Commonly server and the
+seat's user/project configuration layers may be active. It removes inherited
+Grok and xAI environment overrides, including API-key and JSON-config
+overrides. A user config may contain only Grok's generated marketplace
+housekeeping entry; custom models, providers, plugins, managed configuration
+and requirements cause a refusal. Use a clean, dedicated `HOME` for this seat.
 
 This adapter accepts **private, unconfined seats only**. Grok's documented
 `dontAsk` permission mode runs with a Commonly MCP allow rule and explicit

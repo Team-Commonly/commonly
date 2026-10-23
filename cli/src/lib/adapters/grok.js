@@ -1,9 +1,9 @@
 /** Grok Build local CLI wrapper. Authentication stays with the operator's grok login. */
 import { spawn as childSpawn, spawnSync } from 'node:child_process';
-import { existsSync, lstatSync } from 'node:fs';
+import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { commonlyMcpServer } from '../default-environment.js';
@@ -28,6 +28,9 @@ const ancestorConfigs = (cwd, home) => {
       throw new Error('Grok adapter refuses inherited project .grok/config.toml servers');
     }
   }
+  if (existsSync(join(home, '.grok')) && lstatSync(join(home, '.grok')).isSymbolicLink()) {
+    throw new Error('Grok adapter refuses a symlinked user .grok directory');
+  }
   const userConfig = join(home, '.grok', 'config.toml');
   if (existsSync(userConfig)) {
     const content = lstatSync(userConfig).isSymbolicLink() ? 'mcp_servers' : null;
@@ -36,13 +39,17 @@ const ancestorConfigs = (cwd, home) => {
   return { userConfig: null, content: null };
 };
 
-/** Refuse extra native servers; Grok merges rather than replaces user config. */
-const assertNoUserMcp = async (userConfig, symlinkMarker) => {
+/** A seat login may have Grok's own housekeeping, never model or plugin config. */
+const assertSafeUserConfig = async (userConfig, symlinkMarker) => {
   if (!userConfig) return;
   if (symlinkMarker) throw new Error('Grok adapter refuses a symlinked user config');
   const content = await readFile(userConfig, 'utf8');
-  if (content.split('\n').some((line) => !line.trimStart().startsWith('#') && /\bmcp_servers\b/.test(line))) {
-    throw new Error('Grok adapter refuses a user config with inherited MCP servers; use a clean HOME for this seat');
+  const lines = content.split(/\r?\n/).map((line) => line.split('#')[0].trim()).filter(Boolean);
+  const housekeepingOnly = lines.length === 0
+    || (lines.length === 2 && lines[0] === '[marketplace]'
+      && /^default_skills_installs_purged\s*=\s*true$/.test(lines[1]));
+  if (!housekeepingOnly) {
+    throw new Error('Grok adapter refuses user config with model, provider, plugin or MCP settings; use a clean HOME for this seat');
   }
 };
 
@@ -67,24 +74,54 @@ const writeManagedConfig = async (cwd, content) => {
   await writeFile(path, content, { flag: 'wx', mode: 0o600 });
 };
 
-/** Grok merges user, project, plugin and compat servers. Check the merged view. */
+/** `mcp list` has command/env detail; `inspect` also shows plugin servers. */
 const assertSoleMcpServer = (cwd, env, command, spawnSyncImpl = spawnSync) => {
-  const result = spawnSyncImpl('grok', ['--cwd', cwd, '--trust', 'mcp', 'list', '--json'], {
-    cwd, env, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024,
-  });
-  if (result.error || result.status !== 0) {
-    throw new Error('Grok MCP inventory failed; refusing to start a seat without a verified tool set');
-  }
-  let servers;
-  try { servers = JSON.parse(result.stdout); } catch {
-    throw new Error('Grok MCP inventory was not JSON; refusing to start');
-  }
+  const readJson = (args) => {
+    const result = spawnSyncImpl('grok', ['--cwd', cwd, '--trust', ...args], {
+      cwd, env, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024,
+    });
+    if (result.error || result.status !== 0) {
+      throw new Error('Grok MCP inventory failed; refusing to start a seat without a verified tool set');
+    }
+    try { return JSON.parse(result.stdout); } catch {
+      throw new Error('Grok MCP inventory was not JSON; refusing to start');
+    }
+  };
+  const servers = readJson(['mcp', 'list', '--json']);
   if (!Array.isArray(servers) || servers.length !== 1 || servers[0]?.name !== 'commonly'
     || servers[0]?.enabled !== true || servers[0]?.command !== command[0]
     || JSON.stringify(servers[0]?.args || []) !== JSON.stringify(command.slice(1))
     || servers[0]?.env?.COMMONLY_AGENT_TOKEN !== env.COMMONLY_AGENT_TOKEN
     || servers[0]?.env?.COMMONLY_API_URL !== env.COMMONLY_API_URL) {
     throw new Error('Grok loaded MCP servers other than the pinned Commonly server; refusing to start');
+  }
+  // Grok 1.0.67 omits enabled plugin MCPs from `mcp list`, even though they
+  // enter the model's tool catalog. `inspect` exposes them and also lists
+  // disabled compat entries, which do not enter that catalog.
+  const inspection = readJson(['inspect', '--json']);
+  // Inspect reports the configuration layers Grok actually loaded. Managed,
+  // requirements, MDM and JSON overlays can change model/auth independently of
+  // the MCP inventory, so accept only this seat's two known TOML files.
+  const expected = new Map([
+    ['user', join(realpathSync(env.HOME), '.grok', 'config.toml')],
+    ['project', join(realpathSync(cwd), '.grok', 'config.toml')],
+  ]);
+  const layers = inspection?.configSources?.layers;
+  if (!Array.isArray(layers) || layers.some((layer) => !expected.has(layer.role)
+    || !layer.path || !existsSync(dirname(dirname(layer.path)))
+    || join(realpathSync(dirname(dirname(layer.path))), '.grok', 'config.toml')
+      !== expected.get(layer.role)
+    || basename(layer.path) !== 'config.toml' || basename(dirname(layer.path)) !== '.grok')) {
+    throw new Error('Grok inspect found an inherited configuration layer; refusing to start');
+  }
+  if (!Array.isArray(inspection.plugins) || inspection.plugins.length !== 0
+    || !Array.isArray(inspection.hooks) || inspection.hooks.length !== 0) {
+    throw new Error('Grok inspect found inherited plugins or hooks; refusing to start');
+  }
+  const enabled = inspection?.mcpServers?.filter((server) => server.disabled !== true);
+  if (!Array.isArray(enabled) || enabled.length !== 1 || enabled[0]?.name !== 'commonly'
+    || enabled[0]?.transport !== 'stdio' || enabled[0]?.target !== command[0]) {
+    throw new Error('Grok inspect found another enabled MCP server; refusing to start');
   }
 };
 
@@ -181,8 +218,9 @@ export default {
     if (!ctx.runtimeToken || !ctx.instanceUrl) throw new Error('Grok adapter requires a per-spawn Commonly credential and instance URL');
     // Browser login lives under this HOME. Never silently switch to an API key
     // or an inherited GROK_HOME that points at another operator's profile.
-    delete env.XAI_API_KEY;
-    delete env.GROK_HOME;
+    for (const key of Object.keys(env)) {
+      if (/^(?:GROK_|XAI_)/.test(key)) delete env[key];
+    }
     env.COMMONLY_AGENT_TOKEN = ctx.runtimeToken;
     env.COMMONLY_API_URL = ctx.instanceUrl;
     env.GROK_CLAUDE_MCPS_ENABLED = 'false';
@@ -192,7 +230,7 @@ export default {
     env.GROK_SUBAGENTS = '0';
     env.GROK_MEMORY = '0';
     const userConfig = ancestorConfigs(cwd, env.HOME);
-    await assertNoUserMcp(userConfig.userConfig, userConfig.content);
+    await assertSafeUserConfig(userConfig.userConfig, userConfig.content);
     const declared = ctx.environment?.mcp?.[0] || commonlyMcpServer();
     // A project config persists across turns. The MCP warm cache may move from
     // npx to a versioned executable between them, so use the canonical stable

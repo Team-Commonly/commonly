@@ -20,10 +20,18 @@ const withSeat = async (run) => {
 const context = ({ home, cwd }, extras = {}) => ({
   cwd, agentName: 'grok-test', runtimeToken: 'cm_agent_test_only_secret',
   instanceUrl: 'https://api.example.test',
-  env: { HOME: home, PATH: '/bin', XAI_API_KEY: 'must-not-use-api-auth', GROK_HOME: '/wrong-home' },
-  _spawnSyncImpl: (_binary, _args, options) => ({
+  env: { HOME: home, PATH: '/bin', XAI_API_KEY: 'must-not-use-api-auth',
+    GROK_CODE_XAI_API_KEY: 'must-not-use-legacy-api-auth', GROK_CONFIG: '{"models":{"default":"other"}}',
+    GROK_HOME: '/wrong-home' },
+  _spawnSyncImpl: (_binary, args, options) => ({
     status: 0,
-    stdout: JSON.stringify([{
+    stdout: JSON.stringify(args.includes('inspect') ? { plugins: [], hooks: [], configSources: { layers: [
+      { role: 'user', path: join(options.env.HOME, '.grok', 'config.toml') },
+      { role: 'project', path: join(options.cwd, '.grok', 'config.toml') },
+    ] }, mcpServers: [
+      { name: 'commonly', transport: 'stdio', target: 'npx' },
+      { name: 'personal', transport: 'stdio', target: 'node', disabled: true },
+    ] } : [{
       name: 'commonly', command: 'npx', args: ['-y', '@commonlyai/mcp@latest'], enabled: true,
       env: { COMMONLY_AGENT_TOKEN: options.env.COMMONLY_AGENT_TOKEN,
         COMMONLY_API_URL: options.env.COMMONLY_API_URL },
@@ -79,6 +87,8 @@ test('first and resumed Grok turns use JSON, the wrapper HOME login, and only Co
       expect(options.env.HOME).toBe(seat.home);
       expect(options.env.GROK_HOME).toBeUndefined();
       expect(options.env.XAI_API_KEY).toBeUndefined();
+      expect(options.env.GROK_CODE_XAI_API_KEY).toBeUndefined();
+      expect(options.env.GROK_CONFIG).toBeUndefined();
       expect(options.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_test_only_secret');
       expect(options.env.GROK_CLAUDE_MCPS_ENABLED).toBe('false');
       expect(options.env.GROK_CURSOR_MCPS_ENABLED).toBe('false');
@@ -175,6 +185,56 @@ test('merged Grok inventory refuses a compat or plugin server even when TOML is 
   });
 });
 
+test('inspect refuses an enabled plugin server that mcp list omits', async () => {
+  await withSeat(async (seat) => {
+    const spawn = jest.fn();
+    const inventory = jest.fn((_binary, args, options) => ({
+      status: 0,
+      stdout: JSON.stringify(args.includes('inspect') ? { plugins: [], hooks: [], configSources: { layers: [
+        { role: 'user', path: join(options.env.HOME, '.grok', 'config.toml') },
+        { role: 'project', path: join(options.cwd, '.grok', 'config.toml') },
+      ] }, mcpServers: [
+        { name: 'commonly', transport: 'stdio', target: 'npx' },
+        { name: 'plugin-personal', transport: 'stdio', target: 'node' },
+      ] } : [{
+        name: 'commonly', command: 'npx', args: ['-y', '@commonlyai/mcp@latest'], enabled: true,
+        env: { COMMONLY_AGENT_TOKEN: options.env.COMMONLY_AGENT_TOKEN,
+          COMMONLY_API_URL: options.env.COMMONLY_API_URL },
+      }]),
+    }));
+    await expect(grok.spawn('hello', context(seat, {
+      _spawnImpl: spawn, _spawnSyncImpl: inventory,
+    }))).rejects.toThrow('inspect found another enabled MCP server');
+    expect(inventory.mock.calls.map((call) => call[1])).toEqual([
+      ['--cwd', seat.cwd, '--trust', 'mcp', 'list', '--json'],
+      ['--cwd', seat.cwd, '--trust', 'inspect', '--json'],
+    ]);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+});
+
+test('inspect refuses managed or requirements layers even with only Commonly MCP', async () => {
+  await withSeat(async (seat) => {
+    const spawn = jest.fn();
+    const inventory = (_binary, args, options) => ({
+      status: 0,
+      stdout: JSON.stringify(args.includes('inspect') ? { plugins: [], hooks: [], configSources: { layers: [
+        { role: 'user', path: join(options.env.HOME, '.grok', 'config.toml') },
+        { role: 'project', path: join(options.cwd, '.grok', 'config.toml') },
+        { role: 'managed', path: join(options.env.HOME, '.grok', 'managed_config.toml') },
+      ] }, mcpServers: [{ name: 'commonly', transport: 'stdio', target: 'npx' }] } : [{
+        name: 'commonly', command: 'npx', args: ['-y', '@commonlyai/mcp@latest'], enabled: true,
+        env: { COMMONLY_AGENT_TOKEN: options.env.COMMONLY_AGENT_TOKEN,
+          COMMONLY_API_URL: options.env.COMMONLY_API_URL },
+      }]),
+    });
+    await expect(grok.spawn('hello', context(seat, {
+      _spawnImpl: spawn, _spawnSyncImpl: inventory,
+    }))).rejects.toThrow('inherited configuration layer');
+    expect(spawn).not.toHaveBeenCalled();
+  });
+});
+
 test('refuses an inherited user MCP config and a project .mcp.json', async () => {
   await withSeat(async (seat) => {
     const spawn = jest.fn();
@@ -185,8 +245,24 @@ test('refuses an inherited user MCP config and a project .mcp.json', async () =>
     await mkdir(join(seat.home, '.grok'));
     await writeFile(join(seat.home, '.grok', 'config.toml'), '[mcp_servers.sam]\ncommand="node"\n');
     await expect(grok.spawn('hello', context(seat, { _spawnImpl: spawn })))
-      .rejects.toThrow('inherited MCP servers');
+      .rejects.toThrow('refuses user config');
     expect(spawn).not.toHaveBeenCalled();
+  });
+});
+
+test('refuses user model credentials that bypass the operator Grok login', async () => {
+  await withSeat(async (seat) => {
+    const spawn = jest.fn();
+    await mkdir(join(seat.home, '.grok'));
+    await writeFile(join(seat.home, '.grok', 'config.toml'),
+      '[models]\ndefault = "local"\n[model.local]\nbase_url = "http://127.0.0.1:1234"\napi_key = "dummy-key"\n');
+    await expect(grok.spawn('hello', context(seat, { _spawnImpl: spawn })))
+      .rejects.toThrow('refuses user config');
+    expect(spawn).not.toHaveBeenCalled();
+    await writeFile(join(seat.home, '.grok', 'config.toml'),
+      '[marketplace]\ndefault_skills_installs_purged = true\n');
+    await expect(grok.spawn('hello', context(seat, { _spawnImpl: recordedSpawn(() => {}) })))
+      .resolves.toMatchObject({ text: 'PONG' });
   });
 });
 
