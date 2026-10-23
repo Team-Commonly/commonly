@@ -1,0 +1,254 @@
+name: Deploy Staging
+
+# Second Helm release of the chart into namespace commonly-staging, on the SAME
+# GKE cluster as prod (commonly-dev). The reckless, fast lane: every merge to
+# main (and any ref via workflow_dispatch) builds and deploys to staging, runs
+# the stranger smoke, and records a `staging-smoke` commit status that the prod
+# promote path (deploy-dev.yml promote_sha) gates on.
+#
+# Modelled on deploy-dev.yml: same WIF auth, same secret names, same private
+# values overlay pattern. Differences: namespace/release commonly-staging, a
+# staging-only private-values secret, a single staging frontend variant per SHA
+# (the shared prod tag is NOT pushed from staging — see the build step), no
+# clawdbot-gateway (parked everywhere; staging never runs it), cancel-in-progress.
+#
+# DRAFT until the Thursday-night staging install lands — unmerged, this workflow
+# never runs. It goes live once commonly-staging exists (secrets, WI, DBs, tunnel).
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref / SHA to build + deploy to staging (defaults to the triggering ref)'
+        required: false
+        default: ''
+  push:
+    branches: [ main ]
+
+permissions:
+  id-token: write     # OIDC token for google-github-actions/auth
+  contents: read
+  statuses: write     # post the staging-smoke commit status
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true   # reckless lane: a newer push supersedes an in-flight staging deploy
+
+env:
+  REGION: us-central1
+  AR_REPO: docker
+  CLUSTER: commonly-dev        # same cluster; staging is a second release in its own namespace
+  NAMESPACE: commonly-staging
+  RELEASE: commonly-staging
+
+jobs:
+  deploy:
+    name: Build + push + helm upgrade (staging)
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+
+      - name: Compute tag + full SHA of the checked-out ref
+        id: tag
+        run: |
+          echo "tag=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Export PROJECT_ID from secret
+        env:
+          DEV_GCP_PROJECT_ID: ${{ secrets.DEV_GCP_PROJECT_ID }}
+        run: echo "PROJECT_ID=${DEV_GCP_PROJECT_ID}" >> "$GITHUB_ENV"
+
+      - name: Authenticate to GCP via WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Materialize staging private values overlay (runner-only)
+        # STAGING_HELM_VALUES_PRIVATE holds staging's project ID / Aiven + Atlas
+        # hosts / ESO WI SA email — never committed (R12). Set before the
+        # Thursday-night install. Auto-cleaned on runner teardown.
+        run: |
+          printf '%s\n' "${STAGING_HELM_VALUES_PRIVATE}" > "$RUNNER_TEMP/values-private.yaml"
+          echo "Wrote $(wc -l < "$RUNNER_TEMP/values-private.yaml") lines to the staging overlay"
+        env:
+          STAGING_HELM_VALUES_PRIVATE: ${{ secrets.STAGING_HELM_VALUES_PRIVATE }}
+
+      # One frontend image per SHA: frontend:<sha8>-staging
+      # (REACT_APP_API_URL=api-staging.commonly.me) — what commonly-staging runs.
+      # We deliberately do NOT push the shared prod tag frontend:<sha8>: this job's
+      # `environment: staging` carries no DEV_SENTRY_FRONTEND_DSN, so a prod variant
+      # built here would differ from the one deploy-dev builds under the SAME tag (a
+      # different-inputs collision; the two workflows' separate concurrency groups do
+      # NOT serialize the writers). The promotion path that would justify a shared
+      # artifact (deploy-dev promote_sha reusing a staging-verified build) does not
+      # exist yet — reintroduce the shared-tag prod build only once it does, with
+      # enforced input parity. clawdbot-gateway is deliberately NOT built — it is
+      # parked everywhere (agents.clawdbot.enabled: false) and staging never runs it.
+      - name: Build + push backend image
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-backend
+          docker build backend -t "$REPO:$TAG"
+          docker push "$REPO:$TAG"
+
+      - name: Build + push commonly-bot image
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-bot
+          docker build external/commonly-agent-services -t "$REPO:$TAG"
+          docker push "$REPO:$TAG"
+
+      - name: Build + push frontend image (staging variant)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          REACT_APP_SENTRY_DSN: ${{ secrets.DEV_SENTRY_FRONTEND_DSN }}
+        run: |
+          REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-frontend
+          # Staging variant only (-staging tag). The shared prod tag frontend:<sha8> is
+          # NOT pushed from staging (see the note above): it would collide with
+          # deploy-dev's same-tag build on a differing Sentry DSN, and no promotion path
+          # consumes it yet.
+          docker build frontend --build-arg REACT_APP_API_URL=https://api-staging.commonly.me \
+            --build-arg REACT_APP_SHOWCASE_POD_ID=6a507c9b792f1ed2cbfec648 \
+            --build-arg REACT_APP_COMMUNITY_POD_ID=6a5fe677306155f677c26abf \
+            --build-arg REACT_APP_COMMUNITY_INVITE_TOKEN=7b91255f18ae3c0ae3721707a6613731 \
+            --build-arg REACT_APP_TELEGRAM_BOT_HANDLE=Commonly240Bot \
+            --build-arg "REACT_APP_VERSION=$TAG" \
+            --build-arg "REACT_APP_SENTRY_DSN=$REACT_APP_SENTRY_DSN" \
+            -t "$REPO:$TAG-staging"
+          docker push "$REPO:$TAG-staging"
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.CLUSTER }}
+          location: ${{ env.REGION }}
+
+      # --create-namespace: commonly-staging does not exist before the first
+      # install. NOTE: values-staging.yaml should set createNamespace:false
+      # (as values-local.yaml does) so the chart does not ALSO declare the
+      # Namespace and collide with the one helm creates here. Tracked against
+      # the staging chart PR.
+      - name: Helm upgrade commonly-staging
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          helm upgrade --install "$RELEASE" k8s/helm/commonly -n "$NAMESPACE" --create-namespace \
+            -f k8s/helm/commonly/values.yaml \
+            -f k8s/helm/commonly/values-staging.yaml \
+            -f "$RUNNER_TEMP/values-private.yaml" \
+            --set backend.image.tag="$TAG" \
+            --set frontend.image.tag="$TAG-staging" \
+            --set agents.commonlyBot.image.tag="$TAG" \
+            --timeout 10m \
+            --burst-limit 200 \
+            --qps 100
+
+      - name: Verify rollout of the deployed workloads
+        run: |
+          set -uo pipefail
+          FAILED=""
+          DEPLOYS=$(kubectl get deploy -n "$NAMESPACE" -o name)
+          if [ -z "$DEPLOYS" ]; then
+            echo "::error title=Rollout failed::no deployments in $NAMESPACE"
+            exit 1
+          fi
+          for d in $DEPLOYS; do
+            echo "::group::rollout status $d"
+            if kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m; then
+              echo "$d: rolled out"
+            else
+              echo "::error title=Rollout failed::$d did not become ready within 8m"
+              FAILED="$FAILED $d"
+            fi
+            echo "::endgroup::"
+          done
+          if [ -n "$FAILED" ]; then echo "Deploy failed for:$FAILED"; exit 1; fi
+
+      # The stranger-path smoke drives signup -> welcome -> question -> connect
+      # card against api-staging.commonly.me. Its pass/fail IS the staging-smoke
+      # gate the prod promote path reads, so — unlike the dev journey, which is a
+      # non-failing notice — this sets a commit status that must be truthful, and
+      # a failed smoke fails the staging deploy. A reachability probe is the
+      # fallback until the stranger-journey CronJob exists in the staging release.
+      - name: Stranger smoke + staging-smoke commit status
+        if: always()
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          SHA: ${{ steps.tag.outputs.sha }}
+          JOB_STATUS: ${{ job.status }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          STATE=failure
+          DESC="staging deploy + stranger smoke ($TAG)"
+          if [ "$JOB_STATUS" = "success" ]; then
+            # Distinguish a confirmed NotFound (the stranger-journey CronJob is not in the
+            # staging release yet — expected) from any other kubectl failure (auth/API).
+            # Only NotFound drops to the reachability fallback; any other error FAILS
+            # CLOSED, so a transient lookup error + a healthy probe cannot post a false
+            # staging-smoke=success.
+            if ERR=$(kubectl get cronjob stranger-journey -n "$NAMESPACE" -o name 2>&1); then
+              # CronJob exists — run the real stranger smoke against STAGING. The CronJob
+              # defaults JOURNEY_API to production, so build the Job from it suspended,
+              # repoint JOURNEY_API at the staging API, `kubectl create` it (NOT apply),
+              # then resume. The name carries GITHUB_RUN_ID so it is unique per run: a
+              # repeat deploy at the same SHA (a push then a workflow_dispatch, both at
+              # attempt 1) gets its own Job, and `create` fails on any name collision
+              # rather than silently updating a prior run's completed Job — toggling
+              # suspend never reruns a finished Job, so a reused one would post a stale
+              # success.
+              JOB="staging-smoke-${TAG}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+              kubectl create job --from=cronjob/stranger-journey "$JOB" -n "$NAMESPACE" --dry-run=client -o json \
+                | jq '.spec.suspend=true | .spec.template.spec.containers |= map(.env = ((.env // []) | map(select(.name!="JOURNEY_API"))) + [{name:"JOURNEY_API",value:"https://api-staging.commonly.me"}])' \
+                | kubectl create -n "$NAMESPACE" -f -
+              kubectl patch job "$JOB" -n "$NAMESPACE" --type merge -p '{"spec":{"suspend":false}}'
+              for _ in $(seq 1 60); do
+                DONE=$(kubectl get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}{.status.failed}')
+                [ -n "$DONE" ] && break
+                sleep 10
+              done
+              kubectl logs "job/$JOB" -n "$NAMESPACE" --tail=12 || true
+              [ "$(kubectl get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}')" = "1" ] && STATE=success
+            elif printf '%s' "$ERR" | grep -qE 'NotFound.*cronjobs.*stranger-journey'; then
+              # Confirmed the stranger-journey CronJob specifically is absent — reachability-
+              # only fallback, LABELLED as such so a green status is not mistaken for a full
+              # stranger smoke. A missing namespace or any other "not found" does NOT match
+              # and falls through to the fail-closed branch below.
+              CODE=$(curl -s -o /dev/null -w '%{http_code}' https://api-staging.commonly.me/api/health || true)
+              echo "no stranger-journey CronJob in staging (NotFound); reachability-only probe api-staging/api/health = $CODE"
+              DESC="staging deploy + reachability-only, no stranger CronJob ($TAG)"
+              [ "$CODE" = "200" ] && STATE=success
+            else
+              # Any other kubectl error (auth/API) — fail closed.
+              echo "::error title=staging-smoke::stranger-journey lookup failed and was not a NotFound: $ERR"
+            fi
+          fi
+          echo "staging-smoke = $STATE for $SHA ($TAG)"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
+            -f state="$STATE" \
+            -f context="staging-smoke" \
+            -f description="$DESC" >/dev/null
+          [ "$STATE" = "success" ]
