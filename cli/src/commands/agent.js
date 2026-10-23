@@ -2183,14 +2183,17 @@ ${digestLines.join('\n')}${digestEntries.length > 8 ? `\n- ${digestEntries.lengt
       ? new Set(preSpawn.map((message) => String(message._id || message.id)))
       : null;
     const activeEntries = entries.filter((entry) => !entry.result);
-    const triggers = activeEntries.map((entry) => classifyTrigger(entry.event, preSpawn));
+    // Ambient digest entries provide context for this turn, but must never
+    // determine its admission or count as the trigger that woke the seat.
+    const wakingEntries = activeEntries.filter((entry) => entry.event.deliveryMode !== 'digest');
+    const triggers = wakingEntries.map((entry) => classifyTrigger(entry.event, preSpawn));
     const trigger = triggers.includes('human') ? 'human'
       : (triggers.includes('agent') ? 'agent' : 'unknown');
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
-    const admissionEvent = activeEntries.find((entry) => (
+    const admissionEvent = wakingEntries.find((entry) => (
       ADDRESSED_EVENT_TYPES.has(entry.event.type) || entry.event.payload?.addressed === true
     ))
-      || activeEntries[0];
+      || wakingEntries[0];
     if (admissionEvent) {
       const admission = cascadeGovernor.admit(
         eventPodId,

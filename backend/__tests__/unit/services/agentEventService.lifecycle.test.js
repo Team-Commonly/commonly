@@ -333,6 +333,7 @@ describe('garbageCollect: the requeue predicate and its cap', () => {
     // Same instant, not merely "both long": a shorter pending horizon is exactly
     // what let the sweep outrun the retry lifecycle.
     expect(pending.createdAt.$lt.getTime()).toBe(settled.createdAt.$lt.getTime());
+    expect(pending.deliveryMode).toEqual({ $ne: 'digest' });
   });
 
   test('no delete predicate can destroy a pending event inside the retry window', async () => {
@@ -463,6 +464,27 @@ describe('driver paths reach a terminal state', () => {
       expect(AgentEvent.create).toHaveBeenCalledWith(expect.objectContaining({ deliveryMode: 'digest' }));
       expect(AgentEvent.create.mock.calls[0][0]).not.toHaveProperty('status');
       expect(runAgent).not.toHaveBeenCalled();
+    });
+
+    test('a later native wake carries digest context and settles only included rows on success', async () => {
+      const digest = { _id: 'evt-d', payload: { username: 'alice', messageId: '42', content: 'daily update' } };
+      AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: () => Promise.resolve([digest]) }) }) });
+      AgentEvent.updateMany.mockResolvedValue({ modifiedCount: 1 });
+      runAgent.mockResolvedValue({ status: 'succeeded' });
+
+      await enqueueNative();
+
+      expect(runAgent.mock.calls[0][1].payload.content).toContain('alice (message 42): daily update');
+      expect(AgentEvent.updateMany).toHaveBeenCalledWith(
+        { _id: { $in: ['evt-d'] }, status: 'pending', deliveryMode: 'digest' },
+        { $set: { status: 'acked' } },
+      );
+
+      jest.clearAllMocks();
+      AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: () => Promise.resolve([digest]) }) }) });
+      runAgent.mockResolvedValue({ status: 'failed' });
+      await enqueueNative();
+      expect(AgentEvent.updateMany).not.toHaveBeenCalled();
     });
 
     test('a podId shaped like a query operator is never looked up or run in-process', async () => {

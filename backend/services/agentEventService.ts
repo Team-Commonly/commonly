@@ -882,7 +882,11 @@ class AgentEventService {
       // (routes/admin/agentEvents.ts), where "pending for over 30 minutes" is a
       // useful thing to look at — and is now actionable, because seeing it no
       // longer means the row is about to be destroyed.
-      AgentEvent.deleteMany({ status: 'pending', createdAt: { $lt: deliveredThreshold } }),
+      // Digest rows are unread state. Retiring them without folding into a
+      // durable per-seat summary would silently erase the notification.
+      AgentEvent.deleteMany({
+        status: 'pending', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: deliveredThreshold },
+      }),
       AgentEvent.deleteMany({ status: { $in: ['delivered', 'acked'] }, createdAt: { $lt: deliveredThreshold } }),
       AgentEvent.deleteMany({ status: 'failed', createdAt: { $lt: failedThreshold } }),
     ]) as Array<{ deletedCount?: number }>;
@@ -1359,17 +1363,47 @@ class AgentEventService {
       // stayed 'delivered' forever and was structurally unackable. Doing it
       // here rather than inside runAgent keeps the terminal transition next
       // to the non-terminal state that created it.
-      Promise.resolve(runAgent(nativeInstallation, {
-        type,
-        eventId: eventIdStr,
-        payload: event.payload,
+      const runWithDigest = async () => {
+        let digest: EventDoc[] = [];
+        try {
+          digest = await AgentEvent.find({
+            agentName: agentName.toLowerCase(), instanceId, podId: event.podId,
+            status: 'pending', deliveryMode: 'digest',
+          }).sort({ createdAt: 1 }).limit(8).lean() as EventDoc[];
+        } catch (digestErr) {
+          console.warn('[native-runtime] digest lookup failed:', (digestErr as Error).message);
+        }
+        const lines = digest.map((item) => {
+          const who = String(item.payload?.username || 'member').replace(/\s+/g, ' ').slice(0, 40);
+          const content = String(item.payload?.content || '').replace(/\s+/g, ' ').slice(0, 160);
+          const messageId = item.payload?.messageId;
+          return `- ${who}${messageId ? ` (message ${messageId})` : ''}: ${content}`;
+        });
+        const baseContent = String(event.payload?.content || event.payload?.prompt || event.payload?.text || '');
+        const payload = lines.length ? {
+          ...event.payload,
+          content: `${baseContent}\n\n[Since you last looked: ${lines.length} ambient updates; context only.]\n${lines.join('\n')}`,
+        } : event.payload;
+        const result = await runAgent(nativeInstallation, { type, eventId: eventIdStr, payload });
+        // Leave digest unread when the native turn fails. On a successful turn,
+        // mark only the rows actually included; older backlog remains pending.
+        if (result?.status === 'succeeded' && digest.length) {
+          await AgentEvent.updateMany(
+            { _id: { $in: digest.map((item) => item._id) }, status: 'pending', deliveryMode: 'digest' },
+            { $set: { status: 'acked' } },
+          ).catch((digestErr: Error) => {
+            console.warn('[native-runtime] digest settle failed:', digestErr.message);
+          });
+        }
+        return result;
+      };
+      Promise.resolve(runWithDigest()).then(
       // Two-argument .then, deliberately, NOT .then().catch(): a chained
       // .catch would also catch a rejection thrown by the success handler,
       // so a failing acknowledge() would fall through and mark a run that
       // actually succeeded as 'failed'. The rejection handler here is scoped
       // to runAgent alone. Both terminal calls swallow their own errors so
       // this stays fire-and-forget for the caller.
-      })).then(
         () => this.acknowledge(
           eventIdStr,
           agentName,
