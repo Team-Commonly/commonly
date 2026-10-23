@@ -1,5 +1,39 @@
 import i18n, { i18nReady } from '../../i18n';
-import { localizeWindow } from './localizeRelativeTime';
+import { localizeRelativeTime, localizeWindow } from './localizeRelativeTime';
+
+// TASK-353: a past event a few seconds ahead of the browser clock used to read
+// "1m from now" (round(0.5) === 1). Sub-minute skew must read as "just now",
+// while a genuinely future event a minute or more ahead still reads as future.
+describe('localizeRelativeTime future skew', () => {
+  beforeAll(async () => {
+    await i18nReady;
+  });
+
+  afterAll(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  const render = async (offsetMs: number) => {
+    const now = Date.parse('2026-10-23T07:30:00.000Z');
+    const date = new Date(now - offsetMs).toISOString();
+    await i18n.changeLanguage('en');
+    const en = localizeRelativeTime(date, i18n.t.bind(i18n), { now });
+    await i18n.changeLanguage('zh-CN');
+    const zh = localizeRelativeTime(date, i18n.t.bind(i18n), { now });
+    return { en, zh };
+  };
+
+  test('a timestamp under a minute ahead of the clock reads just now, in both locales', async () => {
+    // offset is negative: the event is ahead of the browser clock.
+    await expect(render(-30_000)).resolves.toMatchObject({ en: 'just now', zh: '刚刚' });
+    await expect(render(-1)).resolves.toMatchObject({ en: 'just now', zh: '刚刚' });
+  });
+
+  test('a timestamp a minute or more ahead still reads as future', async () => {
+    await expect(render(-3 * 60_000)).resolves.toMatchObject({ en: '3m from now' });
+    await expect(render(-3 * 60_000)).resolves.toMatchObject({ zh: expect.not.stringMatching(/刚刚/) });
+  });
+});
 
 // localizeWindow had no test of its own, and the clamp inside it is the ONE
 // behaviour change in TASK-164: the English path used to read `just now` for a

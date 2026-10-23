@@ -30,6 +30,9 @@ export const relativeParts = (
   const abs = Math.abs(signedElapsed);
   const round = rounding === 'floor' ? Math.floor : Math.round;
   const minutes = round(abs / 60_000);
+  // A past event a few seconds ahead of the browser clock is clock skew, not a
+  // future event: read it as "just now", never as "1m from now".
+  if (future && abs < 60_000) return { kind: 'now', future: false };
   if (minutes < 1) return { kind: 'now', future };
   if (minutes < 60) return { kind: 'rel', unit: 'minute', count: minutes, future };
   const hours = round(minutes / 60);
