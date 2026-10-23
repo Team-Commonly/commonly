@@ -1599,7 +1599,8 @@ router.post('/pods/:podId/skill-load', phase4RateLimit, agentRuntimeAuth, async 
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(req.agentInstallations, req.agentInstallation, podId);
-    if (!installation || !ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
+    if (!installation || String(installation.podId) !== podId
+      || !ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
     const validNames = (value: unknown): value is string[] => Array.isArray(value)
