@@ -117,7 +117,7 @@ const memoryEditorAccess = async (req: AuthReq, res: Res) => {
   if (!agentName) { res.status(404).json({ error: 'Not found' }); return null; }
   const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
   const owns = isAdmin || await AgentInstallation.exists({
-    agentName, instanceId, installedBy: userId, status: 'active',
+    agentName, instanceId, installedBy: userId, status: { $ne: 'uninstalled' },
   });
   if (!owns) { res.status(403).json({ error: 'Forbidden' }); return null; }
   return { agentName, instanceId };

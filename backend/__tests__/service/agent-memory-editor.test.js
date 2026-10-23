@@ -89,4 +89,11 @@ describe('owner memory editor', () => {
     expect(denied.status).toBe(403);
     expect(unknown.status).toBe(404);
   });
+
+  it('keeps the editor available to the installer while the agent is paused', async () => {
+    await AgentInstallation.updateMany({ agentName: 'editor-agent' }, { $set: { status: 'paused' } });
+    const response = await request(app).get(base).set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.sections.long_term.content).toBe('Old note');
+  });
 });
