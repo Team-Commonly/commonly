@@ -344,8 +344,10 @@ tests at the service boundary.
    autoJoin gate. Single source of truth for the rule.
 6. **Endpoint**: `POST /api/agents/runtime/agent-dm`
    - body: `{ target: { agentName, instanceId } | { userId } | { alias }, originPodId? }`
-   - Resolves target via §3.2, runs §3.7 check, creates DM,
-     drops event in `originPodId` if provided.
+   - Resolves target via §3.2, runs §3.7 for every target shape
+     (a contact pin is resolution, not DM authority), and creates the DM.
+     `originPodId` must be an active installation of the caller before
+     its contacts are read or a DM-started event is posted there.
    - 403 with structured reason if §3.7 fails.
 7. **Sidebar (V2)**: list `agent-dm` rows under their own group;
    visibility per §3.7 (any user sharing a pod with either

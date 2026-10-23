@@ -1070,6 +1070,18 @@ router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res
     if (!target || typeof target !== 'object') {
       return res.status(400).json({ message: 'target is required' });
     }
+    const originPodIdSafe = typeof originPodId === 'string' ? originPodId.trim() : '';
+    if (originPodId !== undefined && !originPodIdSafe) {
+      return res.status(400).json({ message: 'originPodId must be a pod id' });
+    }
+    // The runtime-auth middleware has already resolved this token's active
+    // installations. An origin is a place this agent works, not a pod named
+    // by the request body; checking it here also protects alias lookup below.
+    if (originPodIdSafe && !(req.agentInstallations || []).some(
+      (entry: any) => String(entry.podId).toLowerCase() === originPodIdSafe.toLowerCase(),
+    )) {
+      return res.status(403).json({ message: 'Agent is not installed in origin pod' });
+    }
 
     // Resolve the target User row. Accept three shapes:
     //   { agentName, instanceId? } → look up the bot User row directly.
@@ -1142,12 +1154,8 @@ router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res
       // priority but only when an originPodId is given.
       const alias = String(target.alias).trim().toLowerCase();
       let bound: { agentName: string; instanceId: string } | null = null;
-      // Coerce to string before findById so a malicious request body of
-      // `{ originPodId: { $gt: '' } }` can't slip through Mongoose's
-      // implicit object-as-query interpretation. CodeQL flagged this.
-      const originPodIdStr = originPodId ? String(originPodId) : '';
-      if (originPodIdStr) {
-        const originPod = await Pod.findById(originPodIdStr).select('contacts members').lean();
+      if (originPodIdSafe) {
+        const originPod = await Pod.findById(originPodIdSafe).select('contacts').lean();
         const fromPod = originPod?.contacts?.[alias];
         if (fromPod && fromPod.agentName) bound = { agentName: fromPod.agentName, instanceId: fromPod.instanceId || 'default' };
       }
@@ -1180,22 +1188,15 @@ router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res
       return res.status(400).json({ message: 'Cannot DM yourself' });
     }
 
-    // §3.7 co-pod-member rule. Bypass when an admin has pinned the
-    // target via originPodId's pod.contacts (admin-binding carve-out).
-    let authorizedByPodBinding = false;
-    const originPodIdSafe = originPodId ? String(originPodId) : '';
-    if (originPodIdSafe && target.alias) {
-      const originPod = await Pod.findById(originPodIdSafe).select('contacts').lean();
-      authorizedByPodBinding = !!originPod?.contacts?.[String(target.alias).toLowerCase()];
-    }
-    if (!authorizedByPodBinding) {
-      const shared = await DMService.sharePod(callerAgentUser._id, targetUser._id);
-      if (!shared) {
-        return res.status(403).json({
-          message: 'No shared pod with target — refused per co-pod-member rule',
-          rule: 'sharePod',
-        });
-      }
+    // Contacts choose a target; they do not grant that target access to the
+    // caller. Every path, including aliases pinned by a pod creator, needs a
+    // shared pod before it can create a DM or install the peer into it.
+    const shared = await DMService.sharePod(callerAgentUser._id, targetUser._id);
+    if (!shared) {
+      return res.status(403).json({
+        message: 'No shared pod with target — refused per co-pod-member rule',
+        rule: 'sharePod',
+      });
     }
 
     // Build member metadata for both sides so AgentInstallation upserts

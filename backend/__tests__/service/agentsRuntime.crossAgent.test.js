@@ -17,6 +17,7 @@
 const express = require('express');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 
 const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
@@ -25,6 +26,7 @@ const Pod = require('../../models/Pod');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentMemory = require('../../models/AgentMemory');
 const AgentAsk = require('../../models/AgentAsk');
+const AgentMessageService = require('../../services/agentMessageService');
 
 // Stub the event service before requiring routes.
 jest.mock('../../services/agentEventService', () => ({
@@ -216,6 +218,102 @@ describe('Cross-agent HTTP routes (ADR-003 Phase 4)', () => {
       expect(res.status).toBe(201);
       expect(res.body.podId).toBe(openPod._id.toString());
       expect(await AgentInstallation.isInstalled('bob', openPod._id, 'default')).toBe(true);
+    });
+  });
+
+  describe('POST /agent-dm authorization', () => {
+    const openDm = (target, originPodId) => request(app)
+      .post('/api/agents/runtime/agent-dm')
+      .set('Authorization', `Bearer ${aliceToken}`)
+      .send({ target, ...(originPodId ? { originPodId: String(originPodId) } : {}) });
+
+    const outsider = async () => {
+      const agentName = `outsider-${new mongoose.Types.ObjectId().toString().slice(-8)}`;
+      const user = await User.create({
+        username: agentName,
+        email: `${agentName}@agents.commonly.local`,
+        password: 'password123',
+        isBot: true,
+        botMetadata: { agentName, instanceId: 'default' },
+      });
+      return { agentName, user };
+    };
+
+    it('keeps the co-pod agent-name path and posts a notice in its authorized origin', async () => {
+      const notice = jest.spyOn(AgentMessageService, 'postMessage').mockResolvedValue({});
+      try {
+        const res = await openDm({ agentName: 'bob' }, pod._id);
+        expect(res.status).toBe(200);
+        expect(res.body.room.type).toBe('agent-dm');
+        expect(notice).toHaveBeenCalledWith(expect.objectContaining({
+          agentName: 'commonly-bot', podId: String(pod._id),
+        }));
+      } finally {
+        notice.mockRestore();
+      }
+    });
+
+    it('keeps an authorized alias as a target name when the agents share a pod', async () => {
+      pod.contacts.set('peer', { agentName: 'bob', instanceId: 'default' });
+      await pod.save();
+      const res = await openDm({ alias: 'peer' }, pod._id);
+      expect(res.status).toBe(200);
+      expect(res.body.room.type).toBe('agent-dm');
+    });
+
+    it('refuses an alias pinned in another pod before reading its contacts or posting a notice', async () => {
+      const { agentName, user } = await outsider();
+      const foreign = await Pod.create({
+        name: 'Foreign pin', type: 'team', createdBy: adminUser._id,
+        members: [adminUser._id, user._id],
+        contacts: { reach: { agentName, instanceId: 'default' } },
+      });
+      const notice = jest.spyOn(AgentMessageService, 'postMessage').mockResolvedValue({});
+      const originRead = jest.spyOn(Pod, 'findById');
+      try {
+        const res = await openDm({ alias: 'reach' }, foreign._id);
+        expect(res.status).toBe(403);
+        expect(originRead).not.toHaveBeenCalledWith(String(foreign._id));
+        expect(await Pod.countDocuments({ type: 'agent-dm', members: { $all: [user._id] } })).toBe(0);
+        expect(notice).not.toHaveBeenCalled();
+      } finally {
+        originRead.mockRestore();
+        notice.mockRestore();
+      }
+    });
+
+    it('refuses a caller-owned pod pin when the target shares no pod', async () => {
+      const { agentName, user } = await outsider();
+      const alice = await User.findOne({ 'botMetadata.agentName': 'alice', isBot: true });
+      const ownPod = await Pod.create({
+        name: 'Caller pin', type: 'team', createdBy: alice._id,
+        members: [alice._id], contacts: { reach: { agentName, instanceId: 'default' } },
+      });
+      await AgentInstallation.create({
+        agentName: 'alice', instanceId: 'default', podId: ownPod._id,
+        installedBy: adminUser._id, status: 'active', version: '1.0.0',
+      });
+      const res = await openDm({ alias: 'reach' }, ownPod._id);
+      expect(res.status).toBe(403);
+      expect(res.body.rule).toBe('sharePod');
+      expect(await Pod.countDocuments({ type: 'agent-dm', members: { $all: [user._id] } })).toBe(0);
+    });
+
+    it('does not send a notice to a foreign origin even when the target shares a pod', async () => {
+      const foreign = await Pod.create({
+        name: 'Foreign notice', type: 'team', createdBy: adminUser._id,
+        members: [adminUser._id],
+      });
+      const roomsBefore = await Pod.countDocuments({ type: 'agent-dm' });
+      const notice = jest.spyOn(AgentMessageService, 'postMessage').mockResolvedValue({});
+      try {
+        const res = await openDm({ agentName: 'bob' }, foreign._id);
+        expect(res.status).toBe(403);
+        expect(await Pod.countDocuments({ type: 'agent-dm' })).toBe(roomsBefore);
+        expect(notice).not.toHaveBeenCalled();
+      } finally {
+        notice.mockRestore();
+      }
     });
   });
 
