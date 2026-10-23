@@ -266,6 +266,20 @@ router.patch('/:userId/ban', adminWriteLimiter, auth, adminAuth, async (req: any
   }
 });
 
+// An admin can invalidate human browser sessions without banning the account.
+router.post('/:userId/sessions/revoke', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
+  try {
+    const target = await User.findById(req.params.userId).select('isBot');
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.isBot) return res.status(400).json({ error: 'Agent accounts have no browser sessions' });
+    await User.updateOne({ _id: target._id }, { $inc: { tokenVersion: 1 } });
+    return res.json({ message: 'Sessions revoked' });
+  } catch (error) {
+    console.error('Failed to revoke user sessions:', error);
+    return res.status(500).json({ error: 'Failed to revoke user sessions' });
+  }
+});
+
 router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
   try {
     const { userId } = req.params;

@@ -330,7 +330,7 @@ const authorizePodFile = async (req: AuthReq, fileName: string): Promise<boolean
     try {
       const decoded = jwt.verify(bearer, process.env.JWT_SECRET as string) as Record<string, unknown>;
       const uid = (decoded.id || (decoded.user as Record<string, unknown>)?.id) as string | undefined;
-      if (uid && !sessionRefusal(await loadSessionAccount(uid)) && await canReadAttachment(fileName, uid)) {
+      if (uid && !sessionRefusal(await loadSessionAccount(uid), decoded) && await canReadAttachment(fileName, uid)) {
         return true;
       }
     } catch {

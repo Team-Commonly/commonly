@@ -54,6 +54,11 @@
     "removeError": "无法移除此技能。"
   },
   "settings": {
+    "sessions": {
+      "signOutEverywhere": "退出所有浏览器会话",
+      "confirm": "退出所有浏览器会话，包括当前会话？",
+      "failed": "无法退出所有浏览器会话，请重试。"
+    },
     "username": {
       "save": "保存用户名",
       "saving": "保存中…",

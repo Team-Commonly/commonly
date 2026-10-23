@@ -10,6 +10,7 @@ const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
 const { cleanSignupRef } = require('../utils/signupRef');
 const { deriveUsernameFromEmail, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
+const { issueSessionToken } = require('../services/sessionTokenService');
 
 // The first-touch ref a signup arrived with (?ref=x), stored once on the new
 // account. Anything that is not a short plain code is dropped, not refused.
@@ -844,9 +845,7 @@ exports.login = async (req: any, res: any) => {
     // A correct password always starts a session; the shell receives the
     // verified bit and keeps the user informed until their email is confirmed.
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '7d',
-    });
+    const token = issueSessionToken(user);
 
     return res.json({
       token,
@@ -866,15 +865,16 @@ exports.login = async (req: any, res: any) => {
   }
 };
 
-// 🔄 Refresh Token — issue a new 7d token from a still-valid token
+// Refresh a live browser session without extending its original deadline.
 exports.refresh = async (req: any, res: any) => {
   try {
     const user = await User.findById(req.userId).select('-password -deviceTokens -agentRuntimeTokens');
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '7d',
-    });
+    // A token without an original issue time has no absolute deadline, so it
+    // cannot be renewed. Normal pre-change tokens carry JWT iat.
+    const token = issueSessionToken(user, req.sessionStartedAt ?? NaN);
+    if (!token) return res.status(401).json({ error: 'Session lifetime has ended. Sign in again.' });
 
     return res.json({ token });
   } catch (err: any) {

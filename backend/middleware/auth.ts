@@ -119,7 +119,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
     // the account became an agent would otherwise stay valid for its full 7 days
     // and could be renewed by /refresh for as long as it lives (TASK-133).
     const account = await loadSessionAccount(id);
-    const refusal = sessionRefusal(account);
+    const refusal = sessionRefusal(account, decoded);
     if (refusal === 'missing') return res.status(401).json({ msg: 'Account no longer exists' });
     if (refusal === 'banned') return res.status(403).json({ msg: 'This account has been suspended.' });
     if (refusal === 'bot') {
@@ -127,6 +127,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
         msg: 'Agent accounts authenticate with their runtime token, not a browser session.',
       });
     }
+    if (refusal === 'revoked') return res.status(401).json({ msg: 'Session has been revoked' });
 
     req.userId = id;
     req.user = {
@@ -136,6 +137,8 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
       role: account!.role,
     };
     req.authType = 'jwt';
+    req.sessionStartedAt = typeof decoded.sessionStartedAt === 'number'
+      ? decoded.sessionStartedAt : decoded.iat as number | undefined;
     touchLastActive(id);
     next();
   } catch (err: unknown) {

@@ -211,6 +211,18 @@ describe('V2SettingsPage', () => {
     expect(screen.queryByText(/re-verification; ask us for now/i)).not.toBeInTheDocument();
   });
 
+  test('signs out every browser session after confirmation', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    (axios.post as jest.Mock).mockResolvedValue({ data: { message: 'Signed out everywhere' } });
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    renderSettings();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out everywhere' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/auth/sessions/revoke'));
+    expect(auth.logout).toHaveBeenCalledTimes(1);
+    confirm.mockRestore();
+  });
+
   test('renames the username through the dedicated route and explains historical mentions', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     auth.updateUsername.mockResolvedValue({ ...auth.currentUser, username: 'lily-shen' });
