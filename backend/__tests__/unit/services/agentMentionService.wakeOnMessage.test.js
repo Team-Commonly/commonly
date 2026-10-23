@@ -246,10 +246,10 @@ describe('wake-on-message (ADR-018 D8)', () => {
     });
 
     expect(res.woken).toEqual([]);
-    expect(wakeCalls()).toHaveLength(0);
+    expect(wakeCalls()).toEqual([expect.objectContaining({ agentName: 'seat-b', deliveryMode: 'digest' })]);
     // The dampener counted the WAKE event type, not mentions.
     expect(AgentEvent.countDocuments).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'message.posted', agentName: 'seat-b' }),
+      expect.objectContaining({ type: 'message.posted', agentName: 'seat-b', deliveryMode: { $ne: 'digest' } }),
     );
   });
 
@@ -291,6 +291,7 @@ describe('wake-on-message (ADR-018 D8)', () => {
         podId: 'pod-1', message: { content: 'Scout says welcome', id: 'msg-h2' }, userId: 'bot-1', username: 'scout',
       });
       expect(res.woken).toEqual(['seat-b']);
+      expect(wakeCalls().find((call) => call.agentName === 'sam-claude').deliveryMode).toBe('digest');
     });
 
     test('an unknown sender is not a known human, so it doesn\'t wake either', async () => {
@@ -300,6 +301,7 @@ describe('wake-on-message (ADR-018 D8)', () => {
         podId: 'pod-1', message: { content: 'who am I', id: 'msg-h3' }, userId: 'ghost', username: 'ghost',
       });
       expect(res.woken).toEqual([]);
+      expect(wakeCalls().find((call) => call.agentName === 'sam-claude').deliveryMode).toBe('digest');
     });
   });
 

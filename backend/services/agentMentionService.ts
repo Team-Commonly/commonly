@@ -1200,6 +1200,7 @@ const isWakeLoopDampened = async (
       instanceId: target.instanceId || 'default',
       podId,
       type: 'message.posted',
+      deliveryMode: { $ne: 'digest' },
       createdAt: { $gte: new Date(Date.now() - MENTION_LOOP_WINDOW_MS) },
     });
     if (count > MENTION_LOOP_MAX) {
@@ -1416,9 +1417,9 @@ const enqueueWakeOnMessage = async ({
   // single User.find).
   let cachedBotUserIds: Map<string, string> | undefined = resolvedBotUserIds;
   const needsOwnershipIds = Boolean(threadRootId) || /\bTASK-\d+\b|#\d+\b/i.test(rawContent);
-  if (needsOwnershipIds) cachedBotUserIds = cachedBotUserIds ?? await resolveBotUserIds(targets);
   let addressedTargets: Set<string>;
   try {
+    if (needsOwnershipIds) cachedBotUserIds = cachedBotUserIds ?? await resolveBotUserIds(targets);
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const { addressedMessageTargets } = require('./messageDeliveryModeService');
     addressedTargets = await addressedMessageTargets({
@@ -1428,6 +1429,7 @@ const enqueueWakeOnMessage = async ({
   } catch (error) {
     console.warn('[message-delivery] addressed lookup failed (waking):', (error as Error).message);
     addressedTargets = new Set(targets.map(installKey));
+    cachedBotUserIds = cachedBotUserIds ?? new Map<string, string>();
   }
   if (threadRootId) {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -1507,10 +1509,13 @@ const enqueueWakeOnMessage = async ({
     const key = `${agentName}:${instanceId.toLowerCase()}`;
     if (key === senderKey) return;
     if (excludeKeys?.has(key)) return;
-    if (humanOnlyWake(inst) && sender?.isBot !== false) return;
-    if (senderKey && await isWakeLoopDampened({ agentName, instanceId }, podId)) return;
     const addressed = addressedTargets.has(key);
-    const deliveryMode = wakeOnMessageEnabled(inst) || addressed ? 'wake' : 'digest';
+    let deliveryMode = addressed || (wakeOnMessageEnabled(inst)
+      && (!humanOnlyWake(inst) || sender?.isBot === false)) ? 'wake' : 'digest';
+    // Loop controls suppress a model turn, not receipt. The update remains
+    // available in the next digest for this seat.
+    if (deliveryMode === 'wake' && senderKey
+      && await isWakeLoopDampened({ agentName, instanceId }, podId)) deliveryMode = 'digest';
     const repliesToYou = !!(parentAuthorUserId
       && parentBotUserIds
       && parentBotUserIds.get(installKey(inst)) === parentAuthorUserId);

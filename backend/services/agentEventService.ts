@@ -871,7 +871,7 @@ class AgentEventService {
       // pending delete below excludes digest. Other event retention can run.
       console.warn('[agent-event] digest fold failed:', (err as Error).message);
     }
-    const [pendingResult, deliveredResult, failedResult] = await Promise.all([
+    const [pendingResult, ackedResult, deliveredResult, failedResult] = await Promise.all([
       // #993: this used to run on a 30-minute `stalePendingThreshold`, which put
       // it AHEAD of the retry lifecycle rather than after it. The requeue pass
       // above sets `status` but not `createdAt`, so an event it had just rescued
@@ -898,12 +898,19 @@ class AgentEventService {
       AgentEvent.deleteMany({
         status: 'pending', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: deliveredThreshold },
       }),
-      AgentEvent.deleteMany({ status: { $in: ['delivered', 'acked'] }, createdAt: { $lt: deliveredThreshold } }),
-      AgentEvent.deleteMany({ status: 'failed', createdAt: { $lt: failedThreshold } }),
+      AgentEvent.deleteMany({
+        status: 'acked', createdAt: { $lt: deliveredThreshold },
+      }),
+      AgentEvent.deleteMany({
+        status: 'delivered', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: deliveredThreshold },
+      }),
+      AgentEvent.deleteMany({
+        status: 'failed', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: failedThreshold },
+      }),
     ]) as Array<{ deletedCount?: number }>;
 
     const deletedPending = pendingResult?.deletedCount || 0;
-    const deletedDelivered = deliveredResult?.deletedCount || 0;
+    const deletedDelivered = (ackedResult?.deletedCount || 0) + (deliveredResult?.deletedCount || 0);
     const deletedFailed = failedResult?.deletedCount || 0;
 
     return {

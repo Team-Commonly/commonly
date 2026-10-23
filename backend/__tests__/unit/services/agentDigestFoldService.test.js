@@ -39,6 +39,17 @@ describe('expired digest fold', () => {
     expect(await AgentEvent.countDocuments({ podId })).toBe(1);
   });
 
+  it('folds old unacked deliveries and failures before ordinary GC can delete them', async () => {
+    const podId = new mongoose.Types.ObjectId();
+    const delivered = await seed(new Date(NOW.getTime() - 2 * 60 * 60 * 1000), podId);
+    const failed = await seed(new Date(NOW.getTime() - 90 * 60 * 1000), podId);
+    await AgentEvent.collection.updateOne({ _id: delivered.insertedId }, { $set: { status: 'delivered' } });
+    await AgentEvent.collection.updateOne({ _id: failed.insertedId }, { $set: { status: 'failed' } });
+
+    expect(await foldExpiredDigests(THRESHOLD)).toBe(2);
+    expect((await AgentDigestState.findOne({ agentName: 'flint', podId }).lean()).unreadCount).toBe(2);
+  });
+
   it('does not count a row twice after a crash between state update and delete', async () => {
     const podId = new mongoose.Types.ObjectId();
     const event = await seed(new Date(NOW.getTime() - 2 * 60 * 60 * 1000), podId);

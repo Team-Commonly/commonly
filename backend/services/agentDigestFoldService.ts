@@ -20,7 +20,8 @@ type FoldCandidate = {
  */
 export async function foldExpiredDigests(threshold: Date): Promise<number> {
   const candidates = await AgentEvent.find({
-    deliveryMode: 'digest', status: { $in: ['pending', 'folding'] }, createdAt: { $lt: threshold },
+    deliveryMode: 'digest', status: { $in: ['pending', 'folding', 'delivered', 'failed'] },
+    createdAt: { $lt: threshold },
   }).sort({ _id: 1 }).limit(FOLD_BATCH_SIZE).lean() as FoldCandidate[];
   let folded = 0;
   const blockedScopes = new Set<string>();
@@ -38,16 +39,17 @@ export async function foldExpiredDigests(threshold: Date): Promise<number> {
     // earlier row has not reached the retention horizon yet.
     // eslint-disable-next-line no-await-in-loop
     const olderUnread = await AgentEvent.exists({
-      ...scope, deliveryMode: 'digest', status: { $in: ['pending', 'folding'] }, _id: { $lt: id },
+      ...scope, deliveryMode: 'digest', status: { $in: ['pending', 'folding', 'delivered', 'failed'] },
+      _id: { $lt: id },
     });
     if (olderUnread) {
       blockedScopes.add(scopeKey);
       continue;
     }
-    if (candidate.status === 'pending') {
+    if (candidate.status !== 'folding') {
       // eslint-disable-next-line no-await-in-loop
       const claimed = await AgentEvent.findOneAndUpdate(
-        { _id: id, status: 'pending', deliveryMode: 'digest' },
+        { _id: id, status: candidate.status, deliveryMode: 'digest' },
         { $set: { status: 'folding' } },
         { new: true },
       );

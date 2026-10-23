@@ -332,7 +332,7 @@ describe('garbageCollect: the requeue predicate and its cap', () => {
     await AgentEventService.garbageCollect({});
 
     const pending = deletes().find((f) => f.status === 'pending');
-    const settled = deletes().find((f) => Array.isArray(f.status?.$in));
+    const settled = deletes().find((f) => f.status === 'acked');
 
     expect(pending).toBeDefined();
     expect(settled).toBeDefined();

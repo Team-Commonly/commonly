@@ -60,7 +60,6 @@ export async function addressedMessageTargets({
   });
   const rows = await Task.find({
     podId,
-    status: { $in: ['pending', 'claimed'] },
     $or: selectors,
   }).select('taskId assignee claimedBy claimExpiresAt status prUrl').lean() as Array<{
     taskId: string; assignee?: string | null; claimedBy?: string | null;

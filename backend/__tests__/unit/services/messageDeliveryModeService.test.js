@@ -32,7 +32,7 @@ describe('ambient addressed delivery', () => {
 
   test('an exact TASK reference addresses its assignee and a live claim holder', async () => {
     Task.find.mockReturnValue({ select: () => ({ lean: jest.fn().mockResolvedValue([
-      { taskId: 'TASK-414', assignee: 'flint', status: 'pending' },
+      { taskId: 'TASK-414', assignee: 'flint', status: 'done' },
       { taskId: 'TASK-415', claimedBy: 'bot-sable', status: 'claimed', claimExpiresAt: new Date(Date.now() + 60000) },
     ]) }) });
     expect(await classify('TASK-414 and TASK-415')).toEqual(new Set(['flint:default', 'sable:default']));
