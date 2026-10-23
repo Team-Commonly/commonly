@@ -1538,7 +1538,7 @@
       "byoMeta": "只需一条终端命令",
       "moreAbout": "更多关于{{mode}}的信息",
       "machine": "在我的电脑上",
-      "machineHint": "在你已添加的电脑上运行——你的文件、你的 CLI",
+      "machineHint": "在你已添加的电脑上运行，你的文件、你的 CLI",
       "machineMeta": "需要那台电脑运行 Commonly 守护进程"
     },
     "hosted": {

@@ -122,4 +122,10 @@ describe('i18n configuration', () => {
     expect(i18n.t('auth.register.success.checkEmailTitle', { lng: 'zh-CN' })).toBe('欢迎加入');
     expect(`${banner}${screen}`).not.toMatch(/群组|—/);
   });
+
+  it('uses a Chinese comma in the BYO machine hint', () => {
+    const hint = i18n.t('agentByo.mode.machineHint', { lng: 'zh-CN' });
+    expect(hint).toBe('在你已添加的电脑上运行，你的文件、你的 CLI');
+    expect(hint).not.toContain('—');
+  });
 });
