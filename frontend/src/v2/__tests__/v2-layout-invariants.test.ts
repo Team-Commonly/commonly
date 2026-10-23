@@ -235,6 +235,22 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toMatch(/^\.v2-root button:not\(\.MuiButtonBase-root\)\s*\{/m);
   });
 
+  test('authored utility controls remain visible after the button reset loses specificity', () => {
+    const rail = selectorRuleBody(v2, '.v2-rail__feedback');
+    const languageTrigger = ruleBody(v2, '.v2-lang-switch__trigger');
+    const languageItem = ruleBody(v2, '.v2-lang-switch__item');
+    const mobile = mediaBlockContaining(v2, '.v2-inspector-backdrop');
+
+    // These are deliberate neutral controls, not accidental reset leaks.
+    expect(rail).toContain('color: var(--v2-text-tertiary)');
+    expect(rail).toContain('background: transparent');
+    expect(rail).toContain('border-radius: var(--v2-radius-sm)');
+    expect(languageTrigger).toContain('padding: 4px 6px');
+    expect(languageItem).toContain('padding: 8px 12px');
+    expect(languageItem).toContain('color: var(--v2-text-secondary)');
+    expect(mobile).toContain('background: rgba(15, 17, 21, 0.42)');
+  });
+
   // #2287 (QA BYO walk 1): "Other ways to connect" folds the alternatives so the
   // page shows one command, and the needs line is read before the Copy button.
   // jsdom cannot see either; sprint-review deleted all three rules and every
@@ -935,6 +951,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // `.v2-root { height:100vh; overflow:hidden }` clips it. This is the general
     // rule the showcase bug taught us; keep the known-good example pinned.
     expect(ruleBody(aprofile, '.v2-root.v2-aprofile')).toContain('overflow-y: auto');
+  });
+
+  test('the authenticated agent-profile Talk button is ink, while public links stay cobalt', () => {
+    const linkPrimary = ruleBody(aprofile, '.v2-aprofile__btn--primary');
+    const buttonPrimary = ruleBody(aprofile, '.v2-root button.v2-aprofile__btn--primary');
+
+    expect(linkPrimary).toContain('background: var(--v2-accent)');
+    expect(buttonPrimary).toContain('background: var(--v2-ink)');
+    expect(buttonPrimary).toContain('border-color: var(--v2-ink)');
+    expect(aprofile).toContain('.v2-root button.v2-aprofile__btn--primary:hover');
+    expect(aprofile).toContain('background: var(--v2-ink-hover)');
   });
 
   test('the nav rail pane lets its language dropdown escape the pane clip', () => {
