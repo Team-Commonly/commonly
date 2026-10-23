@@ -82,9 +82,11 @@ jest.mock('../../../models/Message', () => {
 const mockBrokerDispatch = jest.fn();
 const mockComputerSnapshot = jest.fn();
 const mockComputerScreenshot = jest.fn();
+const mockComputerNavigate = jest.fn();
 jest.mock('../../../services/agentComputerBroker', () => ({
   agentComputerEnabled: () => true,
   agentComputerBroker: {
+    navigate: (...args) => mockComputerNavigate(...args),
     snapshot: (...args) => mockComputerSnapshot(...args),
     screenshot: (...args) => mockComputerScreenshot(...args),
   },
@@ -166,9 +168,11 @@ describe('native turn with commonly_fetch_url', () => {
       : null));
     mockComputerSnapshot.mockResolvedValue({ url: 'https://www.linkedin.com/', title: 'LinkedIn', text: 'Untrusted profile' });
     mockComputerScreenshot.mockResolvedValue(Buffer.from('dummy-png'));
+    mockComputerNavigate.mockResolvedValue({ url: 'https://www.linkedin.com/in/a', title: 'Untrusted profile' });
   });
 
   test.each([
+    ['computer_navigate', mockComputerNavigate],
     ['computer_snapshot', mockComputerSnapshot],
     ['computer_screenshot', mockComputerScreenshot],
   ])('%s taints the turn and blocks a bridged post', async (computerTool, reader) => {
@@ -179,12 +183,16 @@ describe('native turn with commonly_fetch_url', () => {
       installedBy: SAM_ID,
     };
     axios.post
-      .mockResolvedValueOnce(toolCalls(call('c1', computerTool, {}), call('c2', 'commonly_post_message', { content: 'Private profile text' })))
+      .mockResolvedValueOnce(toolCalls(call('c1', computerTool, computerTool === 'computer_navigate'
+        ? { url: 'https://www.linkedin.com/in/a' } : {}), call('c2', 'commonly_post_message', { content: 'Private profile text' })))
       .mockResolvedValueOnce(finalReply);
 
     await runAgent(installation, mention());
 
-    expect(reader).toHaveBeenCalledWith(SAM_ID, installation._id);
+    if (computerTool === 'computer_navigate') {
+      expect(reader).toHaveBeenCalledWith(SAM_ID, installation._id, 'https://www.linkedin.com/in/a');
+      expect(toolMessages(1)[0].content).toContain('untrusted third-party content');
+    } else expect(reader).toHaveBeenCalledWith(SAM_ID, installation._id);
     expect(toolMessages(1)[1].content).toMatch(/cannot post in it/);
     expect(offeredIn(1)).not.toContain('commonly_create_task');
     expect(offeredIn(1)).toContain('computer_click');

@@ -388,11 +388,12 @@ export class AgentComputerBroker {
     const current = new URL(old.url());
     const landing = current.protocol === 'https:' && this.config.allowedHosts.has(current.hostname.toLowerCase())
       ? `${current.origin}/` : 'about:blank';
-    // A fresh tab alone does not remove an OTP that a site copied into
-    // localStorage and restores on load. Erase non-cookie origin storage for
-    // every host this trial can read before the agent receives the new tab.
-    // Cookies remain so ordinary logged-in sessions can survive hand-back.
-    const cdp = await state.context.newCDPSession(old);
+    // Close the tainted page before clearing storage so its timers cannot
+    // restore a human-entered credential. The blank replacement has no site
+    // scripts; clear non-cookie storage before it navigates. Cookies remain.
+    await old.close();
+    const fresh = await state.context.newPage();
+    const cdp = await state.context.newCDPSession(fresh);
     try {
       for (const host of this.config.allowedHosts) {
         await cdp.send('Storage.clearDataForOrigin', {
@@ -403,15 +404,11 @@ export class AgentComputerBroker {
     } finally {
       await cdp.detach();
     }
-    // Replacing the page destroys human-entered passwords/OTPs and all timers
-    // queued by an earlier agent click before the agent can read again.
-    await old.close();
-    // Clearing storage may itself wake a page listener that tries a write.
+    // A different tab on the shared profile may issue a write during clearing.
     await this.abortPendingWrites(state, installationId);
     state.tabs.delete(installationId);
     state.frames.delete(installationId);
     state.humanActionSeen.delete(installationId);
-    const fresh = await state.context.newPage();
     const targetId = await this.targetId(state.context, fresh);
     await this.takeoverState.bind(userId, installationId, targetId);
     await this.attachPage(fresh);

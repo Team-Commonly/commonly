@@ -987,7 +987,10 @@ async function dispatchTool(
           return { content: { ok: false, error: 'Agent computer requires a human installation owner.' }, error: 'computer_owner_denied' };
         }
         if (name === 'computer_navigate') {
-          return { content: await agentComputerBroker.navigate(ownerId, installationId, String(args.url || '')) };
+          const page = await agentComputerBroker.navigate(ownerId, installationId, String(args.url || ''));
+          ctx.webTainted = true;
+          ctx.computerReadSeen = true;
+          return { content: page, untrustedSourceTitle: 'a computer page', recorded: { url: page.url, title: page.title } };
         }
         if (name === 'computer_snapshot') {
           const page = await agentComputerBroker.snapshot(ownerId, installationId);

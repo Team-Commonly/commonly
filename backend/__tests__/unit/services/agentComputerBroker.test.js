@@ -6,13 +6,13 @@ const FIRST = '111111111111111111111111';
 const SECOND = '222222222222222222222222';
 let nextTarget = 0;
 
-const fakePage = () => {
+const fakePage = (events = []) => {
   let current = 'about:blank';
   let tabName = '';
   const page = {
     targetId: `cdp-target-${++nextTarget}`,
     isClosed: () => false,
-    close: jest.fn(),
+    close: jest.fn(async () => { events.push('old.close'); }),
     setDefaultTimeout: jest.fn(),
     route: jest.fn(),
     addInitScript: jest.fn(),
@@ -49,14 +49,16 @@ const fakePage = () => {
 const setup = (status = 'absent') => {
   const pages = [];
   const cdpCommands = [];
+  const events = [];
   const context = { route: jest.fn(), newPage: jest.fn(async () => {
-    const page = fakePage();
+    const page = fakePage(events);
     pages.push(page);
     return page;
   }), pages: () => pages.slice(0, 2),
   newCDPSession: jest.fn(async (page) => ({
     send: jest.fn(async (command, args) => {
       cdpCommands.push({ command, args });
+      events.push(`${command}:${page.targetId}`);
       return { targetInfo: { targetId: page.targetId } };
     }),
     detach: jest.fn(),
@@ -67,7 +69,7 @@ const setup = (status = 'absent') => {
     : { id: 'one', status: 'live' }));
   const connect = jest.fn(async (endpoint) => (endpoint.includes(OWNER) ? browser : {
     contexts: () => [{ route: jest.fn(), newCDPSession: context.newCDPSession, newPage: async () => {
-      const page = fakePage();
+      const page = fakePage(events);
       pages.push(page);
       return page;
     }, pages: () => [] }],
@@ -96,7 +98,7 @@ const setup = (status = 'absent') => {
   };
   return {
     broker: new AgentComputerBroker(config, request, connect, wake, takeoverState),
-    pages, context, request, connect, wake, takeoverState, config, cdpCommands,
+    pages, context, request, connect, wake, takeoverState, config, cdpCommands, events,
   };
 };
 
@@ -158,7 +160,7 @@ describe('agent computer broker (fake Steel and CDP)', () => {
   });
 
   test('login fields require takeover; takeover blocks agent actions until hand-back', async () => {
-    const { broker, pages, context, takeoverState, cdpCommands } = setup();
+    const { broker, pages, context, takeoverState, cdpCommands, events } = setup();
     await broker.snapshot(OWNER, FIRST);
     await expect(broker.type(OWNER, FIRST, 'password', 'secret')).rejects.toThrow('require the person');
     expect(pages[0]._fill).not.toHaveBeenCalled();
@@ -190,6 +192,8 @@ describe('agent computer broker (fake Steel and CDP)', () => {
     await broker.decideWrite(OWNER, FIRST, pending[0].id, true);
     expect(mutating.fallback).toHaveBeenCalledTimes(1);
     await broker.handBack(OWNER, FIRST);
+    expect(events.indexOf('old.close')).toBeLessThan(events.indexOf(`Storage.clearDataForOrigin:${pages[1].targetId}`));
+    expect(events).not.toContain(`Storage.clearDataForOrigin:${pages[0].targetId}`);
     expect(cdpCommands).toContainEqual({
       command: 'Storage.clearDataForOrigin',
       args: {
