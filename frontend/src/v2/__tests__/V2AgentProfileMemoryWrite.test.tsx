@@ -86,6 +86,26 @@ describe('V2AgentProfile memory-write visibility', () => {
     expect(screen.queryByText(/Runtime metadata|Deduplication state|Long-term memory/)).toBeNull();
   });
 
+  it('shows an owner the revoked connection and a single Reconnect action', async () => {
+    window.localStorage.setItem('token', 'owner-token');
+    profileClient.get.mockImplementation((url: string) => {
+      if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+        viewerRole: 'owner', totalEntries: 0, sections: [], pods: [{ id: 'pod-1', name: 'Workspace' }],
+      } });
+      if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
+        name: 'claude-code', instanceId: 'observer', runtime: { runtimeType: 'webhook' },
+        connection: { state: 'revoked', lastSeenAt: null },
+      }] } });
+      return Promise.resolve(profilePayload(null));
+    });
+    renderProfile();
+    expect(await screen.findByTestId('agent-profile-connection'))
+      .toHaveTextContent('Disconnected: key revoked');
+    expect(screen.getByRole('link', { name: 'Reconnect' }))
+      .toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=claude-code&reconnect=1');
+    expect(screen.queryByRole('button', { name: 'Talk to Observer' })).toBeNull();
+  });
+
   it('opens the same 1:1 room endpoint for a signed-in visitor', async () => {
     window.localStorage.setItem('token', 'viewer-token');
     renderProfile();

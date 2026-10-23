@@ -5,6 +5,7 @@ import axios from 'axios';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2Avatar from '../components/V2Avatar';
 import { presetCharacterOptions } from '../../utils/avatarUtils';
+import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import '../v2.css';
 import './v2-agent-profile.css';
 import './v2-agent-settings.css';
@@ -119,6 +120,9 @@ const V2AgentProfile: React.FC = () => {
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [memIndex, setMemIndex] = useState<MemoryIndex | null>(null);
   const memoryRequestId = useRef(0);
+  const [ownedConnection, setOwnedConnection] = useState<{
+    connection: AgentConnection; podId: string; runtimeType?: string;
+  } | null>(null);
   const [openingRoom, setOpeningRoom] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
 
@@ -181,6 +185,28 @@ const V2AgentProfile: React.FC = () => {
   }, [t, agentName, fetchProfile, fetchMemoryIndex]);
 
   useEffect(() => { fetchProfile(); fetchMemoryIndex(); }, [fetchProfile, fetchMemoryIndex]);
+
+  // The public profile is deliberately tokenless. Connection details come
+  // only from the owner's authenticated roster, never from the public API.
+  useEffect(() => {
+    const podId = memIndex?.pods?.[0]?.id;
+    const token = localStorage.getItem('token');
+    if (!podId || !token || !agentName) { setOwnedConnection(null); return undefined; }
+    let cancelled = false;
+    getClient().get<{ agents?: Array<{
+      name: string; instanceId: string; runtime?: { runtimeType?: string }; connection?: AgentConnection;
+    }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then((response) => {
+      if (cancelled) return;
+      const match = response.data.agents?.find((row) => row.name === agentName
+        && row.instanceId === (instanceId || 'default') && row.connection);
+      setOwnedConnection(match?.connection ? {
+        connection: match.connection, podId, runtimeType: match.runtime?.runtimeType,
+      } : null);
+    }).catch(() => { if (!cancelled) setOwnedConnection(null); });
+    return () => { cancelled = true; };
+  }, [agentName, instanceId, memIndex]);
 
   // Owner-editable avatar (Sam, 2026-08-20): visible only when the caller is
   // the agent's installer or an admin — the backend is the real gate; this
@@ -352,6 +378,9 @@ const V2AgentProfile: React.FC = () => {
               {agent.officialAgent && <span className="v2-aprofile__badge">{t('agentProfile.hero.official')}</span>}
             </div>
             {agent.description && <p className="v2-aprofile__desc">{agent.description}</p>}
+            {ownedConnection && <p className="v2-aprofile__meta" data-testid="agent-profile-connection">
+              {connectionLabel(ownedConnection.connection, t)}
+            </p>}
             <div className="v2-aprofile__meta">
               <span>{t('agentProfile.hero.activeInPods', { count: pods.count })}</span>
               {memory.has && <span>· {t('agentProfile.hero.memories', { count: memory.entryCount })}</span>}
@@ -364,7 +393,12 @@ const V2AgentProfile: React.FC = () => {
               </div>
             )}
           </div>
-          {authed ? (
+          {ownedConnection && ownedConnection.connection.state !== 'connected' ? (
+            <Link className="v2-aprofile__btn v2-aprofile__btn--primary"
+              to={`/v2/agents/byo?pod=${encodeURIComponent(ownedConnection.podId)}&name=${encodeURIComponent(agent.agentName)}&reconnect=1${ownedConnection.runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
+              {t('agentConnection.reconnect')}
+            </Link>
+          ) : authed ? (
             <button
               type="button"
               className="v2-aprofile__btn v2-aprofile__btn--primary"
