@@ -1,6 +1,7 @@
 // Owner/admin controls for one agent installation at a time.
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
+import { hostedCapsForOwner } from '../../services/hostedRuntimeService';
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
@@ -55,7 +56,8 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
       .select('name').lean();
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
-    return res.json({ podCount: installations.length,
+    const { turnsPerDay } = await hostedCapsForOwner(userId);
+    return res.json({ turnCap: turnsPerDay, podCount: installations.length,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
       installations: manageable
       .filter((entry: any) => names.has(String(entry.podId)))

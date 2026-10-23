@@ -47,18 +47,16 @@ const V2AgentWakePods: React.FC<{
     setDraftMinutes({});
     const load = async () => {
       try {
-        const [settingsResult, capResult] = await Promise.allSettled([
-          axios.get<{ installations: InstallationSettings[]; activePodCount: number; podCount: number }>(`${base}?${query}`),
-          axios.get<{ caps?: { turnsPerDay?: number } }>('/api/hosted/availability'),
-        ]);
+        const settingsResult = await axios.get<{
+          installations: InstallationSettings[]; activePodCount: number; podCount: number; turnCap?: number;
+        }>(`${base}?${query}`);
         if (!active) return;
-        if (settingsResult.status === 'rejected') throw settingsResult.reason;
-        const rows = Array.isArray(settingsResult.value.data.installations) ? settingsResult.value.data.installations : [];
+        const rows = Array.isArray(settingsResult.data.installations) ? settingsResult.data.installations : [];
         setInstallations(rows);
-        setActivePodCount(settingsResult.value.data.activePodCount ?? rows.filter((row) => row.status === 'active').length);
-        setPodCount(settingsResult.value.data.podCount ?? rows.length);
+        setActivePodCount(settingsResult.data.activePodCount ?? rows.filter((row) => row.status === 'active').length);
+        setPodCount(settingsResult.data.podCount ?? rows.length);
         setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
-        setTurnCap(capResult.status === 'fulfilled' ? capResult.value.data.caps?.turnsPerDay ?? null : null);
+        setTurnCap(settingsResult.data.turnCap ?? null);
       } catch (requestError) {
         if (active) setError((requestError as { response?: { status?: number } })?.response?.status === 403
           ? t('agentSettings.forbidden') : t('agentSettings.loadError'));

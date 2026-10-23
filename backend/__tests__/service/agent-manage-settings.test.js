@@ -52,6 +52,7 @@ describe('per-installation agent settings', () => {
     })]);
     expect(response.body.activePodCount).toBe(2);
     expect(response.body.podCount).toBe(2);
+    expect(response.body.turnCap).toBe(30);
   });
 
   it('counts active connections separately from installed pod rows', async () => {
