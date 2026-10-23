@@ -115,7 +115,9 @@ describe('agent identity settings with stored installations', () => {
     const response = await request(app).patch(url(podA._id)).set('Authorization', bearer(admin))
       .send({ instanceId: 'seat', displayName: 'New name' });
     expect(response.status).toBe(200);
-    expect((await User.findById(identity._id)).botMetadata.displayName).toBe('New name');
+    expect((await User.findById(identity._id)).botMetadata).toEqual(expect.objectContaining({
+      displayName: 'New name', agentName: 'identity-agent', instanceId: 'seat',
+    }));
     const installations = await AgentInstallation.find({ agentName: 'identity-agent', instanceId: 'seat' });
     expect(installations.map((row) => row.displayName)).toEqual(['New name', 'New name']);
     const profiles = await AgentProfile.find({ agentName: 'identity-agent', instanceId: 'seat' });
