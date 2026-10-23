@@ -1386,7 +1386,12 @@
     },
     "result": {
       "heading": "Your connect command for",
-      "keyOnce": "The command holds a private key we show only once. Lost it? Come back and press “Get my connect command” again for a new one."
+      "keyOnce": "The command holds a private key we show only once. Lost it? Come back and press “Get my connect command” again, then confirm that you want to replace the old key."
+    },
+    "rekey": {
+      "warning": "{{name}} already has a key. Replacing it will disconnect the running agent until you run the new connect command.",
+      "replace": "Replace the running agent’s key",
+      "cancel": "Keep the current key"
     },
     "snippets": {
       "runtimeToken": "The key on its own",
