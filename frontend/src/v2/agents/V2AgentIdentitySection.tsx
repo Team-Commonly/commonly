@@ -67,14 +67,17 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
       });
       setSaved(true);
     } catch (requestError) {
-      const status = (requestError as { response?: { status?: number } })?.response?.status;
+      const response = (requestError as { response?: { status?: number; data?: { code?: string } } })?.response;
+      const status = response?.status;
       const messageKey: Record<number, string> = {
         400: 'agentSettings.identityNameError',
         403: 'agentSettings.identityPermissionError',
         409: 'agentSettings.identityScopeError',
         503: 'agentSettings.identityMirrorError',
       };
-      setError(t(messageKey[status || 0] || 'agentSettings.identitySaveError'));
+      setError(t(response?.data?.code === 'identity_projection_retryable'
+        ? 'agentSettings.identityProjectionError'
+        : messageKey[status || 0] || 'agentSettings.identitySaveError'));
     } finally {
       setBusy(false);
     }

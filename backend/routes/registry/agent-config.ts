@@ -330,44 +330,59 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       return res.status(404).json({ error: 'Agent identity not found' });
     }
     const effectiveDisplayName = renamedIdentity?.displayName;
-    for (const targetInstallation of installationsToUpdate) {
-      applyInstallationSettings(targetInstallation);
-      if (effectiveDisplayName) targetInstallation.displayName = effectiveDisplayName;
-      // eslint-disable-next-line no-await-in-loop
-      await targetInstallation.save();
-    }
+    try {
+      for (const targetInstallation of installationsToUpdate) {
+        applyInstallationSettings(targetInstallation);
+        if (effectiveDisplayName) targetInstallation.displayName = effectiveDisplayName;
+        // eslint-disable-next-line no-await-in-loop
+        await targetInstallation.save();
+      }
 
-    if (
-      status
-      || modelPreferences
-      || displayName
-      || instructions !== undefined
-      || persona !== undefined
-      || normalizedToolPolicy !== null
-      || normalizedContextPolicy !== null
-    ) {
-      const updates: any = {};
-      if (status) updates.status = status;
-      if (modelPreferences) updates.modelPreferences = modelPreferences;
-      if (effectiveDisplayName) updates.name = effectiveDisplayName;
-      if (instructions !== undefined) updates.instructions = instructions;
-      if (persona !== undefined) updates.persona = persona;
-      if (normalizedToolPolicy !== null) updates.toolPolicy = normalizedToolPolicy;
-      if (normalizedContextPolicy !== null) updates.contextPolicy = normalizedContextPolicy;
-      await AgentProfile.updateMany(
-        {
-          agentId: buildAgentProfileId(name, normalizedInstanceId),
-          podId: { $in: writablePodIds },
-        },
-        updates,
-      );
+      if (
+        status
+        || modelPreferences
+        || displayName
+        || instructions !== undefined
+        || persona !== undefined
+        || normalizedToolPolicy !== null
+        || normalizedContextPolicy !== null
+      ) {
+        const updates: any = {};
+        if (status) updates.status = status;
+        if (modelPreferences) updates.modelPreferences = modelPreferences;
+        if (effectiveDisplayName) updates.name = effectiveDisplayName;
+        if (instructions !== undefined) updates.instructions = instructions;
+        if (persona !== undefined) updates.persona = persona;
+        if (normalizedToolPolicy !== null) updates.toolPolicy = normalizedToolPolicy;
+        if (normalizedContextPolicy !== null) updates.contextPolicy = normalizedContextPolicy;
+        await AgentProfile.updateMany(
+          {
+            agentId: buildAgentProfileId(name, normalizedInstanceId),
+            podId: { $in: writablePodIds },
+          },
+          updates,
+        );
 
-      if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
-        const identityContent = buildIdentityContent(effectiveDisplayName || normalizedInstanceId, persona || {});
-        writeWorkspaceIdentityFile(normalizedInstanceId, identityContent).catch((err: any) => {
-          console.warn('[registry] Failed to sync IDENTITY.md for', normalizedInstanceId, err.message);
+        if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
+          const identityContent = buildIdentityContent(effectiveDisplayName || normalizedInstanceId, persona || {});
+          writeWorkspaceIdentityFile(normalizedInstanceId, identityContent).catch((err: any) => {
+            console.warn('[registry] Failed to sync IDENTITY.md for', normalizedInstanceId, err.message);
+          });
+        }
+      }
+    } catch (projectionError) {
+      if (displayName !== undefined) {
+        // A retry with the same name repairs any rows saved before this error.
+        // The collision resolver accepts the same User principal, and every
+        // projection write is idempotent. Expose the repair action explicitly
+        // instead of reporting a generic 500 over a partially saved rename.
+        console.error('Agent identity projection update interrupted');
+        return res.status(503).json({
+          code: 'identity_projection_retryable',
+          error: 'Identity update interrupted. Save again to finish syncing pod names.',
         });
       }
+      throw projectionError;
     }
 
     const skillSync = config?.skillSync || null;
@@ -403,6 +418,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
 
     if (renamedIdentity && !renamedIdentity.mirrorSynced) {
       return res.status(503).json({
+        code: 'identity_mirror_pending',
         error: 'The name was saved, but chat is catching up. Save again in a moment.',
       });
     }

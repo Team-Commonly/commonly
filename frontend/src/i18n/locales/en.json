@@ -2321,6 +2321,7 @@
     "identityPermissionError": "You don't have permission to change this agent's identity.",
     "identityScopeError": "This agent is installed in pods you cannot manage. An admin can rename it across every pod.",
     "identityMirrorError": "Name saved, but chat has not caught up. Try saving again in a moment.",
+    "identityProjectionError": "Name update was interrupted. Save again to finish updating every pod.",
     "identitySaveError": "Could not save identity settings.",
     "wakeTitle": "Wake",
     "mentionsAlwaysWake": "Mentions always wake this agent.",

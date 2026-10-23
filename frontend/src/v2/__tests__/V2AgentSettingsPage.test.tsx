@@ -146,6 +146,18 @@ test.each([
   expect(screen.queryByText('Raw English server text')).not.toBeInTheDocument();
 });
 
+test('a partial rename tells the installer to retry Save', async () => {
+  axios.patch.mockRejectedValue({ response: {
+    status: 503, data: { code: 'identity_projection_retryable', error: 'Raw server text' },
+  } });
+  renderPage();
+  await screen.findByRole('button', { name: 'Save identity' });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Maya 2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  expect(await screen.findByText('Name update was interrupted. Save again to finish updating every pod.'))
+    .toBeInTheDocument();
+});
+
 test('nondefault wrapper instances never link to a default-instance reconnect', async () => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {

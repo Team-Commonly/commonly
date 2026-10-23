@@ -124,6 +124,64 @@ describe('agent identity settings with stored installations', () => {
     expect(profiles.map((row) => row.name)).toEqual(['New name', 'New name']);
   });
 
+  it('repairs a partial identity rename when the same request is retried', async () => {
+    const updateProfiles = AgentProfile.updateMany.bind(AgentProfile);
+    const profileWrite = jest.spyOn(AgentProfile, 'updateMany')
+      .mockRejectedValueOnce(new Error('injected profile write failure'))
+      .mockImplementation((...args) => updateProfiles(...args));
+    const sendRename = () => request(app).patch(url(podA._id)).set('Authorization', bearer(admin))
+      .send({ instanceId: 'seat', displayName: 'Recovered name' });
+    let first;
+    let second;
+    try {
+      first = await sendRename();
+      expect(first.status).toBe(503);
+      expect(first.body.code).toBe('identity_projection_retryable');
+      expect((await User.findById(identity._id)).botMetadata.displayName).toBe('Recovered name');
+      expect((await AgentProfile.findOne({ podId: podA._id, agentName: 'identity-agent' })).name)
+        .toBe('Old name');
+      second = await sendRename();
+    } finally {
+      profileWrite.mockRestore();
+    }
+    expect(second.status).toBe(200);
+    expect((await AgentInstallation.find({ agentName: 'identity-agent', instanceId: 'seat' }))
+      .map((row) => row.displayName)).toEqual(['Recovered name', 'Recovered name']);
+    expect((await AgentProfile.find({ agentName: 'identity-agent', instanceId: 'seat' }))
+      .map((row) => row.name)).toEqual(['Recovered name', 'Recovered name']);
+  });
+
+  it('repairs an interrupted installation fan-out on retry', async () => {
+    const saveInstallation = AgentInstallation.prototype.save;
+    let failed = false;
+    const installationWrite = jest.spyOn(AgentInstallation.prototype, 'save').mockImplementation(function (...args) {
+      if (!failed && String(this.podId) === String(podB._id)) {
+        failed = true;
+        return Promise.reject(new Error('injected installation write failure'));
+      }
+      return saveInstallation.apply(this, args);
+    });
+    const sendRename = () => request(app).patch(url(podA._id)).set('Authorization', bearer(admin))
+      .send({ instanceId: 'seat', displayName: 'Recovered name' });
+    let second;
+    try {
+      const first = await sendRename();
+      expect(first.status).toBe(503);
+      expect(first.body.code).toBe('identity_projection_retryable');
+      expect((await User.findById(identity._id)).botMetadata.displayName).toBe('Recovered name');
+      const installations = await AgentInstallation.find({ agentName: 'identity-agent', instanceId: 'seat' });
+      expect(installations.map((row) => row.displayName).sort()).toEqual(['Old name', 'Recovered name']);
+      second = await sendRename();
+    } finally {
+      installationWrite.mockRestore();
+    }
+    expect(second.status).toBe(200);
+    expect((await AgentInstallation.find({ agentName: 'identity-agent', instanceId: 'seat' }))
+      .map((row) => row.displayName)).toEqual(['Recovered name', 'Recovered name']);
+    expect((await AgentProfile.find({ agentName: 'identity-agent', instanceId: 'seat' }))
+      .map((row) => row.name)).toEqual(['Recovered name', 'Recovered name']);
+  });
+
   it('lets a sole installer rename a paused identity', async () => {
     await AgentInstallation.updateOne({ podId: podB._id, agentName: 'identity-agent' }, { status: 'uninstalled' });
     await AgentInstallation.updateOne({ podId: podA._id, agentName: 'identity-agent' }, { status: 'paused' });

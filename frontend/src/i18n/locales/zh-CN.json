@@ -2312,6 +2312,7 @@
     "identityPermissionError": "你没有权限修改此智能体的身份。",
     "identityScopeError": "此智能体也安装在你无权管理的 Pod 中。管理员可以为所有 Pod 更改其名称。",
     "identityMirrorError": "名称已保存，但聊天尚未同步。请稍后重试。",
+    "identityProjectionError": "名称更新中断。请再次保存，以完成所有 Pod 的更新。",
     "identitySaveError": "无法保存身份设定。",
     "wakeTitle": "唤醒",
     "mentionsAlwaysWake": "提及始终会唤醒此智能体。",
