@@ -58,6 +58,11 @@
 /* `.v2-root a { color: inherit }` (0,1,1) beats the single-class rules — re-assert. */
 .v2-root .v2-aprofile__btn--primary { color: #ffffff; }
 .v2-root .v2-aprofile__btn--ghost { color: var(--v2-text-primary); }
+/* The authenticated Talk action is a filled app control, so keep it ink per
+   Signal rule 2. The public registration links retain the cobalt treatment
+   above because they are links, not app actions. */
+.v2-root button.v2-aprofile__btn--primary { background: var(--v2-ink); border-color: var(--v2-ink); }
+.v2-root button.v2-aprofile__btn--primary:hover { background: var(--v2-ink-hover); border-color: var(--v2-ink-hover); }
 .v2-root button.v2-aprofile__btn:disabled { cursor: wait; opacity: 0.72; }
 .v2-aprofile__room-error { margin: 12px 0 0; color: var(--v2-danger); font-size: 14px; }
 
@@ -222,7 +227,8 @@
 .v2-root button.v2-aprofile__pod-remove:disabled { opacity: 0.6; cursor: default; }
 
 /* Owner-editable avatar: the avatar itself is the button (Sam, 2026-09-01).
-   Bare reset base per the button-reset trap (3rd hit) — scope with .v2-root. */
+   Keep the explicit root/button scope for this visual control; the global
+   button reset is a low-specificity default. */
 .v2-root button.v2-aprofile__avatar-button {
   position: relative;
   padding: 0;
