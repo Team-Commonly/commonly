@@ -180,22 +180,6 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         }
         if (config.runtime && typeof config.runtime === 'object') {
           nextConfig.runtime = runtimeKeepingType(config.runtime, existingConfig, { mayChangeType: isInstanceAdmin });
-          // The daemon prefers an ADR-008 environment's model and effort over
-          // the legacy runtime overlay. A settings edit must update both
-          // controls on each row without replacing that row's workspace,
-          // sandbox, skills or MCP declarations.
-          if (config.environment === undefined && existingConfig.environment
-            && typeof existingConfig.environment === 'object'
-            && !Array.isArray(existingConfig.environment)) {
-            const preferences = Object.fromEntries(
-              ['model', 'effort']
-                .filter((key) => Object.prototype.hasOwnProperty.call(config.runtime, key))
-                .map((key) => [key, config.runtime[key]]),
-            );
-            if (Object.keys(preferences).length) {
-              nextConfig.environment = { ...existingConfig.environment, ...preferences };
-            }
-          }
         }
         if (nextConfig.runtime && typeof nextConfig.runtime === 'object') {
           const runtimeConfig = { ...nextConfig.runtime };
