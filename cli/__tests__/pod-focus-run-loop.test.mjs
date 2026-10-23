@@ -118,6 +118,36 @@ describe('performRun pod-focus turn seam', () => {
     expect(get).toHaveBeenCalledWith('/api/agents/runtime/pods/pod-focus/skills');
   });
 
+  test('a rejected spawn does not report server or adapter skills as loaded', async () => {
+    const get = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') return { events: [event({ _id: 'skill-failed-spawn' })] };
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/context')) return { focus: { podId: 'pod-focus', revision: 0, focus: null } };
+      if (route.endsWith('/skills')) return { items: [{ name: 'review', content: 'Check the patch.' }] };
+      return {};
+    });
+    const post = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async (_prompt, ctx) => {
+      ctx.onSkillsLinked({ mounted: ['/tmp/local-review'], conflicted: [] });
+      throw new Error('adapter failed before child start');
+    });
+    const errors = [];
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_skills',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'focus-stub', setTimeoutImpl: noopTimeout,
+      onError: (error) => errors.push(error),
+    });
+    await drain();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls.filter(([route]) => route.endsWith('/skill-load'))).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+  });
+
   test('does not spawn or acknowledge when the turn-start focus read fails', async () => {
     const get = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/events') return { events: [event({ _id: 'focus-fail-1' })] };

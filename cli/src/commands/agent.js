@@ -1669,6 +1669,7 @@ export const performRun = ({
     let skillMount = serverSkills.mounted.length || serverSkills.conflicted.length
       ? { mounted: serverSkills.mounted, conflicted: serverSkills.conflicted }
       : null;
+    let spawnCompleted = false;
     let commitAttribution = null;
     try {
       // The local CLI is a wrapper for a Commonly seat, so its Git commits
@@ -1710,11 +1711,12 @@ export const performRun = ({
         agentName,
         metadata: { event },
       });
+      spawnCompleted = true;
     } finally {
       try {
         commitAttribution?.cleanup();
       } finally {
-        if (skillMount) {
+        if (spawnCompleted && skillMount) {
           try {
             await client.post(`/api/agents/runtime/pods/${eventPodId}/skill-load`, skillMount);
           } catch (error) {
