@@ -522,9 +522,19 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // syntax. Without this, agents posting raw URLs render as plain text and
   // the user can't click them.
   if (stripped && !externalBareImage) {
+    // The match runs to the end of the URL (a lazy match stopped at the first
+    // dot, so github.com/x linked only "https://github"). Trailing punctuation
+    // stays outside the link, and a trailing ")" stays outside unless the URL
+    // opens a paren of its own.
     stripped = stripped.replace(
-      /(?<![(<[])(https?:\/\/[^\s<>"]+?[^\s<>".,!?;:])(?=[\s.,!?;:]|$)/g,
-      '[$1]($1)',
+      /(?<![(<[])https?:\/\/[^\s<>"]+/g,
+      (raw) => {
+        let url = raw.replace(/[.,!?;:]+$/, '');
+        while (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
+          url = url.slice(0, -1);
+        }
+        return `[${url}](${url})${raw.slice(url.length)}`;
+      },
     );
   }
 

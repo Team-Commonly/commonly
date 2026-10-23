@@ -32,6 +32,98 @@ describe('V2MessageRow', () => {
     expect(tag.nextElementSibling).toHaveClass('v2-msg__time');
   });
 
+  // TASK-374. The auto-linkify match used to stop at the first dot, so
+  // github.com/x linked only "https://github". The markdown renderer is mocked
+  // in this suite and echoes its source, so each case checks the markdown the
+  // row produced for the body.
+  const markdownFor = (content) => {
+    const { container, unmount } = render(
+      <MemoryRouter>
+        <V2MessageRow
+          message={{ id: 'link-case', pod_id: 'pod-1', user_id: 'sender-1',
+            content, message_type: 'text', created_at: '2026-10-23T00:00:00.000Z',
+            user: { username: 'sender' } }}
+        />
+      </MemoryRouter>,
+    );
+    const text = container.querySelector('[data-testid="react-markdown"]').textContent;
+    unmount();
+    return text;
+  };
+
+  it('a PR URL whose card loads shows the card, and the URL is not repeated as text', async () => {
+    const previousFetch = global.fetch;
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ title: 'Card loads', state: 'open', merged: false, number: 374101, html_url: 'https://github.com/Team-Commonly/commonly/pull/374101', commits: 1, additions: 1, deletions: 0, changed_files: 1 }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] });
+    try {
+      const { container } = render(
+        <MemoryRouter>
+          <V2MessageRow
+            message={{ id: 'pr-ok', pod_id: 'pod-1', user_id: 'sender-1',
+              content: 'opened https://github.com/Team-Commonly/commonly/pull/374101 today',
+              message_type: 'text', created_at: '2026-10-23T00:00:00.000Z', user: { username: 'sender' } }}
+          />
+        </MemoryRouter>,
+      );
+      expect(await screen.findByRole('link', { name: 'Pull request #374101: Card loads' })).toBeInTheDocument();
+      const text = container.querySelector('[data-testid="react-markdown"]').textContent;
+      expect(text).not.toContain('github.com/Team-Commonly/commonly/pull/374101');
+      expect(container.querySelectorAll('a[href*="pull/374101"]')).toHaveLength(1);
+    } finally {
+      global.fetch = previousFetch;
+    }
+  });
+
+  it('a PR URL whose card fails keeps one full link, not zero and not two', async () => {
+    const previousFetch = global.fetch;
+    global.fetch = jest.fn().mockRejectedValue(new Error('private repo'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { container } = render(
+        <MemoryRouter>
+          <V2MessageRow
+            message={{ id: 'pr-fail', pod_id: 'pod-1', user_id: 'sender-1',
+              content: 'opened https://github.com/Team-Commonly/commonly/pull/374102 today',
+              message_type: 'text', created_at: '2026-10-23T00:00:00.000Z', user: { username: 'sender' } }}
+          />
+        </MemoryRouter>,
+      );
+      const links = await screen.findAllByRole('link', { name: 'https://github.com/Team-Commonly/commonly/pull/374102' });
+      expect(links).toHaveLength(1);
+      expect(links[0]).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly/pull/374102');
+      expect(container.querySelectorAll('a[href*="pull/374102"]')).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+      global.fetch = previousFetch;
+    }
+  });
+
+  it('links a repo URL as one full link, not just the first dot', () => {
+    expect(markdownFor('see https://github.com/Team-Commonly/commonly for the code'))
+      .toBe('see [https://github.com/Team-Commonly/commonly](https://github.com/Team-Commonly/commonly) for the code');
+  });
+
+  it('links a URL followed by a full stop without taking the stop', () => {
+    expect(markdownFor('ship it at https://example.com/docs/page.'))
+      .toBe('ship it at [https://example.com/docs/page](https://example.com/docs/page).');
+  });
+
+  it('links a URL in parentheses without taking the closing paren', () => {
+    expect(markdownFor('(read https://example.com/guide)'))
+      .toBe('(read [https://example.com/guide](https://example.com/guide))');
+  });
+
+  it('keeps a URL with its own balanced paren whole', () => {
+    expect(markdownFor('see https://en.wikipedia.org/wiki/Foo_(bar) now'))
+      .toBe('see [https://en.wikipedia.org/wiki/Foo_(bar)](https://en.wikipedia.org/wiki/Foo_(bar)) now');
+  });
+
+  it('leaves a markdown link untouched', () => {
+    expect(markdownFor('[docs](https://example.com/docs) here'))
+      .toBe('[docs](https://example.com/docs) here');
+  });
+
   it('resolves relative uploaded images against the configured API origin', () => {
     process.env.REACT_APP_API_URL = 'https://api.commonly.me';
 
