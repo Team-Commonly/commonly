@@ -57,10 +57,17 @@ describe('Sentry backend instrumentation', () => {
     );
 
     const event = {
-      message: 'boom',
+      message: 'access_token=secret-value',
       user: { id: 'private-user' },
+      exception: { values: [{ type: 'Error', value: 'access_token=secret-value', stacktrace: { frames: [{ filename: 'secret-value' }] } }] },
+      extra: { token: 'secret-value' },
+      breadcrumbs: [{ message: 'secret-value' }],
+      contexts: { vendor: { token: 'secret-value' } },
+      tags: { token: 'secret-value' },
+      fingerprint: ['secret-value'],
+      transaction: 'secret-value',
       request: {
-        url: 'https://api.commonly.me/api/pods',
+        url: 'https://api.commonly.me/api/callback?code=secret-value',
         method: 'GET',
         headers: { authorization: 'Bearer private-token' },
         cookies: { session: 'private-cookie' },
@@ -71,12 +78,13 @@ describe('Sentry backend instrumentation', () => {
     const scrubbed = options.beforeSend(event);
 
     expect(scrubbed).toEqual({
-      message: 'boom',
+      message: 'Unhandled request error',
+      exception: { values: [{ type: 'Error', value: 'Unhandled request error' }] },
       request: {
-        url: 'https://api.commonly.me/api/pods',
         method: 'GET',
       },
     });
+    expect(JSON.stringify(scrubbed)).not.toContain('secret-value');
     expect(event.user).toBeDefined();
     expect(event.request.headers).toBeDefined();
     expect(event.request.cookies).toBeDefined();
