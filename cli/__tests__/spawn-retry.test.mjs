@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
 
 import {
   SPAWN_FAILURE_CLASS,
@@ -25,6 +25,84 @@ describe('spawn retry policy', () => {
     for (const error of [new Error('quota exceeded'), new Error('command not found')]) {
       const policy = spawnRetryPolicy({ error, consecutiveFailures: 1, intervalMs: 5000 });
       expect(policy).toMatchObject({ circuitOpen: true, delayMs: SPAWN_RETRY_MAX_MS });
+    }
+  });
+
+  test('a named quota reset holds the first probe until after the reset', () => {
+    const now = Date.parse('2026-10-23T09:57:37Z'); // 2:57:37am in Los Angeles
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const error = new Error(
+        "claude exited with code 1: You've hit your session limit "
+        + '· resets 4:20am (America/Los_Angeles)',
+      );
+      const policy = spawnRetryPolicy({ error, consecutiveFailures: 1, intervalMs: 5000 });
+      expect(policy).toEqual({
+        failureClass: SPAWN_FAILURE_CLASS.QUOTA,
+        circuitOpen: true,
+        delayMs: Date.parse('2026-10-23T11:22:00Z') - now,
+      });
+      expect(spawnRetryPolicy({
+        error, consecutiveFailures: 2, intervalMs: 5000, jitterRatio: 0.2,
+      }).delayMs).toBe(policy.delayMs + 24_000);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test('a reset clock across midnight still names the next local day', () => {
+    const now = Date.parse('2026-10-23T06:55:00Z'); // 11:55pm in Los Angeles
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const policy = spawnRetryPolicy({
+        error: new Error('session limit · resets 12:10am (America/Los_Angeles)'),
+        consecutiveFailures: 1,
+        intervalMs: 5000,
+      });
+      expect(policy.delayMs).toBe(17 * 60 * 1000);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test.each([
+    ['spring forward', '2026-03-08T09:30:00Z', '2026-03-08T11:22:00Z'],
+    ['fall back', '2026-11-01T07:30:00Z', '2026-11-01T12:22:00Z'],
+  ])('a quota reset across the %s clock change uses the named zone', (_, nowText, probeText) => {
+    const now = Date.parse(nowText);
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const policy = spawnRetryPolicy({
+        error: new Error('session limit · resets 4:20am (America/Los_Angeles)'),
+        consecutiveFailures: 1,
+        intervalMs: 5000,
+      });
+      expect(policy.delayMs).toBe(Date.parse(probeText) - now);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test('an invalid reset hint keeps the bounded quota fallback', () => {
+    const policy = spawnRetryPolicy({
+      error: new Error('session limit · resets 25:99am (America/Los_Angeles)'),
+      consecutiveFailures: 1,
+      intervalMs: 5000,
+    });
+    expect(policy.delayMs).toBe(SPAWN_RETRY_MAX_MS);
+  });
+
+  test('a just-passed reset clock does not defer the next probe for a day', () => {
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-23T11:21:00Z'));
+    try {
+      const policy = spawnRetryPolicy({
+        error: new Error('session limit · resets 4:20am (America/Los_Angeles)'),
+        consecutiveFailures: 1,
+        intervalMs: 5000,
+      });
+      expect(policy.delayMs).toBe(SPAWN_RETRY_MAX_MS);
+    } finally {
+      clock.mockRestore();
     }
   });
 
@@ -114,14 +192,20 @@ describe('classifies the Claude CLI session-limit string (2026-08-18 outage)', (
       .toBe(SPAWN_FAILURE_CLASS.QUOTA);
   });
 
-  test('so it opens the circuit at the full cooldown on the first failure', () => {
-    const { circuitOpen, delayMs } = spawnRetryPolicy({
-      error: new Error(SESSION_LIMIT),
-      consecutiveFailures: 1,
-      intervalMs: 5000,
-    });
-    expect(circuitOpen).toBe(true);
-    expect(delayMs).toBe(SPAWN_RETRY_MAX_MS);
+  test('so it opens the circuit until the stated reset on the first failure (TASK-380)', () => {
+    const now = Date.parse('2026-08-18T10:00:00Z'); // 3am in Los Angeles
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const { circuitOpen, delayMs } = spawnRetryPolicy({
+        error: new Error(SESSION_LIMIT),
+        consecutiveFailures: 1,
+        intervalMs: 5000,
+      });
+      expect(circuitOpen).toBe(true);
+      expect(delayMs).toBe(62 * 60 * 1000);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   // Guard on the widening, not just the fix. QUOTA is tested before
