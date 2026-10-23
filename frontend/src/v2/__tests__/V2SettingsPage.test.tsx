@@ -90,18 +90,28 @@ describe('V2SettingsPage', () => {
     await act(async () => { await i18n.changeLanguage('en'); });
   });
 
-  // Pinned as a literal AND compared with the registry: the first assertion
-  // fails when the shipped languages change, the second when this surface
-  // stops reading LANGUAGE_REGISTRY and drifts from it.
+  // Two shapes, two tests, because jest abandons a test at its first failing
+  // expect: held together, a change to the shipped languages reported only the
+  // literal and said nothing about whether this surface still reads the
+  // registry (otto, gate on #2436). Split, a failing run names both.
+  const languageRadioLabels = () => within(screen.getByRole('radiogroup', { name: 'Language' }))
+    .getAllByRole('radio')
+    .map((radio) => radio.textContent);
+
+  test('ships exactly the pinned language radios', async () => {
+    await i18nReady;
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    renderSettings();
+
+    expect(languageRadioLabels()).toEqual(['English', '中文']);
+  });
+
   test('builds the language radios from the registry, and only those', async () => {
     await i18nReady;
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     renderSettings();
 
-    const radios = within(screen.getByRole('radiogroup', { name: 'Language' })).getAllByRole('radio');
-    const labels = radios.map((radio) => radio.textContent);
-    expect(labels).toEqual(['English', '中文']);
-    expect(labels).toEqual(LANGUAGE_REGISTRY.map(({ label }) => label));
+    expect(languageRadioLabels()).toEqual(LANGUAGE_REGISTRY.map(({ label }) => label));
   });
 
   test('keeps every folded settings concern visible on one page', () => {
