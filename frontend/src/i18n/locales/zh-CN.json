@@ -2245,6 +2245,41 @@
     "listSeparator": "、",
     "sentenceSeparator": ""
   },
+  "agentManage": {
+    "runtime": {
+      "title": "运行环境",
+      "how": "运行方式",
+      "hosted": "托管运行",
+      "daemon": "通过守护进程在电脑上运行",
+      "cli": "单个 CLI",
+      "unknown": "暂无运行环境详情",
+      "adapter": "适配器",
+      "model": "模型",
+      "modelUnknown": "由运行环境决定",
+      "effort": "推理强度",
+      "changeModel": "模型",
+      "changeEffort": "推理强度",
+      "effortUnset": "选择推理强度",
+      "save": "保存运行设置",
+      "saveError": "无法保存模型。"
+    },
+    "grants": {
+      "title": "连接器授权",
+      "loading": "正在加载授权…",
+      "empty": "此智能体没有连接器授权。",
+      "tool": "工具",
+      "direct": "直接授权给此智能体",
+      "by": "授权人",
+      "unknown": "未知",
+      "ended": "已结束",
+      "ends": "结束于",
+      "revoke": "撤销",
+      "confirmRevoke": "确认撤销",
+      "cancel": "取消",
+      "loadError": "无法加载连接器授权。",
+      "revokeError": "无法撤销授权。"
+    }
+  },
   "agentSettings": {
     "wakeTitle": "唤醒",
     "mentionsAlwaysWake": "提及始终会唤醒此智能体。",

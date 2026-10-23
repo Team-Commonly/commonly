@@ -13,7 +13,7 @@ const mongoose = require('mongoose');
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   const id = req.get('x-test-user');
   if (!id) return res.status(401).json({ error: 'unauthorized' });
-  req.user = { id };
+  req.user = { id, role: req.get('x-test-role') || 'user' };
   req.userId = id;
   return next();
 });
@@ -267,6 +267,18 @@ describe('GET /api/grants/:grantId', () => {
 });
 
 describe('POST /api/grants/:grantId/revoke', () => {
+  test('refuses a non-owner member and lets an instance admin revoke', async () => {
+    const row = await RoomGrant.create(grant());
+    const denied = await request(app).post(`/api/grants/${row.grantId}/revoke`).set('x-test-user', MEMBER);
+    expect(denied.status).toBe(403);
+    expect((await RoomGrant.findOne({ grantId: row.grantId })).revokedAt).toBeNull();
+
+    const admin = await request(app).post(`/api/grants/${row.grantId}/revoke`)
+      .set('x-test-user', STRANGER).set('x-test-role', 'admin');
+    expect(admin.status).toBe(200);
+    expect((await RoomGrant.findOne({ grantId: row.grantId })).revokedBy).toBe(STRANGER);
+  });
+
   test('records the authenticated caller as revokedBy', async () => {
     const row = await RoomGrant.create(grant());
     const res = await request(app).post(`/api/grants/${row.grantId}/revoke`).set('x-test-user', OWNER);

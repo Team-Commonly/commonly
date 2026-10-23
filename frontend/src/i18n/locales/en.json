@@ -2254,6 +2254,41 @@
     "listSeparator": ", ",
     "sentenceSeparator": " "
   },
+  "agentManage": {
+    "runtime": {
+      "title": "Runtime",
+      "how": "How it runs",
+      "hosted": "Hosted",
+      "daemon": "On a computer, via the daemon",
+      "cli": "Single CLI",
+      "unknown": "Runtime details unavailable",
+      "adapter": "Adapter",
+      "model": "Model",
+      "modelUnknown": "Set by the runtime",
+      "effort": "Effort",
+      "changeModel": "Model",
+      "changeEffort": "Effort",
+      "effortUnset": "Choose effort",
+      "save": "Save runtime",
+      "saveError": "Could not save the model."
+    },
+    "grants": {
+      "title": "Connector grants",
+      "loading": "Loading grants…",
+      "empty": "This agent has no connector grants.",
+      "tool": "Tool",
+      "direct": "Direct to this agent",
+      "by": "Granted by",
+      "unknown": "unknown",
+      "ended": "Ended",
+      "ends": "Ends",
+      "revoke": "Revoke",
+      "confirmRevoke": "Yes, revoke it",
+      "cancel": "Cancel",
+      "loadError": "Could not load connector grants.",
+      "revokeError": "Could not revoke the grant."
+    }
+  },
   "agentSettings": {
     "wakeTitle": "Wake",
     "mentionsAlwaysWake": "Mentions always wake this agent.",
