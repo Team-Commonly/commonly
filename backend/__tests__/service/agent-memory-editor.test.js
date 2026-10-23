@@ -81,6 +81,18 @@ describe('owner memory editor', () => {
     expect(records[0].content).toBe('First note');
   });
 
+  it('shows legacy long-term content and keeps it in history on the first edit', async () => {
+    await AgentMemory.updateOne({ agentName: 'editor-agent', instanceId: 'machine-1' },
+      { $set: { content: 'Legacy note' }, $unset: { 'sections.long_term': 1 } });
+    const read = await request(app).get(base).set('Authorization', `Bearer ${token(owner)}`);
+    expect(read.body.sections.long_term).toMatchObject({ content: 'Legacy note', updatedAt: null });
+    const saved = await request(app).patch(`${base}/long_term`).set('Authorization', `Bearer ${token(owner)}`)
+      .send({ content: 'New note', expectedUpdatedAt: null });
+    expect(saved.status).toBe(200);
+    const record = await AgentMemory.findOne({ agentName: 'editor-agent', instanceId: 'machine-1' }).lean();
+    expect(record.sections.long_term.history[0].content).toBe('Legacy note');
+  });
+
   it('blocks another member from editing and refuses unknown sections', async () => {
     const denied = await request(app).patch(`${base}/long_term`).set('Authorization', `Bearer ${token(outsider)}`)
       .send({ content: 'No', expectedUpdatedAt: null });

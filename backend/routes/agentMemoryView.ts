@@ -129,10 +129,12 @@ router.get('/:agentName/:instanceId/editable', auth, async (req: AuthReq, res: R
   try {
     const identity = await memoryEditorAccess(req, res);
     if (!identity) return;
-    const record = await AgentMemory.findOne(identity).select('sections.soul sections.long_term sections.shared').lean();
+    const record = await AgentMemory.findOne(identity)
+      .select('content sections.soul sections.long_term sections.shared').lean();
     const sections = Object.fromEntries(EDITABLE_SECTIONS.map((key) => {
       const section = record?.sections?.[key];
-      return [key, { content: section?.content || '', updatedAt: section?.updatedAt || null,
+      return [key, { content: section?.content || (key === 'long_term' ? record?.content || '' : ''),
+        updatedAt: section?.updatedAt || null,
         visibility: section?.visibility || 'private' }];
     }));
     res.json({ sections });
@@ -156,8 +158,9 @@ router.patch('/:agentName/:instanceId/editable/:section', auth, async (req: Auth
       || Number.isNaN(new Date(expectedUpdatedAt).getTime()))) {
       res.status(400).json({ error: 'Expected memory revision required' }); return;
     }
-    const prior = await AgentMemory.findOne(identity).select('sections').lean();
-    const before = prior?.sections?.[section];
+    const prior = await AgentMemory.findOne(identity).select('content sections').lean();
+    const before = prior?.sections?.[section] || (section === 'long_term' && prior?.content
+      ? { content: prior.content, visibility: 'private' } : null);
     const priorRevision = before?.updatedAt ? new Date(before.updatedAt).toISOString() : null;
     if (priorRevision !== expectedUpdatedAt) {
       res.status(409).json({ error: 'Memory changed since you opened it' }); return;
@@ -165,7 +168,9 @@ router.patch('/:agentName/:instanceId/editable/:section', auth, async (req: Auth
     const incoming = stampSectionsForWrite({ [section]: {
       content, visibility: before?.visibility || 'private',
     } });
-    const decorated = decorateSectionsWithProvenance(prior?.sections, incoming, { via: 'memory-owner' });
+    const priorSections = before && !prior?.sections?.[section]
+      ? { ...(prior?.sections || {}), [section]: before } : prior?.sections;
+    const decorated = decorateSectionsWithProvenance(priorSections, incoming, { via: 'memory-owner' });
     const revisionPath = `sections.${section}.updatedAt`;
     const query = { ...identity, [revisionPath]: expectedUpdatedAt === null
       ? { $exists: false } : new Date(expectedUpdatedAt) };
