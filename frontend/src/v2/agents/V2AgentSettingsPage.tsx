@@ -259,7 +259,7 @@ const V2AgentSettingsPage: React.FC = () => {
       <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
         installation={installation} update={update} />
       <div className="v2-agent-settings__section">
-        <V2AgentSkills podId={podId} agentName={agentName} instanceId={instanceId} />
+        <V2AgentSkills podId={podId} podName={access?.pods.find((pod) => pod.id === podId)?.name || podId} agentName={agentName} instanceId={instanceId} />
       </div>
     </main>
   );

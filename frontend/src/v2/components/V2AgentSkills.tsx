@@ -8,7 +8,7 @@ interface SkillLoad { at: string; mounted: string[]; conflicted: string[]; statu
 interface SkillsResponse { items: SkillItem[]; canEdit: boolean; skillLoad: SkillLoad | null }
 interface CatalogItem extends SkillItem { content?: string; license?: string | { name?: string } }
 
-interface Props { podId: string; agentName: string; instanceId: string }
+interface Props { podId: string; podName: string; agentName: string; instanceId: string }
 
 const requestError = (error: unknown, fallback: string): string => (
   (error as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback
@@ -23,7 +23,7 @@ const loadLabel = (skill: SkillItem, load: SkillLoad | null, t: (key: string) =>
   return t('agentSkills.notLoaded');
 };
 
-const V2AgentSkills: React.FC<Props> = ({ podId, agentName, instanceId }) => {
+const V2AgentSkills: React.FC<Props> = ({ podId, podName, agentName, instanceId }) => {
   const { t } = useTranslation();
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [skillLoad, setSkillLoad] = useState<SkillLoad | null>(null);
@@ -127,6 +127,7 @@ const V2AgentSkills: React.FC<Props> = ({ podId, agentName, instanceId }) => {
         <h2 id="v2-agent-skills-heading">{t('agentSkills.title')}</h2>
         {canEdit && <button type="button" onClick={() => { setCatalogOpen(!catalogOpen); setError(null); }}>{t(catalogOpen ? 'agentSkills.closeCatalog' : 'agentSkills.addSkill')}</button>}
       </div>
+      <p className="v2-agent-skills__pod">{t('agentSkills.pod')} · {podName}</p>
       {error && <p role="alert" className="v2-agent-skills__error">{error}</p>}
       {loading ? <p className="v2-agent-skills__empty">{t('agentSkills.loading')}</p> : (
         skills.length ? <div className="v2-agent-skills__list">

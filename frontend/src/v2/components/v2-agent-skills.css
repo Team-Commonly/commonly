@@ -7,7 +7,8 @@
 .v2-agent-skills__copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .v2-agent-skills__copy strong { font-size: 14px; line-height: 20px; }
 .v2-agent-skills__copy span { font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); }
-.v2-agent-skills__copy small, .v2-agent-skills__reported { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-agent-skills__copy small, .v2-agent-skills__reported, .v2-agent-skills__pod { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-agent-skills__pod { margin: 0 0 12px; overflow-wrap: anywhere; }
 .v2-agent-skills__empty { margin: 12px 0; color: var(--v2-text-muted); font-size: 13px; }
 .v2-agent-skills__reported { margin: 8px 0 0; }
 .v2-agent-skills__error { margin: 8px 0; font-size: 13px; color: var(--v2-text-primary); }

@@ -335,6 +335,8 @@ test('selects an installation the owner can manage without exposing a foreign po
   expect(axios.get).not.toHaveBeenCalledWith(
     '/api/skills/pods/foreign/imported', expect.anything(),
   );
+  expect(screen.getByText('Pod · My pod')).toBeInTheDocument();
+  expect(screen.queryByText('Pod · Other pod')).not.toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Key' }).compareDocumentPosition(
     screen.getByRole('heading', { name: 'Skills' }),
   ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
