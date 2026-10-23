@@ -88,7 +88,8 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
         .collation({ locale: 'en', strength: 2 });
       const hasOrphanCredential = !hasActiveInstallation
         && (agentUser?.agentRuntimeTokens?.length || hasCredential);
-      if (!hasProfile && !hasMembership && !hasOrphanCredential) {
+      const hasPodArtifact = hasProfile || hasMembership;
+      if (!hasPodArtifact && (!isGlobalAdmin || !hasOrphanCredential)) {
         return res.status(404).json({
           error: 'Agent not installed in this pod. Pass its agentName in the URL and instanceId as a query parameter.',
         });
