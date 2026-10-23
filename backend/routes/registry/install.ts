@@ -426,6 +426,16 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
 
     const globalAgent = await findExistingAgentInstance(agentName, normalizedInstanceId);
     const isReusingExistingAgent = globalAgent.exists;
+    if (!isPrivateListenerEnvironment(requestedEnvironment)
+      && globalAgent.installations.some((peer: any) => {
+        const peerConfig = normalizeConfigMap(peer.config) || {};
+        return isPrivateListenerEnvironment(peerConfig.environment);
+      })) {
+      return res.status(403).json({
+        code: 'private_listener_requires_downgrade',
+        error: 'This agent already has full local tools. Change its existing listener to read-only before adding it to another pod.',
+      });
+    }
 
     const requiredScopes = agent.manifest.context?.required || [];
     const missingScopes = requiredScopes.filter((s: any) => !scopes.includes(s));
@@ -438,12 +448,20 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
 
     const installConfig = normalizeConfigMap(config) || {};
     if (isPrivateListenerEnvironment(installConfig.environment)) {
-      const eligible = !globalAgent.exists
-        || await privateListenerIdentityAllowed(safeAgentName, normalizedInstanceId, userId, true);
+      const peers = globalAgent.installations || [];
+      // The daemon takes the runtime+environment pair from the oldest row.
+      // A new private row after an older read-only row would never reach it.
+      // Promote the existing listener first (the config route fans out).
+      const allPeersPrivate = peers.every((peer: any) => {
+        const peerConfig = normalizeConfigMap(peer.config) || {};
+        return isPrivateListenerEnvironment(peerConfig.environment);
+      });
+      const eligible = allPeersPrivate && (!globalAgent.exists
+        || await privateListenerIdentityAllowed(safeAgentName, normalizedInstanceId, userId, true));
       if (!eligible) {
         return res.status(403).json({
           code: 'private_listener_not_allowed',
-          error: 'Full computer access requires your sole-human invite-only pod and an absolute repo path',
+          error: 'Full computer access requires owner-only pods and an existing private listener for this agent identity',
         });
       }
     }

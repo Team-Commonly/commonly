@@ -41,8 +41,8 @@ const issue = () => request(app)
   .send({ label: 'private listener' });
 const assigned = () => request(app).get('/api/agent-binding/assigned')
   .set('Authorization', `Bearer ${DAEMON}`);
-const install = (agentName, path = '~/projects/example') => request(app).post('/api/registry/install').send({
-  agentName, podId: String(pod._id), scopes: ['context:read'],
+const install = (agentName, path = '~/projects/example', targetPod = pod) => request(app).post('/api/registry/install').send({
+  agentName, podId: String(targetPod._id), scopes: ['context:read'],
   config: { runtime: { runtimeType: 'webhook' }, environment: {
     workspace: { path }, sandbox: { trust: 'private' },
   } },
@@ -146,6 +146,33 @@ test('relative repo paths are refused before creating an agent', async () => {
   expect(refused.status).toBe(403);
   expect(refused.body.code).toBe('private_listener_not_allowed');
   expect(await AgentRegistry.findOne({ agentName: 'private-relative-path' })).toBeNull();
+});
+
+test('a newer private install cannot be shadowed by an older read-only installation', async () => {
+  const first = await request(app).post('/api/registry/install').send({
+    agentName: 'mixed-trust-agent', podId: String(pod._id), scopes: ['context:read'],
+    config: { runtime: { runtimeType: 'webhook' } },
+  });
+  expect(first.status).toBe(200);
+  const peerPod = await Pod.create({ name: 'Second owned pod', type: 'chat', joinPolicy: 'invite-only',
+    createdBy: mockOwner.id, members: [mockOwner.id] });
+  const refused = await install('mixed-trust-agent', '~/projects/example', peerPod);
+  expect(refused.status).toBe(403);
+  expect(refused.body.code).toBe('private_listener_not_allowed');
+  expect(await AgentInstallation.countDocuments({ agentName: 'mixed-trust-agent' })).toBe(1);
+});
+
+test('a read-only choice cannot inherit private trust from an older installation', async () => {
+  expect((await install('private-then-public')).status).toBe(200);
+  const peerPod = await Pod.create({ name: 'Read-only peer pod', type: 'chat', joinPolicy: 'invite-only',
+    createdBy: mockOwner.id, members: [mockOwner.id] });
+  const refused = await request(app).post('/api/registry/install').send({
+    agentName: 'private-then-public', podId: String(peerPod._id), scopes: ['context:read'],
+    config: { runtime: { runtimeType: 'webhook' } },
+  });
+  expect(refused.status).toBe(403);
+  expect(refused.body.code).toBe('private_listener_requires_downgrade');
+  expect(await AgentInstallation.countDocuments({ agentName: 'private-then-public' })).toBe(1);
 });
 
 test('a config edit cannot renew private trust after another human joins', async () => {
