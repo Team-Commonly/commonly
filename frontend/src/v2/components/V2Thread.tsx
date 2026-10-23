@@ -136,7 +136,7 @@ const loadDecisionPages = async <T,>(
   return { items };
 };
 
-const loadDecisionPagesForMessageIds = async <T,>(
+export const loadDecisionPagesForMessageIds = async <T,>(
   api: ReturnType<typeof useV2Api>,
   endpoint: string,
   podId: string,

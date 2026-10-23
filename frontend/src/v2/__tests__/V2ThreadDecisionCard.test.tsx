@@ -2,7 +2,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2Thread from '../components/V2Thread';
+import V2Thread, { loadDecisionPagesForMessageIds } from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
 
 const mockGet = jest.fn();
@@ -389,14 +389,12 @@ describe('V2Thread decision cards', () => {
     expect(screen.getByText('Overflow decision')).toBeInTheDocument();
   });
 
-  test('chunks loaded source ids so decisions at both ends of a long transcript remain discoverable', async () => {
-    const messages = Array.from({ length: 202 }, (_, index) => ({
-      ...detail.messages[0],
-      id: String(index),
-    }));
-    messages[0] = { ...messages[0], id: 'source-first' };
-    messages[201] = { ...messages[201], id: 'source-last' };
-    const wideDetail = { ...detail, messages };
+  test('chunks loaded source ids so decisions at both ends of a long transcript are retrieved', async () => {
+    // Exercise the 200-id request boundary without mounting 202 message rows;
+    // the card placement/rendering contract is covered by the tests above.
+    const messageIds = Array.from({ length: 202 }, (_, index) => String(index));
+    messageIds[0] = 'source-first';
+    messageIds[201] = 'source-last';
     const first = {
       id: 'decision-first', kind: 'decision', podId: 'pod-1', messageId: 'source-first',
       title: 'First source decision', detail: 'Which first-end choice?',
@@ -407,35 +405,30 @@ describe('V2Thread decision cards', () => {
       title: 'Last source decision', detail: 'Which last-end choice?',
       options: [{ label: 'Keep last' }],
     };
-    const requests = new Map<string, string[]>();
-    mockGet.mockImplementation((url, config) => {
-      if (url !== '/api/activity/decision-queue' && url !== '/api/activity/decision-history') return Promise.resolve({ data: {} });
+    const requests = new Map<string, string[][]>([['queue', []], ['history', []]]);
+    const api = { get: jest.fn((url, config) => {
       const ids = String(config?.params?.messageIds || '').split(',').filter(Boolean);
       expect(ids.length).toBeLessThanOrEqual(200);
       expect(new Set(ids).size).toBe(ids.length);
       const key = url.endsWith('decision-queue') ? 'queue' : 'history';
-      requests.set(`${key}-${requests.size}`, ids);
+      requests.get(key)?.push(ids);
       const items = key === 'queue'
         ? [first, last].filter((item) => ids.includes(item.messageId))
         : [];
-      return Promise.resolve({ data: { items, hasMore: false } });
-    });
+      return Promise.resolve({ items, hasMore: false });
+    }) };
 
-    render(
-      <AuthContext.Provider value={auth}>
-        <MemoryRouter><V2Thread detail={wideDetail} /></MemoryRouter>
-      </AuthContext.Provider>,
-    );
+    const [queue, history] = await Promise.all([
+      loadDecisionPagesForMessageIds(api, '/api/activity/decision-queue', 'pod-1', messageIds),
+      loadDecisionPagesForMessageIds(api, '/api/activity/decision-history', 'pod-1', messageIds),
+    ]);
 
-    expect(await screen.findAllByTestId('decision-card')).toHaveLength(2);
-    expect(screen.getByText('First source decision')).toBeInTheDocument();
-    expect(screen.getByText('Last source decision')).toBeInTheDocument();
-    const queueRequests = [...requests.entries()].filter(([key]) => key.startsWith('queue-'));
-    const historyRequests = [...requests.entries()].filter(([key]) => key.startsWith('history-'));
-    expect(queueRequests).toHaveLength(2);
-    expect(historyRequests).toHaveLength(2);
-    expect(queueRequests[0][1]).toContain('source-first');
-    expect(queueRequests[1][1]).toContain('source-last');
+    expect(queue.items).toEqual([first, last]);
+    expect(history.items).toEqual([]);
+    expect(requests.get('queue')).toHaveLength(2);
+    expect(requests.get('history')).toHaveLength(2);
+    expect(requests.get('queue')?.[0]).toContain('source-first');
+    expect(requests.get('queue')?.[1]).toContain('source-last');
   });
 
   test('keeps authored option order while labeling a later recommended option', async () => {
