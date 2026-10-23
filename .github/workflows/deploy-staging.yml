@@ -207,10 +207,12 @@ jobs:
           SMOKE_API: https://api-staging.commonly.me
           SMOKE_EMAIL: ${{ secrets.STAGING_SMOKE_EMAIL }}
           SMOKE_PW: ${{ secrets.STAGING_SMOKE_PW }}
+          SMOKE_FRESH_EMAIL: ${{ secrets.STAGING_SMOKE_FRESH_EMAIL }}
+          SMOKE_FRESH_PW: ${{ secrets.STAGING_SMOKE_FRESH_PW }}
         run: |
           set -euo pipefail
-          if [ -z "${SMOKE_EMAIL:-}" ] || [ -z "${SMOKE_PW:-}" ]; then
-            echo "::error title=Tier-1 smoke::STAGING_SMOKE_EMAIL / STAGING_SMOKE_PW repo secrets are not set"
+          if [ -z "${SMOKE_EMAIL:-}" ] || [ -z "${SMOKE_PW:-}" ] || [ -z "${SMOKE_FRESH_EMAIL:-}" ] || [ -z "${SMOKE_FRESH_PW:-}" ]; then
+            echo "::error title=Tier-1 smoke::STAGING_SMOKE_EMAIL/PW and STAGING_SMOKE_FRESH_EMAIL/PW repo secrets must all be set (the connectors-fold check fails closed without the fresh account)"
             exit 1
           fi
           cd scripts/staging-smoke

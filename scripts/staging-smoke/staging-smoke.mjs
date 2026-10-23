@@ -119,7 +119,68 @@ async function main() {
     await page.close();
   }
 
-  // 6) hosted agent answers (skip until staging has an LLM key)
+  // 6) connectors fold — guards the #2504 regression. A FRESH, grant-free account must see at least
+  //    one connectable TOOL as a real row outside the inactive fold. Fail-CLOSED: absent creds, a
+  //    failed login, or a non-grant-free account all FAIL (never skip-green). We match an actual
+  //    .v2-connector-row that has a .v2-connector-row__action (Connect) and is NOT contained by
+  //    .v2-connectors__inactive-fold — NOT an ancestor's textContent (that false-passed when GitHub
+  //    was only inside the fold).
+  const FRESH_EMAIL = process.env.SMOKE_FRESH_EMAIL, FRESH_PW = process.env.SMOKE_FRESH_PW;
+  if (!FRESH_EMAIL || !FRESH_PW) {
+    rec('connectors: fresh user sees a tool row outside the fold', false, 'SMOKE_FRESH_EMAIL/PW not set — fresh-account check could not run (fail-closed)');
+  } else {
+    try {
+      const { status, body } = await api('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: FRESH_EMAIL, password: FRESH_PW }) });
+      const ftoken = body?.token || body?.accessToken || null;
+      if (!ftoken) { rec('connectors: fresh user sees a tool row outside the fold', false, `fresh login failed (status ${status})`); }
+      else {
+        // 6a) 0 live TOOL grants. Tool grants live per-pod at /api/pods/:podId/grants (NOT the
+        //     Integration list), so sum .grants across the fresh account's pods. res.ok is asserted
+        //     on every fetch — a 503 whose body happens to be [] must FAIL, not pass.
+        const pr = await api('/api/pods', { headers: { Authorization: `Bearer ${ftoken}` } });
+        if (pr.status !== 200) {
+          rec('connectors: fresh account has 0 live grants', false, `GET /api/pods -> ${pr.status}`);
+        } else {
+          const pods = Array.isArray(pr.body) ? pr.body : (pr.body?.pods || []);
+          let totalGrants = 0, bad = null;
+          for (const pod of pods) {
+            const id = pod._id || pod.id;
+            const gr = await api(`/api/pods/${id}/grants`, { headers: { Authorization: `Bearer ${ftoken}` } });
+            if (gr.status !== 200) { bad = `grants ${id} -> ${gr.status}`; break; }
+            totalGrants += Array.isArray(gr.body?.grants) ? gr.body.grants.length : 0;
+          }
+          rec('connectors: fresh account has 0 live grants', bad === null && totalGrants === 0, bad || `pods=${pods.length} tool-grants=${totalGrants}`);
+        }
+        // 6b) at least one connectable TOOL row visible OUTSIDE the inactive fold. A real
+        //     .v2-connector-row (never ancestor text) whose action is Connect/Install (not "Ask"
+        //     or "Add") and that is not the unavailable --not-enabled modifier.
+        const fctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+        await fctx.addInitScript(t => { try { localStorage.setItem('token', t); } catch(e){} }, ftoken);
+        const page = await fctx.newPage();
+        await page.goto(BASE+'/v2/connectors', { waitUntil:'networkidle', timeout: 30000 });
+        await page.waitForTimeout(1800);
+        const r = await page.evaluate(() => {
+          const TOOLS = ['GitHub','Linear','Slack','Notion','Google','Jira','Atlassian','Gmail','Airtable','Sentry'];
+          const fold = document.querySelector('.v2-connectors__inactive-fold');
+          const inFold = el => !!fold && fold.contains(el);
+          const rows = [...document.querySelectorAll('.v2-connector-row')];
+          const visibleToolRows = rows.filter(row => {
+            if (row.offsetParent === null) return false;                               // visible
+            if (inFold(row)) return false;                                             // not in the inactive fold
+            if (row.classList.contains('v2-connector-row--not-enabled')) return false; // exclude unavailable ("Ask") offers
+            const action = (row.querySelector('.v2-connector-row__action')?.textContent || '').trim();
+            if (!/\b(connect|install)\b/i.test(action)) return false;                  // require a connectable action
+            return TOOLS.some(t => (row.textContent || '').includes(t));               // names a known tool
+          }).map(row => TOOLS.find(t => (row.textContent || '').includes(t))).filter(Boolean);
+          return { visibleToolRows, rowsTotal: rows.length, foldedRows: fold ? fold.querySelectorAll('.v2-connector-row').length : 0 };
+        });
+        rec('connectors: fresh user sees a tool row outside the fold', r.visibleToolRows.length >= 1, `visible=[${[...new Set(r.visibleToolRows)].join(',')}] rows=${r.rowsTotal} foldedRows=${r.foldedRows}`);
+        await fctx.close();
+      }
+    } catch (e) { rec('connectors: fresh user sees a tool row outside the fold', false, e.message.slice(0,100)); }
+  }
+
+  // 7) hosted agent answers (skip until staging has an LLM key)
   if (CHECK_HOSTED) rec('hosted agent answers', false, 'TODO once staging LLM key is set');
   else console.log('SKIP  hosted agent answers — staging has no LLM key yet (SMOKE_HOSTED!=1)');
 
