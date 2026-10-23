@@ -233,6 +233,10 @@ app.use('/api/webhooks/github', githubGigWebhookRoutes.githubGigRawBody);
 app.use('/api/webhooks/github', githubGigWebhookRoutes.githubGigRawError);
 
 // JSON parsing for all other routes
+// The seat push channel carries a bounded incremental Git bundle. Keep its
+// larger parser scoped to this one authenticated route; every other JSON API
+// retains the default body limit.
+app.use('/api/mcp/grants/:grantId/push', express.json({ limit: '9mb' }));
 app.use(express.json());
 
 // Routes

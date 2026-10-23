@@ -117,3 +117,38 @@ describe('host GitHub broker command boundary', () => {
     expect(mockCallTool).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('host GitHub push boundary', () => {
+  const push = {
+    ref: `refs/heads/seat/${AGENT_ID}/work`, baseOid: 'a'.repeat(40),
+    newOid: 'b'.repeat(40), bundle: 'YnVuZGxl',
+  };
+
+  it('requires the exact push tool and reserves two token/grant slots', async () => {
+    mockListToolsForGrant.mockResolvedValue([{ name: 'github.push_branch' }]);
+    const response = await request(app).post('/api/mcp/grants/grant-1/push').send(push);
+    expect(response.status).toBe(200);
+    expect(mockCallTool).toHaveBeenCalledWith(expect.objectContaining({
+      grantId: 'grant-1', agentUserId: AGENT_ID, tool: 'github.push_branch', args: push,
+    }));
+    expect(mockReserveBudgetLineage).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ calls: 2, windowMs: 60000 }),
+    ]));
+  });
+
+  it('refuses a read-only or omitted push tool before budget use', async () => {
+    mockListToolsForGrant.mockResolvedValue([{ name: 'github.get_pull_request' }]);
+    const response = await request(app).post('/api/mcp/grants/grant-1/push').send(push);
+    expect(response.status).toBe(403);
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(mockCallTool).not.toHaveBeenCalled();
+  });
+
+  it('refuses exhausted push budget before any provider call', async () => {
+    mockListToolsForGrant.mockResolvedValue([{ name: 'github.push_branch' }]);
+    mockReserveBudgetLineage.mockResolvedValue(false);
+    const response = await request(app).post('/api/mcp/grants/grant-1/push').send(push);
+    expect(response.status).toBe(429);
+    expect(mockCallTool).not.toHaveBeenCalled();
+  });
+});

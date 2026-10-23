@@ -12,6 +12,8 @@ import { join } from 'path';
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 128 * 1024;
 const SHIM_SOURCE = fileURLToPath(new URL('./host-gh-shim.mjs', import.meta.url));
+const PUSH_HELPER_SOURCE = fileURLToPath(new URL('./git-remote-commonly.mjs', import.meta.url));
+const MAX_PUSH_REQUEST_BYTES = 9 * 1024 * 1024;
 
 const reply = (socket, status, body) => {
   if (!socket.destroyed) socket.end(JSON.stringify({ status, body }));
@@ -39,11 +41,15 @@ export const startSeatGhBroker = async ({
   const directory = await mkdtemp(join(root, 'seat-'));
   const socketPath = join(directory, 'broker.sock');
   const shimPath = join(directory, 'gh');
+  const pushHelperPath = join(directory, 'git-remote-commonly');
   let server;
   try {
     const shimSource = await readFile(SHIM_SOURCE, 'utf8');
     await writeFile(shimPath, `#!${process.execPath}\n${shimSource.replace(/^#![^\n]*\n/, '')}`, { mode: 0o500 });
     await chmod(shimPath, 0o555);
+    const helperSource = await readFile(PUSH_HELPER_SOURCE, 'utf8');
+    await writeFile(pushHelperPath, `#!${process.execPath}\n${helperSource.replace(/^#![^\n]*\n/, '')}`, { mode: 0o500 });
+    await chmod(pushHelperPath, 0o555);
     server = createServer({ allowHalfOpen: true }, (socket) => {
       let chunks = [];
       let size = 0;
@@ -51,7 +57,7 @@ export const startSeatGhBroker = async ({
       socket.on('error', () => {});
       socket.on('data', (chunk) => {
         size += chunk.length;
-        if (size > MAX_REQUEST_BYTES) {
+        if (size > MAX_PUSH_REQUEST_BYTES) {
           reply(socket, 413, { error: 'request_too_large' });
           chunks = [];
         } else {
@@ -72,13 +78,19 @@ export const startSeatGhBroker = async ({
           reply(socket, 400, { error: 'invalid_request' });
           return;
         }
+        if (operation !== 'push.branch' && size > MAX_REQUEST_BYTES) {
+          reply(socket, 413, { error: 'request_too_large' });
+          return;
+        }
+        if (operation === 'push.branch') socket.setTimeout(180_000, () => socket.destroy());
         try {
-          const url = new URL(`/api/mcp/grants/${encodeURIComponent(grantId)}/cli`, endpoint);
+          const suffix = operation === 'push.branch' ? 'push' : 'cli';
+          const url = new URL(`/api/mcp/grants/${encodeURIComponent(grantId)}/${suffix}`, endpoint);
           const response = await fetchImpl(url, {
             method: 'POST',
             headers: { Authorization: `Bearer ${runtimeToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ operation, args }),
-            signal: AbortSignal.timeout(15_000),
+            body: JSON.stringify(operation === 'push.branch' ? args : { operation, args }),
+            signal: AbortSignal.timeout(operation === 'push.branch' ? 180_000 : 15_000),
           });
           const bodyText = await response.text();
           if (Buffer.byteLength(bodyText, 'utf8') > MAX_RESPONSE_BYTES) {
@@ -103,6 +115,7 @@ export const startSeatGhBroker = async ({
     return {
       socketPath,
       shimPath,
+      pushHelperPath,
       directory,
       async close() {
         await new Promise((resolve) => server.close(resolve));

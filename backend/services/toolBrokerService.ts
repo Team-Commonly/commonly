@@ -15,6 +15,7 @@ import { judgeSeatConfinement } from './seatGrantConfinement';
 import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from './outsiderGrantPodEligibility';
+import { parseSeatPushArgs, pushSeatBranch } from './seatGithubPush';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');
@@ -61,7 +62,7 @@ export interface GithubToolDefinition extends ToolDefinitionBase {
     args: Record<string, unknown>,
     connection: GithubToolConnection,
   ) => Promise<Record<string, unknown>>;
-  call: (args: Record<string, unknown>, connection: GithubToolConnection) => Promise<unknown>;
+  call: (args: Record<string, unknown>, connection: GithubToolConnection, agentUserId?: string) => Promise<unknown>;
 }
 
 /**
@@ -359,6 +360,29 @@ const createPullRequest: GithubToolDefinition = {
   },
 };
 
+const pushSeatBranchDefinition: GithubToolDefinition = {
+  name: 'github.push_branch',
+  description: 'Push one fast-forward seat branch to the connected GitHub repository.',
+  requiredWriteMode: 'write',
+  connectionType: 'github-app',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      ref: { type: 'string', maxLength: 220 },
+      baseOid: { type: 'string', pattern: '^[0-9a-f]{40}$' },
+      newOid: { type: 'string', pattern: '^[0-9a-f]{40}$' },
+      bundle: { type: 'string', maxLength: 8388612 },
+    },
+    required: ['ref', 'baseOid', 'newOid', 'bundle'],
+    additionalProperties: false,
+  },
+  async call(args, connection, agentUserId) {
+    if (!agentUserId) throw new RoomGrantError('agent_identity_required', 'seat identity is required', 403);
+    parseSeatPushArgs(args, agentUserId);
+    return pushSeatBranch(args, connection, agentUserId);
+  },
+};
+
 const commentPullRequest: GithubToolDefinition = {
   name: 'github.comment_on_pull_request',
   description: 'Add a plain conversation comment to a pull request in the connected GitHub repository.',
@@ -367,7 +391,10 @@ const commentPullRequest: GithubToolDefinition = {
   irreversible: true,
   inputSchema: {
     type: 'object',
-    properties: { pullNumber: { type: 'integer', minimum: 1 }, body: { type: 'string', minLength: 1, maxLength: 65536 } },
+    properties: {
+      pullNumber: { type: 'integer', minimum: 1 },
+      body: { type: 'string', minLength: 1, maxLength: 65536 },
+    },
     required: ['pullNumber', 'body'],
     additionalProperties: false,
   },
@@ -399,7 +426,10 @@ const reviewPullRequestComment: GithubToolDefinition = {
   irreversible: true,
   inputSchema: {
     type: 'object',
-    properties: { pullNumber: { type: 'integer', minimum: 1 }, body: { type: 'string', minLength: 1, maxLength: 65536 } },
+    properties: {
+      pullNumber: { type: 'integer', minimum: 1 },
+      body: { type: 'string', minLength: 1, maxLength: 65536 },
+    },
     required: ['pullNumber', 'body'],
     additionalProperties: false,
   },
@@ -647,6 +677,7 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   [getIssue.name]: getIssue,
   [getPullRequest.name]: getPullRequest,
   [createPullRequest.name]: createPullRequest,
+  [pushSeatBranchDefinition.name]: pushSeatBranchDefinition,
   [commentPullRequest.name]: commentPullRequest,
   [reviewPullRequestComment.name]: reviewPullRequestComment,
   [listPullRequestFiles.name]: listPullRequestFiles,
@@ -1112,11 +1143,12 @@ const runDefinition = (
   definition: ToolDefinition,
   args: Record<string, unknown>,
   connection: ToolConnection,
+  agentUserId: string,
 ): Promise<unknown> => {
   const provider = providerConnection(connection);
   return definition.connectionType === 'hosted-mcp'
     ? definition.call(args, asHostedConnection(provider))
-    : definition.call(args, asGithubConnection(provider));
+    : definition.call(args, asGithubConnection(provider), agentUserId);
 };
 
 /**
@@ -1212,6 +1244,7 @@ const recordCall = async (
      * their id on the error (see `refusedCredentialOwner`).
      */
     credentialOwnerId?: string;
+    providerRepo?: string;
     vendorStatus?: number;
     vendorError?: string;
   },
@@ -1231,6 +1264,11 @@ const recordCall = async (
     reason,
     vendorStatus: overrides?.vendorStatus,
     vendorError: overrides?.vendorError?.split(/[\r\n]/, 1)[0].slice(0, 200),
+    providerRepo: overrides?.providerRepo,
+    providerRef: input.tool === 'github.push_branch'
+      && typeof (input.args as { ref?: unknown })?.ref === 'string'
+      && /^refs\/heads\/[A-Za-z0-9._/-]{1,220}$/.test((input.args as { ref: string }).ref)
+      ? (input.args as { ref: string }).ref : undefined,
     approvalId: overrides?.approvalId,
     durationMs: Math.max(0, Date.now() - startedAt),
   });
@@ -1272,6 +1310,7 @@ const recordExecutionResult = async (
     approvalId?: string;
     args?: unknown;
     credentialOwnerId?: string;
+    providerRepo?: string;
   },
 ): Promise<{ callId: string; outcome: 'ok' | 'failed' }> => {
   const upstreamToolError = isToolErrorResult(result);
@@ -1316,6 +1355,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
   // before anything resolves leaves it unset — except an owner refusal, which
   // names the owner on the error and is preferred by the catch.
   let credentialOwnerId: string | undefined;
+  let providerRepo: string | undefined;
 
   try {
     grant = await loadGrantForAgent({ grantId: input.grantId, agentUserId: input.agentUserId });
@@ -1335,6 +1375,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
 
     const connection = await resolveConnection(grant, definition);
     credentialOwnerId = connection.ownerUserId;
+    if (input.tool === 'github.push_branch' && connection.type === 'github-app') {
+      providerRepo = `${connection.owner}/${connection.repo}`;
+    }
     if (definition.connectionType === 'hosted-mcp') {
       await definition.assess(asHostedConnection(connection));
     }
@@ -1462,13 +1505,13 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       if (!reserved) throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
     }
 
-    const result = await runDefinition(definition, parsedArgs, connection);
+    const result = await runDefinition(definition, parsedArgs, connection, input.agentUserId);
     const recorded = await recordExecutionResult(
       input,
       grant,
       result,
       startedAt,
-      { credentialOwnerId },
+      { credentialOwnerId, providerRepo },
     );
     return {
       ...recorded,
@@ -1487,6 +1530,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       ? String(error.details?.callId || '')
       : await recordCall(input, grant, outcome, startedAt, reason, {
         credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
+        providerRepo,
         vendorStatus: error instanceof RoomGrantError && typeof error.details?.vendorStatus === 'number'
           ? error.details.vendorStatus : undefined,
         vendorError: error instanceof RoomGrantError && typeof error.details?.vendorError === 'string'
@@ -1560,7 +1604,7 @@ export const executeApprovedToolCall = async (
     if (budgetEntries.length > 0 && !await reserveBudgetLineage(budgetEntries)) {
       throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
     }
-    const result = await runDefinition(definition, executionArgs, connection);
+    const result = await runDefinition(definition, executionArgs, connection, input.agentUserId);
     const recorded = await recordExecutionResult(
       { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
       grant,

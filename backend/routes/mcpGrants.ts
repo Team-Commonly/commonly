@@ -75,6 +75,42 @@ const reserveHostGhCall = async (tokenHash: string, grantId: string, tier: 'read
   ]);
 };
 
+router.post('/:grantId/push', brokerRateLimit, agentRuntimeAuth, async (
+  req: express.Request, res: express.Response,
+) => {
+  const agent = req.agentUser;
+  const agentUserId = String(agent?._id || '');
+  if (!agentUserId || !req.agentTokenHash) return res.status(401).json({ error: 'agent_identity_required' });
+  const args = req.body;
+  if (!args || typeof args !== 'object' || Array.isArray(args)
+    || Object.keys(args).some((key) => !['ref', 'baseOid', 'newOid', 'bundle'].includes(key))
+    || Buffer.byteLength(JSON.stringify(args), 'utf8') > 9 * 1024 * 1024) {
+    return res.status(400).json({ error: 'invalid_push_request' });
+  }
+  const installation = req.agentInstallation;
+  const identity = {
+    grantId: String(req.params.grantId),
+    agentUserId,
+    agentName: installation?.agentName || agent?.botMetadata?.agentName || agent?.username,
+    instanceId: installation?.instanceId || agent?.botMetadata?.instanceId || 'default',
+  };
+  try {
+    if (!(await listToolsForGrant(identity)).some((tool) => tool.name === 'github.push_branch')) {
+      return res.status(403).json({ error: 'operation_not_granted' });
+    }
+    const digest = createHash('sha256').update(identity.grantId).digest('hex');
+    if (!await reserveBudgetLineage([
+      { grantId: `host-gh:push:token:${req.agentTokenHash}`, calls: 2, windowMs: 60_000 },
+      { grantId: `host-gh:push:grant:${digest}`, calls: 2, windowMs: 60_000 },
+    ])) return res.status(429).json({ error: 'host_github_push_rate_limited' });
+    const result = await callTool({ ...identity, tool: 'github.push_branch', args });
+    return res.json({ callId: result.callId, outcome: result.outcome, result: result.result });
+  } catch (error) {
+    const e = error as { statusCode?: number };
+    return res.status(typeof e.statusCode === 'number' ? e.statusCode : 500).json(errorPayload(error));
+  }
+});
+
 /** No body or status ever carries a provider credential. */
 router.post('/:grantId/cli', brokerRateLimit, agentRuntimeAuth, async (req: express.Request, res: express.Response) => {
   const agent = req.agentUser;

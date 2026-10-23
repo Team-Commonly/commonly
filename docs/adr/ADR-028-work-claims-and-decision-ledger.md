@@ -696,7 +696,12 @@ may supply operations it already implements; missing PR operations must be
 added there with the same grant and audit checks, never through `routes/github`'s
 legacy `anyAuth` path.
 
-Git push is a separate smart-HTTP channel on the same socket. It is registered
+Git push is a separate bounded bundle channel on the same socket. The seat's
+`git-remote-commonly` helper implements Git's push-only remote-helper protocol:
+it makes an incremental bundle against a local base commit, then sends one
+branch update to the daemon. The daemon forwards it with the seat's runtime
+token; the backend alone holds the GitHub App token. This avoids tunneling an
+interactive Git wire protocol through the grant route. It is registered
 as `github.push_branch` in the broker catalogue, and goes through the same
 exact-tool, active-grant, pinned-repository and audit checks as the CLI channel.
 `read` grants refuse. `write-with-confirm` grants refuse push until a later
@@ -705,17 +710,19 @@ then revalidate them after approval; no provider write occurs on that path now.
 Only an explicit `github.push_branch` tool on an autonomous `write` grant can
 push. A grant for issue comments never implies push authority.
 
-The backend accepts one bounded receive-pack request, parses the **complete**
-command framing before a provider call, and requires exactly one update to the
+The backend accepts one bounded bundle request, checks its single advertised
+head and prerequisite against objects fetched from the pinned provider repo,
+and requires exactly one update to the
 authenticated seat's `refs/heads/seat/<agentUserId>/` prefix. It refuses
 deletion, tags, second refs, protected branches, malformed framing and any
-client-supplied repo/prefix override. The claimed old OID must equal the
-provider's current ref (or zero for a fresh branch). It unpacks into an isolated
-quarantine object store and verifies the old commit is an ancestor of the new
+client-supplied repo/prefix override. The backend reads the old OID from the
+provider's current ref (or zero for a fresh branch). It unbundles into a fresh
+backend-owned bare object store with no inherited Git config or hooks, checks
+connectivity, and verifies the old commit is an ancestor of the new
 commit; it refuses when ancestry cannot be established. A trusted server-side
 push then uses a compare-and-swap lease on that same old OID, so a concurrent
 ref move fails. The client has no control over this lease or fast-forward check:
-the wire protocol does not attest to the client's `--force` choice. The App
+the remote-helper protocol does not attest to the client's `--force` choice. The App
 token stays only in the backend-to-GitHub request; the child never receives a
 credential helper that returns it. Acceptance covers fresh branch and existing
 fast-forward success, and divergent update with correct old OID, stale old OID,

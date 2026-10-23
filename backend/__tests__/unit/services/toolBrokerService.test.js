@@ -14,6 +14,7 @@ const mockGithub = {
   createPullReview: jest.fn(),
 };
 const mockReserveBudgetLineage = jest.fn();
+const mockPushSeatBranch = jest.fn();
 const mockDmService = { getOrCreateAgentRoom: jest.fn() };
 
 jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockRoomGrant }));
@@ -40,6 +41,10 @@ jest.mock('../../../services/seatGrantConfinement', () => ({
   judgeSeatConfinement: (...args) => mockSeatConfinement(...args),
 }));
 jest.mock('../../../services/githubAppService', () => mockGithub);
+jest.mock('../../../services/seatGithubPush', () => ({
+  parseSeatPushArgs: jest.fn(),
+  pushSeatBranch: (...args) => mockPushSeatBranch(...args),
+}));
 jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
   outsiderGrantPodRefusal: jest.fn(async () => null),
   outsiderGrantRefusalMessage: jest.fn((reason) => `Use a separate pod: ${reason}`),
@@ -579,5 +584,43 @@ describe('host GitHub command tools', () => {
       args: { title: 'Change', head: 'seat/agent-a/change', base: 'main' },
     })).rejects.toMatchObject({ code: 'tool_not_allowed' });
     expect(mockGithub.createPullRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('host GitHub push authority', () => {
+  const args = {
+    ref: 'refs/heads/seat/agent-a/work', baseOid: 'a'.repeat(40),
+    newOid: 'b'.repeat(40), bundle: 'YWJj',
+  };
+
+  it.each(['read', 'write-with-confirm'])('refuses %s mode before an App push', async (writeMode) => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode }));
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args,
+    })).rejects.toMatchObject({ code: 'write_mode_not_allowed' });
+    expect(mockPushSeatBranch).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit push pin even on an autonomous write grant', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.comment_on_issue'], writeMode: 'write' }));
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args,
+    })).rejects.toMatchObject({ code: 'tool_not_allowed' });
+    expect(mockPushSeatBranch).not.toHaveBeenCalled();
+  });
+
+  it('binds the executing seat identity and uses the pinned App repository', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode: 'write' }));
+    mockPushSeatBranch.mockResolvedValue({ ref: args.ref, oldOid: '0'.repeat(40), newOid: args.newOid });
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args,
+    })).resolves.toMatchObject({ outcome: 'ok' });
+    expect(mockPushSeatBranch).toHaveBeenCalledWith(args, expect.objectContaining({
+      owner: 'Team-Commonly', repo: 'commonly', installationId: 'gh-install-1',
+    }), 'agent-a');
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'github.push_branch', providerRepo: 'Team-Commonly/commonly',
+      providerRef: args.ref, outcome: 'ok',
+    }));
   });
 });
