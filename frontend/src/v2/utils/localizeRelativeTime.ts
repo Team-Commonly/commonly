@@ -1,8 +1,17 @@
 import type { TFunction } from 'i18next';
 
+/** How far a past event may sit ahead of the browser clock and still read as past. */
+const PAST_EVENT_SKEW_MS = 2 * 60_000;
+
 export interface RelativeTimeOptions {
   /** Keep future timestamps as "from now"; past-only surfaces clamp to now. */
   includeFuture?: boolean;
+  /**
+   * The timestamp is an event that already happened. An event up to two minutes
+   * ahead of the browser clock is skew and reads "just now", never "from now".
+   * Deadlines and other future times leave this off.
+   */
+  pastEvent?: boolean;
   /** Text for a missing or invalid timestamp. */
   missing?: string;
   /** Preserve each surface's established boundary behavior. */
@@ -19,7 +28,7 @@ export type RelativeParts =
 /** Compute relative-time semantics once so every formatter consumes the same parts. */
 export const relativeParts = (
   date?: string | null,
-  { includeFuture = true, rounding = 'round', now = Date.now() }: RelativeTimeOptions = {},
+  { includeFuture = true, pastEvent = false, rounding = 'round', now = Date.now() }: RelativeTimeOptions = {},
 ): RelativeParts => {
   if (!date) return { kind: 'missing' };
   const timestamp = new Date(date).getTime();
@@ -30,9 +39,7 @@ export const relativeParts = (
   const abs = Math.abs(signedElapsed);
   const round = rounding === 'floor' ? Math.floor : Math.round;
   const minutes = round(abs / 60_000);
-  // A past event a few seconds ahead of the browser clock is clock skew, not a
-  // future event: read it as "just now", never as "1m from now".
-  if (future && abs < 60_000) return { kind: 'now', future: false };
+  if (pastEvent && future && abs <= PAST_EVENT_SKEW_MS) return { kind: 'now', future: false };
   if (minutes < 1) return { kind: 'now', future };
   if (minutes < 60) return { kind: 'rel', unit: 'minute', count: minutes, future };
   const hours = round(minutes / 60);
