@@ -22,12 +22,12 @@ regexes = [
   # signature. generic-api-key matched it, and main's Secret Scan was red on
   # every push from 2026-10-16. The exact literal only, so a real token still fails.
   '''eyJhbGciOiJSUzI1NiJ9\.jwt''',
-  # The namespaced cloudflared ExternalSecret declares `secretKey: credentials.json`
-  # (#2439) — a Secret KEY NAME (the key the tunnel credentials.json is stored under),
-  # not a value. gitleaks' kubernetes-secret-yaml rule matched the literal filename
-  # `credentials.json`. The exact literal only, so a real credential (a high-entropy
-  # token/blob) still fails.
-  '''credentials\.json''',
+  # The namespaced cloudflared ExternalSecret has `- secretKey: credentials.json`
+  # (#2439) — a Secret KEY NAME (what the tunnel credentials.json is stored under), not
+  # a value. gitleaks' kubernetes-secret-yaml rule captures `secretKey: credentials` (it
+  # stops at the dot) as the "secret". The exact literal only, so a real credential (a
+  # high-entropy token/blob) still fails. Verified against gitleaks 8.21.2 locally.
+  '''secretKey: credentials''',
 ]
 
 paths = [
