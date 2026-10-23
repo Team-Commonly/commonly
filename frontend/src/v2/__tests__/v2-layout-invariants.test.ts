@@ -192,6 +192,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__section-head button')).toContain('background: var(--v2-ink)');
   });
 
+  test('agent Control reconnect remains an ink action with a focus edge', () => {
+    const action = ruleBody(agentSettings, '.v2-root .v2-agent-settings a.v2-agent-settings__action');
+    expect(action).toContain('background: var(--v2-ink)');
+    expect(action).toContain('color: var(--v2-on-ink)');
+    expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings a.v2-agent-settings__action:focus-visible'))
+      .toContain('box-shadow: var(--v2-focus-ring)');
+  });
+
   test('BYO hints do not add paragraph margins to flex gaps', () => {
     expect(ruleBody(v2, '.v2-byo__hint')).toContain('margin: 0');
   });

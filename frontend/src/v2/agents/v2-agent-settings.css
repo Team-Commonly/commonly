@@ -47,6 +47,25 @@
 .v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
 .v2-root .v2-agent-settings .v2-agent-settings__section-head button:hover,
 .v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child:hover { background: var(--v2-ink-hover); }
+.v2-root .v2-agent-settings a.v2-agent-settings__action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--v2-ink);
+  border-radius: var(--v2-radius);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.v2-root .v2-agent-settings a.v2-agent-settings__action:hover { background: var(--v2-ink-hover); }
+.v2-root .v2-agent-settings a.v2-agent-settings__action:focus-visible {
+  box-shadow: var(--v2-focus-ring);
+  outline: 1px solid var(--v2-accent);
+}
 .v2-agent-settings__error { color: var(--v2-danger); }
 .v2-agent-settings__empty { margin-top: 24px; color: var(--v2-text-secondary); }
 .v2-agent-settings__keys { list-style: none; padding: 0; margin: 20px 0 0; }
