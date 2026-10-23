@@ -180,6 +180,7 @@ export interface IIntegration extends Document {
     credentialRef?: string;
     refreshTokenRef?: string;
     refreshGeneration?: number;
+    authGeneration?: number;
     refreshingUntil?: Date;
     credentialHint?: string;
     pendingAuth?: { state?: string; codeVerifier?: string; expiresAt?: Date; clientId?: string };
@@ -373,6 +374,7 @@ const IntegrationSchema = new Schema<IIntegration>(
       credentialRef: String, // ConnectorSecret ref: the access token
       refreshTokenRef: String, // ConnectorSecret ref: the refresh token
       refreshGeneration: Number, // the §10.3 fence's generation at the last refresh
+      authGeneration: Number, // monotonically fences concurrent OAuth callbacks for this row
       // The §10.3 fence's LEASE: taken by whoever won the bump, released by its
       // commit or its error mark, and treated as takeable once it is in the
       // past. Without it a caller that reads the row mid-round-trip sees a

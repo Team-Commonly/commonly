@@ -292,6 +292,7 @@ const startConnect = async (req: AuthedRequest, res: Response) => {
   const row = await Integration.findOneAndUpdate(
     { type: 'hosted-mcp', createdBy: userId, 'config.entryId': entry.id },
     {
+      $inc: { 'config.authGeneration': 1 },
       $set: {
         'config.intake': 'oauth',
         'config.pendingAuth': { state, codeVerifier: verifier, expiresAt, browserNonce, clientId: client.clientId },
@@ -355,11 +356,14 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
  * is atomic on the same terms and hands back the verifier in the pre-image,
  * which is the only place it is kept.
  */
-const finishCallback = async (req: Request, res: Response, flow: {
+interface CallbackFlow {
   pendingRowId?: string;
   connectedRowId?: string;
   credentialWriteStarted?: boolean;
-}) => {
+  authGeneration?: number;
+}
+
+const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
   if (!entry) {
     return callbackRedirect(res, 'error', 'unknown_entry');
@@ -426,6 +430,7 @@ const finishCallback = async (req: Request, res: Response, flow: {
     // A second delivery of the same state, or two tabs finishing at once.
     return callbackRedirect(res, 'error', 'state_consumed');
   }
+  flow.authGeneration = consumed.config?.authGeneration;
   if (consumed.status === 'connected') flow.connectedRowId = String(consumed._id);
 
   let authorizationServer: HostedMcpAuthorizationServer;
@@ -574,43 +579,48 @@ const finishCallback = async (req: Request, res: Response, flow: {
     if (!withdrawn) manualRevokeAt = revokeTarget?.page;
   }
 
-  // Secret storage may replace the token behind the same ref before the row
-  // update. Retire an existing connection before that replacement begins: if
-  // the second secret write or the final row write fails, the stored pair may
-  // be mixed, but no caller can use a row whose status is error. The outer
-  // catch also retries this retirement in case another callback made the row
-  // connected while this one was writing.
-  if (flow.connectedRowId) {
-    const retired = await Integration.findOneAndUpdate(
-      { _id: flow.connectedRowId, status: 'connected' },
-      {
-        $set: {
-          status: 'error',
-          errorMessage: 'Connection could not be completed. Try again.',
-          errorMessageUserFacing: true,
-        },
+  // Fence publication before either stable secret ref can be replaced. A
+  // newer /start increments authGeneration; its callback may then finish while
+  // this one is waiting for the secret store. Both the row and each encrypted
+  // secret reject an older generation, and the row is unusable during writes.
+  const authGeneration = flow.authGeneration ?? 0;
+  const generationFilter = flow.authGeneration === undefined
+    ? { 'config.authGeneration': { $exists: false } }
+    : { 'config.authGeneration': authGeneration };
+  const retired = await Integration.findOneAndUpdate(
+    { _id: consumed._id, ...generationFilter, 'config.pendingAuth': { $exists: false } },
+    {
+      $set: {
+        status: 'error',
+        errorMessage: 'Connection could not be completed. Try again.',
+        errorMessageUserFacing: true,
       },
-      { new: true },
-    );
-    if (!retired) return callbackRedirect(res, 'error', 'state_consumed');
-  }
+    },
+    { new: true },
+  );
+  if (!retired) return callbackRedirect(res, 'error', 'state_consumed');
   // Clear the old-grant assessment before replacement begins.
   forgetHostedMcpDrift(String(consumed._id));
   flow.credentialWriteStarted = true;
-  const credentialRef = await connectorSecrets.put(String(consumed._id), HOSTED_MCP_ACCESS_TOKEN, tokens.access_token);
+  const credentialRef = await connectorSecrets.put(
+    String(consumed._id), HOSTED_MCP_ACCESS_TOKEN, tokens.access_token, authGeneration,
+  );
   let refreshTokenRef = consumed.config?.refreshTokenRef || undefined;
   if (tokens.refresh_token) {
-    refreshTokenRef = await connectorSecrets.put(String(consumed._id), HOSTED_MCP_REFRESH_TOKEN, tokens.refresh_token);
+    refreshTokenRef = await connectorSecrets.put(
+      String(consumed._id), HOSTED_MCP_REFRESH_TOKEN, tokens.refresh_token, authGeneration,
+    );
   } else if (refreshTokenRef) {
     // This authorization returned no refresh token, so the row cannot confirm
     // that its stored token belongs to this grant. Discard it rather than let a
     // later refresh use a credential whose grant binding is unknown.
-    await connectorSecrets.revoke(refreshTokenRef);
+    // Do not delete a stable ref here: a newer callback may have already
+    // replaced it. Dropping the row reference lets the orphan sweep remove it.
     refreshTokenRef = undefined;
   }
 
-  await Integration.findOneAndUpdate(
-    { _id: consumed._id },
+  const published = await Integration.findOneAndUpdate(
+    { _id: consumed._id, status: 'error', ...generationFilter, 'config.pendingAuth': { $exists: false } },
     {
       $set: {
         status: 'connected',
@@ -647,6 +657,7 @@ const finishCallback = async (req: Request, res: Response, flow: {
     },
     { new: true },
   );
+  if (!published) return callbackRedirect(res, 'error', 'state_consumed');
 
   // Also discard any assessment started during the exchange, before the row
   // update made the new grant visible.
@@ -661,7 +672,7 @@ const finishCallback = async (req: Request, res: Response, flow: {
 };
 
 router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Response) => {
-  const flow: { pendingRowId?: string; connectedRowId?: string; credentialWriteStarted?: boolean } = {};
+  const flow: CallbackFlow = {};
   try {
     await finishCallback(req, res, flow);
   } catch {
@@ -672,7 +683,12 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
         await Integration.findOneAndUpdate(
           // A newer /start may have written a fresh pendingAuth while this
           // callback was waiting for the secret store. Leave that flow intact.
-          { _id: flow.pendingRowId, status: 'pending', 'config.pendingAuth': { $exists: false } },
+          {
+            _id: flow.pendingRowId,
+            status: 'pending',
+            'config.pendingAuth': { $exists: false },
+            'config.authGeneration': flow.authGeneration === undefined ? { $exists: false } : flow.authGeneration,
+          },
           {
             $set: {
               status: 'error',
@@ -694,7 +710,11 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
         // the old access/refresh pair may be mixed; retire the connection so
         // no caller can use either token until a fresh authorization succeeds.
         await Integration.findOneAndUpdate(
-          { _id: flow.connectedRowId, status: 'connected' },
+          {
+            _id: flow.connectedRowId,
+            status: 'connected',
+            'config.authGeneration': flow.authGeneration === undefined ? { $exists: false } : flow.authGeneration,
+          },
           {
             $set: {
               status: 'error',

@@ -227,7 +227,7 @@ test('a failed older callback leaves a newer start flow available', async () => 
     const olderResult = await olderCallback;
     expect(outcome(olderResult)).toEqual({ hostedMcp: 'error', code: 'connector_unavailable' });
     const row = await Integration.findById(id).lean();
-    expect(row.status).toBe('pending');
+    expect(row.status).toBe('error');
     expect(row.config.pendingAuth.state).toBe(newerState);
   } finally {
     log.mockRestore();
@@ -264,6 +264,66 @@ test('a failed refresh write retires a connected row with a partially replaced s
     expect(row.status).toBe('error');
     expect(JSON.stringify(log.mock.calls)).not.toContain('refresh store failed');
   } finally {
+    log.mockRestore();
+    if (originalKeys === undefined) delete process.env.CONNECTOR_SECRET_KEYS;
+    else process.env.CONNECTOR_SECRET_KEYS = originalKeys;
+    if (originalActiveKey === undefined) delete process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+    else process.env.CONNECTOR_SECRET_ACTIVE_KEY = originalActiveKey;
+  }
+});
+
+test('an older callback cannot replace a newer completed connection secret pair', async () => {
+  const originalKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const originalActiveKey = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+  process.env.CONNECTOR_SECRET_KEYS = `test:${Buffer.alloc(32, 7).toString('base64')}`;
+  process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'test';
+  const actualSecrets = jest.requireActual('../../../services/connectorSecrets');
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  let releaseOlder;
+  try {
+    const id = await seedPending({ state: 'st-race-older', credentialRef: undefined });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'access-A', refresh_token: 'refresh-A', scope: 'read' }),
+    });
+    let enteredOlderWrite;
+    const olderAtWrite = new Promise((resolve) => { enteredOlderWrite = resolve; });
+    connectorSecrets.put.mockImplementation(async (integrationId, kind, material, generation) => {
+      if (material === 'access-A') {
+        enteredOlderWrite();
+        await new Promise((resolve) => { releaseOlder = resolve; });
+      }
+      return actualSecrets.put(integrationId, kind, material, generation);
+    });
+
+    const olderCallback = callback('st-race-older');
+    const first = await Promise.race([
+      olderAtWrite,
+      olderCallback.then((result) => ({ earlyOutcome: outcome(result) })),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('older callback did not reach secret storage')), 5000)),
+    ]);
+    expect(first).toBeUndefined();
+    const newerStart = await request(app).post('/connect/hosted-mcp/linear/start');
+    expect(newerStart.status).toBe(200);
+    const newerState = new URL(newerStart.body.authorizeUrl).searchParams.get('state');
+    const newerCookie = newerStart.headers['set-cookie'][0].split(';')[0];
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'access-B', refresh_token: 'refresh-B', scope: 'read' }),
+    });
+    expect(outcome(await callback(newerState, newerCookie))).toEqual({ hostedMcp: 'connected', code: null });
+    const before = await Integration.findById(id).lean();
+    expect(await actualSecrets.get(before.config.credentialRef)).toBe('access-B');
+    expect(await actualSecrets.get(before.config.refreshTokenRef)).toBe('refresh-B');
+
+    releaseOlder();
+    expect(outcome(await olderCallback)).toEqual({ hostedMcp: 'error', code: 'connector_unavailable' });
+    const after = await Integration.findById(id).lean();
+    expect(after.status).toBe('connected');
+    expect(await actualSecrets.get(after.config.credentialRef)).toBe('access-B');
+    expect(await actualSecrets.get(after.config.refreshTokenRef)).toBe('refresh-B');
+  } finally {
+    releaseOlder?.();
     log.mockRestore();
     if (originalKeys === undefined) delete process.env.CONNECTOR_SECRET_KEYS;
     else process.env.CONNECTOR_SECRET_KEYS = originalKeys;
