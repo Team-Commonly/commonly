@@ -57,6 +57,11 @@ try {
   const other = await run(aProfile, process.execPath, ['-e', connectProbe, b.socketPath]);
   expect(other.code === 2 && other.stdout.includes('EPERM') && calls.length === 1,
     `cross-seat socket reached: ${other.stdout} ${other.stderr}`);
+  // Mutation control: without the proxy feature, the nominal socket allowlist
+  // does not confine direct AF_UNIX connects on this macOS build.
+  const unconfined = await run(profile(a, false), process.execPath, ['-e', connectProbe, b.socketPath]);
+  expect(unconfined.code === 0 && unconfined.stdout.includes('CONNECTED'),
+    `expected the no-proxy control to expose B: ${unconfined.stdout} ${unconfined.stderr}`);
 
   const oldPath = b.socketPath;
   await b.close();
@@ -67,7 +72,7 @@ try {
   const stale = await run(aProfile, process.execPath, ['-e', connectProbe, oldPath]);
   expect(stale.code !== 0 && calls.length === 1, 'stale socket remained reachable');
 
-  process.stdout.write('PASS: own call, known sibling, restarted sibling, stale endpoint\n');
+  process.stdout.write('PASS: own call, known sibling, no-proxy control, restarted sibling, stale endpoint\n');
 } finally {
   await a?.close();
   await b?.close();
