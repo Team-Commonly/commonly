@@ -211,8 +211,11 @@ exports.getOAuthProviders = (_req: any, res: any) => {
 };
 
 // GET /api/auth/oauth/:provider/start?next=/v2&invite=CODE
+// POST /api/auth/oauth/:provider/start (form body: next, invite, ref): the register
+// page's form, which keeps an invite code out of the URL and so out of logs.
 exports.startOAuth = async (req: any, res: any) => {
   try {
+    const input = req.method === 'POST' ? (req.body || {}) : req.query;
     const provider = String(req.params.provider || '').toLowerCase();
     if (!isProviderConfigured(provider)) {
       return res.status(404).json({ error: 'Unknown or unconfigured OAuth provider.' });
@@ -222,9 +225,9 @@ exports.startOAuth = async (req: any, res: any) => {
     await OAuthLoginState.create({
       provider,
       state,
-      invitationCode: String(req.query.invite || '').trim(),
-      next: safeNextPath(req.query.next),
-      signupRef: cleanSignupRef(req.query.ref) || '',
+      invitationCode: String(input.invite || '').trim(),
+      next: safeNextPath(input.next),
+      signupRef: cleanSignupRef(input.ref) || '',
       expiresAt: new Date(Date.now() + STATE_TTL_MS),
     });
 
@@ -281,6 +284,7 @@ exports.oauthCallback = async (req: any, res: any) => {
       'authProviders.provider': provider,
       'authProviders.providerId': profile.providerId,
     });
+    let createdNewUser = false;
     // The provider arm matches a linked identity, and a converted agent row keeps
     // whatever the person had linked — so this arm can land on a bot row whose
     // email no longer matches anything. The email arm below already refuses bots;
@@ -337,6 +341,7 @@ exports.oauthCallback = async (req: any, res: any) => {
         }],
       });
       await user.save();
+      createdNewUser = true;
       await createDefaultWorkspacePod(user._id);
       joinCommunityPodBestEffort(user._id);
     }
@@ -348,6 +353,10 @@ exports.oauthCallback = async (req: any, res: any) => {
     await stateRow.save();
 
     const dest = new URLSearchParams({ code: exchangeCode, next: stateRow.next || '/v2' });
+    // This marker contains no invitation data. It lets the frontend clear its
+    // session-only continuation secret only for a newly-created invited user;
+    // an existing account logging in from a register page must retain it.
+    if (createdNewUser && stateRow.invitationCode) dest.set('inviteSignup', '1');
     return res.redirect(`${frontendUrl()}/v2/oauth/complete?${dest.toString()}`);
   } catch {
     // provider is user-controlled (req.params) — keep it out of the format

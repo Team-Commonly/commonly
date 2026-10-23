@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from '../utils/axiosConfig';
 import { useTranslation } from 'react-i18next';
 import V2AuthBrand from '../v2/components/V2AuthBrand';
+import { registerPathWithInvite } from '../v2/utils/pendingInvite';
 
 // v2-native invite-required gate. Pairs with V2Login / V2Register (reuses the
 // .v2-login card styles) so every auth surface matches after v2 became the
@@ -25,7 +26,7 @@ const RegistrationInviteRequired: React.FC = () => {
     e.preventDefault();
     const trimmed = invitationCode.trim();
     if (!trimmed) return;
-    navigate(`/v2/register?invite=${encodeURIComponent(trimmed)}`);
+    navigate(registerPathWithInvite(trimmed));
   };
 
   const onWaitlistSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {

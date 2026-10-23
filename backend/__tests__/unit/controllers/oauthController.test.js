@@ -111,6 +111,27 @@ describe('OAuth Controller', () => {
       expect(state.invitationCode).toBe('CODE1');
     });
 
+    it('a form POST start reads next, invite and ref from the body, so the code stays out of the URL', async () => {
+      const res = mockRes();
+      await oauthController.startOAuth({
+        method: 'POST',
+        params: { provider: 'github' },
+        // A query invite on a POST is ignored: only the body counts.
+        query: { invite: 'FROM-QUERY' },
+        body: { next: '/v2/pods/abc', invite: 'CODE2', ref: 'x' },
+        protocol: 'https',
+        get: () => 'api.test.local',
+      }, res);
+
+      expect(res.redirect).toHaveBeenCalledTimes(1);
+      const url = new URL(res.redirect.mock.calls[0][0]);
+      expect(url.toString()).not.toContain('CODE2');
+      const state = await OAuthLoginState.findOne({ state: url.searchParams.get('state') });
+      expect(state.invitationCode).toBe('CODE2');
+      expect(state.next).toBe('/v2/pods/abc');
+      expect(state.signupRef).toBe('x');
+    });
+
     it('serves consecutive starts — pending rows must not collide on the exchangeCode index', async () => {
       // Regression: exchangeCode had `default: null` + a sparse unique index.
       // Sparse skips MISSING fields but still indexes explicit nulls, so the
@@ -226,6 +247,7 @@ describe('OAuth Controller', () => {
       expect(redirectUrl.origin).toBe('https://app.test.local');
       expect(redirectUrl.pathname).toBe('/v2/oauth/complete');
       expect(redirectUrl.searchParams.get('code')).toBeTruthy();
+      expect(redirectUrl.searchParams.get('inviteSignup')).toBeNull();
 
       const state = await OAuthLoginState.findOne({ state: 'state-1' });
       expect(String(state.userId)).toBe(String(user._id));
@@ -250,11 +272,14 @@ describe('OAuth Controller', () => {
       });
       await seedState({ signupRef: 'x' });
       mockGithubProfile();
+      const res = mockRes();
 
-      await oauthController.oauthCallback(callbackReq(), mockRes());
+      await oauthController.oauthCallback(callbackReq(), res);
 
       const user = await User.findOne({ email: 'octo@example.com' });
       expect(user.onboarding?.signupRef).toBeUndefined();
+      const redirectUrl = new URL(res.redirect.mock.calls[0][0]);
+      expect(redirectUrl.searchParams.get('inviteSignup')).toBeNull();
     });
 
     it('links to an existing account with the same verified email', async () => {
@@ -362,6 +387,8 @@ describe('OAuth Controller', () => {
       expect(await User.countDocuments({ email: 'octo@example.com' })).toBe(1);
       const invite = await InvitationCode.findOne({ code: 'WELCOME1' });
       expect(invite.useCount).toBe(1);
+      const redirectUrl = new URL(res.redirect.mock.calls[0][0]);
+      expect(redirectUrl.searchParams.get('inviteSignup')).toBe('1');
     });
 
     it('grants cloudAgents when an invite code rides through /start under open registration', async () => {

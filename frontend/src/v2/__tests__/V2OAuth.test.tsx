@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useNavigationType } from 'react-router-dom';
 import V2OAuthButtons from '../components/V2OAuthButtons';
 import V2OAuthComplete from '../components/V2OAuthComplete';
@@ -43,24 +43,60 @@ const baseAuth = {
 afterEach(() => {
   jest.clearAllMocks();
   localStorage.clear();
+  sessionStorage.clear();
 });
 
 describe('V2OAuthButtons', () => {
-  test('renders a button per configured provider with invite carried through', async () => {
+  test('posts an invite without nesting a form or exposing the code in a link', async () => {
     axios.get.mockResolvedValueOnce({
       data: { providers: [{ id: 'github', label: 'GitHub' }, { id: 'google', label: 'Google' }] },
     });
+    render(
+      <MemoryRouter>
+        <V2OAuthButtons invite="CODE1" next="/v2/pods/abc" />
+      </MemoryRouter>,
+    );
+
+    const github = await screen.findByRole('button', { name: /continue with github/i });
+    expect(github).not.toHaveAttribute('href');
+    expect(github.closest('form')).toBeNull();
+    expect(screen.getByRole('button', { name: /continue with google/i })).toBeInTheDocument();
+
+    const submit = jest.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {});
+    fireEvent.click(github);
+    const form = document.body.querySelector('form[action*="/api/auth/oauth/github/start"]') as HTMLFormElement;
+    expect(form).toBeTruthy();
+    expect(form).toHaveAttribute('method', 'post');
+    expect(form).toHaveAttribute('action', expect.stringContaining('/api/auth/oauth/github/start'));
+    expect(form.method).toBe('post');
+    expect(form.action).toContain('/api/auth/oauth/github/start');
+    expect(form.action).not.toContain('CODE1');
+    const fields = Object.fromEntries(Array.from(form.elements)
+      .filter((el) => el.name)
+      .map((el) => [el.name, el.value]));
+    expect(fields).toEqual({ next: '/v2/pods/abc', invite: 'CODE1' });
+
+    expect(sessionStorage.getItem('commonly.pendingInviteOAuth')).toBe('1');
+    form.remove();
+    submit.mockRestore();
+  });
+
+  test('without an invite the button is a plain link and submits no form', async () => {
+    axios.get.mockResolvedValueOnce({ data: { providers: [{ id: 'github', label: 'GitHub' }] } });
+    const submit = jest.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {});
 
     render(
       <MemoryRouter>
-        <V2OAuthButtons invite="CODE1" />
+        <V2OAuthButtons />
       </MemoryRouter>,
     );
 
     const github = await screen.findByRole('link', { name: /continue with github/i });
-    expect(github).toHaveAttribute('href', expect.stringContaining('/api/auth/oauth/github/start'));
-    expect(github).toHaveAttribute('href', expect.stringContaining('invite=CODE1'));
-    expect(screen.getByRole('link', { name: /continue with google/i })).toBeInTheDocument();
+    // jsdom can't follow the link; stop the navigation so only the form question is tested.
+    github.addEventListener('click', (e) => e.preventDefault());
+    act(() => { github.click(); });
+    expect(submit).not.toHaveBeenCalled();
+    submit.mockRestore();
   });
 
   test('carries the first-touch ref into the provider start', async () => {
@@ -173,6 +209,32 @@ describe('V2OAuthComplete', () => {
     expect(locationSpies.assign).not.toHaveBeenCalled();
   });
 
+  test('clears an invite only after an invite-bearing OAuth signup succeeds', async () => {
+    sessionStorage.setItem('commonly.pendingInvite', 'CM-SIGNUP');
+    sessionStorage.setItem('commonly.pendingInviteOAuth', '1');
+    axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
+
+    await act(async () => {
+      renderComplete('?code=one-time&next=/v2&inviteSignup=1');
+    });
+
+    await screen.findByText('home REPLACE');
+    expect(sessionStorage.getItem('commonly.pendingInvite')).toBeNull();
+    expect(sessionStorage.getItem('commonly.pendingInviteOAuth')).toBeNull();
+  });
+
+  test('keeps an earlier invite through an ordinary OAuth login', async () => {
+    sessionStorage.setItem('commonly.pendingInvite', 'CM-EARLIER');
+    axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
+
+    await act(async () => {
+      renderComplete('?code=one-time&next=/v2');
+    });
+
+    await screen.findByText('home REPLACE');
+    expect(sessionStorage.getItem('commonly.pendingInvite')).toBe('CM-EARLIER');
+  });
+
   test('an off-site next (backslash, read as //) lands on /v2, not the other site', async () => {
     axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
 
@@ -245,6 +307,8 @@ describe('V2OAuthComplete', () => {
   });
 
   test('bounces to login with an error when the exchange fails', async () => {
+    sessionStorage.setItem('commonly.pendingInvite', 'CM-RETRY');
+    sessionStorage.setItem('commonly.pendingInviteOAuth', '1');
     axios.post.mockRejectedValueOnce(new Error('bad code'));
     // The login page fetches providers on mount after the bounce.
     axios.get.mockResolvedValue({ data: { providers: [] } });
@@ -255,5 +319,7 @@ describe('V2OAuthComplete', () => {
 
     expect(await screen.findByText(/sign-in could not be completed/i)).toBeInTheDocument();
     expect(localStorage.getItem('token')).toBeNull();
+    expect(sessionStorage.getItem('commonly.pendingInvite')).toBe('CM-RETRY');
+    expect(sessionStorage.getItem('commonly.pendingInviteOAuth')).toBeNull();
   });
 });
