@@ -56,11 +56,13 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
       .select('name').lean();
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
+    const visible = manageable.filter((entry: any) => names.has(String(entry.podId)));
+    const writable = visible.find((entry: any) => entry.status === 'active') || visible[0];
     const { turnsPerDay } = await hostedCapsForOwner(userId);
     return res.json({ turnCap: turnsPerDay, podCount: installations.length,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
-      installations: manageable
-      .filter((entry: any) => names.has(String(entry.podId)))
+      writablePodId: writable ? String(writable.podId) : null,
+      installations: visible
       .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod')) });
   } catch (error) {
     console.error('Error loading agent settings:', error);

@@ -53,6 +53,10 @@ describe('per-installation agent settings', () => {
     expect(response.body.activePodCount).toBe(2);
     expect(response.body.podCount).toBe(2);
     expect(response.body.turnCap).toBe(30);
+    expect(response.body.writablePodId).toBe(String(podA._id));
+    const otherResponse = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(other)}`);
+    expect(otherResponse.body.writablePodId).toBe(String(podB._id));
   });
 
   it('counts active connections separately from installed pod rows', async () => {
