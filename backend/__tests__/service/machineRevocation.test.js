@@ -14,7 +14,17 @@ app.use(express.json());
 app.use('/api/auth', require('../../routes/auth'));
 app.use('/api/machines', require('../../routes/machines'));
 app.use('/api/credentials', require('../../routes/credentials'));
-app.get('/runtime-check', require('../../middleware/agentRuntimeAuth').default, (_req, res) => res.sendStatus(204));
+const agentRuntimeAuth = require('../../middleware/agentRuntimeAuth').default;
+
+const agentCall = async (token) => {
+  const req = { header: (name) => (name === 'Authorization' ? `Bearer ${token}` : undefined) };
+  const res = { statusCode: 200 };
+  res.status = (code) => { res.statusCode = code; return res; };
+  res.json = () => res;
+  let nexted = false;
+  await agentRuntimeAuth(req, res, () => { nexted = true; });
+  return nexted ? 204 : res.statusCode;
+};
 
 const owner = async () => User.create({
   username: `owner-${new mongoose.Types.ObjectId().toString().slice(0, 8)}`,
@@ -81,7 +91,7 @@ describe('machine credential revocation', () => {
     const child = await addRuntimeChild(user, first.machine, first.daemonToken, 'first');
 
     await daemonCall(first.daemonToken, first.machine.id).expect(200);
-    await request(app).get('/runtime-check').set('Authorization', `Bearer ${child.token}`).expect(204);
+    expect(await agentCall(child.token)).toBe(204);
 
     await request(app).delete(`/api/auth/devices/${device.id}`)
       .set('Authorization', `Bearer ${generateTestToken(user._id)}`).expect(200);
@@ -89,7 +99,7 @@ describe('machine credential revocation', () => {
     expect(await Machine.findById(first.machine.id)).toBeNull();
     expect(await AgentCredential.findById(child.child._id)).toMatchObject({ status: 'revoked' });
     await daemonCall(first.daemonToken, first.machine.id).expect(401);
-    await request(app).get('/runtime-check').set('Authorization', `Bearer ${child.token}`).expect(401);
+    expect(await agentCall(child.token)).toBe(401);
     await daemonCall(other.daemonToken, other.machine.id).expect(200);
   });
 
@@ -112,16 +122,16 @@ describe('machine credential revocation', () => {
     expect(remaining.every((credential) => credential.status === 'revoked')).toBe(true);
     await daemonCall(first.daemonToken, first.machine.id).expect(401);
     await daemonCall(extraToken, first.machine.id).expect(401);
-    await request(app).get('/runtime-check').set('Authorization', `Bearer ${child.token}`).expect(401);
+    expect(await agentCall(child.token)).toBe(401);
 
-    // An in-flight mint can commit after a deletion's credential scan. The
-    // machine-existence check must still refuse that otherwise-active row.
-    await AgentCredential.updateMany(
-      { machineId: first.machine.machineId },
+    // Even if an old daemon row escaped the revocation sweep, its missing
+    // machine still vetoes the next request.
+    await AgentCredential.updateOne(
+      { tokenHash: hash(first.daemonToken) },
       { $set: { status: 'active', revokedAt: null } },
     );
     await daemonCall(first.daemonToken, first.machine.id).expect(401);
-    await request(app).get('/runtime-check').set('Authorization', `Bearer ${child.token}`).expect(401);
+    expect(await agentCall(child.token)).toBe(401);
   });
 
   it('revoking a daemon credential in the owner UI rejects it and its minted child on the next call', async () => {
@@ -136,7 +146,7 @@ describe('machine credential revocation', () => {
 
     expect(await AgentCredential.findById(child.child._id)).toMatchObject({ status: 'revoked' });
     await daemonCall(first.daemonToken, first.machine.id).expect(401);
-    await request(app).get('/runtime-check').set('Authorization', `Bearer ${child.token}`).expect(401);
+    expect(await agentCall(child.token)).toBe(401);
   });
 
   it('retires pre-binding machines conservatively when their owner revokes a device', async () => {
