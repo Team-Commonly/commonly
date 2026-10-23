@@ -95,6 +95,22 @@ describe('BYO default agent name follows where it runs', () => {
     ));
   });
 
+  test('a nondefault webhook reconnect selects and rotates only that instance', async () => {
+    mockGet([
+      { name: 'local', instanceId: 'default', installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+        connection: { state: 'connected', lastSeenAt: new Date().toISOString() } },
+      { name: 'local', instanceId: 'alpha', installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+        connection: { state: 'revoked', lastSeenAt: null } },
+    ]);
+    axios.post.mockResolvedValue({ data: { token: 'cm_agent_alpha' } });
+    renderAt('/v2/agents/byo?pod=p1&name=local&instanceId=alpha&reconnect=1');
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/registry/pods/p1/agents/local/runtime-tokens',
+      { label: 'BYO MCP — replacement', force: true, instanceId: 'alpha' }, expect.anything(),
+    ));
+  });
+
   test('compact BYO never offers a non-owner a forced key rotation', async () => {
     mockGet([{ name: 'local', installedBy: 'someone-else', runtime: { runtimeType: 'webhook' },
       connection: { state: 'revoked', lastSeenAt: null } }]);
