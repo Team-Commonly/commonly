@@ -1,13 +1,14 @@
 /**
  * Drift guard for the ops-runner env mirror.
  *
- * templates/ops/ops-runner-deployment.yaml mirrors the backend container's env
- * + volume mounts VERBATIM (it can't DRY-extract into a helper without changing
+ * templates/ops/ops-runner-deployment.yaml mirrors the backend container's app
+ * dependencies and volume mounts (it can't DRY-extract into a helper without changing
  * backend's byte-for-byte render — the env block has blank lines nindent would
  * re-indent). A "KEEP IN SYNC" banner alone drifts (recorded instances across
  * the chart), so this pins the contract: the two Deployments must declare the
  * SAME env entries except RUN_WORKER, which controls the serving process and
- * is not read by the sleeping ops-runner — the same (name, source) tuples, where source is a
+ * is not read by the sleeping ops-runner — the same (name, source) tuples,
+ * where source is a
  * secretKeyRef name+key, a configMapKeyRef name+key, or a literal value. If
  * backend gains/loses an env var, or changes a var's source, and ops-runner
  * isn't updated to match, this fails.
@@ -97,6 +98,7 @@ if (typeof describe === 'function') {
       const withoutWorkerGate = (tuple) => !tuple.startsWith('RUN_WORKER\t');
       expect([...opsTuples].filter(withoutWorkerGate).sort())
         .toEqual([...backendTuples].filter(withoutWorkerGate).sort());
+      expect(opsTuples.every(withoutWorkerGate)).toBe(true);
       expect(backendTuples.filter((tuple) => !withoutWorkerGate(tuple))).toEqual([
         'RUN_WORKER\tvalue:"1"',
         'RUN_WORKER\tvalue:"0"',
