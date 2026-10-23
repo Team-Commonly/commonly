@@ -1815,12 +1815,17 @@ class AgentMessageService {
 
       await mongoMessage.save();
       await mongoMessage.populate('userId', 'username profilePicture isBot');
+      const serializedMongoMessage = typeof mongoMessage.toObject === 'function'
+        ? mongoMessage.toObject()
+        : mongoMessage;
       message = {
         // Mongoose documents keep schema fields in `_doc`; spreading the
         // document only copies internals and drops content for broadcasts and
         // installable bridge dispatches. Serialize after populate so the
-        // Mongo fallback matches the PostgreSQL normalized shape.
-        ...(mongoMessage.toObject() as unknown as MessageNormalized),
+        // Mongo fallback matches the PostgreSQL normalized shape. The plain
+        // fallback keeps lightweight test doubles and alternate adapters
+        // compatible while real Mongoose documents take the safe path above.
+        ...(serializedMongoMessage as unknown as MessageNormalized),
         author_kind: authorKind,
       };
     }
