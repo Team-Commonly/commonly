@@ -15,10 +15,16 @@ on:
         description: 'Image tag override (defaults to short SHA of HEAD)'
         required: false
         default: ''
+      allow_without_staging_smoke:
+        description: 'EMERGENCY: deploy prod even without a green staging-smoke on this SHA'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   id-token: write     # required to mint the OIDC token for google-github-actions/auth
   contents: read
+  statuses: read      # read the staging-smoke commit status for the prod-promote gate
 
 concurrency:
   group: deploy-dev
@@ -33,8 +39,37 @@ env:
   NAMESPACE: commonly-dev
 
 jobs:
+  # Prod-promote gate (Sam, 2026-10-23): no prod deploy without a green `staging-smoke`
+  # commit status on this exact SHA. Deploy Staging runs the Tier-1 UI smoke and posts that
+  # status; this job reads it and blocks the deploy if it is not success. The
+  # allow_without_staging_smoke input is the explicit emergency override.
+  require_staging_smoke:
+    name: Require green staging-smoke on this SHA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on the staging-smoke commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          ALLOW: ${{ inputs.allow_without_staging_smoke }}
+        run: |
+          set -uo pipefail
+          if [ "$ALLOW" = "true" ]; then
+            echo "::warning title=staging-smoke gate::bypassed via allow_without_staging_smoke=true"
+            exit 0
+          fi
+          STATE=$(gh api "repos/$REPO/commits/$SHA/statuses" \
+            --jq '[.[] | select(.context=="staging-smoke")] | sort_by(.updated_at) | last | .state' 2>/dev/null || echo "")
+          echo "staging-smoke on $SHA = ${STATE:-<none>}"
+          if [ "$STATE" != "success" ]; then
+            echo "::error title=staging-smoke gate::no green staging-smoke on $SHA (got: ${STATE:-none}). Deploy Staging on this SHA first (it runs the Tier-1 smoke and posts the status), or re-dispatch with allow_without_staging_smoke=true for an emergency."
+            exit 1
+          fi
+
   deploy:
     name: Build + push + helm upgrade
+    needs: require_staging_smoke
     runs-on: ubuntu-latest
     environment: dev
     timeout-minutes: 30
