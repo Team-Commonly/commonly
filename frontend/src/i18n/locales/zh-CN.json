@@ -483,7 +483,7 @@
   },
   "podChat": {
     "systemActions": {
-      "taskClaimed": "{{actor}} 认领了 {{taskId}}"
+      "taskClaimedVerb": "认领了"
     },
     "firstTask": { "addFailed": "添加任务失败，请重试。" },
     "starts": {

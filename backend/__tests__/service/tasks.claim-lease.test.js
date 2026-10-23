@@ -86,7 +86,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       verified: true,
       isBot: true,
       botType: 'agent',
-      botMetadata: { agentName: 'claim-audit-agent', instanceId: 'default' },
+      botMetadata: { agentName: 'claim-audit-agent', instanceId: 'default', displayName: 'Audit Agent' },
       agentRuntimeTokens: [{
         tokenHash: hash(AGENT_TOKEN),
         label: 'task-claim-audit',
@@ -139,6 +139,11 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
         authorId: agent._id.toString(),
       }),
     ]));
+    expect(emitSystemActionLine).toHaveBeenCalledWith(expect.objectContaining({
+      actorName: 'Audit Agent',
+      actorUsername: 'claim-audit-agent',
+      actorIsBot: true,
+    }));
   });
 
   test('a fresh claim stamps a lease ~30 minutes out', async () => {
@@ -154,6 +159,9 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       podId: pod._id.toString(),
       actorUserId: owner._id.toString(),
       actorName: owner.username,
+      actorUsername: owner.username,
+      actorAvatarUrl: null,
+      actorIsBot: false,
       action: 'task-claimed',
       taskId: 'T-1',
     });

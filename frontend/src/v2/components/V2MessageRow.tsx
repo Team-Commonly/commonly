@@ -469,12 +469,22 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   if ((message.message_type === 'system' || message.messageType === 'system')
       && message.payload?.kind === 'system-action'
       && message.payload.action === 'task-claimed') {
+    const actorLabel = overriddenDisplay || message.payload.actorName || author;
     return (
       <div id={`message-${message.id}`} className="v2-system-action-line">
-        <span>{t('podChat.systemActions.taskClaimed', {
-          actor: message.payload.actorName || author,
-          taskId: message.payload.taskId || '',
-        })}</span>
+        <V2Avatar
+          name={actorLabel}
+          src={message.user?.profile_picture || undefined}
+          size="sm"
+          tone="flat"
+          kind={message.user?.isBot === false ? 'human' : 'agent'}
+          seed={message.user_id || undefined}
+        />
+        <span className="v2-system-action-line__name">{actorLabel}</span>
+        <span className="v2-system-action-line__action">
+          <span className="v2-system-action-line__verb">{t('podChat.systemActions.taskClaimedVerb')}</span>
+          <span className="v2-system-action-line__object" title={message.payload.taskId || ''}>{message.payload.taskId || ''}</span>
+        </span>
         {time && <time dateTime={message.created_at}>{time}</time>}
       </div>
     );

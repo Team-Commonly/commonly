@@ -2724,21 +2724,55 @@ body.modern-ui.v2-canvas {
 
 /* TASK-406: quiet, non-interactive kernel action line in the pod timeline. */
 .v2-system-action-line {
-  display: flex;
-  justify-content: center;
-  align-items: baseline;
+  box-sizing: border-box;
+  width: calc(100% - 36px);
+  margin-left: 36px;
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
-  padding: 4px 12px;
+  padding: 4px 0;
+  font: 400 13px/16px var(--v2-font);
+}
+
+.v2-system-action-line .v2-avatar {
+  width: 16px;
+  height: 16px;
+  font-size: 8px;
+}
+
+.v2-system-action-line__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--v2-text-primary);
+  font-weight: 500;
+}
+
+.v2-system-action-line__action {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.v2-system-action-line__verb {
   color: var(--v2-text-tertiary);
-  font-family: var(--v2-font-mono);
-  font-size: 11px;
-  line-height: 16px;
-  text-align: center;
+}
+
+.v2-system-action-line__object {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--v2-text-tertiary);
+  font: 400 11px/16px var(--v2-font-mono);
 }
 
 .v2-system-action-line time {
-  flex: 0 0 auto;
   color: var(--v2-text-placeholder);
+  font: 400 11px/16px var(--v2-font-mono);
 }
 
 /* §3.8 system event card — replaces the regular author/avatar bubble for

@@ -19,6 +19,7 @@ beforeEach(() => {
 it('persists one structured system row and broadcasts the same line without a wake or pod touch', async () => {
   await emitSystemActionLine({
     podId: 'pod-1', actorUserId: 'user-1', actorName: 'Forge',
+    actorUsername: 'forge-agent', actorAvatarUrl: '/avatars/forge.png', actorIsBot: true,
     action: 'task-claimed', taskId: 'TASK-406',
   });
 
@@ -34,5 +35,6 @@ it('persists one structured system row and broadcasts the same line without a wa
   expect(mockEmit).toHaveBeenCalledWith('newMessage', expect.objectContaining({
     id: '42', messageType: 'system', pod_id: 'pod-1',
     payload: expect.objectContaining({ action: 'task-claimed', taskId: 'TASK-406' }),
+    user: expect.objectContaining({ username: 'forge-agent', profile_picture: '/avatars/forge.png', isBot: true }),
   }));
 });
