@@ -300,6 +300,7 @@ jobs:
             -f k8s/helm/commonly/values.yaml \
             -f k8s/helm/commonly/values-dev.yaml \
             --set backend.worker.enabled=true \
+            --set backend.worker.startPaused=false \
             > /tmp/dev-worker-rendered.yaml
 
       - name: Verify backend worker render

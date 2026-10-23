@@ -88,9 +88,9 @@ backend:
   worker:
     # Opt in only when a dedicated worker can replace web's background jobs.
     enabled: false
-    # First enable with this true; wait for old web pods to terminate, then
-    # clear it so the worker starts without overlapping the old scheduler.
-    startPaused: false
+    # Enabling the worker first disables web jobs but keeps worker replicas at
+    # zero. After old web pods terminate, set this false to start the worker.
+    startPaused: true
     nodeSelector: {}
     tolerations: []
   image:
