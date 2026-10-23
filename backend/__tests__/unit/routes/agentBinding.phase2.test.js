@@ -9,7 +9,7 @@ const request = require('supertest');
 const express = require('express');
 
 jest.mock('../../../middleware/auth', () => {
-  const mw = (req, res, next) => { req.user = { id: global.__CALLER_ID }; next(); };
+  const mw = (req, res, next) => { req.user = { id: global.__CALLER_ID, role: global.__CALLER_ROLE }; next(); };
   mw.touchLastActive = jest.fn();
   return mw;
 });
@@ -46,6 +46,7 @@ beforeEach(async () => {
   ]);
   owner = await User.create({ username: `o${Date.now() % 1e6}`, email: `o${Date.now()}@x.com`, password: 'x'.repeat(12) });
   global.__CALLER_ID = String(owner._id);
+  global.__CALLER_ROLE = undefined;
   bot = await User.create({
     username: `b${Date.now() % 1e6}`, email: `b${Date.now()}@agents.commonly.local`, password: 'x'.repeat(12),
     isBot: true, botMetadata: { agentName: 'wren-test', instanceId: 'default' },
@@ -102,6 +103,10 @@ beforeEach(async () => {
 const requestPlacement = (machineId) => request(app)
   .post('/api/agent-binding/request')
   .send({ agentName: 'wren-test', instanceId: 'default', machineId });
+
+const requestReconnect = () => request(app)
+  .post('/api/agent-binding/reconnect')
+  .send({ agentName: 'wren-test', instanceId: 'default' });
 
 const adopt = (tok) => request(app)
   .post('/api/agent-binding/adopt')
@@ -208,6 +213,63 @@ describe('placement request', () => {
     const res = await requestPlacement('machine-a');
     expect(res.status).toBe(409);
     expect(res.body.boundTo).toBe('machine-b');
+  });
+});
+
+describe('owner-requested reconnect', () => {
+  it('projects one owner-approved rekey directive to the bound daemon', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    const requested = await requestReconnect();
+    expect(requested.status).toBe(200);
+    expect(requested.body.requested).toBe(true);
+    const assignedRow = (await assigned(DAEMON_A)).body.agents[0];
+    expect(new Date(assignedRow.reconnectRequestedAt).getTime()).toBeGreaterThan(0);
+    expect((await assigned(DAEMON_B)).body.agents).toEqual([]);
+  });
+
+  it('lets the bound daemon replace a revoked agent key after the owner request', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    const original = await mint(DAEMON_A);
+    expect(original.status).toBe(201);
+    await AgentCredential.updateOne({ tokenHash: hash(original.body.token) }, { $set: { status: 'revoked' } });
+    expect((await runtimeAuthProbe(original.body.token)).status).toBe(401);
+    expect((await requestReconnect()).status).toBe(200);
+    expect((await assigned(DAEMON_A)).body.agents[0].reconnectRequestedAt).toBeTruthy();
+    const refreshed = await mint(DAEMON_A, { rotate: true });
+    expect(refreshed.status).toBe(201);
+    expect((await runtimeAuthProbe(refreshed.body.token)).status).toBe(200);
+    expect((await runtimeAuthProbe(original.body.token)).status).toBe(401);
+  });
+
+  it('refuses a different human and a revoked daemon key', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    global.__CALLER_ID = String(new mongoose.Types.ObjectId());
+    expect((await requestReconnect()).status).toBe(403);
+    global.__CALLER_ID = String(owner._id);
+    await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { status: 'revoked' } });
+    const refused = await requestReconnect();
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('machine_key_revoked');
+  });
+
+  it('refuses an expired daemon key without spending the reconnect directive', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    await AgentCredential.updateOne({ _id: daemonCredA._id }, {
+      $set: { expiresAt: new Date(Date.now() - 60_000) },
+    });
+    const refused = await requestReconnect();
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('machine_key_revoked');
+    const identity = await User.findById(bot._id).lean();
+    expect(identity.botMetadata.reconnectRequestedAt ?? null).toBeNull();
+  });
+
+  it('lets an instance admin request a bound computer reconnect', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    global.__CALLER_ID = String(new mongoose.Types.ObjectId());
+    global.__CALLER_ROLE = 'admin';
+    expect((await requestReconnect()).status).toBe(200);
+    expect((await assigned(DAEMON_A)).body.agents[0].reconnectRequestedAt).toBeTruthy();
   });
 });
 

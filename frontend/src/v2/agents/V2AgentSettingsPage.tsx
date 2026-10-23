@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2PageHead from '../components/V2PageHead';
 import V2AgentRuntimeGrants, { Runtime } from '../components/V2AgentRuntimeGrants';
+import { AgentControlLoader } from '../components/V2AgentControlSection';
+import { AgentConnection } from '../utils/agentConnection';
 import { useAgentSettings } from './useAgentSettings';
 import V2AgentWakePods from './V2AgentWakePods';
 import './v2-agent-settings.css';
@@ -40,9 +42,16 @@ const V2AgentSettingsPage: React.FC = () => {
   const [pendingAction, setPendingAction] = useState<'replace' | string | null>(null);
   const [busy, setBusy] = useState(false);
   const [oneTimeKey, setOneTimeKey] = useState<string | null>(null);
+  const [connectionState, setConnectionState] = useState<AgentConnection['state'] | null>(null);
   const identityKey = `${agentName}:${instanceId}:${podId || ''}`;
   const currentIdentity = useRef(identityKey);
   currentIdentity.current = identityKey;
+  const disconnected = connectionState === 'revoked' || connectionState === 'stale';
+
+  const onConnectionState = useCallback((state: AgentConnection['state']) => {
+    setConnectionState(state);
+    if (state === 'revoked' || state === 'stale') setPendingAction(null);
+  }, []);
 
   const keyUrl = useCallback((podId: string) => (
     `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`
@@ -63,6 +72,7 @@ const V2AgentSettingsPage: React.FC = () => {
     setOneTimeKey(null);
     setPendingAction(null);
     setBusy(false);
+    setConnectionState(null);
     if (access && podId) {
       void fetchKeys().then((rows) => {
         if (active) {
@@ -156,12 +166,14 @@ const V2AgentSettingsPage: React.FC = () => {
         <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
         <span aria-current="page">{t('agentSettings.settings')}</span>
       </nav>
+      <AgentControlLoader agentName={agentName} instanceId={instanceId}
+        onConnectionState={onConnectionState} />
       <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
         <div className="v2-agent-settings__section-head">
           <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>
           {installation?.runtime?.runtimeType === 'wrapper' ? (
             <span>{t('agentSettings.wrapperReconnect')}</span>
-          ) : (
+          ) : !disconnected && (
             <button type="button" onClick={() => setPendingAction('replace')} disabled={busy}>
               {t('agentSettings.regenerate')}
             </button>

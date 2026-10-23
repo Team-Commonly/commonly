@@ -54,10 +54,52 @@ test('wrapper key replacement cannot bypass the daemon reconnect flow', async ()
     return Promise.resolve({ data: [] });
   });
   renderPage();
-  await screen.findByText('Key replacement is unavailable here for locally connected agents.');
+  await screen.findByText("Replace this computer's key from Control.");
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
   expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('revoked webhook key has one Reconnect action in Control', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
+    if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
+      name: 'maya-claude', instanceId: 'default', runtime: { runtimeType: 'webhook' },
+      connection: { state: 'revoked', lastSeenAt: null },
+    }] } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage();
+  expect(await screen.findByRole('link', { name: 'Reconnect' }))
+    .toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=maya-claude&instanceId=default&reconnect=1');
+  expect(screen.queryByRole('button', { name: 'Regenerate key' })).toBeNull();
+});
+
+test('connected nondefault wrapper regenerates from Control without a second Key action', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
+    if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
+      name: 'maya-claude', instanceId: 'second', runtime: { runtimeType: 'wrapper' },
+      connection: { state: 'connected', lastSeenAt: new Date().toISOString() },
+    }] } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'second', displayName: 'Maya', runtime: { runtimeType: 'wrapper' },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage('/v2/agents/maya-claude/second');
+  expect(await screen.findByRole('link', { name: 'Regenerate key' }))
+    .toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=maya-claude&instanceId=second&reconnect=1&mode=machine');
+  expect(screen.queryByRole('button', { name: 'Regenerate key' })).toBeNull();
 });
 
 test('nondefault wrapper instances never link to a default-instance reconnect', async () => {
@@ -71,7 +113,7 @@ test('nondefault wrapper instances never link to a default-instance reconnect', 
     return Promise.resolve({ data: [] });
   });
   renderPage('/v2/agents/maya-claude/second');
-  await screen.findByText('Key replacement is unavailable here for locally connected agents.');
+  await screen.findByText("Replace this computer's key from Control.");
   expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
 });

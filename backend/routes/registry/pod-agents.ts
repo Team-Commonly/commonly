@@ -7,6 +7,8 @@ const AgentProfile = require('../../models/AgentProfile');
 const AgentTemplate = require('../../models/AgentTemplate');
 const AgentEvent = require('../../models/AgentEvent');
 const AgentCredential = require('../../models/AgentCredential');
+const Machine = require('../../models/Machine');
+const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
@@ -265,6 +267,36 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       (userRows as any[]).map((u: any) => [u.username, u]),
     );
 
+    // Connection health is advisory, like activity. Read credentials in one
+    // batch; a revoked row survives removal of the embedded bearer.
+    let credentialByAgent = new Map<string, any[]>();
+    let credentialByMachine = new Map<string, any[]>();
+    let machineById = new Map<string, any>();
+    let connectionAvailable = true;
+    try {
+      if ((userRows as any[]).length > 0) {
+        const agentIds = (userRows as any[]).map((u: any) => u._id);
+        const machineIds = Array.from(new Set((userRows as any[])
+          .map((u: any) => u.botMetadata?.machineId).filter(Boolean)));
+        const [credentials, machines] = await Promise.all([
+          AgentCredential.find({ $or: [
+            { kind: 'runtime', agentUserId: { $in: agentIds } },
+            { kind: 'daemon', machineId: { $in: machineIds } },
+          ] }).select('kind agentUserId machineId status lastUsedAt expiresAt').lean(),
+          Machine.find({ machineId: { $in: machineIds } }).select('machineId lastSeenAt').lean(),
+        ]);
+        for (const credential of credentials as any[]) {
+          const key = credential.kind === 'daemon' ? String(credential.machineId) : String(credential.agentUserId);
+          const target = credential.kind === 'daemon' ? credentialByMachine : credentialByAgent;
+          target.set(key, [...(target.get(key) || []), credential]);
+        }
+        machineById = new Map((machines as any[]).map((machine: any) => [machine.machineId, machine]));
+      }
+    } catch (connectionErr) {
+      connectionAvailable = false;
+      console.warn('[pod-agents] connection lookup failed:', (connectionErr as Error).message);
+    }
+
     // Last thing each agent said in THIS pod (Wren spec §1.1 line 2).
     // Advisory like the activity map: a PG hiccup must never fail the roster.
     let lastMessageByUserId = new Map<string, { content: string; createdAt: unknown }>();
@@ -307,7 +339,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         const username = AgentIdentityService.buildAgentUsername(i.agentName, i.instanceId || 'default');
         const user = userByUsername.get(username) || null;
         const lastActiveAt = activityMap.get(instanceKey) || null;
-        return buildAgentInstallationPayload(i, {
+        const payload = buildAgentInstallationPayload(i, {
           profile,
           iconUrl: templateIcon || iconMap.get(i.agentName) || '',
           lastHeartbeatAt: heartbeatMap.get(instanceKey) || null,
@@ -315,6 +347,20 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           user,
           lastMessage: (user && lastMessageByUserId.get(String(user._id))) || null,
         });
+        const runtimeType = payload?.runtime?.runtimeType;
+        if (!connectionAvailable || !user || !['webhook', 'wrapper'].includes(runtimeType)
+          || (runtimeType === 'webhook' && payload?.runtime?.webhookUrl)) return payload;
+        const machineId = user.botMetadata?.machineId;
+        return {
+          ...payload,
+          connection: deriveAgentConnection({
+            runtimeType,
+            credentials: credentialByAgent.get(String(user._id)) || [],
+            machineCredentials: credentialByMachine.get(String(machineId)) || [],
+            embeddedTokens: [...(user.agentRuntimeTokens || []), ...(i.runtimeTokens || [])],
+            machineLastSeenAt: machineById.get(String(machineId))?.lastSeenAt || null,
+          }),
+        };
       }),
     });
   } catch (error) {

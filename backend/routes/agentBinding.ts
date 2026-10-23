@@ -28,6 +28,10 @@ const auth = require('../middleware/auth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const Machine = require('../models/Machine');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const AgentCredential = require('../models/AgentCredential');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
   getRuntimeTokenHashesForAgent,
   revokeRuntimeTokensForAgent,
@@ -265,6 +269,52 @@ router.post('/request', logAgentInstallRefusal('/api/agent-binding/request', 'wr
   }
 });
 
+// The owner explicitly asks the already-bound daemon to rotate this agent's
+// runtime key. A placement request cannot do that: the daemon keeps its local
+// token until a distinct reconnect directive arrives.
+router.post('/reconnect', bindingRateLimit, auth, async (
+  req: express.Request & { user?: { id?: string; role?: string } },
+  res: express.Response,
+) => {
+  try {
+    const agentName = normalize(req.body?.agentName);
+    const instanceId = normalize(req.body?.instanceId) || 'default';
+    if (!agentName) return res.status(400).json({ message: 'agentName required' });
+    const isAdmin = req.user?.role === 'admin';
+    if (!isAdmin) {
+      const ownership = await ownsAgent(req.user?.id, agentName, instanceId);
+      if (!ownership.owned) return res.status(403).json({
+        message: ownershipFailureMessage[ownership.failure], code: ownership.failure,
+      });
+    }
+    const identity = await User.findOne({
+      isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
+    }).select('_id botMetadata.machineId').lean();
+    const machineId = identity?.botMetadata?.machineId;
+    if (!machineId) return res.status(409).json({ message: 'Agent is not bound to a computer' });
+    const machine = await Machine.findOne(isAdmin ? { machineId } : { machineId, ownerUserId: req.user?.id })
+      .select('_id ownerUserId').lean();
+    if (!machine) return res.status(403).json({ message: 'Computer is not owned by this installer' });
+    const daemonCanReconnect = await AgentCredential.exists({
+      kind: 'daemon', machineId, ownerUserId: machine.ownerUserId, status: 'active',
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+    });
+    if (!daemonCanReconnect) return res.status(409).json({
+      message: 'Computer key revoked. Register the computer again before reconnecting this agent.',
+      code: 'machine_key_revoked',
+    });
+    const requestedAt = new Date();
+    const update = await User.updateOne({ _id: identity._id, 'botMetadata.machineId': machineId }, {
+      $set: { 'botMetadata.reconnectRequestedAt': requestedAt },
+    });
+    if (!update.matchedCount) return res.status(409).json({ message: 'Agent binding changed. Reload and retry.' });
+    return res.json({ requested: true, agentName, instanceId, machineId, requestedAt });
+  } catch (err) {
+    console.error('agent reconnect request error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // ADR-026 Phase 2: the daemon's work list. Ownership authority is the
 // installation set (same sole-installer basis as ownsAgent): start from the
 // owner's active installations, then join to identities bound to — or
@@ -284,7 +334,7 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
         { 'botMetadata.machineId': machine.machineId },
         { 'botMetadata.requestedMachineId': machine.machineId },
       ],
-    }).select('_id botMetadata.agentName botMetadata.instanceId botMetadata.machineId botMetadata.requestedMachineId').lean() as AssignedIdentity[];
+    }).select('_id botMetadata.agentName botMetadata.instanceId botMetadata.machineId botMetadata.requestedMachineId botMetadata.reconnectRequestedAt').lean() as AssignedIdentity[];
 
     const grantServers = await grantServersForIdentities(identities, byIdentity);
 
@@ -318,6 +368,8 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
         state: meta.machineId === machine.machineId ? 'bound' : 'requested',
         podIds: entry.podIds,
         runtime: entry.runtime,
+        ...(meta.machineId === machine.machineId && meta.reconnectRequestedAt
+          ? { reconnectRequestedAt: meta.reconnectRequestedAt } : {}),
         ...(environment ? { environment } : {}),
         // Why a live grant is not on this row, for the daemon that would
         // otherwise have to guess: server-side refusals only (a daemon-side

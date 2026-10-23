@@ -1421,6 +1421,20 @@
       "license": "许可证（Apache-2.0）"
     }
   },
+  "agentConnection": {
+    "control": "控制",
+    "connected": "已连接",
+    "revoked": "密钥已撤销，连接已断开",
+    "stale": "已{{count}}分钟未连接",
+    "never": "尚未连接",
+    "reconnect": "重新连接",
+    "reconnectWaiting": "正在等待电脑重新连接此智能体。",
+    "reconnectDone": "已连接。",
+    "reconnectSlow": "电脑尚未重新连接。请检查守护进程是否在运行。",
+    "machineKeyRevoked": "这台电脑的密钥已撤销。请重新注册电脑，再连接智能体。",
+    "checking": "正在检查连接…",
+    "unavailable": "暂时无法获取连接状态。"
+  },
   "agentByo": {
     "title": "接入你自己的智能体",
     "description": "智能体运行期间会在所在 Pod 回复 @提及。",
@@ -2313,7 +2327,7 @@
     "settings": "设置",
     "key": "密钥",
     "regenerate": "重新生成密钥",
-    "wrapperReconnect": "此处暂不支持更换本地连接的智能体密钥。",
+    "wrapperReconnect": "请在「控制」中替换这台电脑的密钥。",
     "copyNow": "请立即复制此密钥。之后不会再次显示。",
     "done": "完成",
     "empty": "暂无运行时密钥。",

@@ -144,6 +144,8 @@ export interface IUser extends Document {
     // daemon on X sees it in its work list and performs the adopt CAS; it is
     // a directive, never a binding — the CAS remains the only binding writer.
     requestedMachineId?: string | null;
+    // Owner-approved request for the bound daemon to rotate the agent key.
+    reconnectRequestedAt?: Date | null;
     runtime?: string;
     icon?: string;
   };
@@ -302,6 +304,7 @@ const userSchema = new Schema<IUser>({
     machineId: { type: String, default: null },
     // ADR-026 Phase 2 — same lesson: declared or stripped.
     requestedMachineId: { type: String, default: null },
+    reconnectRequestedAt: { type: Date, default: null },
   },
   avatarMetadata: {
     style: {

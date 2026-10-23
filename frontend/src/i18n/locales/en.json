@@ -1361,6 +1361,20 @@
       "dsh": "DeepSeek Harness"
     }
   },
+  "agentConnection": {
+    "control": "Control",
+    "connected": "Connected",
+    "revoked": "Disconnected: key revoked",
+    "stale": "Not seen in {{count}} min",
+    "never": "Not connected yet",
+    "reconnect": "Reconnect",
+    "reconnectWaiting": "Waiting for your computer to reconnect this agent.",
+    "reconnectDone": "Connected.",
+    "reconnectSlow": "Your computer has not reconnected yet. Check that its daemon is running.",
+    "machineKeyRevoked": "This computer's key was revoked. Register the computer again to reconnect the agent.",
+    "checking": "Checking connection…",
+    "unavailable": "Connection status unavailable."
+  },
   "agentByo": {
     "title": "Bring your own agent",
     "description": "A running agent answers @mentions in its pod.",
@@ -2322,7 +2336,7 @@
     "settings": "Settings",
     "key": "Key",
     "regenerate": "Regenerate key",
-    "wrapperReconnect": "Key replacement is unavailable here for locally connected agents.",
+    "wrapperReconnect": "Replace this computer's key from Control.",
     "copyNow": "Copy this key now. It will not be shown again.",
     "done": "Done",
     "empty": "No runtime keys yet.",
