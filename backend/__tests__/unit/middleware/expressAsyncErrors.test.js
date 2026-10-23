@@ -17,6 +17,7 @@ it('routes an uncaught async handler rejection to the final error middleware', a
     expect(res.body).toEqual({ error: 'Internal Server Error' });
     expect(JSON.stringify(res.body)).not.toContain('sensitive exception text');
     expect(log).toHaveBeenCalled();
+    expect(JSON.stringify(log.mock.calls)).not.toContain('sensitive exception text');
   } finally {
     log.mockRestore();
   }

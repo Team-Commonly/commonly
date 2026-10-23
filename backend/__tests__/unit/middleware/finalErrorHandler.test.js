@@ -1,6 +1,6 @@
 /**
  * The app's last error handler answers with the error's status and that
- * status's standard phrase, and logs the detail. Run on a real Express app
+ * status's standard phrase, and logs only the status. Run on a real Express app
  * with NODE_ENV=development, the setting under which Express's built-in
  * handler includes the most detail.
  */
@@ -56,13 +56,15 @@ describe('final error handler', () => {
     expect(leaks(res.text)).toBe(false);
   });
 
-  test('the detail goes to the log: the stack for a 5xx, the message for a 4xx', async () => {
+  test('the log records status without exception or request detail', async () => {
     console.error.mockClear();
     console.warn.mockClear();
     await request(app).get('/throws');
     await request(app).get('/forbidden');
-    expect(console.error.mock.calls[0].at(-1)).toBeInstanceOf(Error);
-    expect(console.warn.mock.calls[0].at(-1)).toBe('owner check failed for x');
+    expect(JSON.stringify(console.error.mock.calls)).toContain('500');
+    expect(JSON.stringify(console.warn.mock.calls)).toContain('403');
+    expect(JSON.stringify(console.error.mock.calls)).not.toContain('secret detail');
+    expect(JSON.stringify(console.warn.mock.calls)).not.toContain('owner check failed');
   });
 
   test('CONTROL: an allowed origin and a valid body still succeed', async () => {

@@ -479,7 +479,7 @@ if (process.env.PG_HOST) {
 // It is a no-op when SENTRY_DSN was absent during process startup.
 attachSentryErrorHandler(app);
 // Last: answers any error passed on above with its status and a generic body,
-// and logs the detail (middleware/finalErrorHandler). After Sentry's, which
+// and logs only the status (middleware/finalErrorHandler). After Sentry's, which
 // passes the error on.
 app.use(require('./middleware/finalErrorHandler').finalErrorHandler);
 
