@@ -23,6 +23,7 @@ const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-09.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
+const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -574,10 +575,12 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
 });
 
 describe('the shipped catalogue cannot land half-wired', () => {
-  test('ships Linear, Google Calendar, Atlassian, then Airtable, and lookup names the requested entry', () => {
+  test('ships Linear, Google Calendar, Atlassian, Airtable and Sentry, and lookup names the requested entry', () => {
     // The catalogue is the one place that says what an instance offers before
     // any member has connected anything. Its ordering follows the build plan.
-    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual(['linear', 'google-calendar', 'atlassian', 'airtable']);
+    expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual([
+      'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry',
+    ]);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
     expect(findHostedMcpEntry(catalogue, 'linear').title).toBe('Linear');
@@ -745,6 +748,48 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
     expect(capture.tools).toHaveLength(46);
+  });
+
+  test('the Sentry pin restricts resource lookup to type and ID and parks its destructive writer', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
+    const capture = SENTRY_CAPTURE;
+    expect(entry).toMatchObject({
+      resource: 'https://mcp.sentry.dev/mcp',
+      issuer: 'https://mcp.sentry.dev',
+      client: 'cimd',
+      revoke: {
+        page: 'https://sentry.io/settings/account/authorizations/',
+        endpoint: 'https://mcp.sentry.dev/oauth/token',
+      },
+    });
+    expect(capture.server).toBe(entry.resource);
+    expect(capture.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
+    const excluded = new Set(['analyze_issue_with_seer', 'search_sentry_tools', 'execute_sentry_tool']);
+    expect(entry.tools.map((tool) => tool.upstreamName)).toEqual(
+      capture.tools.filter((tool) => !excluded.has(tool.name)).map((tool) => tool.name),
+    );
+    expect(capture.tools).toHaveLength(15);
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    const resource = entry.tools.find((tool) => tool.name === 'get_sentry_resource');
+    expect(resource.inputSchema.properties.url).toBeUndefined();
+    expect(measured.get('get_sentry_resource').inputSchema.properties.url).toBeDefined();
+    expect(resource.inputSchema.properties.resourceType.enum).toEqual([
+      'issue', 'event', 'trace', 'ai_conversation', 'replay', 'monitor', 'snapshot', 'dashboard',
+    ]);
+    expect(resource.description).toContain('by type and ID');
+    expect(assessEntryTools(entry, capture.tools).find((tool) => tool.name === 'get_sentry_resource'))
+      .toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatibly') });
+    expect(entry.tools.find((tool) => tool.name === 'update_issue').irreversible).toBe(true);
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      if (tool.name !== 'get_sentry_resource') {
+        expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      }
+      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
+      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
+      expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read');
+    }
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
