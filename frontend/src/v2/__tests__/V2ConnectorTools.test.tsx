@@ -9,6 +9,13 @@ import V2ConnectorTools from '../components/V2ConnectorTools';
 import { AuthContext } from '../../context/AuthContext';
 import i18n, { i18nReady } from '../../i18n';
 
+// These existing cases exercise grant actions and row copy with the roster
+// expanded. The collapsed interaction is covered by V2ConnectorTools.fold.
+jest.mock('../components/V2InactiveFold', () => ({
+  __esModule: true,
+  default: ({ children }) => <>{children}</>,
+}));
+
 jest.mock('axios', () => {
   const mock = {
     get: jest.fn(), post: jest.fn(), patch: jest.fn(), delete: jest.fn(),
@@ -538,8 +545,8 @@ test('an unavailable not-yet tool row offers the same Ask affordance as unavaila
     return Promise.reject(new Error(`unmocked ${url}`));
   });
   renderTools();
-  expect(await screen.findByText('not enabled on this instance · ask your operator')).toBeInTheDocument();
-  const ask = screen.getByRole('link', { name: 'Ask' });
+  const ask = await screen.findByRole('link', { name: 'Ask' });
+  expect(screen.queryByText('not enabled on this instance · ask your operator')).not.toBeInTheDocument();
   expect(ask).toHaveAttribute('href', 'https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request');
   expect(ask.closest('.v2-connector-row')).toHaveClass('v2-connector-row--not-enabled');
 });
@@ -676,7 +683,7 @@ test('Linear exposes only its pinned read mode in the not-yet row and Add form',
   expect(within(modeGroup).getByRole('button', { name: 'read' })).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('search filters by tool name and the segment hides not-yet rows; with no grants and no catalogue it renders nothing', async () => {
+test('search filters by tool name; with no grants and no catalogue it renders nothing', async () => {
   renderTools();
   await screen.findByRole('heading', { name: 'Tools' });
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search tools' }), { target: { value: 'comment' } });
