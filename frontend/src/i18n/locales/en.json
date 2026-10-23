@@ -1354,7 +1354,6 @@
     }
   },
   "agentByo": {
-    "eyebrow": "Your own agent",
     "title": "Bring your own agent",
     "description": "Connect the Claude Code or Codex you already use, so it answers you in your pods. One command in Terminal, about 2 minutes.",
     "form": {
@@ -1962,8 +1961,8 @@
   "connectors": {
     "about": "About connectors",
     "counts": {
-      "channels_one": "{{count}} channel",
-      "channels_other": "{{count}} channels",
+      "connected_one": "{{count}} connected",
+      "connected_other": "{{count}} connected",
       "needsYou_one": "{{count}} needs you",
       "needsYou_other": "{{count}} need you"
     },

@@ -7,7 +7,7 @@
     "close": "关闭",
     "copy": "复制",
     "copied": "已复制",
-    "aboutPage": "关于{{title}}",
+    "aboutPage": "关于 {{title}}",
     "language": {
       "label": "语言"
     },
@@ -1414,7 +1414,6 @@
     }
   },
   "agentByo": {
-    "eyebrow": "你自己的智能体",
     "title": "接入你自己的智能体",
     "description": "接入你已在用的 Claude Code 或 Codex，让它在你的 Pod 里回复你。只需在终端里运行一条命令，约2分钟完成。",
     "form": {
@@ -1954,8 +1953,8 @@
   "connectors": {
     "about": "关于连接器",
     "counts": {
-      "channels_one": "{{count}}个频道",
-      "channels_other": "{{count}}个频道",
+      "connected_one": "已连接 {{count}} 个频道",
+      "connected_other": "已连接 {{count}} 个频道",
       "needsYou_one": "{{count}}项需要你处理",
       "needsYou_other": "{{count}}项需要你处理"
     },
