@@ -330,7 +330,6 @@ export default {
         }, {
           workspacePath: ctx.cwd,
           homePath: home,
-          environment: env,
           readOnlyPaths: [tempDir, executable, packageDir, process.execPath, ...mcpReadDirectories].filter(Boolean),
         });
       } else if (isPublic) {

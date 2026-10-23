@@ -817,7 +817,6 @@ export default {
           },
         }, {
           workspacePath: ctx.cwd,
-          environment: childEnv,
           readOnlyPaths: [
             tempDir,
             binary,

@@ -708,7 +708,6 @@ const prepareArgv = async (innerArgv, ctx) => {
     const claudeBin = resolveClaudePath(claudeEnv);
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
-      environment: claudeEnv,
       readOnlyPaths: [ctx.mcpConfigDir, commitHooksPath, originalHooksPath, ...(ctx.mcpReadDirectories || [])].filter(Boolean),
     });
     return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv };

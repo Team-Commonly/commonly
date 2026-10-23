@@ -732,9 +732,9 @@ describe('claude adapter — ctx.environment', () => {
       expect(calls[0].cmd).toBe('bwrap');
       expect(calls[0].args).toContain('--unshare-all');
       expect(calls[0].args).toContain('--die-with-parent');
-      // Mutation guard: removing --clearenv would let the host process env
-      // back into the namespace even though the adapter env is filtered.
-      expect(calls[0].args).toContain('--clearenv');
+      // The adapter passes its filtered environment to bwrap as the process
+      // environment; values are not serialized into bwrap argv.
+      expect(calls[0].args).not.toContain('--clearenv');
       expect(calls[0].opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
       expect(calls[0].opts.env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
       expect(calls[0].opts.env.COMMONLY_AGENT_SEAT_NAME).toBe('Public Linux Seat');
