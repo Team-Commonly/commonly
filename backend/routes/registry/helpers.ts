@@ -401,6 +401,15 @@ const buildAgentInstallationPayload = (installation: any, {
     normalizedConfig?.runtime || installation.config?.runtime || null,
     installation.agentName,
   );
+  // Settings may edit these model controls, and the daemon prefers an explicit
+  // ADR-008 environment over the runtime overlay. Expose only these benign
+  // scalar fields; never project environment secrets or tool declarations.
+  const environmentSettings = normalizedConfig?.environment;
+  const editableEnvironment = environmentSettings && typeof environmentSettings === 'object'
+    ? Object.fromEntries(['model', 'effort', 'adapter']
+      .filter((key) => typeof environmentSettings[key] === 'string')
+      .map((key) => [key, environmentSettings[key]]))
+    : {};
   // Chat attributes this seat through the User principal. Use that same
   // resolver for the listing; scoped names are only a fallback for installs
   // that have no User row yet.
@@ -464,6 +473,7 @@ const buildAgentInstallationPayload = (installation: any, {
       errorRouting: normalizedConfig.errorRouting || null,
       heartbeatChecklist: normalizedConfig.heartbeatChecklist || '',
       skillSync: normalizedConfig.skillSync || null,
+      environment: editableEnvironment,
     } : null,
     profile: profile
       ? {

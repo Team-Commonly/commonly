@@ -288,6 +288,26 @@ describe('agent config PATCH — installer gate', () => {
     expect(primary.save).toHaveBeenCalledTimes(1);
   });
 
+  it('changes environment model controls without deleting hidden MCP or workspace declarations', async () => {
+    const existingEnvironment = {
+      model: 'old-model', workspace: { path: './seat' },
+      mcp: [{ name: 'trusted', command: ['true'] }],
+    };
+    const primary = installation({ installedBy: MEMBER, config: new Map([['environment', existingEnvironment]]) });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', config: { environment: { model: 'new-model', effort: 'high' } } });
+
+    expect(res.status).toBe(200);
+    expect(primary.config.get('environment')).toEqual({
+      ...existingEnvironment, model: 'new-model', effort: 'high',
+    });
+  });
+
   it('still refuses a non-admin non-member before any of that', async () => {
     const primary = installation();
     Pod.findById.mockReturnValue({

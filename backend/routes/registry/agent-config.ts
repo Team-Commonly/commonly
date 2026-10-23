@@ -169,6 +169,15 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       if (config) {
         const existingConfig = normalizeConfigMap(targetInstallation.config) || {};
         const nextConfig = { ...existingConfig, ...config };
+        // The Settings model editor receives only these safe fields, never
+        // the full ADR-008 declaration. Preserve MCP, workspace and sandbox
+        // values when it changes a model/effort/adapter control.
+        const environmentControls = config.environment;
+        if (environmentControls && typeof environmentControls === 'object'
+          && !Array.isArray(environmentControls)
+          && Object.keys(environmentControls).every((key) => ['model', 'effort', 'adapter'].includes(key))) {
+          nextConfig.environment = { ...(existingConfig.environment || {}), ...environmentControls };
+        }
         if (config.runtime && typeof config.runtime === 'object') {
           nextConfig.runtime = runtimeKeepingType(config.runtime, existingConfig, { mayChangeType: isInstanceAdmin });
         }

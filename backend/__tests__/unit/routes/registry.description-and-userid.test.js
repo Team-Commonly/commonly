@@ -49,4 +49,13 @@ describe('agent listing description + principal id', () => {
         .toBe(resolveAgentDisplayLabel(user, user.username));
     }
   });
+
+  test('settings projects effective environment model controls without secrets', () => {
+    const payload = buildAgentInstallationPayload({ ...install, config: new Map([['environment', {
+      model: 'openai/gpt-5', effort: 'high', adapter: 'codex',
+      provider: { apiKey: 'secret' }, mcp: [{ env: { TOKEN: 'secret' } }],
+    }]]) });
+    expect(payload.config.environment).toEqual({ model: 'openai/gpt-5', effort: 'high', adapter: 'codex' });
+    expect(JSON.stringify(payload)).not.toContain('secret');
+  });
 });

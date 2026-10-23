@@ -35,7 +35,7 @@ beforeEach(() => {
   });
 });
 
-test('wrapper key replacement goes through reconnect instead of stranding its local key', async () => {
+test('wrapper key replacement cannot bypass the daemon reconnect flow', async () => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
@@ -46,12 +46,9 @@ test('wrapper key replacement goes through reconnect instead of stranding its lo
     return Promise.resolve({ data: [] });
   });
   renderPage();
-  const regenerate = await screen.findByRole('button', { name: 'Regenerate key' });
+  await screen.findByText("Regenerate this key from the agent's Control section.");
+  expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
-  fireEvent.click(regenerate);
-  expect(screen.getByTestId('agent-key-replace-confirmation')).toHaveTextContent('Replacing it will disconnect');
-  const reconnect = screen.getByRole('link', { name: 'Reconnect to regenerate key' });
-  expect(reconnect).toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=maya-claude&reconnect=1&mode=machine');
   expect(axios.post).not.toHaveBeenCalled();
 });
 
@@ -66,7 +63,7 @@ test('nondefault wrapper instances never link to a default-instance reconnect', 
     return Promise.resolve({ data: [] });
   });
   renderPage('/v2/agents/maya-claude/second');
-  await screen.findByText('Reconnect this agent from its Control section to regenerate its key.');
+  await screen.findByText("Regenerate this key from the agent's Control section.");
   expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
 });
