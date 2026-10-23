@@ -193,8 +193,13 @@ jobs:
       # non-failing notice — this sets a commit status that must be truthful, and
       # a failed smoke fails the staging deploy. A reachability probe is the
       # fallback until the stranger-journey CronJob exists in the staging release.
+      # `!cancelled()` rather than `always()`: a run superseded by cancel-in-progress
+      # reaches this step with job.status=cancelled, skips the smoke block below, and
+      # posts the default STATE=failure — a staging-smoke=failure on a SHA that was
+      # never deployed (observed 2026-10-23: runs 39897767827 and 39897776573 both
+      # posted one for 820b4938c before cac4d6570 actually deployed).
       - name: Stranger smoke + staging-smoke commit status
-        if: always()
+        if: ${{ !cancelled() }}
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           SHA: ${{ steps.tag.outputs.sha }}
@@ -202,6 +207,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
+          # A cancelled job deployed nothing, so it has nothing truthful to say about
+          # this SHA. The step condition already skips a cancelled RUN; this covers a
+          # job cancelled while the run is not, where cancelled() is false and
+          # job.status is already 'cancelled'. Posting NOTHING is the correct outcome:
+          # the promote path requires staging-smoke=success, so an absent status blocks
+          # promotion exactly like a red one, without claiming the smoke ran and failed.
+          if [ "${JOB_STATUS:-}" = "cancelled" ]; then
+            echo "job cancelled; leaving staging-smoke unset for $SHA ($TAG)"
+            exit 0
+          fi
           STATE=failure
           DESC="staging deploy + stranger smoke ($TAG)"
           if [ "$JOB_STATUS" = "success" ]; then
