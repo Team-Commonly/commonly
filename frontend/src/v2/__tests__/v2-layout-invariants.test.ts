@@ -635,7 +635,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2App).toContain("'v2-feature--artifacts'");
     expect(v2App).toContain('<V2ArtifactsPage />');
     expect(ruleBody(v2, '.v2-artifacts__title')).toContain('32px/1.1 var(--v2-font-display)');
-    expect(ruleBody(v2, '.v2-artifacts__meta')).toContain('color: var(--v2-text-muted)');
+    expect(ruleBody(v2, '.v2-page-head__meta')).toContain('color: var(--v2-text-muted)');
     expect(ruleBody(v2, '.v2-artifacts__seg')).toContain('border: 1px solid var(--v2-border)');
     expect(ruleBody(v2, '.v2-root button.v2-artifacts__seg-button--active')).toContain('background: var(--v2-surface-hover)');
     expect(ruleBody(v2, '.v2-root button.v2-artifacts__seg-button--active')).not.toContain('var(--v2-ink)');
@@ -2178,7 +2178,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(layoutBlocks('v2-connectors').filter((b) => b.includes('min-height'))).toEqual([]);
     expect(layoutBlocks('v2-connectors__content').filter((b) => b.includes('flex: 1'))).toEqual([]);
     expect(layoutBlocks('v2-connectors__rows').filter((b) => b.includes('flex: 1'))).toEqual([]);
-    expect(ruleBody(v2, '.v2-connectors__header p')).not.toContain('var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-page-head__meta')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('width: 20px');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('color: inherit');
     expect(ruleBody(v2, '.v2-connector-row--not-yet .v2-connector-row__glyph')).toContain('color: var(--v2-text-placeholder)');
@@ -2418,7 +2418,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(lastRuleBody(v2, '.v2-feature--activity .v2-feature__legacy')).toContain('max-width: none');
       // The page head is display 32 + muted 13 meta (ux-lead 66400 fix 2), not a 52px bar.
       expect(lastRuleBody(v2, '.v2-activity__title')).toContain('32px/36px var(--v2-font-display)');
-      expect(lastRuleBody(v2, '.v2-activity__subtitle')).toContain('color: var(--v2-text-muted)');
+      expect(activityPage).toContain('hint={t(\'activity.subtitle\')}');
       expect(lastRuleBody(v2, '.v2-activity__header')).toContain('border-bottom: 0');
       expect(lastRuleBody(v2, '.v2-activity')).toContain('width: 100%');
       expect(lastRuleBody(v2, '.v2-activity__sections')).toContain('760px');
@@ -2439,7 +2439,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-activity__queue-row\.v2-activity__queue-row--decision \.v2-activity__option-choice button \{ width: 100%; min-height: 44px; \}/);
       // 0-state (66422 miss 1): the dashed panel renders whenever nothing is open, settled cards under it, no kicker.
       expect(activityPage).toContain('{(queueCount === 0 || visibleQueue.length === 0) && (');
-      expect(activityPage).toContain('{queueCount !== 0 && <p>{queueCount === null');
+      expect(activityPage).toContain('queueCount === null && <span>');
+      expect(activityPage).toContain('queueCount !== null && queueCount !== 0 && <V2Hint');
       // 390: mention and handoff actions drop full width under the copy, like the decision options (66400 fix 7).
       expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__queue-row \.v2-activity__queue-actions \{ grid-column: 1 \/ -1;/);
       expect(lastRuleBody(v2, '.v2-root button.v2-activity__window-button')).toContain('var(--v2-font-mono)');

@@ -93,7 +93,7 @@ describe('V2Composer send button', () => {
     const header = view.container.querySelector('.v2-pod-header');
     expect(header).toBeTruthy();
     expect(header.querySelector('h1')).toHaveTextContent('My Workspace');
-    expect(header.querySelector('.v2-thread__title p')).toHaveTextContent('Team discussion');
+    expect(header.querySelector('.v2-hint__content')).toHaveTextContent('Team discussion');
     const meta = header.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)');
     expect(meta).toHaveTextContent('2 members');
     expect(meta).toHaveTextContent('1 agent');

@@ -179,10 +179,11 @@ entrance and scroll-reveal animation is allowed within these limits:
 
 ### Layout rules
 
+- **Page heads** use `V2PageHead`: one title, an optional live count in mono, and actions. Put explanation in `V2Hint` beside the title. The (i) opens on hover, keyboard focus, and tap; at 760px and below its text expands inline. Do not add eyebrow or sentence subtitle rows. Errors and requests for action remain visible.
 - **Fixed sidebar widths** (rail 76, pods 272, inspector 336) — not fluid. The main pane absorbs all flex. The content pane is the card: 8px gutter top/right/bottom on desktop, flush on phones; when the inspector is open the card meets the inspector gutter.
 - **Rail collapses labels** at all widths — labels show as tooltips on hover (CSS `::after` with `data-label`).
 - **Inspector closes** to free width for the main pane; default state is collapsed.
-- Header heights cluster at **42px (tabs)**, **34px (chips/buttons)**, **78px (chat header w/ subtitle)**.
+- Header heights cluster at **42px (tabs)**, **34px (chips/buttons)**, **78px (chat header)**.
 - Mobile breakpoints at `1200px / 992px / 900px / 768px`. Below 900px the rail and pods sidebar collapse off-canvas.
 - **App-shell scroll containment.** `.v2-root` is a fixed-height app shell —
   `height: 100vh; overflow: hidden` — so the shell chrome never scrolls and each

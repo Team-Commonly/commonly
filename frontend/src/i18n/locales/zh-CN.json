@@ -7,6 +7,7 @@
     "close": "关闭",
     "copy": "复制",
     "copied": "已复制",
+    "aboutPage": "关于 {{title}}",
     "language": {
       "label": "语言"
     },
@@ -61,6 +62,13 @@
   "activity": {
     "title": "动态",
     "subtitle": "需要你处理的事项，以及刚刚推进的工作",
+    "about": "关于动态",
+    "head": {
+      "needsYou_one": "{{count}}项需要你处理",
+      "needsYou_other": "{{count}}项需要你处理",
+      "moved_one": "{{count}}项已推进",
+      "moved_other": "{{count}}项已推进"
+    },
     "controlsAriaLabel": "动态控制项",
     "windowAriaLabel": "动态时间范围",
     "windows": {
@@ -99,6 +107,7 @@
     "updatesCount_one": "{{count}}条更新",
     "updatesCount_other": "{{count}}条更新",
     "needsYou": {
+      "about": "关于需要你处理的事项",
       "eyebrow": "决策队列",
       "title": "需要你处理",
       "description": "这里只显示需要你回应的直接提及、审批和待决事项。",
@@ -171,6 +180,7 @@
       }
     },
     "movedForward": {
+      "about": "关于推进的工作",
       "title": "推进的工作",
       "description": "按 Pod 分组 · 最新在前",
       "empty": "今天还没有更新。",
@@ -520,6 +530,7 @@
       "recent_other": "最近收到{{formattedCount}}次心跳"
     },
     "header": {
+      "aboutPod": "关于这个 Pod",
       "agentsWorking_other": "{{count}}个智能体正在工作",
       "members_one": "{{count}}名成员",
       "members_other": "{{count}}名成员",
@@ -1408,7 +1419,6 @@
     }
   },
   "agentByo": {
-    "eyebrow": "你自己的智能体",
     "title": "接入你自己的智能体",
     "description": "接入你已在用的 Claude Code 或 Codex，让它在你的 Pod 里回复你。只需在终端里运行一条命令，约2分钟完成。",
     "form": {
@@ -1946,6 +1956,13 @@
     }
   },
   "connectors": {
+    "about": "关于连接器",
+    "counts": {
+      "connected_one": "已连接{{count}}个频道",
+      "connected_other": "已连接{{count}}个频道",
+      "needsYou_one": "{{count}}项需要你处理",
+      "needsYou_other": "{{count}}项需要你处理"
+    },
     "loading": "正在加载连接器…",
     "loadError": "无法加载连接器。",
     "createError": "无法创建连接器。",
@@ -2093,6 +2110,7 @@
   },
   "artifacts": {
     "title": "产物",
+    "about": "关于产物",
     "meta": "你所有 Pod 中共享的文件与页面",
     "kindLabel": "类型",
     "podLabel": "Pod",

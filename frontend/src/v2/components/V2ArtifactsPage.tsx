@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import V2Lightbox from './V2Lightbox';
+import V2PageHead from './V2PageHead';
 
 export type ArtifactKind = 'image' | 'page' | 'doc';
 export interface ArtifactItem {
@@ -160,12 +161,14 @@ const V2ArtifactsPage: React.FC = () => {
 
   return (
     <div className="v2-artifacts">
-      <header className="v2-artifacts__head">
-        <div className="v2-artifacts__heading">
-          <h1 className="v2-artifacts__title">{t('artifacts.title')}</h1>
-          <span className="v2-artifacts__meta">{t('artifacts.meta')}</span>
-        </div>
-      </header>
+      <V2PageHead
+        className="v2-artifacts__head"
+        titleClassName="v2-artifacts__title"
+        title={t('artifacts.title')}
+        meta={!loading ? total : undefined}
+        hint={t('artifacts.meta')}
+        hintLabel={t('artifacts.about')}
+      />
       <div className="v2-artifacts__controls">
         <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.kindLabel')}>
           {KINDS.map((option) => (

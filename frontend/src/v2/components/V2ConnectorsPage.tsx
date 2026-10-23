@@ -15,6 +15,7 @@ import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
 import V2ConnectorTools, { type HostedMcpManualRevokeNotice } from './V2ConnectorTools';
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
+import V2PageHead from './V2PageHead';
 
 interface ConnectorGate {
   enabled?: boolean;
@@ -1135,6 +1136,17 @@ const V2ConnectorsPage: React.FC = () => {
   // A backend type is an identifier, not a customer-facing name. Unknown types
   // have no Channels row until the catalog provides a label or this map does.
   const items = allItems.filter((item) => Boolean(itemLabel(item)));
+  const connectedCount = items.filter((item) => item.connector?.status === 'connected').length;
+  const needsYouCount = items.filter((item) => (
+    item.connector?.status === 'error'
+    || (item.kind === 'catalog' && item.entry.installation?.status === 'error')
+    || (item.connector?.status === 'connected' && !connectorPodId(item.connector))
+    || Boolean(item.connector?.config?.pendingBind)
+  )).length;
+  const headMeta = [
+    connectedCount ? t('connectors.counts.connected', { count: connectedCount }) : null,
+    needsYouCount ? t('connectors.counts.needsYou', { count: needsYouCount }) : null,
+  ].filter(Boolean).join(' · ');
 
   const itemType = (item: ListItem): string => (item.kind === 'catalog' ? item.entry.installableId : item.connector.type);
 
@@ -1639,10 +1651,13 @@ const V2ConnectorsPage: React.FC = () => {
 
   return (
     <div className="v2-connectors">
-      <header className="v2-connectors__header">
-        <h1>{t('connectors.title', { defaultValue: 'Connectors' })}</h1>
-        <p>{t('connectors.description', { defaultValue: 'Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.' })}</p>
-      </header>
+      <V2PageHead
+        className="v2-connectors__header"
+        title={t('connectors.title', { defaultValue: 'Connectors' })}
+        meta={!loading && headMeta ? headMeta : undefined}
+        hint={t('connectors.description', { defaultValue: 'Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.' })}
+        hintLabel={t('connectors.about')}
+      />
 
       {loading && <div className="v2-connectors__loading">{t('connectors.loading', { defaultValue: 'Loading connectors…' })}</div>}
 

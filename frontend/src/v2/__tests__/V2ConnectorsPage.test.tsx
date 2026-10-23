@@ -986,6 +986,28 @@ describe('V2ConnectorsPage', () => {
       });
     };
 
+    it('counts connected channels in the page head, not catalogue options', async () => {
+      mockCatalog([
+        entry(),
+        entry({
+          installableId: 'slack', label: 'Slack',
+          installation: { status: 'active', boundPodId: 'p1' },
+          integration: liveIntegration(),
+        }),
+      ]);
+      const { container } = renderPage();
+
+      await waitFor(() => expect(container.querySelector('.v2-connectors__header .v2-page-head__meta')?.textContent).toBe('1 connected'));
+    });
+
+    it('omits the connected count when the catalogue has no live channels', async () => {
+      mockCatalog([entry(), entry({ installableId: 'discord', label: 'Discord' })]);
+      const { container } = renderPage();
+
+      await screen.findByRole('button', { name: 'View Telegram' });
+      expect(container.querySelector('.v2-connectors__header .v2-page-head__meta')).toBeNull();
+    });
+
     it('TASK-131: a catalog failure prints the generic sentence, not the raw exception that wrote the row', async () => {
       // The catalogue half reads `InstallableInstallation.errorMessage`, whose
       // projection-failure writer stores `error.message` verbatim. Same rule as
