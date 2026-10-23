@@ -663,6 +663,19 @@ Keychain handle. A removed seat, grant, connection, or pod membership refuses
 the next request. No generic URL, repository, method, header, or `gh api`
 passthrough is part of this interface.
 
+Each listener lives under a daemon-owned directory that the seat cannot read,
+write, enumerate, or replace. The Codex permission profile grants **connect
+only** to that seat's exact socket path, denies every sibling socket and daemon
+control/config path, and cannot write or rebind its own endpoint. A path's
+secrecy and same-UID Unix permissions are not authentication. The daemon derives
+the tuple from trusted launch state and binds a fresh, unguessable listener
+generation to the running child; stopping or replacing that child closes and
+unlinks the old listener before a successor is admitted. If the native profile
+cannot enforce this exact-path separation, the host-seat broker must refuse to
+start. The acceptance walk uses two real confined, same-UID seats: A can use its
+own socket, but A cannot connect to B's **known** path before any backend call;
+repeat after B restarts and against its stale endpoint.
+
 The initial command grammar is exact: `pr create`, `pr view`, `pr comment`,
 `pr review --comment`, and `issue comment`. The backend checks the grant's
 read/write mode and the connection's pinned owner/repo, validates command
@@ -675,18 +688,37 @@ may supply operations it already implements; missing PR operations must be
 added there with the same grant and audit checks, never through `routes/github`'s
 legacy `anyAuth` path.
 
-Git push is a separate smart-HTTP channel on the same socket, forwarded by the
-backend to the grant's pinned repository with an App token **only in the
-backend-to-GitHub request**. It accepts one non-delete, non-force update to a
-seat-owned `refs/heads/` prefix, bounds the pack size, and refuses extra refs,
-tags and protected branches before forwarding. The child Git process gets no
-credential helper that returns a token. The backend records a `ToolCall`-style
-receipt containing seat, grant, repo, operation, branch/ref, argument digest,
-outcome, and time; never token or pack bytes. Apply per-runtime-token and
-per-grant limits (30 reads, 10 writes, 2 pushes per minute) before the provider
-call, with a bounded request body. Refusals and upstream failures retain
-distinct codes. A real staging walk must branch, test, push and open a PR
-through this path before TASK-280 can roll out.
+Git push is a separate smart-HTTP channel on the same socket. It is registered
+as `github.push_branch` in the broker catalogue, and goes through the same
+exact-tool, active-grant, pinned-repository and audit checks as the CLI channel.
+`read` grants refuse. `write-with-confirm` grants refuse push until a later
+implementation can park immutable repo/ref/old-OID/new-OID/pack-digest inputs,
+then revalidate them after approval; no provider write occurs on that path now.
+Only an explicit `github.push_branch` tool on an autonomous `write` grant can
+push. A grant for issue comments never implies push authority.
+
+The backend accepts one bounded receive-pack request, parses the **complete**
+command framing before a provider call, and requires exactly one update to the
+authenticated seat's `refs/heads/seat/<agentUserId>/` prefix. It refuses
+deletion, tags, second refs, protected branches, malformed framing and any
+client-supplied repo/prefix override. The claimed old OID must equal the
+provider's current ref (or zero for a fresh branch). It unpacks into an isolated
+quarantine object store and verifies the old commit is an ancestor of the new
+commit; it refuses when ancestry cannot be established. A trusted server-side
+push then uses a compare-and-swap lease on that same old OID, so a concurrent
+ref move fails. The client has no control over this lease or fast-forward check:
+the wire protocol does not attest to the client's `--force` choice. The App
+token stays only in the backend-to-GitHub request; the child never receives a
+credential helper that returns it. Acceptance covers fresh branch and existing
+fast-forward success, and divergent update with correct old OID, stale old OID,
+second ref, deletion, tag and another seat's prefix refusal.
+
+The backend records a `ToolCall` receipt containing seat, grant, repo,
+operation, branch/ref, argument digest, outcome and time; never token or pack
+bytes. Apply per-runtime-token and per-grant limits (30 reads, 10 writes, 2
+pushes per minute) before the provider call, with a bounded request body.
+Refusals and upstream failures retain distinct codes. A real staging walk must
+branch, test, push and open a PR through this path before TASK-280 can roll out.
 
 ---
 
