@@ -57,6 +57,8 @@ tool declaration includes `computer_request_takeover`. Ownership failures are
 403; stale frames and absent takeover are 409. The person's login text travels
 only in their authenticated `type` request; it is not sent to an agent model,
 tool argument, or AgentRun. The person performs the final send in this UI.
+Each click, type, or press consumes its frame revision before the browser action;
+the UI fetches status and frame again before sending another action.
 
 The broker does not use Steel's unauthenticated live-view URL. Forge's
 takeover UI calls the PNG and input bridge above. A full live browser walk is
