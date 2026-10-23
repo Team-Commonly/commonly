@@ -109,7 +109,7 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav, needsYouCount })
               >
                 <span className="v2-rail__item-icon">
                   {item.key === 'activity' && count !== null && count > 0 ? (
-                    <Badge badgeContent={count} max={Number.MAX_SAFE_INTEGER} title={String(count)} aria-label={t('activity.needsYou.countLabel', { count })}>
+                    <Badge className="v2-rail__badge--activity" badgeContent={count} max={Number.MAX_SAFE_INTEGER} title={String(count)} aria-label={t('activity.needsYou.countLabel', { count })}>
                       {item.icon}
                     </Badge>
                   ) : item.icon}

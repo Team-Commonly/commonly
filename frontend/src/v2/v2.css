@@ -12713,7 +12713,7 @@ body.modern-ui.v2-canvas {
 /* Rail badge (66390): the exact count at any size — 118 reads as 118. Mono, bordered, cobalt, no clip. */
 .v2-rail__item-icon .MuiBadge-badge {
   top: -8px;
-  right: -6px;
+  right: -14px;
   height: 16px;
   min-width: 16px;
   padding: 0 4px;
@@ -12724,6 +12724,11 @@ body.modern-ui.v2-canvas {
   font: 500 11px/14px var(--v2-font-mono);
   transform: none;
   white-space: nowrap;
+}
+/* TASK-363: only the Activity badge is offset inward. Three-digit counts (230,
+   1234) overflowed the rail at -14px; the other rail badges keep the base offset. */
+.v2-rail__item-icon .v2-rail__badge--activity .MuiBadge-badge {
+  right: -6px;
 }
 .v2-root .v2-activity__queue-actions button.v2-activity__option--other { border-color: transparent; background: transparent; color: var(--v2-accent-text); padding: 0 4px; }
 /* ≤760 (66390): the two toggles stack. The card-action stack lives in the trailing ≤760
