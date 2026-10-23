@@ -19,7 +19,7 @@ const V2AgentWakePods: React.FC<{
   agentName: string;
   instanceId: string;
   updatePod: (podId: string, patch: AgentPodWakePatch) => Promise<unknown>;
-  onRemoved?: (podId: string) => void;
+  onRemoved?: (podId: string, wasLastPod: boolean) => void;
 }> = ({ agentName, instanceId, updatePod, onRemoved }) => {
   const { t } = useTranslation();
   const [installations, setInstallations] = useState<InstallationSettings[]>([]);
@@ -108,7 +108,7 @@ const V2AgentWakePods: React.FC<{
       if (identityRef.current === requestedIdentity) {
         setInstallations((current) => current.filter((item) => item.podId !== entry.podId));
         setActivePodCount((count) => Math.max(0, count - 1));
-        onRemoved?.(entry.podId);
+        onRemoved?.(entry.podId, activePodCount === 1);
       }
     } catch (requestError) {
       if (identityRef.current === requestedIdentity) setError((requestError as { response?: { status?: number } })?.response?.status === 403

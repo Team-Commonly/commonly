@@ -120,12 +120,12 @@ const V2AgentSettingsPage: React.FC = () => {
     }
   };
 
-  const onRemoved = () => {
+  const onRemoved = (_podId: string, wasLastPod: boolean) => {
     if (!access) return;
     setKeys([]);
     setPendingAction(null);
     setOneTimeKey(null);
-    if (access.pods.length === 1) setRemovedLast(true);
+    if (wasLastPod) setRemovedLast(true);
     else void refresh().catch((requestError) => setError(errorLabel(requestError, t('agentSettings.unavailable'))));
   };
 
