@@ -196,11 +196,11 @@ const V2AgentProfile: React.FC = () => {
     }
     let cancelled = false;
     const headers = { Authorization: `Bearer ${token}` };
-    getClient().get<{ installations?: Array<{ podId: string }> }>(
+    getClient().get<{ writablePodId?: string | null }>(
       `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings?instanceId=${encodeURIComponent(instanceId || 'default')}`,
       { headers },
     ).then(async (writable) => {
-      const podId = writable.data.installations?.[0]?.podId;
+      const podId = writable.data.writablePodId;
       if (!podId) return null;
       const roster = await getClient().get<{ agents?: Array<{
         name: string; instanceId: string; runtime?: { runtimeType?: string }; connection?: AgentConnection;

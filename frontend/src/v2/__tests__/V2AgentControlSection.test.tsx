@@ -31,10 +31,26 @@ it('keeps a never-connected key off the reconnect path', () => {
   expect(screen.queryByRole('link', { name: 'Reconnect' })).toBeNull();
 });
 
+it('offers the connected wrapper one owner-directed key regeneration route', () => {
+  show('connected');
+  expect(screen.getByRole('link', { name: 'Regenerate key' }))
+    .toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=local&instanceId=default&reconnect=1&mode=machine');
+  expect(screen.queryByRole('link', { name: 'Reconnect' })).toBeNull();
+});
+
+it('keeps a nondefault instance on the connected wrapper key route', () => {
+  render(<MemoryRouter><V2AgentControlSection agentName="local" instanceId="alpha" podId="pod-1"
+    runtimeType="wrapper" connection={{ state: 'connected', lastSeenAt: new Date().toISOString() }} />
+  </MemoryRouter>);
+  expect(screen.getByRole('link', { name: 'Regenerate key' }))
+    .toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=local&instanceId=alpha&reconnect=1&mode=machine');
+});
+
 it('loads connection state from an installer-owned pod', async () => {
+  const onConnectionState = jest.fn();
   api.get.mockImplementation((url: string) => {
     if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
-      installations: [{ podId: 'owned-pod' }],
+      installations: [{ podId: 'read-only-pod' }], writablePodId: 'owned-pod',
     } });
     if (url === '/api/registry/pods/owned-pod/agents') return Promise.resolve({ data: { agents: [{
       name: 'local', instanceId: 'default', runtime: { runtimeType: 'wrapper' },
@@ -42,9 +58,11 @@ it('loads connection state from an installer-owned pod', async () => {
     }] } });
     return Promise.reject(new Error('Unexpected request'));
   });
-  render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" /></MemoryRouter>);
+  render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default"
+    onConnectionState={onConnectionState} /></MemoryRouter>);
   expect(await screen.findByRole('link', { name: 'Reconnect' }))
     .toHaveAttribute('href', '/v2/agents/byo?pod=owned-pod&name=local&instanceId=default&reconnect=1&mode=machine');
   expect(api.get).toHaveBeenCalledWith('/api/registry/agents/local/manage-settings',
     { params: { instanceId: 'default' } });
+  expect(onConnectionState).toHaveBeenCalledWith('revoked');
 });

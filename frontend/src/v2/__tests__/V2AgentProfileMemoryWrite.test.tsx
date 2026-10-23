@@ -93,7 +93,7 @@ describe('V2AgentProfile memory-write visibility', () => {
         viewerRole: 'owner', totalEntries: 0, sections: [], pods: [{ id: 'pod-1', name: 'Workspace' }],
       } });
       if (url.startsWith('/api/registry/agents/claude-code/manage-settings')) return Promise.resolve({ data: {
-        installations: [{ podId: 'pod-1', podName: 'Workspace' }],
+        writablePodId: 'pod-1',
       } });
       if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
         name: 'claude-code', instanceId: 'observer', runtime: { runtimeType: 'webhook' },
@@ -117,7 +117,7 @@ describe('V2AgentProfile memory-write visibility', () => {
         pods: [{ id: 'other-pod', name: 'Other team' }, { id: 'own-pod', name: 'Workspace' }],
       } });
       if (url.startsWith('/api/registry/agents/claude-code/manage-settings')) return Promise.resolve({ data: {
-        installations: [{ podId: 'own-pod', podName: 'Workspace' }],
+        installations: [{ podId: 'other-pod', podName: 'Other team' }], writablePodId: 'own-pod',
       } });
       if (url === '/api/registry/pods/own-pod/agents') return Promise.resolve({ data: { agents: [{
         name: 'claude-code', instanceId: 'observer', runtime: { runtimeType: 'wrapper' },
