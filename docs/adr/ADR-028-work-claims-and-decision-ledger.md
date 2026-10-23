@@ -640,6 +640,54 @@ cannot be tied to the acts they authorised records intent, not accountability.
 install (the removed route's own note argues the latter). That is a build decision with a real cost
 difference and it should be ratified, not assumed — added as ratification point 7.
 
+#### Shared-host Codex seat application (TASK-284, 2026-10-23)
+
+Connector chose a broker for private Codex seats on the shared Mac (decision
+`6adbc2b48522fc8abce606e5`). This settles the **host-seat path only**; it does
+not settle D13's general per-user App question. The old measurement above is
+time-stamped: the current `toolBrokerService` already resolves a connected
+GitHub App row from a room grant, calls `GitHubAppService` with `forceApp`, checks
+the grant again on each call, and writes `ToolCall` records. Reuse that backend
+boundary instead of adding a second host-held GitHub credential.
+
+The local daemon owns one broker socket per running seat. It creates the socket
+outside the Codex sandbox and passes only its path to a confined `gh` shim; the
+shim has no fallback to the host's real `gh`. The daemon binds the socket to its
+own `(agent user, installation, runtime token)` tuple, never to a seat name or
+grant ID supplied by the shim. It forwards a structured request to the backend
+with that runtime token; `agentRuntimeAuth` must reject a revoked or expired
+token, and the broker must resolve an active room grant, its target pod and its
+connected GitHub App row on **every** operation. The shim and Codex shell never
+receive the runtime token, the App token, the operator's `gh` config, or a
+Keychain handle. A removed seat, grant, connection, or pod membership refuses
+the next request. No generic URL, repository, method, header, or `gh api`
+passthrough is part of this interface.
+
+The initial command grammar is exact: `pr create`, `pr view`, `pr comment`,
+`pr review --comment`, and `issue comment`. The backend checks the grant's
+read/write mode and the connection's pinned owner/repo, validates command
+arguments, and returns bounded response fields. `pr review --approve` and
+`--request-changes`, `pr merge/close`, issue close, branch deletion, arbitrary
+API calls, and unknown flags refuse before any GitHub call. This is an
+allowlist, not a set of denials layered on the present `seat-gh-guard` (which
+explicitly says it is not a security boundary). The existing App tool broker
+may supply operations it already implements; missing PR operations must be
+added there with the same grant and audit checks, never through `routes/github`'s
+legacy `anyAuth` path.
+
+Git push is a separate smart-HTTP channel on the same socket, forwarded by the
+backend to the grant's pinned repository with an App token **only in the
+backend-to-GitHub request**. It accepts one non-delete, non-force update to a
+seat-owned `refs/heads/` prefix, bounds the pack size, and refuses extra refs,
+tags and protected branches before forwarding. The child Git process gets no
+credential helper that returns a token. The backend records a `ToolCall`-style
+receipt containing seat, grant, repo, operation, branch/ref, argument digest,
+outcome, and time; never token or pack bytes. Apply per-runtime-token and
+per-grant limits (30 reads, 10 writes, 2 pushes per minute) before the provider
+call, with a bounded request body. Refusals and upstream failures retain
+distinct codes. A real staging walk must branch, test, push and open a PR
+through this path before TASK-280 can roll out.
+
 ---
 
 ## Sequencing and acceptance (Sam, 2026-08-31 — pod 61474)
