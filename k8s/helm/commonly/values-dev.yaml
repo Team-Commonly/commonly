@@ -443,6 +443,10 @@ hostedMcp:
     # Remove each line once its staging walk passes.
     - atlassian
     - sentry
+    # Added by #2429 (deploy 4). Hidden until each is walked end to end (Cofounder 10-23).
+    - notion
+    - gitlab
+    - supabase
   googleCalendar:
     enabled: false
 
