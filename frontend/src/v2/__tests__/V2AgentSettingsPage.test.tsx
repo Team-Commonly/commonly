@@ -132,6 +132,20 @@ test('identity edits go through the shared installation PATCH with the exact ins
   ));
 });
 
+test.each([
+  [403, "You don't have permission to change this agent's identity."],
+  [409, 'This agent is installed in pods you cannot manage. An admin can rename it across every pod.'],
+  [503, 'Name saved, but chat has not caught up. Try saving again in a moment.'],
+])('identity refusal %i uses localized UI copy', async (status, expectedMessage) => {
+  axios.patch.mockRejectedValue({ response: { status, data: { error: 'Raw English server text' } } });
+  renderPage();
+  await screen.findByRole('button', { name: 'Save identity' });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Maya 2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  expect(await screen.findByText(expectedMessage)).toBeInTheDocument();
+  expect(screen.queryByText('Raw English server text')).not.toBeInTheDocument();
+});
+
 test('nondefault wrapper instances never link to a default-instance reconnect', async () => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
