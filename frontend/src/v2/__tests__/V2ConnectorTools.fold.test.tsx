@@ -57,3 +57,30 @@ test('two live grants stay visible and nine revoked or expired grants start in o
   await waitFor(() => expect(container.querySelectorAll('.v2-connector-row')).toHaveLength(11));
   expect(fold).toHaveAttribute('aria-expanded', 'true');
 });
+
+test('search counts only matching inactive grants, catalogue entries and connections', async () => {
+  const entries = [catalog[0], { ...catalog[0], installableId: 'linear', connectionType: 'hosted-mcp', entryId: 'linear', label: 'Linear', description: 'Linear issues',
+    tools: [{ name: 'linear.list_issues', requiredWriteMode: 'read', irreversible: false }] }];
+  axios.get.mockImplementation((url: string) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: entries, hiddenToolConnections: [
+      { connectionId: 'hidden-1', entryId: 'atlassian', label: 'Atlassian', status: 'inactive', revokePage: null },
+    ] } });
+    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { grants: [grant('live', null), grant('revoked', yesterday)] } });
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+    return Promise.reject(new Error(`unmocked ${url}`));
+  });
+
+  const { container } = render(<AuthContext.Provider value={auth}><MemoryRouter>
+    <V2ConnectorTools pods={[{ _id: 'p1', name: 'Launch pod', members: [{ _id: 'u1', username: 'sam' }] }]} />
+  </MemoryRouter></AuthContext.Provider>);
+  expect(await screen.findByRole('button', { name: 'inactive · 3' })).toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search tools' }), { target: { value: 'Linear' } });
+  const fold = screen.getByRole('button', { name: 'inactive · 1' });
+  fireEvent.click(fold);
+  expect(container.querySelectorAll('.v2-connector-row')).toHaveLength(1);
+  expect(container.querySelector('.v2-connector-row')).toHaveTextContent('Linear');
+  expect(container).not.toHaveTextContent('Atlassian');
+  expect(container.querySelector('.v2-connector-row__name')).toHaveTextContent('Linear');
+});

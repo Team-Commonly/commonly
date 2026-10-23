@@ -4613,6 +4613,6 @@ describe('connector inactive fold layout', () => {
     expect(rule).toContain('width: 100%');
     expect(rule).toContain('min-height: 44px');
     expect(ruleBody(v2, '.v2-root button.v2-connectors__inactive-toggle:focus-visible'))
-      .toContain('box-shadow: var(--v2-focus-ring)');
+      .toContain('box-shadow: inset 0 0 0 2px var(--v2-accent)');
   });
 });
