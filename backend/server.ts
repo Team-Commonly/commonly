@@ -21,7 +21,7 @@ const podInvitesRoutes = require('./routes/podInvites');
 const attributionRoutes = require('./routes/attribution');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
-const { socketAuthMiddleware } = require('./middleware/socketAuth');
+const { socketAuthMiddleware, installSocketSessionGuard } = require('./middleware/socketAuth');
 const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
 const integrationRoutes = require('./routes/integrations');
@@ -558,6 +558,7 @@ const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) =>
 
 // Socket.io event handlers
 io.on('connection', (socket: any) => {
+  installSocketSessionGuard(socket);
   console.log(
     `New client connected (id: ${socket.id}, user: ${socket.userId})`,
   );

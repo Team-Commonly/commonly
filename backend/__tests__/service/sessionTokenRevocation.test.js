@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../../models/User');
 const authRoutes = require('../../routes/auth');
 const adminRoutes = require('../../routes/admin/users');
-const { socketAuthMiddleware } = require('../../middleware/socketAuth');
+const { socketAuthMiddleware, installSocketSessionGuard } = require('../../middleware/socketAuth');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 
 describe('human session revocation and absolute lifetime', () => {
@@ -34,12 +34,24 @@ describe('human session revocation and absolute lifetime', () => {
   it('accepts a pre-change token at version zero, then refuses it on the next request after sign out everywhere', async () => {
     const legacy = jwt.sign({ id: String(user._id) }, process.env.JWT_SECRET, { expiresIn: '7d' });
     await getUser(legacy).expect(200);
+    const connectedSocket = { handshake: { auth: { token: legacy } }, use: jest.fn(), disconnect: jest.fn() };
+    const socketAccepted = jest.fn();
+    await socketAuthMiddleware(connectedSocket, socketAccepted);
+    expect(socketAccepted).toHaveBeenCalledWith();
+    installSocketSessionGuard(connectedSocket);
     await request(app).post('/api/auth/sessions/revoke').set('Authorization', `Bearer ${legacy}`).expect(200);
     await getUser(legacy).expect(401);
     await request(app).post('/api/auth/refresh').set('Authorization', `Bearer ${legacy}`).expect(401);
     const socketNext = jest.fn();
     await socketAuthMiddleware({ handshake: { auth: { token: legacy } } }, socketNext);
     expect(socketNext).toHaveBeenCalledWith(expect.any(Error));
+    const packetNext = jest.fn();
+    await new Promise((resolve) => connectedSocket.use.mock.calls[0][0](['sendMessage'], (error) => {
+      packetNext(error);
+      resolve();
+    }));
+    expect(packetNext).toHaveBeenCalledWith(expect.any(Error));
+    expect(connectedSocket.disconnect).toHaveBeenCalledWith(true);
     expect((await User.findById(user._id)).tokenVersion).toBe(1);
     const signedInAgain = await login().expect(200);
     expect(jwt.decode(signedInAgain.body.token).tokenVersion).toBe(1);

@@ -770,11 +770,17 @@ exports.resetPassword = async (req: any, res: any) => {
       return res.status(400).json({ error: 'Invalid or expired reset link.' });
     }
 
-    user.password = password; // pre-save hook hashes
-    // Resetting via email proves address ownership — unblock login for
-    // accounts that never finished the signup verification email.
-    user.verified = true;
-    await user.save();
+    // A conditional single write consumes the reset link and advances the
+    // session version atomically. A stale save could overwrite a concurrent
+    // admin/self revocation with an older version.
+    const passwordHash = await bcrypt.hash(password, 10);
+    const changed = await User.updateOne(
+      { _id: user._id, password: user.password },
+      { $set: { password: passwordHash, verified: true }, $inc: { tokenVersion: 1 } },
+    );
+    if (changed.modifiedCount !== 1) {
+      return res.status(400).json({ error: 'Invalid or expired reset link.' });
+    }
     joinCommunityPodBestEffort(user._id);
 
     return res.json({ message: 'Password updated. You can sign in now.' });
