@@ -148,6 +148,12 @@ jobs:
       - run: cd workers/agent-runtime && npm ci --include=dev
       - run: npm run verify:moltbot-tools
       - run: npm run verify:litellm-patch-runner
+      # These node:test files lived only in the retired all-in-one job.
+      - name: Run agent service tests
+        run: |
+          node --test \
+            external/commonly-agent-services/shared/delivery-nonce.test.js \
+            external/commonly-agent-services/shared/summary-text.test.js
       - run: cd commonly-mcp && npm test
       - run: cd cli && npm run lint && npm test
       - run: cd workers/agent-runtime && npm run typecheck && npm test
@@ -160,156 +166,17 @@ jobs:
     env:
       NEEDS_JSON: ${{ toJSON(needs) }}
     steps:
+      - uses: actions/checkout@v4
+      - name: Verify gate covers every suite
+        run: |
+          diff -u \
+            <(awk '/^jobs:$/ { jobs=1; next } jobs && /^  [[:alnum:]_-]+:$/ { id=$1; sub(/:$/, "", id); if (id != "test-gate") print id }' .github/workflows/tests.yml | sort) \
+            <(printf '%s\n' "$NEEDS_JSON" | jq -r 'keys[]' | sort)
       - name: Verify every check passed
         run: |
           echo "$NEEDS_JSON" | jq -e '
             [.[].result] | all(. == "success")
           '
-
-  legacy-test:
-    # Retire only after the new gate passes a real merge_group run.
-    name: Legacy test and coverage
-    runs-on: ubuntu-latest
-
-    env:
-      JWT_SECRET: test-jwt-secret
-      SENDGRID_API_KEY: fake-api-key
-      SENDGRID_FROM_EMAIL: test@example.com
-      FRONTEND_URL: http://localhost:3000
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          submodules: recursive
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
-
-      - name: Install dependencies
-        run: |
-          npm ci --include=dev
-          cd backend
-          npm ci --include=dev
-          cd ../frontend
-          npm install --legacy-peer-deps
-          cd ../commonly-mcp
-          npm ci --include=dev
-          cd ../cli
-          npm ci --include=dev
-          cd ../workers/agent-runtime
-          npm ci --include=dev
-          cd ../..
-
-      - name: Verify moltbot tool contract
-        run: npm run verify:moltbot-tools
-
-      # Executes the litellm boot block's patch runner against a two-tree fixture,
-      # so the 79-hour SEV class (patcher and proxy resolving `import litellm` to
-      # different copies) fails here instead of in a crash-looping pod. Needs a
-      # python3 on PATH — ubuntu-latest ships one; if that ever stops being true
-      # the guard says so by name rather than passing quietly.
-      - name: Verify litellm patch runner
-        run: npm run verify:litellm-patch-runner
-
-      - name: Backend TypeScript check
-        run: |
-          cd backend
-          npm run tsc:check
-
-      - name: Frontend TypeScript check
-        run: |
-          cd frontend
-          npm run typecheck
-
-      # packages/types has zero dependencies and zero external imports, so it
-      # needs no install of its own — it typechecks with the compiler the
-      # backend step already installed. Gated now because it is green now;
-      # that is the only moment a gate is free.
-      #
-      # packages/commonly-apps is deliberately NOT gated here. It defines the
-      # same tsc:check script and is equally uninvoked, but it needs @types/node
-      # and is not npm ci'd by this job, so adding it means adding an install.
-      # Its actual state is unknown, not assumed green. Separate change.
-      - name: Shared types TypeScript check
-        run: |
-          cd packages/types
-          ../../backend/node_modules/.bin/tsc --noEmit -p tsconfig.json
-
-      - name: Run backend tests (coverage on the nightly schedule only)
-        run: |
-          cd backend
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            npx jest --coverage --forceExit
-          else
-            npx jest --forceExit
-          fi
-
-      - name: Run frontend tests (coverage on the nightly schedule only)
-        run: |
-          cd frontend
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            npx jest --coverage --watchAll=false --forceExit
-          else
-            npx jest --watchAll=false --forceExit
-          fi
-          node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs
-
-      # The node:test files under external/commonly-agent-services were run by
-      # no job, so the agent services' own helpers were ungated, including the
-      # one that decides what text reaches a pod summary surface (#2406).
-      # Listed by file, like the frontend scripts step above.
-      - name: Run agent service tests
-        run: |
-          node --test \
-            external/commonly-agent-services/shared/delivery-nonce.test.js \
-            external/commonly-agent-services/shared/summary-text.test.js
-
-      - name: Run commonly-mcp tests
-        run: |
-          cd commonly-mcp
-          npm test
-
-      # Backend `.ts` lint. TASK-024 measured this reaching 0 of 286 files:
-      # `npm run lint` was scoped `--ext .js`, every backend `lint-staged` glob
-      # had gone stale to zero as its files were converted, and no CI job ran
-      # backend lint at all.
-      #
-      # Deliberately `lint:ts`, NOT `npm run lint`. The backend `.js` corpus is
-      # 2,279 errors across 282 files (277 of them under `__tests__`) and has
-      # been red on main for some time — wiring the existing script in would
-      # fail on the first run. That half is in the burn-down task, not here.
-      - name: Backend TypeScript lint
-        run: |
-          cd backend
-          npm run lint:ts
-
-      - name: Run CLI lint
-        run: |
-          cd cli
-          npm run lint
-
-      - name: Run CLI tests
-        run: |
-          cd cli
-          npm test
-
-      - name: Run hosted-runtime tests (ADR-023 W2)
-        run: |
-          cd workers/agent-runtime
-          npm run typecheck
-          npm test
-
-      - name: Upload coverage report
-        if: github.event_name == 'schedule'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: backend/coverage/
 
   service-test:
     name: Service Tests (Tier 1 — real DBs)
