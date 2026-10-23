@@ -51,10 +51,10 @@ jest.mock('../../../services/objectStore', () => ({
 }));
 jest.mock('../../../models/integrationPublicConfig', () => ({ toPublicIntegrationConfig: jest.fn() }));
 jest.mock('../../../routes/registry/helpers', () => ({ isGlobalAdminUser: jest.fn() }));
-jest.mock('../../../middleware/agentRateLimit', () => ({ agentRateLimitKeyGenerator: jest.fn() }));
-jest.mock('../../../middleware/ipRateLimit', () => ({ cloudflareIpRateLimitKeyGenerator: jest.fn() }));
+jest.mock('../../../middleware/agentRateLimit', () => ({ agentRateLimitKeyGenerator: jest.fn(() => 'agent-test') }));
+jest.mock('../../../middleware/ipRateLimit', () => ({ cloudflareIpRateLimitKeyGenerator: jest.fn(() => 'ip-test') }));
 jest.mock('../../../utils/discordBotToken', () => ({ resolveDiscordBotToken: jest.fn() }));
-jest.mock('../../../middleware/rateLimitObserver', () => ({ rateLimitObserver: jest.fn() }));
+jest.mock('../../../middleware/rateLimitObserver', () => ({ rateLimitObserver: jest.fn((_req, _res, next) => next()) }));
 
 const express = require('express');
 const request = require('supertest');
