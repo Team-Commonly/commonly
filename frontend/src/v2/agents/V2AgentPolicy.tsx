@@ -48,8 +48,10 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
   const [section, setSection] = useState<MemorySection>('long_term');
   const [content, setContent] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ group: 'policy' | 'trust' | 'memory';
+    kind: 'error' | 'saved'; text: string } | null>(null);
+  const [memoryLoadError, setMemoryLoadError] = useState<string | null>(null);
+  const [quotaError, setQuotaError] = useState<string | null>(null);
 
   useEffect(() => {
     setAllowed(displayList(policy?.allowed));
@@ -68,22 +70,25 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
   const loadMemory = useCallback(async (preserveDraft = false) => {
     const response = await axios.get<{ sections: MemoryDocuments }>(memoryUrl);
     setDocuments(response.data.sections);
+    setMemoryLoadError(null);
     if (!preserveDraft) setContent(response.data.sections[section]?.content || '');
   }, [memoryUrl, section]);
 
   useEffect(() => {
     let current = true;
     setDocuments(null);
+    setMemoryLoadError(null);
+    setQuotaError(null);
     void axios.get<{ sections: MemoryDocuments }>(memoryUrl).then((response) => {
       if (current) {
         setDocuments(response.data.sections);
         setContent(response.data.sections.long_term?.content || '');
       }
-    }).catch((requestError) => { if (current) setError(message(requestError, t('agentPolicy.loadError'))); });
+    }).catch((requestError) => { if (current) setMemoryLoadError(message(requestError, t('agentPolicy.loadError'))); });
     void axios.get<{ turnCap: number; userRunCeiling: number | null }>(
       `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`, { params: { instanceId } },
     ).then((response) => { if (current) setQuota(response.data); })
-      .catch((requestError) => { if (current) setError(message(requestError, t('agentPolicy.loadError'))); });
+      .catch((requestError) => { if (current) setQuotaError(message(requestError, t('agentPolicy.loadError'))); });
     return () => { current = false; };
   }, [agentName, instanceId, memoryUrl, t]);
 
@@ -91,40 +96,40 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
     if (!Number.isInteger(maxTokens) || maxTokens < 1 || !Number.isInteger(compactionThreshold)
       || compactionThreshold < 1 || compactionThreshold > maxTokens
       || !Number.isInteger(summaryHours) || summaryHours < 1) {
-      setError(t('agentPolicy.contextInvalid')); return;
+      setFeedback({ group: 'policy', kind: 'error', text: t('agentPolicy.contextInvalid') }); return;
     }
-    setBusy(true); setError(null); setSaved(null);
+    setBusy(true); setFeedback(null);
     try {
       await update({ toolPolicy: { allowed: commaList(allowed), blocked: commaList(blocked),
         requireApproval: commaList(approval) },
       contextPolicy: { maxTokens, compactionThreshold, summaryHours,
         includeMemory, includeSkills, includeSummaries } });
-      setSaved(t('agentPolicy.saved'));
-    } catch (requestError) { setError(message(requestError, t('agentPolicy.saveError'))); }
+      setFeedback({ group: 'policy', kind: 'saved', text: t('agentPolicy.saved') });
+    } catch (requestError) { setFeedback({ group: 'policy', kind: 'error', text: message(requestError, t('agentPolicy.saveError')) }); }
     finally { setBusy(false); }
   };
 
   const saveTrust = async () => {
     if (!canSetTrust || !['read-only', 'workspace'].includes(trustMode)) return;
-    setBusy(true); setError(null); setSaved(null);
+    setBusy(true); setFeedback(null);
     try {
       await update({ config: { environment: { sandbox: { mode: trustMode } } } });
-      setSaved(t('agentPolicy.saved'));
-    } catch (requestError) { setError(message(requestError, t('agentPolicy.saveError'))); }
+      setFeedback({ group: 'trust', kind: 'saved', text: t('agentPolicy.saved') });
+    } catch (requestError) { setFeedback({ group: 'trust', kind: 'error', text: message(requestError, t('agentPolicy.saveError')) }); }
     finally { setBusy(false); }
   };
 
   const saveMemory = async () => {
     if (!documents) return;
-    setBusy(true); setError(null); setSaved(null);
+    setBusy(true); setFeedback(null);
     try {
       await axios.patch(`${memoryUrl}/${section}`, {
         content, expectedUpdatedAt: documents[section].updatedAt,
       });
       await loadMemory();
-      setSaved(t('agentPolicy.saved'));
+      setFeedback({ group: 'memory', kind: 'saved', text: t('agentPolicy.saved') });
     } catch (requestError) {
-      setError(message(requestError, t('agentPolicy.saveError')));
+      setFeedback({ group: 'memory', kind: 'error', text: message(requestError, t('agentPolicy.saveError')) });
       if ((requestError as { response?: { status?: number } })?.response?.status === 409) {
         await loadMemory(true).catch(() => {});
       }
@@ -134,15 +139,19 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
   const changeSection = (next: MemorySection) => {
     setSection(next);
     setContent(documents?.[next]?.content || '');
-    setError(null); setSaved(null);
+    setFeedback(null);
   };
+
+  const groupFeedback = (group: 'policy' | 'trust' | 'memory') => feedback?.group === group && (
+    <p role={feedback.kind === 'error' ? 'alert' : 'status'}
+      className={feedback.kind === 'error' ? 'v2-agent-policy__error' : 'v2-agent-policy__saved'}>{feedback.text}</p>
+  );
 
   return <section className="v2-agent-policy" aria-labelledby="agent-policy-title">
     <h2 id="agent-policy-title">{t('agentPolicy.title')}</h2>
-    {error && <p role="alert" className="v2-agent-policy__error">{error}</p>}
-    {saved && <p role="status" className="v2-agent-policy__saved">{saved}</p>}
     <div className="v2-agent-policy__group">
       <h3>{t('agentPolicy.approvals')}</h3>
+      <p className="v2-agent-policy__muted">{t('agentPolicy.commaHint')}</p>
       <label>{t('agentPolicy.allowed')}<input value={allowed} onChange={(event) => setAllowed(event.target.value)} /></label>
       <label>{t('agentPolicy.blocked')}<input value={blocked} onChange={(event) => setBlocked(event.target.value)} /></label>
       <label>{t('agentPolicy.requireApproval')}<input value={approval} onChange={(event) => setApproval(event.target.value)} /></label>
@@ -160,6 +169,7 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
         <label><input type="checkbox" checked={includeSummaries} onChange={(event) => setIncludeSummaries(event.target.checked)} />{t('agentPolicy.includeSummaries')}</label>
       </div>
       <button type="button" disabled={busy || !installation?.profile} onClick={savePolicy}>{t('agentPolicy.savePolicy')}</button>
+      {groupFeedback('policy')}
     </div>
     {canSetTrust && <div className="v2-agent-policy__group">
       <h3>{t('agentPolicy.trust')}</h3>
@@ -169,6 +179,7 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
         <option value="workspace">{t('agentPolicy.workspace')}</option>
       </select></label>
       <button type="button" disabled={busy || !['read-only', 'workspace'].includes(trustMode)} onClick={saveTrust}>{t('agentPolicy.saveTrust')}</button>
+      {groupFeedback('trust')}
     </div>}
     <div className="v2-agent-policy__group">
       <h3>{t('agentPolicy.memory')}</h3>
@@ -180,13 +191,20 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
         <label>{t(`agentPolicy.section.${section}`)}<textarea value={content} rows={8}
           onChange={(event) => setContent(event.target.value)} /></label>
         <button type="button" disabled={busy || content === documents[section].content} onClick={saveMemory}>{t('agentPolicy.saveMemory')}</button>
+      </> : memoryLoadError ? <>
+        <p role="alert" className="v2-agent-policy__error">{memoryLoadError}</p>
+        <button type="button" onClick={() => { setMemoryLoadError(null);
+          void loadMemory().catch((requestError) => setMemoryLoadError(message(requestError, t('agentPolicy.loadError'))));
+        }}>{t('agentPolicy.retry')}</button>
       </> : <p className="v2-agent-policy__muted">{t('agentPolicy.loadingMemory')}</p>}
+      {groupFeedback('memory')}
     </div>
     {(installation?.runtime?.runtimeType === 'hosted' || installation?.runtime?.runtimeType === 'native') && (
       <div className="v2-agent-policy__group">
         <h3>{t('agentPolicy.quotas')}</h3>
         <div className="v2-agent-policy__quota"><span>{t('agentPolicy.turnsPerDay')}</span><strong>{quota?.turnCap ?? '—'}</strong></div>
         <div className="v2-agent-policy__quota"><span>{t('agentPolicy.userRunCeiling')}</span><strong>{quota?.userRunCeiling ?? '—'}</strong></div>
+        {quotaError && <p role="alert" className="v2-agent-policy__error">{quotaError}</p>}
       </div>
     )}
   </section>;

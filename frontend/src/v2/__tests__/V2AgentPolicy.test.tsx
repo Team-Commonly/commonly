@@ -81,3 +81,17 @@ it('offers trust mode for the canonical BYO runtime shape', async () => {
     config: { environment: { sandbox: { mode: 'read-only' } } } });
   expect(await screen.findByLabelText('Repository access')).toHaveValue('read-only');
 });
+
+it('shows a retry in Memory when loading fails, then opens the editor', async () => {
+  axios.get.mockImplementation((url) => url.endsWith('/editable')
+    ? Promise.reject(new Error('Memory offline'))
+    : Promise.resolve({ data: { turnCap: 30, userRunCeiling: 120 } }));
+  renderPolicy();
+  expect(await screen.findByText('Memory offline')).toBeInTheDocument();
+  expect(screen.queryByText('Loading memory…')).not.toBeInTheDocument();
+  axios.get.mockImplementation((url) => url.endsWith('/editable')
+    ? Promise.resolve({ data: { sections: docs() } })
+    : Promise.resolve({ data: { turnCap: 30, userRunCeiling: 120 } }));
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  expect(await screen.findByDisplayValue('Original')).toBeInTheDocument();
+});
