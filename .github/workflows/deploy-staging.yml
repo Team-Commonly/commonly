@@ -2,9 +2,12 @@ name: Deploy Staging
 
 # Second Helm release of the chart into namespace commonly-staging, on the SAME
 # GKE cluster as prod (commonly-dev). The reckless, fast lane: every merge to
-# main (and any ref via workflow_dispatch) builds and deploys to staging, runs
-# the stranger smoke, and records a `staging-smoke` commit status that the prod
-# promote path (deploy-dev.yml promote_sha) gates on.
+# main — on push, or via workflow_dispatch pinned to main — builds and deploys to
+# staging, runs the stranger + Tier-1 smokes, and records a `staging-smoke` commit
+# status that the prod promote path (deploy-dev.yml) gates on. A workflow_dispatch
+# from any OTHER ref fails WIF auth (the binding trusts only refs/heads/main), so
+# you cannot deploy a non-main SHA from a side branch — see
+# docs/deployment/GITHUB_DEPLOY_SETUP.md.
 #
 # Modelled on deploy-dev.yml: same WIF auth, same secret names, same private
 # values overlay pattern. Differences: namespace/release commonly-staging, a

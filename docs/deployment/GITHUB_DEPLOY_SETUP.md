@@ -206,6 +206,20 @@ jobs:
       # docker build + push, helm upgrade, smoke probes — per ADR-009 Phase 3/4.
 ```
 
+> **Dispatch `deploy-dev.yml` / `deploy-staging.yml` only with `--ref main`.** The WIF binding
+> (step 4) trusts **only `refs/heads/main`** (dev) and the `prod` environment. A
+> `workflow_dispatch` from any other branch or a pin ref **fails GCP auth** — the run dies in the
+> image-build step with `(gcloud.auth.docker-helper) ... iam.serviceAccounts.getAccessToken denied`
+> and Artifact Registry `denied: Unauthenticated request ... uploadArtifacts`, because the OIDC
+> token's `ref` does not match the binding's attribute condition. (OIDC *federation* succeeds; the
+> denial is specifically at service-account **impersonation** — `getAccessToken` — which the binding
+> gates.) **So you cannot deploy an arbitrary non-`main` SHA by pushing it to a side branch and
+> dispatching `--ref <that-branch>`.** To deploy a specific commit, get it onto `main` and dispatch
+> `--ref main` (it builds `HEAD`). Earned 2026-10-23: a pinned **staging** run (`deploy-staging` on a
+> side branch, run 39955031436) failed auth this way; `deploy-dev` (prod) is bound to `main` + the
+> `prod` environment the same way (step 4), so a pinned prod deploy would fail identically — not
+> separately attempted.
+
 ### 8. Verify
 
 ```bash
