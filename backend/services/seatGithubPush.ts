@@ -97,6 +97,21 @@ export const pushWithLease = async (options: {
   }
 };
 
+/** Fetch both lines of provider history needed for bundle and ancestry proof. */
+export const fetchProviderObjects = async (options: {
+  git: (args: string[], cwd?: string, failure?: SeatPushError) => Promise<string>;
+  url: string;
+  defaultRef: string;
+  ref: string;
+  oldOid: string;
+}): Promise<void> => {
+  const { git, url, defaultRef, ref, oldOid } = options;
+  await git(['fetch', '--no-tags', url, defaultRef]);
+  // A bundle may name the current seat tip as its prerequisite. Fetch that
+  // object even if its OID equals baseOid; it need not be on the default branch.
+  if (oldOid !== ZERO_OID) await git(['fetch', '--no-tags', url, ref]);
+};
+
 /** All subprocess settings are backend-owned. The bundle controls no Git config, hook or remote. */
 export const pushSeatBranch = async (
   raw: Record<string, unknown>, connection: GithubToolConnection, agentUserId: string,
@@ -142,8 +157,7 @@ export const pushSeatBranch = async (
     const current = await git(['ls-remote', url, ref]);
     const oldOid = current ? current.split(/\s+/, 1)[0] : ZERO_OID;
     if (!OID.test(oldOid)) throw new SeatPushError('provider_ref_invalid', 502);
-    await git(['fetch', '--no-tags', url, defaultRef]);
-    if (oldOid !== ZERO_OID && oldOid !== baseOid) await git(['fetch', '--no-tags', url, ref]);
+    await fetchProviderObjects({ git, url, defaultRef, ref, oldOid });
     await writeFile(bundlePath, bytes, { mode: 0o600 });
     await validateSeatBundle({ git, repo, bundlePath, baseOid, newOid, oldOid });
     // The server, not the child, chooses the compare-and-swap lease. A ref

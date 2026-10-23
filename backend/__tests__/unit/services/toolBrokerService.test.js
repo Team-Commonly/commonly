@@ -42,6 +42,9 @@ jest.mock('../../../services/seatGrantConfinement', () => ({
 }));
 jest.mock('../../../services/githubAppService', () => mockGithub);
 jest.mock('../../../services/seatGithubPush', () => ({
+  SeatPushError: class SeatPushError extends Error {
+    constructor(code, statusCode = 403) { super(code); this.code = code; this.statusCode = statusCode; }
+  },
   parseSeatPushArgs: jest.fn(),
   pushSeatBranch: (...args) => mockPushSeatBranch(...args),
 }));
@@ -79,7 +82,7 @@ jest.mock('../../../services/roomGrantService', () => {
 });
 
 // eslint-disable-next-line import/no-unresolved, import/extensions
-const { callTool, executeApprovedToolCall } = require('../../../services/toolBrokerService');
+const { callTool, executeApprovedToolCall, executionErrorOutcome } = require('../../../services/toolBrokerService');
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const { assertGrantUsable, getGrantLineage, RoomGrantError } = require('../../../services/roomGrantService');
 
@@ -585,6 +588,21 @@ describe('host GitHub command tools', () => {
     })).rejects.toMatchObject({ code: 'tool_not_allowed' });
     expect(mockGithub.createPullRequest).not.toHaveBeenCalled();
   });
+
+  it('refuses a sibling PR branch before proposing and again at approved execution', async () => {
+    const args = { title: 'Change', head: 'seat/agent-b/work', base: 'main' };
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({
+      tools: ['github.create_pull_request'], writeMode: 'write',
+    }));
+    await expect(callTool({ grantId: 'grant-1', agentUserId: 'agent-a',
+      tool: 'github.create_pull_request', args })).rejects.toMatchObject({ code: 'branch_not_owned_by_seat' });
+    const approvedArgs = { ...args, owner: 'Team-Commonly', repo: 'commonly' };
+    await expect(executeApprovedToolCall({ grantId: 'grant-1', agentUserId: 'agent-a',
+      tool: 'github.create_pull_request', args: approvedArgs,
+      expectedArgsDigest: digest(approvedArgs), approvalId: 'approval-test' }))
+      .rejects.toMatchObject({ code: 'branch_not_owned_by_seat' });
+    expect(mockGithub.createPullRequest).not.toHaveBeenCalled();
+  });
 });
 
 describe('host GitHub push authority', () => {
@@ -622,5 +640,33 @@ describe('host GitHub push authority', () => {
       tool: 'github.push_branch', providerRepo: 'Team-Commonly/commonly',
       providerRef: args.ref, outcome: 'ok',
     }));
+  });
+
+  it('shares a mandatory two-call budget across token-bearing and tokenless broker calls', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode: 'write' }));
+    mockPushSeatBranch.mockResolvedValue({ ref: args.ref, oldOid: '0'.repeat(40), newOid: args.newOid });
+    const spent = new Map();
+    mockReserveBudgetLineage.mockImplementation(async (entries) => {
+      if (entries.some(({ grantId, calls }) => (spent.get(grantId) || 0) >= calls)) return false;
+      entries.forEach(({ grantId }) => spent.set(grantId, (spent.get(grantId) || 0) + 1));
+      return true;
+    });
+    const input = { grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args };
+    await expect(callTool({ ...input, agentTokenHash: 'a'.repeat(64) })).resolves.toMatchObject({ outcome: 'ok' });
+    await expect(callTool(input)).resolves.toMatchObject({ outcome: 'ok' });
+    await expect(callTool({ ...input, agentTokenHash: 'b'.repeat(64) }))
+      .rejects.toMatchObject({ code: 'host_github_push_rate_limited', statusCode: 429 });
+    expect(mockPushSeatBranch).toHaveBeenCalledTimes(2);
+    expect(mockReserveBudgetLineage.mock.calls[0][0]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ grantId: expect.stringMatching(/^host-gh:push:seat:/), calls: 2 }),
+      expect.objectContaining({ grantId: expect.stringMatching(/^host-gh:push:grant:/), calls: 2 }),
+      expect.objectContaining({ grantId: `host-gh:push:token:${'a'.repeat(64)}`, calls: 2 }),
+    ]));
+  });
+
+  it('records push policy errors as refusals and provider errors as failures', () => {
+    const { SeatPushError } = require('../../../services/seatGithubPush');
+    expect(executionErrorOutcome(new SeatPushError('non_fast_forward', 409))).toBe('refused');
+    expect(executionErrorOutcome(new SeatPushError('provider_git_failed', 502))).toBe('failed');
   });
 });

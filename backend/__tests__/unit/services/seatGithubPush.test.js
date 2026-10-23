@@ -3,7 +3,7 @@ const { mkdtemp, rm, writeFile } = require('fs/promises');
 const { tmpdir } = require('os');
 const { join } = require('path');
 const { promisify } = require('util');
-const { parseSeatPushArgs, pushWithLease, validateSeatBundle } = require('../../../services/seatGithubPush');
+const { parseSeatPushArgs, fetchProviderObjects, pushWithLease, validateSeatBundle } = require('../../../services/seatGithubPush');
 
 const runFile = promisify(execFile);
 const env = { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
@@ -52,6 +52,24 @@ describe('seat GitHub push proof', () => {
   it('accepts an incremental bundle whose old ref is an ancestor', async () => {
     await expect(validateSeatBundle({ git, repo: receiver, bundlePath, baseOid, oldOid, newOid }))
       .resolves.toBeUndefined();
+  });
+
+  it('fetches a current seat tip used as the bundle prerequisite', async () => {
+    const provider = join(root, 'provider.git');
+    const freshReceiver = join(root, 'fresh.git');
+    const ref = 'refs/heads/seat/agent123/work';
+    await git(['init', '--bare', provider], root);
+    await git(['update-ref', 'refs/heads/main', baseOid], source);
+    await git(['fetch', source, 'refs/heads/main'], provider);
+    await git(['fetch', source, oldOid], provider);
+    await git(['update-ref', 'refs/heads/main', baseOid], provider);
+    await git(['update-ref', ref, oldOid], provider);
+    await git(['init', '--bare', freshReceiver], root);
+    await git(['bundle', 'create', bundlePath, 'HEAD', `^${oldOid}`], source);
+    const boundGit = (args, cwd = freshReceiver, failure) => git(args, cwd, failure);
+    await fetchProviderObjects({ git: boundGit, url: provider, defaultRef: 'refs/heads/main', ref, oldOid });
+    await expect(validateSeatBundle({ git: boundGit, repo: freshReceiver, bundlePath,
+      baseOid: oldOid, oldOid, newOid })).resolves.toBeUndefined();
   });
 
   it('uses a zero-OID lease for a fresh branch and refuses a stale provider ref', async () => {

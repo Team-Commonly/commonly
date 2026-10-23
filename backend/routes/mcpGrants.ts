@@ -111,12 +111,8 @@ router.post('/:grantId/push', brokerRateLimit, agentRuntimeAuth, async (
     if (!(await listToolsForGrant(identity)).some((tool) => tool.name === 'github.push_branch')) {
       return res.status(403).json({ error: 'operation_not_granted' });
     }
-    const digest = createHash('sha256').update(identity.grantId).digest('hex');
-    if (!await reserveBudgetLineage([
-      { grantId: `host-gh:push:token:${req.agentTokenHash}`, calls: 2, windowMs: 60_000 },
-      { grantId: `host-gh:push:grant:${digest}`, calls: 2, windowMs: 60_000 },
-    ])) return res.status(429).json({ error: 'host_github_push_rate_limited' });
-    const result = await callTool({ ...identity, tool: 'github.push_branch', args });
+    const result = await callTool({ ...identity, agentTokenHash: req.agentTokenHash,
+      tool: 'github.push_branch', args });
     return res.json({ callId: result.callId, outcome: result.outcome, result: result.result });
   } catch (error) {
     const e = error as { statusCode?: number };
@@ -161,6 +157,7 @@ router.post('/:grantId/cli', brokerRateLimit, agentRuntimeAuth, async (req: expr
     }
     const result = await callTool({
       ...identity,
+      agentTokenHash: req.agentTokenHash,
       tool: operation.tool,
       args,
     });
@@ -239,6 +236,7 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
       const result = await callTool({
         grantId: String(req.params.grantId),
         agentUserId,
+        agentTokenHash: req.agentTokenHash,
         agentName,
         instanceId,
         tool,

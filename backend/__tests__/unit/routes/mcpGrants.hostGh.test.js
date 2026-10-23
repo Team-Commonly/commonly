@@ -50,7 +50,8 @@ describe('host GitHub broker command boundary', () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ callId: 'call-1', outcome: 'ok' });
     expect(mockCallTool).toHaveBeenCalledWith({
-      grantId: 'grant-1', agentUserId: AGENT_ID, agentName: 'kai', instanceId: 'default', tool, args,
+      grantId: 'grant-1', agentUserId: AGENT_ID, agentTokenHash: 'a'.repeat(64),
+      agentName: 'kai', instanceId: 'default', tool, args,
     });
     expect(mockReserveBudgetLineage).toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({ calls: operation === 'pr.view' ? 30 : 10, windowMs: 60000 }),
@@ -127,16 +128,15 @@ describe('host GitHub push boundary', () => {
     newOid: 'b'.repeat(40), bundle: 'YnVuZGxl',
   };
 
-  it('requires the exact push tool and reserves two token/grant slots', async () => {
+  it('requires the exact push tool and passes token identity to the shared broker budget', async () => {
     mockListToolsForGrant.mockResolvedValue([{ name: 'github.push_branch' }]);
     const response = await request(app).post('/api/mcp/grants/grant-1/push').send(push);
     expect(response.status).toBe(200);
     expect(mockCallTool).toHaveBeenCalledWith(expect.objectContaining({
-      grantId: 'grant-1', agentUserId: AGENT_ID, tool: 'github.push_branch', args: push,
+      grantId: 'grant-1', agentUserId: AGENT_ID, agentTokenHash: 'a'.repeat(64),
+      tool: 'github.push_branch', args: push,
     }));
-    expect(mockReserveBudgetLineage).toHaveBeenCalledWith(expect.arrayContaining([
-      expect.objectContaining({ calls: 2, windowMs: 60000 }),
-    ]));
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
   });
 
   it('refuses a read-only or omitted push tool before budget use', async () => {
@@ -147,12 +147,14 @@ describe('host GitHub push boundary', () => {
     expect(mockCallTool).not.toHaveBeenCalled();
   });
 
-  it('refuses exhausted push budget before any provider call', async () => {
+  it('returns the shared broker budget refusal', async () => {
     mockListToolsForGrant.mockResolvedValue([{ name: 'github.push_branch' }]);
-    mockReserveBudgetLineage.mockResolvedValue(false);
+    mockCallTool.mockRejectedValue(Object.assign(new Error('push budget exhausted'), {
+      code: 'host_github_push_rate_limited', statusCode: 429,
+    }));
     const response = await request(app).post('/api/mcp/grants/grant-1/push').send(push);
     expect(response.status).toBe(429);
-    expect(mockCallTool).not.toHaveBeenCalled();
+    expect(mockCallTool).toHaveBeenCalledTimes(1);
   });
 
   it('preserves the larger push parser before the global JSON parser in the real server', async () => {
