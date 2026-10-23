@@ -463,6 +463,23 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   const handleAuthorClick = isClickable ? () => onAuthorClick?.(rawUsername) : undefined;
   const time = formatRelativeTime(message.created_at);
 
+  // Kernel system actions have a structured payload and no message actions,
+  // avatar, reply affordance or mention semantics. Legacy system messages
+  // continue through the existing renderer below.
+  if ((message.message_type === 'system' || message.messageType === 'system')
+      && message.payload?.kind === 'system-action'
+      && message.payload.action === 'task-claimed') {
+    return (
+      <div id={`message-${message.id}`} className="v2-system-action-line">
+        <span>{t('podChat.systemActions.taskClaimed', {
+          actor: message.payload.actorName || author,
+          taskId: message.payload.taskId || '',
+        })}</span>
+        {time && <time dateTime={message.created_at}>{time}</time>}
+      </div>
+    );
+  }
+
   if (decision) {
     return (
       <div id={`message-${message.id}`} data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined} tabIndex={-1} className="v2-message-row v2-message-row--decision">

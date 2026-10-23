@@ -482,6 +482,9 @@
     }
   },
   "podChat": {
+    "systemActions": {
+      "taskClaimed": "{{actor}} 认领了 {{taskId}}"
+    },
     "firstTask": { "addFailed": "添加任务失败，请重试。" },
     "starts": {
       "label": "开始方式"

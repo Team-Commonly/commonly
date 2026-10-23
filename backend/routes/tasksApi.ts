@@ -21,6 +21,8 @@ const AgentSendFreshness = require('../services/agentSendFreshness');
 // eslint-disable-next-line global-require
 const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
 // eslint-disable-next-line global-require
+const { emitSystemActionLine } = require('../services/systemActionLineService');
+// eslint-disable-next-line global-require
 const { recordTaskAttention, resolveTaskAttention } = require('../services/attentionItemService');
 // eslint-disable-next-line global-require
 const { parseAssignee, toSingleLineTitle } = require('../utils/taskFieldNormalization');
@@ -684,6 +686,15 @@ router.post('/:podId/:taskId/claim', rateLimit({
       && (preClaim.claimedBy === claimedBy || preClaim.lapsedFrom === claimedBy);
     if (!isSameHolderContinuation) {
       notifyAgents(req, podId, task, 'updated', preClaim);
+      // The claim CAS has committed. This quiet timeline projection is
+      // best-effort and never changes the claim's HTTP result.
+      void emitSystemActionLine({
+        podId: String(podId),
+        actorUserId: String(userId),
+        actorName: author,
+        action: 'task-claimed',
+        taskId: String(task.taskId || taskId),
+      }).catch((error: Error) => console.warn('[tasks] system action line failed:', error.message));
     }
     return res.json({ task });
   } catch (err) {

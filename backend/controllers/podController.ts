@@ -273,6 +273,7 @@ exports.getAllPods = async (req: any, res: any) => {
           FROM messages m
           LEFT JOIN users u ON u._id = m.user_id
           WHERE m.pod_id = ANY($1::text[])
+            AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
           ORDER BY m.pod_id, m.created_at DESC
         `;
         const result = await pool.query(sql, [podIds]);
