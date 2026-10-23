@@ -122,6 +122,7 @@ describe('PG Message model', () => {
     });
     const res = await Message.findByPodId('p');
     expect(pool.query).toHaveBeenCalled();
+    expect(pool.query.mock.calls[0][0]).toContain('m.author_kind');
     expect(res[0]).toHaveProperty('_id', '1');
     expect(res[0]).toHaveProperty('userId');
     expect(res[0]).toHaveProperty('messageType', 'text');
@@ -156,6 +157,7 @@ describe('PG Message model', () => {
     });
     const msg = await Message.findById('1');
     expect(pool.query).toHaveBeenCalledWith(expect.any(String), ['1']);
+    expect(pool.query.mock.calls[0][0]).toContain('m.author_kind');
     expect(msg).toHaveProperty('id', '1');
     expect(msg).toHaveProperty('messageType');
   });
