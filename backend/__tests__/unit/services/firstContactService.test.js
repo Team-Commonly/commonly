@@ -186,8 +186,9 @@ describe('firstContactService', () => {
 
   test.each([
     ['hola, necesito ayuda', 'Europe/Madrid'],
+    ['hola, necesito ayuda', 'Asia/Tokyo'],
     ['bonjour, je cherche un assistant', 'Europe/Paris'],
-    ['안녕하세요, 도움이 필요합니다', 'Asia/Seoul'],
+    ['안녕하세요, 도움이 필요합니다', 'Asia/Taipei'],
   ])('unknown language is never instructed to greet in English: %s', async (words, timezone) => {
     Message.recentContentByUser.mockResolvedValue([words]);
     User.findById.mockReturnValue({ select: () => ({ lean: async () => ({ timezone }) }) });
@@ -197,6 +198,15 @@ describe('firstContactService', () => {
     const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
     expect(cue).not.toContain("Use the person's language for this greeting: English");
     expect(cue).not.toContain("Use the person's language for this greeting:");
+  });
+
+  test('timezone guides the first greeting only when the person has no prior words', async () => {
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({ timezone: 'Asia/Taipei' }) }) });
+
+    await maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' }));
+
+    const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    expect(cue).toContain("Use the person's language for this greeting: Traditional Chinese.");
   });
 
   test('concurrent installs enqueue exactly once when only one atomic upsert inserts', async () => {

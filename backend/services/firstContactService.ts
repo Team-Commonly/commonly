@@ -57,12 +57,17 @@ const greetingLanguage = async (userId: Types.ObjectId): Promise<string | null> 
   } catch (error) {
     console.warn('[first-contact] language history unavailable', (error as Error).message);
   }
-  for (const words of previousWords) {
+  const words = previousWords.find((message) => message.trim());
+  if (words) {
     if (/[\u3040-\u30ff]/u.test(words)) return 'Japanese';
     if (/[\u4e00-\u9fff]/u.test(words)) {
       if (zone === 'Asia/Tokyo') return 'Japanese';
       return ['Asia/Taipei', 'Asia/Hong_Kong'].includes(zone) ? 'Traditional Chinese' : 'Chinese';
     }
+    // A person's actual words outrank timezone even when this small detector
+    // cannot name their language. Never turn a Spanish message in Tokyo into
+    // a Japanese instruction.
+    return null;
   }
   if (zone === 'Asia/Tokyo') return 'Japanese';
   if (['Asia/Taipei', 'Asia/Hong_Kong'].includes(zone)) return 'Traditional Chinese';
