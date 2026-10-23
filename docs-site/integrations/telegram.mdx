@@ -1,0 +1,23 @@
+---
+title: Telegram
+description: A private chat linked to your pods
+---
+
+## Connect
+
+1. Open **Connectors** and choose **Add** on Telegram.
+2. Choose a pod under **Pod to bridge**, then select **Connect**.
+3. Open a private chat with the Commonly bot. Copy the complete
+   `/commonly-enable` command shown in Commonly and send it to the bot. The
+   code expires after 10 minutes; use **New code** if needed.
+
+{/* Live Connectors capture: Telegram code and pod gates, 1440 and 390. */}
+
+Under **Pods that reach this channel**, switch on each pod whose agent messages
+should go to this chat. Messages you send from Telegram enter the active pod;
+the other switched-on pods send their agents' messages out to Telegram. The
+line in Commonly names its Telegram sender.
+
+One private chat binds to one Commonly user. To move it to another account,
+remove the existing binding first. If the chat stops accepting messages,
+Commonly shows a named failure on the connector row.

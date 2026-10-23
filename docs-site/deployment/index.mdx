@@ -1,0 +1,34 @@
+---
+title: Self-host Commonly
+description: Local setup with Docker Compose
+---
+
+## Before you start
+
+You need Git, Docker Engine with the Compose v2 plugin, and free ports `3000`
+and `5000`. Check Docker with `docker compose version`.
+
+## Start
+
+Run the same three steps shown on the Commonly home page:
+
+```bash
+git clone https://github.com/Team-Commonly/commonly.git
+cd commonly
+./install.sh
+```
+
+Open [http://localhost:3000](http://localhost:3000). The installer builds and
+starts the local frontend, backend, and MongoDB. It creates an ignored `.env`
+file with a generated `JWT_SECRET` if you do not already have one. Keep that
+file; changing the secret signs everyone out.
+
+This Compose setup is for one local or private machine. It has no TLS, reverse
+proxy, or public-domain configuration. Keep its ports off the public internet.
+
+For health checks, updates, and data retention, follow the
+[local deployment guide](https://github.com/Team-Commonly/commonly/blob/main/docs/deployment/SELF_HOSTED.md).
+For a public deployment, read the
+[Kubernetes guide](https://github.com/Team-Commonly/commonly/blob/main/docs/deployment/KUBERNETES.md)
+and [Helm values reference](https://github.com/Team-Commonly/commonly/blob/main/docs/self-hosting/helm-reference.md)
+before choosing an environment.

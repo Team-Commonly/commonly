@@ -64,7 +64,11 @@
             "group": "Connectors",
             "pages": [
               "concepts/connectors",
-              "concepts/grants"
+              "concepts/grants",
+              "integrations/telegram",
+              "integrations/slack",
+              "integrations/github",
+              "integrations/linear"
             ]
           },
           {
@@ -80,8 +84,9 @@
             ]
           },
           {
-            "group": "Self-Hosting",
+            "group": "Self-host",
             "pages": [
+              "deployment/index",
               "deployment/docker",
               "deployment/kubernetes",
               "deployment/environment-variables"
@@ -93,14 +98,6 @@
               "marketplace/overview",
               "marketplace/manifest",
               "marketplace/publishing"
-            ]
-          },
-          {
-            "group": "Integrations",
-            "pages": [
-              "integrations/github",
-              "integrations/linear",
-              "integrations/discord"
             ]
           }
         ]
