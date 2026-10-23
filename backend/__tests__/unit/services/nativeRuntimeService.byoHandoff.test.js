@@ -4,13 +4,16 @@
  * setup message.
  */
 jest.mock('axios', () => ({ __esModule: true, default: { post: jest.fn() } }));
+const mockPodFindById = jest.fn();
 jest.mock('../../../models/Pod', () => ({
-  findById: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({ name: 'Build Pod' }) })),
+  findById: (...args) => mockPodFindById(...args),
 }));
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
+const mockUserFindOne = jest.fn();
+const mockUserFindById = jest.fn();
 jest.mock('../../../models/User', () => ({
-  findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) })),
-  findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ username: 'Sam Xu' }) }) })),
+  findOne: (...args) => mockUserFindOne(...args),
+  findById: (...args) => mockUserFindById(...args),
 }));
 jest.mock('../../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
 jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn().mockResolvedValue({ success: true }) }));
@@ -21,11 +24,26 @@ jest.mock('../../../services/messageClaimService', () => ({
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
 }));
+const mockPodIsBridged = jest.fn();
+jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
+  podIsBridged: (...args) => mockPodIsBridged(...args),
+}));
+const mockHostedBrokerToolsForRun = jest.fn();
+const mockDispatchHostedBrokerTool = jest.fn();
+jest.mock('../../../services/grantBrokerProjectionService', () => ({
+  hostedBrokerToolsForRun: (...args) => mockHostedBrokerToolsForRun(...args),
+  dispatchHostedBrokerTool: (...args) => mockDispatchHostedBrokerTool(...args),
+}));
 
 const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const AgentMessageService = require('../../../services/agentMessageService');
 const { runAgent } = require('../../../services/nativeRuntimeService');
+
+const chain = (value) => ({
+  select: () => ({ lean: () => Promise.resolve(value) }),
+  lean: () => Promise.resolve(value),
+});
 
 const POD = '507f1f77bcf86cd799439011';
 const install = {
@@ -65,6 +83,12 @@ describe('commonly_offer_local_agent', () => {
     process.env.LITELLM_BASE_URL = 'http://litellm.test';
     process.env.LITELLM_MASTER_KEY = 'test-key';
     process.env.HOSTED_ENGINE = 'native';
+    mockPodFindById.mockReturnValue(chain({ name: 'Build Pod', members: [] }));
+    mockUserFindOne.mockReturnValue(chain(null));
+    mockUserFindById.mockReturnValue(chain({ username: 'Sam Xu' }));
+    mockHostedBrokerToolsForRun.mockResolvedValue({ tools: [], dispatch: new Map() });
+    mockDispatchHostedBrokerTool.mockResolvedValue({ callId: 'broker-call', content: { ok: true }, outcome: 'ok' });
+    mockPodIsBridged.mockResolvedValue(false);
     AgentRun.countDocuments.mockResolvedValue(0);
     AgentRun.create.mockImplementation(async (doc) => ({ _id: 'run-1', ...doc, save: jest.fn().mockResolvedValue(undefined) }));
   });
@@ -89,5 +113,47 @@ describe('commonly_offer_local_agent', () => {
     expect(posted.payload.commands.mac).not.toMatch(/cm_agent|COMMONLY_AGENT_TOKEN|token/i);
     expect(posted.content).not.toContain('commonly agent attach');
     expect(posted.answeringMessageId).toBeUndefined();
+    expect(posted.authorKind).toBe('kernel');
+  });
+
+  test('keeps a broker result from crossing a bridge before the handoff card', async () => {
+    mockUserFindOne.mockReturnValue(chain({ _id: 'seat-1' }));
+    mockPodFindById.mockReturnValue(chain({ name: 'Build Pod', members: ['seat-1'] }));
+    mockHostedBrokerToolsForRun.mockResolvedValue({
+      tools: [{ type: 'function', function: { name: 'github_list_issues', description: 'List issues', parameters: {} } }],
+      dispatch: new Map([['github_list_issues', { grantId: 'grant-1', tool: 'github.list_issues' }]]),
+    });
+    mockPodIsBridged.mockResolvedValue(true);
+    axios.post
+      .mockResolvedValueOnce(callsTool('github_list_issues', { state: 'open' }))
+      .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'opencode', os: 'mac' }))
+      .mockResolvedValueOnce(says('The handoff was blocked.'));
+
+    const result = await runAgent(install, ask);
+
+    expect(result.status).toBe('succeeded');
+    expect(mockDispatchHostedBrokerTool).toHaveBeenCalledTimes(1);
+    expect(mockPodIsBridged).toHaveBeenCalledWith(POD);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+  });
+
+  test('does not let a client post mark itself as kernel-authored', async () => {
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_post_message', {
+        content: 'ordinary post',
+        authorKind: 'kernel',
+        metadata: { authorKind: 'kernel' },
+      }))
+      .mockResolvedValueOnce(says('Done.'));
+
+    await runAgent({
+      ...install,
+      config: { ...install.config, tools: ['commonly_post_message'] },
+    }, ask);
+
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    const posted = AgentMessageService.postMessage.mock.calls[0][0];
+    expect(posted.authorKind).toBeUndefined();
+    expect(posted.metadata).toEqual({ source: 'native-runtime' });
   });
 });
