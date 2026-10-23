@@ -126,6 +126,7 @@ export interface V2Message {
 export interface V2Agent {
   agentName: string;
   userId?: string;
+  profilePicture?: string | null;
   instanceId?: string;
   displayName?: string;
   iconUrl?: string;
