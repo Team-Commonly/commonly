@@ -69,6 +69,47 @@ afterEach(() => {
 });
 
 describe('BYO on-my-computer mode', () => {
+  test.each([
+    ['Read-only', { sandbox: { trust: 'public' } }],
+    ['Work in my repo on this machine', { workspace: { path: '~/projects/example' }, sandbox: { trust: 'private' } }],
+  ])('existing machine listener applies %s before placement', async (choice, environment) => {
+    mockGet({ pods: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'invite-only',
+      createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }] }] });
+    axios.post.mockRejectedValueOnce({ response: { data: { error: 'Agent already installed in this pod' } } });
+    axios.post.mockResolvedValue({ data: {} });
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    if (choice !== 'Read-only') {
+      fireEvent.click(screen.getByLabelText(choice));
+      fireEvent.change(screen.getByTestId('byo-repo-path'), { target: { value: '~/projects/example' } });
+    }
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+    fireEvent.click(screen.getByText('Add to this computer'));
+    await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+    expect(axios.patch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/registry\/pods\/p1\/agents\//),
+      { config: { environment } }, expect.anything(),
+    );
+    expect(axios.patch.mock.invocationCallOrder[0]).toBeLessThan(
+      axios.post.mock.invocationCallOrder[1],
+    );
+  });
+
+  test('existing machine listener is not placed when access change fails', async () => {
+    mockGet();
+    axios.post.mockRejectedValueOnce({ response: { data: { error: 'Agent already installed in this pod' } } });
+    axios.patch.mockRejectedValueOnce({ response: { data: { error: 'Access change refused' } } });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+    fireEvent.click(screen.getByText('Add to this computer'));
+    await waitFor(() => expect(screen.getByText('Access change refused')).toBeInTheDocument());
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
   test('one-command listener installs with private trust and the selected repo path', async () => {
     mockGet({ pods: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'invite-only',
       createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }] }] });

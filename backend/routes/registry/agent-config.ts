@@ -3,8 +3,9 @@
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
-const AgentProfile = require('../../models/AgentProfile');
+const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const AgentProfile = require('../../models/AgentProfile');
 const Pod = require('../../models/Pod');
 const {
   writeWorkspaceIdentityFile,
@@ -24,6 +25,7 @@ const {
 const {
   normalizeToolPolicy,
   normalizeContextPolicy,
+  revokeRuntimeTokensForAgent,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
@@ -385,6 +387,23 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         }
         throw joinError;
       }
+    }
+
+    const downgradesPrivateListener = config?.environment !== undefined
+      && !isPrivateListenerEnvironment(config.environment)
+      && installationsToUpdate.some((entry: any) => isPrivateListenerEnvironment(
+        normalizeConfigMap(entry.config)?.environment,
+      ));
+    if (downgradesPrivateListener) {
+      // A running one-command listener cached its private environment at boot.
+      // Revoking before the new public config is visible makes its saved bearer
+      // unusable; the owner must reconnect against the public projection.
+      const resolvedType = AgentIdentityService.resolveAgentType(name.toLowerCase());
+      const username = AgentIdentityService.buildAgentUsername(resolvedType, normalizedInstanceId);
+      const agentUser = await User.findOne({ username, isBot: true });
+      await revokeRuntimeTokensForAgent({
+        agentUser, agentName: name.toLowerCase(), instanceId: normalizedInstanceId,
+      });
     }
 
     // The User row is the name source for chat and the pod roster. An explicit

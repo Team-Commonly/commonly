@@ -52,7 +52,6 @@ const renderPage = (entry = '/') => render(
 );
 
 const issueToken = async () => {
-  axios.get.mockResolvedValueOnce({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
   axios.post
     .mockResolvedValueOnce({ data: { ok: true } }) // /api/registry/install
     .mockResolvedValueOnce({ data: { token: AGENT_TOKEN } }); // runtime-tokens
@@ -66,7 +65,9 @@ const issueToken = async () => {
 
 beforeEach(() => {
   axios.get.mockImplementation((url) => (
-    url.startsWith('/api/registry/agents/next-free-name?')
+    url === '/api/pods'
+      ? Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] })
+      : url.startsWith('/api/registry/agents/next-free-name?')
       ? Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } })
       : Promise.resolve({ data: {} })
   ));
@@ -166,10 +167,12 @@ describe('V2AgentBYO memory import', () => {
   });
 
   test('already-installed agent requires explicit key replacement for lost-token recovery', async () => {
-    axios.get.mockResolvedValueOnce({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
-    axios.post
-      .mockRejectedValueOnce({ response: { data: { error: 'Agent already installed in this pod' } } })
-      .mockResolvedValueOnce({ data: { token: AGENT_TOKEN } });
+    axios.post.mockImplementation((url) => (
+      url === '/api/registry/install'
+        ? Promise.reject({ response: { data: { error: 'Agent already installed in this pod' } } })
+        : Promise.resolve({ data: { token: AGENT_TOKEN } })
+    ));
+    axios.patch.mockResolvedValue({ data: {} });
 
     renderPage();
     await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
@@ -185,11 +188,15 @@ describe('V2AgentBYO memory import', () => {
   });
 
   test('a token shared from another pod is not silently replaced after install', async () => {
-    axios.get.mockResolvedValueOnce({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
-    axios.post
-      .mockResolvedValueOnce({ data: { ok: true } })
-      .mockResolvedValueOnce({ data: { existing: true } })
-      .mockResolvedValueOnce({ data: { token: AGENT_TOKEN } });
+    let issues = 0;
+    axios.post.mockImplementation((url) => {
+      if (/runtime-tokens/.test(url)) {
+        issues += 1;
+        return Promise.resolve({ data: issues === 1 ? { existing: true } : { token: AGENT_TOKEN } });
+      }
+      return Promise.resolve({ data: { ok: true } });
+    });
+    axios.patch.mockResolvedValue({ data: {} });
 
     renderPage();
     await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());

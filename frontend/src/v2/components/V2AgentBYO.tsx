@@ -619,6 +619,14 @@ const V2AgentBYO: React.FC = () => {
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
         if (!/already installed/i.test(msg)) throw installErr;
+        // An existing machine listener keeps its previous environment. Apply
+        // the owner's current choice before placement can resume it.
+        await api.patch(
+          `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(cleanName)}`,
+          { config: { environment: listenerTrust === 'private'
+            ? { workspace: { path: repoPath.trim() }, sandbox: { trust: 'private' } }
+            : { sandbox: { trust: 'public' } } } },
+        );
       }
       await api.post('/api/agent-binding/request', {
         agentName: cleanName, instanceId: 'default', machineId,

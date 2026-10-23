@@ -215,13 +215,25 @@ test('owner can promote a read-only listener in a sole-human invite pod', async 
 });
 
 test('owner can downgrade to read-only after a second human joins', async () => {
+  const old = await issue();
+  expect(old.status).toBe(200);
+  const legacy = `cm_agent_${'c'.repeat(32)}`;
+  await AgentInstallation.updateOne({ agentName: AGENT }, {
+    $push: { runtimeTokens: { tokenHash: hash(legacy), createdAt: new Date() } },
+  });
   const second = await User.create({ username: 'downgrade-second', email: 'downgrade-second@test.com', password: 'password123' });
   await Pod.updateOne({ _id: pod._id }, { $addToSet: { members: second._id } });
   const changed = await request(app).patch(`/api/registry/pods/${pod._id}/agents/${AGENT}`).send({
     config: { environment: { sandbox: { trust: 'public' } } },
   });
   expect(changed.status).toBe(200);
+  // The same running CLI still has a private environment in memory. Its old
+  // bearer must stay dead even though the server config is now read-only.
+  expect((await request(app).get('/probe').set('Authorization', `Bearer ${old.body.token}`)).status).toBe(401);
+  expect((await request(app).get('/probe').set('Authorization', `Bearer ${legacy}`)).status).toBe(401);
+  expect(await User.countDocuments({ 'agentRuntimeTokens.tokenHash': hash(old.body.token) })).toBe(0);
   expect((await issue()).status).toBe(200);
+  expect((await assigned()).body.agents[0].environment.sandbox.trust).toBe('public');
   const row = await AgentInstallation.findOne({ agentName: AGENT });
   expect(row.config.get('environment')).toEqual({ sandbox: { trust: 'public' } });
 });

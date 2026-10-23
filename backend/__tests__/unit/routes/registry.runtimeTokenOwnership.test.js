@@ -58,6 +58,12 @@ jest.mock('../../../services/agentIdentityService', () => ({
   ensureAgentInPod: jest.fn().mockResolvedValue(undefined),
 }));
 
+// This suite measures sole-installer authority; private-listener pod
+// eligibility has its own service suite with real installations and members.
+jest.mock('../../../services/privateListenerPolicy', () => ({
+  privateListenerIdentityAllowed: jest.fn().mockResolvedValue(true),
+}));
+
 const mockIsAdmin = jest.fn().mockResolvedValue(false);
 jest.mock('../../../routes/registry/helpers', () => ({
   getUserId: jest.fn((req) => req.userId),

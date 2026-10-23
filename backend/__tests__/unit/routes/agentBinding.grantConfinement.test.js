@@ -57,7 +57,8 @@ const seed = async (sandbox, runtime = { runtimeType: 'wrapper', model: 'claude-
     isBot: true,
     botMetadata: { agentName: AGENT_NAME, instanceId: 'default', machineId: 'machine-a' },
   });
-  const pod = await Pod.create({ name: `p${tag}`, createdBy: owner._id, members: [owner._id, bot._id] });
+  const pod = await Pod.create({ name: `p${tag}`, createdBy: owner._id,
+    joinPolicy: 'invite-only', members: [owner._id, bot._id] });
   const environment = {
     version: 1,
     model: 'claude-opus-5',
