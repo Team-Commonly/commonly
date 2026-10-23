@@ -628,6 +628,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       if (newHostedEngine === HostedEngine.HOSTED_ENGINE_NATIVE) {
         installConfig.hosted = HostedEngine.nativeHostedConfigForInstall(explicitDescription || undefined);
       }
+    }
 
     // GitHub issue writes spend a server-held credential, so this is a
     // server-owned per-installation capability rather than a caller-provided
