@@ -35,6 +35,7 @@ const auth = require('../../middleware/auth');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentCredential = require('../../models/AgentCredential');
+const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const {
   getUserId,
@@ -42,10 +43,14 @@ const {
   resolveInstallation,
   resolveRuntimeInstanceId,
   serializeRuntimeTokens,
+  normalizeConfigMap,
 } = require('./helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { ownsRuntimeIdentity, runtimeCredentialRefusal } = require('../../services/runtimeIdentityOwnership');
-const { privateListenerIdentityAllowed } = require('../../services/privateListenerPolicy');
+const {
+  isPrivateListenerEnvironment,
+  privateListenerIdentityAllowed,
+} = require('../../services/privateListenerPolicy');
 const {
   normalizeScopes,
   revokeRuntimeTokenEverywhere,
@@ -200,6 +205,9 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
     if (!await privateListenerIdentityAllowed(installation.agentName || name, normalizedInstanceId, userId)) {
       return res.status(403).json({ code: 'private_listener_not_allowed', error: 'Private listener pod is no longer owner-only' });
     }
+    const wasPrivateListener = isPrivateListenerEnvironment(
+      normalizeConfigMap(installation.config)?.environment,
+    );
 
     const resolvedType = AgentIdentityService.resolveAgentType(name);
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(resolvedType, {
@@ -230,6 +238,31 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
       installation,
       { ownerUserId: userId },
     );
+    if (wasPrivateListener) {
+      // A downgrade may revoke old tokens, then pause while its public config
+      // is saved. A mint that read private trust before that pause must not
+      // outlive the downgrade. The matching post-save revoke catches mints
+      // that finish before the save; this recheck catches mints that finish
+      // afterward. Both sides are needed across backend workers.
+      const current = await AgentInstallation.findById(installation._id).select('config').lean();
+      const stillPrivate = isPrivateListenerEnvironment(
+        normalizeConfigMap(current?.config)?.environment,
+      );
+      if (!stillPrivate || !await privateListenerIdentityAllowed(
+        installation.agentName || name, normalizedInstanceId, userId, true,
+      )) {
+        const freshAgentUser = await User.findById(agentUser._id);
+        await revokeRuntimeTokensForAgent({
+          agentUser: freshAgentUser,
+          agentName: installation.agentName || name,
+          instanceId: normalizedInstanceId,
+        });
+        return res.status(403).json({
+          code: 'private_listener_not_allowed',
+          error: 'Private listener pod is no longer owner-only',
+        });
+      }
+    }
     return res.json(issued);
   } catch (error) {
     if ((error as { code?: string })?.code === 'in_process_agent_no_token') {

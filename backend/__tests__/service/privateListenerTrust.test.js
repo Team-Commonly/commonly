@@ -252,3 +252,77 @@ test('owner can downgrade to read-only after a second human joins', async () => 
   const row = await AgentInstallation.findOne({ agentName: AGENT });
   expect(row.config.get('environment')).toEqual({ sandbox: { trust: 'public' }, mcp: retainedMcp });
 });
+
+test('downgrade fences a private mint paused before the public config save', async () => {
+  const original = await issue();
+  expect(original.status).toBe(200);
+  let releaseSave;
+  let reachedSave;
+  const release = new Promise((resolve) => { releaseSave = resolve; });
+  const reached = new Promise((resolve) => { reachedSave = resolve; });
+  const originalSave = AgentInstallation.prototype.save;
+  let intercepted = false;
+  const save = jest.spyOn(AgentInstallation.prototype, 'save').mockImplementation(async function (...args) {
+    if (!intercepted && this.agentName === AGENT && this.config.get('environment')?.sandbox?.trust === 'public') {
+      intercepted = true;
+      reachedSave();
+      await release;
+    }
+    return originalSave.apply(this, args);
+  });
+  const changing = request(app).patch(`/api/registry/pods/${pod._id}/agents/${AGENT}`)
+    .send({ config: { environment: { sandbox: { trust: 'public' } } } }).then((value) => value);
+  let minted;
+  try {
+    await reached;
+    expect((await request(app).get('/probe').set('Authorization', `Bearer ${original.body.token}`)).status).toBe(401);
+    minted = await issue();
+  } finally {
+    releaseSave();
+    await changing;
+    save.mockRestore();
+  }
+  const row = await AgentInstallation.findOne({ agentName: AGENT });
+  expect(row.config.get('environment').sandbox.trust).toBe('public');
+  if (minted.status === 200) {
+    expect((await request(app).get('/probe').set('Authorization', `Bearer ${minted.body.token}`)).status).toBe(401);
+  } else {
+    expect(minted.status).toBe(403);
+  }
+  const second = await User.create({ username: 'race-second', email: 'race-second@test.com', password: 'password123' });
+  await Pod.updateOne({ _id: pod._id }, { $addToSet: { members: second._id } });
+  expect(await User.countDocuments({ 'agentRuntimeTokens.0': { $exists: true } })).toBe(0);
+});
+
+test('a private mint paused before its token save cannot revive after downgrade', async () => {
+  let releaseSave;
+  let reachedSave;
+  const release = new Promise((resolve) => { releaseSave = resolve; });
+  const reached = new Promise((resolve) => { reachedSave = resolve; });
+  const originalSave = User.prototype.save;
+  let intercepted = false;
+  const save = jest.spyOn(User.prototype, 'save').mockImplementation(async function (...args) {
+    if (!intercepted && String(this._id) === String(bot._id) && this.agentRuntimeTokens?.length) {
+      intercepted = true;
+      reachedSave();
+      await release;
+    }
+    return originalSave.apply(this, args);
+  });
+  const minting = issue().then((value) => value);
+  let minted;
+  try {
+    await reached;
+    const changed = await request(app).patch(`/api/registry/pods/${pod._id}/agents/${AGENT}`)
+      .send({ config: { environment: { sandbox: { trust: 'public' } } } });
+    expect(changed.status).toBe(200);
+  } finally {
+    releaseSave();
+    minted = await minting;
+    save.mockRestore();
+  }
+  expect(minted.status).toBe(403);
+  expect(minted.body.code).toBe('private_listener_not_allowed');
+  expect(await User.countDocuments({ 'agentRuntimeTokens.0': { $exists: true } })).toBe(0);
+  expect(await AgentInstallation.countDocuments({ 'runtimeTokens.0': { $exists: true } })).toBe(0);
+});

@@ -405,16 +405,22 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       && installationsToUpdate.some((entry: any) => isPrivateListenerEnvironment(
         normalizeConfigMap(entry.config)?.environment,
       ));
-    if (downgradesPrivateListener) {
+    const revokePrivateListenerTokens = async () => {
       // A running one-command listener cached its private environment at boot.
-      // Revoking before the new public config is visible makes its saved bearer
-      // unusable; the owner must reconnect against the public projection.
+      // Reload the User on each pass: a concurrent mint may have saved a new
+      // token on that row since the previous pass.
       const resolvedType = AgentIdentityService.resolveAgentType(name.toLowerCase());
       const username = AgentIdentityService.buildAgentUsername(resolvedType, normalizedInstanceId);
       const agentUser = await User.findOne({ username, isBot: true });
       await revokeRuntimeTokensForAgent({
         agentUser, agentName: name.toLowerCase(), instanceId: normalizedInstanceId,
       });
+    };
+    if (downgradesPrivateListener) {
+      // The first pass stops the running private listener before the public
+      // config is visible. The second catches any mint that passed its private
+      // eligibility read while this config write was in flight.
+      await revokePrivateListenerTokens();
     }
 
     // The User row is the name source for chat and the pod roster. An explicit
@@ -440,6 +446,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         // eslint-disable-next-line no-await-in-loop
         await targetInstallation.save();
       }
+    if (downgradesPrivateListener) await revokePrivateListenerTokens();
 
       if (
         status
