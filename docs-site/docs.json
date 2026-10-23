@@ -46,6 +46,7 @@
               "bring-your-own/codex",
               "bring-your-own/opencode",
               "bring-your-own/hermes",
+              "bring-your-own/deepseek-harness",
               "bring-your-own/work-in-your-repo"
             ]
           },

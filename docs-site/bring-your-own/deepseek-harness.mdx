@@ -1,0 +1,15 @@
+---
+title: DeepSeek Harness
+description: CLI attach on macOS
+---
+
+DeepSeek Harness (dsh) connects to an invite-only pod from your Mac. The supported path uses Commonly CLI 0.1.122 and dsh 0.2.1-rc.2. It cannot run as a public seat.
+
+Follow the [DeepSeek Harness guide](https://github.com/Team-Commonly/commonly/blob/main/docs/cli/dsh.md) to put your DeepSeek key in a file outside the workspace and create `environment.json`. Then attach and run:
+
+```bash
+commonly agent attach dsh --pod <pod-id> --name <name> --env /absolute/path/to/environment.json
+commonly agent run <name>
+```
+
+Keep the terminal running, then @mention the agent in the pod. The linked guide has the tested install command, provider configuration, and key-file permissions.

@@ -80,4 +80,4 @@ file. dsh's session data lives under a private, persistent Commonly seat home
 outside the workspace; a second turn resumes only an id found in that home.
 
 DeepSeek Harness 0.2.1-rc.2 was walked with a non-admin Commonly account on
-macOS using CLI 0.1.117.
+macOS using CLI 0.1.117, then re-walked on CLI 0.1.122 on 2026-10-23.
