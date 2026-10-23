@@ -340,6 +340,94 @@ test('an older callback cannot replace a newer completed connection secret pair'
   }
 });
 
+test('an in-flight refresh cannot overwrite a newer completed authorization', async () => {
+  const originalKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const originalActiveKey = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+  process.env.CONNECTOR_SECRET_KEYS = `test:${Buffer.alloc(32, 7).toString('base64')}`;
+  process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'test';
+  const actualSecrets = jest.requireActual('../../../services/connectorSecrets');
+  const { credentialFor } = require('../../../services/hostedMcpCredentialService');
+  const { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } = require('../../../services/connectorSecretKinds');
+  let releaseRefresh;
+  try {
+    const id = await seedPending({ state: 'st-refresh-race', subject: 'acct-same', credentialRef: undefined });
+    const accessRef = await actualSecrets.put(id, HOSTED_MCP_ACCESS_TOKEN, 'old-access', 1);
+    const refreshRef = await actualSecrets.put(id, HOSTED_MCP_REFRESH_TOKEN, 'old-refresh', 1);
+    await Integration.updateOne({ _id: id }, {
+      $set: {
+        status: 'connected',
+        'config.authGeneration': 1,
+        'config.refreshGeneration': 3,
+        'config.credentialRef': accessRef,
+        'config.refreshTokenRef': refreshRef,
+        'config.clientId': 'client-id',
+        'config.expiresAt': new Date(Date.now() - 3600 * 1000),
+      },
+      $unset: { 'config.pendingAuth': 1 },
+    });
+    const row = await Integration.findById(id).lean();
+    let atRefreshWrite;
+    const refreshAtWrite = new Promise((resolve) => { atRefreshWrite = resolve; });
+    const refreshing = credentialFor(row, {
+      entryFor: () => FIXTURE_ENTRY,
+      clientIdFor: () => 'client-id',
+      refreshAtVendor: async () => ({
+        accessToken: 'access-refresh-A', refreshToken: 'refresh-refresh-A', expiresIn: 3600,
+      }),
+      secrets: {
+        ...actualSecrets,
+        put: async (integrationId, kind, material, generation) => {
+          if (material === 'access-refresh-A') {
+            atRefreshWrite();
+            await new Promise((resolve) => { releaseRefresh = resolve; });
+          }
+          return actualSecrets.put(integrationId, kind, material, generation);
+        },
+      },
+    });
+    let waitTimeout;
+    try {
+      await Promise.race([
+        refreshAtWrite,
+        refreshing.then(() => { throw new Error('refresh finished before secret write gate'); }),
+        new Promise((_, reject) => {
+          waitTimeout = setTimeout(() => reject(new Error('refresh did not reach secret storage')), 5000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(waitTimeout);
+    }
+
+    const newerStart = await request(app).post('/connect/hosted-mcp/linear/start');
+    expect(newerStart.status).toBe(200);
+    const newerState = new URL(newerStart.body.authorizeUrl).searchParams.get('state');
+    const newerCookie = newerStart.headers['set-cookie'][0].split(';')[0];
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'access-B', refresh_token: 'refresh-B', scope: 'read', id_token: idToken('acct-same'),
+      }),
+    });
+    connectorSecrets.put.mockImplementation((integrationId, kind, material, generation) => (
+      actualSecrets.put(integrationId, kind, material, generation)
+    ));
+    expect(outcome(await callback(newerState, newerCookie))).toEqual({ hostedMcp: 'connected', code: null });
+    releaseRefresh();
+    await expect(refreshing).rejects.toMatchObject({ name: 'ConnectorSecretStaleWrite' });
+
+    const after = await Integration.findById(id).lean();
+    expect(after.status).toBe('connected');
+    expect(await actualSecrets.get(after.config.credentialRef)).toBe('access-B');
+    expect(await actualSecrets.get(after.config.refreshTokenRef)).toBe('refresh-B');
+  } finally {
+    releaseRefresh?.();
+    if (originalKeys === undefined) delete process.env.CONNECTOR_SECRET_KEYS;
+    else process.env.CONNECTOR_SECRET_KEYS = originalKeys;
+    if (originalActiveKey === undefined) delete process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+    else process.env.CONNECTOR_SECRET_ACTIVE_KEY = originalActiveKey;
+  }
+});
+
 test('a vendor that issues no ID token CLEARS the stored subject rather than keeping a stale one', async () => {
   const id = await seedPending({ state: 'st-clear', subject: 'acct-old' });
   exchange();

@@ -450,6 +450,19 @@ describe('the winner of the fence', () => {
     expect(h.state().errorMessage).toBeNull();
   });
 
+  test('refresh fences both stable secret writes to its authorization attempt', async () => {
+    const row = stale({ authGeneration: 7 });
+    const h = harness({ row });
+    await credentialFor(row, h.deps);
+
+    expect(h.put).toHaveBeenCalledTimes(2);
+    expect(h.put.mock.calls.map(([id, kind, material, generation]) => [id, kind.kind, material, generation]))
+      .toEqual([
+        [ROW_ID, ACCESS_KIND, 'new-access', 7],
+        [ROW_ID, REFRESH_KIND, 'new-refresh', 7],
+      ]);
+  });
+
   test('every path the commit names is declared on the schema, and the error text is top-level', async () => {
     const h = harness({ row: stale() });
     await credentialFor(stale(), h.deps);

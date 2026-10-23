@@ -100,6 +100,7 @@ export interface HostedMcpRow {
     credentialRef?: string;
     refreshTokenRef?: string;
     refreshGeneration?: number;
+    authGeneration?: number;
     expiresAt?: Date | null;
   };
 }
@@ -474,12 +475,20 @@ export const credentialFor = async (
     throw failure;
   }
 
-  const credentialRef = await deps.secrets.put(String(id), HOSTED_MCP_ACCESS_TOKEN, refreshed.accessToken);
+  // Refresh shares the callback's stable secret refs. Carry the authorization
+  // generation read before the vendor call so a newer completed callback wins
+  // even if this refresh resumes after its own row fence was reset.
+  const authGeneration = row.config?.authGeneration ?? 0;
+  const credentialRef = await deps.secrets.put(
+    String(id), HOSTED_MCP_ACCESS_TOKEN, refreshed.accessToken, authGeneration,
+  );
   let nextRefreshRef = refreshTokenRef;
   if (refreshed.refreshToken) {
     // A vendor that rotates hands back a new refresh token; a vendor that does
     // not (or omits it in this response) keeps the one that still works.
-    nextRefreshRef = await deps.secrets.put(String(id), HOSTED_MCP_REFRESH_TOKEN, refreshed.refreshToken);
+    nextRefreshRef = await deps.secrets.put(
+      String(id), HOSTED_MCP_REFRESH_TOKEN, refreshed.refreshToken, authGeneration,
+    );
   }
 
   const expiresAt = refreshed.expiresIn ? new Date(now.getTime() + refreshed.expiresIn * 1000) : null;
