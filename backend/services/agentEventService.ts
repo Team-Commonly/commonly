@@ -1430,12 +1430,14 @@ class AgentEventService {
       lines.unshift(`- ${rollup.unreadCount} older updates (last event IDs: ${rollup.lastEventIds.join(', ')})`);
     }
     const summary = `[Since you last looked: ${raw.length + (rollup?.unreadCount || 0)} ambient updates; context only, no reply needed.]\n${lines.join('\n')}`;
+    const baseContent = typeof event.payload?.content === 'string' ? event.payload.content : '';
     event.payload = {
       ...(event.payload || {}),
       // Existing drivers consume content; the additive field also lets a new
       // driver render the frame separately without parsing the wake text.
-      ...(typeof event.payload?.content === 'string'
-        ? { content: `${event.payload.content}\n\n${summary}` } : {}),
+      content: baseContent ? `${baseContent}\n\n${summary}` : summary,
+      ...(typeof event.payload?.prompt === 'string'
+        ? { prompt: `${event.payload.prompt}\n\n${summary}` } : {}),
       digestSummary: summary,
     };
   }

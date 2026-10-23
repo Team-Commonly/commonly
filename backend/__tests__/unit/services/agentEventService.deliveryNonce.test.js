@@ -143,6 +143,18 @@ describe('legacy ambient digest bridge', () => {
     expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('pending');
   });
 
+  test('a legacy wake without content still exposes digest to the consumer', async () => {
+    await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest',
+      payload: { username: 'Alice', content: 'ambient note' },
+    });
+    await seedEvent(); // payload.text only; older consumers read payload.content.
+
+    const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
+    expect(delivered.payload.content).toContain('Alice: ambient note');
+  });
+
   test('a claim stand-down does not consume raw or folded digest', async () => {
     const ambient = await AgentEvent.create({
       agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
