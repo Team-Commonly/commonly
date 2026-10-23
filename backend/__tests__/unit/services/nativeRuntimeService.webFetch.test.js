@@ -24,6 +24,11 @@ jest.mock('../../../models/Pod', () => ({
   }),
 }));
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
+const mockTaskCreate = jest.fn();
+jest.mock('../../../models/Task', () => ({
+  countDocuments: jest.fn().mockResolvedValue(0),
+  create: (...args) => mockTaskCreate(...args),
+}));
 // The agent's own bot User (its seat). Null in the arm where it cannot be found.
 const SEAT_ID = '507f1f77bcf86cd799439077';
 const SAM_ID = '507f1f77bcf86cd7994390aa';
@@ -526,7 +531,21 @@ describe('native turn with commonly_fetch_url', () => {
     expect(taskMessage.content).toMatch(/unavailable for the rest of this turn because web results are in it/);
   });
 
+  test('commonly_create_task accepts an assignee handle and stores it (TASK-354)', async () => {
+    mockTaskCreate.mockClear();
+    mockTaskCreate.mockResolvedValue({ taskId: 'N-1', toObject: () => ({}) });
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_create_task', { title: 'Ship it', assignee: 'nova' })))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention());
+
+    expect(mockTaskCreate).toHaveBeenCalledWith(expect.objectContaining({ title: 'Ship it', assignee: 'nova' }));
+    expect(toolMessages(1)[0].content).not.toMatch(/assign by handle/);
+  });
+
   test('commonly_create_task refuses a display-name assignee before it writes a row (TASK-354)', async () => {
+    mockTaskCreate.mockClear();
     axios.post
       .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_create_task', { title: 'Ship it', assignee: 'Sprint Impl' })))
       .mockResolvedValueOnce(finalReply);
@@ -534,6 +553,7 @@ describe('native turn with commonly_fetch_url', () => {
     await runAgent(install(), mention());
 
     expect(toolMessages(1)[0].content).toMatch(/assign by handle/);
+    expect(mockTaskCreate).not.toHaveBeenCalled();
   });
 
   test('a guard refusal reaches the model and does not narrow the turn', async () => {

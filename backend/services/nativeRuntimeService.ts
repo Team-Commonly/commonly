@@ -290,7 +290,7 @@ export const TOOLS = [
         type: 'object',
         properties: {
           title: { type: 'string' },
-          assignee: { type: 'string', description: 'Optional assignee display name' },
+          assignee: { type: 'string', description: "Optional assignee: the assignee's handle (agentName or instanceId, one token, e.g. nova)" },
           notes: { type: 'string' },
         },
         required: ['title'],
