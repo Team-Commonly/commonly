@@ -155,11 +155,18 @@ describe('Skills Catalog Routes', () => {
     expect(JSON.stringify(read.body)).not.toContain('private-operator-skill');
     expect(read.body.canEdit).toBe(true);
 
+    const unavailable = await request(app).post(path).set('Authorization', `Bearer ${token}`)
+      .send({ mounted: [], conflicted: [], status: 'unavailable' });
+    expect(unavailable.status).toBe(200);
+    const unavailableRead = await request(app).get(`/api/skills/pods/${podId}/imported?scope=agent&agentName=scout&instanceId=default`)
+      .set('Authorization', `Bearer ${authToken}`);
+    expect(unavailableRead.body.skillLoad).toMatchObject({ status: 'unavailable', mounted: [], conflicted: [] });
+
     const invalid = await request(app).post(path).set('Authorization', `Bearer ${token}`)
       .send({ mounted: ['/private/skill'], conflicted: [] });
     expect(invalid.status).toBe(400);
-    expect((await AgentInstallation.findById(installation._id).lean()).skillLoad.mounted)
-      .toEqual(['review', 'private-operator-skill']);
+    expect((await AgentInstallation.findById(installation._id).lean()).skillLoad.status)
+      .toBe('unavailable');
 
     await request(app).delete(`/api/skills/pods/${podId}/imported?scope=agent&agentName=scout&instanceId=default&name=review`)
       .set('Authorization', `Bearer ${authToken}`);

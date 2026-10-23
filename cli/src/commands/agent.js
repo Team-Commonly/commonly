@@ -1591,14 +1591,19 @@ export const performRun = ({
     }
     const promptWithFocus = `${focusFrame}\n\n${prompt}`;
     let serverSkills;
+    let skillReadUnavailable = false;
     try {
-      const response = await client.get(`/api/agents/runtime/pods/${eventPodId}/skills`);
+      const response = await client.get(`/api/agents/runtime/pods/${eventPodId}/skills`, {}, {
+        signal: AbortSignal.timeout(5000),
+      });
       serverSkills = compileServerSkills(response?.items || []);
     } catch (error) {
-      // A rolling deploy can put the CLI ahead of the runtime route. Existing
-      // agents keep working until the server catches up; other failures retry
-      // the event rather than silently omit installed instructions.
-      if (error?.status !== 404) throw error;
+      // Skill delivery is optional to the turn. A read failure must not stop
+      // every seat from spawning; report the missing observation explicitly.
+      if (error?.status !== 404) {
+        skillReadUnavailable = true;
+        log(`server skills unavailable (HTTP ${error?.status || 'no response'}); spawning without them`);
+      }
       serverSkills = compileServerSkills();
     }
     const promptWithSkills = serverSkills.text
@@ -1666,8 +1671,8 @@ export const performRun = ({
       };
     }
     let result;
-    let skillMount = serverSkills.mounted.length || serverSkills.conflicted.length
-      ? { mounted: serverSkills.mounted, conflicted: serverSkills.conflicted }
+    let skillMount = skillReadUnavailable || serverSkills.mounted.length || serverSkills.conflicted.length
+      ? { mounted: serverSkills.mounted, conflicted: serverSkills.conflicted, ...(skillReadUnavailable ? { status: 'unavailable' } : {}) }
       : null;
     let spawnCompleted = false;
     let commitAttribution = null;
@@ -1698,6 +1703,7 @@ export const performRun = ({
           skillMount = {
             mounted: [...new Set([...serverSkills.mounted, ...mounted.map(reportedSkillName)])],
             conflicted: [...new Set([...serverSkills.conflicted, ...conflicted.map(({ path }) => reportedSkillName(path))])],
+            ...(skillReadUnavailable ? { status: 'unavailable' } : {}),
           };
         },
         // Runtime context the Claude/Codex adapters expose only to their

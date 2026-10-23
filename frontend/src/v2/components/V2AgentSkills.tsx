@@ -4,7 +4,7 @@ import axios from '../../utils/axiosConfig';
 import './v2-agent-skills.css';
 
 interface SkillItem { name: string; description?: string | null; sourceUrl?: string | null }
-interface SkillLoad { at: string; mounted: string[]; conflicted: string[] }
+interface SkillLoad { at: string; mounted: string[]; conflicted: string[]; status?: 'available' | 'unavailable' }
 interface SkillsResponse { items: SkillItem[]; canEdit: boolean; skillLoad: SkillLoad | null }
 interface CatalogItem extends SkillItem { content?: string; license?: string | { name?: string } }
 
@@ -19,6 +19,7 @@ const loadLabel = (skill: SkillItem, load: SkillLoad | null, t: (key: string) =>
   const name = skill.name.toLowerCase();
   if (load.mounted.some((entry) => entry.toLowerCase() === name)) return t('agentSkills.loaded');
   if (load.conflicted.some((entry) => entry.toLowerCase() === name)) return t('agentSkills.conflicted');
+  if (load.status === 'unavailable') return t('agentSkills.unavailable');
   return t('agentSkills.notLoaded');
 };
 

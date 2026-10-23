@@ -1636,13 +1636,13 @@ router.post('/pods/:podId/skill-load', phase4RateLimit, agentRuntimeAuth, async 
     const validNames = (value: unknown): value is string[] => Array.isArray(value)
       && value.length <= 50
       && value.every((name) => typeof name === 'string' && name.length > 0 && name.length <= 120 && !/[\\/]/.test(name));
-    const { mounted, conflicted } = req.body || {};
-    if (!validNames(mounted) || !validNames(conflicted)) {
-      return res.status(400).json({ message: 'mounted and conflicted must be arrays of skill names' });
+    const { mounted, conflicted, status = 'available' } = req.body || {};
+    if (!validNames(mounted) || !validNames(conflicted) || !['available', 'unavailable'].includes(status)) {
+      return res.status(400).json({ message: 'mounted and conflicted must be arrays of skill names, with a valid status' });
     }
     await AgentInstallation.updateOne(
       { _id: installation._id, status: 'active' },
-      { $set: { skillLoad: { at: new Date(), mounted, conflicted } } },
+      { $set: { skillLoad: { at: new Date(), mounted, conflicted, status } } },
     );
     return res.json({ success: true });
   } catch (error) {

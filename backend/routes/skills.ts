@@ -313,7 +313,7 @@ router.get('/pods/:podId/imported', importedSkillsReadLimit, auth, async (req: A
       ? await AgentInstallation.findOne({ podId, agentName: agentName.toLowerCase(), instanceId, status: 'active' })
         .select('installedBy skillLoad').lean() as {
           installedBy?: { toString: () => string };
-          skillLoad?: { at?: Date; mounted?: string[]; conflicted?: string[] };
+          skillLoad?: { at?: Date; mounted?: string[]; conflicted?: string[]; status?: string };
         } | null
       : null;
     if (scope === 'agent' && !installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
@@ -325,6 +325,7 @@ router.get('/pods/:podId/imported', importedSkillsReadLimit, auth, async (req: A
     const load = installation?.skillLoad;
     const skillLoad = load?.at ? {
       at: load.at,
+      status: load.status || 'available',
       mounted: (load.mounted || []).filter((name) => installedNames.has(name.toLowerCase())),
       conflicted: (load.conflicted || []).filter((name) => installedNames.has(name.toLowerCase())),
     } : null;

@@ -65,10 +65,10 @@ export const createClient = ({ instance = null, token = undefined } = {}) => {
     baseUrl,
   };
 
-  const get = (path, params = {}) => {
+  const get = (path, params = {}, options = {}) => {
     const url = new URL(`${baseUrl}${path}`);
     Object.entries(params).forEach(([k, v]) => v != null && url.searchParams.set(k, v));
-    return fetch(url.toString(), { headers: headers(authToken) }).then((res) => handleResponse(res, session));
+    return fetch(url.toString(), { headers: headers(authToken), ...options }).then((res) => handleResponse(res, session));
   };
 
   const post = (path, body = {}) => fetch(`${baseUrl}${path}`, {

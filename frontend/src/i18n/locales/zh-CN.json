@@ -39,6 +39,7 @@
     "loaded": "上次运行已加载",
     "conflicted": "上次运行未能加载",
     "notLoaded": "上次运行未加载",
+    "unavailable": "上次运行时技能状态不可用",
     "reported": "上次运行报告 · {{date}}",
     "find": "查找技能",
     "search": "搜索目录",

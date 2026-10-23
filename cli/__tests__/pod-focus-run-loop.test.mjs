@@ -115,7 +115,41 @@ describe('performRun pod-focus turn seam', () => {
     await drain();
     second.stop();
     expect(spawn.mock.calls[1][0]).not.toContain('## Skill: review');
-    expect(get).toHaveBeenCalledWith('/api/agents/runtime/pods/pod-focus/skills');
+    expect(get).toHaveBeenCalledWith('/api/agents/runtime/pods/pod-focus/skills', {}, {
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  test('a failed server skill read still spawns and reports unavailable', async () => {
+    const get = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') return { events: [event({ _id: 'skill-read-500' })] };
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/context')) return { focus: { podId: 'pod-focus', revision: 0, focus: null } };
+      if (route.endsWith('/skills')) throw Object.assign(new Error('skills unavailable'), { status: 500 });
+      return {};
+    });
+    const post = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn().mockResolvedValue({ text: 'done' });
+    const log = jest.fn();
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_skills',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'focus-stub', setTimeoutImpl: noopTimeout, log,
+    });
+    await drain();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0]).not.toContain('## Skill:');
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('server skills unavailable (HTTP 500)'));
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/pods/pod-focus/skill-load', {
+      mounted: [], conflicted: [], status: 'unavailable',
+    });
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/skill-read-500/ack', {
+      result: { outcome: 'posted' },
+    });
   });
 
   test('a rejected spawn does not report server or adapter skills as loaded', async () => {

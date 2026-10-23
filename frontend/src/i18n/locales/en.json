@@ -39,6 +39,7 @@
     "loaded": "Loaded at last spawn",
     "conflicted": "Could not load at last spawn",
     "notLoaded": "Not loaded at last spawn",
+    "unavailable": "Skill status unavailable at last spawn",
     "reported": "Last spawn report · {{date}}",
     "find": "Find a skill",
     "search": "Search catalog",
