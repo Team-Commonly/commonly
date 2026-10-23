@@ -4179,6 +4179,6 @@ Gates that never appear in metadata decided several more, including the client a
 
 *Origin: TASK-375. A hosted agent had `agentName: native` and `instanceId: scout`. Calling `DELETE /api/registry/agents/scout/pods/:podId` missed the installation lookup, then returned HTTP 200 with `removedOrphan: true`; the installation remained active. A service test reproduces the response on the old route.*
 
-**Repair:** the orphan cleanup path now requires evidence it can remove a pod profile or membership, or revoke a credential with no active installation. Otherwise it returns 404 and tells the caller to use the agent name in the path and instance ID in the query. The real orphan token cleanup remains covered by a service test.
+**Repair:** the orphan cleanup path now requires evidence it can remove a pod profile or membership, or revoke a credential with no active installation. It checks the bot's stored agent name and instance ID before touching a derived username, which can collide across identities. Otherwise it returns 404 and tells the caller to use the agent name in the path and instance ID in the query. The real orphan token cleanup remains covered by a service test.
 
 **Lesson:** a cleanup fallback must prove it found something to clean before returning success. A successful HTTP status with an outcome-shaped field can make an agent stop retrying while the requested state never changed.

@@ -270,6 +270,23 @@ describe('revoking a runtime token kills it in every store', () => {
       .toBe('active');
   });
 
+  test('a colliding derived username cannot clean another installed agent identity', async () => {
+    const { workspace } = await seed();
+    const hosted = await AgentInstallation.create({
+      agentName: 'native', instanceId: 'scout', podId: workspace._id,
+      installedBy: mockOwner.id, status: 'active', version: '1.0.0',
+    });
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser('native', { instanceId: 'scout' });
+    const { token } = await issueRuntimeTokenForAgent(agentUser, 'colliding', null, {
+      ownerUserId: mockOwner.id,
+    });
+
+    const result = await request(app).delete(`/api/registry/agents/native-scout/pods/${workspace._id}`);
+    expect(result.status).toBe(404);
+    expect((await AgentInstallation.findById(hosted._id)).status).toBe('active');
+    expect((await probe(token)).status).toBe(200);
+  });
+
   test('admin repeat uninstall cleans credentials stranded by an older path', async () => {
     const { workspaceInstall } = await seed();
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });

@@ -63,8 +63,10 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
 
       const resolvedType = AgentIdentityService.resolveAgentType(name);
       const username = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
-      const agentUser = await User.findOne({ username, isBot: true })
-        .select('_id agentRuntimeTokens').lean();
+      const candidateUser = await User.findOne({ username, isBot: true })
+        .select('_id agentRuntimeTokens botMetadata').lean();
+      const agentUser = candidateUser?.botMetadata?.agentName === resolvedType
+        && candidateUser?.botMetadata?.instanceId === instanceId ? candidateUser : null;
       const hasProfile = await AgentProfile.exists({ agentId: buildAgentProfileId(name, instanceId), podId });
       const hasMembership = agentUser && pod.members?.some((member: any) => (
         String(member?.userId || member) === String(agentUser._id)
@@ -84,15 +86,14 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
       }
 
       await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
-      // Older uninstall paths could leave a bearer on an orphaned User row.
-      await revokeRuntimeTokensAfterLastUninstall(name, instanceId);
-      try {
-        await AgentIdentityService.removeAgentFromPod(
-          AgentIdentityService.buildAgentUsername(resolvedType, instanceId),
-          podId,
-        );
-      } catch (identityError: unknown) {
-        console.warn('Failed to remove agent user from pod:', (identityError as Error).message);
+      if (agentUser) {
+        // Older uninstall paths could leave a bearer on an orphaned User row.
+        await revokeRuntimeTokensAfterLastUninstall(name, instanceId);
+        try {
+          await AgentIdentityService.removeAgentFromPod(username, podId);
+        } catch (identityError: unknown) {
+          console.warn('Failed to remove agent user from pod:', (identityError as Error).message);
+        }
       }
 
       return res.json({ success: true, removedOrphan: true });
