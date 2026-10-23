@@ -237,8 +237,8 @@ exports.startOAuth = async (req: any, res: any) => {
     });
     if (provider === 'google') params.set('response_type', 'code');
     return res.redirect(`${p.authorizeUrl}?${params.toString()}`);
-  } catch (err: any) {
-    console.error('OAuth start failed:', err.message);
+  } catch {
+    console.error('OAuth start failed');
     return res.status(500).json({ error: 'Failed to start OAuth flow' });
   }
 };
@@ -349,10 +349,10 @@ exports.oauthCallback = async (req: any, res: any) => {
 
     const dest = new URLSearchParams({ code: exchangeCode, next: stateRow.next || '/v2' });
     return res.redirect(`${frontendUrl()}/v2/oauth/complete?${dest.toString()}`);
-  } catch (err: any) {
+  } catch {
     // provider is user-controlled (req.params) — keep it out of the format
     // string (CodeQL js/tainted-format-string).
-    console.error('OAuth callback failed for provider:', provider, err?.response?.data || err.message);
+    console.error('OAuth callback failed for provider:', provider);
     return loginErrorRedirect(res, 'provider_error');
   }
 };

@@ -174,6 +174,24 @@ test('a browser that did not start the flow is refused, and the flow survives it
   expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
 });
 
+test('a secret-store failure after exchange ends the real pending row and redirects', async () => {
+  const id = await seedPending({ state: 'st-secret-fail' });
+  exchange();
+  connectorSecrets.put.mockRejectedValueOnce(new Error('secret store failed: access-1'));
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const res = await callback('st-secret-fail');
+    expect(res.status).toBe(302);
+    expect(outcome(res)).toEqual({ hostedMcp: 'error', code: 'connector_unavailable' });
+    const row = await Integration.findById(id).lean();
+    expect(row.status).toBe('error');
+    expect(row.config.pendingAuth).toBeUndefined();
+    expect(JSON.stringify(log.mock.calls)).not.toContain('access-1');
+  } finally {
+    log.mockRestore();
+  }
+});
+
 test('a vendor that issues no ID token CLEARS the stored subject rather than keeping a stale one', async () => {
   const id = await seedPending({ state: 'st-clear', subject: 'acct-old' });
   exchange();

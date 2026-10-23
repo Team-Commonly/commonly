@@ -192,6 +192,20 @@ describe('OAuth Controller', () => {
       get: () => 'api.test.local',
     });
 
+    it('redirects a failed token exchange without logging token-shaped error text', async () => {
+      await seedState();
+      axios.post.mockRejectedValueOnce(new Error('access_token=secret-value'));
+      const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const res = mockRes();
+        await oauthController.oauthCallback(callbackReq(), res);
+        expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=provider_error');
+        expect(JSON.stringify(log.mock.calls)).not.toContain('secret-value');
+      } finally {
+        log.mockRestore();
+      }
+    });
+
     it('creates a new verified passwordless user and redirects with an exchange code', async () => {
       await seedState();
       mockGithubProfile();

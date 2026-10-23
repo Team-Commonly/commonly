@@ -1,6 +1,10 @@
 const { attachSentryErrorHandler } = require('./instrument');
 export {};
 const express = require('express');
+// Express 4 does not forward rejected async route promises to error middleware.
+// Load before route modules register their handlers so a missed route-level
+// catch reaches finalErrorHandler instead of becoming an unhandled rejection.
+require('express-async-errors');
 const cors = require('cors');
 const _path = require('path');
 const dotenv = require('dotenv');
