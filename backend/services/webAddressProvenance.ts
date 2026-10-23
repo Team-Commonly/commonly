@@ -75,8 +75,22 @@ const parseAddress = (raw: string): { key: string; url: string } | null => {
 /** The comparable form of one written address, or null when it is not one. */
 export const addressKey = (raw: string): string | null => parseAddress(raw)?.key ?? null;
 
+/**
+ * How many texts have been scanned for addresses, ever, in this process.
+ *
+ * Instrumentation, not behaviour: the no-rescan guarantee below ("each given
+ * text is scanned once, and a refused attempt costs no rescan") used to be
+ * asserted with a wall clock, which measures the shared CI runner as much as
+ * the code and flaked at 62 ms against a 50 ms budget (TASK-347). A rescan is
+ * a count, so count it: one rescan fails the test, and a slow machine does
+ * not. Monotonic and never read by anything here.
+ */
+let textScans = 0;
+export const textScanCount = (): number => textScans;
+
 /** Every address written in `text`, keyed by its comparable form, first writing kept. */
 const writtenAddresses = (text: string): Map<string, string> => {
+  textScans += 1;
   const found = new Map<string, string>();
   for (const token of String(text || '').split(TOKEN_SEPARATORS)) {
     if (!token.includes('.')) continue;

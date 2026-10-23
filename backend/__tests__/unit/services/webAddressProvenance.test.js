@@ -13,7 +13,7 @@
  */
 
 const {
-  addressKey, addressesIn, addressWasGiven, GivenAddresses,
+  addressKey, addressesIn, addressWasGiven, GivenAddresses, textScanCount,
 } = require('../../../services/webAddressProvenance');
 
 describe('webAddressProvenance', () => {
@@ -144,14 +144,27 @@ describe('webAddressProvenance', () => {
       expect(given.resolve('')).toBeNull();
     });
 
+    // Counted, not timed. This assertion was a 50 ms budget for 1,000 lookups,
+    // which measures the runner as much as the code: it flaked at 62.47 ms on
+    // #1768 and again on #2446 (TASK-347). A rescan is a count, so count it —
+    // ONE rescan fails this now, where the clock needed enough of them to
+    // exceed a budget, and a cold or loaded machine no longer fails it at all.
     test('each text is scanned once: refused attempts against three hostile pages cost no rescan', () => {
       const given = new GivenAddresses();
-      const page = Array.from({ length: 400 }, (_, i) => `https://h${i}.example/p${'!'.repeat(50)}x`).join(' ');
-      [page, page, page].forEach((text) => given.add(text));
+      const address = (i) => `https://h${i}.example/p${'!'.repeat(50)}x`;
+      const page = Array.from({ length: 400 }, (_, i) => address(i)).join(' ');
 
-      const started = process.hrtime.bigint();
-      for (let i = 0; i < 1000; i += 1) given.has(`https://attacker.example/c?d=${i}`);
-      expect(Number(process.hrtime.bigint() - started) / 1e6).toBeLessThan(50);
+      const beforeAdds = textScanCount();
+      [page, page, page].forEach((text) => given.add(text));
+      expect(textScanCount() - beforeAdds).toBe(3);
+
+      const afterAdds = textScanCount();
+      for (let i = 0; i < 1000; i += 1) {
+        expect(given.has(`https://attacker.example/c?d=${i}`)).toBe(false);
+      }
+      // An accepted attempt is a lookup too, so it may not rescan either.
+      expect(given.has(address(7))).toBe(true);
+      expect(textScanCount()).toBe(afterAdds);
     });
   });
 });
