@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ActGlyph, KindGlyph } from '../icons/glyphs';
 import { AuthContext } from '../../context/AuthContext';
@@ -46,7 +46,7 @@ interface NeedsYouItem {
   // A settled decision keeps its ruling (from durable history) so the 0-state
   // can say when the last ask was answered.
   ruling?: { value?: string; by?: string; at?: string | null } | null;
-  kind: 'mention' | 'approval' | 'decision' | 'handoff';
+  kind: 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
   title: string;
   detail: string;
   podId: string | null;
@@ -162,12 +162,14 @@ const relativeTime = (value: string | null | undefined): string => {
 };
 
 const V2ActivityPage: React.FC = () => {
+  const location = useLocation();
   const navigate = useNavigate();
   const { t } = useTranslation();
   const auth = useContext(AuthContext);
   const currentUser = auth?.currentUser || null;
   const authLoading = auth?.loading || false;
   const accountId = currentUser?._id ? String(currentUser._id) : null;
+  const emailTargetRef = useRef(new URLSearchParams(location.search).get('item'));
   const restoredSnapshotRef = useRef<ActivitySnapshot | null>(null);
   const snapshotAccountRef = useRef<string | null | undefined>(undefined);
   const [snapshotReady, setSnapshotReady] = useState(false);
@@ -663,6 +665,17 @@ const V2ActivityPage: React.FC = () => {
     void loadMoreQueue(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueHydrated, queue.length, queueRemaining, queueLoadingMore, queueMoreError, queueFailed]);
+
+  useEffect(() => {
+    const target = emailTargetRef.current;
+    if (!target || !queueHydrated || !queue.some((item) => item.attentionItemId === target)) return;
+    emailTargetRef.current = null;
+    globalThis.window.requestAnimationFrame(() => {
+      const row = document.querySelector<HTMLElement>(`[data-attention-id="${CSS.escape(target)}"]`);
+      row?.scrollIntoView({ block: 'center' });
+      row?.focus({ preventScroll: true });
+    });
+  }, [queue, queueHydrated]);
 
   // Stall detector (sprint-review 66417): a next page is expected, nothing is
   // fetching it, and no error cleared the expectation. Normal paging starts
@@ -1242,7 +1255,7 @@ const V2ActivityPage: React.FC = () => {
               {visibleQueue.length > 0 && (
               <div className="v2-activity__queue">
                 {visibleQueue.map((item) => (
-                  <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
+                  <article key={item.id} data-activity-item-id={item.id} data-attention-id={item.attentionItemId} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
                     {/* The kind is a category, so it is a mark (Sam 2026-09-11, direction A); the word stays for
                         assistive tech. The mark's colour still says who is asking: an agent is cobalt. */}
                     <span className={`v2-activity__queue-mark${item.actorName ? (isAgentActor(item) ? ' v2-activity__queue-mark--agent' : ' v2-activity__queue-mark--human') : ''}`} role="img" aria-label={t(`activity.needsYou.kinds.${item.kind}`)} title={t(`activity.needsYou.kinds.${item.kind}`)}>
@@ -1277,7 +1290,7 @@ const V2ActivityPage: React.FC = () => {
                           </button>
                         </>
                       )}
-                      {item.kind === 'handoff' && (
+                      {(item.kind === 'handoff' || item.kind === 'blocked') && (
                         <button type="button" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
                           {acknowledgingAttentionId === item.id ? t('activity.handoff.working', { defaultValue: 'Saving…' }) : t('activity.handoff.markHandled', { defaultValue: 'Mark handled' })}
                         </button>

@@ -125,6 +125,7 @@
         "approval": "approval",
         "decision": "decision",
         "handoff": "handoff",
+        "blocked": "blocked",
         "press": "ready for your press"
       },
       "countLabel": "{{count}} waiting on you",

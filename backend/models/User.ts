@@ -188,6 +188,7 @@ export interface IUser extends Document {
   };
   emailPreferences: {
     dailyDigest: boolean;
+    needsYou: boolean;
   };
   digestUnsubscribeToken?: string;
   lastActive: Date;
@@ -417,6 +418,7 @@ const userSchema = new Schema<IUser>({
   },
   emailPreferences: {
     dailyDigest: { type: Boolean, default: true },
+    needsYou: { type: Boolean, default: true },
   },
   // Capability token: it can only disable digest mail. Hidden from normal
   // User projections and generated lazily when the first email is sent.

@@ -125,6 +125,7 @@
         "approval": "审批",
         "decision": "待你决策",
         "handoff": "交接",
+        "blocked": "受阻",
         "press": "待你合并"
       },
       "countLabel": "{{count}}项等你处理",

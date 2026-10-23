@@ -5,6 +5,8 @@ const express = require('express');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+// eslint-disable-next-line global-require
+const { recordNeedsYouClick } = require('../services/needsYouEmailService');
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
@@ -42,6 +44,37 @@ router.get('/unsubscribe/:token', unsubscribeRateLimit, async (req: any, res: an
   } catch (error) {
     console.error('Email unsubscribe failed:', (error as Error)?.message || error);
     return res.status(500).send('Unable to update email preferences');
+  }
+});
+
+router.get('/unsubscribe/needs-you/:token', unsubscribeRateLimit, async (req: any, res: any) => {
+  try {
+    const token = req.params?.token;
+    if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token)) return res.status(404).send('Unsubscribe link not found');
+    const user = await User.findOneAndUpdate(
+      { digestUnsubscribeToken: token },
+      { $set: { 'emailPreferences.needsYou': false } },
+      { new: true },
+    );
+    if (!user) return res.status(404).send('Unsubscribe link not found');
+    return res.status(200).type('html').send(confirmationPage
+      .replace('Digest emails disabled', 'Needs-you emails disabled')
+      .replace('Daily digests are off', 'Needs-you emails are off')
+      .replace('You will no longer receive Commonly daily digest emails.', 'You will no longer receive Commonly needs-you emails.'));
+  } catch (error) {
+    console.error('Needs-you unsubscribe failed:', (error as Error)?.message || error);
+    return res.status(500).send('Unable to update email preferences');
+  }
+});
+
+router.get('/needs-you/open/:token', unsubscribeRateLimit, async (req: any, res: any) => {
+  try {
+    const url = await recordNeedsYouClick(req.params?.token);
+    if (!url) return res.status(404).send('Email link not found');
+    return res.redirect(302, url);
+  } catch (error) {
+    console.error('Needs-you email click failed:', (error as Error)?.message || error);
+    return res.status(500).send('Unable to open email link');
   }
 });
 

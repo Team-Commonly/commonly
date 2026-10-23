@@ -13,6 +13,10 @@ const Message = require('../models/Message');
 const PGMessage = require('../models/pg/Message');
 const Task = require('../models/Task');
 // eslint-disable-next-line global-require
+const { AgentInstallation } = require('../models/AgentRegistry');
+// eslint-disable-next-line global-require
+const { sendNeedsYouEmail } = require('./needsYouEmailService');
+// eslint-disable-next-line global-require
 const { ESCALATION_MARKERS } = require('./connectorRelayPolicy');
 // eslint-disable-next-line global-require
 const { humansAnsweredBy } = require('./agentAnswerService');
@@ -20,11 +24,13 @@ const { humansAnsweredBy } = require('./agentAnswerService');
 const { isListedPodMember } = require('../utils/isPodMember');
 
 type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task';
-type Kind = 'mention' | 'approval' | 'decision' | 'handoff';
+type Kind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
 type MentionOptions = {
   isAlreadyAcknowledged?: (recipientUserId: unknown, legacyMentionId: string) => boolean;
+  suppressEmail?: boolean;
 };
-type TaskAttentionOptions = { includeBlocked?: boolean };
+type TaskAttentionOptions = { includeBlocked?: boolean; suppressEmail?: boolean };
+type RecordOptions = { suppressEmail?: boolean };
 
 const compact = (value: unknown, max = 220): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 const sourceKey = (type: SourceType, id: unknown): string => String(id || '').trim();
@@ -40,32 +46,66 @@ const currentHumanMembers = async (podId: unknown): Promise<Array<{ _id: unknown
   return users.filter((user: any) => isListedPodMember(pod, user._id));
 };
 
+const installerForAgent = async (
+  agentUserId: unknown, podId: unknown, declaredName?: unknown, declaredInstanceId?: unknown,
+): Promise<string | null> => {
+  try {
+    const agent = agentUserId
+      ? await User.findById(agentUserId).select('isBot username botMetadata').lean() : null;
+    if (agent?.isBot && agent.botMetadata?.ownerUserId) return String(agent.botMetadata.ownerUserId);
+    const name = String(declaredName || (agent?.isBot && (agent.botMetadata?.agentName || agent.username)) || '').toLowerCase();
+    if (!name) return null;
+    const instanceId = String(declaredInstanceId || agent?.botMetadata?.instanceId || 'default');
+    const installation = await AgentInstallation.findOne({
+      podId, agentName: name, instanceId, status: { $ne: 'uninstalled' },
+    }).select('installedBy').lean();
+    return installation?.installedBy ? String(installation.installedBy) : null;
+  } catch (error) {
+    // The attention row still matters if its optional email owner cannot be
+    // resolved. Never send to the pod creator as a fallback.
+    console.warn('[attention] email owner lookup failed:', (error as Error).message);
+    return null;
+  }
+};
+
 const recordForRecipients = async (
   recipients: Array<{ _id: unknown }>,
   payload: Record<string, unknown>,
 ): Promise<void> => {
-  await Promise.all(recipients.map((recipient) => AttentionItem.updateOne(
-    { recipientUserId: recipient._id, 'source.type': payload.sourceType, 'source.id': payload.sourceId },
-    {
-      $setOnInsert: {
-        recipientUserId: recipient._id,
-        podId: payload.podId,
-        kind: payload.kind,
-        source: { type: payload.sourceType, id: payload.sourceId },
-        title: payload.title,
-        detail: payload.detail,
-        podName: payload.podName,
-        actorName: payload.actorName,
-        actorUserId: payload.actorUserId,
-        messageId: payload.messageId,
-        threadRootId: payload.threadRootId,
-        options: payload.options,
-        sourceCreatedAt: payload.sourceCreatedAt,
-        status: 'open',
+  await Promise.all(recipients.map(async (recipient) => {
+    const result = await AttentionItem.updateOne(
+      { recipientUserId: recipient._id, 'source.type': payload.sourceType, 'source.id': payload.sourceId },
+      {
+        $setOnInsert: {
+          recipientUserId: recipient._id,
+          podId: payload.podId,
+          kind: payload.kind,
+          source: { type: payload.sourceType, id: payload.sourceId },
+          title: payload.title,
+          detail: payload.detail,
+          podName: payload.podName,
+          actorName: payload.actorName,
+          actorUserId: payload.actorUserId,
+          messageId: payload.messageId,
+          threadRootId: payload.threadRootId,
+          options: payload.options,
+          sourceCreatedAt: payload.sourceCreatedAt,
+          status: 'open',
+        },
       },
-    },
-    { upsert: true },
-  )));
+      { upsert: true },
+    );
+    // Only the authoritative first insert can email. A retry, a backfill, or
+    // another member's copy of the same ask cannot send a second alert.
+    if (result?.upsertedId && !payload.suppressEmail && payload.kind !== 'mention'
+      && String(payload.emailRecipientId || '') === String(recipient._id)) {
+      await sendNeedsYouEmail({
+        _id: result.upsertedId, recipientUserId: recipient._id,
+        title: String(payload.title || ''), detail: String(payload.detail || ''),
+        podName: String(payload.podName || ''), actorName: String(payload.actorName || ''),
+      });
+    }
+  }));
 };
 
 const resolveAuthorName = async (authorId: unknown): Promise<string> => {
@@ -125,6 +165,32 @@ export const recordMentionedUsers = async (message: any, options: MentionOptions
     if (!podId || messageId === undefined || messageId === null) return;
     const authorId = message?.userId?._id || message?.userId || message?.user_id;
     const content = String(message?.content || message?.text || '');
+    if (/^\s*\[BLOCKED\]/i.test(content)) {
+      try {
+        const installerId = await installerForAgent(authorId, podId);
+        if (installerId) {
+          const members = await currentHumanMembers(podId);
+          const installer = members.find((member) => String(member._id) === installerId);
+          if (installer) {
+            const pod = await Pod.findById(podId).select('name').lean();
+            const actorName = await resolveAuthorName(authorId);
+            await recordForRecipients([installer], {
+              podId, kind: 'blocked' as Kind, sourceType: 'message' as SourceType,
+              sourceId: sourceKey('message', messageId),
+              title: `${actorName} is blocked`, detail: compact(content),
+              actorName, actorUserId: authorId, podName: pod?.name || 'Pod',
+              messageId: String(messageId),
+              threadRootId: String(message?.threadRootId || message?.thread_root_id || messageId),
+              sourceCreatedAt: message?.createdAt || message?.created_at || undefined,
+              emailRecipientId: installerId, suppressEmail: options.suppressEmail,
+            });
+          }
+        }
+      } catch (error) {
+        // A failing ownership lookup must not hide an explicit @mention.
+        console.warn('[attention] blocked-message materialization failed:', (error as Error).message);
+      }
+    }
     // Message delivery invokes this writer for every post. Avoid two Mongo
     // reads on the common no-mention path; every valid @mention contains this
     // sentinel, so the guard cannot hide a recipient.
@@ -325,7 +391,7 @@ export const sweepMissedAgentMentions = async (
   return { scanned: rows.length, eligible: ids.length, missed: Number(result.modifiedCount || 0) };
 };
 
-export const recordApproval = async (approval: any): Promise<void> => {
+export const recordApproval = async (approval: any, options: RecordOptions = {}): Promise<void> => {
   try {
     const podId = approval?.podId;
     const id = approval?._id || approval?.id;
@@ -333,6 +399,9 @@ export const recordApproval = async (approval: any): Promise<void> => {
     const recipients = await currentHumanMembers(podId);
     const pod = await Pod.findById(podId).select('name').lean();
     const agentName = approval?.agentMetadata?.agentName;
+    const emailRecipientId = await installerForAgent(
+      approval?.agentUserId, podId, agentName,
+    );
     await recordForRecipients(recipients, {
       podId, kind: 'approval' as Kind, sourceType: 'approval' as SourceType, sourceId: sourceKey('approval', id),
       title: agentName ? `${agentName} requests approval` : 'Approval requested', actorName: agentName || undefined,
@@ -340,6 +409,7 @@ export const recordApproval = async (approval: any): Promise<void> => {
       // requester when the source carries one, else leave it unset.
       actorUserId: approval?.approval?.requestedBy || approval?.agentUserId || approval?.actorId || undefined,
       detail: compact(approval?.content, 180), podName: pod?.name || 'Pod',
+      emailRecipientId, suppressEmail: options.suppressEmail,
     });
   } catch (error) {
     console.warn('[attention] approval materialization failed:', (error as Error).message);
@@ -351,7 +421,7 @@ export const recordApproval = async (approval: any): Promise<void> => {
 // (ux-lead ruling on #1650). It is its own source type because it resolves
 // through /api/approvals/:id/resolve, not the Activity approve/reject verbs —
 // the page branches on `sourceType`, never on a guess about the id.
-export const recordActionApproval = async (row: any, displayName?: string | null): Promise<void> => {
+export const recordActionApproval = async (row: any, displayName?: string | null, options: RecordOptions = {}): Promise<void> => {
   try {
     const podId = row?.podId;
     const id = row?._id || row?.id;
@@ -370,29 +440,32 @@ export const recordActionApproval = async (row: any, displayName?: string | null
       title: label ? `${label} requests approval` : 'Approval requested', actorName: label || undefined,
       actorUserId: row?.agentUserId ? String(row.agentUserId) : undefined,
       detail: compact(row?.summary, 180), podName: pod?.name || 'Pod',
+      emailRecipientId: owner, suppressEmail: options.suppressEmail,
     });
   } catch (error) {
     console.warn('[attention] action-approval materialization failed:', (error as Error).message);
   }
 };
 
-export const recordDecision = async (decision: any): Promise<void> => {
+export const recordDecision = async (decision: any, options: RecordOptions = {}): Promise<void> => {
   try {
     const podId = decision?.podId;
     const id = decision?._id || decision?.id;
     if (!podId || !id) return;
     const recipients = await currentHumanMembers(podId);
     const pod = await Pod.findById(podId).select('name').lean();
-    const options = (decision.options || []).filter((option: any) => option?.label).map((option: any) => ({
+    const emailRecipientId = await installerForAgent(decision.agentUserId, podId, decision.agentName, decision.instanceId);
+    const choiceOptions = (decision.options || []).filter((option: any) => option?.label).map((option: any) => ({
       label: String(option.label), ...(option.description ? { description: String(option.description) } : {}),
       ...(option.recommended ? { recommended: true } : {}),
     }));
     await recordForRecipients(recipients, {
       podId, kind: 'decision' as Kind, sourceType: 'decision_request' as SourceType, sourceId: sourceKey('decision_request', id),
       title: String(decision.title || 'Decision requested'), detail: compact(decision.question || decision.context, 1000),
-      actorUserId: decision.agentUserId || undefined,
+      actorName: decision.agentName || undefined, actorUserId: decision.agentUserId || undefined,
       podName: pod?.name || 'Pod', messageId: decision.messageId ? String(decision.messageId) : undefined,
-      threadRootId: String(decision.threadRootId || decision.messageId || ''), options,
+      threadRootId: String(decision.threadRootId || decision.messageId || ''), options: choiceOptions,
+      emailRecipientId, suppressEmail: options.suppressEmail,
     });
   } catch (error) {
     console.warn('[attention] decision materialization failed:', (error as Error).message);
@@ -452,14 +525,22 @@ export const recordTaskAttention = async (task: any, options: TaskAttentionOptio
     const handoff = mightAsk && isHandoffRequest(text, members.map((member) => String(member.username || '')));
     if (!handoff && !(options.includeBlocked && blocked)) return;
     const pod = await Pod.findById(task.podId).select('name createdBy').lean();
-    const recipients = handoffRecipients(members, text, pod?.createdBy);
+    const namedRecipient = members.find((member) => String(member.username || '').toLowerCase() === String(task.assignee || '').toLowerCase())
+      || members.find((member) => named(text, String(member.username || '')));
+    const emailRecipientId = namedRecipient
+      ? String(namedRecipient._id)
+      : await installerForAgent(last?.authorId, task.podId);
+    const installerRecipient = members.find((member) => String(member._id) === emailRecipientId);
+    const recipients = namedRecipient ? [namedRecipient]
+      : installerRecipient ? [installerRecipient] : handoffRecipients(members, text, pod?.createdBy);
     const taskKey = String(task._id || task.taskId);
     const sequence = String(last?._id || last?.createdAt?.getTime?.() || task.updatedAt?.getTime?.() || taskKey);
     await recordForRecipients(recipients, {
-      podId: task.podId, kind: 'handoff' as Kind, sourceType: 'task' as SourceType,
+      podId: task.podId, kind: (blocked ? 'blocked' : 'handoff') as Kind, sourceType: 'task' as SourceType,
       sourceId: `${taskKey}:${sequence}`,
       title: String(task.title || 'Task needs attention'), detail: compact(last?.text || task.notes, 220),
       podName: pod?.name || 'Pod',
+      emailRecipientId, suppressEmail: options.suppressEmail,
     });
   } catch (error) {
     console.warn('[attention] task materialization failed:', (error as Error).message);
@@ -688,7 +769,7 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   const podIds = [...new Set(visible.map((row: any) => String(row.podId)))];
   const pods = await Pod.find({ _id: { $in: podIds } }).select('_id name members').lean();
   const allowed = new Map(pods.filter((pod: any) => isListedPodMember(pod, recipientUserId)).map((pod: any) => [String(pod._id), pod]));
-  const priority: Record<string, number> = { approval: 0, decision: 1, handoff: 1, mention: 2 };
+  const priority: Record<string, number> = { approval: 0, decision: 1, handoff: 1, blocked: 1, mention: 2 };
   const renderKind = (row: any): Kind => (
     row.kind === 'decision' && row.source?.type === 'task' ? 'handoff' : row.kind
   );
@@ -776,6 +857,7 @@ export const acknowledgeAttention = async (recipientUserId: unknown, attentionIt
       $or: [
         { kind: 'mention' },
         { kind: 'handoff' },
+        { kind: 'blocked' },
         { kind: 'decision', 'source.type': 'task' },
       ],
     },

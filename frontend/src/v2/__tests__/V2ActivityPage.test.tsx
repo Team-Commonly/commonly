@@ -93,6 +93,30 @@ describe('V2ActivityPage', () => {
     await act(async () => { await i18n.changeLanguage('en'); });
   });
 
+  test('a needs-you email link opens and focuses its blocked ask', async () => {
+    const blocked = {
+      id: 'message-45', attentionItemId: 'attention-45', kind: 'blocked',
+      title: 'Scout is blocked', detail: 'Needs the staging key',
+      podId: 'pod-1', podName: 'Launch pod', createdAt: new Date().toISOString(),
+    };
+    mockGet.mockImplementation((url: string) => Promise.resolve({
+      data: url === '/api/activity/decision-queue'
+        ? { items: [blocked], count: 1, countsByPod: { 'pod-1': 1 } }
+        : { ...recap, needsYou: [] },
+    }));
+    HTMLElement.prototype.scrollIntoView = jest.fn();
+    render(
+      <MemoryRouter initialEntries={['/v2/activity?item=attention-45']}>
+        <V2ActivityPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Scout is blocked')).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-attention-id="attention-45"]')).toHaveFocus());
+    expect(screen.getByRole('img', { name: 'blocked' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark handled' })).toBeInTheDocument();
+  });
+
   test('projects the needs-you queue and moved-forward groups without inventing a count', async () => {
     mockGet.mockImplementation((url: string) => {
       if (url === '/api/activity/decision-queue') return Promise.resolve({ data: decisionQueue });

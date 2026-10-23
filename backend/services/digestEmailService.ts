@@ -7,6 +7,10 @@ const User = require('../models/User');
 const { sendEmail } = require('./emailService');
 // eslint-disable-next-line global-require
 const SystemSetting = require('../models/SystemSetting');
+// eslint-disable-next-line global-require
+const NeedsYouEmail = require('../models/NeedsYouEmail');
+// eslint-disable-next-line global-require
+const AttentionItem = require('../models/AttentionItem');
 
 /**
  * The switch that stops digest SENDING in seconds, with no deploy and no
@@ -60,7 +64,6 @@ interface DigestUser {
   emailPreferences?: { dailyDigest?: boolean };
   digestUnsubscribeToken?: string;
   getOrCreateDigestUnsubscribeToken: () => string;
-  save: () => Promise<unknown>;
 }
 
 export interface DigestEmailResult {
@@ -100,7 +103,7 @@ export const extractTopItems = (content: string | undefined, limit = 5): string[
   return candidates.map(cleanMarkdownLine).filter(Boolean).slice(0, limit);
 };
 
-const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string) => {
+const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string, heldAsks: string[] = []) => {
   const title = summary.title || 'Your Commonly daily digest';
   const items = extractTopItems(summary.content);
   const frontendUrl = primaryUrl(process.env.FRONTEND_URL, 'http://localhost:3000');
@@ -116,14 +119,18 @@ const buildEmailBodies = (summary: DigestSummary, unsubscribeToken: string) => {
   const htmlItems = items.length > 0
     ? `<ul style="margin:16px 0;padding-left:22px;color:#111827;line-height:1.55;">${items.map((item) => `<li style="margin:0 0 8px;">${escapeHtml(item)}</li>`).join('')}</ul>`
     : '<p style="margin:16px 0;color:#4b5563;line-height:1.55;">Open Commonly to catch up on today&#39;s activity.</p>';
+  const heldText = heldAsks.length ? `\n\nWaiting on you:\n${heldAsks.map((ask) => `- ${ask}`).join('\n')}` : '';
+  const heldHtml = heldAsks.length
+    ? `<h2 style="font-size:16px">Waiting on you</h2><ul>${heldAsks.map((ask) => `<li>${escapeHtml(ask)}</li>`).join('')}</ul>`
+    : '';
 
   return {
     subject: title,
-    textBody: `${title}\n\n${textItems}\n\nOpen Commonly: ${appUrl}\n\nUnsubscribe from daily digests: ${unsubscribeUrl}`,
+    textBody: `${title}\n\n${textItems}${heldText}\n\nOpen Commonly: ${appUrl}\n\nUnsubscribe from daily digests: ${unsubscribeUrl}`,
     // Email clients cannot reliably consume the app's CSS variables, so these
     // inline values mirror the canonical Commonly tokens: accent, text,
     // border, and system-font stack. Digest content is escaped above.
-    htmlBody: `<!doctype html><html><body style="margin:0;background:#f8f8fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111827;"><main style="max-width:600px;margin:0 auto;padding:32px 20px;"><section style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;"><h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;letter-spacing:-0.03em;">${escapeHtml(title)}</h1>${htmlItems}<p style="margin:24px 0 0;"><a href="${escapeHtml(appUrl)}" style="display:inline-block;background:#2f6feb;color:#ffffff;text-decoration:none;font-weight:600;border-radius:8px;padding:10px 16px;">Open Commonly</a></p></section><p style="margin:16px 0 0;text-align:center;color:#7b8494;font-size:12px;line-height:1.45;">You receive this because daily digests are enabled for your Commonly account. <a href="${escapeHtml(unsubscribeUrl)}" style="color:#2456c8;">Unsubscribe</a></p></main></body></html>`,
+    htmlBody: `<!doctype html><html><body style="margin:0;background:#f8f8fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111827;"><main style="max-width:600px;margin:0 auto;padding:32px 20px;"><section style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;"><h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;letter-spacing:-0.03em;">${escapeHtml(title)}</h1>${htmlItems}${heldHtml}<p style="margin:24px 0 0;"><a href="${escapeHtml(appUrl)}" style="display:inline-block;background:#2f6feb;color:#ffffff;text-decoration:none;font-weight:600;border-radius:8px;padding:10px 16px;">Open Commonly</a></p></section><p style="margin:16px 0 0;text-align:center;color:#7b8494;font-size:12px;line-height:1.45;">You receive this because daily digests are enabled for your Commonly account. <a href="${escapeHtml(unsubscribeUrl)}" style="color:#2456c8;">Unsubscribe</a></p></main></body></html>`,
   };
 };
 
@@ -202,8 +209,14 @@ export class DigestEmailService {
 
         let unsubscribeToken = user.digestUnsubscribeToken;
         if (!unsubscribeToken) {
-          unsubscribeToken = user.getOrCreateDigestUnsubscribeToken();
-          await user.save();
+          const candidate = user.getOrCreateDigestUnsubscribeToken();
+          await User.updateOne(
+            { _id: user._id, digestUnsubscribeToken: { $exists: false } },
+            { $set: { digestUnsubscribeToken: candidate } },
+          );
+          const saved = await User.findById(user._id).select('+digestUnsubscribeToken');
+          unsubscribeToken = saved?.digestUnsubscribeToken;
+          if (!unsubscribeToken) throw new Error('Digest unsubscribe token could not be saved');
         }
 
         // Claim before crossing the SMTP boundary. Email has no transactional
@@ -222,7 +235,14 @@ export class DigestEmailService {
         }
         if (summary.metadata) summary.metadata.emailedAt = emailedAt;
 
-        const bodies = buildEmailBodies(summary, unsubscribeToken);
+        const overflow = await NeedsYouEmail.find({
+          recipientUserId: user._id, status: 'overflow', includedInDigestAt: { $exists: false },
+        }).select('_id attentionItemId').lean();
+        const asks = overflow.length ? await AttentionItem.find({
+          _id: { $in: overflow.map((row: any) => row.attentionItemId) }, status: 'open',
+        }).select('title podName').lean() : [];
+        const heldAsks = asks.map((ask: any) => `${ask.title} · ${ask.podName || 'Pod'}`);
+        const bodies = buildEmailBodies(summary, unsubscribeToken, heldAsks);
         await sendEmail({
           to: user.email,
           subject: bodies.subject,
@@ -231,6 +251,16 @@ export class DigestEmailService {
         });
 
         result.sent += 1;
+        if (overflow.length) {
+          try {
+            await NeedsYouEmail.updateMany(
+              { _id: { $in: overflow.map((row: any) => row._id) }, includedInDigestAt: { $exists: false } },
+              { $set: { includedInDigestAt: emailedAt } },
+            );
+          } catch (markError) {
+            console.warn('Digest sent but held asks could not be marked included:', (markError as Error).message);
+          }
+        }
         // SMTP has accepted the email. A failed timestamp write should not
         // reclassify that delivery as a failed send.
         try {
