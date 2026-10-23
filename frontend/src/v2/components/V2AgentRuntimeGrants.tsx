@@ -66,7 +66,8 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   const api = useV2Api();
   const [grants, setGrants] = useState<AgentGrant[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [runtimeError, setRuntimeError] = useState('');
+  const [grantsError, setGrantsError] = useState('');
   const [busy, setBusy] = useState(false);
   const [modelDraft, setModelDraft] = useState(runtime.model || '');
   const [effortDraft, setEffortDraft] = useState(runtime.effort || '');
@@ -74,14 +75,14 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError('');
+    setGrantsError('');
     try {
       const next = await api.get<AgentGrantsResponse>(
         `/api/registry/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(instanceId)}/grants`,
       );
       setGrants(next.grants || []);
     } catch {
-      setError(t('agentManage.grants.loadError', { defaultValue: 'Could not load connector grants.' }));
+      setGrantsError(t('agentManage.grants.loadError', { defaultValue: 'Could not load connector grants.' }));
     } finally {
       setLoading(false);
     }
@@ -94,7 +95,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   const details = useMemo(() => describeRuntime(runtime), [runtime]);
   const modeLabel = {
     hosted: t('agentManage.runtime.hosted', { defaultValue: 'Hosted' }),
-    daemon: t('agentManage.runtime.daemon', { defaultValue: 'On my computer via the daemon' }),
+    daemon: t('agentManage.runtime.daemon', { defaultValue: 'On a computer, via the daemon' }),
     cli: t('agentManage.runtime.cli', { defaultValue: 'Single CLI' }),
     unknown: t('agentManage.runtime.unknown', { defaultValue: 'Runtime details unavailable' }),
   }[details.mode];
@@ -103,19 +104,19 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   // the child when it changes. A single CLI chooses its own model locally.
   const mayEditRuntime = Boolean(onSaveRuntime && details.mode === 'daemon' && details.adapter);
   const modelChanged = Boolean(modelDraft.trim() && modelDraft.trim() !== (runtime.model || ''));
-  const effortChanged = Boolean(effortDraft.trim() && effortDraft.trim() !== (runtime.effort || ''));
+  const effortChanged = effortDraft.trim() !== (runtime.effort || '');
 
   const saveRuntime = async () => {
     if (!onSaveRuntime || !mayEditRuntime) return;
     setBusy(true);
-    setError('');
+    setRuntimeError('');
     try {
       await onSaveRuntime({
         ...(modelChanged ? { model: modelDraft.trim() } : {}),
         ...(effortChanged ? { effort: effortDraft.trim() } : {}),
       });
     } catch {
-      setError(t('agentManage.runtime.saveError', { defaultValue: 'Could not save the model.' }));
+      setRuntimeError(t('agentManage.runtime.saveError', { defaultValue: 'Could not save the model.' }));
     } finally {
       setBusy(false);
     }
@@ -123,13 +124,16 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
 
   const revoke = async (grantId: string) => {
     setBusy(true);
-    setError('');
+    setGrantsError('');
     try {
       await api.post(`/api/grants/${encodeURIComponent(grantId)}/revoke`);
       setConfirmGrantId(null);
+      setGrants((current) => current.map((grant) => (
+        grant.grantId === grantId ? { ...grant, revokedAt: new Date().toISOString() } : grant
+      )));
       await load();
     } catch {
-      setError(t('agentManage.grants.revokeError', { defaultValue: 'Could not revoke the grant.' }));
+      setGrantsError(t('agentManage.grants.revokeError', { defaultValue: 'Could not revoke the grant.' }));
     } finally {
       setBusy(false);
     }
@@ -147,7 +151,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
         </dl>
         {mayEditRuntime && (
           <div className="v2-agent-runtime-grants__edit">
-            <label htmlFor="agent-runtime-model">{t('agentManage.runtime.changeModel', { defaultValue: 'Change model on this computer' })}</label>
+            <label htmlFor="agent-runtime-model">{t('agentManage.runtime.changeModel', { defaultValue: 'Model' })}</label>
             <input id="agent-runtime-model" value={modelDraft} onChange={(event) => setModelDraft(event.target.value)} />
             <label htmlFor="agent-runtime-effort">{t('agentManage.runtime.changeEffort', { defaultValue: 'Effort' })}</label>
             <select id="agent-runtime-effort" value={effortDraft} onChange={(event) => setEffortDraft(event.target.value)}>
@@ -159,11 +163,13 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
             </button>
           </div>
         )}
+        {runtimeError && <p role="alert">{runtimeError}</p>}
       </section>
       <section className="v2-agent-settings__section" aria-labelledby="agent-grants-heading">
         <h2 id="agent-grants-heading">{t('agentManage.grants.title', { defaultValue: 'Connector grants' })}</h2>
+        {grantsError && <p role="alert">{grantsError}</p>}
         {loading && <p role="status">{t('agentManage.grants.loading', { defaultValue: 'Loading grants…' })}</p>}
-        {!loading && !error && grants.length === 0 && <p>{t('agentManage.grants.empty', { defaultValue: 'This agent has no connector grants.' })}</p>}
+        {!loading && !grantsError && grants.length === 0 && <p>{t('agentManage.grants.empty', { defaultValue: 'This agent has no connector grants.' })}</p>}
         <ul className="v2-agent-runtime-grants__list">
           {grants.map((grant) => {
             const ended = Boolean(grant.revokedAt) || new Date(grant.expiresAt).getTime() <= Date.now();
@@ -188,7 +194,6 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
           })}
         </ul>
       </section>
-      {error && <p role="alert">{error}</p>}
     </div>
   );
 };

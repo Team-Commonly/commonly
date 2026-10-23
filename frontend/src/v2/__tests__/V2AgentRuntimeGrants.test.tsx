@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import V2AgentRuntimeGrants, { describeRuntime } from '../components/V2AgentRuntimeGrants';
 import { AuthContext } from '../../context/AuthContext';
 
@@ -50,7 +50,7 @@ test('runtime labels only recognize walked adapters and distinguish daemon from 
 
 test('shows this agent grant and requires a second click to revoke through the existing route', async () => {
   renderSection();
-  expect(await screen.findByText('On my computer via the daemon')).toBeInTheDocument();
+  expect(await screen.findByText('On a computer, via the daemon')).toBeInTheDocument();
   expect(screen.getByText('Claude Code')).toBeInTheDocument();
   expect(await screen.findByText(/Work · Granted by Owner/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
@@ -61,7 +61,7 @@ test('shows this agent grant and requires a second click to revoke through the e
 
 test('model changes delegate to the shared settings hook; a single CLI has no edit control', async () => {
   const { rerender } = renderSection();
-  const input = await screen.findByLabelText('Change model on this computer');
+  const input = await screen.findByLabelText('Model');
   fireEvent.change(input, { target: { value: 'opus' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
   await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ model: 'opus' }));
@@ -69,7 +69,7 @@ test('model changes delegate to the shared settings hook; a single CLI has no ed
 
   rerender(<AuthContext.Provider value={authValue}><V2AgentRuntimeGrants name="other" instanceId="default" runtime={{ runtimeType: 'webhook', host: 'byo', adapter: 'hermes' }} onSaveRuntime={saveRuntime} /></AuthContext.Provider>);
   expect(await screen.findByText('Single CLI')).toBeInTheDocument();
-  expect(screen.queryByLabelText('Change model on this computer')).toBeNull();
+  expect(screen.queryByLabelText('Model')).toBeNull();
 });
 
 test('daemon effort changes are passed to the shared settings callback', async () => {
@@ -80,9 +80,36 @@ test('daemon effort changes are passed to the shared settings callback', async (
   await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ effort: 'high' }));
 });
 
+test('the unset effort option clears a saved effort', async () => {
+  renderSection({ runtimeType: 'wrapper', adapter: 'codex', model: 'gpt-6-sol', effort: 'medium' });
+  fireEvent.change(screen.getByLabelText('Effort'), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
+  await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ effort: '' }));
+});
+
+test('a failed runtime save reports next to the editor', async () => {
+  saveRuntime.mockRejectedValue(new Error('unavailable'));
+  renderSection();
+  fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'opus' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
+  const runtimeSection = screen.getByRole('heading', { name: 'Runtime' }).closest('section');
+  expect(await within(runtimeSection).findByRole('alert')).toHaveTextContent('Could not save the model.');
+});
+
+test('a successful revoke stays ended if the grant reload fails', async () => {
+  renderSection();
+  await screen.findByText(/Work · Granted by Owner/);
+  axios.get.mockRejectedValue(new Error('reload failed'));
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, revoke it' }));
+  const grantsSection = screen.getByRole('heading', { name: 'Connector grants' }).closest('section');
+  expect(await within(grantsSection).findByRole('alert')).toHaveTextContent('Could not load connector grants.');
+  expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
+});
+
 test('does not offer revoke when the server says this viewer cannot revoke', async () => {
   axios.get.mockResolvedValue({ data: { ...response, grants: [{ ...response.grants[0], canRevoke: false }] } });
   renderSection();
-  expect(await screen.findByText('Connector grants')).toBeInTheDocument();
+  expect(await screen.findByText(/Work · Granted by Owner/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
 });

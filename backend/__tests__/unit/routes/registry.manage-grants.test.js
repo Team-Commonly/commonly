@@ -72,11 +72,24 @@ test('only the installer or an instance admin can read an agent grants', async (
 
 test('a second installer cannot inspect a shared identity through their row', async () => {
   AgentInstallation.find.mockReturnValue({ lean: async () => [
-    { installedBy: 'owner', config: {} }, { installedBy: 'someone-else', config: {} },
+    { installedBy: 'owner', status: 'active', config: {} },
+    { installedBy: 'someone-else', status: 'paused', config: {} },
   ] });
   const res = await request(app).get(URL).set('x-test-user', 'owner');
   expect(res.status).toBe(403);
   expect(RoomGrant.find).not.toHaveBeenCalled();
+  expect(AgentInstallation.find).toHaveBeenCalledWith({
+    agentName: 'nib', instanceId: 'default', status: { $ne: 'uninstalled' },
+  });
+});
+
+test('a paused-only installer can read their agent grants', async () => {
+  AgentInstallation.find.mockReturnValue({ lean: async () => [
+    { installedBy: 'owner', status: 'paused', config: {} },
+  ] });
+  const res = await request(app).get(URL).set('x-test-user', 'owner');
+  expect(res.status).toBe(200);
+  expect(res.body.grants).toHaveLength(1);
 });
 
 test('a grant for a pod the agent left does not appear as current access', async () => {

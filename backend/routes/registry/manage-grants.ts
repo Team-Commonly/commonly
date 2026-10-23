@@ -38,7 +38,7 @@ router.get('/agents/:name/instances/:instanceId/grants', grantManageLimit, auth,
     const agentName = String(req.params.name || '').toLowerCase();
     const instanceId = normalizeInstanceId(req.params.instanceId);
     const installations = await AgentInstallation.find({
-      agentName, instanceId, status: 'active',
+      agentName, instanceId, status: { $ne: 'uninstalled' },
     }).lean();
     if (!installations.length) return res.status(404).json({ error: 'Agent not installed' });
 
