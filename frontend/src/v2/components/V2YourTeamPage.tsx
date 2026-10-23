@@ -392,7 +392,7 @@ const V2YourTeamPage: React.FC = () => {
           <span className="v2-team__meta">
             {loading
               ? t('yourTeam.loading')
-              : t('yourTeam.head.meta', { agents: counts.agents, working: counts.working, needsYou: counts.needsYou })}
+              : t('yourTeam.head.meta', { count: counts.agents, agents: counts.agents, working: counts.working, needsYou: counts.needsYou })}
           </span>
         </div>
         <div className="v2-team__actions">
