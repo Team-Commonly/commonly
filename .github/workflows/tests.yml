@@ -130,6 +130,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          # The tool-contract guard compares the submodule pin against the
+          # merge base with origin/main to catch a ROLLBACK, which containment
+          # structurally cannot see. At the default depth 1 there is no
+          # origin/main and no shared history, so that check could not run at
+          # all (#2497). The guard now says so loudly instead of passing, and
+          # this is what lets it answer.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

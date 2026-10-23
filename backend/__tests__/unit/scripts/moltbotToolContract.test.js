@@ -24,6 +24,7 @@ const {
   loadMentionCues,
   readDeclaredBranch,
   checkPinReachable,
+  checkPinDirection,
   readGitlinkSha,
   stripComments,
   MENTION_CUES,
@@ -292,6 +293,202 @@ describe('moltbot tool contract', () => {
       });
 
       /**
+       * DIRECTION, which containment structurally cannot judge.
+       *
+       * A rollback is by definition to a commit the declared branch already
+       * had, so "the pin is an ancestor of the branch" is TRUE of every
+       * rollback. Measured on main 9ac61bdef before the fix: the scripted
+       * repo below returned `contained` — the guard passed #1089's exact
+       * shape. #1089 was caught because ux-lead read the diff by hand.
+       *
+       * The five cells are scripted through the injected exec rather than
+       * with real commits, because the original fix (#1090) said outright
+       * that it could not exercise the forward-bump cell — "no sha exists
+       * that is a descendant of the base pin … both are argued rather than
+       * exercised". Through this seam all five are exercised, and the
+       * superproject and submodule calls are told apart by cwd, not by call
+       * order, so a reordering cannot make these vacuous.
+       */
+      const directionRepoWhere = ({ basePin, isAncestor, resolvableRefs = ['origin/main'] }) => {
+        const calls = [];
+        const supCalls = [];
+        const mock = jest.fn((_bin, args, opts = {}) => {
+          const inSubmodule = String(opts.cwd || '').includes('_external');
+          calls.push({ args, inSubmodule });
+          if (!inSubmodule) supCalls.push(args);
+          if (!inSubmodule && args[0] === 'merge-base') {
+            // `merge-base HEAD <ref>`. A ref the checkout never fetched is not
+            // a git failure with a special status — the command simply exits
+            // non-zero, the same as "no common history", which is why the probe
+            // cannot tell them apart and must say undetermined for both.
+            if (!resolvableRefs.includes(args[2])) {
+              throw Object.assign(new Error('not a valid object name'), { status: 128 });
+            }
+            return 'basecommitsha\n';
+          }
+          if (!inSubmodule && args[0] === 'ls-tree') {
+            return basePin ? `160000 commit ${basePin}\t_external/clawdbot\n` : '\n';
+          }
+          if (inSubmodule && args[0] === 'merge-base' && args[1] === '--is-ancestor') {
+            if (!isAncestor) throw Object.assign(new Error('not an ancestor'), { status: 1 });
+            return '';
+          }
+          return '';
+        });
+        mock.supCalls = supCalls;
+        return mock;
+      };
+
+      // The probe reads GITHUB_BASE_REF, which the Actions runner SETS — and
+      // sets to the PR's base, so on a stacked PR these cells would inherit a
+      // ref their harness does not resolve and red in CI only. Each cell states
+      // its own base; nothing is inherited from the process.
+      // Both halves of the CI repair live outside this process — one in the
+      // guard's source, one in the workflow — so two cells read repo files.
+      const repoFile = (rel) => fs.readFileSync(path.join(__dirname, '../../../..', rel), 'utf8');
+
+      let savedBaseRef;
+      beforeEach(() => {
+        savedBaseRef = process.env.GITHUB_BASE_REF;
+        delete process.env.GITHUB_BASE_REF;
+      });
+      afterEach(() => {
+        if (savedBaseRef === undefined) delete process.env.GITHUB_BASE_REF;
+        else process.env.GITHUB_BASE_REF = savedBaseRef;
+      });
+
+      // #1089's real relation: the branch pinned 70bd82b8 while the base
+      // carried 5d88a3f1, two commits ahead.
+      const ROLLED_BACK_BASE = '5d88a3f1bf8abbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+      it('reports rollback when the pin is a strict ancestor of the base pin', () => {
+        const exec = directionRepoWhere({ basePin: ROLLED_BACK_BASE, isAncestor: true });
+        const result = checkPinDirection({ exec });
+        expect(result.state).toBe('rollback');
+        expect(result.detail).toMatch(/moved BACKWARD/);
+        // The remedy has to be in the message: the author of the next one will
+        // not have typed a submodule command either.
+        expect(result.detail).toMatch(/update-index --cacheinfo/);
+      });
+
+      // These next two do NOT discriminate against main: main has no direction
+      // check at all, so nothing here reds with the fix reverted. Measured, not
+      // assumed. They are future-regression guards on the narrowness the check
+      // promises, which is the same role (and the same honest label) as the
+      // known-limit pin on #2491. Kept because the obvious way to break this
+      // check later is to widen it until it second-guesses containment.
+      it('stays silent when the pin is unchanged from the base', () => {
+        const exec = directionRepoWhere({ basePin: null, isAncestor: true });
+        expect(checkPinDirection({ exec }).state).toBe('ok');
+      });
+
+      // The cell #1090 could not exercise. A forward bump IS an ancestry
+      // answer of "no" in the probe's direction, which is exactly what a
+      // diverged pin answers too — so one scripted case covers the claim the
+      // original PR could only argue: neither is reported as a rollback.
+      it('stays out of the way for a forward bump or a diverged pin', () => {
+        const exec = directionRepoWhere({ basePin: ROLLED_BACK_BASE, isAncestor: false });
+        expect(checkPinDirection({ exec }).state).toBe('ok');
+      });
+
+      /**
+       * CI's real topology, and the reason this cell used to assert the wrong
+       * thing. `tests.yml`'s tool-tests job checked out with no `fetch-depth`,
+       * so `origin/main` did not exist and there was no shared history to take
+       * a merge base from. @otto measured that on #2497: the probe returned
+       * undetermined, the caller dropped it, and the check never fired on a
+       * single pull request. This cell asserted `contained` and therefore
+       * PINNED that silence as acceptable.
+       *
+       * Two halves to the repair, and this is the half that belongs here: an
+       * unresolvable base is LOUD. The other half is the checkout depth, which
+       * belongs in the workflow and is pinned by the last test in this block —
+       * not by a fetch from inside the guard, which would both hide a
+       * misconfigured job and pay the cost this file measures at 11.4s/314M.
+       */
+      it('reports undetermined, NOT silence, when no base ref resolves', () => {
+        const exec = directionRepoWhere({ basePin: ROLLED_BACK_BASE, isAncestor: true, resolvableRefs: [] });
+        const result = checkPinDirection({ exec });
+        expect(result.state).toBe('undetermined');
+        expect(result.detail).toMatch(/NOT a pass/);
+        // Name the repair, or the next person reads this as flakiness.
+        expect(result.detail).toMatch(/fetch-depth: 0/);
+        // And it must not try to buy the history itself.
+        expect(exec.supCalls.some((c) => c[0] === 'fetch')).toBe(false);
+      });
+
+      /**
+       * A stacked PR's base is not main. Taking the merge base with main would
+       * reach behind the real base and read a pin the PR never touched, which
+       * is a FALSE rollback — the failure mode this check cannot afford, since
+       * a check that cries wolf gets switched off.
+       *
+       * This is about ORDER, not fallback: at `fetch-depth: 0` BOTH refs
+       * resolve, so a probe that merely fell back to the base branch when main
+       * was missing would be dead code in CI and would answer against main on
+       * every stacked PR.
+       */
+      it('takes the base the pull request targets before main', () => {
+        process.env.GITHUB_BASE_REF = 'nova/stack-parent';
+        const exec = directionRepoWhere({
+          basePin: ROLLED_BACK_BASE,
+          isAncestor: true,
+          resolvableRefs: ['origin/nova/stack-parent', 'origin/main'],
+        });
+        expect(checkPinDirection({ exec }).state).toBe('rollback');
+        const asked = exec.supCalls.filter((c) => c[0] === 'merge-base').map((c) => c[2]);
+        expect(asked[0]).toBe('origin/nova/stack-parent');
+        // And it stops there — asking main as well would read a second, older
+        // pin and make the verdict depend on which answer came last.
+        expect(asked).not.toContain('origin/main');
+      });
+
+      it('falls back to main when no base branch is named', () => {
+        const exec = directionRepoWhere({ basePin: ROLLED_BACK_BASE, isAncestor: true });
+        expect(checkPinDirection({ exec }).state).toBe('rollback');
+        expect(exec.supCalls.filter((c) => c[0] === 'merge-base').map((c) => c[2])).toEqual(['origin/main']);
+      });
+
+      /**
+       * The verdict has to reach the exit code. This is the defect @otto found
+       * on #2497: the probe computed `undetermined` correctly and the caller
+       * dropped it on the floor, so the check was structurally incapable of
+       * failing a run. `main()` cannot be exercised through the injected exec
+       * — it reads the live repo and exits the process — so this reads the
+       * wiring out of the source. A source assertion is a weak instrument and
+       * is named as one: it proves the branch exists, not that it behaves.
+       * The behaviour of the two states is pinned by the cells above.
+       */
+      it('wires both direction verdicts into the exit code', () => {
+        const source = repoFile('scripts/verify-moltbot-tool-contract.js');
+        const main = source.slice(source.indexOf('const main = '));
+        // The last `if (…) process.exit(n)` in main() is the verdict line;
+        // the earlier bare `process.exit(2)` calls are the can't-run bailouts.
+        const verdict = (code) => main.match(new RegExp(`^\\s*if \\(.*process\\.exit\\(${code}\\);$`, 'gm')).pop();
+        const exitOne = verdict(1);
+        const exitTwo = verdict(2);
+        expect(exitOne).toContain("direction.state === 'rollback'");
+        expect(exitTwo).toContain("direction.state === 'undetermined'");
+      });
+
+      /**
+       * The other half of the CI repair, and the one a mocked exec cannot
+       * reach: the job that runs this guard has to check out deep enough for
+       * `origin/main` to exist. Without this the probe is correct and silent —
+       * it reports undetermined on every pull request and the direction check
+       * is, in practice, off. That was the live state until #2497.
+       */
+      it('runs in a CI job whose checkout can reach origin/main', () => {
+        const workflow = repoFile('.github/workflows/tests.yml');
+        const jobs = workflow.split(/\n {2}(?=[a-z][\w-]*:\n)/);
+        const job = jobs.find((block) => block.includes('verify:moltbot-tools'));
+        expect(job).toBeDefined();
+        // Scoped to the job that actually runs the guard: a `fetch-depth` on
+        // some other job is exactly the thing that looks like a pass and isn't.
+        expect(job).toMatch(/fetch-depth:\s*0/);
+      });
+
+      /**
        * A SHALLOW checkout answers this question confidently and wrongly.
        *
        * Both commits are valid objects, so git does not error — it walks back
@@ -314,18 +511,27 @@ describe('moltbot tool contract', () => {
        *   depth-1            is-ancestor → 1  (wrong)    .git 35M
        *   after --deepen=64  is-ancestor → 0  (correct)  .git 36M
        */
-      const shallowRepoWhere = ({ ancestry, tip = 'a-different-sha' }) => {
+      const shallowRepoWhere = ({ ancestry, tip = 'a-different-sha', refMissing = false }) => {
         const calls = [];
+        // Containment only ever talks to the submodule; direction is a
+        // separate function with its own harness above. `submoduleCalls` keeps
+        // that explicit so a future merge of the two cannot make these rung
+        // assertions count a superproject call.
+        const submoduleCalls = [];
         let fetched = 0;
-        const exec = jest.fn((_bin, args) => {
+        const exec = jest.fn((_bin, args, opts = {}) => {
           calls.push(args);
+          if (String(opts.cwd || '').includes('_external')) submoduleCalls.push(args);
           if (args[0] === 'rev-parse' && args[1] === '--is-shallow-repository') {
             // Real git keeps reporting `true` after a successful --deepen; only
             // --unshallow clears it. Modelled exactly, because a probe that
             // flipped to false would hide a bug in the ladder's exit condition.
             return calls.some((c) => c.includes('--unshallow')) ? 'false\n' : 'true\n';
           }
-          if (args[0] === 'rev-parse' && args[1] === '--verify') return '';
+          if (args[0] === 'rev-parse' && args[1] === '--verify') {
+            if (refMissing) throw Object.assign(new Error('no such ref'), { status: 1 });
+            return '';
+          }
           if (args[0] === 'rev-parse') return `${tip}\n`;
           if (args[0] === 'fetch') { fetched += 1; return ''; }
           if (args[0] === 'merge-base') {
@@ -340,7 +546,9 @@ describe('moltbot tool contract', () => {
         const rungs = () => calls
           .filter((c) => c[0] === 'fetch')
           .map((c) => c.find((a) => /^--(deepen=\d+|unshallow)$/.test(a)));
-        return { exec, calls, rungs };
+        return {
+          exec, calls, submoduleCalls, rungs, 
+        };
       };
 
       it('climbs the deepen ladder and reports contained once history reaches the pin', () => {
@@ -447,7 +655,7 @@ describe('moltbot tool contract', () => {
        */
       it('reports contained without ancestry when the pin is the branch tip', () => {
         const pin = readGitlinkSha({ full: true });
-        const { exec, calls } = shallowRepoWhere({
+        const { exec, submoduleCalls } = shallowRepoWhere({
           ancestry: () => { throw new Error('ancestry must not be consulted here'); },
           tip: pin,
         });
@@ -455,7 +663,12 @@ describe('moltbot tool contract', () => {
         expect(result.state).toBe('contained');
         expect(result.detail).toMatch(/tip/);
         // Shallowness is irrelevant on this path — assert we never got that far.
-        expect(calls.some((c) => c[0] === 'merge-base')).toBe(false);
+        // Scoped to the SUBMODULE deliberately: this used to read `calls`, and
+        // the direction check now makes one `merge-base` call in the
+        // superproject on every path, which would red this test for a reason
+        // it was not written about. The ancestry walk is what must not happen
+        // here, and `submoduleCalls` is exactly that.
+        expect(submoduleCalls.some((c) => c[0] === 'merge-base')).toBe(false);
       });
 
       it('reports orphaned when --is-ancestor exits 1 on a full clone', () => {
@@ -501,8 +714,14 @@ describe('moltbot tool contract', () => {
        * and both hand back a usable ref — so this test pins the flag itself.
        */
       it('caps the first fetch at depth 1 when the repo is shallow', () => {
-        const { exec, calls } = shallowRepoWhere({ ancestry: (fetched) => (fetched >= 2 ? 0 : 1) });
-        exec.mockImplementationOnce(() => { throw gitError(1); }); // no origin/<branch> ref
+        // `mockImplementationOnce` used to carry this, keyed on the ref probe
+        // being the FIRST exec call. Targeted by shape instead: a positional
+        // mock makes this cell silently stop testing ref-absence the moment a
+        // call is added ahead of it.
+        const { exec, calls } = shallowRepoWhere({
+          ancestry: (fetched) => (fetched >= 2 ? 0 : 1),
+          refMissing: true,
+        });
         checkPinReachable({ exec });
         const first = calls.find((c) => c[0] === 'fetch');
         expect(first).toContain('--depth=1');
