@@ -1971,6 +1971,7 @@
       "needsYou_one": "{{count}} needs you",
       "needsYou_other": "{{count}} need you"
     },
+    "inactiveFold": "inactive · {{n}}",
     "loading": "Loading connectors…",
     "loadError": "Could not load connectors.",
     "createError": "Could not create the connector.",
