@@ -46,6 +46,8 @@ spec:
           value: {{ .Values.backend.env.nodeEnv }}
         - name: PORT
           value: {{ .Values.backend.service.port | quote }}
+        - name: HOSTED_MCP_HIDDEN_ENTRIES
+          value: {{ .Values.hostedMcp.hiddenEntries | toJson | quote }}
         {{- if .Values.errorTracking.enabled }}
         - name: SENTRY_DSN
           valueFrom:

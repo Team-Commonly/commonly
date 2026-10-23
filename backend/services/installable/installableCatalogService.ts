@@ -12,6 +12,8 @@ const { manifests } = require('../../integrations/manifests');
 const { mcpComponentOf, projectTools, toolInstallableMetas } = require('./toolInstallables');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { HOSTED_MCP_ENTRIES, findHostedMcpEntry } = require('../../integrations/hostedMcp/entries');
+const { hiddenHostedMcpEntryIds } = require('../../integrations/hostedMcp/visibility');
+const { isHostedMcpClientConfigured } = require('../hostedMcpIntakeService');
 
 type ProviderReadiness = { available: boolean; reason?: 'not_configured' };
 
@@ -123,22 +125,42 @@ const publicConnection = (integration: any) => ({
  * entry id by construction, but reading that as a URL would be a second,
  * unwitnessed spelling of the same fact.
  */
-const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
+const toolEntriesFor = async (userId: string): Promise<{ entries: unknown[]; hiddenConnections: unknown[] }> => {
   const metas = toolInstallableMetas();
-  const rows = (await Installable.find({
+  const allRows = (await Installable.find({
     source: 'builtin',
     status: 'active',
     'components.type': 'mcp-server',
   }).lean() as any[]).filter((row) => mcpComponentOf(row) && metas[row.installableId]);
-  if (!rows.length) return [];
+  if (!allRows.length) return { entries: [], hiddenConnections: [] };
+  const hiddenIds = hiddenHostedMcpEntryIds();
+  const isHidden = (row: any): boolean => {
+    const meta = metas[row.installableId];
+    if (meta.connectionType !== 'hosted-mcp') return false;
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, meta.entryId || '');
+    return hiddenIds.has(meta.entryId) || !entry || !isHostedMcpClientConfigured(entry);
+  };
+  const rows = allRows.filter((row) => !isHidden(row));
+  const hiddenRows = allRows.filter(isHidden);
+  const hiddenEntryIds = hiddenRows.map((row) => metas[row.installableId].entryId);
+  const hiddenIntegrations = hiddenEntryIds.length ? await Integration.find({
+    type: 'hosted-mcp', createdBy: userId, 'config.entryId': { $in: hiddenEntryIds },
+  }).lean() as any[] : [];
   const connectionTypes = Array.from(new Set(rows.map((row) => metas[row.installableId].connectionType)));
-  const connections = await Integration.find({
+  const connections = connectionTypes.length ? await Integration.find({
     type: { $in: connectionTypes },
     createdBy: userId,
     status: 'connected',
     revokedAt: null,
-  }).lean() as any[];
-  return rows.map((row) => {
+  }).lean() as any[] : [];
+  return { hiddenConnections: hiddenIntegrations.map((integration) => ({
+    connectionId: String(integration._id),
+    entryId: String(integration.config?.entryId || ''),
+    label: hiddenRows.find((row) => metas[row.installableId].entryId === integration.config?.entryId)?.name
+      || integration.config?.entryId || '',
+    status: String(integration.status || ''),
+    revokePage: findHostedMcpEntry(HOSTED_MCP_ENTRIES, String(integration.config?.entryId || ''))?.revoke?.page || null,
+  })), entries: rows.map((row) => {
     const meta = metas[row.installableId];
     const component = mcpComponentOf(row);
     const hostedEntry = meta.connectionType === 'hosted-mcp'
@@ -167,10 +189,10 @@ const toolEntriesFor = async (userId: string): Promise<unknown[]> => {
       installation: null,
       integration: null,
     };
-  });
+  }) };
 };
 
-const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> => {
+const catalogFor = async (userId: string): Promise<{ installables: unknown[]; hiddenToolConnections: unknown[] }> => {
   const installableIds = providerInstallableIds();
   const [installables, installations] = await Promise.all([
     Installable.find({
@@ -201,6 +223,7 @@ const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> 
 
   const tools = await toolEntriesFor(userId);
   return {
+    hiddenToolConnections: tools.hiddenConnections,
     installables: [...installableIds.map((installableId) => {
       const installable = installableById.get(installableId);
       const installation = installationById.get(installableId);
@@ -221,7 +244,7 @@ const catalogFor = async (userId: string): Promise<{ installables: unknown[] }> 
           ? publicIntegration(integrationByInstallationId.get(String(installation._id)) || null)
           : null,
       };
-    }), ...tools],
+    }), ...tools.entries],
   };
 };
 
