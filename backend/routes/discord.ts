@@ -336,8 +336,11 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
       try {
         const guildResponse = await axios.get(`https://discord.com/api/guilds/${guildId}`, { headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` } });
         serverName = (guildResponse.data as { name?: string }).name || serverName;
-      } catch (error) {
-        console.log('Could not fetch guild info:', (error as { response?: { data?: unknown } }).response?.data);
+      } catch {
+        // Discord may echo request credentials in its error body. A failed
+        // post-exchange lookup is a failed callback, not a completed install.
+        console.error('Discord OAuth guild lookup failed');
+        return res.redirect(`${frontend}/discord/error?error=OAuth%20authorization%20failed`);
       }
     }
     const successUrl = new URL(`${frontend}/discord/success`);
