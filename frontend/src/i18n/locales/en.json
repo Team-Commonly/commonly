@@ -2263,7 +2263,7 @@
     "heartbeat": "Heartbeat",
     "heartbeatInterval": "Interval",
     "turnsPerDay": "{{count}} turns/day · {{cap}} available",
-    "capUnavailable": "cap unavailable",
+    "capUnavailable": "{{count}} turns/day · plan cap unavailable",
     "overCap": "This exceeds the daily cap.",
     "saveInterval": "Save interval",
     "everyMinutes_one": "Every minute",

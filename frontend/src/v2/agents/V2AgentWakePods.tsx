@@ -164,8 +164,13 @@ const V2AgentWakePods: React.FC<{
               </select>
             </label>
             <p className="v2-agent-wake-pods__hint">
-              {t('agentSettings.turnsPerDay', { count: Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)),
-                cap: turnCap ?? t('agentSettings.capUnavailable') })}
+              {turnCap === null
+                ? t('agentSettings.capUnavailable', {
+                  count: Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)),
+                })
+                : t('agentSettings.turnsPerDay', {
+                  count: Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)), cap: turnCap,
+                })}
               {turnCap !== null && Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)) > turnCap
                 && ` ${t('agentSettings.overCap')}`}
             </p>

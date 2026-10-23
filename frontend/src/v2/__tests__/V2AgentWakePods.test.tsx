@@ -87,4 +87,15 @@ describe('per-agent Wake and Pods settings', () => {
     expect(screen.getByText(/This exceeds the daily cap/)).toBeInTheDocument();
     expect(updatePod).not.toHaveBeenCalled();
   });
+
+  it('states the daily turn count clearly when availability cannot be loaded', async () => {
+    client.get.mockImplementation((url: string) => url.includes('/hosted/availability')
+      ? Promise.reject(new Error('offline'))
+      : Promise.resolve({ data: { activePodCount: 1, installations: [{
+        podId: 'pod-1', podName: 'Launch', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
+      }] } }));
+    renderSettings();
+    expect(await screen.findByText('24 turns/day · plan cap unavailable')).toBeInTheDocument();
+  });
 });
