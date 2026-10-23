@@ -45,10 +45,10 @@ describe('PG Message model', () => {
     expect(pool.query).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('INSERT INTO messages'),
-      // Seventh param is the RESOLVED thread root (@ux-lead 56879): null here
+      // Eighth param is the RESOLVED thread root (@ux-lead 56879): null here
       // because this call names none, which makes the SQL fall through to
       // deriving from the reply edge — the pre-existing behaviour.
-      ['p', 'u', 'c', 'text', null, null, null],
+      ['p', 'u', 'c', 'text', null, null, null, null],
     );
     expect(pool.query).toHaveBeenNthCalledWith(
       2,
@@ -83,7 +83,7 @@ describe('PG Message model', () => {
 
   // The message the posting run is answering (agentAnswerService) reaches the
   // attention writer with the row and is never stored: the INSERT carries the
-  // same seven parameters, and no reply edge.
+  // same eight parameters, and no reply edge.
   it("hands the run's answeringMessageId to the attention writer without storing it", async () => {
     pool.query
       .mockResolvedValueOnce({
@@ -98,7 +98,7 @@ describe('PG Message model', () => {
     expect(pool.query).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('INSERT INTO messages'),
-      ['pod-1', 'agent', '@lee done', 'text', null, null, null],
+      ['pod-1', 'agent', '@lee done', 'text', null, null, null, null],
     );
     expect(mockRecordMentionedUsers).toHaveBeenCalledWith(expect.objectContaining({
       id: '3', answeringMessageId: '78385',

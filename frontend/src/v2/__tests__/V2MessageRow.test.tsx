@@ -134,6 +134,34 @@ describe('V2MessageRow', () => {
       .toBe('[docs](https://example.com/docs) here');
   });
 
+  it('marks a Commonly-authored seat post without marking an agent post', () => {
+    const { rerender } = render(
+      <MemoryRouter>
+        <V2MessageRow
+          message={{ id: 'kernel-1', pod_id: 'pod-1', user_id: 'seat-1',
+            message_type: 'text', content: 'Your agent is ready.',
+            author_kind: 'kernel', created_at: '2026-09-08T20:00:00.000Z',
+            user: { username: 'vale', isBot: true } }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByLabelText('Commonly system message')).toHaveTextContent('Commonly');
+
+    rerender(
+      <MemoryRouter>
+        <V2MessageRow
+          message={{ id: 'agent-1', pod_id: 'pod-1', user_id: 'seat-1',
+            message_type: 'text', content: 'I am ready.',
+            author_kind: null, created_at: '2026-09-08T20:00:00.000Z',
+            user: { username: 'vale', isBot: true } }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByLabelText('Commonly system message')).not.toBeInTheDocument();
+  });
+
   it('resolves relative uploaded images against the configured API origin', () => {
     process.env.REACT_APP_API_URL = 'https://api.commonly.me';
 

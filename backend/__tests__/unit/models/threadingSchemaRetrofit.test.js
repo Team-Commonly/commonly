@@ -59,6 +59,7 @@ describe('every late column on messages is retrofitted, not just declared', () =
   test('thread_root_id has an ALTER — the CREATE TABLE alone cannot reach an existing instance', () => {
     const all = [...alters, ...multiLineAlters].join('\n');
     expect(all).toMatch(/thread_root_id/);
+    expect(all).toMatch(/author_kind/);
   });
 
   test('applied to a PRE-EXISTING messages table, the column appears', async () => {
@@ -69,6 +70,7 @@ describe('every late column on messages is retrofitted, not just declared', () =
     const pool = new (db.adapters.createPg().Pool)();
     await pool.query(OLD_MESSAGES);
     expect(await columnsOf(pool, 'messages')).not.toContain('thread_root_id');
+    expect(await columnsOf(pool, 'messages')).not.toContain('author_kind');
 
     for (const stmt of [...alters, ...multiLineAlters]) {
       // eslint-disable-next-line no-await-in-loop
@@ -76,6 +78,7 @@ describe('every late column on messages is retrofitted, not just declared', () =
     }
 
     expect(await columnsOf(pool, 'messages')).toContain('thread_root_id');
+    expect(await columnsOf(pool, 'messages')).toContain('author_kind');
   });
 
   test('CONTROL: the old shape genuinely lacks it, so the test above measures something', async () => {
@@ -85,6 +88,7 @@ describe('every late column on messages is retrofitted, not just declared', () =
     const cols = await columnsOf(pool, 'messages');
     expect(cols).toContain('reply_to_message_id');
     expect(cols).not.toContain('thread_root_id');
+    expect(cols).not.toContain('author_kind');
   });
 
   test('the retrofits are idempotent — boot DDL runs on every start', async () => {
@@ -98,6 +102,7 @@ describe('every late column on messages is retrofitted, not just declared', () =
       }
     }
     expect(await columnsOf(pool, 'messages')).toContain('thread_root_id');
+    expect(await columnsOf(pool, 'messages')).toContain('author_kind');
   });
 
   test('the index on thread_root_id is created AFTER the retrofit that adds it', () => {

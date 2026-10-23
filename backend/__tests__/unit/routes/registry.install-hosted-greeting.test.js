@@ -166,6 +166,7 @@ describe('registry install — a hosted agent joins with one post', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
     expect(introPosts()).toHaveLength(1);
     expect(introPosts()[0][0].content).toMatch(/@my-agent/);
+    expect(introPosts()[0][0].authorKind).toBe('kernel');
   });
 
   it('on the Durable Object, the intro posts and no handle is passed to the greeting', async () => {
@@ -175,5 +176,6 @@ describe('registry install — a hosted agent joins with one post', () => {
 
     expect(mockFireFirstContact).toHaveBeenCalledWith(expect.not.objectContaining({ mentionHandle: expect.anything() }));
     expect(introPosts()).toHaveLength(1);
+    expect(introPosts()[0][0].authorKind).toBe('kernel');
   });
 });

@@ -23,6 +23,7 @@ export interface V2Message {
   user_id: string;
   content: string;
   message_type: string;
+  author_kind?: 'kernel' | null;
   created_at: string;
   createdAt?: string;
   messageType?: string;

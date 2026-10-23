@@ -3117,6 +3117,17 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 
+.v2-msg__author-kind {
+  display: inline-block;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--v2-accent-soft, #e8ecfb);
+  color: var(--v2-accent-text, #4353b8);
+  font: 700 10px/16px var(--v2-font-mono);
+  letter-spacing: 0.02em;
+}
+
 .v2-msg__avatar-btn {
   appearance: none;
   background: transparent;

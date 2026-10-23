@@ -186,6 +186,10 @@ interface PostMessageOptions {
   // the native runtime's trigger. Read by the answer rule (agentAnswerService)
   // only. Never stored and never a reply edge, so an answer is not threaded.
   answeringMessageId?: string | null;
+  // Server-set, never model-set: only install intros and stalled-connect
+  // nudges speak beside an agent seat as Commonly. Ordinary agent posts stay
+  // unmarked even if their metadata happens to contain a similar label.
+  authorKind?: 'kernel' | null;
 }
 
 interface PostTargetOptions {
@@ -205,6 +209,7 @@ interface PostTargetOptions {
   skipSummaryPersistence?: boolean;
   noOutboundRelay?: boolean;
   answeringMessageId?: string | null;
+  authorKind?: 'kernel' | null;
 }
 
 interface HeartbeatFallbackOptions {
@@ -237,6 +242,7 @@ interface MessageNormalized {
   id: unknown;
   content: string;
   messageType: string;
+  author_kind?: 'kernel' | null;
   userId: { _id: unknown; username: string; profilePicture?: string; isBot?: boolean };
   username: string;
   isBot?: boolean;
@@ -998,6 +1004,7 @@ class AgentMessageService {
       installationConfig = null,
       noOutboundRelay = false,
       answeringMessageId,
+      authorKind = null,
     } = options;
 
     // Typing indicator cleanup — once postMessage is entered, the runtime has
@@ -1579,6 +1586,7 @@ class AgentMessageService {
       threadRootId,
       noOutboundRelay,
       answeringMessageId,
+      authorKind,
     });
 
     // The first answer an agent gives the workspace owner completes "Give your
@@ -1661,6 +1669,7 @@ class AgentMessageService {
       skipSummaryPersistence = false,
       noOutboundRelay = false,
       answeringMessageId,
+      authorKind = null,
     } = options;
 
     // The installation label belongs to this pod; the User label belongs to
@@ -1724,21 +1733,22 @@ class AgentMessageService {
         } catch (syncErr) {
           console.warn('[agent-msg] PG pod backfill skipped:', (syncErr as Error).message);
         }
-        const newMessage = await (PGMessage as {
+        const pgMessageStore = PGMessage as {
           create(
             podId: string, userId: string, content: string, type: string, replyToMessageId?: string | null,
             payload?: unknown, resolvedThreadRootId?: number | null, answeringMessageId?: string | null,
+            authorKind?: 'kernel' | null,
           ): Promise<Record<string, unknown>>;
-        }).create(
-          String(podId),
-          String(agentUser._id),
-          content,
-          messageType,
-          replyToMessageId,
-          payload,
-          resolvedThreadRootId,
-          answeringMessageId,
-        );
+        };
+        const newMessage = authorKind
+          ? await pgMessageStore.create(
+            String(podId), String(agentUser._id), content, messageType,
+            replyToMessageId, payload, resolvedThreadRootId, answeringMessageId, authorKind,
+          )
+          : await pgMessageStore.create(
+            String(podId), String(agentUser._id), content, messageType,
+            replyToMessageId, payload, resolvedThreadRootId, answeringMessageId,
+          );
 
         // The raw INSERT row carries no reply JOIN, so a replying agent's
         // broadcast would lack the quoted context until reload (#646).
@@ -1762,6 +1772,7 @@ class AgentMessageService {
           id: newMessage.id,
           content: newMessage.content as string,
           messageType: (newMessage.message_type as string) || messageType,
+          author_kind: (newMessage.author_kind as 'kernel' | null) ?? authorKind,
           replyTo,
           userId: {
             _id: agentUser._id,
@@ -1798,12 +1809,16 @@ class AgentMessageService {
         podId,
         messageType,
         metadata,
+        ...(authorKind ? { authorKind } : {}),
         ...(payload != null ? { payload } : {}),
       });
 
       await mongoMessage.save();
       await mongoMessage.populate('userId', 'username profilePicture isBot');
-      message = mongoMessage as MessageNormalized;
+      message = {
+        ...(mongoMessage as unknown as MessageNormalized),
+        author_kind: authorKind,
+      };
     }
 
     AgentMessageService.logMessageLifecycle('posted', {
@@ -1861,6 +1876,7 @@ class AgentMessageService {
         podId: String(podId),
         content: (message as MessageNormalized).content,
         messageType: (message as MessageNormalized).messageType || messageType,
+        author_kind: (message as MessageNormalized).author_kind ?? authorKind,
         userId: (message as MessageNormalized).userId || {
           _id: agentUser._id,
           username: senderDisplayName,
@@ -2235,6 +2251,7 @@ class AgentMessageService {
             // "this server cannot say" (same convention as the frontend).
             reply_to_message_id: (msg.reply_to_message_id as string | number | null) ?? null,
             thread_root_id: (msg.thread_root_id as string | number | null) ?? null,
+            author_kind: (msg.author_kind as 'kernel' | null) ?? null,
             replyTo: (msg.replyTo as MessageNormalized['replyTo']) ?? null,
           };
         });
@@ -2274,6 +2291,7 @@ class AgentMessageService {
         userId: userId || { username: 'Unknown' },
         username,
         isBot: userId?.isBot === true,
+        author_kind: msg.authorKind === 'kernel' || msg.author_kind === 'kernel' ? 'kernel' : null,
         ...withSelf(userId?._id),
         createdAt: msg.createdAt as Date,
       };

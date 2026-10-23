@@ -117,6 +117,7 @@ describe('stalledConnectService.scan', () => {
     expect(mockPost).toHaveBeenCalledTimes(1);
     const posted = mockPost.mock.calls[0][0];
     expect(posted.podId).toBe('pod1');
+    expect(posted.authorKind).toBe('kernel');
     expect(posted.content).toContain('@alice');
     expect(posted.content).toContain('commonly agent run ai1-agent');
     expect(posted.content).toContain("I'll post here the moment I connect");
