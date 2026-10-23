@@ -67,6 +67,25 @@ ingress:
 cloudflared:
   enabled: false
 
+# clawdbot-gateway (openclaw moltbot) is OFF in staging. Prod has no clawdbot-gateway
+# Deployment either — prod runs backend, commonly-bot, frontend, litellm and redis — so
+# staging matches. Disabling it also drops its two PVCs (clawdbot-config / clawdbot-
+# workspace, which never Bound in the first install attempt) and the gateway's CPU.
+# Hosted agents answer through litellm (native runtime), not this gateway; if the Fri
+# walk needs a live moltbot inside a staging pod, enable one right-sized replica.
+agents:
+  clawdbot:
+    enabled: false
+    # The gateway Deployment/Service gate on `enabled`, but its two PVCs gate on
+    # these separate persistence flags (default true) — leaving them on would re-create
+    # the unbound clawdbot-config / clawdbot-workspace PVCs that stalled the first
+    # install (no consumer, never Bound). Off here so the gateway leaves nothing behind.
+    persistence:
+      config:
+        enabled: false
+      workspace:
+        enabled: false
+
 backend:
   env:
     # Smaller Postgres pool for staging's Aiven db (fewer connections than prod).
@@ -74,6 +93,46 @@ backend:
     # Non-secret db name; host/user/password come from the private values +
     # the database-credentials secret created by the Thu staging-secrets task.
     pgDatabase: commonly_staging
+  # Staging backend runs on the SPOT pool at a fraction of prod's requests, so it fits
+  # the nodes we already have (spot-pool sits at single-digit % CPU) without growing a
+  # pool. Prod backend stays on dev-pool because it holds session state a spot
+  # reclamation must never interrupt (values-dev); staging is the reckless, resettable
+  # lane, so a reclamation just restarts it. The empty default nodeSelector/tolerations
+  # in values.yaml left it stuck on the full, untainted default-pool ("Insufficient cpu
+  # / untolerated taints"); this fixes that.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  nodeSelector:
+    workload-tier: spot
+  tolerations:
+    - effect: NoSchedule
+      key: workload-tier
+      operator: Equal
+      value: spot
+
+# Staging frontend also on the spot pool, right-sized. It scheduled fine in the first
+# attempt (small request), but consolidating it onto spot keeps the contended, untainted
+# default-pool clear for cluster system pods.
+frontend:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  nodeSelector:
+    workload-tier: spot
+  tolerations:
+    - effect: NoSchedule
+      key: workload-tier
+      operator: Equal
+      value: spot
 
 # No ops-runner in staging — operators exec into prod's ops-runner. Also keeps
 # staging's render free of a backend-image pod it doesn't need.
