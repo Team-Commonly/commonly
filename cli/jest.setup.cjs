@@ -19,5 +19,7 @@ const { mkdtempSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 
-process.env.COMMONLY_MCP_HOME = mkdtempSync(join(tmpdir(), 'commonly-mcp-home-jest-'));
-writeFileSync(join(process.env.COMMONLY_MCP_HOME, '.warm.lock'), 'warming\n');
+const mcpHome = mkdtempSync(join(tmpdir(), 'commonly-mcp-home-jest-'));
+process.env.COMMONLY_MCP_HOME = mcpHome;
+globalThis.__commonlyMcpHomeForCleanup = mcpHome;
+writeFileSync(join(mcpHome, '.warm.lock'), 'warming\n');
