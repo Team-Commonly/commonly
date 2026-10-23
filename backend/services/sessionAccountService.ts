@@ -30,10 +30,15 @@ export interface SessionAccount {
   _id?: unknown;
   banned?: boolean;
   isBot?: boolean;
+  username?: string;
+  email?: string;
+  role?: string;
 }
 
 export const loadSessionAccount = async (userId: string): Promise<SessionAccount | null> => {
-  const account = await User.findById(userId).select('banned isBot').lean();
+  // Express auth also needs identity fields for the same req.user shape as
+  // API-token auth. Keep one live-row read for all session verifiers.
+  const account = await User.findById(userId).select('banned isBot username email role').lean();
   return (account as SessionAccount | null) || null;
 };
 

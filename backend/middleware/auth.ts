@@ -128,7 +128,12 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
     }
 
     req.userId = id;
-    req.user = { id };
+    req.user = {
+      id,
+      username: account!.username,
+      email: account!.email,
+      role: account!.role,
+    };
     req.authType = 'jwt';
     touchLastActive(id);
     next();
