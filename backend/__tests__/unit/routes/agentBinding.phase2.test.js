@@ -251,6 +251,18 @@ describe('owner-requested reconnect', () => {
     expect(refused.body.code).toBe('machine_key_revoked');
   });
 
+  it('refuses an expired daemon key without spending the reconnect directive', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    await AgentCredential.updateOne({ _id: daemonCredA._id }, {
+      $set: { expiresAt: new Date(Date.now() - 60_000) },
+    });
+    const refused = await requestReconnect();
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('machine_key_revoked');
+    const identity = await User.findById(bot._id).lean();
+    expect(identity.botMetadata.reconnectRequestedAt ?? null).toBeNull();
+  });
+
   it('lets an instance admin request a bound computer reconnect', async () => {
     await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
     global.__CALLER_ID = String(new mongoose.Types.ObjectId());

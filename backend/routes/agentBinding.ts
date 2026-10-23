@@ -296,6 +296,7 @@ router.post('/reconnect', bindingRateLimit, auth, async (
     if (!machine) return res.status(403).json({ message: 'Computer is not owned by this installer' });
     const daemonCanReconnect = await AgentCredential.exists({
       kind: 'daemon', machineId, ownerUserId: machine.ownerUserId, status: 'active',
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
     });
     if (!daemonCanReconnect) return res.status(409).json({
       message: 'Computer key revoked. Register the computer again before reconnecting this agent.',
