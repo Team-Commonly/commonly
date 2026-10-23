@@ -358,6 +358,107 @@ const readDeclaredBranch = (gitmodulesText) => {
 };
 
 /**
+ * Did this pin move FORWARD from what the merge base carries, or backward?
+ *
+ * Containment — "the pin is on the declared branch" — cannot catch a
+ * ROLLBACK, because a rollback is by definition to a commit the branch
+ * already had. Measured on #1089: `compare/70bd82b8...5d88a3f1` returned
+ * `status=ahead, behind_by=0`, so the check above passed while the live
+ * gateway reverted two commits. A human caught it by reading the diff.
+ *
+ * How the bad pin gets there is why this must not key on intent: `git add -A`
+ * in a checkout whose submodule sits at an older commit stages that stale
+ * pointer as if it were an edit. The author types no submodule command, so a
+ * guard keyed on a title or a label misses the entire population — the
+ * regression happens precisely in PRs that believe they have nothing to do
+ * with the submodule.
+ *
+ * Returns 'rollback' ONLY for a strict ancestor of the merge base's pin.
+ * Unchanged, forward, diverged and undeterminable all fall through, because
+ * containment already judges those and this must not become a second opinion
+ * on a check that works.
+ */
+const checkPinDirection = ({ exec = execFileSync } = {}) => {
+  const gitlink = readGitlinkSha({ full: true });
+  const submodule = path.join(REPO_ROOT, '_external', 'clawdbot');
+  if (gitlink === '(unknown)') {
+    return { state: 'undetermined', pin: gitlink, detail: 'could not read the gitlink sha from HEAD' };
+  }
+  const sup = (args) => exec('git', args, { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const sub = (args) => exec('git', args, { cwd: submodule, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+  // CI is the case that matters and it is the hostile one. `tests.yml`'s
+  // tool-tests job used to check out with `submodules: recursive` and NO
+  // fetch-depth, so actions/checkout took depth 1 and fetched only the PR's
+  // merge ref: `origin/main` did not exist, no merge base could be computed,
+  // and this probe returned undetermined on every pull request while the
+  // caller dropped it — the check never fired. Measured by @otto on #2497.
+  // Two halves to the fix: that job now checks out with `fetch-depth: 0`
+  // (the depth belongs in the workflow, not in a git fetch from inside a
+  // guard, where it would also pollute the fetch assertions this suite makes
+  // about the submodule ladder), and an unresolvable base is now LOUD.
+  //
+  // `GITHUB_BASE_REF` goes FIRST, not last: it is the branch the pull request
+  // actually targets, and on a stacked PR the merge base with main sits behind
+  // the real base and carries a pin this PR never touched — a FALSE rollback,
+  // which is the one failure this check cannot afford. On an ordinary PR the
+  // two are the same ref. Unset (local runs, push events) falls to main.
+  const baseCandidates = [
+    process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : null,
+    'origin/main',
+  ].filter(Boolean);
+
+  let base;
+  let resolved;
+  for (const ref of baseCandidates) {
+    try {
+      base = String(sup(['merge-base', 'HEAD', ref])).trim();
+      resolved = ref;
+      break;
+    } catch { /* try the next candidate */ }
+  }
+  if (!resolved) {
+    return {
+      state: 'undetermined',
+      pin: gitlink,
+      detail: `could not resolve a merge base against ${baseCandidates.join(' or ')}, so the `
+        + 'direction of the pin is unknown. This is NOT a pass: a checkout too shallow to reach '
+        + 'the base is exactly the state in which a rollback goes unnoticed. If this is CI, the '
+        + 'job needs `fetch-depth: 0`.',
+    };
+  }
+  // An empty success is not a real git answer — it is what a stub returns —
+  // so treat it as nothing to compare and let containment judge.
+  if (!base) return { state: 'ok', pin: gitlink };
+
+  let basePin;
+  try {
+    const line = String(sup(['ls-tree', base, '_external/clawdbot'])).trim();
+    basePin = line.split(/\s+/)[2];
+  } catch {
+    return { state: 'undetermined', pin: gitlink, detail: `could not read the gitlink at the merge base ${base.slice(0, 12)}` };
+  }
+  if (!basePin || basePin === gitlink) return { state: 'ok', pin: gitlink };
+
+  try {
+    sub(['merge-base', '--is-ancestor', gitlink, basePin]);
+  } catch {
+    // Not an ancestor (status 1) or the object is absent (128). Forward,
+    // diverged and unknown all land here, and all are containment's problem.
+    return { state: 'ok', pin: gitlink };
+  }
+  return {
+    state: 'rollback',
+    pin: gitlink,
+    detail: `the gitlink moved BACKWARD: ${gitlink.slice(0, 12)} is an ancestor of the base's ${basePin.slice(0, 12)}. `
+      + 'If you did not mean to touch the submodule, this is `git add -A` staging a stale checkout. '
+      + 'Repair with `git update-index --cacheinfo 160000,<main-sha>,_external/clawdbot` — note that '
+      + '`git checkout origin/main -- _external/clawdbot` stages the right sha and ANY later `git add` '
+      + 'of that path overwrites it again from the working tree.',
+  };
+};
+
+/**
  * Is the pinned commit contained in the branch `.gitmodules` declares?
  *
  * This is a DIFFERENT invariant from the tool contract above, on the same
@@ -393,62 +494,6 @@ const checkPinReachable = ({ exec = execFileSync } = {}) => {
     return { state: 'undetermined', branch, pin, detail: 'could not read the gitlink sha from HEAD' };
   }
 
-  /**
-   * Did this pin move FORWARD from what the merge base carries, or backward?
-   *
-   * Containment — "the pin is on the declared branch" — cannot catch a
-   * ROLLBACK, because a rollback is by definition to a commit the branch
-   * already had. Measured on #1089: `compare/70bd82b8...5d88a3f1` returned
-   * `status=ahead, behind_by=0`, so the check above passed while the live
-   * gateway reverted two commits. A human caught it by reading the diff.
-   *
-   * How the bad pin gets there is why this must not key on intent: `git add -A`
-   * in a checkout whose submodule sits at an older commit stages that stale
-   * pointer as if it were an edit. The author types no submodule command, so a
-   * guard keyed on a title or a label misses the entire population — the
-   * regression happens precisely in PRs that believe they have nothing to do
-   * with the submodule.
-   *
-   * Returns 'rollback' ONLY for a strict ancestor of the merge base's pin.
-   * Unchanged, forward, diverged and undeterminable all fall through, because
-   * containment already judges those and this must not become a second opinion
-   * on a check that works.
-   */
-  function checkPinDirection(gitlink) {
-    const sup = (args) => exec('git', args, { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    const sub = (args) => exec('git', args, { cwd: submodule, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-
-    let basePin;
-    try {
-      const base = String(sup(['merge-base', 'HEAD', 'origin/main'])).trim();
-      const line = String(sup(['ls-tree', base, '_external/clawdbot'])).trim();
-      basePin = line.split(/\s+/)[2];
-    } catch {
-      return { state: 'undetermined', detail: 'could not resolve the merge base with origin/main' };
-    }
-    if (!basePin || basePin === gitlink) return { state: 'ok' };
-
-    try {
-      sub(['merge-base', '--is-ancestor', gitlink, basePin]);
-    } catch {
-      // Not an ancestor (status 1) or the object is absent (128). Forward,
-      // diverged and unknown all land here, and all are containment's problem.
-      return { state: 'ok' };
-    }
-    return {
-      state: 'rollback',
-      detail: `the gitlink moved BACKWARD: ${gitlink.slice(0, 12)} is an ancestor of the base's ${basePin.slice(0, 12)}. `
-        + 'If you did not mean to touch the submodule, this is `git add -A` staging a stale checkout. '
-        + 'Repair with `git update-index --cacheinfo 160000,<main-sha>,_external/clawdbot` — note that '
-        + '`git checkout origin/main -- _external/clawdbot` stages the right sha and ANY later `git add` '
-        + 'of that path overwrites it again from the working tree.',
-    };
-  }
-
-  const direction = checkPinDirection(pin);
-  if (direction.state === 'rollback') {
-    return { state: 'rollback', branch, pin, detail: direction.detail };
-  }
 
   const git = (args) => exec('git', args, { cwd: submodule, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -908,12 +953,23 @@ const main = () => {
   // simultaneously tool-complete and unreachable (that is exactly #840), and
   // exiting on the first failure would hide whichever ran second.
   const reach = checkPinReachable();
-  if (reach.state === 'rollback') {
+  // Direction is its own question and its own function: containment asks "is
+  // the pin on the branch", direction asks "did it move backward", and a
+  // rollback answers YES to the first. Kept separate so that a containment
+  // harness cannot answer for direction and vice versa — they were one
+  // function and the direction verdict was silently dropped (#2497).
+  const direction = checkPinDirection();
+  if (direction.state === 'rollback') {
     console.error(
       '[moltbot-tool-contract] FAIL — the submodule pin moved BACKWARD.\n\n'
-      + `    pin              ${reach.pin}\n`
+      + `    pin              ${direction.pin}\n`
       + `    declared branch  ${reach.branch}\n`
-      + `    ${reach.detail}\n\n`,
+      + `    ${direction.detail}\n\n`,
+    );
+  } else if (direction.state === 'undetermined') {
+    console.error(
+      `[moltbot-tool-contract] CANNOT VERIFY pin direction — ${direction.detail}\n`
+      + '  Exiting 2, NOT 0.\n',
     );
   }
   if (reach.state === 'orphaned') {
@@ -1003,15 +1059,15 @@ const main = () => {
 
   // Severity order: a proven violation (1) outranks an unrun check (2) only
   // because a violation is actionable now. Both are non-zero; neither is a pass.
-  if (missing.length || presetCheck.missing.length || reach.state === 'orphaned' || reach.state === 'rollback') process.exit(1);
-  if (presetCheck.uncovered.length || reach.state === 'undetermined') process.exit(2);
+  if (missing.length || presetCheck.missing.length || reach.state === 'orphaned' || direction.state === 'rollback') process.exit(1);
+  if (presetCheck.uncovered.length || reach.state === 'undetermined' || direction.state === 'undetermined') process.exit(2);
 };
 
 if (require.main === module) main();
 
 module.exports = {
   parseDeclaredTools, collectRequiredTools, loadCyclesTrailer, loadMentionCues,
-  readDeclaredBranch, checkPinReachable, readGitlinkSha,
+  readDeclaredBranch, checkPinReachable, checkPinDirection, readGitlinkSha,
   parsePresets, checkPresetToolNames, loadNativeTools, readExtensionToolsAtPin,
   NAMED_AS_REMOVED, PRESETS_FILE,
   MENTION_CUES, REQUIRED_TOOL_SOURCES, stripComments,
