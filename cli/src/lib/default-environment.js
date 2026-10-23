@@ -20,6 +20,7 @@
  *   qwen — per-spawn --mcp-config with file-backed stdio credentials (adapters/qwen.js)
  *   dsh — per-spawn --patch with file-backed stdio credentials (adapters/dsh.js)
  *   goose — per-spawn --with-extension with file-backed stdio credentials (adapters/goose.js)
+ *   grok — project .grok/config.toml with environment-expanded stdio credentials (adapters/grok.js)
  * `stub` has no consumption path and must keep being handed `environment: null`.
  *
  * The placeholders are substituted at spawn time by the adapter, so the
@@ -28,7 +29,7 @@
 
 import { normalizeSandboxTrust } from './environment.js';
 
-export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'opencode', 'qwen', 'dsh', 'goose']);
+export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'opencode', 'qwen', 'dsh', 'goose', 'grok']);
 
 /**
  * The adapters that can ENFORCE the default sandbox — a strict subset of the
