@@ -403,8 +403,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     return toolLabel(grant).toLowerCase().includes(q) || grant.tools.some((tool) => tool.toLowerCase().includes(q));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [grants, q, catalog]);
-  // Catalogue entries without a live grant join the inactive fold. `now` is
-  // a dep so expiry moves a grant into the fold without a reload.
+  // Catalogue entries without a live grant are offers. `now` is a dep so an
+  // expired grant becomes inactive and its catalogue entry becomes an offer.
   const notYet = useMemo(() => catalog.filter((entry) => (
     !entryIsGranted(entry, grants || [], now)
     && (!q || entry.label.toLowerCase().includes(q) || entry.tools.some((tool) => tool.name.toLowerCase().includes(q)))
@@ -412,7 +412,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const liveRows = rows.filter((grant) => !isDead(grant, now));
   const inactiveRows = rows.filter((grant) => isDead(grant, now));
   const matchedHiddenConnections = hiddenConnections.filter((connection) => !q || connection.label.toLowerCase().includes(q));
-  const inactiveCount = inactiveRows.length + notYet.length + matchedHiddenConnections.length;
+  const inactiveCount = inactiveRows.length + matchedHiddenConnections.length;
   // Grants, not entries: a person may hold two live grants on one tool.
   const grantedCount = (grants || []).filter((grant) => !isDead(grant, now)).length;
   // Entries, from the same predicate the Not yet list filters on, so the header
@@ -1089,12 +1089,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         {removedHiddenNotice && <p className="v2-connector-aside__note" role="status">{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review Commonly access at {{label}}.', label: removedHiddenNotice.label })} <a href={removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></p>}
         <div className="v2-connectors__rows">
           {liveRows.map(renderRow)}
+          {notYet.map(renderNotYet)}
           <V2InactiveFold count={inactiveCount}>
             {inactiveRows.map(renderRow)}
-            {notYet.map(renderNotYet)}
             {matchedHiddenConnections.map(renderHiddenConnection)}
           </V2InactiveFold>
-          {liveRows.length === 0 && inactiveCount === 0 && (
+          {liveRows.length === 0 && notYet.length === 0 && inactiveCount === 0 && (
             <p className="v2-tools__empty">{t('tools.nothingMatches', { defaultValue: 'Nothing matches.' })}</p>
           )}
         </div>

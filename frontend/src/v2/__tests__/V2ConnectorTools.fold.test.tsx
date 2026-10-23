@@ -29,8 +29,55 @@ const grant = (id: string, revokedAt: string | null) => ({
 });
 const catalog = [{ installableId: 'github', list: 'tools', label: 'GitHub', description: 'Issues', available: true,
   tools: [{ name: 'github.list_issues', requiredWriteMode: 'read', irreversible: false }], connections: [] }];
+const offers = ['GitHub', 'Linear', 'Atlassian', 'Airtable', 'Sentry'].map((label) => ({
+  ...catalog[0], installableId: label.toLowerCase(), label,
+  tools: [{ name: `${label.toLowerCase()}.list_issues`, requiredWriteMode: 'read', irreversible: false }],
+}));
+
+const mockTools = (entries: typeof catalog, grants: ReturnType<typeof grant>[]) => {
+  axios.get.mockImplementation((url: string) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: entries } });
+    if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { grants } });
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+    return Promise.reject(new Error(`unmocked ${url}`));
+  });
+};
+
+const renderTools = () => render(<AuthContext.Provider value={auth}><MemoryRouter>
+  <V2ConnectorTools pods={[{ _id: 'p1', name: 'Launch pod', members: [{ _id: 'u1', username: 'sam' }] }]} />
+</MemoryRouter></AuthContext.Provider>);
 
 beforeAll(async () => { await i18nReady; await i18n.changeLanguage('en'); });
+
+test('five never-granted catalogue offers are visible with no inactive fold', async () => {
+  mockTools(offers, []);
+  const { container } = renderTools();
+
+  await waitFor(() => expect(container.querySelectorAll('.v2-connector-row')).toHaveLength(5));
+  expect(screen.getByText('0 granted · 5 more')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /inactive ·/ })).not.toBeInTheDocument();
+  expect([...container.querySelectorAll('.v2-connector-row__name')].map((row) => row.textContent))
+    .toEqual(['GitHub', 'Linear', 'Atlassian', 'Airtable', 'Sentry']);
+  expect(screen.queryByText('Nothing matches.')).not.toBeInTheDocument();
+});
+
+test('eight ended grants fold below five never-granted offers', async () => {
+  const grants = [
+    ...Array.from({ length: 4 }, (_, i) => grant(`revoked-${i}`, yesterday)),
+    ...Array.from({ length: 4 }, (_, i) => ({ ...grant(`expired-${i}`, null), expiresAt: yesterday })),
+  ];
+  mockTools(offers, grants);
+  const { container } = renderTools();
+
+  const fold = await screen.findByRole('button', { name: 'inactive · 8' });
+  expect(fold).toHaveAttribute('aria-expanded', 'false');
+  expect(container.querySelectorAll('.v2-connector-row')).toHaveLength(5);
+  expect([...container.querySelectorAll('.v2-connector-row__name')].map((row) => row.textContent))
+    .toEqual(['GitHub', 'Linear', 'Atlassian', 'Airtable', 'Sentry']);
+  fireEvent.click(fold);
+  expect(container.querySelectorAll('.v2-connector-row')).toHaveLength(13);
+});
 
 test('two live grants stay visible and nine revoked or expired grants start in one closed fold', async () => {
   const grants = [grant('live-1', null), grant('live-2', null),
@@ -58,7 +105,7 @@ test('two live grants stay visible and nine revoked or expired grants start in o
   expect(fold).toHaveAttribute('aria-expanded', 'true');
 });
 
-test('search counts only matching inactive grants, catalogue entries and connections', async () => {
+test('search keeps a matching catalogue offer visible and folds only ended connections', async () => {
   const entries = [catalog[0], { ...catalog[0], installableId: 'linear', connectionType: 'hosted-mcp', entryId: 'linear', label: 'Linear', description: 'Linear issues',
     tools: [{ name: 'linear.list_issues', requiredWriteMode: 'read', irreversible: false }] }];
   axios.get.mockImplementation((url: string) => {
@@ -74,11 +121,10 @@ test('search counts only matching inactive grants, catalogue entries and connect
   const { container } = render(<AuthContext.Provider value={auth}><MemoryRouter>
     <V2ConnectorTools pods={[{ _id: 'p1', name: 'Launch pod', members: [{ _id: 'u1', username: 'sam' }] }]} />
   </MemoryRouter></AuthContext.Provider>);
-  expect(await screen.findByRole('button', { name: 'inactive · 3' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'inactive · 2' })).toBeInTheDocument();
 
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search tools' }), { target: { value: 'Linear' } });
-  const fold = screen.getByRole('button', { name: 'inactive · 1' });
-  fireEvent.click(fold);
+  expect(screen.queryByRole('button', { name: /inactive ·/ })).not.toBeInTheDocument();
   expect(container.querySelectorAll('.v2-connector-row')).toHaveLength(1);
   expect(container.querySelector('.v2-connector-row')).toHaveTextContent('Linear');
   expect(container).not.toHaveTextContent('Atlassian');
