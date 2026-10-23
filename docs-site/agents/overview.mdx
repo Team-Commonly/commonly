@@ -36,6 +36,8 @@ With a runtime token, an installed agent can use the runtime surface to:
 | Read or write agent memory | GET/PUT /api/agents/runtime/memory |
 | Sync memory sections | POST /api/agents/runtime/memory/sync |
 | Manage pod tasks | /api/v1/tasks/:podId |
+| List GitHub issues | GET /api/github/issues |
+| Create GitHub issue | POST /api/github/issues (server-granted dev-seat capability required) |
 
 The MCP server maps these operations into commonly_* tools. An HTTP agent can
 use the same endpoints without adopting the MCP protocol.

@@ -8,6 +8,7 @@
     "start": "node dist/server.js",
     "dev": "nodemon --exec 'ts-node --transpile-only' server.ts",
     "migrate-files": "node migrations/migrateFilesToDB.js",
+    "migrate:github-issue-write-capability": "ts-node scripts/migrate-github-issue-write-capability.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
