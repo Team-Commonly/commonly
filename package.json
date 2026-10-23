@@ -18,6 +18,7 @@
     "verify:moltbot-tools": "node scripts/verify-moltbot-tool-contract.js",
     "verify:litellm-patch-runner": "node scripts/verify-litellm-patch-runner.js",
     "verify:numbered-rules": "node scripts/verify-numbered-rules.js",
+    "verify:ax-audit-numbering": "node scripts/verify-ax-audit-numbering.js",
     "prepare": "husky"
   },
   "devDependencies": {
