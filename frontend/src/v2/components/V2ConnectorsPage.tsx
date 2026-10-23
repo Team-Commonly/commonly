@@ -16,6 +16,7 @@ import V2ConnectorTools, { type HostedMcpManualRevokeNotice } from './V2Connecto
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import V2PageHead from './V2PageHead';
+import V2InactiveFold from './V2InactiveFold';
 
 interface ConnectorGate {
   enabled?: boolean;
@@ -955,7 +956,7 @@ const V2ConnectorsPage: React.FC = () => {
         // raised on the row; everything else in the commit is unchanged.
         detail: t('connectors.askOperator', { defaultValue: 'ask your operator' }),
         dot: 'not-yet',
-        line: t('connectors.notEnabled', { defaultValue: 'Not enabled on this instance.' }),
+        line: t('connectors.notEnabled', { defaultValue: 'Not offered on this instance.' }),
         muted: true,
         notEnabled: true,
         pulse: false,
@@ -971,7 +972,7 @@ const V2ConnectorsPage: React.FC = () => {
         action: null,
         detail: '',
         dot: 'not-yet',
-        line: t('connectors.notConnectable', { defaultValue: 'Not connectable yet.' }),
+        line: t('connectors.notConnectable', { defaultValue: 'Unavailable here.' }),
         muted: true,
         // The class and the Ask link are right for this row; the kicker was the
         // part that lied. Measured in the keys-set render at #1826: the eyebrow
@@ -1155,16 +1156,13 @@ const V2ConnectorsPage: React.FC = () => {
   // last-used; a connection with no pod says so. Both parts come from keys and
   // the timestamp, never from rendered English (Vera, Connectors 70300).
   const kickerFor = (item: ListItem, row: ConnectorRow): string => {
+    // Inactive rows sit under the "inactive · N" fold. Their state is the fold's
+    // job, so the kicker carries no pod and no state word.
+    if (row.muted) return '';
     const podId = item.connector ? connectorPodId(item.connector) : null;
     // TASK-140: a not-enabled row has no connection to name a pod for, so the
     // pod slot read `no pod` — which is false, it names the blocker instead.
-    let pod = row.notEnabled
-      ? t('connectors.notEnabledKicker', { defaultValue: 'not enabled' })
-      : podId ? podNameById(podId, item.connector) : t('connectors.noPod', { defaultValue: 'no pod' });
-    // `notEnabled` covers two states and the kicker must not: a not-connectable
-    // row has this instance's credentials, so it says "not yet" — the same
-    // string the not-yet roster row renders.
-    if (row.notConnectable) pod = t('connectors.notYetKicker', { defaultValue: 'not yet' });
+    const pod = podId ? podNameById(podId, item.connector) : t('connectors.noPod', { defaultValue: 'no pod' });
     // A row with no age (the not-enabled row's '—') carries only the pod.
     return row.when === '—' ? pod : `${pod} · ${row.when}`;
   };
@@ -1208,6 +1206,15 @@ const V2ConnectorsPage: React.FC = () => {
     if (action === 'confirm') return resolveSlackBind(connector, 'confirm', item.key);
     return undefined;
   };
+
+  // Live rows first; every dead row (not offered, unavailable, or not enabled)
+  // goes under the one shared "inactive · N" fold.
+  const isInactive = (item: ListItem): boolean => {
+    const row = rowForItem(item);
+    return Boolean(row.muted || row.notEnabled);
+  };
+  const liveItems = items.filter((item) => !isInactive(item));
+  const inactiveItems = items.filter(isInactive);
 
   const busyFor = (item: ListItem): boolean => busyId === item.key || (item.connector !== null && busyId === item.connector._id);
 
@@ -1665,28 +1672,10 @@ const V2ConnectorsPage: React.FC = () => {
         <div className="v2-connectors__content">
           <section className="v2-connectors__main" aria-label={t('connectors.channels', { defaultValue: 'Your channels' })}>
             <div className="v2-connectors__rows">
-              {items.map(renderRow)}
-              <article className="v2-connector-row v2-connector-row--not-yet">
-                <span className="v2-connector-row__name">
-                  <span className="v2-connector-row__dot v2-connector-row__dot--not-yet" aria-hidden="true" />
-                  <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type="whatsapp" /></span>
-                  <span className="v2-connector-row__names">
-                    {UNAVAILABLE_PLATFORM_LABELS.map((name, index) => (
-                      <React.Fragment key={name}>
-                        {index > 0 && <span className="v2-connector-row__name-sep" aria-hidden="true"> · </span>}
-                        <span className="v2-connector-row__name-item">{name}</span>
-                      </React.Fragment>
-                    ))}
-                  </span>
-                </span>
-                <span className="v2-connector-row__details">
-                  <span className="v2-connector-row__kicker">{t('connectors.notYetKicker', { defaultValue: 'not yet' })}</span>
-                  <strong>{t('connectors.notYetLine', { defaultValue: 'Not yet. Tell us which channel you need and we build it next.' })}</strong>
-                </span>
-                <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
-                  {t('connectors.ask', { defaultValue: 'Ask' })}
-                </a>
-              </article>
+              {liveItems.map(renderRow)}
+              <V2InactiveFold count={inactiveItems.length}>
+                {inactiveItems.map(renderRow)}
+              </V2InactiveFold>
             </div>
 
             {availableProviders.length > 0 && (

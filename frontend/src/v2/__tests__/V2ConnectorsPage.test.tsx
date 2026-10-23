@@ -213,21 +213,18 @@ describe('V2ConnectorsPage', () => {
     }
   });
 
-  it('TASK-162: the not-yet channel names are separate elements, with a separator that only shows at ≤760', async () => {
+  // TASK-338: dead rows sit under the shared "inactive · N" fold, collapsed.
+  const openInactiveFold = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: /^inactive · \d+$/ }));
+  };
+
+  it('TASK-338: the unbuilt-provider placeholder is gone, and no not-yet copy renders', async () => {
     mockGets([]);
     const { container } = renderPage();
-    await waitFor(() => expect(container.querySelector('.v2-connector-row--not-yet')).not.toBeNull());
-    const names = container.querySelector('.v2-connector-row--not-yet .v2-connector-row__names');
-    expect(names).not.toBeNull();
-    // Separate elements, not one joined string: above 760 they stack in the name
-    // track, so a joined string would be a single 140px-wide line that runs into
-    // the details column. TASK-024 left this row one name — Discord is a built
-    // connector and now arrives through the catalog — so the LIST is what is
-    // asserted and the separator count follows from its length. Nothing renders a
-    // `__name-sep` until a second unbuilt provider joins WhatsApp; the rule that
-    // shows it at ≤760 stays pinned in v2-layout-invariants.test.ts.
-    expect(Array.from(names!.querySelectorAll('.v2-connector-row__name-item')).map((item) => item.textContent)).toEqual(['WhatsApp']);
-    expect(names!.querySelectorAll('.v2-connector-row__name-sep')).toHaveLength(0);
+    await waitFor(() => expect(container.querySelector('.v2-connectors__rows')).not.toBeNull());
+    expect(container.querySelector('.v2-connector-row__names')).toBeNull();
+    expect(screen.queryByText(/not yet/i)).toBeNull();
+    expect(screen.queryByText(/Tell us which channel/)).toBeNull();
   });
 
   it('TASK-131: relative ages advance in place, and a returning tab re-reads, without a reload', async () => {
@@ -261,17 +258,11 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByText('Send /commonly-enable in your Telegram chat.')).toBeInTheDocument();
     expect(screen.getByText('Code expires in 5 min')).toBeInTheDocument();
     expect(screen.getByText('Rewire crew · linked to Ops')).toBeInTheDocument();
-    const notYetNames = container.querySelector('.v2-connector-row--not-yet .v2-connector-row__names');
-    // TASK-024: this row is "we have not built it", so it lists only providers
-    // with no manifest at all. Discord is a built connector (routes/discord.ts;
-    // discordProvider.ts) and reaches the page through the catalog — available, or
-    // the not-enabled row when the instance lacks its credentials — so naming it
-    // here asserted something false. Scoped to this row deliberately: a plain
-    // queryByText would also fail if a later fixture adds Discord as a catalog row.
-    expect(notYetNames?.textContent).toBe('WhatsApp');
+    // TASK-338: the unbuilt-provider placeholder row is gone from the list.
+    expect(container.querySelector('.v2-connector-row__names')).toBeNull();
     expect(screen.getByText('/commonly-enable abc1 23')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy command' })).toBeInTheDocument();
-    expect(container.querySelectorAll('.v2-connector-row__glyph')).toHaveLength(3);
+    expect(container.querySelectorAll('.v2-connector-row__glyph')).toHaveLength(2);
   });
 
   // TASK-156. A linked Slack stores its workspace in `teamName`
@@ -508,11 +499,12 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
-  it('removes the retired SOON tiles and keeps unavailable providers in the Not yet row', async () => {
+  it('removes the retired SOON tiles and the not-yet placeholder copy', async () => {
     mockGets([]);
     renderPage();
 
-    expect(await screen.findByText(/Not yet\. Tell us which channel/)).toBeInTheDocument();
+    await screen.findByRole('button', { name: /^inactive · \d+$/ }).catch(() => null);
+    expect(screen.queryByText(/Tell us which channel/)).toBeNull();
     expect(screen.queryByText('SOON')).toBeNull();
   });
 
@@ -1101,26 +1093,39 @@ describe('V2ConnectorsPage', () => {
       return container.querySelector('svg path')?.getAttribute('d') || null;
     };
 
+    it('TASK-338: dead rows collapse under one inactive fold below the live rows', async () => {
+      mockCatalog([
+        entry({ installableId: 'slack', label: 'Slack', available: false, unavailableReason: 'not_configured' }),
+        entry({
+          installableId: 'telegram',
+          label: 'Telegram',
+          available: true,
+          installation: { status: 'active', updatedAt: new Date().toISOString(), components: [] },
+          integration: liveIntegration({ _id: 'i-tg', installationId: 'install-telegram-u1', type: 'telegram' }),
+        }),
+      ]);
+      const { container } = renderPage();
+      const fold = await screen.findByRole('button', { name: 'inactive · 1' });
+      expect(fold).toHaveAttribute('aria-expanded', 'false');
+      const rows = container.querySelector('.v2-connectors__rows') as HTMLElement;
+      expect(rows.firstElementChild).toHaveTextContent('Telegram');
+      expect(screen.queryByText('Not offered on this instance.')).toBeNull();
+      fireEvent.click(fold);
+      expect(screen.getByText('Not offered on this instance.')).toBeInTheDocument();
+    });
+
     it('describes Discord only through the catalog, never as a provider we have not built', async () => {
       mockCatalog([
         entry({ installableId: 'discord', label: 'Discord', available: false, unavailableReason: 'not_configured' }),
       ]);
       renderPage();
 
-      const notEnabled = (await screen.findByText('Not enabled on this instance.')).closest('.v2-connector-row');
+      await openInactiveFold();
+      const notEnabled = (await screen.findByText('Not offered on this instance.')).closest('.v2-connector-row');
       expect(notEnabled).toHaveClass('v2-connector-row--not-enabled');
-
-      const notYet = (await screen.findByText(/Not yet\. Tell us which channel/)).closest('.v2-connector-row') as HTMLElement;
-      expect(notYet).toHaveClass('v2-connector-row--not-yet');
-      expect(notYet.textContent).toContain('WhatsApp');
-      expect(notYet.textContent).not.toContain('Discord');
-
-      // The glyph tracks the label: the row is about WhatsApp now, and the two
-      // glyphs differ, so this cannot pass by comparing a value to itself.
-      const whatsapp = glyphPath('whatsapp');
-      expect(whatsapp).not.toBeNull();
-      expect(whatsapp).not.toBe(glyphPath('discord'));
-      expect(notYet.querySelector('svg path')?.getAttribute('d')).toBe(whatsapp);
+      expect(notEnabled?.textContent).toContain('Discord');
+      expect(notEnabled?.querySelector('svg path')?.getAttribute('d')).toBe(glyphPath('discord'));
+      expect(screen.queryByText(/Tell us which channel/)).toBeNull();
     });
 
     it('offers a rostered provider with Add, and an unmapped one inherits no onboarding sentence', async () => {
@@ -1140,9 +1145,7 @@ describe('V2ConnectorsPage', () => {
       const slack = screen.getByText('Slack').closest('.v2-connector-row') as HTMLElement;
       expect(slack.textContent).toContain('one click in your workspace');
 
-      const notYet = screen.getByText(/Not yet\. Tell us which channel/).closest('.v2-connector-row') as HTMLElement;
-      expect(notYet.textContent).toContain('WhatsApp');
-      expect(notYet.textContent).not.toContain('Discord');
+      expect(screen.queryByText(/Tell us which channel/)).toBeNull();
     });
 
     it('reads a usable-but-unrostered provider as not connectable, with no Add anywhere', async () => {
@@ -1155,7 +1158,8 @@ describe('V2ConnectorsPage', () => {
       ]);
       renderPage();
 
-      const roster = (await screen.findByText('Not connectable yet.')).closest('.v2-connector-row') as HTMLElement;
+      await openInactiveFold();
+      const roster = (await screen.findByText('Unavailable here.')).closest('.v2-connector-row') as HTMLElement;
       expect(roster).toHaveClass('v2-connector-row--not-enabled');
       expect(roster.textContent).toContain('Discord');
       expect(roster.querySelector('svg path')?.getAttribute('d')).toBe(glyphPath('discord'));
@@ -1171,14 +1175,15 @@ describe('V2ConnectorsPage', () => {
       // this row's class and Ask link, so it also drove the kicker: the keys-set
       // render read "not enabled" directly above "Not connectable yet." — asking
       // an operator for credentials the instance already has (Vera, #1826).
-      expect(roster.querySelector('.v2-connector-row__kicker')).toHaveTextContent(/^not yet$/);
-      expect(roster.querySelector('.v2-connector-row__kicker')).not.toHaveTextContent('not enabled');
+      // TASK-338: a dead row carries no state word in its kicker; the fold and
+      // the line say it.
+      expect(roster.querySelector('.v2-connector-row__kicker')).toBeEmptyDOMElement();
 
       // The Add verb itself must be gone, not merely unused: an offered provider
       // is the only thing that may produce it, and there is none in this catalog.
       expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Connect a channel' })).toBeNull();
-      expect(await screen.findByText(/Not yet\. Tell us which channel/)).toBeInTheDocument();
+      expect(screen.queryByText(/Tell us which channel/)).toBeNull();
     });
 
     it('renders an unavailable provider with a state line and an available one with Add', async () => {
@@ -1189,7 +1194,8 @@ describe('V2ConnectorsPage', () => {
       axios.post.mockResolvedValue({ data: { status: 'installing' } });
       renderPage();
 
-      expect(await screen.findByText('Not enabled on this instance.')).toBeInTheDocument();
+      await openInactiveFold();
+      expect(await screen.findByText('Not offered on this instance.')).toBeInTheDocument();
       // This commit's own copy expectations are NOT merged: they asserted the
       // one-pod Telegram sentence TASK-154 reversed, and the absence of the
       // "ask your operator" detail — which #1557 landed AFTER the 09-04 ruling
@@ -1236,11 +1242,13 @@ describe('V2ConnectorsPage', () => {
       ]);
       renderPage();
 
+      await openInactiveFold();
       const ask = (await screen.findAllByRole('link', { name: 'Ask' }))
         .find((link) => link.closest('.v2-connector-row')?.classList.contains('v2-connector-row--not-enabled'));
       expect(ask).toBeDefined();
-      expect(ask?.closest('.v2-connector-row')?.querySelector('.v2-connector-row__kicker'))
-        .toHaveTextContent(/^not enabled$/);
+      // TASK-338: the blocker is the line; the kicker carries no state word.
+      expect(ask?.closest('.v2-connector-row')?.querySelector('.v2-connector-row__kicker')).toBeEmptyDOMElement();
+      expect(ask?.closest('.v2-connector-row')).toHaveTextContent('Not offered on this instance.');
       expect(screen.queryByText('no pod')).toBeNull();
 
       // Positive control: the row that DOES carry a connection still names its
