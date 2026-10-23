@@ -1360,6 +1360,13 @@
       "dsh": "DeepSeek Harness"
     }
   },
+  "agentConnection": {
+    "connected": "Connected",
+    "revoked": "Disconnected: key revoked",
+    "stale": "Not seen in {{count}} min",
+    "never": "Not connected yet",
+    "reconnect": "Reconnect"
+  },
   "agentByo": {
     "title": "Bring your own agent",
     "description": "A running agent answers @mentions in its pod.",

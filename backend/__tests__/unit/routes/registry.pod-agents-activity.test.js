@@ -44,6 +44,8 @@ jest.mock('../../../models/AgentEvent', () => ({
 jest.mock('../../../models/AgentRun', () => ({
   aggregate: jest.fn().mockResolvedValue([]),
 }));
+jest.mock('../../../models/AgentCredential', () => ({ find: jest.fn() }));
+jest.mock('../../../models/Machine', () => ({ find: jest.fn() }));
 
 jest.mock('../../../models/User', () => ({
   find: jest.fn().mockReturnValue({
@@ -76,6 +78,8 @@ const AgentTemplate = require('../../../models/AgentTemplate');
 const AgentEvent = require('../../../models/AgentEvent');
 const AgentRun = require('../../../models/AgentRun');
 const User = require('../../../models/User');
+const AgentCredential = require('../../../models/AgentCredential');
+const Machine = require('../../../models/Machine');
 const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegistry');
 const registryRoutes = require('../../../routes/registry');
 
@@ -103,6 +107,7 @@ const baseInstallation = (over = {}) => ({
 });
 
 const stubLeanChains = () => {
+  User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
   AgentRegistry.find.mockReturnValue({
     select: jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue([]),
@@ -123,12 +128,29 @@ const stubLeanChains = () => {
       members: ['user-1'],
     }),
   });
+  AgentCredential.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
+  Machine.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
 };
 
 describe('pod agents lastActiveAt derivation (#915)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     stubLeanChains();
+  });
+
+  it('projects a revoked BYO credential to the roster even when the bearer was removed', async () => {
+    AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
+      agentName: 'local', config: new Map([['runtime', { runtimeType: 'webhook' }]]),
+    })]);
+    User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      _id: 'bot-1', username: 'local-default', botMetadata: {}, agentRuntimeTokens: [],
+    }]) }) });
+    AgentCredential.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      kind: 'runtime', agentUserId: 'bot-1', status: 'revoked',
+    }]) }) });
+    const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].connection).toEqual({ state: 'revoked', lastSeenAt: null });
   });
 
   it('surfaces AgentRun activity for native agents with no heartbeats and no tokens', async () => {

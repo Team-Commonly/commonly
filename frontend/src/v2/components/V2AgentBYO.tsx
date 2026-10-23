@@ -28,6 +28,7 @@ import { V2Pod } from '../hooks/useV2Pods';
 import { PERSONA_CARDS } from '../agents/personaCatalogData';
 import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
 import { readPodVisits } from '../lib/podRecency';
+import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
 // The token routes refuse a name that belongs to an agent Commonly runs (the
@@ -135,6 +136,8 @@ const V2AgentBYO: React.FC = () => {
       // chose their own agent, its name and its pod. ?adapter= is the tool
       // they told the proposer they run.
       fromCard: params.get('from') === 'card',
+      reconnect: params.get('reconnect') === '1',
+      machine: params.get('mode') === 'machine',
       adapter: ((a): 'claude' | 'codex' | null => (a === 'claude' || a === 'codex' ? a : null))(params.get('adapter')),
     };
   })();
@@ -166,6 +169,9 @@ const V2AgentBYO: React.FC = () => {
   const [nameLookupError, setNameLookupError] = useState(false);
   const [nameLookupRetry, setNameLookupRetry] = useState(0);
   const [pendingReplacement, setPendingReplacement] = useState<{ agentName: string; podId: string } | null>(null);
+  const [existingConnection, setExistingConnection] = useState<{
+    connection: AgentConnection; runtimeType: string; installedBy?: string;
+  } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<'machine' | 'name' | 'pod' | null>(null);
@@ -204,6 +210,7 @@ const V2AgentBYO: React.FC = () => {
   // it starts on "Run it here".
   const [chosenMode, setMode] = useState<'hosted' | 'byo' | 'machine' | null>(() => {
     if (prefill.hosted) return 'hosted';
+    if (prefill.machine) return 'machine';
     return prefill.name ? 'byo' : null;
   });
   const [hosted, setHosted] = useState<{ agentName: string; podId: string; ready?: boolean } | null>(null);
@@ -255,6 +262,29 @@ const V2AgentBYO: React.FC = () => {
   // back to Claude or auto-detect, and vice versa.
   const [adapter, setAdapter] = useState<MachineAdapter>('');
   const [model, setModel] = useState<string>('');
+  // The same roster verdict powers Your Team and this reconnection screen.
+  // Limit the lookup to an intentional name to avoid probing suggested names.
+  useEffect(() => {
+    if (!podId || !nameTouched || !sanitizeAgentName(name)) {
+      setExistingConnection(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api.get<{ agents?: Array<{ name: string; runtime?: { runtimeType?: string }; connection?: AgentConnection; installedBy?: string }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`)
+        .then((result) => {
+          if (cancelled) return;
+          const match = result.agents?.find((agent) => agent.name === sanitizeAgentName(name) && agent.connection);
+          setExistingConnection(match?.connection ? {
+            connection: match.connection,
+            runtimeType: match.runtime?.runtimeType || '',
+            installedBy: match.installedBy,
+          } : null);
+        })
+        .catch(() => { if (!cancelled) setExistingConnection(null); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [api, name, nameTouched, podId]);
   // Re-default while the person hasn't typed a name: when the user resolves
   // after mount, and when the mode or the runner changes.
   const defaultAgentName = defaultNameFor(mode, mode === 'machine' ? adapter : listenAdapter);
@@ -267,6 +297,10 @@ const V2AgentBYO: React.FC = () => {
 
   useEffect(() => {
     if (!choicesKnown) return undefined;
+    if (prefill.reconnect && prefill.name) {
+      setNamesReady(true);
+      return undefined;
+    }
     let cancelled = false;
     const base = sanitizeAgentName(prefill.name || defaultAgentName);
     setNamesReady(false);
@@ -280,7 +314,7 @@ const V2AgentBYO: React.FC = () => {
       })
       .catch(() => { if (!cancelled) setNameLookupError(true); });
     return () => { cancelled = true; };
-  }, [api, choicesKnown, defaultAgentName, nameLookupRetry, nameTouched, prefill.name]);
+  }, [api, choicesKnown, defaultAgentName, nameLookupRetry, nameTouched, prefill.name, prefill.reconnect]);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
 
@@ -624,12 +658,12 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
-  const replaceRunningKey = async () => {
-    if (!pendingReplacement) return;
+  const replaceRunningKey = async (target = pendingReplacement) => {
+    if (!target) return;
     setSubmitting(true);
     setError(null);
     try {
-      const { agentName, podId: targetPodId } = pendingReplacement;
+      const { agentName, podId: targetPodId } = target;
       const tokenRes = await api.post<{ token?: string }>(
         `/api/registry/pods/${encodeURIComponent(targetPodId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`,
         { label: 'BYO MCP — replacement', force: true },
@@ -894,17 +928,27 @@ const V2AgentBYO: React.FC = () => {
             </p>
           )}
           {error && <div className="v2-byo__error">{error}</div>}
+          {existingConnection && (
+            <div className="v2-byo__hint" data-testid="byo-connection-state">
+              {connectionLabel(existingConnection.connection, t)}
+            </div>
+          )}
           {nameLookupError && mode === 'byo' && <div className="v2-byo__error">{t('agentByo.errors.nameLookupFailed')} <button type="button" className="v2-byo__link" onClick={() => setNameLookupRetry((n) => n + 1)}>{t('agentByo.actions.retry')}</button></div>}
           {/* Enabled once the pod list confirms the pod: a link's pod the person
               cannot install into is replaced by their own, and that is the line
               above the button, so the click never lands somewhere unshown. */}
           <button
             type="button"
-            onClick={submit}
+            onClick={() => {
+              if (existingConnection?.connection.state === 'revoked' || existingConnection?.connection.state === 'stale') {
+                void replaceRunningKey({ agentName: sanitizeAgentName(name), podId });
+              } else void submit();
+            }}
             disabled={submitting || !namesReady || !pods.some((p) => p._id === podId)}
             className="v2-byo__submit"
           >
-            {submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install')}
+            {submitting ? t('agentByo.actions.issuing') : existingConnection && existingConnection.connection.state !== 'connected'
+              ? t('agentConnection.reconnect') : t('agentByo.actions.install')}
           </button>
           <button
             type="button"
@@ -1086,6 +1130,11 @@ const V2AgentBYO: React.FC = () => {
               fell under the fold at 1440x900 with "Run it here" chosen (QA 2026-10-16:
               its top edge at y=882), so a stranger saw a selected card and no button. */}
           {error && <div className="v2-byo__error">{error}</div>}
+          {existingConnection && mode !== 'hosted' && (
+            <div className="v2-byo__hint" data-testid="byo-connection-state">
+              {connectionLabel(existingConnection.connection, t)}
+            </div>
+          )}
           {nameLookupError && mode === 'byo' && <div className="v2-byo__error">{t('agentByo.errors.nameLookupFailed')} <button type="button" className="v2-byo__link" onClick={() => setNameLookupRetry((n) => n + 1)}>{t('agentByo.actions.retry')}</button></div>}
           {mode === null ? (
             // Signal §3 not yet: a dashed slot where the act will be, until a
@@ -1093,7 +1142,15 @@ const V2AgentBYO: React.FC = () => {
             <div className="v2-byo__unchosen" data-testid="byo-mode-unchosen">
               {t('agentByo.actions.chooseFirst')}
             </div>
-          ) : (
+          ) : existingConnection && existingConnection.connection.state !== 'connected'
+            && (existingConnection.installedBy === String(currentUser?._id) || currentUser?.role === 'admin') ? (
+              <button type="button" className="v2-byo__submit" disabled={submitting || !podId} onClick={() => {
+                if (existingConnection.runtimeType === 'wrapper') void submitMachine(sanitizeAgentName(name));
+                else void replaceRunningKey({ agentName: sanitizeAgentName(name), podId });
+              }}>
+                {t('agentConnection.reconnect')}
+              </button>
+            ) : (
             <button
               type="button"
               onClick={submit}
@@ -1149,7 +1206,7 @@ const V2AgentBYO: React.FC = () => {
           <p className="v2-byo__error">
             {t('agentByo.rekey.warning', { name: pendingReplacement.agentName })}
           </p>
-          <button type="button" className="v2-byo__submit" disabled={submitting} onClick={replaceRunningKey}>
+          <button type="button" className="v2-byo__submit" disabled={submitting} onClick={() => { void replaceRunningKey(); }}>
             {submitting ? t('agentByo.actions.issuing') : t('agentByo.rekey.replace')}
           </button>
           <button type="button" className="v2-byo__link" onClick={() => setPendingReplacement(null)}>

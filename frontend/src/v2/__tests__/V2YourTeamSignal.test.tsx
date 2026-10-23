@@ -36,7 +36,7 @@ const renderPage = (over = {}) => {
   const queue = over.queue ?? [{ id: 'd-1', kind: 'decision', title: 'Slack defaults', podId: 'p2', messageId: '900', actorUserId: 'wren-user' }];
   axios.get.mockImplementation((url) => {
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Sharpen — pod model, attention routing, hardening' }, { _id: 'p2', name: 'Connectors v2 — channel routing' }] });
-    if (url.startsWith('/api/registry/pods/p1/agents')) return Promise.resolve({ data: { agents: agents.p1 } });
+    if (url.startsWith('/api/registry/pods/p1/agents')) return Promise.resolve({ data: { agents: over.p1Agents || agents.p1 } });
     if (url.startsWith('/api/registry/pods/p2/agents')) return Promise.resolve({ data: { agents: agents.p2 } });
     // `claimedBy` is the claimer's User id (never a name); `assignee` is a name
     // written by PATCH and is not a claim.
@@ -61,6 +61,20 @@ describe('Your Team (direction C)', () => {
     await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Hire an agent' }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo?mode=hosted');
+  });
+
+  test('a revoked BYO card shows the reason and one Reconnect action', async () => {
+    renderPage({ p1Agents: [{
+      name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user',
+      installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+      connection: { state: 'revoked', lastSeenAt: null },
+    }] });
+    await waitFor(() => expect(screen.getByText('Local')).toBeInTheDocument());
+    const card = cardOf('Local');
+    expect(card).toHaveTextContent('Disconnected: key revoked');
+    expect(within(card).queryByRole('button', { name: /Talk to/ })).toBeNull();
+    fireEvent.click(within(card).getByRole('button', { name: 'Reconnect' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo?pod=p1&name=local&reconnect=1');
   });
   test('head: display title, one mono meta line with agents · working · needs you, Bring your own bordered + Hire an agent ink', async () => {
     renderPage();

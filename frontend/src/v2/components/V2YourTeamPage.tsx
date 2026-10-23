@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import V2Avatar from './V2Avatar';
+import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 
 /**
  * Your Team — direction C, built to `YourTeam.dc.html` (canvas: Workspace in C)
@@ -50,6 +51,8 @@ interface AgentInstallationSummary {
   internal?: boolean;
   userId?: string | null;
   description?: string | null;
+  installedBy?: string | null;
+  connection?: AgentConnection;
 }
 
 interface TaskRow {
@@ -326,7 +329,10 @@ const V2YourTeamPage: React.FC = () => {
     const key = agentKey(a);
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
     const task = claimedTaskFor(a);
-    const statusText = state === 'needsYou'
+    const disconnected = a.connection && a.connection.state !== 'connected';
+    const statusText = disconnected
+      ? connectionLabel(a.connection!, t)
+      : state === 'needsYou'
       ? `${t('yourTeam.card.needsYou')} · ${ask?.title || ''}`.replace(/ · $/, '')
       : state === 'working'
         ? `${t('yourTeam.card.working')} · ${task?.taskId || shortPodName(task?.podName || a.podName || '')}`.replace(/ · $/, '')
@@ -350,8 +356,8 @@ const V2YourTeamPage: React.FC = () => {
           <div className="v2-team-card__title">
             <div className="v2-team-card__name">{display}</div>
             <div className={`v2-team-card__status v2-team-card__status--${state}`}>
-              {state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
-              {state !== 'idle' ? ' ' : ''}
+              {!disconnected && state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
+              {!disconnected && state !== 'idle' ? ' ' : ''}
               {statusText}
             </div>
           </div>
@@ -365,12 +371,17 @@ const V2YourTeamPage: React.FC = () => {
           </div>
         )}
         <div className="v2-team-card__actions">
-          {state === 'needsYou' && (
+          {disconnected && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
+            <button type="button" className="v2-team-card__answer" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
+              {t('agentConnection.reconnect')}
+            </button>
+          ) : null}
+          {!disconnected && state === 'needsYou' && (
             <button type="button" className="v2-team-card__answer" onClick={() => handleAnswer(a)}>
               {t('yourTeam.card.answer')}
             </button>
           )}
-          <button
+          {!disconnected && <button
             type="button"
             className="v2-team-card__talk"
             onClick={(e) => handleTalk(a, e)}
@@ -378,7 +389,7 @@ const V2YourTeamPage: React.FC = () => {
             aria-label={t('yourTeam.card.talkToAria', { name: display })}
           >
             {opening === key ? t('yourTeam.card.opening') : t('yourTeam.card.talk')}
-          </button>
+          </button>}
         </div>
       </article>
     );

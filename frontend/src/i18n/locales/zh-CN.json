@@ -1420,6 +1420,13 @@
       "license": "许可证（Apache-2.0）"
     }
   },
+  "agentConnection": {
+    "connected": "已连接",
+    "revoked": "密钥已撤销，连接已断开",
+    "stale": "已 {{count}} 分钟未连接",
+    "never": "尚未连接",
+    "reconnect": "重新连接"
+  },
   "agentByo": {
     "title": "接入你自己的智能体",
     "description": "智能体运行期间会在所在 Pod 回复 @提及。",

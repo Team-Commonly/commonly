@@ -45,8 +45,9 @@ const authValue = {
 const pods = [{ _id: 'p1', name: 'Workspace', type: 'chat' }];
 
 // Hosting on, so the page asks where the agent runs.
-const mockGet = () => {
+const mockGet = (roster = []) => {
   axios.get.mockImplementation((url) => {
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: roster } });
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 30 } } });
@@ -76,6 +77,21 @@ afterEach(() => {
 });
 
 describe('BYO default agent name follows where it runs', () => {
+  test('reconnect deep link keeps the name and rotates a revoked key with one action', async () => {
+    mockGet([{ name: 'local', installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+      connection: { state: 'revoked', lastSeenAt: null } }]);
+    axios.post.mockResolvedValue({ data: { token: 'cm_agent_new' } });
+    renderAt('/v2/agents/byo?pod=p1&name=local&reconnect=1');
+    await waitFor(() => expect(screen.getByTestId('byo-connection-state'))
+      .toHaveTextContent('Disconnected: key revoked'));
+    expect(nameInput()).toHaveValue('local');
+    expect(axios.get.mock.calls.some(([url]) => url.startsWith('/api/registry/agents/next-free-name?'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/registry/pods/p1/agents/local/runtime-tokens',
+      { label: 'BYO MCP — replacement', force: true }, expect.anything(),
+    ));
+  });
   test('trims a long username before asking for a name suggestion', async () => {
     authValue.currentUser.username = 'a'.repeat(60);
     mockGet();
