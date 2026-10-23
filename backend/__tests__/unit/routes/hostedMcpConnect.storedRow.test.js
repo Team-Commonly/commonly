@@ -297,11 +297,19 @@ test('an older callback cannot replace a newer completed connection secret pair'
     });
 
     const olderCallback = callback('st-race-older');
-    const first = await Promise.race([
-      olderAtWrite,
-      olderCallback.then((result) => ({ earlyOutcome: outcome(result) })),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('older callback did not reach secret storage')), 5000)),
-    ]);
+    let waitTimeout;
+    let first;
+    try {
+      first = await Promise.race([
+        olderAtWrite,
+        olderCallback.then((result) => ({ earlyOutcome: outcome(result) })),
+        new Promise((_, reject) => {
+          waitTimeout = setTimeout(() => reject(new Error('older callback did not reach secret storage')), 5000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(waitTimeout);
+    }
     expect(first).toBeUndefined();
     const newerStart = await request(app).post('/connect/hosted-mcp/linear/start');
     expect(newerStart.status).toBe(200);
