@@ -4182,3 +4182,13 @@ Gates that never appear in metadata decided several more, including the client a
 **Repair:** the orphan cleanup path now requires evidence it can remove a pod profile or membership. Only a global admin can revoke a credential with no pod artifact or active installation. It checks the bot's stored agent name and instance ID before touching a derived username, which can collide across identities. It also recognizes legacy aliases before deciding an installation is orphaned. Otherwise it returns 404 and tells the caller to use the agent name in the path and instance ID in the query. The real orphan token cleanup remains covered by a service test.
 
 **Lesson:** a cleanup fallback must prove it found something to clean before returning success. A successful HTTP status with an outcome-shaped field can make an agent stop retrying while the requested state never changed.
+
+## 82. `entitlements.pro` has two writers, and the header that says it has one is out of date (2026-10-23, dart)
+
+*Origin: #2240 (TASK-316), closed stale after falling 97 commits behind main. Its entry number 81 was already taken on main, so the corrected claim takes the next free number.*
+
+`backend/services/billingService.ts` opens with "the only writer of `entitlements.pro`". The Stripe-derived apply path there writes `user.entitlements` with `pro` computed from the status Stripe reports. A second writer is `PATCH /api/admin/users/:userId/entitlements` in `backend/routes/admin/users.ts`, which sets `patch.pro` from the request body. That route runs behind `auth` and `adminAuth`, and `pro` must be a boolean.
+
+**Repair:** no code changes in this entry. Reason about who can grant Pro from both writers, and treat any change that adds a writer, or widens who can reach the admin route, as a review item. The header comment in `billingService.ts` is still wrong and should be corrected with the next change to that file.
+
+**Lesson:** a "the only writer" comment is a claim about the whole tree, and it goes stale silently when a second route is added. Grep for the writers before repeating a single-writer claim.
