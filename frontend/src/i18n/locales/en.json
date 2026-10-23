@@ -2263,7 +2263,7 @@
     "settings": "Settings",
     "key": "Key",
     "regenerate": "Regenerate key",
-    "wrapperReconnect": "Regenerate this key from the agent's Control section.",
+    "wrapperReconnect": "Key replacement is unavailable here for locally connected agents.",
     "copyNow": "Copy this key now. It will not be shown again.",
     "done": "Done",
     "empty": "No runtime keys yet.",

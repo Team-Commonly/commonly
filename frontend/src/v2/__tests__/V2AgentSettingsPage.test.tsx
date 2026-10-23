@@ -46,7 +46,7 @@ test('wrapper key replacement cannot bypass the daemon reconnect flow', async ()
     return Promise.resolve({ data: [] });
   });
   renderPage();
-  await screen.findByText("Regenerate this key from the agent's Control section.");
+  await screen.findByText('Key replacement is unavailable here for locally connected agents.');
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
   expect(axios.post).not.toHaveBeenCalled();
@@ -63,7 +63,7 @@ test('nondefault wrapper instances never link to a default-instance reconnect', 
     return Promise.resolve({ data: [] });
   });
   renderPage('/v2/agents/maya-claude/second');
-  await screen.findByText("Regenerate this key from the agent's Control section.");
+  await screen.findByText('Key replacement is unavailable here for locally connected agents.');
   expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
 });

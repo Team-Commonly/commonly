@@ -2254,7 +2254,7 @@
     "settings": "设置",
     "key": "密钥",
     "regenerate": "重新生成密钥",
-    "wrapperReconnect": "请在此智能体的控制区重新生成密钥。",
+    "wrapperReconnect": "此处暂不支持更换本地连接的智能体密钥。",
     "copyNow": "请立即复制此密钥。之后不会再次显示。",
     "done": "完成",
     "empty": "暂无运行时密钥。",

@@ -28,7 +28,7 @@
 .v2-agent-settings__section { padding: 28px 0; }
 .v2-agent-settings__section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .v2-agent-settings__section h2 { margin: 0; font-family: var(--v2-font-display); font-size: 20px; }
-.v2-agent-settings button {
+.v2-root .v2-agent-settings button:not(.MuiButtonBase-root) {
   min-height: 34px;
   padding: 6px 12px;
   border: 1px solid var(--v2-border);
@@ -40,13 +40,13 @@
   font-weight: 600;
   cursor: pointer;
 }
-.v2-agent-settings button:hover { background: var(--v2-surface-hover); }
-.v2-agent-settings button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
-.v2-agent-settings button:disabled { opacity: .55; cursor: default; }
-.v2-agent-settings__section-head button,
-.v2-agent-settings__actions button:first-child { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
-.v2-agent-settings__section-head button:hover,
-.v2-agent-settings__actions button:first-child:hover { background: var(--v2-ink-hover); }
+.v2-root .v2-agent-settings button:hover { background: var(--v2-surface-hover); }
+.v2-root .v2-agent-settings button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.v2-root .v2-agent-settings button:disabled { opacity: .55; cursor: default; }
+.v2-root .v2-agent-settings .v2-agent-settings__section-head button { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
+.v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
+.v2-root .v2-agent-settings .v2-agent-settings__section-head button:hover,
+.v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child:hover { background: var(--v2-ink-hover); }
 .v2-agent-settings__error { color: var(--v2-danger); }
 .v2-agent-settings__empty { margin-top: 24px; color: var(--v2-text-secondary); }
 .v2-agent-settings__keys { list-style: none; padding: 0; margin: 20px 0 0; }
