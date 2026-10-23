@@ -664,9 +664,17 @@ the next request. No generic URL, repository, method, header, or `gh api`
 passthrough is part of this interface.
 
 Each listener lives under a daemon-owned directory that the seat cannot read,
-write, enumerate, or replace. The Codex permission profile grants **connect
-only** to that seat's exact socket path, denies every sibling socket and daemon
-control/config path, and cannot write or rebind its own endpoint. A path's
+write, enumerate, or replace. The Codex permission profile sets
+`features.network_proxy = true` and
+`network.unix_sockets.<exact seat path> = "allow"`, leaves
+`dangerously_allow_all_unix_sockets = false`, and has no sibling socket entry;
+its filesystem rules deny the daemon directory and control/config paths. It
+cannot write or rebind its own endpoint. The [Codex permission reference](https://learn.chatgpt.com/docs/permissions)
+documents this exact-path Unix socket allowlist. The proxy feature is
+load-bearing: a local macOS `codex sandbox` probe connected to a sibling socket
+when the feature was off, despite the allowlist, and refused it with `EPERM`
+when the feature was on. The two-seat attack test below must repeat that proof
+in the real adapter. A path's
 secrecy and same-UID Unix permissions are not authentication. The daemon derives
 the tuple from trusted launch state and binds a fresh, unguessable listener
 generation to the running child; stopping or replacing that child closes and

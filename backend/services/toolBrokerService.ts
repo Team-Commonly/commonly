@@ -307,6 +307,123 @@ const getPullRequest: GithubToolDefinition = {
   },
 };
 
+const createPullRequest: GithubToolDefinition = {
+  name: 'github.create_pull_request',
+  description: 'Open a pull request in the connected GitHub repository.',
+  requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  irreversible: true,
+  receipt: [{ field: 'number', kind: 'positive-integer' }],
+  inputSchema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', minLength: 1, maxLength: 256 },
+      head: { type: 'string', minLength: 1, maxLength: 200 },
+      base: { type: 'string', minLength: 1, maxLength: 200 },
+      body: { type: 'string', maxLength: 65536 },
+      draft: { type: 'boolean' },
+    },
+    required: ['title', 'head', 'base'],
+    additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection) {
+    return pinConnectionRepository(rawArgs, connection);
+  },
+  async call(rawArgs, connection) {
+    assertNoUnknown(rawArgs, ['title', 'head', 'base', 'body', 'draft']);
+    const title = nonEmptyString(rawArgs.title, 'title');
+    const head = nonEmptyString(rawArgs.head, 'head');
+    const base = nonEmptyString(rawArgs.base, 'base');
+    if (title.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(head)
+      || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(base)) {
+      throw new RoomGrantError('invalid_tool_args', 'title or branch is invalid', 400);
+    }
+    if (rawArgs.body !== undefined && (typeof rawArgs.body !== 'string' || rawArgs.body.length > 65536)) {
+      throw new RoomGrantError('invalid_tool_args', 'body must be a string of at most 65536 characters', 400);
+    }
+    if (rawArgs.draft !== undefined && typeof rawArgs.draft !== 'boolean') {
+      throw new RoomGrantError('invalid_tool_args', 'draft must be boolean', 400);
+    }
+    const pull = await GitHubAppService.createPullRequest({
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
+      forceApp: true,
+      title,
+      head,
+      base,
+      body: rawArgs.body as string | undefined,
+      draft: rawArgs.draft as boolean | undefined,
+    });
+    return pullView(pull as Record<string, unknown>);
+  },
+};
+
+const commentPullRequest: GithubToolDefinition = {
+  name: 'github.comment_on_pull_request',
+  description: 'Add a plain conversation comment to a pull request in the connected GitHub repository.',
+  requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  irreversible: true,
+  inputSchema: {
+    type: 'object',
+    properties: { pullNumber: { type: 'integer', minimum: 1 }, body: { type: 'string', minLength: 1, maxLength: 65536 } },
+    required: ['pullNumber', 'body'],
+    additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection) {
+    return pinConnectionRepository(rawArgs, connection);
+  },
+  async call(rawArgs, connection) {
+    assertNoUnknown(rawArgs, ['pullNumber', 'body']);
+    const pullNumber = positiveInteger(rawArgs.pullNumber, 'pullNumber');
+    const body = nonEmptyString(rawArgs.body, 'body');
+    if (body.length > 65536) throw new RoomGrantError('invalid_tool_args', 'body is too long', 400);
+    const comment = await GitHubAppService.addIssueComment({
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
+      forceApp: true,
+      issueNumber: pullNumber,
+      body,
+    }) as Record<string, unknown>;
+    return { id: comment.id, url: comment.html_url, pullNumber };
+  },
+};
+
+const reviewPullRequestComment: GithubToolDefinition = {
+  name: 'github.review_pull_request_comment',
+  description: 'Submit a comment-only review of a pull request in the connected GitHub repository.',
+  requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  irreversible: true,
+  inputSchema: {
+    type: 'object',
+    properties: { pullNumber: { type: 'integer', minimum: 1 }, body: { type: 'string', minLength: 1, maxLength: 65536 } },
+    required: ['pullNumber', 'body'],
+    additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection) {
+    return pinConnectionRepository(rawArgs, connection);
+  },
+  async call(rawArgs, connection) {
+    assertNoUnknown(rawArgs, ['pullNumber', 'body']);
+    const pullNumber = positiveInteger(rawArgs.pullNumber, 'pullNumber');
+    const body = nonEmptyString(rawArgs.body, 'body');
+    if (body.length > 65536) throw new RoomGrantError('invalid_tool_args', 'body is too long', 400);
+    const review = await GitHubAppService.createPullReview({
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
+      forceApp: true,
+      pullNumber,
+      event: 'COMMENT',
+      body,
+    }) as Record<string, unknown>;
+    return { id: review.id, url: review.html_url, pullNumber };
+  },
+};
+
 /**
  * A review needs the code, not just the file names: each file's `patch` (its
  * unified-diff hunks, as GitHub returns them) rides along, capped so one large
@@ -529,6 +646,9 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   [listIssues.name]: listIssues,
   [getIssue.name]: getIssue,
   [getPullRequest.name]: getPullRequest,
+  [createPullRequest.name]: createPullRequest,
+  [commentPullRequest.name]: commentPullRequest,
+  [reviewPullRequestComment.name]: reviewPullRequestComment,
   [listPullRequestFiles.name]: listPullRequestFiles,
   [createIssue.name]: createIssue,
   [commentIssue.name]: commentIssue,

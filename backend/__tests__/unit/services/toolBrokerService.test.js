@@ -1,3 +1,5 @@
+const { createHash } = require('crypto');
+
 const mockRoomGrant = { findOne: jest.fn() };
 const mockPod = { findById: jest.fn() };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
@@ -8,6 +10,8 @@ const mockGithub = {
   createIssue: jest.fn(),
   addIssueComment: jest.fn(),
   closeIssue: jest.fn(),
+  createPullRequest: jest.fn(),
+  createPullReview: jest.fn(),
 };
 const mockReserveBudgetLineage = jest.fn();
 const mockDmService = { getOrCreateAgentRoom: jest.fn() };
@@ -70,13 +74,14 @@ jest.mock('../../../services/roomGrantService', () => {
 });
 
 // eslint-disable-next-line import/no-unresolved, import/extensions
-const { callTool } = require('../../../services/toolBrokerService');
+const { callTool, executeApprovedToolCall } = require('../../../services/toolBrokerService');
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const { assertGrantUsable, getGrantLineage, RoomGrantError } = require('../../../services/roomGrantService');
 
 // The row a grant was minted for always predates the grant; the guard compares
 // these two, so both fixtures carry the field the models always write.
 const GRANT_CREATED_AT = new Date('2026-01-02T00:00:00.000Z');
+const digest = (args) => createHash('sha256').update(JSON.stringify(args)).digest('hex');
 
 const seatGrant = (overrides = {}) => ({
   grantId: 'grant-1',
@@ -503,5 +508,76 @@ describe('a suspended github-app row owner (§7)', () => {
     })).resolves.toBeTruthy();
     expect(mockGithub.listOpenIssues).toHaveBeenCalledTimes(1);
     expect(mockUser.findById).not.toHaveBeenCalled();
+  });
+});
+
+describe('host GitHub command tools', () => {
+  const cases = [
+    {
+      tool: 'github.create_pull_request',
+      args: { title: 'Change', head: 'seat/agent-a/change', base: 'main' },
+      method: 'createPullRequest',
+      result: { number: 12, title: 'Change', html_url: 'https://github.com/Team-Commonly/commonly/pull/12' },
+      expected: { title: 'Change', head: 'seat/agent-a/change', base: 'main' },
+    },
+    {
+      tool: 'github.comment_on_pull_request',
+      args: { pullNumber: 12, body: 'Please check this' },
+      method: 'addIssueComment',
+      result: { id: 42, html_url: 'https://github.com/Team-Commonly/commonly/pull/12#issuecomment-42' },
+      expected: { issueNumber: 12, body: 'Please check this' },
+    },
+    {
+      tool: 'github.review_pull_request_comment',
+      args: { pullNumber: 12, body: 'Inline feedback' },
+      method: 'createPullReview',
+      result: { id: 43, html_url: 'https://github.com/Team-Commonly/commonly/pull/12#pullrequestreview-43' },
+      expected: { pullNumber: 12, body: 'Inline feedback', event: 'COMMENT' },
+    },
+  ];
+
+  it.each(cases)('$tool parks before provider use, then executes only with App auth', async ({
+    tool, args, method, result, expected,
+  }) => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: [tool], writeMode: 'write' }));
+    mockGithub[method].mockResolvedValue(result);
+    await expect(callTool({
+      grantId: 'grant-1',
+      agentUserId: 'agent-a',
+      tool,
+      args,
+    }))
+      .rejects.toMatchObject({ code: 'approval_required' });
+    expect(mockGithub[method]).not.toHaveBeenCalled();
+
+    const approvedArgs = { ...args, owner: 'Team-Commonly', repo: 'commonly' };
+    await expect(executeApprovedToolCall({
+      grantId: 'grant-1',
+      agentUserId: 'agent-a',
+      tool,
+      args: approvedArgs,
+      expectedArgsDigest: digest(approvedArgs),
+      approvalId: 'approval-test',
+    })).resolves.toMatchObject({ outcome: 'ok' });
+    expect(mockGithub[method]).toHaveBeenCalledWith(expect.objectContaining({
+      owner: 'Team-Commonly',
+      repo: 'commonly',
+      installationId: 'gh-install-1',
+      forceApp: true,
+      ...expected,
+    }));
+  });
+
+  it('refuses an ungranted PR write before provider use', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({
+      tools: ['github.get_pull_request'], writeMode: 'write',
+    }));
+    await expect(callTool({
+      grantId: 'grant-1',
+      agentUserId: 'agent-a',
+      tool: 'github.create_pull_request',
+      args: { title: 'Change', head: 'seat/agent-a/change', base: 'main' },
+    })).rejects.toMatchObject({ code: 'tool_not_allowed' });
+    expect(mockGithub.createPullRequest).not.toHaveBeenCalled();
   });
 });
