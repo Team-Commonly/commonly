@@ -167,6 +167,8 @@ const V2AgentSettingsPage: React.FC = () => {
     ...(installation?.runtime?.host === 'cloud' || installation?.runtime?.host === 'byo'
       ? { host: installation.runtime.host } : {}),
     adapter: installation?.runtime?.adapter,
+    model: installation?.runtime?.model,
+    effort: installation?.runtime?.effort,
     ...(typeof controls.adapter === 'string' ? { adapter: controls.adapter } : {}),
     ...(typeof controls.model === 'string' ? { model: controls.model } : {}),
     ...(typeof controls.effort === 'string' ? { effort: controls.effort } : {}),

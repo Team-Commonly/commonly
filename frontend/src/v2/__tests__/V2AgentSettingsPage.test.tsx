@@ -356,3 +356,19 @@ test('runtime editor writes environment controls through the shared settings hoo
     { config: { environment: { model: 'new-model' } }, instanceId: 'default' },
   ));
 });
+
+test('runtime editor keeps a wrapper model when no environment override exists', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
+      runtime: { runtimeType: 'wrapper', adapter: 'claude', model: 'selected-model', effort: 'medium' },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage();
+  expect(await screen.findByLabelText('Model')).toHaveValue('selected-model');
+  expect(screen.getByLabelText('Effort')).toHaveValue('medium');
+});
