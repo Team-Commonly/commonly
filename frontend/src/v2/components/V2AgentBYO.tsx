@@ -282,7 +282,7 @@ const V2AgentBYO: React.FC = () => {
         .then((result) => {
           if (cancelled) return;
           const match = result.agents?.find((agent) => agent.name === sanitizeAgentName(name)
-            && (!prefill.reconnect || agent.instanceId === prefill.instanceId) && agent.connection);
+            && agent.instanceId === prefill.instanceId && agent.connection);
           setExistingConnection(match?.connection ? {
             connection: match.connection,
             runtimeType: match.runtime?.runtimeType || '',
