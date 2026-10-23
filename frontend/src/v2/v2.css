@@ -11908,7 +11908,12 @@ body.modern-ui.v2-canvas {
   .v2-pods-aside:not(.v2-pods-aside--page) { display: none; }
   .v2-mobile-backdrop { display: none; }
 
-  .v2-pod-header .v2-thread__header-row { min-height: 50px; }
+  .v2-pod-header .v2-thread__header-row {
+    box-sizing: border-box;
+    min-height: 50px;
+    padding: 11px 0;
+    align-items: flex-start;
+  }
   .v2-pod-header__meta { display: none; }
   .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; }
 

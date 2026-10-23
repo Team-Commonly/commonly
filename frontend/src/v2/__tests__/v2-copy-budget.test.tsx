@@ -25,6 +25,7 @@ describe('page head copy budget', () => {
     const detail = screen.getByText('What needs you, then what moved');
     expect(screen.getByRole('heading', { name: 'Activity' })).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
+    expect(hint.compareDocumentPosition(screen.getByText('3')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(detail.parentElement).not.toHaveClass('v2-hint--open');
     fireEvent.mouseEnter(hint.parentElement!);
     expect(detail.parentElement).toHaveClass('v2-hint--open');
@@ -48,6 +49,7 @@ describe('page head copy budget', () => {
     expect(css).toContain('.v2-page-head__identity .v2-hint--open,\n  .v2-thread__title-line .v2-hint--open { display: contents; }');
     expect(css).toContain('.v2-thread__title-line { display: flex; flex-wrap: wrap; align-items: center; }');
     expect(css).toContain('.v2-thread__title-line .v2-hint__content { width: 100%; flex-basis: 100%; }');
+    expect(css).toMatch(/\.v2-pod-header \.v2-thread__header-row \{[^}]*padding: 11px 0;[^}]*align-items: flex-start;/);
     expect(css).toContain('box-shadow: var(--v2-focus-ring);');
   });
 });

@@ -18,8 +18,8 @@ const V2PageHead: React.FC<V2PageHeadProps> = ({
   <header className={`v2-page-head${className ? ` ${className}` : ''}`}>
     <div className="v2-page-head__identity">
       <h1 className={titleClassName}>{title}</h1>
-      {meta != null && <span className={`v2-page-head__meta${metaClassName ? ` ${metaClassName}` : ''}`}>{meta}</span>}
       {hint != null && <V2Hint label={hintLabel}>{hint}</V2Hint>}
+      {meta != null && <span className={`v2-page-head__meta${metaClassName ? ` ${metaClassName}` : ''}`}>{meta}</span>}
     </div>
     {actions != null && <div className="v2-page-head__actions">{actions}</div>}
   </header>

@@ -2106,6 +2106,7 @@
   },
   "artifacts": {
     "title": "产物",
+    "about": "关于产物",
     "meta": "你所有 Pod 中共享的文件与页面",
     "kindLabel": "类型",
     "podLabel": "Pod",

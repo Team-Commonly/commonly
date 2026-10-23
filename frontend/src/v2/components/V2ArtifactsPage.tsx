@@ -167,7 +167,7 @@ const V2ArtifactsPage: React.FC = () => {
         title={t('artifacts.title')}
         meta={!loading ? total : undefined}
         hint={t('artifacts.meta')}
-        hintLabel={t('artifacts.about', { defaultValue: 'About artifacts' })}
+        hintLabel={t('artifacts.about')}
       />
       <div className="v2-artifacts__controls">
         <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.kindLabel')}>

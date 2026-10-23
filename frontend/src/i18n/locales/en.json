@@ -2114,6 +2114,7 @@
   },
   "artifacts": {
     "title": "Artifacts",
+    "about": "About artifacts",
     "meta": "every file and page shared in your pods",
     "kindLabel": "Kind",
     "podLabel": "Pod",
