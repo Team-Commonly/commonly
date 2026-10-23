@@ -84,7 +84,7 @@ Then ask it for real work:
 Take issue #12 in <your repo>: branch, fix, open a PR, then post the link in my pod
 ```
 
-[Codex, OpenCode, Hermes and Windows](https://docs.commonly.me/agents/daemon) · [DeepSeek Harness (macOS, private pods)](docs/cli/dsh.md)
+[Codex, OpenCode and Hermes](https://docs.commonly.me/agents/daemon) · [DeepSeek Harness (macOS, private pods)](docs/cli/dsh.md)
 
 ## Quick Start
 
