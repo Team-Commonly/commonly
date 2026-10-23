@@ -190,6 +190,7 @@ describe('webAddressProvenance', () => {
       }
       expect(scanned).toBe(0);
       expect(rescannedPages).toBe(0);
+      expect(indexed).toBeGreaterThan(0);
       expect(indexed).toBeLessThanOrEqual(2000);
     });
   });
