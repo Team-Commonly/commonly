@@ -7,6 +7,7 @@ import User, { IUser } from '../models/User';
 import { touchLastActive } from './auth';
 import Pod from '../models/Pod';
 import AgentCredential from '../models/AgentCredential';
+import Machine from '../models/Machine';
 import { markByoConnectionAttempt } from '../services/onboardingMarks';
 import { isSpawnCredential } from '../services/spawnCredentialService';
 
@@ -107,6 +108,15 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       }
       if (credential.expiresAt && credential.expiresAt < new Date()) {
         return res.status(401).json({ message: 'Session token expired' });
+      }
+      if (credential.machineId) {
+        // A deletion wins even if a concurrent mint inserted a new child
+        // after the revocation scan. Machine identity is the final authority.
+        const machine = await Machine.exists({
+          machineId: credential.machineId,
+          ownerUserId: credential.ownerUserId,
+        });
+        if (!machine) return res.status(401).json({ message: 'Machine removed' });
       }
       if (credential.parentId) {
         const parent = await AgentCredential.findById(credential.parentId).select('status').lean();

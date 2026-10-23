@@ -79,9 +79,11 @@ const serializeMachine = (machine: IMachine | LeanMachine, now = new Date()): Ma
 export async function registerMachine({
   ownerUserId,
   name,
+  deviceTokenHash,
 }: {
   ownerUserId: Types.ObjectId | string;
   name: unknown;
+  deviceTokenHash?: string;
 }): Promise<{ machine: MachineView; token: string }> {
   const normalizedName = String(name || '').trim();
   if (!normalizedName || normalizedName.length > 120) {
@@ -97,6 +99,9 @@ export async function registerMachine({
     ownerUserId,
     machineId: crypto.randomUUID(),
     name: normalizedName,
+    // Explicit null distinguishes a new browser/API-token registration from
+    // pre-binding rows, whose missing field cannot be attributed to a device.
+    registeredByDeviceTokenHash: deviceTokenHash || null,
     status: 'offline',
   });
 
@@ -106,6 +111,18 @@ export async function registerMachine({
       machineId: machine.machineId,
       name: machine.name,
     });
+    if (deviceTokenHash) {
+      // A revoke racing registration must not leave a new daemon alive after
+      // the revoke's machine scan has passed.
+      const deviceStillActive = await User.exists({
+        _id: ownerUserId,
+        deviceTokens: { $elemMatch: { tokenHash: deviceTokenHash, revokedAt: { $in: [null] } } },
+      });
+      if (!deviceStillActive) {
+        await removeMachine({ machineDbId: String(machine._id), actorUserId: String(ownerUserId), isAdmin: false });
+        throw new Error('Device token revoked during machine registration');
+      }
+    }
     return { machine: serializeMachine(machine.toObject ? machine.toObject() : machine), token };
   } catch (error) {
     // Do not return a machine whose daemon credential failed to mint. The
@@ -165,16 +182,11 @@ export async function removeMachine({
   if (!machine) return 'not_found';
   if (!isAdmin && String(machine.ownerUserId) !== actorUserId) return 'forbidden';
 
-  const credentials = await AgentCredential.find({
-    kind: 'daemon',
-    machineId: machine.machineId,
-  }).select('_id').lean();
-  for (const credential of credentials) {
-    // A cascade revokes every runtime child minted by this daemon before the
-    // machine can be deleted, including a child that is otherwise still live.
-    // eslint-disable-next-line no-await-in-loop
-    await AgentCredential.revokeCascade(credential._id);
-  }
+  const credentials = await AgentCredential.find({ machineId: machine.machineId }).select('_id').lean();
+  // Include all machine-bound roots, not only daemon rows: a seat minted on
+  // this machine can have a spawn child without a daemon parent. One breadth-
+  // first walk also keeps a busy machine's removal bounded by lineage depth.
+  await AgentCredential.revokeCascade(credentials.map((credential) => credential._id));
 
   // S2 owns the identity-level CAS. Deletion clears the binding but preserves
   // the agent User row, identity, and memory.
@@ -187,6 +199,24 @@ export async function removeMachine({
   return 'removed';
 }
 
+// Device-login tokens and daemon tokens are different bearers. Revoking the
+// former must retire every machine it registered. For pre-binding machine
+// rows, ownership is the only durable link: retire those too, rather than
+// leave an older daemon live after its owner's device was revoked.
+export async function removeMachinesForDeviceToken(ownerUserId: string, deviceTokenHash: string): Promise<void> {
+  const machines = await Machine.find({
+    ownerUserId,
+    $or: [
+      { registeredByDeviceTokenHash: deviceTokenHash },
+      { registeredByDeviceTokenHash: { $exists: false } },
+    ],
+  }).select('_id').lean();
+  for (const machine of machines) {
+    // eslint-disable-next-line no-await-in-loop
+    await removeMachine({ machineDbId: String(machine._id), actorUserId: ownerUserId, isAdmin: false });
+  }
+}
+
 module.exports = {
   MACHINE_OFFLINE_AFTER_MS,
   MAX_MACHINES_PER_OWNER,
@@ -197,5 +227,6 @@ module.exports = {
   recordMachineHeartbeat,
   registerMachine,
   removeMachine,
+  removeMachinesForDeviceToken,
 };
 Object.assign(module.exports, exports);

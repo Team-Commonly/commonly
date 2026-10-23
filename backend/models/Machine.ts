@@ -19,6 +19,9 @@ export interface IMachine extends Document {
   // Opaque server-assigned identifier. Agent identities bind to this value in
   // ADR-026 D3; callers never supply it.
   machineId: string;
+  // Hash of the device-login bearer that registered this machine. Older rows
+  // lack this field; they are handled conservatively on device revocation.
+  registeredByDeviceTokenHash?: string | null;
   name: string;
   lastSeenAt: Date | null;
   status: MachineStatus;
@@ -31,6 +34,7 @@ const MachineSchema = new Schema<IMachine>(
   {
     ownerUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     machineId: { type: String, required: true, unique: true },
+    registeredByDeviceTokenHash: { type: String },
     name: { type: String, required: true, trim: true, maxlength: 120 },
     lastSeenAt: { type: Date, default: null },
     // Last reported status. Read APIs derive an offline view from lastSeenAt
