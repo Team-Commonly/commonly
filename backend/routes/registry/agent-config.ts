@@ -132,6 +132,25 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       || !displayName.trim() || displayName.trim().length > 80)) {
       return res.status(400).json({ error: 'Display name must be 1–80 characters' });
     }
+    if (normalizedContextPolicy) {
+      const numbers = ['maxTokens', 'compactionThreshold', 'summaryHours'];
+      if (numbers.some((key) => normalizedContextPolicy[key] !== undefined
+        && (!Number.isInteger(normalizedContextPolicy[key]) || normalizedContextPolicy[key] < 1))
+        || (normalizedContextPolicy.maxTokens !== undefined
+          && normalizedContextPolicy.compactionThreshold !== undefined
+          && normalizedContextPolicy.compactionThreshold > normalizedContextPolicy.maxTokens)
+        || ['includeMemory', 'includeSkills', 'includeSummaries'].some((key) => (
+          normalizedContextPolicy[key] !== undefined && typeof normalizedContextPolicy[key] !== 'boolean'
+        ))) {
+        return res.status(400).json({ error: 'Invalid context policy' });
+      }
+    }
+    const requestedSandboxMode = config?.environment?.sandbox?.mode;
+    if (requestedSandboxMode !== undefined && !['none', 'workspace', 'read-only', 'bwrap',
+      'firejail', 'container', 'managed'].includes(requestedSandboxMode)) {
+      return res.status(400).json({ error: 'Invalid sandbox mode' });
+    }
+
     // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is one of
     // TWO backend writers of `config.environment` (the other is
     // POST /api/registry/install, which checks the same thing), and that field
@@ -180,8 +199,14 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         const environmentControls = config.environment;
         if (environmentControls && typeof environmentControls === 'object'
           && !Array.isArray(environmentControls)
-          && Object.keys(environmentControls).every((key) => ['model', 'effort', 'adapter'].includes(key))) {
-          nextConfig.environment = { ...(existingConfig.environment || {}), ...environmentControls };
+          && Object.keys(environmentControls).every((key) => ['model', 'effort', 'adapter', 'sandbox'].includes(key))
+          && (!environmentControls.sandbox || (typeof environmentControls.sandbox === 'object'
+            && !Array.isArray(environmentControls.sandbox)
+            && Object.keys(environmentControls.sandbox).every((key) => key === 'mode')))) {
+          nextConfig.environment = { ...(existingConfig.environment || {}), ...environmentControls,
+            ...(environmentControls.sandbox ? { sandbox: {
+              ...(existingConfig.environment?.sandbox || {}), ...environmentControls.sandbox,
+            } } : {}) };
         }
         if (config.runtime && typeof config.runtime === 'object') {
           nextConfig.runtime = runtimeKeepingType(config.runtime, existingConfig, { mayChangeType: isInstanceAdmin });

@@ -6,11 +6,16 @@ export interface AgentSettingsInstallation {
   instanceId: string;
   displayName: string;
   installedBy?: string;
-  runtime?: { runtimeType?: string };
+  runtime?: { runtimeType?: string; host?: string; adapter?: string };
   config?: Record<string, unknown> | null;
   profile?: {
     instructions?: string;
     persona?: { tone?: string; specialties?: string[]; boundaries?: string[]; customInstructions?: string };
+    toolPolicy?: { allowed?: string[]; blocked?: string[]; requireApproval?: string[] };
+    contextPolicy?: {
+      maxTokens?: number; compactionThreshold?: number; summaryHours?: number;
+      includeMemory?: boolean; includeSkills?: boolean; includeSummaries?: boolean;
+    };
   } | null;
   [field: string]: unknown;
 }

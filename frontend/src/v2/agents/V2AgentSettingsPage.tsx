@@ -9,6 +9,7 @@ import { AgentConnection } from '../utils/agentConnection';
 import { useAgentSettings } from './useAgentSettings';
 import V2AgentIdentitySection from './V2AgentIdentitySection';
 import V2AgentWakePods from './V2AgentWakePods';
+import V2AgentPolicy from './V2AgentPolicy';
 import './v2-agent-settings.css';
 
 interface RuntimeKey {
@@ -240,6 +241,8 @@ const V2AgentSettingsPage: React.FC = () => {
           await update({ config: { environment: changes } });
         }}
       />
+      <V2AgentPolicy key={`${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
+        installation={installation} update={update} />
     </main>
   );
 };

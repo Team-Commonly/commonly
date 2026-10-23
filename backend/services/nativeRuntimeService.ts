@@ -43,7 +43,8 @@ import {
   engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline, hostedNativeRunConfig, hostedRunsNative,
 } from './hostedEngine';
 import {
-  hostedCaps, hostedCapsForOwner, isConfigured as hostedWorkerConfigured, listHostedInstallationsForUser, ownerIsPro,
+  hostedCaps, hostedCapsForOwner, isConfigured as hostedWorkerConfigured, listHostedInstallationsForUser,
+  userRunCeilingForOwner,
 } from './hostedRuntimeService';
 import {
   buildByoHandoffPayload,
@@ -1523,8 +1524,8 @@ export async function runAgent(
   // a runaway guard and a spend ceiling have opposite safe directions.
   // Forward-only: rows without userId predate the stamp and cannot be
   // counted; the window inherits the cap's fixed-UTC-midnight semantics.
-  const freeCeiling = Number(process.env.AGENT_USER_DAILY_RUN_CEILING ?? 120);
-  if (Number.isFinite(freeCeiling) && freeCeiling > 0) {
+  const userCeiling = await userRunCeilingForOwner(installation.installedBy);
+  if (userCeiling !== null) {
     const installedBy = installation.installedBy ? String(installation.installedBy) : '';
     if (!installedBy) {
       console.warn(
@@ -1535,10 +1536,6 @@ export async function runAgent(
       // A pro owner's hosted line (200 turns a day, TASK-268) sits above the
       // free ceiling, so pro owners get the pro ceiling; a failed plan lookup
       // reads as free, the lower one.
-      const proCeiling = Number(process.env.AGENT_USER_DAILY_RUN_CEILING_PRO ?? 300);
-      const userCeiling = (await ownerIsPro(installedBy)) && Number.isFinite(proCeiling) && proCeiling > 0
-        ? proCeiling
-        : freeCeiling;
       try {
         const AgentRunModel = require('../models/AgentRun');
         const dayStart = new Date();
