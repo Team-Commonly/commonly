@@ -105,7 +105,11 @@ describe('owner memory editor', () => {
   it('keeps the editor available to the installer while the agent is paused', async () => {
     await AgentInstallation.updateMany({ agentName: 'editor-agent' }, { $set: { status: 'paused' } });
     const response = await request(app).get(base).set('Authorization', `Bearer ${token(owner)}`);
+    const index = await request(app).get('/api/agent-memory/editor-agent/machine-1')
+      .set('Authorization', `Bearer ${token(owner)}`);
     expect(response.status).toBe(200);
     expect(response.body.sections.long_term.content).toBe('Old note');
+    expect(index.status).toBe(200);
+    expect(index.body.pods).toHaveLength(1);
   });
 });

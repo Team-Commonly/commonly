@@ -218,7 +218,7 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
         agentName,
         instanceId,
         installedBy: userId,
-        status: 'active',
+        status: { $ne: 'uninstalled' },
       }).select('_id').lean();
       if (owns) role = 'owner';
     }
@@ -235,7 +235,7 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
 
     // ── Pods this agent is in — ALL pods (owner/admin view), each with last
     // activity + the agent's own last message there, sorted most-active first. ──
-    const installs = await AgentInstallation.find({ agentName, instanceId, status: 'active' })
+    const installs = await AgentInstallation.find({ agentName, instanceId, status: { $ne: 'uninstalled' } })
       .select('podId').lean();
     const podIds = Array.from(new Set((installs as Array<{ podId?: unknown }>)
       .map((i) => (i?.podId ? String(i.podId) : '')).filter(Boolean)));
