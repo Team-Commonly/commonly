@@ -273,6 +273,9 @@ router.post('/:userId/sessions/revoke', adminWriteLimiter, auth, adminAuth, asyn
     if (!target) return res.status(404).json({ error: 'User not found' });
     if (target.isBot) return res.status(400).json({ error: 'Agent accounts have no browser sessions' });
     await User.updateOne({ _id: target._id }, { $inc: { tokenVersion: 1 } });
+    // eslint-disable-next-line global-require
+    const { disconnectUserSessionSockets } = require('../../services/sessionSocketService');
+    disconnectUserSessionSockets(String(target._id));
     return res.json({ message: 'Sessions revoked' });
   } catch (error) {
     console.error('Failed to revoke user sessions:', error);

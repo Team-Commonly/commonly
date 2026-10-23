@@ -11,6 +11,7 @@ const { normalizeAvatarUrl } = require('../services/avatarService');
 const { cleanSignupRef } = require('../utils/signupRef');
 const { deriveUsernameFromEmail, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
+const { disconnectUserSessionSockets } = require('../services/sessionSocketService');
 
 // The first-touch ref a signup arrived with (?ref=x), stored once on the new
 // account. Anything that is not a short plain code is dropped, not refused.
@@ -781,6 +782,7 @@ exports.resetPassword = async (req: any, res: any) => {
     if (changed.modifiedCount !== 1) {
       return res.status(400).json({ error: 'Invalid or expired reset link.' });
     }
+    disconnectUserSessionSockets(String(user._id));
     joinCommunityPodBestEffort(user._id);
 
     return res.json({ message: 'Password updated. You can sign in now.' });

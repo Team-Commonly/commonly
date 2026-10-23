@@ -21,6 +21,7 @@ describe('human session revocation and absolute lifetime', () => {
   });
   afterAll(closeMongoDb);
   afterEach(async () => {
+    jest.restoreAllMocks();
     await clearMongoDb();
     delete process.env.SESSION_ABSOLUTE_LIFETIME_DAYS;
   });
@@ -32,6 +33,9 @@ describe('human session revocation and absolute lifetime', () => {
   const login = () => request(app).post('/api/auth/login').send({ email: 'session@example.com', password: 'Password123!' });
 
   it('accepts a pre-change token at version zero, then refuses it on the next request after sign out everywhere', async () => {
+    const disconnectSockets = jest.fn();
+    const room = jest.fn(() => ({ disconnectSockets }));
+    jest.spyOn(require('../../config/socket'), 'getIO').mockReturnValue({ in: room });
     const legacy = jwt.sign({ id: String(user._id) }, process.env.JWT_SECRET, { expiresIn: '7d' });
     await getUser(legacy).expect(200);
     const connectedSocket = { handshake: { auth: { token: legacy } }, use: jest.fn(), disconnect: jest.fn() };
@@ -40,6 +44,8 @@ describe('human session revocation and absolute lifetime', () => {
     expect(socketAccepted).toHaveBeenCalledWith();
     installSocketSessionGuard(connectedSocket);
     await request(app).post('/api/auth/sessions/revoke').set('Authorization', `Bearer ${legacy}`).expect(200);
+    expect(room).toHaveBeenCalledWith(`session_user_${user._id}`);
+    expect(disconnectSockets).toHaveBeenCalledWith(true);
     await getUser(legacy).expect(401);
     await request(app).post('/api/auth/refresh').set('Authorization', `Bearer ${legacy}`).expect(401);
     const socketNext = jest.fn();

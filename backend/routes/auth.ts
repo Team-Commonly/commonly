@@ -326,6 +326,9 @@ router.post('/sessions/revoke', sessionLimiter, auth, async (req: AuthReq, res: 
     // eslint-disable-next-line global-require
     const User = require('../models/User');
     await User.updateOne({ _id: req.userId }, { $inc: { tokenVersion: 1 } });
+    // eslint-disable-next-line global-require
+    const { disconnectUserSessionSockets } = require('../services/sessionSocketService');
+    disconnectUserSessionSockets(String(req.userId));
     return res.json({ message: 'Signed out everywhere' });
   } catch (error) {
     console.error('Failed to revoke sessions:', error);
