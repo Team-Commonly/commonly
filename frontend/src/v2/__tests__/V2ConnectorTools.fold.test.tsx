@@ -32,9 +32,10 @@ const catalog = [{ installableId: 'github', list: 'tools', label: 'GitHub', desc
 
 beforeAll(async () => { await i18nReady; await i18n.changeLanguage('en'); });
 
-test('two live grants stay visible and nine revoked grants start in one closed fold', async () => {
+test('two live grants stay visible and nine revoked or expired grants start in one closed fold', async () => {
   const grants = [grant('live-1', null), grant('live-2', null),
-    ...Array.from({ length: 9 }, (_, i) => grant(`revoked-${i}`, yesterday))];
+    ...Array.from({ length: 4 }, (_, i) => grant(`revoked-${i}`, yesterday)),
+    ...Array.from({ length: 5 }, (_, i) => ({ ...grant(`expired-${i}`, null), expiresAt: yesterday }))];
   axios.get.mockImplementation((url: string) => {
     if (url === '/api/installables') return Promise.resolve({ data: { installables: catalog } });
     if (url === '/api/pods/p1/grants') return Promise.resolve({ data: { grants } });
