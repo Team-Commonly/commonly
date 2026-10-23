@@ -2965,6 +2965,24 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 
+/* The global `.v2-root button:not(.MuiButtonBase-root)` reset (0,2,1) sets
+   background: none and outranks the two rules above (0,2,0 and 0,1,0), so the
+   arrow-key and hover highlight never painted on a <button> item. Prefixing
+   with `.v2-root button` lifts these to 0,3,1 — the reset itself stays. */
+.v2-root button.v2-mention-item:hover {
+  background: var(--v2-surface-hover);
+}
+
+.v2-root button.v2-mention-item--active {
+  background: var(--v2-surface-hover);
+}
+
+/* The same reset also sets `padding: 0` (0,2,1), which erased the item's 7px 9px.
+   Scoped to the dropdown so the selector is 0,3,1 and the reset itself is unchanged. */
+.v2-root .v2-mention-dropdown button.v2-mention-item {
+  padding: 7px 9px;
+}
+
 .v2-mention-item__text {
   display: flex;
   flex-direction: column;
