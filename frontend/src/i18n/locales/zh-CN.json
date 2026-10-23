@@ -1225,6 +1225,7 @@
   },
   "board": {
     "title": "看板",
+    "claimUntil": "{{holder}} 已认领 · 至{{time}}",
     "backToChat": "返回聊天",
     "newTask": "新建任务",
     "taskCount_other": "{{count}}个任务",
