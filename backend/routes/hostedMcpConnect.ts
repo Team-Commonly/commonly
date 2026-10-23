@@ -238,7 +238,7 @@ router.get('/:entryId/client-metadata', clientMetadataRateLimit, (req: Request, 
  * pair through the §10.3 fence. An insert here would collide with the partial
  * unique index instead.
  */
-router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: AuthedRequest, res: Response) => {
+const startConnect = async (req: AuthedRequest, res: Response) => {
   const userId = req.user?.id;
   if (!userId) {
     return res.status(401).json({ error: 'authentication_required' });
@@ -326,6 +326,15 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
     expiresAt,
     integrationId: row?._id,
   });
+};
+
+router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: AuthedRequest, res: Response) => {
+  try {
+    await startConnect(req, res);
+  } catch {
+    console.error('[hosted-mcp] start failed', JSON.stringify({ entryId: req.params.entryId }));
+    if (!res.headersSent) res.status(503).json({ error: 'connector_unavailable' });
+  }
 });
 
 /**
@@ -346,7 +355,7 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
  * is atomic on the same terms and hands back the verifier in the pre-image,
  * which is the only place it is kept.
  */
-router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Response) => {
+const finishCallback = async (req: Request, res: Response, flow: { pendingRowId?: string }) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
   if (!entry) {
     return callbackRedirect(res, 'error', 'unknown_entry');
@@ -397,6 +406,7 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
   if (!browserNonceMatches(issued.config?.pendingAuth?.browserNonce, browserNonce)) {
     return callbackRedirect(res, 'error', 'browser_mismatch');
   }
+  if (issued.status === 'pending') flow.pendingRowId = String(issued._id);
 
   const codeVerifier = issued.config?.pendingAuth?.codeVerifier;
   const consumed = await Integration.findOneAndUpdate(
@@ -623,6 +633,37 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
       revokeAt: manualRevokeAt,
     },
   } : undefined);
+};
+
+router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Response) => {
+  const flow: { pendingRowId?: string } = {};
+  try {
+    await finishCallback(req, res, flow);
+  } catch {
+    // Only a new pending row can be marked failed. A reconnect must preserve
+    // its previous connected credential when this attempt cannot finish.
+    if (flow.pendingRowId) {
+      try {
+        await Integration.findOneAndUpdate(
+          { _id: flow.pendingRowId, status: 'pending' },
+          {
+            $set: {
+              status: 'error',
+              errorMessage: 'Connection could not be completed. Try again.',
+              errorMessageUserFacing: true,
+            },
+            $unset: { 'config.pendingAuth': 1 },
+          },
+          { new: true },
+        );
+      } catch {
+        // A failed recovery write still must not strand the browser or reject
+        // the Express handler.
+      }
+    }
+    console.error('[hosted-mcp] callback failed', JSON.stringify({ entryId: req.params.entryId }));
+    if (!res.headersSent) callbackRedirect(res, 'error', 'connector_unavailable');
+  }
 });
 
 module.exports = router;

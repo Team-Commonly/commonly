@@ -121,6 +121,7 @@ const callback = (query = 'state=st-1&code=code-1', cookie = BROWSER_COOKIE, ent
  */
 const storedRow = (config = {}) => ({
   _id: 'row-1',
+  status: 'pending',
   createdBy: 'user-1',
   config: {
     entryId: 'linear',
@@ -196,6 +197,61 @@ const outcome = (res) => {
 const scopeSet = (scope) => new Set(String(scope).split(/[\s,]+/).filter(Boolean));
 
 describe('hosted-mcp connect: callback', () => {
+  it('redirects and marks a pending flow failed when secret storage rejects', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      connectorSecrets.put.mockReset();
+      connectorSecrets.put.mockRejectedValue(new Error('secret store failed: access-1'));
+
+      const res = await callback();
+
+      expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'connector_unavailable' });
+      expect(res.headers.location).not.toContain('access-1');
+      expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+      const [filter, update] = Integration.findOneAndUpdate.mock.calls[1];
+      expect(filter).toEqual({ _id: 'row-1', status: 'pending' });
+      expect(update).toMatchObject({
+        $set: { status: 'error' },
+        $unset: { 'config.pendingAuth': 1 },
+      });
+      expect(JSON.stringify(log.mock.calls)).toContain('linear');
+      expect(JSON.stringify(log.mock.calls)).not.toContain('access-1');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('preserves an existing connected row when a reconnect cannot store its token', async () => {
+    const connected = { ...storedRow({ credentialRef: 'ref-old-access' }), status: 'connected' };
+    Integration.findOne.mockResolvedValue(connected);
+    Integration.findOneAndUpdate.mockReset().mockResolvedValueOnce(connected);
+    connectorSecrets.put.mockReset().mockRejectedValue(new Error('secret store failed'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await callback();
+      expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'connector_unavailable' });
+      expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(1);
+      expect(Integration.findOneAndUpdate.mock.calls[0][1]).toEqual({ $unset: { 'config.pendingAuth': 1 } });
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('still redirects if marking the pending flow failed also rejects', async () => {
+    connectorSecrets.put.mockReset().mockRejectedValue(new Error('secret store failed'));
+    Integration.findOneAndUpdate.mockReset()
+      .mockResolvedValueOnce(storedRow())
+      .mockRejectedValueOnce(new Error('write failed'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await callback();
+      expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'connector_unavailable' });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('write failed');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('forgets the old grant’s tools/list assessment around credential replacement', async () => {
     connectorSecrets.put.mockReset();
     connectorSecrets.put.mockImplementationOnce(async () => {
