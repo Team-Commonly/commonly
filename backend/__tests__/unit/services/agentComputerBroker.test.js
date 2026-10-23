@@ -4,11 +4,13 @@ const OWNER = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const OTHER_OWNER = 'bbbbbbbbbbbbbbbbbbbbbbbb';
 const FIRST = '111111111111111111111111';
 const SECOND = '222222222222222222222222';
+let nextTarget = 0;
 
 const fakePage = () => {
   let current = 'about:blank';
   let tabName = '';
   const page = {
+    targetId: `cdp-target-${++nextTarget}`,
     isClosed: () => false,
     close: jest.fn(),
     setDefaultTimeout: jest.fn(),
@@ -50,13 +52,17 @@ const setup = (status = 'absent') => {
     const page = fakePage();
     pages.push(page);
     return page;
-  }), pages: () => pages.slice(0, 2) };
+  }), pages: () => pages.slice(0, 2),
+  newCDPSession: jest.fn(async (page) => ({
+    send: jest.fn(async () => ({ targetInfo: { targetId: page.targetId } })),
+    detach: jest.fn(),
+  })) };
   const browser = { contexts: () => [context], on: jest.fn() };
   const request = jest.fn(async (_url, method) => (method === 'GET'
     ? { sessions: status === 'absent' ? [] : [{ id: 'one', status }] }
     : { id: 'one', status: 'live' }));
   const connect = jest.fn(async (endpoint) => (endpoint.includes(OWNER) ? browser : {
-    contexts: () => [{ route: jest.fn(), newPage: async () => {
+    contexts: () => [{ route: jest.fn(), newCDPSession: context.newCDPSession, newPage: async () => {
       const page = fakePage();
       pages.push(page);
       return page;
@@ -65,11 +71,18 @@ const setup = (status = 'absent') => {
   }));
   const wake = jest.fn(async () => {});
   const held = new Set();
+  const bound = new Map();
   const takeoverState = {
     get: jest.fn(async (userId, installationId) => held.has(`${userId}:${installationId}`)),
     set: jest.fn(async (userId, installationId, active) => {
       const key = `${userId}:${installationId}`;
       if (active) held.add(key); else held.delete(key);
+    }),
+    bindings: jest.fn(async (userId) => [...bound]
+      .filter(([key]) => key.startsWith(`${userId}:`))
+      .map(([key, targetId]) => ({ installationId: key.slice(userId.length + 1), targetId }))),
+    bind: jest.fn(async (userId, installationId, targetId) => {
+      bound.set(`${userId}:${installationId}`, targetId);
     }),
   };
   const config = {
@@ -195,6 +208,25 @@ describe('agent computer broker (fake Steel and CDP)', () => {
     expect(current.frameRevision).not.toBe(oldRevision);
     await expect(restarted.humanClick(OWNER, FIRST, 10, 10, oldRevision)).rejects.toThrow('Stale computer frame');
     expect(fixture.request.mock.calls.filter(([, method]) => method === 'POST')).toHaveLength(0);
+  });
+
+  test('recovery follows CDP target bindings, never page-writable window.name', async () => {
+    const fixture = setup('live');
+    await fixture.broker.snapshot(OWNER, FIRST);
+    // A page can set its name to another installation and open an about:blank
+    // popup with the same name. Neither page script can set a CDP target id.
+    await fixture.pages[0].evaluate(() => {}, `commonly-installation:${SECOND}`);
+    const popup = fakePage();
+    await popup.evaluate(() => {}, `commonly-installation:${FIRST}`);
+    fixture.pages.push(popup);
+    const restarted = new AgentComputerBroker(
+      fixture.config, fixture.request, fixture.connect, fixture.wake, fixture.takeoverState,
+    );
+    expect((await restarted.snapshot(OWNER, FIRST)).text).toContain('snapshot');
+    expect(fixture.context.newPage).toHaveBeenCalledTimes(1);
+    await restarted.snapshot(OWNER, SECOND);
+    expect(fixture.context.newPage).toHaveBeenCalledTimes(2);
+    expect(fixture.pages[1].locator).not.toHaveBeenCalled();
   });
 
   test('concurrent human actions cannot reuse one frame revision', async () => {

@@ -80,6 +80,15 @@ jest.mock('../../../models/Message', () => {
   return { find: jest.fn(() => chain) };
 });
 const mockBrokerDispatch = jest.fn();
+const mockComputerSnapshot = jest.fn();
+const mockComputerScreenshot = jest.fn();
+jest.mock('../../../services/agentComputerBroker', () => ({
+  agentComputerEnabled: () => true,
+  agentComputerBroker: {
+    snapshot: (...args) => mockComputerSnapshot(...args),
+    screenshot: (...args) => mockComputerScreenshot(...args),
+  },
+}));
 jest.mock('../../../services/grantBrokerProjectionService', () => ({
   hostedBrokerToolsForRun: jest.fn().mockResolvedValue({
     tools: [{ type: 'function', function: { name: 'linear_list_issues', description: 'List issues.', parameters: { type: 'object', properties: {} } } }],
@@ -155,6 +164,30 @@ describe('native turn with commonly_fetch_url', () => {
     mockBrokerDispatch.mockImplementation(async ({ name }) => (name === 'linear_list_issues'
       ? { callId: 'tc-1', outcome: 'ok', content: { issues: [{ title: 'Private roadmap' }] } }
       : null));
+    mockComputerSnapshot.mockResolvedValue({ url: 'https://www.linkedin.com/', title: 'LinkedIn', text: 'Untrusted profile' });
+    mockComputerScreenshot.mockResolvedValue(Buffer.from('dummy-png'));
+  });
+
+  test.each([
+    ['computer_snapshot', mockComputerSnapshot],
+    ['computer_screenshot', mockComputerScreenshot],
+  ])('%s taints the turn and blocks a bridged post', async (computerTool, reader) => {
+    mockBridged.mockResolvedValue(true);
+    const installation = {
+      ...install({ tools: [computerTool, 'computer_click', 'computer_type', 'commonly_post_message', 'commonly_create_task'] }),
+      _id: '507f1f77bcf86cd7994390cc',
+      installedBy: SAM_ID,
+    };
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', computerTool, {}), call('c2', 'commonly_post_message', { content: 'Private profile text' })))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(installation, mention());
+
+    expect(reader).toHaveBeenCalledWith(SAM_ID, installation._id);
+    expect(toolMessages(1)[1].content).toMatch(/cannot post in it/);
+    expect(offeredIn(1)).not.toContain('commonly_create_task');
+    expect(offeredIn(1)).toContain('computer_click');
   });
 
   test('opens a link from the mention, marked untrusted; the run keeps the address and size only', async () => {

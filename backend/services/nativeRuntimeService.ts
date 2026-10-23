@@ -552,7 +552,16 @@ const IN_POD_NATIVE_TOOLS = new Set(['commonly_read_context', 'commonly_post_mes
 // set because the address it may open is one the turn was given
 // (webAddressProvenance), so it cannot carry anything the turn holds.
 const WEB_LOOKUP_TOOLS: ReadonlySet<string> = new Set(['commonly_web_search', 'commonly_fetch_url']);
-const WEB_TAINTED_TOOLS: ReadonlySet<string> = new Set([...IN_POD_NATIVE_TOOLS, ...WEB_LOOKUP_TOOLS]);
+// Computer reads carry the same third-party text as a web page. Keep only
+// same-tab inspection and drafting actions after one returns: navigation to a
+// model-chosen address remains closed, while actual writes still require the
+// person's takeover and explicit per-request decision in the broker.
+const COMPUTER_AFTER_READ_TOOLS: ReadonlySet<string> = new Set([
+  'computer_snapshot', 'computer_screenshot', 'computer_click', 'computer_type', 'computer_request_takeover',
+]);
+const WEB_TAINTED_TOOLS: ReadonlySet<string> = new Set([
+  ...IN_POD_NATIVE_TOOLS, ...WEB_LOOKUP_TOOLS, ...COMPUTER_AFTER_READ_TOOLS,
+]);
 const MAX_WEB_SEARCHES_PER_TURN = 3;
 // Load-bearing beyond cost: a page can offer many addresses, and which one a
 // steered model opens leaks about log2(N) bits a fetch (webAddressProvenance).
@@ -976,6 +985,7 @@ async function dispatchTool(
         }
         if (name === 'computer_snapshot') {
           const page = await agentComputerBroker.snapshot(ownerId, installationId);
+          ctx.webTainted = true;
           return { content: page, untrustedSourceTitle: 'a computer page', recorded: { url: page.url, title: page.title } };
         }
         if (name === 'computer_click') {
@@ -988,6 +998,7 @@ async function dispatchTool(
         }
         if (name === 'computer_screenshot') {
           const png = await agentComputerBroker.screenshot(ownerId, installationId);
+          ctx.webTainted = true;
           return {
             content: { screenshot: 'attached to the next model input' },
             recorded: { bytes: png.length },

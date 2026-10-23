@@ -18,6 +18,8 @@ type Connect = (endpoint: string) => Promise<Browser>;
 type TakeoverStore = {
   get: (userId: string, installationId: string) => Promise<boolean>;
   set: (userId: string, installationId: string, active: boolean) => Promise<void>;
+  bindings: (userId: string) => Promise<{ installationId: string; targetId: string }[]>;
+  bind: (userId: string, installationId: string, targetId: string) => Promise<void>;
 };
 type UserBrowser = {
   browser: Browser;
@@ -40,7 +42,6 @@ const MAX_SCREENSHOT_BYTES = 1_000_000;
 const WRITE_APPROVAL_TIMEOUT_MS = 30_000;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const HUMAN_KEYS = new Set(['Enter', 'Tab', 'Escape', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
-const TAB_NAME_PREFIX = 'commonly-installation:';
 
 const templateUrl = (template: string, userId: string): string => {
   if (!USER_ID.test(userId) || !template.includes('{userId}')) throw new Error('Computer endpoint is not configured.');
@@ -101,6 +102,22 @@ const takeoverStore: TakeoverStore = {
       { upsert: true },
     );
   },
+  bindings: async (userId) => {
+    const rows = await AgentComputerTakeover.find({ ownerId: userId, targetId: { $exists: true } })
+      .select('_id targetId').lean();
+    return rows.flatMap((row) => {
+      const targetId = (row as { targetId?: unknown }).targetId;
+      return typeof targetId === 'string' && targetId
+        ? [{ installationId: String(row._id), targetId }] : [];
+    });
+  },
+  bind: async (userId, installationId, targetId) => {
+    await AgentComputerTakeover.updateOne(
+      { _id: installationId, ownerId: userId },
+      { $set: { targetId }, $setOnInsert: { active: false } },
+      { upsert: true },
+    );
+  },
 };
 
 export const isCommitControl = (control: {
@@ -133,11 +150,22 @@ export class AgentComputerBroker {
     private readonly takeoverState: TakeoverStore = takeoverStore,
   ) {} // eslint-disable-line no-empty-function
 
-  private async attachPage(page: Page, installationId: string): Promise<void> {
+  private async attachPage(page: Page): Promise<void> {
     page.setDefaultTimeout(ACTION_TIMEOUT_MS);
-    await page.addInitScript((name) => { window.name = name; }, `${TAB_NAME_PREFIX}${installationId}`);
     // Request interception is installed on the shared context before any tab
     // navigates; Page.route misses the first request of a new popup.
+  }
+
+  private async targetId(context: BrowserContext, page: Page): Promise<string> {
+    const session = await context.newCDPSession(page);
+    try {
+      const result = await session.send('Target.getTargetInfo');
+      const id = result.targetInfo?.targetId;
+      if (typeof id !== 'string' || !id) throw new Error('Computer tab identity is unavailable.');
+      return id;
+    } finally {
+      await session.detach();
+    }
   }
 
   private async guardRequest(route: Route, state: UserBrowser): Promise<void> {
@@ -205,15 +233,17 @@ export class AgentComputerBroker {
       epoch: randomUUID(),
     };
     await context.route('**/*', (route) => this.guardRequest(route, state));
+    const bindings = await this.takeoverState.bindings(userId);
+    const byTarget = new Map(bindings.filter(({ installationId }) => INSTALLATION_ID.test(installationId))
+      .map(({ installationId, targetId }) => [targetId, installationId]));
     for (const page of context.pages()) {
-      let name = '';
-      try { name = await page.evaluate(() => window.name); } catch { continue; }
-      if (!name.startsWith(TAB_NAME_PREFIX)) continue;
-      const installationId = name.slice(TAB_NAME_PREFIX.length);
-      if (!INSTALLATION_ID.test(installationId)) continue;
-      if (state.tabs.has(installationId)) throw new Error('Duplicate agent computer tabs need operator recovery.');
+      let targetId: string;
+      try { targetId = await this.targetId(context, page); } catch { continue; }
+      const installationId = byTarget.get(targetId);
+      if (!installationId) continue;
+      if (state.tabs.has(installationId)) throw new Error('Duplicate agent computer tab bindings need operator recovery.');
       if (await this.takeoverState.get(userId, installationId)) state.takeover.add(installationId);
-      await this.attachPage(page, installationId);
+      await this.attachPage(page);
       state.tabs.set(installationId, page);
     }
     return state;
@@ -251,8 +281,9 @@ export class AgentComputerBroker {
             throw new Error('The person has control of this tab. Wait for hand-back.');
           }
           const created = await state.context.newPage();
-          await created.evaluate((name) => { window.name = name; }, `${TAB_NAME_PREFIX}${installationId}`);
-          await this.attachPage(created, installationId);
+          const targetId = await this.targetId(state.context, created);
+          await this.takeoverState.bind(userId, installationId, targetId);
+          await this.attachPage(created);
           state.tabs.set(installationId, created);
           return created;
         })();
@@ -276,7 +307,6 @@ export class AgentComputerBroker {
     }
     const page = await this.tab(userId, installationId);
     await page.goto(url.toString(), { waitUntil: 'domcontentloaded', timeout: ACTION_TIMEOUT_MS });
-    await page.evaluate((name) => { window.name = name; }, `${TAB_NAME_PREFIX}${installationId}`);
     return { url: page.url(), title: await page.title() };
   }
 
@@ -365,8 +395,9 @@ export class AgentComputerBroker {
     state.frames.delete(installationId);
     state.humanActionSeen.delete(installationId);
     const fresh = await state.context.newPage();
-    await fresh.evaluate((name) => { window.name = name; }, `${TAB_NAME_PREFIX}${installationId}`);
-    await this.attachPage(fresh, installationId);
+    const targetId = await this.targetId(state.context, fresh);
+    await this.takeoverState.bind(userId, installationId, targetId);
+    await this.attachPage(fresh);
     state.tabs.set(installationId, fresh);
     if (landing !== 'about:blank') await fresh.goto(landing, { waitUntil: 'domcontentloaded', timeout: ACTION_TIMEOUT_MS });
     await this.takeoverState.set(userId, installationId, false);

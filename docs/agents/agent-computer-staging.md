@@ -20,8 +20,10 @@ production do not receive them.
   one distinct Playwright page in that shared persistent browser context.
   This staging release has one backend replica. Human takeover state is also
   stored in Mongo so a spot restart does not silently return control to an
-  agent. A new backend connection gets a new frame epoch, invalidating stale
-  human input.
+  agent. The installation-to-tab binding stores the browser-owned CDP target
+  ID in Mongo; recovery ignores page-writable `window.name` and unbound tabs.
+  A new backend connection gets a new frame epoch, invalidating stale human
+  input.
 - `AGENT_COMPUTER_ENABLED` defaults to `false`; the trial needs that flag,
   both Steel endpoint templates, the waker URL/token, and an allowed host list.
   Staging supplies the Steel templates and LinkedIn host list. SRE supplies
@@ -37,6 +39,10 @@ can navigate only to allowlisted HTTPS hosts with no URL query, read a bounded
 accessibility snapshot, click an inspectable non-commit control, fill a
 non-secret field, or view a bounded screenshot. Page text and screenshots are
 untrusted model input; the AgentRun records only their metadata. The broker
+marks the turn web-tainted when either read succeeds, narrowing later tools and
+blocking posts to externally bridged pods. Same-tab inspection and drafting
+remain available; navigation to a model-chosen address does not.
+The broker
 intercepts the shared browser context, including the first popup request.
 Unknown tabs are denied. It blocks non-GET/HEAD/OPTIONS page requests while
 the agent controls the tab. During human takeover, writes remain blocked until
