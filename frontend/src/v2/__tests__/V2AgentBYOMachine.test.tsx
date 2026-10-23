@@ -89,18 +89,18 @@ describe('BYO on-my-computer mode', () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
 
-    // Nothing is preselected, so the note promises no path yet.
-    expect(screen.getByTestId('byo-preview')).toHaveTextContent('This is how it will appear in the pod. The face follows the name.');
+    // The preview's name and status carry the meaning until a machine is chosen.
+    expect(screen.getByTestId('byo-preview').querySelector('.v2-byo__preview-note')).toBeNull();
 
     // On "Bring your own runtime", the token wording is correct.
     fireEvent.click(screen.getByTestId('byo-mode-byo'));
-    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once the command is running.');
+    expect(screen.getByTestId('byo-preview').querySelector('.v2-byo__preview-note')).toBeNull();
 
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
-    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once the daemon on Sam’s MacBook starts it.');
+    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears when the daemon on Sam’s MacBook starts it.');
 
     fireEvent.change(screen.getByTestId('byo-machine-select'), { target: { value: 'mach-b' } });
-    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears in the pod once the daemon on Studio starts it.');
+    expect(screen.getByTestId('byo-preview')).toHaveTextContent('Appears when the daemon on Studio starts it.');
   });
 
   test('no machines — no card, and the one-paste setup panel shows instead', async () => {

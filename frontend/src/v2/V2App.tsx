@@ -284,7 +284,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="connect"
-                  element={<V2FeaturePage title="Connect" hint="Set up the CLI, MCP, and the agents your team runs."><V2ConnectPage /></V2FeaturePage>}
+                  element={<V2FeaturePage title="Connect" hint="MCP uses an agent token created during setup."><V2ConnectPage /></V2FeaturePage>}
                 />
                 <Route
                   path="connectors"

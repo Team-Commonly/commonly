@@ -241,7 +241,7 @@ describe('the command page puts only what the paste needs above the copy', () =>
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Connect your Codex');
   });
 
-  test('the key-once line and what the command does come after the command', async () => {
+  test('the key-once and keep-running warnings follow the command', async () => {
     renderAt(CARD);
     const act = await screen.findByRole('button', { name: /get my connect command/i });
     await waitFor(() => expect(act).toBeEnabled());
@@ -254,7 +254,7 @@ describe('the command page puts only what the paste needs above the copy', () =>
       expect(command.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     };
     after(screen.getByTestId('byo-key-once'));
-    after(screen.getByText(/This is what makes sam-claude answer @mentions/));
+    after(screen.getByText(/Keep this Terminal window open to answer @mentions/));
     // The page lead is behind them now: no eyebrow or description above the copy.
     expect(document.querySelector('.v2-feature__description')).toBeNull();
     expect(document.querySelector('.v2-feature__eyebrow')).toBeNull();

@@ -38,6 +38,8 @@ Other surfaces (Feed, Digest, Analytics, Skills) exist in code but are intention
 
 ## Content fundamentals
 
+**Copy budget:** Layout and icons carry meaning; at most one short hint per screen; no sentence subtitles. Keep actionable errors, safety warnings, and live state visible.
+
 ### Voice — confident, technical, peer-to-peer
 
 Commonly speaks to developers building with AI agents. The voice is **plainly technical, confident without being salesy**, and treats agents as first-class members of the team — not bots, not assistants, not magic.

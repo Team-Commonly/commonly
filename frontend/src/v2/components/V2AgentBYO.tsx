@@ -927,8 +927,7 @@ const V2AgentBYO: React.FC = () => {
                     choice (ruled 2026-10-15). */}
                 <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.onCommonly')}</span>
                 <span className="v2-byo__mode-title">{t('agentByo.mode.hosted')}</span>
-                <span className="v2-byo__hint">{t('agentByo.mode.hostedHint', { turns: hosting.caps.turnsPerDay })}</span>
-                <span className="v2-byo__mode-meta">{t('agentByo.mode.hostedMeta')}</span>
+                <span className="v2-byo__mode-meta">{t('agentByo.mode.hostedMeta', { turns: hosting.caps.turnsPerDay })}</span>
               </button>
               {machines.length > 0 && (
                 <button
@@ -940,7 +939,6 @@ const V2AgentBYO: React.FC = () => {
                 >
                   <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
                   <span className="v2-byo__mode-title">{t('agentByo.mode.machine')}</span>
-                  <span className="v2-byo__hint">{t('agentByo.mode.machineHint')}</span>
                   <span className="v2-byo__mode-meta">{t('agentByo.mode.machineMeta')}</span>
                 </button>
               )}
@@ -953,7 +951,6 @@ const V2AgentBYO: React.FC = () => {
               >
                 <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
                 <span className="v2-byo__mode-title">{t('agentByo.mode.byo')}</span>
-                <span className="v2-byo__hint">{t('agentByo.mode.byoHint')}</span>
                 <span className="v2-byo__mode-meta">{t('agentByo.mode.byoMeta')}</span>
               </button>
             </div>
@@ -974,7 +971,6 @@ const V2AgentBYO: React.FC = () => {
                   </option>
                 ))}
               </select>
-              <span className="v2-byo__hint">{t('agentByo.form.machineHint')}</span>
             </label>
           )}
           {mode === 'machine' && (
@@ -993,7 +989,6 @@ const V2AgentBYO: React.FC = () => {
                 <option value="claude">{t('agentByo.form.adapterClaude')}</option>
                 <option value="codex">{t('agentByo.form.adapterCodex')}</option>
               </select>
-              <span className="v2-byo__hint">{t('agentByo.form.adapterHint')}</span>
             </label>
           )}
           {mode === 'machine' && (
@@ -1065,9 +1060,6 @@ const V2AgentBYO: React.FC = () => {
                 </option>
               ))}
             </select>
-            <span className="v2-byo__hint">
-              {t('agentByo.form.podHint')}
-            </span>
           </label>
           {/* The act sits right under the fields it acts on. Below "Add a computer" it
               fell under the fold at 1440x900 with "Run it here" chosen (QA 2026-10-16:
@@ -1102,7 +1094,6 @@ const V2AgentBYO: React.FC = () => {
           {machines.length === 0 && (
             <div className="v2-byo__add-computer" data-testid="byo-add-computer">
               <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
-              <p className="v2-byo__hint">{t('agentByo.addComputer.lead')}</p>
               <div className="v2-byo__add-computer-row">
                 <code>{DAEMON_SETUP_COMMAND}</code>
                 <button
@@ -1199,7 +1190,6 @@ const V2AgentBYO: React.FC = () => {
               <span className="v2-byo__stat-label">{t('agentByo.hosted.statAgents')}</span>
             </div>
           </div>
-          <p className="v2-byo__hint">{t('agentByo.hosted.latencyHint')}</p>
           <div className="v2-byo__cta-row">
             <button
               type="button"
@@ -1305,7 +1295,6 @@ const V2AgentBYO: React.FC = () => {
                 <p className="v2-byo__listen-note">
                   {t('agentByo.listen.note', { name: issued.agentName })}
                 </p>
-                <p className="v2-byo__listen-body">{t('agentByo.listen.body', { name: issued.agentName })}</p>
               </>
             )}
           </div>
@@ -1452,18 +1441,11 @@ const V2AgentBYO: React.FC = () => {
             {t(`agentByo.preview.${previewStatus}`)}
           </div>
         </div>
-        <p className="v2-byo__preview-note">
-          {mode === null
-            ? t('agentByo.preview.noteUnchosen')
-            : mode === 'hosted'
-            ? t('agentByo.preview.noteHosted')
-            : mode === 'machine'
-              // "On my computer" issues no runtime token — the daemon on the
-              // chosen machine starts the seat. Saying "token" here described
-              // the wrong path (TASK-163, found drawing README frame 5).
-              ? t('agentByo.preview.noteMachine', { machine: selectedMachineName })
-              : t('agentByo.preview.noteByo')}
-        </p>
+        {mode === 'machine' && (
+          <p className="v2-byo__preview-note">
+            {t('agentByo.preview.noteMachine', { machine: selectedMachineName })}
+          </p>
+        )}
       </aside>
       </div>
     </V2FeaturePage>
