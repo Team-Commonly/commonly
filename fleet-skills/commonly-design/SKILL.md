@@ -79,3 +79,7 @@ The design system is meant to evolve. The way to evolve it:
 - **For mocks / throwaway prototypes**, use `frontend/design-system/tokens.css` + lucide icons via CDN. Output static HTML the user can open.
 - **For production v2 code**, use `var(--v2-*)` tokens from `v2.css`. Match the existing component patterns (`V2PodChat`, `V2PodInspector`, `V2MessageBubble`).
 - **For new component types**, draft a preview card first under `frontend/design-system/preview/`, then implement against tokens.
+
+## Related skills
+
+- `frontend-design` — Anthropic's public design-judgment skill. Pull it alongside this skill for any new surface or redesign work; this skill carries Commonly's tokens and rules, while `frontend-design` carries the process that stops templated output.
