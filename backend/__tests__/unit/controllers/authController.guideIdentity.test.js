@@ -119,7 +119,7 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
 
     const welcome = mockPostMessage.mock.calls[0][0];
     expect(welcome.content).toBe(SCOUT_WELCOME);
-    expect(welcome.content.split(/\s+/)).toHaveLength(10);
+    expect(welcome.content).toBe('What would you like to do first?');
     expect(welcome.payload).toEqual({
       kind: 'starts',
       starts: [

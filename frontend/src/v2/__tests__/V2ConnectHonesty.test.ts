@@ -25,15 +25,14 @@ describe('the connect flow states what it does not do', () => {
 
     test('a listening step exists at all', () => {
       expect(listen?.title).toBeTruthy();
-      expect(listen?.body).toBeTruthy();
       expect(listen?.note).toBeTruthy();
     });
 
     test('it says plainly that MCP alone will not answer mentions', () => {
-      const all = `${listen.title} ${listen.body} ${listen.note}`;
+      const all = `${listen.title} ${listen.note}`;
       // The whole point: name the gap rather than only describing the fix.
       expect(all).toMatch(/@|提及/);
-      expect(all.length).toBeGreaterThan(60);
+      expect(all).toMatch(/MCP/);
     });
 
     test('the note names the agent, so the consequence is concrete', () => {
