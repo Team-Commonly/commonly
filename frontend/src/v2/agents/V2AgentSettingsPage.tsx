@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2PageHead from '../components/V2PageHead';
+import V2AgentRuntimeGrants, { Runtime } from '../components/V2AgentRuntimeGrants';
 import { useAgentSettings } from './useAgentSettings';
 import V2AgentWakePods from './V2AgentWakePods';
 import './v2-agent-settings.css';
@@ -31,7 +32,7 @@ const errorLabel = (error: unknown, fallback: string): string => (
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
-  const { access, installation, podId, loading, error: loadError, refresh, updatePod } = useAgentSettings(agentName, instanceId);
+  const { access, installation, podId, loading, error: loadError, refresh, update, updatePod } = useAgentSettings(agentName, instanceId);
   const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
   const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
@@ -138,6 +139,16 @@ const V2AgentSettingsPage: React.FC = () => {
     {error || t('agentSettings.loading')}
   </div>;
 
+  const environment = installation?.config?.environment;
+  const controls = environment && typeof environment === 'object' && !Array.isArray(environment)
+    ? environment as Record<string, unknown> : {};
+  const runtime: Runtime = {
+    ...(installation?.runtime || {}),
+    ...(typeof controls.adapter === 'string' ? { adapter: controls.adapter } : {}),
+    ...(typeof controls.model === 'string' ? { model: controls.model } : {}),
+    ...(typeof controls.effort === 'string' ? { effort: controls.effort } : {}),
+  };
+
   return (
     <main className="v2-agent-settings">
       <V2PageHead title={access.displayName || agentName} actions={<Link to="/v2/agents">{t('agentSettings.yourTeam')}</Link>} />
@@ -145,6 +156,15 @@ const V2AgentSettingsPage: React.FC = () => {
         <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
         <span aria-current="page">{t('agentSettings.settings')}</span>
       </nav>
+      <V2AgentRuntimeGrants
+        key={`${agentName}:${instanceId}`}
+        name={agentName}
+        instanceId={instanceId}
+        runtime={runtime}
+        onSaveRuntime={async (changes) => {
+          await update({ config: { environment: changes } });
+        }}
+      />
       <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
         <div className="v2-agent-settings__section-head">
           <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>

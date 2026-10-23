@@ -87,3 +87,12 @@ test('a grant for a pod the agent left does not appear as current access', async
   expect(res.status).toBe(200);
   expect(res.body.grants).toEqual([]);
 });
+
+test('linked user can revoke when the connection has no createdBy', async () => {
+  Integration.findOne.mockReturnValue({ select: () => ({ lean: async () => ({
+    type: 'hosted-mcp', config: { entryId: 'linear', linkedUserId: 'owner' },
+  }) }) });
+  const res = await request(app).get(URL).set('x-test-user', 'owner');
+  expect(res.status).toBe(200);
+  expect(res.body.grants[0]).toMatchObject({ grantedBy: 'Owner', canRevoke: true });
+});

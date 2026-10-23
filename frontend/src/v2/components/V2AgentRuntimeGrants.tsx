@@ -99,8 +99,8 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     unknown: t('agentManage.runtime.unknown', { defaultValue: 'Runtime details unavailable' }),
   }[details.mode];
   const model = runtime.model || preferredModel || null;
-  // The daemon reads runtime.model on its next assignment and restarts the
-  // child when it changes. A single CLI chooses its own model locally.
+  // The daemon reads the environment model on its next assignment and restarts
+  // the child when it changes. A single CLI chooses its own model locally.
   const mayEditRuntime = Boolean(onSaveRuntime && details.mode === 'daemon' && details.adapter);
   const modelChanged = Boolean(modelDraft.trim() && modelDraft.trim() !== (runtime.model || ''));
   const effortChanged = Boolean(effortDraft.trim() && effortDraft.trim() !== (runtime.effort || ''));
@@ -163,7 +163,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
       <section className="v2-agent-settings__section" aria-labelledby="agent-grants-heading">
         <h2 id="agent-grants-heading">{t('agentManage.grants.title', { defaultValue: 'Connector grants' })}</h2>
         {loading && <p role="status">{t('agentManage.grants.loading', { defaultValue: 'Loading grants…' })}</p>}
-        {!loading && grants.length === 0 && <p>{t('agentManage.grants.empty', { defaultValue: 'This agent has no connector grants.' })}</p>}
+        {!loading && !error && grants.length === 0 && <p>{t('agentManage.grants.empty', { defaultValue: 'This agent has no connector grants.' })}</p>}
         <ul className="v2-agent-runtime-grants__list">
           {grants.map((grant) => {
             const ended = Boolean(grant.revokedAt) || new Date(grant.expiresAt).getTime() <= Date.now();

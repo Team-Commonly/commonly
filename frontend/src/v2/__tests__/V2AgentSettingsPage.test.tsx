@@ -3,21 +3,29 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import V2AgentSettingsPage from '../agents/V2AgentSettingsPage';
+import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('axios', () => {
   const mock = {
-    get: jest.fn(), post: jest.fn(), delete: jest.fn(),
+    get: jest.fn(), post: jest.fn(), patch: jest.fn(), delete: jest.fn(),
     defaults: { baseURL: '', headers: { common: {} } },
     interceptors: { request: { use: jest.fn() }, response: { use: jest.fn() } },
   };
   return { __esModule: true, default: mock, ...mock };
 });
 const axios = jest.requireMock('axios').default;
+const authValue = {
+  currentUser: { _id: 'owner', username: 'owner' }, user: { _id: 'owner', username: 'owner' },
+  token: 'user-jwt', loading: false, error: null, isAuthenticated: true,
+  register: jest.fn(), login: jest.fn(), signInWithToken: jest.fn(), logout: jest.fn(), updateProfile: jest.fn(),
+};
 
 const renderPage = (path = '/v2/agents/maya-claude/default') => render(
-  <MemoryRouter initialEntries={[path]}>
-    <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
-  </MemoryRouter>,
+  <AuthContext.Provider value={authValue}>
+    <MemoryRouter initialEntries={[path]}>
+      <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+    </MemoryRouter>
+  </AuthContext.Provider>,
 );
 
 beforeEach(() => {
@@ -105,10 +113,12 @@ test('an in-flight replacement never reveals its key on another agent page', asy
     return <button type="button" onClick={() => navigate('/v2/agents/other/default')}>Next agent</button>;
   };
   render(
-    <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
-      <NextAgent />
-      <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
-    </MemoryRouter>,
+    <AuthContext.Provider value={authValue}>
+      <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+        <NextAgent />
+        <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>,
   );
   await screen.findByText('Laptop');
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
@@ -176,5 +186,29 @@ test('selects a pod the owner can read when the first identity pod is inaccessib
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
     '/api/registry/pods/owned/agents/maya-claude/runtime-tokens',
     expect.objectContaining({ force: true }),
+  ));
+});
+
+test('runtime editor writes environment controls through the shared settings hook', async () => {
+  axios.patch.mockResolvedValue({ data: { updated: true } });
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
+      runtime: { runtimeType: 'wrapper' },
+      config: { environment: { adapter: 'claude', model: 'old', effort: 'medium' } },
+    } } });
+    if (url.includes('/grants')) return Promise.resolve({ data: { grants: [] } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage();
+  const model = await screen.findByLabelText('Change model on this computer');
+  fireEvent.change(model, { target: { value: 'new-model' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    '/api/registry/pods/pod-1/agents/maya-claude',
+    { config: { environment: { model: 'new-model' } }, instanceId: 'default' },
   ));
 });

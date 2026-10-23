@@ -54,15 +54,15 @@ router.get('/agents/:name/instances/:instanceId/grants', auth, async (req: any, 
     const connections = await Promise.all(Array.from(new Set(visibleGrants.map((row) => row.connectionId)))
       .map(async (connectionId) => {
         const byId = /^[a-f\d]{24}$/i.test(connectionId)
-          ? await Integration.findById(connectionId).select('type createdBy config.entryId').lean()
+          ? await Integration.findById(connectionId).select('type createdBy config.entryId config.linkedUserId').lean()
           : null;
         const connection = byId || await Integration.findOne({ installationId: connectionId })
-          .select('type createdBy config.entryId').lean();
+          .select('type createdBy config.entryId config.linkedUserId').lean();
         return [connectionId, connection] as const;
       }));
     const connectionById = new Map(connections);
     const granterIds = Array.from(new Set(connections
-      .map(([, connection]) => String(connection?.createdBy || ''))
+      .map(([, connection]) => String(connection?.createdBy || connection?.config?.linkedUserId || ''))
       .filter(Boolean)));
     const granters = granterIds.length
       ? await User.find({ _id: { $in: granterIds } }).select('username displayName').lean()
@@ -72,7 +72,7 @@ router.get('/agents/:name/instances/:instanceId/grants', auth, async (req: any, 
     return res.json({
       grants: visibleGrants.map((grant) => {
         const connection = connectionById.get(grant.connectionId);
-        const granterId = String(connection?.createdBy || '');
+        const granterId = String(connection?.createdBy || connection?.config?.linkedUserId || '');
         const granter: any = granterById.get(granterId);
         return {
           grantId: grant.grantId,
