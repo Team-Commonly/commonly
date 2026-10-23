@@ -39,7 +39,7 @@ import {
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
-import { detectSkills, importSkills } from '../lib/skills-import.js';
+import { detectSkills, importSkills, parseSkillMeta } from '../lib/skills-import.js';
 import {
   environmentForServer,
   normalizeSandboxTrust,
@@ -497,6 +497,14 @@ const versionAtLeast = (version, minimum) => {
 const BUNDLED_COMMONLY_SKILL_DIR = pathResolve(
   dirname(fileURLToPath(import.meta.url)), '..', '..', 'skills', 'commonly',
 );
+
+const reportedSkillName = (source) => {
+  try {
+    return parseSkillMeta(readFileSync(join(source, 'SKILL.md'), 'utf8'), basename(source)).name;
+  } catch {
+    return basename(source);
+  }
+};
 
 // Minimum-viable environment for fresh attach: wire @commonlyai/mcp so the
 // agent gets commonly_* kernel tools out of the box, AND mount the commonly
@@ -1670,8 +1678,8 @@ export const performRun = ({
         environment: seatEnvironment,
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
-            mounted: mounted.map((source) => basename(source)),
-            conflicted: conflicted.map(({ path }) => basename(path)),
+            mounted: mounted.map(reportedSkillName),
+            conflicted: conflicted.map(({ path }) => reportedSkillName(path)),
           };
         },
         // Runtime context the Claude/Codex adapters expose only to their
