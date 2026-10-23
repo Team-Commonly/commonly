@@ -337,6 +337,9 @@ jobs:
             -f k8s/helm/commonly/values-dev.yaml \
             > /tmp/dev-rendered.yaml
 
+      - name: Verify backend worker render
+        run: bash scripts/verify-backend-worker-chart.sh
+
       - name: Lint rendered dev chart
         run: |
           kubeconform --strict --summary -output text \

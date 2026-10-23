@@ -88,6 +88,11 @@ agentProvisioning:
 backend:
   enabled: true
   replicaCount: 1
+  worker:
+    # Opt in only when a dedicated worker can replace web's background jobs.
+    enabled: false
+    nodeSelector: {}
+    tolerations: []
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
     tag: latest
