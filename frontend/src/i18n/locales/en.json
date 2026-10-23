@@ -2263,6 +2263,7 @@
     "settings": "Settings",
     "key": "Key",
     "regenerate": "Regenerate key",
+    "reconnectToRegenerate": "Reconnect to regenerate key",
     "copyNow": "Copy this key now. It will not be shown again.",
     "done": "Done",
     "empty": "No runtime keys yet.",

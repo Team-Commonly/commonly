@@ -3,12 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2PageHead from '../components/V2PageHead';
+import { useAgentSettings } from './useAgentSettings';
 import './v2-agent-settings.css';
-
-interface AgentAccess {
-  displayName: string;
-  pods: Array<{ id: string; name: string }>;
-}
 
 interface RuntimeKey {
   _id: string;
@@ -34,62 +30,52 @@ const errorLabel = (error: unknown, fallback: string): string => (
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
-  const [access, setAccess] = useState<AgentAccess | null>(null);
+  const { access, installation, podId, loading, error: loadError } = useAgentSettings(agentName, instanceId);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'replace' | string | null>(null);
   const [busy, setBusy] = useState(false);
   const [oneTimeKey, setOneTimeKey] = useState<string | null>(null);
+  const identityKey = `${agentName}:${instanceId}:${podId || ''}`;
 
   const keyUrl = useCallback((podId: string) => (
     `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`
   ), [agentName]);
 
-  const loadKeys = useCallback(async () => {
+  const fetchKeys = useCallback(async () => {
     const response = await axios.get<RuntimeKey[]>('/api/credentials', {
       params: { agentName, instanceId },
     });
-    setKeys(response.data || []);
+    return response.data || [];
   }, [agentName, instanceId]);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setAccess(null);
     setKeys([]);
+    setKeysReadyFor(null);
     setError(null);
     setOneTimeKey(null);
     setPendingAction(null);
-    const load = async () => {
-      try {
-        // This owner/admin endpoint gates the page and supplies an installed
-        // pod for the existing pod-scoped token routes. Public profile data is
-        // deliberately insufficient to render the Settings tab.
-        const response = await axios.get<AgentAccess>(
-          `/api/agent-memory/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`,
-        );
-        if (!active) return;
-        const next = response.data;
-        if (!next.pods?.length) throw new Error(t('agentSettings.noPod'));
-        await loadKeys();
-        if (active) setAccess(next);
-      } catch (requestError) {
+    if (access && podId) {
+      void fetchKeys().then((rows) => {
+        if (active) {
+          setKeys(rows);
+          setKeysReadyFor(identityKey);
+        }
+      }).catch((requestError) => {
         if (active) setError(errorLabel(requestError, t('agentSettings.unavailable')));
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    void load();
+      });
+    }
     return () => { active = false; };
-  }, [agentName, instanceId, loadKeys, t]);
+  }, [access, podId, fetchKeys, identityKey, t]);
 
   const replaceKey = async () => {
-    if (!access || pendingAction !== 'replace' || busy) return;
+    if (!access || !podId || pendingAction !== 'replace' || busy || installation?.runtime?.runtimeType === 'wrapper') return;
     setBusy(true);
     setError(null);
     try {
-      const response = await axios.post<{ token?: string }>(keyUrl(access.pods[0].id), {
+      const response = await axios.post<{ token?: string }>(keyUrl(podId), {
         instanceId,
         label: 'Agent Settings replacement',
         force: true,
@@ -97,7 +83,7 @@ const V2AgentSettingsPage: React.FC = () => {
       if (!response.data.token) throw new Error(t('agentSettings.missingReplacement'));
       setOneTimeKey(response.data.token);
       setPendingAction(null);
-      await loadKeys();
+      setKeys(await fetchKeys());
     } catch (requestError) {
       setError(errorLabel(requestError, t('agentSettings.updateError')));
     } finally {
@@ -115,7 +101,7 @@ const V2AgentSettingsPage: React.FC = () => {
       });
       setPendingAction(null);
       setOneTimeKey(null);
-      await loadKeys();
+      setKeys(await fetchKeys());
     } catch (requestError) {
       setError(errorLabel(requestError, t('agentSettings.updateError')));
     } finally {
@@ -124,7 +110,12 @@ const V2AgentSettingsPage: React.FC = () => {
   };
 
   if (loading) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.loading')}</div>;
-  if (!access) return <div className="v2-agent-settings__state" role="alert">{error || t('agentSettings.unavailable')}</div>;
+  if (!access || !podId) return <div className="v2-agent-settings__state" role="alert">
+    {error || errorLabel(loadError, t('agentSettings.unavailable'))}
+  </div>;
+  if (keysReadyFor !== identityKey) return <div className="v2-agent-settings__state" role={error ? 'alert' : 'status'}>
+    {error || t('agentSettings.loading')}
+  </div>;
 
   return (
     <main className="v2-agent-settings">
@@ -136,9 +127,15 @@ const V2AgentSettingsPage: React.FC = () => {
       <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
         <div className="v2-agent-settings__section-head">
           <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>
-          <button type="button" onClick={() => setPendingAction('replace')} disabled={busy}>
-            {t('agentSettings.regenerate')}
-          </button>
+          {installation?.runtime?.runtimeType === 'wrapper' ? (
+            <Link to={`/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&reconnect=1&mode=machine`}>
+              {t('agentSettings.reconnectToRegenerate')}
+            </Link>
+          ) : (
+            <button type="button" onClick={() => setPendingAction('replace')} disabled={busy}>
+              {t('agentSettings.regenerate')}
+            </button>
+          )}
         </div>
         {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}
         {pendingAction === 'replace' && (

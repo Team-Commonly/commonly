@@ -26,10 +26,30 @@ beforeEach(() => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
+    } } });
     return Promise.resolve({ data: [{
       _id: 'tok-1', label: 'Laptop', createdAt: '2026-10-01T00:00:00Z', lastUsedAt: null, revokedAt: null, status: 'active',
     }] });
   });
+});
+
+test('wrapper key replacement goes through reconnect instead of stranding its local key', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'wrapper' },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage();
+  const reconnect = await screen.findByRole('link', { name: 'Reconnect to regenerate key' });
+  expect(reconnect).toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=maya-claude&reconnect=1&mode=machine');
+  expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
+  expect(axios.post).not.toHaveBeenCalled();
 });
 
 test('regeneration waits for the explicit running-key replacement confirmation', async () => {
@@ -58,6 +78,22 @@ test('a denied owner probe renders no key controls or metadata', async () => {
   expect(screen.queryByText('Laptop')).not.toBeInTheDocument();
 });
 
+test('a partial installation owner cannot see identity-wide key controls', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
+    } } });
+    return Promise.reject({ response: { status: 403, data: { message: 'Access denied' } } });
+  });
+  renderPage();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Agent settings unavailable');
+  expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Laptop')).not.toBeInTheDocument();
+});
+
 test('revocation uses the credential id only after confirmation', async () => {
   axios.delete.mockResolvedValue({ data: { revoked: 1 } });
   renderPage();
@@ -68,4 +104,26 @@ test('revocation uses the credential id only after confirmation', async () => {
   await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/credentials/tok-1', {
     params: { agentName: 'maya-claude', instanceId: 'default' },
   }));
+});
+
+test('selects a pod the owner can read when the first identity pod is inaccessible', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Maya', pods: [{ id: 'foreign', name: 'Other pod' }, { id: 'owned', name: 'My pod' }],
+    } });
+    if (url.includes('/pods/foreign/')) return Promise.reject({ response: { status: 403 } });
+    if (url.includes('/pods/owned/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  axios.post.mockResolvedValue({ data: { token: 'cm_agent_once' } });
+  renderPage();
+  await screen.findByRole('button', { name: 'Regenerate key' });
+  fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
+  fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+    '/api/registry/pods/owned/agents/maya-claude/runtime-tokens',
+    expect.objectContaining({ force: true }),
+  ));
 });
