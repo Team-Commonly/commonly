@@ -1427,8 +1427,10 @@ const enqueueWakeOnMessage = async ({
       botUserIds: cachedBotUserIds ?? new Map<string, string>(),
     });
   } catch (error) {
-    console.warn('[message-delivery] addressed lookup failed (waking):', (error as Error).message);
-    addressedTargets = new Set(targets.map(installKey));
+    console.warn('[message-delivery] addressed lookup failed (ambient fallback):', (error as Error).message);
+    // Keep receiving the message. A lookup outage cannot justify waking every
+    // installed seat; explicit mentions have already taken their own path.
+    addressedTargets = new Set();
     cachedBotUserIds = cachedBotUserIds ?? new Map<string, string>();
   }
   if (threadRootId) {

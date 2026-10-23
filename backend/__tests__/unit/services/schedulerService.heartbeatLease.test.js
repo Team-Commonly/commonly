@@ -140,4 +140,18 @@ describe('SchedulerService automatic heartbeat dispatch lease', () => {
     expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(1);
     expect(enqueue).toHaveBeenCalledTimes(1);
   });
+
+  it('does not wake an installation whose autonomy is disabled', async () => {
+    const podId = new mongoose.Types.ObjectId();
+    const scope = { agentName: 'flint', instanceId: 'default', podId };
+    const enqueue = jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+    await AgentInstallation.collection.insertOne({ ...scope, status: 'active',
+      version: '1.0.0', installedBy: new mongoose.Types.ObjectId(),
+      config: { autonomy: { enabled: false } } });
+    await AgentEvent.collection.insertOne({ ...scope, type: 'message.posted', status: 'pending',
+      deliveryMode: 'digest', attempts: 0, createdAt: new Date(NOW.getTime() - 61 * 60000) });
+
+    expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
 });

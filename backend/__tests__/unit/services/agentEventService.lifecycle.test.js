@@ -507,7 +507,7 @@ describe('driver paths reach a terminal state', () => {
       const digest = { _id: 'evt-d', payload: { username: 'alice', messageId: '42', content: 'daily update' } };
       AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: () => Promise.resolve([digest]) }) }) });
       AgentEvent.updateMany.mockResolvedValue({ modifiedCount: 1 });
-      runAgent.mockResolvedValue({ status: 'succeeded' });
+      runAgent.mockResolvedValue({ status: 'succeeded', runId: 'run-1', totalTurns: 1 });
 
       await enqueueNative();
 
@@ -522,6 +522,19 @@ describe('driver paths reach a terminal state', () => {
       runAgent.mockResolvedValue({ status: 'failed' });
       await enqueueNative();
       expect(AgentEvent.updateMany).not.toHaveBeenCalled();
+
+      jest.clearAllMocks();
+      AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: () => Promise.resolve([digest]) }) }) });
+      runAgent.mockResolvedValue({ status: 'succeeded', runId: '', totalTurns: 0 });
+      const acknowledge = jest.spyOn(AgentEventService, 'acknowledge').mockResolvedValue({});
+      await enqueueNative();
+      expect(AgentEvent.updateMany).not.toHaveBeenCalled();
+      expect(acknowledge).toHaveBeenCalledWith(
+        'evt-n', 'clerk', 'default',
+        { outcome: 'no_action', reason: 'native-no-turn' },
+        null, 'native',
+      );
+      acknowledge.mockRestore();
     });
 
     test('a podId shaped like a query operator is never looked up or run in-process', async () => {

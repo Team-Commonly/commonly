@@ -69,6 +69,7 @@ const AgentProfile = require('../../../models/AgentProfile');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
+const messageDeliveryModeService = require('../../../services/messageDeliveryModeService');
 
 const install = (agentName, { optIn = false, instanceId = 'default' } = {}) => ({
   agentName,
@@ -193,6 +194,26 @@ describe('wake-on-message (ADR-018 D8)', () => {
     expect(wakeCalls().map((call) => [call.agentName, call.deliveryMode]))
       .toEqual([['seat-a', 'digest'], ['seat-b', 'digest']]);
     expect(wakeCalls()[0].payload.content).toBe('nobody asked anyone anything');
+  });
+
+  test('an addressed lookup outage keeps ambient receipt without waking default-off seats', async () => {
+    mockInstallations([install('seat-a'), install('seat-b', { optIn: true })]);
+    const lookup = jest.spyOn(messageDeliveryModeService, 'addressedMessageTargets')
+      .mockRejectedValue(new Error('lookup unavailable'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'TASK-414 update', id: 'msg-outage' },
+        userId: 'user-1', username: 'alice',
+      });
+      expect(res.woken).toEqual(['seat-b']);
+      expect(wakeCalls().map((call) => [call.agentName, call.deliveryMode]))
+        .toEqual([['seat-a', 'digest'], ['seat-b', 'wake']]);
+    } finally {
+      lookup.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   test('a mention-enqueued target is not double-delivered; other opt-ins still wake', async () => {

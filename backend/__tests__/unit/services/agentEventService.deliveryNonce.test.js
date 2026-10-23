@@ -88,6 +88,8 @@ describe('legacy ambient digest bridge', () => {
       agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 10,
     });
     expect(page.events.map((item) => String(item._id))).toEqual([String(wake._id), String(digest._id)]);
+    expect((await AgentEvent.findById(wake._id).lean()).attempts).toBe(1);
+    expect((await AgentEvent.findById(digest._id).lean()).attempts).toBe(0);
     expect((await AgentEventService.listInboxPage({
       agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 10,
     })).events).toEqual([]);
@@ -171,6 +173,28 @@ describe('legacy ambient digest bridge', () => {
 
     expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('pending');
     expect((await AgentDigestState.findOne({ agentName: AGENT, podId: POD_ID }).lean()).unreadCount).toBe(2);
+  });
+
+  test('repeated refused wakes do not exhaust the digest delivery cap', async () => {
+    const digest = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest', payload: { content: 'still unread' },
+    });
+    for (let index = 0; index < 4; index += 1) {
+      const wake = await seedEvent();
+      const page = await AgentEventService.listInboxPage({
+        agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 10,
+      });
+      expect(page.events.map((event) => String(event._id)))
+        .toEqual([String(wake._id), String(digest._id)]);
+      await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,
+        { outcome: 'no_action', reason: 'claim-held' }, page.events[0].deliveryNonce);
+      await AgentEvent.updateOne({ _id: digest._id }, {
+        $set: { status: 'pending', deliveryNonce: null, deliveredAt: null },
+      });
+    }
+    expect((await AgentEvent.findById(digest._id).lean()).attempts).toBe(0);
+    expect((await AgentEvent.findById(digest._id).lean()).status).toBe('pending');
   });
 
   test('a legacy wake carries a folded count and clears only the revision it showed', async () => {

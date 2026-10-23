@@ -1516,7 +1516,9 @@ class AgentEventService {
         const result = await runAgent(nativeInstallation, { type, eventId: eventIdStr, payload });
         // Leave digest unread when the native turn fails. On a successful turn,
         // mark only the rows actually included; older backlog remains pending.
-        if (result?.status === 'succeeded' && digest.length) {
+        const modelTurnRan = result?.status === 'succeeded'
+          && Boolean(result.runId) && Number(result.totalTurns) > 0;
+        if (modelTurnRan && digest.length) {
           await AgentEvent.updateMany(
             { _id: { $in: digest.map((item) => item._id) }, status: 'pending', deliveryMode: 'digest' },
             { $set: { status: 'acked' } },
@@ -1533,7 +1535,7 @@ class AgentEventService {
       // actually succeeded as 'failed'. The rejection handler here is scoped
       // to runAgent alone. Both terminal calls swallow their own errors so
       // this stays fire-and-forget for the caller.
-        (runResult: { status?: string; error?: string }) => (runResult?.status === 'failed'
+        (runResult: { status?: string; error?: string; runId?: string; totalTurns?: number }) => (runResult?.status === 'failed'
           ? this.recordFailure(
             eventIdStr,
             agentName,
@@ -1545,7 +1547,9 @@ class AgentEventService {
           eventIdStr,
           agentName,
           instanceId,
-          { outcome: 'acknowledged', reason: 'native-runtime-completed' },
+          runResult?.runId && Number(runResult.totalTurns) > 0
+            ? { outcome: 'acknowledged', reason: 'native-runtime-completed' }
+            : { outcome: 'no_action', reason: 'native-no-turn' },
           nativeDeliveryId,
           'native',
         ).catch((ackErr: Error) => {
@@ -1885,7 +1889,10 @@ class AgentEventService {
             // this delivery belongs to is the only one whose ack can land.
             deliveryNonce: mintDeliveryNonce(),
           },
-          $inc: { attempts: 1 },
+          // Digest is context for another turn. A refused wake can attach the
+          // same digest repeatedly without consuming it, so charging those
+          // attachments against the poison-event attempt cap would lose it.
+          ...(index < wakeCandidates.length ? { $inc: { attempts: 1 } } : {}),
         },
         { new: true },
       ).lean() as EventDoc | null;
@@ -2023,7 +2030,8 @@ class AgentEventService {
     // time (`list()`); this update brings the agent's read-checkpoint up
     // to that revision. $max makes it monotone — out-of-order acks across
     // events still converge correctly.
-    if (result && typeof result.memoryRevisionAtDelivery === 'number' && result.memoryRevisionAtDelivery > 0) {
+    if (result && consumedDigest
+      && typeof result.memoryRevisionAtDelivery === 'number' && result.memoryRevisionAtDelivery > 0) {
       try {
         await AgentMemory.updateOne(
           { agentName: safeAgentName, instanceId: safeInstanceId },

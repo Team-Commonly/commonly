@@ -1149,7 +1149,9 @@ class SchedulerService {
       // A retired projection has no listener. Its old digest remains for GC,
       // but must not create a new wake every hour.
       // eslint-disable-next-line no-await-in-loop
-      const active = await AgentInstallation.exists({ ...scope, status: 'active' });
+      const active = await AgentInstallation.exists({
+        ...scope, status: 'active', 'config.autonomy.enabled': { $ne: false },
+      });
       if (!active) continue;
       // An existing wake will carry the digest. A recent completed wake says
       // the seat has already had a turn inside this 60-minute window.
