@@ -5,7 +5,8 @@ import { STATUS_CODES } from 'http';
  * The last error handler in the app. An error a route or middleware passes on
  * (a body that is not JSON, a body over the size limit, a disallowed origin,
  * an unhandled throw) is answered with its status and that status's standard
- * phrase, nothing else. The detail goes to the server log.
+ * phrase, nothing else. Only the status is logged: exception messages and
+ * request paths can contain OAuth codes or token responses.
  *
  * Without it, Express's built-in handler answers, and its body depends on
  * NODE_ENV. The status is kept as is, so clients that tell 400/401/403/404
@@ -17,7 +18,7 @@ const statusOf = (err: unknown): number => {
   return Number.isInteger(raw) && raw >= 400 && raw <= 599 ? raw : 500;
 };
 
-export const finalErrorHandler = (err: unknown, req: Request, res: Response, next: NextFunction): void => {
+export const finalErrorHandler = (err: unknown, _req: Request, res: Response, next: NextFunction): void => {
   if (res.headersSent) {
     // Too late to answer; Express closes the connection.
     next(err);
@@ -25,9 +26,9 @@ export const finalErrorHandler = (err: unknown, req: Request, res: Response, nex
   }
   const status = statusOf(err);
   if (status >= 500) {
-    console.error('[http] unhandled error on %s %s:', req.method, req.path, err);
+    console.error('[http] unhandled request error, status %d', status);
   } else {
-    console.warn('[http] %d on %s %s:', status, req.method, req.path, (err as Error)?.message);
+    console.warn('[http] request error, status %d', status);
   }
   res.status(status).json({ error: STATUS_CODES[status] || 'Error' });
 };

@@ -55,6 +55,7 @@ jest.mock('../../../services/discordMultiCommandService', () => ({
 }));
 
 const discordRoutes = require('../../../routes/discord');
+const axios = require('axios');
 
 const GUILD = '123456789012345678';
 const PATH = `/api/discord/channels/${GUILD}`;
@@ -98,4 +99,20 @@ describe('the channel-list limiter answers ahead of auth (TASK-123 a)', () => {
     expect(limited).toHaveLength(1);
     expect(limited[0].msg).toBe(LIMITER_MSG);
   });
+});
+
+it('redirects a failed Discord OAuth exchange even without FRONTEND_URL', async () => {
+  const priorFrontend = process.env.FRONTEND_URL;
+  delete process.env.FRONTEND_URL;
+  axios.post.mockRejectedValueOnce(new Error('exchange failed'));
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const res = await request(app).get('/api/discord/callback?code=oauth-code&state=pod_123');
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('http://localhost:3000/discord/error?error=OAuth%20authorization%20failed');
+  } finally {
+    log.mockRestore();
+    if (priorFrontend === undefined) delete process.env.FRONTEND_URL;
+    else process.env.FRONTEND_URL = priorFrontend;
+  }
 });
