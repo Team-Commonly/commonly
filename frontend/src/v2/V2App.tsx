@@ -154,7 +154,6 @@ const V2UseCaseRedirect: React.FC = () => {
 
 const feature = (
   title: string,
-  description: string,
   children: React.ReactNode,
   showPodsSidebar = false,
   showHeader = true,
@@ -162,7 +161,6 @@ const feature = (
 ) => (
   <V2FeaturePage
     title={title}
-    description={description}
     showPodsSidebar={showPodsSidebar}
     showHeader={showHeader}
     className={className}
@@ -243,7 +241,6 @@ const V2App: React.FC = () => {
                   path="pods/:podId/board"
                   element={feature(
                     'Board',
-                    'Pod task board inside the v2 shell.',
                     <V2PodBoard />,
                     false,
                     /* V2PodBoard owns its own header (pod name + back). */
@@ -254,7 +251,6 @@ const V2App: React.FC = () => {
                   path="pods/:podType/:roomId"
                   element={feature(
                     'Pod Tools',
-                    'Full pod chat, files, member, and agent tools without leaving v2.',
                     <ChatRoom />,
                     false,
                     /* ChatRoom owns its own sticky AppBar with title/tabs;
@@ -271,7 +267,6 @@ const V2App: React.FC = () => {
                   path="agents"
                   element={feature(
                     'Your Team',
-                    'Agents you have hired across your projects.',
                     <V2YourTeamPage />,
                     false,
                     /* V2YourTeamPage owns its own header — suppress the
@@ -281,7 +276,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="agents/manage"
-                  element={feature('Manage agents', 'Installed agents and registry operations.', <AgentsHub />)}
+                  element={feature('Manage agents', <AgentsHub />)}
                 />
                 <Route
                   path="agents/byo"
@@ -289,18 +284,12 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="connect"
-                  element={feature(
-                    'Connect',
-                    'Set up the CLI, MCP, and the agents your team runs.',
-                    <V2ConnectPage />,
-                    false,
-                  )}
+                  element={<V2FeaturePage title="Connect" hint="Set up the CLI, MCP, and the agents your team runs."><V2ConnectPage /></V2FeaturePage>}
                 />
                 <Route
                   path="connectors"
                   element={feature(
                     'Connectors',
-                    'Bridge pods to the channels your team already uses.',
                     <V2ConnectorsPage />,
                     false,
                     // The Signal artboard owns this page's display-sized head.
@@ -309,15 +298,15 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="artifacts"
-                  element={feature('Artifacts', undefined, <V2ArtifactsPage />, false, false, 'v2-feature--artifacts')}
+                  element={feature('Artifacts', <V2ArtifactsPage />, false, false, 'v2-feature--artifacts')}
                 />
                 <Route
                   path="activity"
-                  element={feature('Activity', 'Review updates, mentions, approvals, pod activity, and unread items.', <V2ActivityPage />, false, false, 'v2-feature--activity')}
+                  element={feature('Activity', <V2ActivityPage />, false, false, 'v2-feature--activity')}
                 />
                 <Route
                   path="settings"
-                  element={feature('Settings', undefined, <V2SettingsPage />, false, false)}
+                  element={feature('Settings', <V2SettingsPage />, false, false)}
                 />
                 <Route
                   path="settings/devices"
@@ -329,13 +318,12 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="profile/:id"
-                  element={feature('Profile', 'Public profile, activity, and pod membership.', <UserProfile />)}
+                  element={feature('Profile', <UserProfile />)}
                 />
                 <Route
                   path="admin/integrations/global"
                   element={feature(
                     'Global Integrations',
-                    'Global integration administration inside v2.',
                     <ProtectedRoute requireAdmin><GlobalIntegrations /></ProtectedRoute>,
                     false,
                   )}
@@ -344,7 +332,6 @@ const V2App: React.FC = () => {
                   path="admin/users"
                   element={feature(
                     'User Admin',
-                    'Review waitlist requests and manage invitation codes.',
                     <ProtectedRoute requireAdmin><V2AdminUsers /></ProtectedRoute>,
                     false,
                   )}
@@ -353,7 +340,6 @@ const V2App: React.FC = () => {
                   path="admin/analytics"
                   element={feature(
                     'Usage Analytics',
-                    'Activation funnel, signups, messages, and active-user counts for this instance.',
                     <ProtectedRoute requireAdmin><V2AdminAnalytics /></ProtectedRoute>,
                     false,
                   )}
@@ -362,7 +348,6 @@ const V2App: React.FC = () => {
                   path="dev/api"
                   element={feature(
                     'API Dev',
-                    'Developer API inspection tools inside v2.',
                     <ProtectedRoute requireAdmin><ApiDevPage /></ProtectedRoute>,
                     false,
                   )}
@@ -371,7 +356,6 @@ const V2App: React.FC = () => {
                   path="dev/pod-context"
                   element={feature(
                     'Pod Context Dev',
-                    'Pod context inspection tools inside v2.',
                     <ProtectedRoute requireAdmin><PodContextDevPage /></ProtectedRoute>,
                     false,
                   )}

@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { ActGlyph, KindGlyph } from '../icons/glyphs';
 import { AuthContext } from '../../context/AuthContext';
 import { ATTENTION_CHANGED, notifyAttentionChanged } from '../hooks/useV2PodAttention';
+import V2PageHead from './V2PageHead';
+import V2Hint from './V2Hint';
 
 type ActivityWindow = 'today' | '7d';
 
@@ -1059,12 +1061,14 @@ const V2ActivityPage: React.FC = () => {
 
   return (
     <div className="v2-activity" aria-busy={loading}>
-      <header className="v2-activity__header">
-        <div className="v2-activity__bar-title">
-          <h1 className="v2-activity__title">{t('activity.title')}</h1>
-          <span className="v2-activity__subtitle">{t('activity.subtitle')}</span>
-        </div>
-      </header>
+      <V2PageHead
+        className="v2-activity__header"
+        titleClassName="v2-activity__title"
+        title={t('activity.title')}
+        meta={queueCount ?? undefined}
+        hint={t('activity.subtitle')}
+        hintLabel={t('activity.about', { defaultValue: 'About activity' })}
+      />
       <div className="v2-activity__controls" aria-label={t('activity.controlsAriaLabel')}>
         <div className="v2-activity__window" role="group" aria-label={t('activity.windowAriaLabel')}>
           {(['today', '7d'] as ActivityWindow[]).map((value) => (
@@ -1217,9 +1221,10 @@ const V2ActivityPage: React.FC = () => {
             <div className="v2-activity__section-heading">
               <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
               {queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
-              {queueCount !== 0 && <p>{queueCount === null
-                ? t('activity.needsYou.countUnavailable', { defaultValue: 'Count unavailable' })
-                : t(podId === 'all' ? 'activity.needsYou.countDescription' : 'activity.needsYou.scopedCountDescription', { count: queueCount })}</p>}
+              {queueCount === null && <span>{t('activity.needsYou.countUnavailable', { defaultValue: 'Count unavailable' })}</span>}
+              {queueCount !== null && queueCount !== 0 && <V2Hint label={t('activity.needsYou.about', { defaultValue: 'About needs you' })}>
+                {t(podId === 'all' ? 'activity.needsYou.countDescription' : 'activity.needsYou.scopedCountDescription', { count: queueCount })}
+              </V2Hint>}
             </div>
             {queueFailed ? <>
               <p role="status">{t('activity.loadFailed')}</p>
@@ -1411,7 +1416,7 @@ const V2ActivityPage: React.FC = () => {
           <section className="v2-activity__section v2-activity__moved" aria-labelledby="activity-moved-forward">
             <div className="v2-activity__section-heading">
               <h2 id="activity-moved-forward">{t('activity.movedForward.title')}</h2>
-              <p>{t('activity.movedForward.description')}</p>
+              <V2Hint label={t('activity.movedForward.about', { defaultValue: 'About moved forward' })}>{t('activity.movedForward.description')}</V2Hint>
             </div>
             {movedGroups.length === 0 ? <div className="v2-activity__empty v2-activity__empty--plain"><strong>{t('activity.movedForward.empty')}</strong></div> : <div className="v2-activity__moved-list">
               {movedGroups.map((group) => {

@@ -4,11 +4,11 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import { V2EmbeddedProvider } from '../hooks/useV2Embedded';
+import V2PageHead from './V2PageHead';
 
 interface V2FeaturePageProps {
-  eyebrow?: string;
   title: string;
-  description?: string;
+  hint?: React.ReactNode;
   children: React.ReactNode;
   showPodsSidebar?: boolean;
   showHeader?: boolean;
@@ -288,11 +288,8 @@ const v2FeatureTheme = createTheme({
 });
 
 const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
-  // No default kicker — "v2" is internal terminology and renders on every
-  // feature-page header otherwise. Callers can opt in by passing eyebrow.
-  eyebrow,
   title,
-  description,
+  hint,
   children,
   showPodsSidebar = false,
   showHeader = true,
@@ -329,15 +326,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
       <V2NavRail />
       {showPodsSidebar && <V2PodsSidebar selectedPodId={null} />}
       <main className={`v2-pane v2-pane--main v2-feature${className ? ` ${className}` : ''}`} onClickCapture={handleClickCapture} aria-label={title}>
-        {showHeader && (
-          <header className="v2-feature__header">
-            <div>
-              {eyebrow && <div className="v2-feature__eyebrow">{eyebrow}</div>}
-              <h1 className="v2-feature__title">{title}</h1>
-              {description && <p className="v2-feature__description">{description}</p>}
-            </div>
-          </header>
-        )}
+        {showHeader && <V2PageHead className="v2-feature__header" titleClassName="v2-feature__title" title={title} hint={hint} hintLabel={`About ${title}`} />}
         <section className="v2-feature__body">
           <ThemeProvider theme={v2FeatureTheme}>
             <V2EmbeddedProvider>

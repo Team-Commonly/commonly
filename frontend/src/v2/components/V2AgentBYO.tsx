@@ -803,10 +803,6 @@ const V2AgentBYO: React.FC = () => {
 
   return (
     <V2FeaturePage
-      eyebrow={(() => {
-        if (issued) return undefined;
-        return showCompactHosted && !hosted ? t('agentByo.mode.onCommonly') : t('agentByo.eyebrow');
-      })()}
       title={(() => {
         if (showCompactHosted && !hosted) return t('agentByo.compact.title');
         // The command page keeps the tool's name (QA BYO walk 3: it reverted to
@@ -817,9 +813,7 @@ const V2AgentBYO: React.FC = () => {
         }
         return t('agentByo.title');
       })()}
-      // Once the command is shown, the page's lead is behind the person: what
-      // sits above the copy is only what the paste needs (QA BYO walk 2).
-      description={(() => {
+      hint={(() => {
         if (issued) return undefined;
         if (showCompactHosted && !hosted) return t('agentByo.compact.lead');
         if (showCompactByo) return t('agentByo.compactByo.lead');

@@ -15,6 +15,7 @@ import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
 import V2ConnectorTools, { type HostedMcpManualRevokeNotice } from './V2ConnectorTools';
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
+import V2PageHead from './V2PageHead';
 
 interface ConnectorGate {
   enabled?: boolean;
@@ -1639,10 +1640,13 @@ const V2ConnectorsPage: React.FC = () => {
 
   return (
     <div className="v2-connectors">
-      <header className="v2-connectors__header">
-        <h1>{t('connectors.title', { defaultValue: 'Connectors' })}</h1>
-        <p>{t('connectors.description', { defaultValue: 'Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.' })}</p>
-      </header>
+      <V2PageHead
+        className="v2-connectors__header"
+        title={t('connectors.title', { defaultValue: 'Connectors' })}
+        meta={!loading ? items.length : undefined}
+        hint={t('connectors.description', { defaultValue: 'Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.' })}
+        hintLabel={t('connectors.about', { defaultValue: 'About connectors' })}
+      />
 
       {loading && <div className="v2-connectors__loading">{t('connectors.loading', { defaultValue: 'Loading connectors…' })}</div>}
 

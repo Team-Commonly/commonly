@@ -5,6 +5,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import V2Avatar from './V2Avatar';
+import V2Hint from './V2Hint';
 import V2CatchUpStrip from './V2CatchUpStrip';
 import V2Composer from './V2Composer';
 import { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
@@ -1691,7 +1692,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             <div className="v2-thread__title">
               <div className="v2-thread__title-line">
                 <h1>{pod.name}</h1>
-                {pod.description && <p>{pod.description}</p>}
+                {pod.description && <V2Hint label={t('podChat.header.aboutPod', { defaultValue: 'About this pod' })}>{pod.description}</V2Hint>}
               </div>
             </div>
             <span
