@@ -740,7 +740,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       }
     }
 
-    // ADR-018 D8.1: an agent a person brings into a pod wakes on every human
+    // ADR-018 D8.1 (2026-10-21): an agent a person brings into a pod wakes on every human
     // message by default (services/wakeDefaultService.ts).
     const wakeDefault = personAgentWakeDefault(installConfig);
     if (wakeDefault) Object.assign(installConfig, wakeDefault);

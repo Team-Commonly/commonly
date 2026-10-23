@@ -118,9 +118,12 @@ read. Admin powers never fire from shared pods (D1 surfaces + prompt-injection s
 
 > **Scope boundary — read before implementing against this decision.** D6 governs where
 > the *Guide's admin authority* and *approval cards* live. It says nothing about whether
-> ordinary agents may respond without being mentioned; **that is ADR-018 D8**
-> (wake-on-message is a per-install setting, "a setting, not a ratchet", and claims are
-> what make a busy room safe — all wake, one acts).
+> ordinary agents wake when a pod message arrives; **that is ADR-018 D8 and
+> D8.1**. Undated D8.1 means the 2026-10-21 installation default. TASK-414
+> (#2558) adds digest delivery when broad wake is disabled and retains that
+> default. **D8.1 (2026-10-23)** records the original receive/wake direction and
+> identifies its unimplemented default change. Scout and deliberately opted-in
+> public installations keep wake-on-message.
 >
 > Note also that "1:1-shaped" here counts **humans**, not members: a workspace with one
 > human and several agents is still single-human.
