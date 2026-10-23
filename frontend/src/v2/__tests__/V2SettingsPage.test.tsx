@@ -8,7 +8,7 @@ import V2SettingsPage from '../components/V2SettingsPage';
 
 jest.mock('../../utils/axiosConfig', () => {
   const mock = {
-    get: jest.fn(), post: jest.fn(), delete: jest.fn(), patch: jest.fn(),
+    get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn(), patch: jest.fn(),
     defaults: { baseURL: '', headers: { common: {} } },
     interceptors: { request: { use: jest.fn(), eject: jest.fn() }, response: { use: jest.fn(), eject: jest.fn() } },
   };
@@ -61,7 +61,7 @@ const auth = {
   currentUser: { _id: 'u1', username: 'lily', email: 'lily@example.com', profilePicture: '/uploads/lily.png', role: 'member' },
   user: { _id: 'u1', username: 'lily', email: 'lily@example.com', profilePicture: '/uploads/lily.png', role: 'member' },
   token: 'jwt', loading: false, error: null, isAuthenticated: true,
-  register: jest.fn(), login: jest.fn(), signInWithToken: jest.fn(), logout: jest.fn(), updateProfile: jest.fn(),
+  register: jest.fn(), login: jest.fn(), signInWithToken: jest.fn(), logout: jest.fn(), updateProfile: jest.fn(), updateUsername: jest.fn(),
 };
 
 const TOKEN_CREATED_AT = '2026-09-04T12:00:00.000Z';
@@ -187,13 +187,27 @@ describe('V2SettingsPage', () => {
 
     await waitFor(() => expect(auth.updateProfile).toHaveBeenCalledTimes(1));
     expect(auth.updateProfile).toHaveBeenCalledWith({ displayName: 'Lily Shen' });
-    expect(screen.getByLabelText('Username')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Username')).toHaveValue('lily');
     expect(screen.getByLabelText('Email')).toHaveValue('lily@example.com');
     expect(screen.getByLabelText('Email')).not.toHaveAttribute('readonly');
     fireEvent.click(screen.getByRole('button', { name: 'Change' }));
     expect(auth.updateProfile).toHaveBeenCalledTimes(1);
     expect(await screen.findByRole('status')).toHaveTextContent('Account saved.');
     expect(screen.queryByText(/re-verification; ask us for now/i)).not.toBeInTheDocument();
+  });
+
+  test('renames the username through the dedicated route and explains historical mentions', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    auth.updateUsername.mockResolvedValue({ ...auth.currentUser, username: 'lily-shen' });
+    renderSettings();
+
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: ' Lily-Shen ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save username' }));
+
+    await waitFor(() => expect(auth.updateUsername).toHaveBeenCalledWith('lily-shen'));
+    expect(await screen.findByRole('status')).toHaveTextContent('Username saved.');
+    expect(screen.getByText('@lily-shen')).toBeInTheDocument();
+    expect(screen.getByText(/previous username stays reserved/i)).toBeInTheDocument();
   });
 
   test('Regenerate saves the next Paper seed instead of repeating the current look', async () => {

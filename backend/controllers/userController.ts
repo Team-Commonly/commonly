@@ -4,6 +4,10 @@ const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const AgentIdentityService = require('../services/agentIdentityService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
+const {
+  isValidUsername,
+  isFreeUsername,
+} = require('../services/derivedUsername');
 
 // Credentials. These must never reach a response body under any circumstance,
 // not even the account's own profile: `apiToken` is a live `cm_` bearer that
@@ -36,6 +40,11 @@ const PRIVATE_USER_FIELDS = [
   'banReason',
 ];
 
+// Reservation metadata is used only by username availability checks. It is
+// not part of a profile response: historical message text remains the only
+// public record of the previous handle.
+const INTERNAL_USER_FIELDS = ['previousUsernames'];
+
 const isValidAccountLabel = (value: unknown) => typeof value === 'string'
   && value.trim().length > 0
   && value.trim().length <= 80;
@@ -65,6 +74,7 @@ const toSocialProfile = (userDoc: any, viewerId: any = null) => {
 
   const plain = typeof userDoc.toObject === 'function' ? userDoc.toObject() : { ...userDoc };
   for (const field of SECRET_USER_FIELDS) delete plain[field];
+  for (const field of INTERNAL_USER_FIELDS) delete plain[field];
 
   const isSelf = Boolean(viewerIdStr && String(userDoc._id) === viewerIdStr);
   if (!isSelf) {
@@ -169,6 +179,78 @@ exports.updateProfile = async (req: any, res: any) => {
   } catch (err: any) {
     console.error(err.message);
     res.status(500).send('Server Error');
+  }
+};
+
+// Rename the routable handle without changing historical message text. The
+// old handle is stored as a reservation on the same account: it remains
+// unavailable to new accounts, but the mention pipeline only reads the
+// current `username`, so future @old-handle mentions do not route.
+exports.updateUsername = async (req: any, res: any) => {
+  try {
+    const requestedUsername = String(req.body?.username || '').trim().toLowerCase();
+    if (!isValidUsername(requestedUsername)) {
+      return res.status(400).json({
+        error: 'Username must be 2-40 lowercase letters, digits, or hyphens, starting with a letter or digit.',
+        code: 'invalid_username',
+      });
+    }
+
+    const currentUser = await User.findById(req.user.id).select('_id username isBot');
+    if (!currentUser) return res.status(404).json({ msg: 'User not found' });
+    if (currentUser.isBot) {
+      return res.status(400).json({
+        error: 'Agent usernames cannot be changed here.',
+        code: 'username_not_editable',
+      });
+    }
+
+    const currentUsername = String(currentUser.username || '');
+    if (currentUsername.toLowerCase() === requestedUsername) {
+      const unchanged = await User.findById(req.user.id).select('-password');
+      return res.json(toSocialProfile(unchanged, req.user.id));
+    }
+
+    if (!await isFreeUsername(requestedUsername, req.user.id)) {
+      return res.status(409).json({
+        error: 'That username is already taken.',
+        code: 'username_taken',
+      });
+    }
+
+    let user;
+    try {
+      user = await User.findOneAndUpdate(
+        { _id: req.user.id },
+        {
+          $set: { username: requestedUsername },
+          $addToSet: { previousUsernames: currentUsername.toLowerCase() },
+        },
+        { new: true },
+      ).select('-password');
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        return res.status(409).json({
+          error: 'That username is already taken.',
+          code: 'username_taken',
+        });
+      }
+      throw error;
+    }
+
+    if (!user) return res.status(404).json({ msg: 'User not found' });
+    const synced = await AgentIdentityService.syncUserToPostgreSQL(user);
+    if (synced === false) {
+      return res.status(503).json({
+        error: 'Your username was saved, but chat is catching up. Please try again in a moment.',
+        code: 'username_sync_pending',
+      });
+    }
+
+    return res.json(toSocialProfile(user, req.user.id));
+  } catch (err: any) {
+    console.error(err.message);
+    return res.status(500).send('Server Error');
   }
 };
 

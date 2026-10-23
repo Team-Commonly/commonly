@@ -20,6 +20,7 @@ const AgentIdentityService = require('./agentIdentityService');
 
 // The account-label comparison userController uses.
 const ACCOUNT_LABEL_COLLATION = { locale: 'en', strength: 2 };
+const USERNAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,39}$/;
 // Leaves room for the "-xxxx" suffix under the 40-character mention limit.
 const MAX_BASE_LENGTH = 30;
 
@@ -33,9 +34,16 @@ const usernameBaseFromEmail = (email: unknown): string => String(email || '')
   .slice(0, MAX_BASE_LENGTH)
   .replace(/-+$/, '');
 
-const isFreeUsername = async (candidate: string): Promise<boolean> => {
+const isValidUsername = (candidate: unknown): candidate is string => (
+  typeof candidate === 'string' && USERNAME_PATTERN.test(candidate)
+);
+
+const isFreeUsername = async (candidate: string, excludeUserId?: unknown): Promise<boolean> => {
   if (await AgentIdentityService.resolveAccountNameConflict({ username: candidate })) return false;
-  return !await User.exists({ username: candidate }).collation(ACCOUNT_LABEL_COLLATION);
+  return !await User.exists({
+    ...(excludeUserId ? { _id: { $ne: excludeUserId } } : {}),
+    $or: [{ username: candidate }, { previousUsernames: candidate }],
+  }).collation(ACCOUNT_LABEL_COLLATION);
 };
 
 /** A free username from the email: its local part, or that plus a short suffix when taken or too short. */
@@ -52,6 +60,12 @@ const deriveUsernameFromEmail = async (email: unknown): Promise<string> => {
   return `${stem}-${crypto.randomBytes(4).toString('hex')}`;
 };
 
-module.exports = { usernameBaseFromEmail, deriveUsernameFromEmail };
+module.exports = {
+  usernameBaseFromEmail,
+  deriveUsernameFromEmail,
+  isValidUsername,
+  isFreeUsername,
+  ACCOUNT_LABEL_COLLATION,
+};
 
 export {};

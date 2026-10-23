@@ -72,6 +72,9 @@ export interface IContactEntry {
 
 export interface IUser extends Document {
   username: string;
+  // Previous human handles remain reserved after a rename. They are kept for
+  // historical identity only: mention routing always uses `username`.
+  previousUsernames: string[];
   // Human-facing identity label. Usernames remain the stable, routable handle;
   // bots continue to own their display label under botMetadata.
   displayName?: string;
@@ -223,6 +226,7 @@ export interface IUserModel extends Model<IUser> {}
 
 const userSchema = new Schema<IUser>({
   username: { type: String, required: true, unique: true },
+  previousUsernames: { type: [String], default: [] },
   displayName: { type: String, trim: true },
   email: { type: String, required: true, unique: true },
   // Password is only required for accounts with no linked OAuth identity —
@@ -440,6 +444,7 @@ userSchema.index({ 'authProviders.provider': 1, 'authProviders.providerId': 1 })
 // in userController without making the labels themselves globally unique.
 const accountLabelCollation = { locale: 'en', strength: 2 };
 userSchema.index({ username: 1 }, { collation: accountLabelCollation });
+userSchema.index({ previousUsernames: 1 }, { collation: accountLabelCollation });
 userSchema.index({ displayName: 1 }, { collation: accountLabelCollation });
 userSchema.index({ 'botMetadata.displayName': 1 }, { collation: accountLabelCollation });
 // A single index supports authentication by digest and the account's device

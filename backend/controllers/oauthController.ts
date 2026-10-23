@@ -11,6 +11,7 @@ const {
   createDefaultWorkspacePod,
 } = require('./authController');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
+const { isFreeUsername } = require('../services/derivedUsername');
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -177,11 +178,11 @@ const generateUsername = async (hint: string, email: string) => {
   // A derived agent name is not free either (TASK-133 b): it has no User row to
   // collide with, so `User.exists` answers no while the install would derive the
   // same name and adopt whatever row holds it.
-  if (!AgentIdentityService.isReservedAgentUsername(base) && !await User.exists({ username: base })) return base;
+  if (await isFreeUsername(base)) return base;
   for (let i = 0; i < 5; i += 1) {
     const candidate = `${base}-${crypto.randomBytes(2).toString('hex')}`;
     // eslint-disable-next-line no-await-in-loop
-    if (!AgentIdentityService.isReservedAgentUsername(candidate) && !await User.exists({ username: candidate })) return candidate;
+    if (await isFreeUsername(candidate)) return candidate;
   }
   return `${base}-${crypto.randomBytes(6).toString('hex')}`;
 };

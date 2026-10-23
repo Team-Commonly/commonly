@@ -992,10 +992,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-settings__nav')).toContain('position: sticky');
   });
 
-  test('Settings saves a display name while keeping the handle read-only and exposing the email change affordance', () => {
+  test('Settings saves a display name while allowing handle changes and exposing the email change affordance', () => {
     expect(settingsPage).toContain('className="v2-settings__account-fields"');
     expect(settingsPage).toContain('await updateProfile({ displayName: nextName });');
-    expect(settingsPage).toContain('value={accountUsername} readOnly aria-readonly="true"');
+    // TASK-295 intentionally makes the handle editable. The previous handle
+    // remains reserved and historical-only, so this control must stay separate
+    // from the display-name save and expose its own rename action.
+    expect(settingsPage).toContain('id="v2-settings-username"');
+    expect(settingsPage).toContain('value={username}');
     expect(settingsPage).toContain('className="v2-settings__email-control"');
     expect(settingsPage).toContain('id="v2-settings-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)}');
     expect(settingsPage).toContain('type="button">Change</button>');

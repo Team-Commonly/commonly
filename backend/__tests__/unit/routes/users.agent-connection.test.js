@@ -19,6 +19,7 @@ jest.mock('../../../services/agentIdentityService', () => ({
 jest.mock('../../../controllers/userController', () => ({
   getCurrentProfile: jest.fn(),
   updateProfile: jest.fn(),
+  updateUsername: jest.fn(),
   getUserById: jest.fn(),
   getUserPublicActivity: jest.fn(),
   followUser: jest.fn(),

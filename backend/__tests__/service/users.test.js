@@ -3,6 +3,7 @@ const express = require('express');
 // eslint-disable-next-line no-unused-vars
 const mongoose = require('mongoose');
 const userRoutes = require('../../routes/users');
+const authRoutes = require('../../routes/auth');
 const User = require('../../models/User');
 const {
   setupMongoDb,
@@ -20,6 +21,7 @@ describe('User Routes Integration Tests', () => {
     app.use(express.json());
     process.env.JWT_SECRET = 'test-jwt-secret';
     app.use('/api/users', userRoutes);
+    app.use('/api/auth', authRoutes);
   });
 
   afterAll(async () => {
@@ -116,5 +118,34 @@ describe('User Routes Integration Tests', () => {
     const updated = await User.findById(user._id);
     expect(updated.displayName).toBe('Test User');
     expect(updated.verified).toBe(true);
+  });
+
+  it('renames a username and reserves the old handle from later registration', async () => {
+    const user = new User({
+      username: 'old-handle',
+      email: 'rename@example.com',
+      password: 'Password123!',
+      verified: true,
+    });
+    await user.save();
+    const token = generateTestToken(user._id);
+
+    const rename = await request(app)
+      .put('/api/users/username')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: 'new-handle' })
+      .expect(200);
+
+    expect(rename.body.username).toBe('new-handle');
+    const updated = await User.findById(user._id).lean();
+    expect(updated.username).toBe('new-handle');
+    expect(updated.previousUsernames).toEqual(['old-handle']);
+
+    const reused = await request(app)
+      .post('/api/auth/register')
+      .send({ username: 'old-handle', email: 'second@example.com', password: 'Password123!' })
+      .expect(400);
+
+    expect(reused.body.error).toBe('Username already exists');
   });
 });

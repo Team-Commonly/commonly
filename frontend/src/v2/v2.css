@@ -7797,6 +7797,27 @@ body.modern-ui.v2-canvas {
   white-space: nowrap;
 }
 
+.v2-settings__username-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.v2-settings__username-control input {
+  min-width: 0;
+}
+
+.v2-settings__username-control .v2-settings__secondary {
+  align-self: stretch;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.v2-settings__field-help {
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
 .v2-settings__section .v2-billing,
 .v2-settings__section .v2-devices {
   margin: 0;
