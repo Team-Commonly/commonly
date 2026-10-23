@@ -30,6 +30,11 @@ export const deriveAgentConnection = ({
     && machineCredentials.some((credential) => credential.status === 'revoked')) {
     return { state: 'revoked', lastSeenAt: null };
   }
+  // A live daemon heartbeat only proves that the computer is online. The
+  // agent itself is not connected until it holds a usable runtime key.
+  if (isMachine && !active.length && !hasEmbedded) {
+    return { state: 'never', lastSeenAt: null };
+  }
   const dates = isMachine
     ? [machineLastSeenAt]
     : [...active, ...embeddedTokens].map((credential) => credential.lastUsedAt);

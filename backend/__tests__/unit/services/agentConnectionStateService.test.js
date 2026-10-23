@@ -34,6 +34,12 @@ describe('agent connection verdict', () => {
       .toBe('revoked');
   });
 
+  it('does not call a live daemon an agent connection before a runtime key exists', () => {
+    expect(deriveAgentConnection({ runtimeType: 'wrapper', credentials: [],
+      machineCredentials: [{ status: 'active' }], machineLastSeenAt: seen(0), now }).state)
+      .toBe('never');
+  });
+
   it('preserves pre-ledger embedded tokens', () => {
     expect(deriveAgentConnection({ runtimeType: 'webhook', credentials: [], embeddedTokens: [
       { lastUsedAt: seen(2) },
