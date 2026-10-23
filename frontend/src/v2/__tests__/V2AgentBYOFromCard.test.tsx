@@ -49,6 +49,7 @@ const pods = [
 beforeEach(() => {
   // Hosting is available, so a bare visit would ask where it should run.
   axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
     }
@@ -157,12 +158,13 @@ describe('BYO from an approved connect card', () => {
     renderAt('/v2/agents/byo?pod=deadbeef&name=sam-claude&from=card');
     const compact = await screen.findByTestId('byo-card-compact');
     await waitFor(() => expect(compact).toHaveTextContent('It joins Workspace as sam-claude.'));
-    expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
   });
 
   test('the act waits for the pod list: nothing is minted for a pod the page has not confirmed', async () => {
     let answerPods;
     axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
       if (url === '/api/pods') return new Promise((resolve) => { answerPods = resolve; });
       if (url.startsWith('/api/hosted/availability')) {
         return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });

@@ -45,6 +45,7 @@ const machineRow = {
 
 const mockGet = ({ machines = [machineRow] } = {}) => {
   axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: false, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
     }
@@ -124,6 +125,7 @@ describe('BYO on-my-computer mode', () => {
     // into "Run it here" — my submit went down the hosted path.
     mockGet();
     axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
       if (url.startsWith('/api/hosted/availability')) {
         return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
       }
@@ -153,6 +155,7 @@ describe('BYO on-my-computer mode', () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
     fireEvent.click(screen.getByText('Add to this computer'));
 
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
@@ -177,6 +180,7 @@ describe('BYO on-my-computer mode', () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
     fireEvent.click(screen.getByText('Add to this computer'));
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
     expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
@@ -206,6 +210,7 @@ describe('BYO on-my-computer mode', () => {
     ]);
     expect(screen.getByText(/suggestions only.*catalog on that machine/i)).toBeInTheDocument();
     fireEvent.change(modelInput, { target: { value: 'gpt-6-sol' } });
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
     fireEvent.click(screen.getByText('Add to this computer'));
 
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
@@ -222,6 +227,7 @@ describe('BYO on-my-computer mode', () => {
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
     fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'codex' } });
     fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'future-catalog-slug' } });
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
     fireEvent.click(screen.getByText('Add to this computer'));
 
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
@@ -243,6 +249,7 @@ describe('BYO on-my-computer mode', () => {
       '', 'opus', 'sonnet', 'haiku',
     ]);
     fireEvent.change(modelSelect, { target: { value: 'sonnet' } });
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
     fireEvent.click(screen.getByText('Add to this computer'));
 
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
@@ -259,6 +266,7 @@ describe('BYO on-my-computer mode', () => {
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
     fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'claude' } });
     expect(screen.getByTestId('byo-model-select')).toHaveValue('');
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
     fireEvent.click(screen.getByText('Add to this computer'));
 
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
@@ -278,6 +286,7 @@ describe('BYO on-my-computer mode', () => {
     fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'gpt-6-sol' } });
     fireEvent.change(adapterSelect, { target: { value: 'claude' } });
     expect(screen.getByTestId('byo-model-select')).toHaveValue('');
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
     fireEvent.click(screen.getByText('Add to this computer'));
 
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
@@ -293,6 +302,7 @@ describe('BYO on-my-computer mode', () => {
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
     expect(screen.getByTestId('byo-adapter-select')).toHaveValue('');
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
     fireEvent.click(screen.getByText('Add to this computer'));
 
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
@@ -354,6 +364,7 @@ describe('BYO on-my-computer mode', () => {
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
     fireEvent.change(screen.getByPlaceholderText('my-mcp-agent'), { target: { value: 'sam-hosted' } });
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
     fireEvent.click(screen.getByText('Add to this computer'));
 
     expect(await screen.findByText(/sam-hosted is your hosted agent/)).toBeInTheDocument();

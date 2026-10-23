@@ -113,15 +113,6 @@ const sanitizeAgentName = (raw: string): string => raw
   .replace(/^-+|-+$/g, '')
   .slice(0, 64);
 
-const nextFreeAgentName = (base: string, installed: string[]): string => {
-  const taken = new Set(installed.map((item) => item.toLowerCase()));
-  if (!taken.has(base.toLowerCase())) return base;
-  for (let suffix = 2; ; suffix += 1) {
-    const candidate = `${base.slice(0, 64 - String(suffix).length - 1)}-${suffix}`;
-    if (!taken.has(candidate.toLowerCase())) return candidate;
-  }
-};
-
 const V2AgentBYO: React.FC = () => {
   const { t } = useTranslation();
   const api = useV2Api();
@@ -170,8 +161,9 @@ const V2AgentBYO: React.FC = () => {
   };
   const [name, setName] = useState<string>(prefill.name || defaultNameFor(null, ''));
   const [nameTouched, setNameTouched] = useState<boolean>(Boolean(prefill.name));
-  const [installedNames, setInstalledNames] = useState<string[]>([]);
   const [namesReady, setNamesReady] = useState(false);
+  const [nameLookupError, setNameLookupError] = useState(false);
+  const [nameLookupRetry, setNameLookupRetry] = useState(0);
   const [pendingReplacement, setPendingReplacement] = useState<{ agentName: string; podId: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -268,8 +260,28 @@ const V2AgentBYO: React.FC = () => {
   // after mount, and when the mode or the runner changes.
   const defaultAgentName = defaultNameFor(mode, mode === 'machine' ? adapter : listenAdapter);
   useEffect(() => {
-    if (!nameTouched) setName(nextFreeAgentName(defaultAgentName, installedNames));
-  }, [defaultAgentName, installedNames, nameTouched]);
+    if (!nameTouched) {
+      setName(defaultAgentName);
+      setNamesReady(false);
+    }
+  }, [defaultAgentName, nameTouched]);
+
+  useEffect(() => {
+    if (!choicesKnown) return undefined;
+    let cancelled = false;
+    const base = sanitizeAgentName(prefill.name || defaultAgentName);
+    setNamesReady(false);
+    setNameLookupError(false);
+    api.get<{ name?: string }>(`/api/registry/agents/next-free-name?base=${encodeURIComponent(base)}`)
+      .then((result) => {
+        if (cancelled) return;
+        if (!result?.name) throw new Error('Empty name suggestion');
+        setName((current) => (!nameTouched || current === prefill.name ? result.name! : current));
+        setNamesReady(true);
+      })
+      .catch(() => { if (!cancelled) setNameLookupError(true); });
+    return () => { cancelled = true; };
+  }, [api, choicesKnown, defaultAgentName, nameLookupRetry, nameTouched, prefill.name]);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
 
@@ -354,12 +366,11 @@ const V2AgentBYO: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let installablePods: V2Pod[] = [];
       try {
         const data = await api.get<V2Pod[]>('/api/pods');
         if (cancelled) return;
         const list = Array.isArray(data) ? data : [];
-        installablePods = list.filter((p) => (
+        const installablePods = list.filter((p) => (
           // Non-DM only: agent-room/agent-dm/agent-admin are strict-1:1
           // surfaces and refuse third-party installs.
           !['agent-room', 'agent-dm', 'agent-admin'].includes(p.type || '')
@@ -420,25 +431,6 @@ const V2AgentBYO: React.FC = () => {
         }
       } catch {
         // No daemon machines — the "on my computer" card simply doesn't show.
-      }
-      // Names are global to the agent identity, even when the seat is in
-      // another pod. Keep the page's pods → availability → machines request
-      // order, then collect visible installs before enabling the BYO act.
-      const groups = await Promise.all(installablePods.map(async (p) => {
-        try {
-          const roster = await api.get<{ agents?: Array<{ name?: string }> }>(`/api/registry/pods/${p._id}/agents`);
-          return (roster?.agents || []).map((agent) => agent.name || '').filter(Boolean);
-        } catch {
-          return [];
-        }
-      }));
-      if (cancelled) return;
-      const names = groups.flat();
-      setInstalledNames(names);
-      setNamesReady(true);
-      if (prefill.name) {
-        setName((current) => current === prefill.name
-          ? nextFreeAgentName(sanitizeAgentName(prefill.name), names) : current);
       }
       if (!cancelled) setChoicesKnown(true);
     })();
@@ -902,6 +894,7 @@ const V2AgentBYO: React.FC = () => {
             </p>
           )}
           {error && <div className="v2-byo__error">{error}</div>}
+          {nameLookupError && mode === 'byo' && <div className="v2-byo__error">{t('agentByo.errors.nameLookupFailed')} <button type="button" className="v2-byo__link" onClick={() => setNameLookupRetry((n) => n + 1)}>{t('agentByo.actions.retry')}</button></div>}
           {/* Enabled once the pod list confirms the pod: a link's pod the person
               cannot install into is replaced by their own, and that is the line
               above the button, so the click never lands somewhere unshown. */}
@@ -1086,6 +1079,7 @@ const V2AgentBYO: React.FC = () => {
               fell under the fold at 1440x900 with "Run it here" chosen (QA 2026-10-16:
               its top edge at y=882), so a stranger saw a selected card and no button. */}
           {error && <div className="v2-byo__error">{error}</div>}
+          {nameLookupError && mode === 'byo' && <div className="v2-byo__error">{t('agentByo.errors.nameLookupFailed')} <button type="button" className="v2-byo__link" onClick={() => setNameLookupRetry((n) => n + 1)}>{t('agentByo.actions.retry')}</button></div>}
           {mode === null ? (
             // Signal §3 not yet: a dashed slot where the act will be, until a
             // place to run it is chosen.

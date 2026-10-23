@@ -53,16 +53,29 @@ const renderPage = () => render(
 );
 
 const issueToken = async () => {
-  axios.get.mockResolvedValueOnce({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
+    if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
+    return Promise.resolve({ data: {} });
+  });
   axios.post
     .mockResolvedValueOnce({ data: { ok: true } }) // /api/registry/install
     .mockResolvedValueOnce({ data: { token: 'cm_agent_test_token' } }); // runtime-tokens
 
   renderPage();
   await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
   await screen.findByText(/your connect command for/i);
 };
+
+beforeEach(() => {
+  axios.get.mockImplementation((url) => (
+    url.startsWith('/api/registry/agents/next-free-name?')
+      ? Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } })
+      : Promise.resolve({ data: {} })
+  ));
+});
 
 afterEach(() => {
   jest.useRealTimers();

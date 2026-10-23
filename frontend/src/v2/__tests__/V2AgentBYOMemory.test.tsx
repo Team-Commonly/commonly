@@ -59,10 +59,18 @@ const issueToken = async () => {
 
   renderPage();
   await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
   await screen.findByText(/your connect command for/i);
 };
 
+beforeEach(() => {
+  axios.get.mockImplementation((url) => (
+    url.startsWith('/api/registry/agents/next-free-name?')
+      ? Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } })
+      : Promise.resolve({ data: {} })
+  ));
+});
 afterEach(() => jest.clearAllMocks());
 
 describe('V2AgentBYO memory import', () => {
@@ -124,15 +132,37 @@ describe('V2AgentBYO memory import', () => {
   });
 
   test('a second visit suggests a free name instead of reusing the connected agent', async () => {
+    const manyPods = Array.from({ length: 20 }, (_, i) => ({ _id: `p${i + 1}`, name: `Workspace ${i + 1}`, type: 'chat' }));
     axios.get.mockImplementation((url) => {
-      if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
-      if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'sam-claude' }, { name: 'sam-claude-2' }] } });
+      if (url === '/api/pods') return Promise.resolve({ data: manyPods });
+      if (url === '/api/registry/agents/next-free-name?base=sam-claude') return Promise.resolve({ data: { name: 'sam-claude-3' } });
       return Promise.resolve({ data: {} });
     });
 
     renderPage('/?name=sam-claude&pod=p1&adapter=claude');
-    await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Workspace 1 (chat)')).toBeInTheDocument());
     await waitFor(() => expect(screen.getByPlaceholderText('my-mcp-agent')).toHaveValue('sam-claude-3'));
+    expect(axios.get.mock.calls.filter(([url]) => url.startsWith('/api/registry/agents/next-free-name?'))).toHaveLength(1);
+    expect(axios.get.mock.calls.filter(([url]) => /\/api\/registry\/pods\/.*\/agents$/.test(url))).toHaveLength(0);
+  });
+
+  test('a failed name lookup blocks the connect command until retry succeeds', async () => {
+    let retry = false;
+    axios.get.mockImplementation((url) => {
+      if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
+      if (url.startsWith('/api/registry/agents/next-free-name?')) {
+        return retry ? Promise.resolve({ data: { name: 'sam-claude-2' } }) : Promise.reject(new Error('network'));
+      }
+      return Promise.resolve({ data: {} });
+    });
+    renderPage('/?name=sam-claude&pod=p1&adapter=claude');
+    await screen.findByText(/couldn't check existing agent names/i);
+    expect(screen.getByRole('button', { name: /get my connect command/i })).toBeDisabled();
+    expect(axios.post).not.toHaveBeenCalled();
+    retry = true;
+    fireEvent.click(screen.getByRole('button', { name: /retry name check/i }));
+    await waitFor(() => expect(screen.getByPlaceholderText('my-mcp-agent')).toHaveValue('sam-claude-2'));
+    expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled();
   });
 
   test('already-installed agent requires explicit key replacement for lost-token recovery', async () => {
@@ -143,6 +173,7 @@ describe('V2AgentBYO memory import', () => {
 
     renderPage();
     await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
 
     await screen.findByText(/already has a key/i);
@@ -162,6 +193,7 @@ describe('V2AgentBYO memory import', () => {
 
     renderPage();
     await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
     await screen.findByText(/already has a key/i);
     const tokenCalls = axios.post.mock.calls.filter(([url]) => /runtime-tokens/.test(url));
