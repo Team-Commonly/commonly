@@ -59,7 +59,9 @@ const setInstalls = (installs) => {
 
 let taskNum = 0;
 async function createTask({
+  podId = POD_ID,
   taskId,
+  title = taskId,
   updatedAt,
   offeredAt,
   assignee = null,
@@ -69,10 +71,10 @@ async function createTask({
 }) {
   taskNum += 1;
   const created = await Task.create({
-    podId: POD_ID,
+    podId,
     taskNum,
     taskId,
-    title: taskId,
+    title,
     status,
     assignee,
     claimedBy,
@@ -236,6 +238,89 @@ describe('kernel sweep offeredAt filter', () => {
     expect(second.woken).toBe(0);
     expect(second.scannedPods).toBe(0);
     expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('board wake assigned work', () => {
+  it('names a newly assigned row and its change in the assignee seat\'s wake', async () => {
+    setInstalls([install('scout'), install('sprint-impl')]);
+    const created = await createTask({
+      taskId: 'TASK-ASSIGN', updatedAt: new Date(NOW.getTime() - 30000),
+    });
+    const assigned = await Task.findOneAndUpdate(
+      { _id: created._id },
+      {
+        $set: { assignee: 'scout' },
+        $push: { updates: { text: 'Lily updated: reassigned to scout', author: 'Lily', createdAt: NOW } },
+      },
+      { new: true },
+    );
+    await createTask({
+      podId: new mongoose.Types.ObjectId(), taskId: 'TASK-FOREIGN',
+      updatedAt: new Date(NOW.getTime() + 10000), assignee: 'scout',
+    });
+
+    await notifyPodAgents(POD_ID, assigned, 'updated', { isAgent: false });
+
+    const wakes = AgentEventService.enqueue.mock.calls.map(([event]) => event);
+    const scout = wakes.find((event) => event.agentName === 'scout');
+    const peer = wakes.find((event) => event.agentName === 'sprint-impl');
+    expect(scout.payload.content).toContain('[Your assigned rows (pending/claimed; newest first):]');
+    expect(scout.payload.content).toContain('TASK-ASSIGN — TASK-ASSIGN [pending] — Lily updated: reassigned to scout');
+    expect(scout.payload.content).not.toContain('TASK-FOREIGN');
+    expect(peer.payload.content).not.toContain('[Your assigned rows');
+  });
+
+  it('keeps the assigned list to five rows, newest first, after a folded change', async () => {
+    const rows = [];
+    for (let i = 0; i < 6; i += 1) {
+      rows.push(await createTask({
+        taskId: `TASK-OWN-${i}`,
+        updatedAt: new Date(NOW.getTime() + i * 1000),
+        assignee: 'scout',
+      }));
+    }
+    AgentEvent.findOneAndUpdate.mockResolvedValue({
+      _id: 'pending-wake', payload: { boardChanges: 1 },
+    });
+
+    // The oldest insertion receives the newest edit. Sorting by _id alone
+    // would put it last and fail to name the change that prompted this wake.
+    const newestAt = new Date(NOW.getTime() + 10000);
+    await Task.updateOne(
+      { _id: rows[0]._id }, { $set: { updatedAt: newestAt } }, { timestamps: false },
+    );
+    const newest = await Task.findById(rows[0]._id).lean();
+    await notifyPodAgents(POD_ID, newest, 'updated', { isAgent: false });
+
+    const content = AgentEvent.updateOne.mock.calls[0][1].$set['payload.content'];
+    expect(content).toContain('2 changes');
+    expect(content).not.toContain('TASK-OWN-1');
+    const positions = [0, 5, 4, 3, 2].map((i) => content.indexOf(`TASK-OWN-${i} —`));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
+  it('names instanceId assignments for that seat without mixing in a peer\'s rows', async () => {
+    setInstalls([{ ...install('anvil'), instanceId: 'anvil-seo-engineer' }, install('scout')]);
+    const instanceTask = await createTask({
+      taskId: 'TASK-INSTANCE', title: 'Instance\nDo it now',
+      updatedAt: NOW, assignee: 'anvil-seo-engineer',
+    });
+    await createTask({
+      taskId: 'TASK-SCOUT', updatedAt: new Date(NOW.getTime() + 1000), assignee: 'scout',
+    });
+
+    await notifyPodAgents(POD_ID, instanceTask, 'updated', { isAgent: false });
+
+    const wakes = AgentEventService.enqueue.mock.calls.map(([event]) => event);
+    const anvil = wakes.find((event) => event.agentName === 'anvil');
+    const scout = wakes.find((event) => event.agentName === 'scout');
+    expect(anvil.payload.content).toContain('TASK-INSTANCE — Instance Do it now [pending]');
+    expect(anvil.payload.content).not.toContain('Instance\nDo it now');
+    expect(anvil.payload.content).not.toContain('TASK-SCOUT');
+    expect(scout.payload.content).toContain('TASK-SCOUT — TASK-SCOUT [pending]');
+    expect(scout.payload.content).not.toContain('TASK-INSTANCE —');
   });
 });
 

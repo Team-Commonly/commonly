@@ -17,6 +17,8 @@ interface SocketIOLike {
 let ioRef: SocketIOLike | null = null;
 
 export type TaskEventKind = 'created' | 'updated' | 'deleted';
+const MAX_NAMED_ITEMS = 5;
+const MAX_ASSIGNED_ROWS = 5;
 
 export interface TaskEventPayload {
   podId: string;
@@ -176,6 +178,7 @@ export async function notifyPodAgents(
     /* eslint-disable global-require, @typescript-eslint/no-require-imports */
     const { AgentInstallation } = require('../models/AgentRegistry');
     const AgentEventService = require('./agentEventService');
+    const Task = require('../models/Task');
     // Lazy so this never forms a load-time cycle with the mention service.
     const { boardWakeEnabled } = require('./agentMentionService');
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
@@ -198,12 +201,22 @@ export async function notifyPodAgents(
     if (!installs.length) return;
 
     const taskId = String(task.taskId || task.id || task._id || 'unknown');
-    const title = String(task.title || '(untitled)');
+    const title = String(task.title || '(untitled)').replace(/\s+/g, ' ');
 
-    const buildContent = (extraChanges: number): string => [
+    const buildContent = (extraChanges: number, assignedRows: Array<Record<string, unknown>>): string => [
       extraChanges > 0
         ? `[The board moved in this pod — ${extraChanges + 1} changes since your last wake, most recent: ${taskId} ${kind}.]`
         : `[The board moved in this pod — ${taskId} was ${kind}: ${title}.]`,
+      ...(assignedRows.length ? [
+        '',
+        '[Your assigned rows (pending/claimed; newest first):]',
+        ...assignedRows.map((row) => {
+          const updates = row.updates as Array<{ text?: string }> | undefined;
+          const latest = updates?.[updates.length - 1]?.text;
+          const change = latest || (String(row.taskId) === taskId ? kind : 'current assignment');
+          return `- ${String(row.taskId)} — ${String(row.title || '(untitled)').replace(/\s+/g, ' ').slice(0, 80)} [${String(row.status)}] — ${String(change).replace(/\s+/g, ' ').slice(0, 120)}`;
+        }),
+      ] : []),
       '',
       'You are seeing this because you are installed here, not because anyone',
       'named you. Look at what is pending and decide what needs YOU:',
@@ -246,6 +259,22 @@ export async function notifyPodAgents(
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
       try {
+        // Assignee is the board's agent-name string. Query the current board
+        // for this seat rather than replaying only the latest pod-wide edit:
+        // an assignment must be visible even when another edit folds into it.
+        // The compound (podId, assignee, status) index bounds this lookup.
+        let assignedRows: Array<Record<string, unknown>> = [];
+        try {
+          const assignees = instanceId === 'default' || instanceId === agentName
+            ? [agentName] : [agentName, instanceId];
+          assignedRows = await Task.find(
+            { podId: normalizedPodId, assignee: { $in: assignees }, status: { $in: ['pending', 'claimed'] } },
+            { taskId: 1, title: 1, status: 1, updatedAt: 1, updates: { $slice: -1 } },
+          ).sort({ updatedAt: -1, _id: -1 }).limit(MAX_ASSIGNED_ROWS).lean();
+        } catch (err) {
+          // A listing failure must not turn the entire board wake into silence.
+          console.warn(`[task-event] assigned rows lookup failed for ${agentName}:`, (err as Error).message);
+        }
         // Fold into this seat's undrained board wake if it has one. Matches on
         // `payload.boardWake` rather than the event type, because the type is
         // deliberately `message.posted` (shared with ordinary chat) and folding
@@ -274,7 +303,7 @@ export async function notifyPodAgents(
           const extra = Number(folded.payload?.boardChanges || 1);
           const rewrite = await AgentEvent.updateOne(
             { _id: folded._id, status: 'pending' },
-            { $set: { 'payload.content': buildContent(extra) } },
+            { $set: { 'payload.content': buildContent(extra, assignedRows) } },
           );
           if (rewrite?.matchedCount === 0) return undefined;
           return true;
@@ -286,7 +315,7 @@ export async function notifyPodAgents(
           podId: normalizedPodId,
           type: 'message.posted',
           payload: {
-            content: buildContent(0),
+            content: buildContent(0, assignedRows),
             // No messageId, deliberately — see choice 2. Every seat should
             // look; the per-task claim CAS arbitrates who takes what.
             podId: normalizedPodId,
@@ -313,8 +342,6 @@ export async function notifyPodAgents(
     console.warn('[task-event] agent notify failed:', (err as Error).message);
   }
 }
-
-const MAX_NAMED_ITEMS = 5;
 
 /**
  * Kernel-sweep wake (#1044): the pod has actionable work — pending, unassigned
