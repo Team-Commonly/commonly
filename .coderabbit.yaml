@@ -2,6 +2,8 @@
 # merge gate; see docs/development/external-review.md.
 language: en-US
 reviews:
+  # Balanced volume; the bar itself is set by the path instruction below.
+  profile: chill
   # No generated summary in the PR description. The placeholder must stay out of
   # PR bodies too: when it is present the summary is generated anyway.
   high_level_summary: false
@@ -21,3 +23,57 @@ reviews:
     # Docstring coverage is not a convention this codebase follows.
     docstrings:
       mode: "off"
+  # CodeRabbit has no global review-criteria field, so the bar is a repo-wide
+  # path instruction. Aim: one or two real comments per PR.
+  path_instructions:
+    - path: "**"
+      instructions: >-
+        Comment only on correctness bugs, security issues, data loss or
+        corruption, broken contracts, and missing tests for changed behaviour.
+        No style, naming, docstring, formatting or nitpick comments.
+  # Linters and secret scanners our CI already runs. Security analysers stay on.
+  tools:
+    eslint:
+      enabled: false
+    biome:
+      enabled: false
+    oxc:
+      enabled: false
+    stylelint:
+      enabled: false
+    htmlhint:
+      enabled: false
+    markdownlint:
+      enabled: false
+    yamllint:
+      enabled: false
+    shellcheck:
+      enabled: false
+    actionlint:
+      enabled: false
+    hadolint:
+      enabled: false
+    checkmake:
+      enabled: false
+    dotenvLint:
+      enabled: false
+    prismaLint:
+      enabled: false
+    ruff:
+      enabled: false
+    flake8:
+      enabled: false
+    pylint:
+      enabled: false
+    sqlfluff:
+      enabled: false
+    languagetool:
+      enabled: false
+    vale:
+      enabled: false
+    ast-grep:
+      enabled: false
+    gitleaks:
+      enabled: false
+    trufflehog:
+      enabled: false
