@@ -1446,7 +1446,7 @@ describe('AgentMentionService', () => {
       expect(res.skipped).toEqual([]);
     });
 
-    test('bot -> bot OVER threshold is suppressed (loop dampened)', async () => {
+    test('bot -> bot OVER threshold does not wake, but remains received as digest', async () => {
       setupTargetAgent();
       asBotSender();
       // 4 prior mentions > MENTION_LOOP_MAX (3) → treat as a loop.
@@ -1459,7 +1459,10 @@ describe('AgentMentionService', () => {
         username: 'theo',
       });
 
-      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+      expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+        deliveryMode: 'digest', type: 'message.posted',
+      }));
       expect(res.enqueued).toEqual([]);
       expect(res.skipped).toEqual(['openclaw:loop-dampened']);
     });

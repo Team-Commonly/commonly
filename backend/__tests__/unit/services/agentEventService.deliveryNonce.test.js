@@ -67,6 +67,50 @@ beforeEach(async () => {
 });
 
 describe('legacy ambient digest bridge', () => {
+  test('a push hint does not consume durable inbox state before the reconciling poll', async () => {
+    const ws = require('../../../services/agentWebSocketService');
+    const push = jest.spyOn(ws, 'pushEvent').mockReturnValue(true);
+    const digest = await AgentEventService.enqueue({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest',
+      payload: { username: 'Alice', content: 'context' },
+    });
+    const wake = await AgentEventService.enqueue({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'chat.mention', payload: { content: 'question' },
+    });
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(String(push.mock.calls[0][0]._id)).toBe(String(wake._id));
+    expect((await AgentEvent.findById(digest._id).lean()).status).toBe('pending');
+    expect((await AgentEvent.findById(wake._id).lean()).status).toBe('pending');
+
+    const page = await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 10,
+    });
+    expect(page.events.map((item) => String(item._id))).toEqual([String(wake._id), String(digest._id)]);
+    expect((await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 10,
+    })).events).toEqual([]);
+    push.mockRestore();
+  });
+
+  test('a poll after pod access is removed cannot drain a queued wake or digest', async () => {
+    const digest = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest', payload: { content: 'private update' },
+    });
+    const wake = await seedEvent();
+
+    expect(await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [],
+    })).toEqual({ events: [], inboxCount: 0 });
+    expect(await AgentEventService.list({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [],
+    })).toEqual([]);
+    expect((await AgentEvent.findById(wake._id).lean()).status).toBe('pending');
+    expect((await AgentEvent.findById(digest._id).lean()).status).toBe('pending');
+  });
+
   test('a legacy poll carries the pending digest on its wake and settles it after ack', async () => {
     const ambient = await AgentEvent.create({
       agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
@@ -74,10 +118,12 @@ describe('legacy ambient digest bridge', () => {
       payload: { username: 'Alice', messageId: '42', content: 'ambient note' },
     });
     const wake = await seedEvent();
+    await AgentEvent.updateOne({ _id: wake._id }, { $set: { payload: { content: 'question' } } });
 
     const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
     expect(String(delivered._id)).toBe(String(wake._id));
     expect(delivered.payload.digestSummary).toContain('Alice (message 42): ambient note');
+    expect(delivered.payload.content).toContain('Alice (message 42): ambient note');
     expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('pending');
 
     await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,

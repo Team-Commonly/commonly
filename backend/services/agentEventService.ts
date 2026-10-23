@@ -731,6 +731,7 @@ class AgentEventService {
       `id=${details.eventId || 'n/a'}`,
     ];
     if (details.trigger) parts.push(`trigger=${details.trigger}`);
+    if (details.deliveryMode) parts.push(`deliveryMode=${details.deliveryMode}`);
     if (details.status) parts.push(`status=${details.status}`);
     if (typeof details.attempts === 'number') parts.push(`attempts=${details.attempts}`);
     if (details.error) parts.push(`error="${details.error}"`);
@@ -1426,9 +1427,14 @@ class AgentEventService {
     if (rollup?.unreadCount) {
       lines.unshift(`- ${rollup.unreadCount} older updates (last event IDs: ${rollup.lastEventIds.join(', ')})`);
     }
+    const summary = `[Since you last looked: ${raw.length + (rollup?.unreadCount || 0)} ambient updates; context only, no reply needed.]\n${lines.join('\n')}`;
     event.payload = {
       ...(event.payload || {}),
-      digestSummary: `[Since you last looked: ${raw.length + (rollup?.unreadCount || 0)} ambient updates; context only, no reply needed.]\n${lines.join('\n')}`,
+      // Existing drivers consume content; the additive field also lets a new
+      // driver render the frame separately without parsing the wake text.
+      ...(typeof event.payload?.content === 'string'
+        ? { content: `${event.payload.content}\n\n${summary}` } : {}),
+      digestSummary: summary,
     };
   }
 
@@ -1645,6 +1651,7 @@ class AgentEventService {
       instanceId: event.instanceId || '',
       podId: String((event.podId as { toString?: () => string })?.toString?.() || ''),
       type: event.type || '',
+      deliveryMode: event.deliveryMode || 'wake',
       trigger: event.payload?.trigger,
       status: event.status,
       attempts: event.attempts,
@@ -1743,6 +1750,12 @@ class AgentEventService {
     // sanitizer; the String() casts are that sanitizer.
     const safeAgentName = String(agentName || '').toLowerCase();
     const safeInstanceId = String(instanceId || 'default');
+    // An explicit empty access set means the caller has no currently visible
+    // pods. It must not fall through to an identity-wide inbox query after an
+    // installation or pod membership was removed between enqueue and drain.
+    if (Array.isArray(podIds) && podIds.length === 0 && !podId) {
+      return { events: [], inboxCount: 0 };
+    }
     const query: Record<string, unknown> = {
       agentName: safeAgentName,
       instanceId: safeInstanceId,
@@ -2021,6 +2034,7 @@ class AgentEventService {
       instanceId,
       podId: String((result?.podId as { toString?: () => string })?.toString?.() || ''),
       type: result?.type || '',
+      deliveryMode: result?.deliveryMode || 'wake',
       trigger: result?.payload?.trigger,
       status: result?.status || 'acked',
       attempts: result?.attempts,
