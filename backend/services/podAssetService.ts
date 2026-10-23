@@ -89,10 +89,12 @@ function toSkillKey(value: string): string {
   const normalized = String(value || '')
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-  return normalized.slice(0, 64);
+    .replace(/[^a-z0-9]+/g, '-');
+  let start = 0;
+  let end = normalized.length;
+  while (normalized[start] === '-') start += 1;
+  while (end > start && normalized[end - 1] === '-') end -= 1;
+  return normalized.slice(start, Math.min(end, start + 64));
 }
 
 function tokenize(text: string): string[] {

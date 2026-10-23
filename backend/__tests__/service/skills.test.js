@@ -3,6 +3,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const Pod = require('../../models/Pod');
 const PodAsset = require('../../models/PodAsset');
+const PodAssetService = require('../../services/podAssetService').default;
 const User = require('../../models/User');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
@@ -14,6 +15,13 @@ const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 const JWT_SECRET = 'test-jwt-secret';
 
 describe('Skills Catalog Routes', () => {
+  test('normalizes long punctuation runs without changing scoped skill keys', () => {
+    expect(PodAssetService.normalizeSkillKey(`${'-'.repeat(100_000)}Focus---Mode${'-'.repeat(100_000)}`))
+      .toBe('focus-mode');
+    expect(PodAssetService.buildScopedSkillKey({ name: 'Focus Mode', scope: 'agent', agentName: 'Scout', instanceId: 'default' }))
+      .toBe('focus-mode-scout-default');
+  });
+
   let app;
   let authToken;
   let userId;
