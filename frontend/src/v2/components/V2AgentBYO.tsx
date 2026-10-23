@@ -999,7 +999,6 @@ const V2AgentBYO: React.FC = () => {
               <select
                 value={adapter}
                 onChange={(e) => {
-                  setErrorField(null);
                   setAdapter(e.target.value as MachineAdapter);
                   setModel('');
                 }}
@@ -1021,7 +1020,7 @@ const V2AgentBYO: React.FC = () => {
                     type="text"
                     list="byo-codex-models"
                     value={model}
-                    onChange={(e) => { setErrorField(null); setModel(e.target.value); }}
+                    onChange={(e) => { setModel(e.target.value); }}
                     placeholder={t('agentByo.form.modelDefault')}
                     className="v2-byo__input"
                     data-testid="byo-model-select"
@@ -1035,7 +1034,7 @@ const V2AgentBYO: React.FC = () => {
               ) : (
                 <select
                   value={model}
-                  onChange={(e) => { setErrorField(null); setModel(e.target.value); }}
+                  onChange={(e) => { setModel(e.target.value); }}
                   className="v2-byo__input"
                   data-testid="byo-model-select"
                 >

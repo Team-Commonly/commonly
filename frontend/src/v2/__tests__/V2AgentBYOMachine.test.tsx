@@ -78,6 +78,25 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-machine-select')).toHaveTextContent('Sam’s MacBook');
   });
 
+  test('adapter and model edits do not clear an unrelated field error', async () => {
+    mockGet();
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+
+    fireEvent.change(screen.getByPlaceholderText('my-mcp-agent'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByText('Add to this computer'));
+
+    const nameField = screen.getByPlaceholderText('my-mcp-agent').closest('label');
+    expect(nameField).toHaveClass('v2-byo__field--error');
+
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'codex' } });
+    expect(nameField).toHaveClass('v2-byo__field--error');
+    fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'gpt-6-sol' } });
+    expect(nameField).toHaveClass('v2-byo__field--error');
+  });
+
   test('the preview stays visual-only when the mode or machine changes', async () => {
     const second = { id: 'm2', machineId: 'mach-b', name: 'Studio', status: 'online', agentStates: [] };
     mockGet({ machines: [machineRow, second] });
