@@ -42,6 +42,23 @@ import type { ToolConnection, ToolDefinition } from './toolBrokerService';
  */
 export const HOSTED_MCP_CALL_TIMEOUT_MS = 30 * 1000;
 
+/**
+ * The most of one vendor reply the backend will read (TASK-254). Past it the
+ * call fails rather than buffering whatever the vendor sends: the reply is held
+ * in memory whole before it is parsed. Airtable's real tools/list page is the
+ * largest we have seen at 608 KB (fixtures/hostedMcp, 2026-10-09), so 4 MiB
+ * leaves room for growth without letting one call fill the process.
+ */
+export const HOSTED_MCP_MAX_REPLY_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The most of one tool result a turn sees, in characters, matching what native
+ * web fetch passes on (MAX_FETCHED_TEXT_CHARS). A result over it is cut, and
+ * the model is told so in the result itself, so it can ask a narrower question
+ * instead of reasoning from a fragment it believes is whole.
+ */
+export const HOSTED_MCP_MAX_RESULT_CHARS = 24_000;
+
 export interface HostedMcpToolDeps {
   /** The row the connection id names. Absent means the grant outlived its row. */
   loadRow: (connectionId: string) => Promise<HostedMcpRow | null>;
@@ -91,6 +108,73 @@ const defaultDeps = (): HostedMcpToolDeps => ({
   driftCache: productionDriftCache,
 });
 
+const replyTooLarge = (vendorStatus: number): RoomGrantError => new RoomGrantError(
+  'provider_error',
+  `hosted-MCP vendor reply is larger than ${HOSTED_MCP_MAX_REPLY_BYTES} bytes`,
+  502,
+  { failure: 'reply_too_large', vendorStatus },
+);
+
+/** The reply body as text, read no further than HOSTED_MCP_MAX_REPLY_BYTES. */
+const readCappedText = async (response: Response): Promise<string> => {
+  const body = response.body;
+  if (!body || typeof body.getReader !== 'function') {
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > HOSTED_MCP_MAX_REPLY_BYTES) throw replyTooLarge(response.status);
+    return text;
+  }
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = '';
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > HOSTED_MCP_MAX_REPLY_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw replyTooLarge(response.status);
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+};
+
+/**
+ * A tool result cut to HOSTED_MCP_MAX_RESULT_CHARS of text, with the cut said
+ * in the result. Text items are kept in order up to the budget; anything that
+ * is not text (an image's base64, a structuredContent copy of the same data)
+ * is dropped once the result is over it, since it would only be serialised
+ * into the turn as more characters.
+ */
+export const capHostedToolResult = (result: unknown): unknown => {
+  const serialised = JSON.stringify(result ?? null);
+  if (serialised.length <= HOSTED_MCP_MAX_RESULT_CHARS) return result;
+  const source = (result && typeof result === 'object') ? result as Record<string, unknown> : {};
+  const items = Array.isArray(source.content) ? source.content as Array<Record<string, unknown>> : [];
+  const kept: Array<Record<string, unknown>> = [];
+  let budget = HOSTED_MCP_MAX_RESULT_CHARS;
+  for (const item of items) {
+    if (budget <= 0) break;
+    if (item?.type !== 'text' || typeof item.text !== 'string') continue;
+    const text = item.text.length > budget ? item.text.slice(0, budget) : item.text;
+    kept.push({ type: 'text', text });
+    budget -= text.length;
+  }
+  kept.push({
+    type: 'text',
+    text: `[Commonly: this result was ${serialised.length} characters and was cut to the first `
+      + `${HOSTED_MCP_MAX_RESULT_CHARS}. Ask for less, for example with a filter or a smaller limit, `
+      + 'to see the rest.]',
+  });
+  return {
+    content: kept,
+    ...(source.isError === true ? { isError: true } : {}),
+    truncated: true,
+  };
+};
+
 /**
  * Streamable HTTP may answer a JSON-RPC request with either a JSON body or an
  * SSE stream. Both are accepted, and the reply is whichever frame carries a
@@ -100,9 +184,10 @@ const defaultDeps = (): HostedMcpToolDeps => ({
 const jsonRpcReply = async (response: Response): Promise<Record<string, unknown>> => {
   const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
   if (!contentType.includes('text/event-stream')) {
+    const raw = await readCappedText(response);
     let body: Record<string, unknown>;
     try {
-      body = await response.json() as Record<string, unknown>;
+      body = JSON.parse(raw) as Record<string, unknown>;
     } catch {
       throw new RoomGrantError('provider_error', 'hosted-MCP vendor returned invalid JSON', 502,
         { failure: 'invalid_json', vendorStatus: response.status });
@@ -139,10 +224,7 @@ const jsonRpcReply = async (response: Response): Promise<Record<string, unknown>
         break;
       }
       bytes += value.byteLength;
-      if (bytes > 4 * 1024 * 1024) {
-        throw new RoomGrantError('provider_error', 'hosted-MCP vendor reply exceeded 4 MiB', 502,
-          { failure: 'reply_too_large', vendorStatus: response.status });
-      }
+      if (bytes > HOSTED_MCP_MAX_REPLY_BYTES) throw replyTooLarge(response.status);
       pending += decoder.decode(value, { stream: true });
       let newline = pending.indexOf('\n');
       while (newline !== -1) {
@@ -173,7 +255,7 @@ const sanitizeVendorError = (value: string, token: string): string | undefined =
 
 const vendorErrorLine = async (response: Response, token: string): Promise<string | undefined> => {
   try {
-    const body = await response.text();
+    const body = await readCappedText(response);
     // Never turn a truncated or malformed structured response into a plain-text
     // diagnostic: it may contain unrelated private fields before the error.
     if (body.length > 4096) return undefined;
@@ -504,7 +586,17 @@ const callHostedTool = async (
         { vendorStatus: response.status, rpcCode: vendorError?.code,
           vendorError: sanitizeVendorError(`JSON-RPC ${String(vendorError?.code ?? 'error')}: ${detail}`, token) });
     }
-    return reply.result;
+    // MCP reports a tool that ran and failed as a result with `isError`, which is
+    // the model's to read: throwing here would hide the vendor's own explanation
+    // from the turn that asked for it.
+    return capHostedToolResult(reply.result);
+  } catch (error) {
+    // The deadline covers the body too: a vendor that sends headers and then
+    // trickles the reply would otherwise hold the turn open past it (TASK-254).
+    if (controller.signal.aborted && !(error instanceof RoomGrantError)) {
+      throw new RoomGrantError('provider_unreachable', 'hosted-MCP vendor reply did not finish in time', 502);
+    }
+    throw error;
   } finally {
     await session?.close();
     clearTimeout(timer);
