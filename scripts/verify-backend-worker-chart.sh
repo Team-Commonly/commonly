@@ -16,8 +16,8 @@ for lane in default dev staging; do
   fi
 
   helm template "commonly-$lane" "$chart" "${values[@]}" > "$tmp_dir/$lane-off.yaml"
-  helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true > "$tmp_dir/$lane-on.yaml"
-  helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true --set backend.worker.startPaused=true > "$tmp_dir/$lane-paused.yaml"
+  helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true --set backend.worker.startPaused=false > "$tmp_dir/$lane-on.yaml"
+  helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true > "$tmp_dir/$lane-paused.yaml"
 
   off="$tmp_dir/$lane-off.yaml"
   on="$tmp_dir/$lane-on.yaml"
