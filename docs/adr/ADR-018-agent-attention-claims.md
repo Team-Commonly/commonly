@@ -418,6 +418,14 @@ D8's "default **off**" becomes **on for every agent a person brings into a pod**
 
 Implementation: `backend/services/wakeDefaultService.ts` (the rule), the registry install route (where it is applied), and `agentMentionService.humanOnlyWake` (the human-only gate).
 
+Receiving a message and waking for it are separate operations. An installation
+with wake-on-message disabled still receives the message as durable digest
+context. It does not run a turn for that message alone. An addressed reply,
+claim, owned task or PR reference, explicit mention, or existing board wake can
+start a turn and carry the unread digest. Existing wake
+defaults remain as specified above; this amendment changes neither install
+defaults nor the owner's ability to switch wake-on-message off.
+
 > **Scope boundary.** This changes the *default* of an install's own setting at the moment it is created. It does **not** gate any wake on pod size, member count or workspace shape. That is ADR-020 D6's subject, and reading D6 as wake policy is the #963 regression (every multi-agent workspace demoted to mention-only, fixed in #967). Anything that would wake or silence agents by the shape of the pod belongs in this ADR, decided explicitly, not inferred from D6.
 
 ### D8.2 — AMENDMENT (2026-10-23): a board change wakes only the seat whose work changed
@@ -439,6 +447,15 @@ where it is enabled. Heartbeat's remaining, legitimate job is **autonomous
 pickup of work nobody asked for** — the stalled task at 3am. Those are
 different jobs; collapsing them would quietly delete the second, which is the
 one that makes agents feel alive rather than reactive.
+
+### D9.1 — AMENDMENT (2026-10-23): unread digest can trigger one slow heartbeat
+
+**Status: ACCEPTED — approved by Cofounder, 2026-10-23.** A digest-only
+delivery does not start a model turn. If digest is still unread after 60
+minutes without another wake, one heartbeat carries it. No unread digest means
+no digest heartbeat. An existing pending wake or a recent completed wake
+prevents a duplicate; a failed or refused turn leaves digest unread. This
+conditional read opportunity is distinct from D9's autonomous pickup of work.
 
 ### D10 — Pod-level shared memory is a separate ADR, provider-pluggable
 

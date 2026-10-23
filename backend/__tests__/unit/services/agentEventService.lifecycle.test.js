@@ -83,6 +83,7 @@ const Task = require('../../../models/Task');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentEventService = require('../../../services/agentEventService');
 const { runAgent } = require('../../../services/nativeRuntimeService');
+const { settleFoldedDigest } = require('../../../services/agentDigestFoldService');
 const { postToPublicAddress } = require('../../../services/outboundUrlGuard');
 
 // Let fire-and-forget promise chains (webhook delivery, native settle) run.
@@ -140,6 +141,20 @@ describe('attempts is a delivery counter with exactly one writer', () => {
     // Double-counting here is what made a normally-handled event read
     // `attempts: 2` and turned the field into "deliveries plus transitions."
     expect(update.$inc).toBeUndefined();
+  });
+
+  test('a no-turn ack leaves folded digest and the memory read cursor unread', async () => {
+    AgentEvent.findOneAndUpdate.mockResolvedValue({
+      _id: 'evt-1', agentName: 'pixel', instanceId: 'default', podId: POD_P1,
+      type: 'heartbeat', status: 'acked', digestRollupRevision: 3,
+      memoryRevisionAtDelivery: 7,
+    });
+
+    await AgentEventService.acknowledge('evt-1', 'pixel', 'default',
+      { outcome: 'no_action', reason: 'native-no-turn' });
+
+    expect(settleFoldedDigest).not.toHaveBeenCalled();
+    expect(AgentMemory.updateOne).not.toHaveBeenCalled();
   });
 
   test('recordFailure() does NOT increment either', async () => {
