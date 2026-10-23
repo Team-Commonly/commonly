@@ -208,6 +208,13 @@ export const createDaemonSupervisor = ({
 
     const existing = loadToken(row.agentName);
     if (existing) {
+      // Local records are still keyed by agent name. Never rotate or launch
+      // another instance through a same-name record: that would overwrite a
+      // different seat's bearer until instance-scoped local records land.
+      if ((existing.instanceId || 'default') !== (row.instanceId || 'default')) {
+        log(`[${row.agentName}] local token belongs to instance '${existing.instanceId || 'default'}'; refusing '${row.instanceId || 'default'}'`);
+        return false;
+      }
       // A human owner can request a fresh key from Settings after revocation.
       // The daemon owns its local token file, so the browser only stamps the
       // directive; this host rotates the key and restarts its child once.
