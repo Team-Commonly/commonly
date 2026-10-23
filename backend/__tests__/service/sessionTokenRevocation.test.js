@@ -4,6 +4,8 @@ const jwt = require('jsonwebtoken');
 const User = require('../../models/User');
 const authRoutes = require('../../routes/auth');
 const adminRoutes = require('../../routes/admin/users');
+const authMiddleware = require('../../middleware/auth');
+const { refresh } = require('../../controllers/authController');
 const { socketAuthMiddleware, installSocketSessionGuard } = require('../../middleware/socketAuth');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 
@@ -82,6 +84,18 @@ describe('human session revocation and absolute lifetime', () => {
     const finalRefresh = await request(app).post('/api/auth/refresh')
       .set('Authorization', `Bearer ${nearDeadlineToken}`).expect(200);
     expect(jwt.decode(finalRefresh.body.token).exp).toBeLessThanOrEqual(nearDeadline + 30 * 24 * 60 * 60);
+  });
+
+  it('cannot mint the new version when revocation lands after middleware authentication', async () => {
+    const versionZero = (await login().expect(200)).body.token;
+    const raceApp = express();
+    raceApp.post('/refresh-race', authMiddleware, async (req, _res, next) => {
+      await User.updateOne({ _id: req.userId }, { $inc: { tokenVersion: 1 } });
+      next();
+    }, refresh);
+    await request(raceApp).post('/refresh-race')
+      .set('Authorization', `Bearer ${versionZero}`).expect(401);
+    await getUser(versionZero).expect(401);
   });
 
   it('revokes on password change and admin revoke without banning the account', async () => {

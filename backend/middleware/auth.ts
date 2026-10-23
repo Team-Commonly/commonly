@@ -137,6 +137,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
       role: account!.role,
     };
     req.authType = 'jwt';
+    req.sessionTokenVersion = decoded.tokenVersion === undefined ? 0 : decoded.tokenVersion as number;
     req.sessionStartedAt = typeof decoded.sessionStartedAt === 'number'
       ? decoded.sessionStartedAt : decoded.iat as number | undefined;
     touchLastActive(id);

@@ -12,6 +12,7 @@ export const absoluteSessionSeconds = (): number => {
 export const issueSessionToken = (
   user: { _id: unknown; tokenVersion?: number },
   sessionStartedAt?: number,
+  authenticatedVersion?: number,
 ): string | null => {
   const now = Math.floor(Date.now() / 1000);
   const startedAt = sessionStartedAt === undefined ? now : sessionStartedAt;
@@ -20,7 +21,7 @@ export const issueSessionToken = (
   if (remaining <= 0) return null;
   return jwt.sign({
     id: user._id,
-    tokenVersion: user.tokenVersion ?? 0,
+    tokenVersion: authenticatedVersion ?? user.tokenVersion ?? 0,
     sessionStartedAt: startedAt,
   }, process.env.JWT_SECRET!, { expiresIn: Math.min(SESSION_TOKEN_SECONDS, remaining) });
 };

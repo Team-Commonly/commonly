@@ -879,9 +879,15 @@ exports.refresh = async (req: any, res: any) => {
     const user = await User.findById(req.userId).select('-password -deviceTokens -agentRuntimeTokens');
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    const authenticatedVersion = req.sessionTokenVersion;
+    if (!Number.isSafeInteger(authenticatedVersion)
+      || authenticatedVersion !== (user.tokenVersion ?? 0)) {
+      return res.status(401).json({ error: 'Session has been revoked' });
+    }
+
     // A token without an original issue time has no absolute deadline, so it
     // cannot be renewed. Normal pre-change tokens carry JWT iat.
-    const token = issueSessionToken(user, req.sessionStartedAt ?? NaN);
+    const token = issueSessionToken(user, req.sessionStartedAt ?? NaN, authenticatedVersion);
     if (!token) return res.status(401).json({ error: 'Session lifetime has ended. Sign in again.' });
 
     return res.json({ token });

@@ -13,6 +13,7 @@ declare global {
       authType?: 'jwt' | 'apiToken' | 'deviceToken';
       deviceTokenHash?: string;
       sessionStartedAt?: number;
+      sessionTokenVersion?: number;
       apiTokenScopes?: string[];
       apiTokenCreatedAt?: Date | null;
 
