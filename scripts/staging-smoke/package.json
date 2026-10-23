@@ -1,0 +1,8 @@
+{
+  "name": "commonly-staging-smoke",
+  "private": true,
+  "type": "module",
+  "description": "Tier-1 staging smoke — gates prod promotion (see .github/workflows/deploy-staging.yml).",
+  "scripts": { "smoke": "node staging-smoke.mjs" },
+  "dependencies": { "playwright": "1.48.2" }
+}

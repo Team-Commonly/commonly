@@ -187,6 +187,34 @@ jobs:
           done
           if [ -n "$FAILED" ]; then echo "Deploy failed for:$FAILED"; exit 1; fi
 
+      - name: Set up Node for the Tier-1 smoke
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Tier-1 UI smoke (Playwright): health/ready, seeded non-admin login, /v2 home + a pod +
+      # /v2/connectors + Bring-your-own render with no console errors, left rail no horizontal
+      # scroll at 1440 & 390px. It FAILS THE JOB on red, so the staging-smoke commit status step
+      # below (which requires JOB_STATUS=success) posts failure and the prod promote path is
+      # blocked. Richer than the stranger reachability probe; it caught the FRONTEND_URL/CORS
+      # regression on 2026-10-23. Skips the hosted-agent check until staging has an LLM key.
+      - name: Tier-1 UI smoke (Playwright)
+        env:
+          SMOKE_BASE: https://staging.commonly.me
+          SMOKE_API: https://api-staging.commonly.me
+          SMOKE_EMAIL: ${{ secrets.STAGING_SMOKE_EMAIL }}
+          SMOKE_PW: ${{ secrets.STAGING_SMOKE_PW }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SMOKE_EMAIL:-}" ] || [ -z "${SMOKE_PW:-}" ]; then
+            echo "::error title=Tier-1 smoke::STAGING_SMOKE_EMAIL / STAGING_SMOKE_PW repo secrets are not set"
+            exit 1
+          fi
+          cd scripts/staging-smoke
+          npm install --no-audit --no-fund --silent
+          npx playwright install --with-deps chromium
+          node staging-smoke.mjs
+
       # The stranger-path smoke drives signup -> welcome -> question -> connect
       # card against api-staging.commonly.me. Its pass/fail IS the staging-smoke
       # gate the prod promote path reads, so — unlike the dev journey, which is a
