@@ -108,6 +108,8 @@ const { outsiderGrantPodRefusal } = require('../../../services/outsiderGrantPodE
 const {
   callTool, listToolsForGrant, getToolDefinitions, allToolDefinitions, executeApprovedToolCall,
 } = broker;
+const currentWriteDigest = () => allToolDefinitions()
+  .find((definition) => definition.name === 'linear.create_issue').definitionDigest;
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const { digestArgs } = require('../../../models/ToolCall');
 // eslint-disable-next-line import/no-unresolved, import/extensions
@@ -156,6 +158,7 @@ const ENTRY = {
       description: 'Create an issue',
       class: 'write',
       irreversible: true,
+      annotations: { readOnlyHint: false, destructiveHint: true },
       inputSchema: { type: 'object', properties: { title: { type: 'string' } } },
     },
   ],
@@ -615,7 +618,8 @@ describe('a hosted-MCP grant through the broker', () => {
       const args = approved ? { title: 'approved issue' } : {};
       const invocation = approved ? executeApprovedToolCall({
         grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.create_issue', args,
-        expectedArgsDigest: digestArgs(args), approvalId: 'approval-private-body',
+        expectedArgsDigest: digestArgs(args), expectedDefinitionDigest: currentWriteDigest(),
+        approvalId: 'approval-private-body',
       }) : callTool({
         grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args, hostedTurn: true,
       });
@@ -647,6 +651,7 @@ describe('a hosted-MCP grant through the broker', () => {
       tool: 'linear.create_issue',
       args,
       expectedArgsDigest: digestArgs(args),
+      expectedDefinitionDigest: currentWriteDigest(),
       approvalId: 'approval-vendor-error',
     });
 
@@ -674,6 +679,7 @@ describe('a hosted-MCP grant through the broker', () => {
       tool: 'linear.create_issue',
       args,
       expectedArgsDigest: digestArgs(args),
+      expectedDefinitionDigest: currentWriteDigest(),
       approvalId: 'approval-transport-error',
     })).rejects.toMatchObject({ code: 'provider_unreachable' });
 
@@ -790,8 +796,79 @@ describe('a hosted-MCP grant through the broker', () => {
     // The parked envelope carries the owner, so the record the DECISION writes
     // still names it after the row is deleted.
     expect(mockProposeAction).toHaveBeenCalledWith(expect.objectContaining({
-      toolCall: expect.objectContaining({ credentialOwnerId: OWNER }),
+      toolCall: expect.objectContaining({ credentialOwnerId: OWNER, definitionDigest: expect.any(String) }),
     }));
+  });
+
+  const parkWrite = async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
+      tools: ['linear.create_issue'], writeMode: 'write-with-confirm',
+    }));
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.create_issue', args: { title: 'x' },
+    })).rejects.toMatchObject({ code: 'approval_required' });
+    return mockProposeAction.mock.calls.at(-1)[0].toolCall;
+  };
+
+  const approveWrite = (parked) => executeApprovedToolCall({
+    grantId: parked.grantId,
+    agentUserId: 'agent-a',
+    tool: parked.tool,
+    args: parked.canonicalArgs,
+    expectedArgsDigest: parked.argsDigest,
+    expectedDefinitionDigest: parked.definitionDigest,
+    approvalId: 'approval-1',
+  });
+
+  it('runs an unchanged hosted pin after approval', async () => {
+    const parked = await parkWrite();
+    await expect(approveWrite(parked)).resolves.toMatchObject({ outcome: 'ok' });
+    expect(toolCalls()).toHaveLength(1);
+  });
+
+  it.each([
+    ['name', 'renamed_issue'],
+    ['upstreamName', 'createIssueV2'],
+    ['description', 'Changed description'],
+    ['class', 'read'],
+    ['irreversible', false],
+    ['inputSchema', { type: 'object', properties: { body: { type: 'string' } } }],
+    ['annotations', { readOnlyHint: true, destructiveHint: false }],
+    ['futurePinField', 'new policy'],
+  ])('refuses an approved write when pin field %s changes', async (field, changed) => {
+    const parked = await parkWrite();
+    const pin = ENTRY.tools[1];
+    const original = pin[field];
+    pin[field] = changed;
+    try {
+      await expect(approveWrite(parked)).rejects.toMatchObject({ code: 'definition_digest_mismatch' });
+      expect(toolCalls()).toHaveLength(0);
+      expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+      expect(refusedRow()).toEqual(expect.objectContaining({
+        reason: 'definition_digest_mismatch', approvalId: 'approval-1',
+      }));
+    } finally {
+      if (original === undefined) delete pin[field];
+      else pin[field] = original;
+    }
+  });
+
+  it('refuses when an entry rename removes the parked tool name', async () => {
+    const parked = await parkWrite();
+    ENTRY.id = 'linear-repinned';
+    try {
+      await expect(approveWrite(parked)).rejects.toMatchObject({ code: 'definition_digest_mismatch' });
+      expect(toolCalls()).toHaveLength(0);
+    } finally {
+      ENTRY.id = 'linear';
+    }
+  });
+
+  it('refuses a pre-binding hosted approval without a definition digest', async () => {
+    const parked = await parkWrite();
+    delete parked.definitionDigest;
+    await expect(approveWrite(parked)).rejects.toMatchObject({ code: 'definition_digest_mismatch' });
+    expect(toolCalls()).toHaveLength(0);
   });
 
   it('refuses a hosted write whose grant target is invalid, keeping the cause\'s own code', async () => {
@@ -984,6 +1061,7 @@ describe('a hosted-MCP grant through the broker', () => {
         tool: 'linear.create_issue',
         args: { title: 'x' },
         expectedArgsDigest: digestArgs({ title: 'x' }),
+        expectedDefinitionDigest: currentWriteDigest(),
         approvalId: 'approval-1',
       })).rejects.toMatchObject({ code: 'connection_owner_banned', statusCode: 403 });
       expect(global.fetch).not.toHaveBeenCalled();

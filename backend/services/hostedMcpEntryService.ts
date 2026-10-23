@@ -28,6 +28,7 @@
  * incompatibly is `tool_drift` until a PR re-pins it. A compatible read-schema
  * change keeps the pin and emits a fresh-assessment signal.
  */
+import { createHash } from 'crypto';
 import type { HostedToolDefinition } from './toolBrokerService';
 import type { RoomGrantWriteMode } from '../models/RoomGrant';
 
@@ -151,6 +152,10 @@ export const canonicalJson = (value: unknown): string => {
   return JSON.stringify(value) ?? 'undefined';
 };
 
+/** Bind a parked approval to the entire catalogue pin, including future fields. */
+export const digestPinnedDefinition = (entryId: string, tool: HostedMcpPinnedTool): string =>
+  createHash('sha256').update(canonicalJson({ entryId, tool })).digest('hex');
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -260,6 +265,7 @@ export const entryToolProjections = (entry: HostedMcpEntry): HostedMcpToolProjec
     requiredWriteMode: writeModeFor(tool),
     connectionType: 'hosted-mcp',
     entryId: entry.id,
+    definitionDigest: digestPinnedDefinition(entry.id, tool),
     entryTitle: entry.title,
     irreversible: tool.irreversible,
     inputSchema: tool.inputSchema,
