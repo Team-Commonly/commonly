@@ -4,6 +4,7 @@ import { existsSync, lstatSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { commonlyMcpServer } from '../default-environment.js';
 import { isShippedCommonlyMcpEntry } from '../declared-mcp-guard.js';
@@ -89,6 +90,7 @@ const assertSoleMcpServer = (cwd, env, command, spawnSyncImpl = spawnSync) => {
 
 const runGrok = ({ args, cwd, env, timeoutMs, spawnImpl, credentials }) => new Promise((resolveTurn, rejectTurn) => {
   const child = (spawnImpl || childSpawn)('grok', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const decoder = new StringDecoder('utf8');
   let stdout = '';
   let stderr = '';
   let overflow = false;
@@ -117,7 +119,7 @@ const runGrok = ({ args, cwd, env, timeoutMs, spawnImpl, credentials }) => new P
   });
   child.stdout.on('data', (chunk) => {
     if (overflow) return;
-    stdout += chunk.toString();
+    stdout += decoder.write(chunk);
     if (stdout.length > MAX_OUTPUT_CHARS) {
       overflow = true;
       stop();
@@ -129,6 +131,7 @@ const runGrok = ({ args, cwd, env, timeoutMs, spawnImpl, credentials }) => new P
     if (settled) return;
     if (timedOut) return finish(new Error(`Grok timed out after ${timeoutMs}ms`));
     if (overflow) return finish(new Error('Grok JSON result exceeded 2 MiB'));
+    stdout += decoder.end();
     let result;
     try { result = JSON.parse(stdout); } catch {
       return finish(adapterFailure('Grok', stderr || 'invalid JSON result', { credentials, exitCode: code }));

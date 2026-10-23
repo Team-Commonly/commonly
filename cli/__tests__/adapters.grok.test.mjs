@@ -115,6 +115,28 @@ test('a Grok login or JSON failure cannot leak the Commonly runtime token', asyn
   });
 });
 
+test('a multibyte reply remains intact when JSON stdout splits a UTF-8 character', async () => {
+  await withSeat(async (seat) => {
+    const spawn = () => {
+      const child = new EventEmitter();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.kill = jest.fn();
+      queueMicrotask(() => {
+        const output = Buffer.from(JSON.stringify({ text: '你好', sessionId: 'utf8-session' }));
+        const split = output.indexOf(Buffer.from('你')) + 1;
+        child.stdout.write(output.subarray(0, split));
+        child.stdout.end(output.subarray(split));
+        child.stderr.end();
+        child.emit('close', 0);
+      });
+      return child;
+    };
+    await expect(grok.spawn('中文问候', context(seat, { _spawnImpl: spawn })))
+      .resolves.toEqual({ text: '你好', newSessionId: 'utf8-session' });
+  });
+});
+
 test('refuses public and sandbox-declared seats before a Grok process starts', async () => {
   const spawn = jest.fn();
   await withSeat(async (seat) => {
