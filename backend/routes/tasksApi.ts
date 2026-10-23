@@ -526,6 +526,20 @@ const leaseRefusalForWrite = async (
   };
 };
 
+// Recheck the same lease at the Mongo write boundary. A read-only refusal
+// above can race with a peer claiming the row before findOneAndUpdate runs.
+const writableLeaseCondition = (req: AuthReq, userId: unknown, now: Date): Record<string, unknown> => {
+  if (!isSeatCaller(req)) return {};
+  const claimKey = resolveAgentInstanceId(req) || userId?.toString() || '';
+  return { $or: [
+    { status: { $ne: 'claimed' } },
+    { claimedBy: claimKey },
+    { claimedBy: { $in: [null, ''] } },
+    { claimExpiresAt: { $lt: now } },
+    { claimExpiresAt: null, claimedAt: { $lt: new Date(now.getTime() - TASK_CLAIM_LEASE_MS) } },
+  ] };
+};
+
 router.post('/:podId/:taskId/claim', rateLimit({
   windowMs: 60_000,
   // Higher than task-create's 20: a claimant renews by re-claiming, and a
@@ -623,8 +637,15 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     const updateText = prUrl ? `Completed by ${author} · PR: ${prUrl}` : `Completed by ${author}`;
     const now = new Date();
     const update = { $set: { status: 'done', completedAt: now, ...(prUrl && { prUrl }), ...(notes && { notes }) }, $push: { updates: { text: updateText, author, authorId: userId?.toString() || null, createdAt: now } } };
-    const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId, status: { $in: ['claimed', 'pending'] } }, update, { new: true }) as { taskId?: string; updates?: unknown[] } | null;
+    const task = await Task.findOneAndUpdate({
+      podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
+      taskId,
+      status: { $in: ['claimed', 'pending'] },
+      ...writableLeaseCondition(req, userId, now),
+    }, update, { new: true }) as { taskId?: string; updates?: unknown[] } | null;
     if (!task) {
+      const racedRefusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
+      if (racedRefusal) return res.status(409).json(racedRefusal);
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { status?: string } | null;
       if (!existing) return res.status(404).json({ error: 'Task not found' });
       const error = existing.status === 'done'
@@ -905,8 +926,16 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     if (fieldUpdates.title !== undefined) changeParts.push('title updated');
     const update: Record<string, unknown> = { $set: fieldUpdates };
     if (changeParts.length > 0) update.$push = { updates: { text: `${author} updated: ${changeParts.join(', ')}`, author, authorId: userId?.toString() || null, createdAt: new Date() } };
-    const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }, update, { new: true });
-    if (!task) return res.status(404).json({ error: 'Task not found' });
+    const task = await Task.findOneAndUpdate({
+      podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
+      taskId,
+      ...writableLeaseCondition(req, userId, new Date()),
+    }, update, { new: true });
+    if (!task) {
+      const racedRefusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
+      if (racedRefusal) return res.status(409).json(racedRefusal);
+      return res.status(404).json({ error: 'Task not found' });
+    }
     if (fieldUpdates.status === 'blocked') await recordTaskAttention(task, { includeBlocked: true });
     if (fieldUpdates.status !== undefined && fieldUpdates.status !== 'blocked') await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');

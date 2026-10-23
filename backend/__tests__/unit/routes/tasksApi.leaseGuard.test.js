@@ -337,6 +337,41 @@ describe('PATCH is guarded the same way', () => {
   });
 });
 
+describe('the write filter closes a claim race after the advisory read', () => {
+  const claimDuringWrite = () => {
+    const original = Task.findOneAndUpdate;
+    return jest.spyOn(Task, 'findOneAndUpdate').mockImplementationOnce(async (...args) => {
+      await Task.updateOne({ taskId: 'TASK-001' }, {
+        $set: {
+          status: 'claimed',
+          claimedBy: 'other-seat',
+          claimedAt: new Date(),
+          claimExpiresAt: new Date(Date.now() + 25 * MIN),
+        },
+      });
+      return original.apply(Task, args);
+    });
+  };
+
+  it.each(['complete', 'patch'])('refuses a %s when a peer claims between read and write', async (operation) => {
+    await leasedByPeer({
+      status: 'pending', claimedBy: null, claimedAt: null, claimExpiresAt: null,
+    });
+    const spy = claimDuringWrite();
+    try {
+      const res = operation === 'complete' ? await complete('me-seat') : await patch('me-seat');
+      expect(res.status).toBe(409);
+      expect(res.body.claimedBy).toBe('other-seat');
+      const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+      expect(row.status).toBe('claimed');
+      expect(row.title).toBe('decouple the schema');
+      expect(row.updates || []).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('the refusal performs no side effect, which is how it composes with #1767', () => {
   // #1767 (merged) made `/complete` close the done task's outstanding handoff
   // cards. These two changes touch the same handler, so it is worth pinning that
