@@ -1816,7 +1816,11 @@ class AgentMessageService {
       await mongoMessage.save();
       await mongoMessage.populate('userId', 'username profilePicture isBot');
       message = {
-        ...(mongoMessage as unknown as MessageNormalized),
+        // Mongoose documents keep schema fields in `_doc`; spreading the
+        // document only copies internals and drops content for broadcasts and
+        // installable bridge dispatches. Serialize after populate so the
+        // Mongo fallback matches the PostgreSQL normalized shape.
+        ...(mongoMessage.toObject() as unknown as MessageNormalized),
         author_kind: authorKind,
       };
     }
