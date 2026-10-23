@@ -718,7 +718,12 @@ describe('claude adapter — ctx.environment', () => {
       await claude.spawn('hi', {
         sessionId: null,
         cwd,
-        env: { PATH: process.env.PATH },
+        env: {
+          PATH: process.env.PATH,
+          COMMONLY_HOST_SECRET: 'must-not-reach-public-seat',
+          AWS_SECRET_ACCESS_KEY: 'must-not-reach-public-seat',
+        },
+        commitAttributionEnv: { COMMONLY_AGENT_SEAT_NAME: 'Public Linux Seat' },
         environment: { sandbox: { trust: 'public' } },
         _spawnImpl: impl,
         _detectBwrap: () => ({ available: true, path: 'bwrap' }),
@@ -727,6 +732,12 @@ describe('claude adapter — ctx.environment', () => {
       expect(calls[0].cmd).toBe('bwrap');
       expect(calls[0].args).toContain('--unshare-all');
       expect(calls[0].args).toContain('--die-with-parent');
+      // Mutation guard: removing --clearenv would let the host process env
+      // back into the namespace even though the adapter env is filtered.
+      expect(calls[0].args).toContain('--clearenv');
+      expect(calls[0].opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
+      expect(calls[0].opts.env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+      expect(calls[0].opts.env.COMMONLY_AGENT_SEAT_NAME).toBe('Public Linux Seat');
       // The inner claude argv rides after `--`, inside the namespace.
       const inner = calls[0].args.slice(calls[0].args.indexOf('--') + 1);
       expect(inner[0]).toMatch(/claude$/);

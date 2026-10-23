@@ -92,8 +92,8 @@ export const detectBwrap = ({ spawn = spawnSync, platform = process.platform } =
  *     user sees the gap before they think they're protected.
  *
  * The expansion order matches `bwrap`'s left-to-right argument application:
- * isolation flags first, then binds (later binds win on collision), then
- * --setenv, then `--` and the inner argv.
+ * isolation flags first, then binds (later binds win on collision), then the
+ * explicit child environment and HOME, then `--` and the inner argv.
  */
 export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   if (process.platform !== 'linux') {
@@ -112,6 +112,7 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
     : ['--share-net'];
 
   const flags = [
+    '--clearenv',
     '--unshare-all',
     ...networkFlags,
     '--die-with-parent',
@@ -149,6 +150,10 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
 
   flags.push('--bind', opts.workspacePath, opts.workspacePath);
   flags.push('--chdir', opts.workspacePath);
+  for (const [name, value] of Object.entries(opts.environment || {})) {
+    if (value === undefined || value === null) continue;
+    flags.push('--setenv', name, String(value));
+  }
   flags.push('--setenv', 'HOME', opts.homePath || opts.workspacePath);
 
   return ['bwrap', ...flags, '--', ...innerArgv];

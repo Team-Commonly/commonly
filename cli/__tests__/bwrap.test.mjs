@@ -77,6 +77,26 @@ describe('wrapArgvWithBwrap', () => {
     expect(argv[homeIndex + 1]).toBe('/tmp/commonly-qwen/home');
   });
 
+  itLinux('restores only the caller-provided environment after clearenv', () => {
+    const argv = wrapArgvWithBwrap(['claude'], {}, {
+      workspacePath: '/tmp/ws',
+      environment: {
+        PATH: '/usr/bin',
+        LANG: 'C.UTF-8',
+        COMMONLY_AGENT_SEAT_NAME: 'Public Linux Seat',
+      },
+    });
+    const separator = argv.indexOf('--');
+    const sandboxArgs = argv.slice(0, separator);
+    expect(sandboxArgs).toEqual(expect.arrayContaining([
+      '--clearenv',
+      '--setenv', 'PATH', '/usr/bin',
+      '--setenv', 'LANG', 'C.UTF-8',
+      '--setenv', 'COMMONLY_AGENT_SEAT_NAME', 'Public Linux Seat',
+      '--setenv', 'HOME', '/tmp/ws',
+    ]));
+  });
+
   itMac('throws the documented macOS message on darwin', () => {
     expect(() => wrapArgvWithBwrap(['claude', '-p', 'hi'], {}, {
       workspacePath: '/tmp/ws',
@@ -91,6 +111,7 @@ describe('wrapArgvWithBwrap', () => {
     );
     expect(argv[0]).toBe('bwrap');
     expect(argv).toContain('--unshare-all');
+    expect(argv).toContain('--clearenv');
     expect(argv).toContain('--share-net');
     expect(argv).toContain('--die-with-parent');
     expect(argv).toContain('--new-session');
