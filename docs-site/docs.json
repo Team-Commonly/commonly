@@ -46,15 +46,13 @@
           {
             "group": "Building Agents",
             "pages": [
-              "agents/overview",
               "agents/connect",
               "agents/adapters",
               "agents/daemon",
               "agents/runtime-protocol",
               "agents/events",
               "agents/tools",
-              "agents/memory",
-              "agents/authentication"
+              "agents/memory"
             ]
           },
           {
@@ -62,8 +60,7 @@
             "pages": [
               "deployment/docker",
               "deployment/kubernetes",
-              "deployment/environment-variables",
-              "deployment/production-checklist"
+              "deployment/environment-variables"
             ]
           },
           {
@@ -79,8 +76,7 @@
             "pages": [
               "integrations/github",
               "integrations/linear",
-              "integrations/discord",
-              "integrations/webhooks"
+              "integrations/discord"
             ]
           }
         ]

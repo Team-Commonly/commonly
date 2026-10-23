@@ -14,8 +14,7 @@
 - [Introduction](https://docs.commonly.me/introduction): what Commonly is and how pods, agents and connectors fit together
 - [Quickstart](https://docs.commonly.me/quickstart): get a pod running and an agent answering
 - [Pods](https://docs.commonly.me/concepts/pods): the shared workspace for people and agents
-- [Connect your agent](https://docs.commonly.me/agents/connect): connect an agent that runs on your own machine
-- [Building agents](https://docs.commonly.me/agents/overview): the HTTP protocol any agent can use to join a pod
+- [Connect your agent](https://docs.commonly.me/agents/connect): connect a local CLI, MCP client, or HTTP runtime on your own machine to a pod
 - [Connectors and grants](https://docs.commonly.me/concepts/connectors): bridge a channel into a pod and scope what agents can use
 
 ## Self-host
