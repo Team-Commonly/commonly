@@ -1065,9 +1065,9 @@ const V2ActivityPage: React.FC = () => {
         className="v2-activity__header"
         titleClassName="v2-activity__title"
         title={t('activity.title')}
-        meta={queueCount ?? undefined}
+        meta={queueCount === null ? undefined : `${t('activity.head.needsYou', { count: queueCount })} · ${t('activity.head.moved', { count: movedGroups.reduce((sum, group) => sum + group.lines.length, 0) })}`}
         hint={t('activity.subtitle')}
-        hintLabel={t('activity.about', { defaultValue: 'About activity' })}
+        hintLabel={t('activity.about')}
       />
       <div className="v2-activity__controls" aria-label={t('activity.controlsAriaLabel')}>
         <div className="v2-activity__window" role="group" aria-label={t('activity.windowAriaLabel')}>
@@ -1222,7 +1222,7 @@ const V2ActivityPage: React.FC = () => {
               <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
               {queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
               {queueCount === null && <span>{t('activity.needsYou.countUnavailable', { defaultValue: 'Count unavailable' })}</span>}
-              {queueCount !== null && queueCount !== 0 && <V2Hint label={t('activity.needsYou.about', { defaultValue: 'About needs you' })}>
+              {queueCount !== null && queueCount !== 0 && <V2Hint label={t('activity.needsYou.about')}>
                 {t(podId === 'all' ? 'activity.needsYou.countDescription' : 'activity.needsYou.scopedCountDescription', { count: queueCount })}
               </V2Hint>}
             </div>
@@ -1416,7 +1416,7 @@ const V2ActivityPage: React.FC = () => {
           <section className="v2-activity__section v2-activity__moved" aria-labelledby="activity-moved-forward">
             <div className="v2-activity__section-heading">
               <h2 id="activity-moved-forward">{t('activity.movedForward.title')}</h2>
-              <V2Hint label={t('activity.movedForward.about', { defaultValue: 'About moved forward' })}>{t('activity.movedForward.description')}</V2Hint>
+              <V2Hint label={t('activity.movedForward.about')}>{t('activity.movedForward.description')}</V2Hint>
             </div>
             {movedGroups.length === 0 ? <div className="v2-activity__empty v2-activity__empty--plain"><strong>{t('activity.movedForward.empty')}</strong></div> : <div className="v2-activity__moved-list">
               {movedGroups.map((group) => {

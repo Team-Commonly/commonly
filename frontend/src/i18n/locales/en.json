@@ -7,6 +7,7 @@
     "close": "Close",
     "copy": "Copy",
     "copied": "Copied!",
+    "aboutPage": "About {{title}}",
     "language": {
       "label": "Language"
     },
@@ -56,6 +57,13 @@
   "activity": {
     "title": "Activity",
     "subtitle": "what needs you, then what moved",
+    "about": "About activity",
+    "head": {
+      "needsYou_one": "{{count}} needs you",
+      "needsYou_other": "{{count}} need you",
+      "moved_one": "{{count}} moved",
+      "moved_other": "{{count}} moved"
+    },
     "controlsAriaLabel": "Activity controls",
     "windowAriaLabel": "Activity window",
     "windows": {
@@ -94,6 +102,7 @@
     "updatesCount_one": "{{count}} update",
     "updatesCount_other": "{{count}} updates",
     "needsYou": {
+      "about": "About needs you",
       "eyebrow": "Decision queue",
       "title": "Needs you",
       "description": "Direct mentions, approvals, and active decisions that need your call.",
@@ -166,6 +175,7 @@
       }
     },
     "movedForward": {
+      "about": "About moved forward",
       "title": "Moved forward",
       "description": "grouped by pod · newest first",
       "empty": "Nothing yet today.",
@@ -515,6 +525,7 @@
       "none": "No recent heartbeats"
     },
     "header": {
+      "aboutPod": "About this pod",
       "agentsWorking_one": "{{count}} agent working",
       "agentsWorking_other": "{{count}} agents working",
       "members_one": "{{count}} member",
@@ -1949,6 +1960,13 @@
     }
   },
   "connectors": {
+    "about": "About connectors",
+    "counts": {
+      "channels_one": "{{count}} channel",
+      "channels_other": "{{count}} channels",
+      "needsYou_one": "{{count}} needs you",
+      "needsYou_other": "{{count}} need you"
+    },
     "loading": "Loading connectors…",
     "loadError": "Could not load connectors.",
     "createError": "Could not create the connector.",

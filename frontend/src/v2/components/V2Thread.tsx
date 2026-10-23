@@ -1692,7 +1692,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             <div className="v2-thread__title">
               <div className="v2-thread__title-line">
                 <h1>{pod.name}</h1>
-                {pod.description && <V2Hint label={t('podChat.header.aboutPod', { defaultValue: 'About this pod' })}>{pod.description}</V2Hint>}
+                {pod.description && <V2Hint label={t('podChat.header.aboutPod')}>{pod.description}</V2Hint>}
               </div>
             </div>
             <span

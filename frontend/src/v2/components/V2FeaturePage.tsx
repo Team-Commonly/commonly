@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { useTranslation } from 'react-i18next';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import { V2EmbeddedProvider } from '../hooks/useV2Embedded';
@@ -296,6 +297,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
   className = '',
 }) => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   useEffect(() => {
     try {
@@ -326,7 +328,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
       <V2NavRail />
       {showPodsSidebar && <V2PodsSidebar selectedPodId={null} />}
       <main className={`v2-pane v2-pane--main v2-feature${className ? ` ${className}` : ''}`} onClickCapture={handleClickCapture} aria-label={title}>
-        {showHeader && <V2PageHead className="v2-feature__header" titleClassName="v2-feature__title" title={title} hint={hint} hintLabel={`About ${title}`} />}
+        {showHeader && <V2PageHead className="v2-feature__header" titleClassName="v2-feature__title" title={title} hint={hint} hintLabel={t('common.aboutPage', { title })} />}
         <section className="v2-feature__body">
           <ThemeProvider theme={v2FeatureTheme}>
             <V2EmbeddedProvider>
