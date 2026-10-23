@@ -95,7 +95,7 @@ describe('hosted-MCP requests are wired through the outbound guard', () => {
     ['aliased fetch', 'const f = fetch; const request = (fetchImpl = f) => fetchImpl(url);', true],
     ['destructured global fetch', 'const { fetch: request } = globalThis;', true],
     ['imported fetch alias', "import { fetch as vendorFetch } from 'undici'; const request = vendorFetch;", true],
-    ['default imported fetch', "import fetch from 'node-fetch'; const request = fetch;", true],
+    ['default import binding named fetch', "import fetch from 'node-fetch'; const request = fetch;", true],
     ['shadowing alias', [
       'import { hostedVendorFetch } from "./hostedVendorFetch";',
       'function request() { const hostedVendorFetch: typeof fetch = fetch; return hostedVendorFetch(url); }',
