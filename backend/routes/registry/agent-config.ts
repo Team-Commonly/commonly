@@ -227,6 +227,17 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
               ...(existingConfig.environment?.sandbox || {}), ...environmentControls.sandbox,
             } } : {}) };
         }
+        const requestedTrust = config.environment?.sandbox?.trust;
+        if ((requestedTrust === 'private' || requestedTrust === 'public')
+          && existingConfig.environment && typeof existingConfig.environment === 'object') {
+          const nextEnvironment = { ...existingConfig.environment, ...config.environment };
+          if (isPrivateListenerEnvironment(existingConfig.environment)
+            && !isPrivateListenerEnvironment(nextEnvironment)
+            && !Object.prototype.hasOwnProperty.call(config.environment, 'workspace')) {
+            delete nextEnvironment.workspace;
+          }
+          nextConfig.environment = nextEnvironment;
+        }
         if (config.runtime && typeof config.runtime === 'object') {
           nextConfig.runtime = runtimeKeepingType(config.runtime, existingConfig, { mayChangeType: isInstanceAdmin });
         }

@@ -223,6 +223,10 @@ test('owner can promote a read-only listener in a sole-human invite pod', async 
 test('owner can downgrade to read-only after a second human joins', async () => {
   const old = await issue();
   expect(old.status).toBe(200);
+  const retainedMcp = [{ name: 'existing', transport: 'http', url: 'https://example.com/mcp' }];
+  const existing = await AgentInstallation.findOne({ agentName: AGENT });
+  existing.config.set('environment', { ...existing.config.get('environment'), mcp: retainedMcp });
+  await existing.save();
   const legacy = `cm_agent_${'c'.repeat(32)}`;
   await AgentInstallation.updateOne({ agentName: AGENT }, {
     $push: { runtimeTokens: { tokenHash: hash(legacy), createdAt: new Date() } },
@@ -241,5 +245,5 @@ test('owner can downgrade to read-only after a second human joins', async () => 
   expect((await issue()).status).toBe(200);
   expect((await assigned()).body.agents[0].environment.sandbox.trust).toBe('public');
   const row = await AgentInstallation.findOne({ agentName: AGENT });
-  expect(row.config.get('environment')).toEqual({ sandbox: { trust: 'public' } });
+  expect(row.config.get('environment')).toEqual({ sandbox: { trust: 'public' }, mcp: retainedMcp });
 });
