@@ -247,7 +247,7 @@ describe('approved create_pod execution — D2: user authority owns', () => {
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
     const posted = mockPostMessage.mock.calls[0][0];
     expect(posted).toEqual(expect.objectContaining({ agentName: 'guide', podId: 'newpod-3', displayName: 'Scout' }));
-    expect(posted.content).toMatch(/Which GitHub repo or weekly workflow/);
+    expect(posted.content).toBe('Which GitHub repo or weekly workflow should we start with?');
     expect(posted.payload).toEqual({ kind: 'starts', starts: [{
       id: 'bring-your-own', label: 'Bring your own', href: '/v2/agents/byo?pod=newpod-3',
     }] });
@@ -274,7 +274,7 @@ describe('approved create_pod execution — D2: user authority owns', () => {
 
     await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
 
-    expect(mockPostMessage.mock.calls[0][0].content).toMatch(/每周工作流程/);
+    expect(mockPostMessage.mock.calls[0][0].content).toBe('先从哪个 GitHub 仓库或每周工作流程开始？');
     expect(mockPostMessage.mock.calls[0][0].payload.starts[0].label).toBe('接入自己的智能体');
     expect(mockPodUpdateOne).toHaveBeenCalledWith({ _id: 'newpod-zh' }, {
       $set: { firstTaskOnboarding: expect.objectContaining({ locale: 'zh-CN' }) },
