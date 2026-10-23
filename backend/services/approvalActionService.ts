@@ -1143,8 +1143,7 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
  * produces a server-composed task proposal with two actionable buttons.
  * Never fatal: the pod exists either way, and the proposer's reply still lands.
  */
-export const NEW_POD_NEXT_STEPS_TEXT = 'Which GitHub repo or weekly workflow should we start with? '
-  + 'I’ll suggest one first task.';
+export const NEW_POD_NEXT_STEPS_TEXT = 'Which GitHub repo or weekly workflow should we start with?';
 
 const postNewPodNextSteps = async (
   row: IApprovalAction,
@@ -1163,7 +1162,7 @@ const postNewPodNextSteps = async (
       podId,
       displayName,
       content: locale === 'zh-CN'
-        ? '先从哪个 GitHub 仓库或每周工作流程开始？我会建议第一项任务。'
+        ? '先从哪个 GitHub 仓库或每周工作流程开始？'
         : NEW_POD_NEXT_STEPS_TEXT,
       payload: { kind: 'starts', starts: [{
         id: 'bring-your-own', label: locale === 'zh-CN' ? '接入自己的智能体' : 'Bring your own', href,

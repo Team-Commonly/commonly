@@ -200,7 +200,7 @@ describe('Scout\'s welcome', () => {
   const { SCOUT_WELCOME } = require('../../../config/native-agents/scout');
 
   test('is in English, with no invitation to write in another language', () => {
-    expect(SCOUT_WELCOME).toBe('I\'m Scout. Pick a start or tell me your goal.');
+    expect(SCOUT_WELCOME).toBe('What would you like to do first?');
     expect(SCOUT_WELCOME).not.toMatch(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/);
   });
 });

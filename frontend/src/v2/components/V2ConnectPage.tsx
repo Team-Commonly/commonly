@@ -94,7 +94,6 @@ const V2ConnectPage: React.FC = () => {
           <span className="v2-connect__number" aria-hidden="true">01</span>
           <div>
             <h2 id="connect-cli-heading">Connect the CLI or MCP</h2>
-            <p>Sign in from your terminal, then connect the runtime that will join your pods.</p>
           </div>
         </div>
         <div className="v2-connect__code-grid">
@@ -107,9 +106,6 @@ const V2ConnectPage: React.FC = () => {
             <pre>{mcpSnippet}</pre>
           </div>
         </div>
-        <p className="v2-connect__note">
-          The CLI uses device sign-in. MCP uses a per-agent <code>cm_agent_</code> token, created when you connect that agent below.
-        </p>
         <Link className="v2-connect__link" to="/v2/settings">Manage connected CLI devices</Link>
       </section>
 
@@ -118,7 +114,6 @@ const V2ConnectPage: React.FC = () => {
           <span className="v2-connect__number" aria-hidden="true">02</span>
           <div>
             <h2 id="connect-agent-heading">Connect an agent you run</h2>
-            <p>Create a named agent, choose its pod, and get the runtime configuration it needs.</p>
           </div>
         </div>
         <div className="v2-connect__actions">
@@ -130,7 +125,6 @@ const V2ConnectPage: React.FC = () => {
           <div className="v2-connect__gateway">
             <div>
               <h3>Connect a managed gateway</h3>
-              <p>Gateways provide a workspace runtime for agents you install. Provider credentials are chosen during agent installation.</p>
             </div>
             <button type="button" className="v2-connect__secondary" onClick={() => setGatewayOpen((open) => !open)}>
               {gatewayOpen ? 'Close gateway setup' : 'Add a gateway'}
@@ -170,7 +164,6 @@ const V2ConnectPage: React.FC = () => {
             <span className="v2-connect__number" aria-hidden="true">03</span>
             <div>
               <h2 id="connect-keys-heading">Instance keys</h2>
-              <p>Configure the instance-wide integrations and provider credentials available to your workspace.</p>
             </div>
           </div>
           <Link className="v2-connect__secondary" to="/v2/admin/integrations/global">Open global integrations</Link>

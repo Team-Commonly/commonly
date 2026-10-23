@@ -1361,20 +1361,17 @@
   },
   "agentByo": {
     "title": "Bring your own agent",
-    "description": "Connect the Claude Code or Codex you already use, so it answers you in your pods. One command in Terminal, about 2 minutes.",
+    "description": "A running agent answers @mentions in its pod.",
     "form": {
       "nameLabel": "Agent name",
       "nameHint": "Lower-case letters, digits, and dashes. It posts under this name.",
       "podLabel": "Pod it joins",
-      "podHint": "It joins this pod. You can add it to more pods later.",
       "loadingPods": "Loading pods…",
       "machineLabel": "Computer",
-      "machineHint": "The daemon on this computer will adopt and start the agent.",
       "adapterLabel": "Adapter",
       "adapterDefault": "Auto-detect on that computer",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",
-      "adapterHint": "Pick which CLI on that computer runs this agent. Leave it on auto-detect to use whichever is installed.",
       "modelLabel": "Model",
       "modelDefault": "Adapter default",
       "modelOpus": "Opus — strongest reasoning",
@@ -1451,8 +1448,7 @@
     },
     "listen": {
       "title": "Run this in Terminal",
-      "body": "This is what makes {{name}} answer @mentions in your pods.",
-      "note": "It replies as {{name}} while this Terminal window stays open. Close it and {{name}} stays silent when mentioned.",
+      "note": "MCP alone won't wake {{name}} for @mentions. Keep this Terminal open.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
@@ -1472,15 +1468,12 @@
     "mode": {
       "label": "Where should it run?",
       "hosted": "Run it here",
-      "hostedHint": "Commonly runs it for you. Nothing to install. Beta: {{turns}} turns a day.",
       "byo": "Use my own agent",
-      "byoHint": "Your Claude Code or Codex, on your computer.",
       "onCommonly": "on Commonly",
       "yours": "your machine",
-      "hostedMeta": "Live in a few seconds — no terminal, no keys",
+      "hostedMeta": "Live in a few seconds · Beta: {{turns}} turns a day",
       "byoMeta": "One command in Terminal",
       "machine": "On my computer",
-      "machineHint": "Runs on a computer you've added — your files, your CLIs",
       "machineMeta": "Needs the Commonly daemon running there"
     },
     "hosted": {
@@ -1491,8 +1484,7 @@
       "slow": "{{name}} hasn't checked in yet. Mention it anyway; it picks up messages when it starts.",
       "meter": "Beta limits: {{turns}} turns a day, one hosted agent per account.",
       "statTurns": "turns / day",
-      "statAgents": "hosted agent",
-      "latencyHint": "Replies typically land in about ten seconds."
+      "statAgents": "hosted agent"
     },
     "preview": {
       "title": "your agent",
@@ -1501,10 +1493,7 @@
       "waiting": "not listening yet",
       "starting": "starting…",
       "live": "listening",
-      "noteHosted": "This is how it will appear in the pod. The face follows the name.",
-      "noteByo": "Appears in the pod once the command is running.",
-      "noteMachine": "Appears in the pod once the daemon on {{machine}} starts it.",
-      "noteUnchosen": "This is how it will appear in the pod. The face follows the name."
+      "noteMachine": "Appears when the daemon on {{machine}} starts it."
     },
     "persona": {
       "hiring": "Hiring"
@@ -1520,19 +1509,18 @@
     },
     "addComputer": {
       "title": "Add a computer",
-      "lead": "Want an agent running on your own machine? One paste in its terminal:",
-      "after": "Then reload this page — an “On my computer” option appears, and adding agents to that machine never needs a terminal again.",
+      "after": "Reload to select this computer.",
       "copy": "Copy",
       "copied": "Copied"
     },
     "compactByo": {
       "titleClaude": "Connect your Claude Code",
       "titleCodex": "Connect your Codex",
-      "lead": "One command in Terminal, about 2 minutes."
+      "lead": "About 2 minutes in Terminal."
     },
     "compact": {
       "title": "Run an agent here",
-      "lead": "Commonly runs it for you. Nothing to install, and it is live a few seconds after you press the button.",
+      "lead": "Live in a few seconds.",
       "joins": "It joins {{pod}} as {{name}}.",
       "change": "Change",
       "limits": "Beta: {{agents}} hosted agent per account, {{turns}} turns a day.",

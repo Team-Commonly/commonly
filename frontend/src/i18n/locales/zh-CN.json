@@ -1421,20 +1421,17 @@
   },
   "agentByo": {
     "title": "接入你自己的智能体",
-    "description": "接入你已在用的 Claude Code 或 Codex，让它在你的 Pod 里回复你。只需在终端里运行一条命令，约2分钟完成。",
+    "description": "智能体运行期间会在所在 Pod 回复 @提及。",
     "form": {
       "nameLabel": "智能体名称",
       "nameHint": "仅支持小写字母、数字和连字符。它会用这个名字发言。",
       "podLabel": "要加入的 Pod",
-      "podHint": "它会加入这个 Pod，之后你还可以把它加到更多 Pod。",
       "loadingPods": "正在加载 Pod…",
       "machineLabel": "电脑",
-      "machineHint": "这台电脑上的守护进程会接管并启动该智能体。",
       "adapterLabel": "适配器",
       "adapterDefault": "在这台电脑上自动检测",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",
-      "adapterHint": "选择在那台电脑上用哪个 CLI 运行这个智能体。保持自动检测，就会用已安装的那个。",
       "modelLabel": "模型",
       "modelDefault": "适配器默认",
       "modelOpus": "Opus——推理最强",
@@ -1511,8 +1508,7 @@
     },
     "listen": {
       "title": "在终端里运行这段命令",
-      "body": "有了它，{{name}} 才会在你的 Pod 里回复 @提及。",
-      "note": "终端窗口开着时，它会以 {{name}} 的身份回复。关掉窗口，{{name}} 被提及时就不会回复。",
+      "note": "仅连接 MCP 不会唤醒 {{name}} 回复 @提及。请保持终端窗口开启。",
       "waiting": "正在等待 {{name}} 接入…命令一接通，这里就会变绿。",
       "verified": "{{name}} 已在监听 —— @提及 会唤醒它。",
       "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
@@ -1532,15 +1528,12 @@
     "mode": {
       "label": "在哪里运行？",
       "hosted": "在这里运行",
-      "hostedHint": "由 Commonly 代为运行，无需安装。测试期：每天{{turns}}轮。",
       "byo": "用我自己的智能体",
-      "byoHint": "你电脑上的 Claude Code 或 Codex。",
       "onCommonly": "在 Commonly 上",
       "yours": "你的电脑",
-      "hostedMeta": "几秒即可上线——无需终端与密钥",
+      "hostedMeta": "几秒即可上线 · 测试期每天{{turns}}轮",
       "byoMeta": "只需一条终端命令",
       "machine": "在我的电脑上",
-      "machineHint": "在你已添加的电脑上运行——你的文件、你的 CLI",
       "machineMeta": "需要那台电脑运行 Commonly 守护进程"
     },
     "hosted": {
@@ -1551,8 +1544,7 @@
       "slow": "{{name}} 尚未接入。可以先 @ 它，启动后会处理消息。",
       "meter": "测试期限制：每天{{turns}}轮，每个账号一个托管智能体。",
       "statTurns": "轮 / 天",
-      "statAgents": "托管智能体",
-      "latencyHint": "回复通常需要10秒左右。"
+      "statAgents": "托管智能体"
     },
     "preview": {
       "title": "你的智能体",
@@ -1561,10 +1553,7 @@
       "waiting": "尚未监听",
       "starting": "正在启动…",
       "live": "监听中",
-      "noteHosted": "这就是它在 Pod 中的样子。头像跟随名字生成。",
-      "noteByo": "命令运行起来后，它就会出现在 Pod 里。",
-      "noteMachine": "{{machine}} 上的守护进程启动它后即会出现在 Pod 中。",
-      "noteUnchosen": "这就是它在 Pod 中的样子。头像跟随名字生成。"
+      "noteMachine": "{{machine}} 上的守护进程启动后会显示在 Pod 中。"
     },
     "persona": {
       "hiring": "正在雇佣"
@@ -1580,19 +1569,18 @@
     },
     "addComputer": {
       "title": "添加电脑",
-      "lead": "想让智能体在你自己的电脑上运行？在它的终端里粘贴一次：",
-      "after": "然后刷新本页——会出现“在我的电脑上”选项，之后往那台电脑添加智能体再也不需要终端。",
+      "after": "刷新页面后即可选择这台电脑。",
       "copy": "复制",
       "copied": "已复制"
     },
     "compactByo": {
       "titleClaude": "接入你的 Claude Code",
       "titleCodex": "接入你的 Codex",
-      "lead": "在终端里运行一条命令，约2分钟完成。"
+      "lead": "在终端里约2分钟完成。"
     },
     "compact": {
       "title": "在这里运行智能体",
-      "lead": "由 Commonly 代为运行，无需安装，点下按钮几秒后即可上线。",
+      "lead": "几秒后即可上线。",
       "joins": "它会以 {{name}} 的身份加入 {{pod}}。",
       "change": "更改",
       "limits": "测试期：每个账号{{agents}}个托管智能体，每天{{turns}}轮。",

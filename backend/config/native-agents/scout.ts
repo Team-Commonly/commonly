@@ -41,7 +41,7 @@ export const SCOUT_STARTS = [
 export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here' } as const;
 
 /** Scout's first message in a new workspace; the starts render under it. */
-export const SCOUT_WELCOME = 'I\'m Scout. Pick a start or tell me your goal.';
+export const SCOUT_WELCOME = 'What would you like to do first?';
 
 export const scoutApp = {
   agentName: 'scout',
