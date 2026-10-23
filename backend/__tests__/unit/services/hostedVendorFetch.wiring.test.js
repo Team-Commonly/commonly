@@ -1,5 +1,7 @@
-// Every hosted-MCP vendor request must go through the outbound guard (TASK-253).
-// The guard's behavior is tested elsewhere; this checks the production wiring.
+// Hosted-MCP vendor requests must go through the outbound guard (TASK-253).
+// The upstreamFetch spy below checks behavior. The source check catches raw
+// fetch references in hosted modules and their direct helpers; it cannot prove
+// that a deeper dependency or a dynamically loaded module uses the wrapper.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -88,7 +90,10 @@ describe('hosted-MCP requests are wired through the outbound guard', () => {
     ['injected fetch type', 'type Deps = { fetcher: typeof fetch };', false],
     ['direct fetch', 'const response = fetch(url);', true],
     ['globalThis.fetch default', 'const request = (fetchImpl = globalThis.fetch) => fetchImpl(url);', true],
+    ['global.fetch default', 'const request = (fetchImpl = global.fetch) => fetchImpl(url);', true],
     ['computed global fetch', "const request = globalThis['fetch'];", true],
+    ['aliased fetch', 'const f = fetch; const request = (fetchImpl = f) => fetchImpl(url);', true],
+    ['destructured global fetch', 'const { fetch: request } = globalThis;', true],
     ['shadowing alias', [
       'import { hostedVendorFetch } from "./hostedVendorFetch";',
       'function request() { const hostedVendorFetch: typeof fetch = fetch; return hostedVendorFetch(url); }',
@@ -113,7 +118,7 @@ describe('hosted-MCP requests are wired through the outbound guard', () => {
     try {
       [services, routes, integrations].forEach((dir) => fs.mkdirSync(dir, { recursive: true }));
       fs.writeFileSync(path.join(services, 'hostedMcpFuture.ts'), "import { request } from './vendorRequest';");
-      fs.writeFileSync(path.join(services, 'vendorRequest.ts'), 'export const request = () => fetch(url);');
+      fs.writeFileSync(path.join(services, 'vendorRequest.ts'), 'const raw = global.fetch; export const request = () => raw(url);');
       fs.writeFileSync(path.join(services, 'unrelated.ts'), 'export const request = () => fetch(url);');
       const modules = hostedRequestModules(services, routes, integrations);
       expect(modules).toContain(path.join(services, 'hostedMcpFuture.ts'));
