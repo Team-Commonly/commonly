@@ -117,6 +117,15 @@ describe('BYO default agent name follows where it runs', () => {
     expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
     expect(await screen.findByTestId('byo-reconnect-result')).toHaveTextContent('Waiting for your computer');
   });
+
+  test('a revoked computer key explains the registration step', async () => {
+    mockGet([{ name: 'local', installedBy: 'u1', runtime: { runtimeType: 'wrapper' },
+      connection: { state: 'revoked', lastSeenAt: null } }]);
+    axios.post.mockRejectedValue({ response: { data: { code: 'machine_key_revoked' } } });
+    renderAt('/v2/agents/byo?pod=p1&name=local&mode=machine&reconnect=1');
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 }));
+    expect(await screen.findByText(/Register the computer again/)).toBeInTheDocument();
+  });
   test('trims a long username before asking for a name suggestion', async () => {
     authValue.currentUser.username = 'a'.repeat(60);
     mockGet();

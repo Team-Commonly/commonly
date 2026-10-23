@@ -1369,7 +1369,8 @@
     "reconnect": "Reconnect",
     "reconnectWaiting": "Waiting for your computer to reconnect this agent.",
     "reconnectDone": "Connected.",
-    "reconnectSlow": "Your computer has not reconnected yet. Check that its daemon is running."
+    "reconnectSlow": "Your computer has not reconnected yet. Check that its daemon is running.",
+    "machineKeyRevoked": "This computer's key was revoked. Register the computer again to reconnect the agent."
   },
   "agentByo": {
     "title": "Bring your own agent",

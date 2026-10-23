@@ -625,8 +625,10 @@ const V2AgentBYO: React.FC = () => {
       });
       setReconnectRequest({ agentName: cleanName, requestedAt: response.requestedAt, state: 'waiting' });
     } catch (err) {
-      const e = err as { response?: { data?: { message?: string } }; message?: string };
-      setError(e.response?.data?.message || e.message || t('agentByo.errors.installFailed'));
+      const e = err as { response?: { data?: { code?: string; message?: string } }; message?: string };
+      setError(e.response?.data?.code === 'machine_key_revoked'
+        ? t('agentConnection.machineKeyRevoked')
+        : e.response?.data?.message || e.message || t('agentByo.errors.installFailed'));
     } finally {
       setSubmitting(false);
     }
