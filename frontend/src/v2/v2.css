@@ -2754,7 +2754,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-system-action-line__action {
-  grid-column: 3 / 5;
+  grid-column: 3;
   display: flex;
   gap: 5px;
   min-width: 0;

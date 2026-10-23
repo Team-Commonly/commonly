@@ -986,7 +986,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).toContain('margin-left: 36px');
     expect(rule).toContain('width: calc(100% - 36px)');
     expect(ruleBody(v2, '.v2-thread .v2-system-action-line .v2-avatar')).toContain('width: 16px');
-    expect(ruleBody(v2, '.v2-system-action-line__action')).toContain('grid-column: 3 / 5');
+    expect(ruleBody(v2, '.v2-system-action-line__action')).toContain('grid-column: 3;');
     expect(ruleBody(v2, '.v2-system-action-line time')).toContain('grid-column: 5');
     expect(ruleBody(v2, '.v2-system-action-line__name')).toContain('color: var(--v2-text-primary)');
     expect(ruleBody(v2, '.v2-system-action-line__verb')).toContain('color: var(--v2-text-tertiary)');
