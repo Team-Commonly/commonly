@@ -8,7 +8,7 @@ interface SkillLoad { at: string; mounted: string[]; conflicted: string[]; statu
 interface SkillsResponse { items: SkillItem[]; canEdit: boolean; skillLoad: SkillLoad | null }
 interface CatalogItem extends SkillItem { content?: string; license?: string | { name?: string } }
 
-interface Props { pods: Array<{ id: string; name: string }>; agentName: string; instanceId: string }
+interface Props { podId: string; agentName: string; instanceId: string }
 
 const requestError = (error: unknown, fallback: string): string => (
   (error as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback
@@ -23,10 +23,8 @@ const loadLabel = (skill: SkillItem, load: SkillLoad | null, t: (key: string) =>
   return t('agentSkills.notLoaded');
 };
 
-const V2AgentSkills: React.FC<Props> = ({ pods, agentName, instanceId }) => {
+const V2AgentSkills: React.FC<Props> = ({ podId, agentName, instanceId }) => {
   const { t } = useTranslation();
-  const [selectedPodId, setSelectedPodId] = useState(pods[0]?.id || '');
-  const podId = pods.some((pod) => pod.id === selectedPodId) ? selectedPodId : pods[0]?.id || '';
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [skillLoad, setSkillLoad] = useState<SkillLoad | null>(null);
   const [canEdit, setCanEdit] = useState(false);
@@ -129,11 +127,6 @@ const V2AgentSkills: React.FC<Props> = ({ pods, agentName, instanceId }) => {
         <h2 id="v2-agent-skills-heading">{t('agentSkills.title')}</h2>
         {canEdit && <button type="button" onClick={() => { setCatalogOpen(!catalogOpen); setError(null); }}>{t(catalogOpen ? 'agentSkills.closeCatalog' : 'agentSkills.addSkill')}</button>}
       </div>
-      {pods.length > 1 && <label className="v2-agent-skills__pod-label" htmlFor="v2-agent-skills-pod">{t('agentSkills.pod')}
-        <select id="v2-agent-skills-pod" value={podId} onChange={(event) => { setSelectedPodId(event.target.value); setCatalogOpen(false); }}>
-          {pods.map((pod) => <option value={pod.id} key={pod.id}>{pod.name}</option>)}
-        </select>
-      </label>}
       {error && <p role="alert" className="v2-agent-skills__error">{error}</p>}
       {loading ? <p className="v2-agent-skills__empty">{t('agentSkills.loading')}</p> : (
         skills.length ? <div className="v2-agent-skills__list">

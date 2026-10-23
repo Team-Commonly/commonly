@@ -317,6 +317,9 @@ test('selects an installation the owner can manage without exposing a foreign po
       writablePodId: 'owned', installations: [{ podId: 'owned', podName: 'My pod', status: 'active' }],
     } });
     if (url.includes('/pods/foreign/')) return Promise.reject({ response: { status: 403 } });
+    if (url.startsWith('/api/skills/pods/owned/')) return Promise.resolve({ data: {
+      items: [], canEdit: true, skillLoad: null,
+    } });
     if (url.includes('/pods/owned/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
     } } });
@@ -325,6 +328,16 @@ test('selects an installation the owner can manage without exposing a foreign po
   axios.post.mockResolvedValue({ data: { token: 'cm_agent_once' } });
   renderPage();
   await screen.findByRole('button', { name: 'Regenerate key' });
+  await waitFor(() => expect(axios.get).toHaveBeenCalledWith(
+    '/api/skills/pods/owned/imported',
+    { params: { scope: 'agent', agentName: 'maya-claude', instanceId: 'default' } },
+  ));
+  expect(axios.get).not.toHaveBeenCalledWith(
+    '/api/skills/pods/foreign/imported', expect.anything(),
+  );
+  expect(screen.getByRole('heading', { name: 'Key' }).compareDocumentPosition(
+    screen.getByRole('heading', { name: 'Skills' }),
+  ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
   fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith(

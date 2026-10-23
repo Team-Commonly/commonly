@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 test('shows the last reported spawn state and installer controls', async () => {
-  render(<V2AgentSkills pods={[{ id: 'pod', name: 'Sharpen' }]} agentName="scout" instanceId="default" />);
+  render(<V2AgentSkills podId="pod" agentName="scout" instanceId="default" />);
   expect(await screen.findByText('Loaded at last spawn')).toBeInTheDocument();
   expect(screen.getByText('Could not load at last spawn')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Add skill' })).toBeInTheDocument();
@@ -43,7 +43,7 @@ test('shows the last reported spawn state and installer controls', async () => {
 
 test('shows installed skills read-only to other pod members', async () => {
   axios.get.mockResolvedValue({ data: { ...installed, canEdit: false, skillLoad: null } });
-  render(<V2AgentSkills pods={[{ id: 'pod', name: 'Sharpen' }]} agentName="scout" instanceId="default" />);
+  render(<V2AgentSkills podId="pod" agentName="scout" instanceId="default" />);
   expect(await screen.findAllByText('No spawn report yet')).toHaveLength(2);
   expect(screen.queryByRole('button')).not.toBeInTheDocument();
 });
@@ -53,7 +53,7 @@ test('shows unavailable rather than not loaded when the last skill read failed',
     ...installed,
     skillLoad: { at: '2026-10-23T16:00:00Z', mounted: [], conflicted: [], status: 'unavailable' },
   } });
-  render(<V2AgentSkills pods={[{ id: 'pod', name: 'Sharpen' }]} agentName="scout" instanceId="default" />);
+  render(<V2AgentSkills podId="pod" agentName="scout" instanceId="default" />);
   expect(await screen.findAllByText('Skill status unavailable at last spawn')).toHaveLength(2);
   expect(screen.queryByText('Not loaded at last spawn')).not.toBeInTheDocument();
 });
