@@ -4,6 +4,7 @@ const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const { isK8sMode } = require('../../services/agentProvisionerService');
 const AgentIdentityService = require('../../services/agentIdentityService').default;
+const { resolveAgentDisplayLabel } = require('../../services/agentIdentityService');
 const { PRESET_DEFINITIONS } = require('./presets');
 const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
 
@@ -283,11 +284,6 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
   return channels;
 };
 
-// Mirror of agentIdentityService.resolveAgentDisplayLabel — duplicated here
-// to avoid pulling that ESM/CJS-mixed module into a CJS helper. Stays in
-// sync via the same fallback chain: botMetadata.displayName → instanceId
-// (when not 'default') → username → fallback. Never falls back to
-// botMetadata.agentName (runtime-leaning).
 /**
  * The install intro, composed so its promise matches reality.
  *
@@ -376,17 +372,6 @@ const composeInstallIntro = ({
   return `${lead} Mention me with @${handle} when you need me.`;
 };
 
-const resolveDisplayLabelFromUser = (user: any, fallback: string): string => {
-  if (!user) return fallback;
-  const meta = user.botMetadata || {};
-  const display = typeof meta.displayName === 'string' ? meta.displayName.trim() : '';
-  if (display) return display;
-  const instanceId = typeof meta.instanceId === 'string' ? meta.instanceId.trim() : '';
-  if (instanceId && instanceId !== 'default') return instanceId;
-  if (typeof user.username === 'string' && user.username) return user.username;
-  return fallback;
-};
-
 // Internal ops/smoke/demo seats (Wren spec §1.1, BEND-3 follow-up #1377):
 // the roster hides these behind a disclosure. The classification lives HERE,
 // at the boundary, so every consumer reads one `internal: true` flag instead
@@ -428,18 +413,17 @@ const buildAgentInstallationPayload = (installation: any, {
     normalizedConfig?.runtime || installation.config?.runtime || null,
     installation.agentName,
   );
-  // The profile and installation are scoped to this pod; the User is the
-  // portable principal. Read the scoped labels first. Reversing that order
-  // makes a label written in one pod bleed into every other pod that renders
-  // this same principal.
+  // Chat attributes this seat through the User principal. Use that same
+  // resolver for the listing; scoped names are only a fallback for installs
+  // that have no User row yet.
   const profileDisplayName = typeof profile?.name === 'string' ? profile.name.trim() : '';
   const installationDisplayName = typeof installation.displayName === 'string'
     ? installation.displayName.trim()
     : '';
   const identityFallback = installation.agentName || '';
-  const displayName = profileDisplayName
-    || installationDisplayName
-    || (user ? resolveDisplayLabelFromUser(user, identityFallback) : identityFallback);
+  const displayName = user
+    ? resolveAgentDisplayLabel(user, identityFallback)
+    : profileDisplayName || installationDisplayName || identityFallback;
   return {
     name: installation.agentName,
     instanceId: installation.instanceId || 'default',

@@ -6,6 +6,7 @@
  */
 
 const { buildAgentInstallationPayload } = require('../../../routes/registry/helpers');
+const { resolveAgentDisplayLabel } = require('../../../services/agentIdentityService');
 
 const install = { agentName: 'wren', instanceId: 'default', status: 'active', scopes: [], createdAt: new Date() };
 
@@ -25,5 +26,27 @@ describe('agent listing description + principal id', () => {
 
   test('no user row means no principal id, not a crash', () => {
     expect(buildAgentInstallationPayload(install).userId).toBeNull();
+  });
+
+  test('listing and chat use the same User label even when scoped labels differ', () => {
+    const user = {
+      _id: 'u1',
+      username: 'commonly-summarizer',
+      botMetadata: { agentName: 'commonly-bot', instanceId: 'default', displayName: 'Commonly Summarizer' },
+    };
+    const listing = buildAgentInstallationPayload(
+      { ...install, displayName: 'Commonly Bot' },
+      { user, profile: { name: 'Commonly Bot' } },
+    );
+    expect(listing.displayName).toBe(resolveAgentDisplayLabel(user, user.username));
+    expect(listing.displayName).toBe('Commonly Summarizer');
+  });
+
+  test('collision suffix and runtime-label fallback match chat', () => {
+    for (const displayName of ['Pixel (Pixel Demo)', 'openclaw (pixel)']) {
+      const user = { username: 'openclaw-pixel', botMetadata: { agentName: 'openclaw', instanceId: 'pixel', displayName } };
+      expect(buildAgentInstallationPayload(install, { user, profile: { name: 'Pixel' } }).displayName)
+        .toBe(resolveAgentDisplayLabel(user, user.username));
+    }
   });
 });

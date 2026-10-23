@@ -34,8 +34,7 @@ jest.mock('../../../models/AgentEvent', () => ({
   aggregate: jest.fn().mockResolvedValue([]),
 }));
 
-// User.find provides the portable principal as a fallback only. Pod-scoped
-// AgentProfile / AgentInstallation labels must win when present.
+// User.find provides the portable principal that also labels chat authors.
 jest.mock('../../../models/User', () => ({
   find: jest.fn().mockReturnValue({
     select: jest.fn().mockReturnValue({
@@ -61,6 +60,7 @@ jest.mock('../../../services/dmService', () => ({
 // and the test sees a 500 instead of 200.
 jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: jest.fn((agentName, instanceId) => `${agentName}-${instanceId}`),
+  resolveAgentDisplayLabel: jest.fn((user, fallback) => user.botMetadata?.displayName || user.username || fallback),
   default: {
     getAgentTypeConfig: jest.fn().mockReturnValue(null),
   },
@@ -171,7 +171,7 @@ describe('registry list pod agents config payload', () => {
     expect(res.body.agents[0].runtime).not.toHaveProperty('webhookSecret');
   });
 
-  it('keeps a pod-scoped label when the portable principal has a different label', async () => {
+  it('uses the chat principal label when scoped labels differ', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
         _id: 'pod-1',
@@ -219,6 +219,6 @@ describe('registry list pod agents config payload', () => {
     const res = await request(app).get('/api/registry/pods/pod-1/agents');
 
     expect(res.status).toBe(200);
-    expect(res.body.agents[0].displayName).toBe('Strategist (Claude)');
+    expect(res.body.agents[0].displayName).toBe('Strategist (Fable)');
   });
 });
