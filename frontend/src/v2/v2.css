@@ -2728,14 +2728,14 @@ body.modern-ui.v2-canvas {
   width: calc(100% - 36px);
   margin-left: 36px;
   display: grid;
-  grid-template-columns: 16px auto minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, max-content) auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 4px 0;
   font: 400 13px/16px var(--v2-font);
 }
 
-.v2-system-action-line .v2-avatar {
+.v2-thread .v2-system-action-line .v2-avatar {
   width: 16px;
   height: 16px;
   border-width: 1px;
@@ -2754,6 +2754,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-system-action-line__action {
+  grid-column: 3 / 5;
   display: flex;
   gap: 5px;
   min-width: 0;
@@ -2774,6 +2775,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-system-action-line time {
+  grid-column: 5;
   color: var(--v2-text-placeholder);
   font: 400 11px/16px var(--v2-font-mono);
 }
