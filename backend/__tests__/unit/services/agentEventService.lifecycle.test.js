@@ -33,6 +33,12 @@ jest.mock('../../../models/AgentEvent', () => ({
   deleteMany: jest.fn(),
 }));
 
+jest.mock('../../../services/agentDigestFoldService', () => ({
+  foldExpiredDigests: jest.fn().mockResolvedValue(0),
+  readFoldedDigest: jest.fn().mockResolvedValue(null),
+  settleFoldedDigest: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../../../models/AgentMemory', () => ({
   findOne: jest.fn(),
   updateOne: jest.fn(),

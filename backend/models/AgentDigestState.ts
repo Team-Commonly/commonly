@@ -1,0 +1,29 @@
+import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+
+/** Unread ambient events folded out of the full AgentEvent retention window. */
+export interface IAgentDigestState extends Document {
+  agentName: string;
+  instanceId: string;
+  podId: Types.ObjectId;
+  unreadCount: number;
+  revision: number;
+  lastEventIds: string[];
+  foldedThroughId?: Types.ObjectId | null;
+  updatedAt: Date;
+}
+
+const schema = new Schema<IAgentDigestState>({
+  agentName: { type: String, required: true, lowercase: true },
+  instanceId: { type: String, required: true, default: 'default' },
+  podId: { type: Schema.Types.ObjectId, required: true, ref: 'Pod' },
+  unreadCount: { type: Number, required: true, default: 0 },
+  revision: { type: Number, required: true, default: 0 },
+  lastEventIds: { type: [String], default: [] },
+  foldedThroughId: { type: Schema.Types.ObjectId, default: null },
+}, { timestamps: true });
+
+schema.index({ agentName: 1, instanceId: 1, podId: 1 }, { unique: true });
+
+const AgentDigestState: Model<IAgentDigestState> = mongoose.model<IAgentDigestState>('AgentDigestState', schema);
+export default AgentDigestState;
+module.exports = exports["default"]; Object.assign(module.exports, exports);

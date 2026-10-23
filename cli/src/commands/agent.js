@@ -2026,20 +2026,26 @@ export const performRun = ({
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
       return `${prefix}\n${claimContext}${body}`;
     });
-    const digestLines = digestEntries.slice(-8).map((entry) => {
+    const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
+    const visibleRawLimit = rollup?.unreadCount > 0 ? 7 : 8;
+    const digestLines = digestEntries.slice(-visibleRawLimit).map((entry) => {
       const who = String(entry.event.payload?.username || 'member').replace(/\s+/g, ' ').slice(0, 40);
       const body = String(entry.event.payload?.content || '').replace(/\s+/g, ' ').slice(0, 160);
       const id = entry.event.payload?.messageId;
       return `- ${who}${id ? ` (message ${id})` : ''}: ${body}`;
     });
+    if (rollup?.unreadCount > 0) {
+      const ids = Array.isArray(rollup.lastEventIds) ? rollup.lastEventIds.slice(-8) : [];
+      digestLines.unshift(`- ${rollup.unreadCount} older updates (last event IDs: ${ids.join(', ')})`);
+    }
     const omitted = Math.max(0, inboxCount - entries.length);
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
         + 'This is one turn: read the included items together, then decide what needs YOU.]',
       ...bodies,
-      ...(digestEntries.length > 0 ? [
-        `[Since you last looked: ${digestEntries.length} ambient update${digestEntries.length === 1 ? '' : 's'}; context only, no reply needed.]
-${digestLines.join('\n')}${digestEntries.length > 8 ? `\n- ${digestEntries.length - 8} earlier updates omitted` : ''}`,
+      ...(digestEntries.length > 0 || rollup?.unreadCount > 0 ? [
+        `[Since you last looked: ${digestEntries.length + (rollup?.unreadCount || 0)} ambient update${digestEntries.length + (rollup?.unreadCount || 0) === 1 ? '' : 's'}; context only, no reply needed.]
+${digestLines.join('\n')}${digestEntries.length > visibleRawLimit ? `\n- ${digestEntries.length - visibleRawLimit} earlier updates omitted` : ''}`,
       ] : []),
       ...(omitted > 0
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]

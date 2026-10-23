@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
+import { foldExpiredDigests, readFoldedDigest, settleFoldedDigest } from './agentDigestFoldService';
 import { postToPublicAddress } from './outboundUrlGuard';
 import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
 
@@ -127,6 +128,7 @@ interface EventDoc {
   delivery?: DeliveryMeta;
   memoryRevisionAtDelivery?: number | null;
   deliveryNonce?: string | null;
+  digestRollupRevision?: number | null;
 }
 
 interface InstallationDoc {
@@ -165,6 +167,7 @@ interface GarbageCollectResult {
   deletedDelivered: number;
   deletedFailed: number;
   totalDeleted: number;
+  foldedDigest?: number;
   deliveredRetentionHours: number;
   failedRetentionHours: number;
   requeuedDelivered?: number;
@@ -860,6 +863,14 @@ class AgentEventService {
     // and 'acked' is the new terminal state. Both age out on the same retention
     // schedule — once an event is past the `delivered` threshold it's stale
     // whether the agent ever explicitly acked or not.
+    let foldedDigest = 0;
+    try {
+      foldedDigest = await foldExpiredDigests(deliveredThreshold);
+    } catch (err) {
+      // The fold is fail-closed: its `folding` rows remain retryable and the
+      // pending delete below excludes digest. Other event retention can run.
+      console.warn('[agent-event] digest fold failed:', (err as Error).message);
+    }
     const [pendingResult, deliveredResult, failedResult] = await Promise.all([
       // #993: this used to run on a 30-minute `stalePendingThreshold`, which put
       // it AHEAD of the retry lifecycle rather than after it. The requeue pass
@@ -899,7 +910,8 @@ class AgentEventService {
       deletedPending,
       deletedDelivered,
       deletedFailed,
-      totalDeleted: deletedPending + deletedDelivered + deletedFailed,
+      totalDeleted: deletedPending + deletedDelivered + deletedFailed + foldedDigest,
+      foldedDigest,
       deliveredRetentionHours: Math.max(deliveredRetentionHours, 1),
       failedRetentionHours: Math.max(failedRetentionHours, 1),
       requeuedDelivered,
@@ -1333,11 +1345,30 @@ class AgentEventService {
     return installationRuntimeType === 'native' || hostedRunsNative(installationDoc) ? installationDoc : null;
   }
 
-  /**
-   * Run a claimed in-process event and settle it on the outcome: success acks,
-   * failure records. Fire-and-forget, so neither enqueue nor the restart sweep
-   * (TASK-264) ever blocks on a turn.
-   */
+  /** Persist the folded digest snapshot carried by this waking delivery. */
+  static async attachFoldedDigest(event: EventDoc): Promise<{
+    unreadCount: number; lastEventIds: string[];
+  } | null> {
+    const scope = {
+      agentName: String(event.agentName || '').toLowerCase(),
+      instanceId: String(event.instanceId || 'default'),
+      podId: event.podId,
+    };
+    if (!scope.agentName || !scope.podId || !event._id) return null;
+    const state = await readFoldedDigest(scope);
+    if (!state) return null;
+    // A retry may show the same rollup. Only the winning ack with this exact
+    // state snapshot clears it; a newer fold must remain unread.
+    const updated = await AgentEvent.updateOne(
+      { _id: event._id, status: 'delivered', deliveryMode: { $ne: 'digest' },
+        ...(event.deliveryNonce ? { deliveryNonce: event.deliveryNonce } : {}) },
+      { $set: { digestRollupRevision: state.revision } },
+    );
+    if (!updated.modifiedCount) return null;
+    return { unreadCount: state.unreadCount, lastEventIds: state.lastEventIds };
+  }
+
+  /** Run a claimed native event and settle it without blocking enqueue. */
   static dispatchInProcess(
     event: EventDoc,
     nativeInstallation: InstallationDoc,
@@ -1364,6 +1395,10 @@ class AgentEventService {
       // here rather than inside runAgent keeps the terminal transition next
       // to the non-terminal state that created it.
       const runWithDigest = async () => {
+        const folded = await this.attachFoldedDigest(event).catch((digestErr: Error) => {
+          console.warn('[native-runtime] folded digest lookup failed:', digestErr.message);
+          return null;
+        });
         let digest: EventDoc[] = [];
         try {
           digest = await AgentEvent.find({
@@ -1380,9 +1415,13 @@ class AgentEventService {
           return `- ${who}${messageId ? ` (message ${messageId})` : ''}: ${content}`;
         });
         const baseContent = String(event.payload?.content || event.payload?.prompt || event.payload?.text || '');
-        const payload = lines.length ? {
+        const foldedLine = folded
+          ? `- ${folded.unreadCount} older updates (last event IDs: ${folded.lastEventIds.join(', ')})`
+          : null;
+        const allLines = foldedLine ? [foldedLine, ...lines] : lines;
+        const payload = allLines.length ? {
           ...event.payload,
-          content: `${baseContent}\n\n[Since you last looked: ${lines.length} ambient updates; context only.]\n${lines.join('\n')}`,
+          content: `${baseContent}\n\n[Since you last looked: ambient updates; context only.]\n${allLines.join('\n')}`,
         } : event.payload;
         const result = await runAgent(nativeInstallation, { type, eventId: eventIdStr, payload });
         // Leave digest unread when the native turn fails. On a successful turn,
@@ -1404,7 +1443,15 @@ class AgentEventService {
       // actually succeeded as 'failed'. The rejection handler here is scoped
       // to runAgent alone. Both terminal calls swallow their own errors so
       // this stays fire-and-forget for the caller.
-        () => this.acknowledge(
+        (runResult: { status?: string; error?: string }) => (runResult?.status === 'failed'
+          ? this.recordFailure(
+            eventIdStr,
+            agentName,
+            instanceId,
+            `native runtime failed: ${runResult.error || 'turn failed'}`,
+            nativeDeliveryId,
+          ).catch(() => undefined)
+          : this.acknowledge(
           eventIdStr,
           agentName,
           instanceId,
@@ -1413,7 +1460,7 @@ class AgentEventService {
           'native',
         ).catch((ackErr: Error) => {
           console.warn('[native-runtime] ack after successful run failed:', ackErr?.message || ackErr);
-        }),
+        })),
         (err: Error) => {
           console.error('[native-runtime] runAgent failed:', err?.message || err);
           // Terminal on failure too — a native event that errored must not
@@ -1734,6 +1781,13 @@ class AgentEventService {
       if (updated) claimed.push(updated);
     }
 
+    const firstWake = claimed.find((event) => event.deliveryMode !== 'digest');
+    const foldedRollup = firstWake
+      ? await this.attachFoldedDigest(firstWake).catch((err: Error) => {
+        console.warn('[agent-event] folded digest attachment failed:', err.message);
+        return null;
+      })
+      : null;
     const events = claimed.map((event) => {
       const messageId = event?.payload?.messageId;
       const basePayload = event?.payload || {};
@@ -1743,6 +1797,7 @@ class AgentEventService {
       const enrichedPayload: Record<string, unknown> = {
         ...basePayload,
         ...digestBundle,
+        ...(foldedRollup && event._id === firstWake?._id ? { digestRollup: foldedRollup } : {}),
         // ADR-026 D6: the driver echoes this back on ack. Additive — a driver
         // that ignores it still acks successfully during the migration window
         // described on acknowledge().
@@ -1831,6 +1886,15 @@ class AgentEventService {
       },
       { new: true },
     ) as EventDoc | null;
+
+    if (result?.digestRollupRevision && normalizedDelivery?.outcome !== 'error') {
+      await settleFoldedDigest(
+        { agentName: safeAgentName, instanceId: safeInstanceId, podId: result.podId },
+        result.digestRollupRevision,
+      ).catch((err: Error) => {
+        console.warn('[agent-event] folded digest settle failed:', err.message);
+      });
+    }
 
     // ADR-012 §3: bump lastSeenRevision exactly once per event via $max.
     // First-ack only: the status-gate above ensures result is non-null only

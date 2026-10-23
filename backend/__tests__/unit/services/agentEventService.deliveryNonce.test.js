@@ -483,6 +483,13 @@ describe('the sweep re-runs a stuck in-process event', () => {
     const event = await AgentEventService.enqueue({
       agentName: AGENT, instanceId: INSTANCE, podId: POD_ID, type: 'chat.mention', payload: { text: 'hi' },
     });
+    // Native dispatch now gathers pending ambient digest before calling the
+    // runner. Wait for that asynchronous read so it cannot leak into the next
+    // test or make an immediate runAgent assertion race the database.
+    for (let i = 0; i < 50 && runAgent.mock.calls.length === 0; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     const born = await AgentEvent.findById(event._id).lean();
     return { event, born, settles };
   };
@@ -522,6 +529,11 @@ describe('the sweep re-runs a stuck in-process event', () => {
       AgentEventService.redispatchStuckInProcess(threshold, 3),
       AgentEventService.redispatchStuckInProcess(threshold, 3),
     ]);
+
+    for (let i = 0; i < 50 && runAgent.mock.calls.length < 2; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
 
     expect(results.reduce((sum, r) => sum + r.redispatched, 0)).toBe(1);
     expect(runAgent).toHaveBeenCalledTimes(2); // the original turn plus one re-run
@@ -719,6 +731,11 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
       AgentEventService.rescueStrandedPendingInProcess(new Date(), 3),
       AgentEventService.rescueStrandedPendingInProcess(new Date(), 3),
     ]);
+
+    for (let i = 0; i < 50 && runAgent.mock.calls.length === 0; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
 
     expect(counts[0].rescued + counts[1].rescued).toBe(1);
     expect(runAgent).toHaveBeenCalledTimes(1);

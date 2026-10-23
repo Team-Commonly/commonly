@@ -304,7 +304,9 @@ describe('performRun', () => {
 
   test('a wake carries compact digest context without claiming ambient messages', async () => {
     const events = [
-      makeEvent({ _id: 'evt-wake', type: 'chat.mention', payload: { content: 'please review' } }),
+      makeEvent({ _id: 'evt-wake', type: 'chat.mention', payload: {
+        content: 'please review', digestRollup: { unreadCount: 3, lastEventIds: ['old-1', 'old-2'] },
+      } }),
       makeEvent({ _id: 'evt-digest', type: 'message.posted', deliveryMode: 'digest',
         payload: { content: 'daily update', username: 'alice', messageId: '42' } }),
     ];
@@ -324,7 +326,8 @@ describe('performRun', () => {
     await drainMicrotasks();
     stop();
     expect(spawn).toHaveBeenCalledTimes(1);
-    expect(spawn.mock.calls[0][0]).toContain('[Since you last looked: 1 ambient update');
+    expect(spawn.mock.calls[0][0]).toContain('[Since you last looked: 4 ambient updates');
+    expect(spawn.mock.calls[0][0]).toContain('3 older updates (last event IDs: old-1, old-2)');
     expect(spawn.mock.calls[0][0]).toContain('- alice (message 42): daily update');
     expect(spawn.mock.calls[0][0]).not.toContain('Event 2/2: message.posted');
     expect(post.mock.calls.filter(([route]) => route.endsWith('/claim'))).toHaveLength(0);

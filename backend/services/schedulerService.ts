@@ -20,6 +20,8 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require
+const AgentDigestState = require('../models/AgentDigestState');
+// eslint-disable-next-line global-require
 const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
 // eslint-disable-next-line global-require
 const AgentEnsembleService = require('./agentEnsembleService');
@@ -1127,12 +1129,16 @@ class SchedulerService {
   /** One slow wake for a pod with unread digest, never for an empty inbox. */
   static async dispatchUnreadDigestHeartbeats(now: Date = new Date()): Promise<number> {
     const threshold = new Date(now.getTime() - 60 * 60 * 1000);
-    const groups = await AgentEvent.aggregate([
+    const rawGroups = await AgentEvent.aggregate([
       { $match: { status: 'pending', deliveryMode: 'digest', createdAt: { $lte: threshold } } },
       { $group: {
         _id: { agentName: '$agentName', instanceId: '$instanceId', podId: '$podId' },
       } },
     ]) as Array<{ _id: { agentName: string; instanceId: string; podId: unknown } }>;
+    const foldedGroups = await AgentDigestState.find({ unreadCount: { $gt: 0 }, updatedAt: { $lte: threshold } })
+      .select('agentName instanceId podId').lean() as Array<{ agentName: string; instanceId: string; podId: unknown }>;
+    const groups = [...new Map([...rawGroups.map((row) => row._id), ...foldedGroups]
+      .map((scope) => [`${scope.agentName}:${scope.instanceId}:${scope.podId}`, { _id: scope }])).values()];
     let enqueued = 0;
     for (const row of groups) {
       const scope = {

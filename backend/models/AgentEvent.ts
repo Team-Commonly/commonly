@@ -6,7 +6,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 //   delivered → failed (on delivery-side terminal error; rare)
 // Existing rows without an `'acked'` value continue to read as `'delivered'`
 // indefinitely; the ack-gate below short-circuits if status is already `'acked'`.
-export type AgentEventStatus = 'pending' | 'delivered' | 'acked' | 'failed';
+export type AgentEventStatus = 'pending' | 'folding' | 'delivered' | 'acked' | 'failed';
 export type AgentEventDeliveryMode = 'wake' | 'digest';
 export type DeliveryOutcome = 'acknowledged' | 'posted' | 'no_action' | 'skipped' | 'error';
 
@@ -110,6 +110,9 @@ export interface IAgentEvent extends Document {
   // superseded child's late ack fail instead of terminating the new child's
   // delivery. `null` for events claimed before D6 shipped.
   deliveryNonce?: string | null;
+  // Snapshot of the folded digest state included in this wake. Ack clears it
+  // only if no newer fold changed the state while the turn was running.
+  digestRollupRevision?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -121,13 +124,14 @@ const AgentEventSchema = new Schema<IAgentEvent>(
     podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true, index: true },
     type: { type: String, required: true },
     payload: Schema.Types.Mixed,
-    status: { type: String, enum: ['pending', 'delivered', 'acked', 'failed'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'folding', 'delivered', 'acked', 'failed'], default: 'pending' },
     deliveryMode: { type: String, enum: ['wake', 'digest'], default: 'wake' },
     attempts: { type: Number, default: 0 },
     deliveredAt: Date,
     error: String,
     memoryRevisionAtDelivery: { type: Number, default: null },
     deliveryNonce: { type: String, default: null },
+    digestRollupRevision: { type: Number, default: null },
     delivery: {
       outcome: {
         type: String,

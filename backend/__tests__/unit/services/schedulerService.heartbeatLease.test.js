@@ -12,6 +12,7 @@ const {
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const SchedulerHeartbeatLease = require('../../../models/SchedulerHeartbeatLease');
 const AgentEvent = require('../../../models/AgentEvent');
+const AgentDigestState = require('../../../models/AgentDigestState');
 const AgentEventService = require('../../../services/agentEventService');
 const mongoose = require('mongoose');
 const schedulerServiceInstance = require('../../../services/schedulerService');
@@ -124,5 +125,18 @@ describe('SchedulerService automatic heartbeat dispatch lease', () => {
       deliveryMode: 'wake', attempts: 1, deliveredAt: new Date(NOW.getTime() - 30 * 60000), createdAt: NOW });
     expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('also wakes for unread digest folded past full-event retention', async () => {
+    const podId = new mongoose.Types.ObjectId();
+    const scope = { agentName: 'flint', instanceId: 'default', podId };
+    const enqueue = jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+    await AgentInstallation.collection.insertOne({ ...scope, status: 'active',
+      version: '1.0.0', installedBy: new mongoose.Types.ObjectId() });
+    await AgentDigestState.collection.insertOne({ ...scope, unreadCount: 2, revision: 2,
+      lastEventIds: ['old-1', 'old-2'], updatedAt: new Date(NOW.getTime() - 61 * 60000) });
+
+    expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(1);
+    expect(enqueue).toHaveBeenCalledTimes(1);
   });
 });
