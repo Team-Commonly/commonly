@@ -3421,7 +3421,6 @@ compliant arm and the untouched arm are byte-identical.
 - No lint rule can see this. The defect is a relation between an event's
   enqueue-time snapshot in one collection and a `$set` on another, and each half
   is locally correct.
-## 52. A producer and a consumer, each green, disagreeing about one key's depth (2026-08-30, sprint-review, gating #1347 + #1349)
 ## 53. A producer and a consumer, each green, disagreeing about one key's depth (2026-08-30, sprint-review, gating #1347 + #1349)
 
 ADR-026 D6 shipped as two PRs. #1347 (backend) minted a delivery nonce and put
