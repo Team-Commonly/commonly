@@ -49,12 +49,12 @@ run('ToolCall provider ref audit on real PostgreSQL', () => {
     const { rows } = await observer.query(query, [GRANT_ID]);
     expect(rows).toEqual([{
       provider_repo: 'Team-Commonly/commonly',
-      provider_ref: 'refs/heads/seat/seat-a/work', 
+      provider_ref: 'refs/heads/seat/seat-a/work',
     }]);
     const [line] = await ToolCall.listForGrant(GRANT_ID);
     expect(line).toMatchObject({
       providerRepo: 'Team-Commonly/commonly',
-      providerRef: 'refs/heads/seat/seat-a/work', 
+      providerRef: 'refs/heads/seat/seat-a/work',
     });
   });
 
@@ -95,7 +95,7 @@ run('ToolCall provider ref audit on real PostgreSQL', () => {
       );
       expect(rows[0]).toMatchObject({
         provider_repo: 'Team-Commonly/commonly',
-        provider_ref: 'refs/heads/seat/seat-a/work', 
+        provider_ref: 'refs/heads/seat/seat-a/work',
       });
     } finally {
       await client.query('RESET search_path');
