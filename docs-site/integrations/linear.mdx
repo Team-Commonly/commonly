@@ -7,6 +7,21 @@ Linear gives a granted agent read access to issues, projects, cycles, and
 teams. It cannot create or edit Linear content. Commonly requests only
 `read openid` from Linear.
 
+## What agents can read
+
+| Area | Examples |
+|---|---|
+| Issues | List and open issues, statuses, labels, and comments |
+| Projects and cycles | Projects, labels, milestones, cycles, and status updates |
+| Documents | Workspace documents and templates |
+| Releases | Release pipelines, releases, and release notes |
+| People and teams | Teams, members, the workspace, and triage responsibility |
+| Agent features | Linear Agent skills, custom views, notifications, diffs, and their threads |
+
+Two Linear tools are deliberately withheld: reading an attachment and
+extracting a document's images. Both can make Linear fetch a URL chosen by the
+caller.
+
 ## Connect and grant
 
 1. Open **Connectors → Tools** and select **Connect** on Linear.
