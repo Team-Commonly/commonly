@@ -6,6 +6,7 @@
 // fragment form also keeps the code out of request logs on the way in.
 
 const STORAGE_KEY = 'commonly.pendingInvite';
+const OAUTH_MARKER_KEY = 'commonly.pendingInviteOAuth';
 
 export const readInviteFromUrl = (search: string, hash: string): string => {
   const fromHash = new URLSearchParams(hash.replace(/^#/, '')).get('invite');
@@ -34,6 +35,21 @@ export const recallInvite = (): string => {
 
 export const forgetInvite = (): void => {
   try { window.sessionStorage.removeItem(STORAGE_KEY); } catch { /* storage unavailable */ }
+};
+
+// This marker carries no invitation data. It only tells the OAuth completion
+// page that this browser started an invite-bearing signup, so an ordinary
+// OAuth login cannot consume an invite left from an earlier visit.
+export const rememberInviteOAuthStart = (): void => {
+  try { window.sessionStorage.setItem(OAUTH_MARKER_KEY, '1'); } catch { /* storage unavailable */ }
+};
+
+export const hasInviteOAuthStart = (): boolean => {
+  try { return window.sessionStorage.getItem(OAUTH_MARKER_KEY) === '1'; } catch { return false; }
+};
+
+export const forgetInviteOAuthStart = (): void => {
+  try { window.sessionStorage.removeItem(OAUTH_MARKER_KEY); } catch { /* storage unavailable */ }
 };
 
 export const registerPathWithInvite = (code: string): string => `/v2/register#invite=${encodeURIComponent(code)}`;

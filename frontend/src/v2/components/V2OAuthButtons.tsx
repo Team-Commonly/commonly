@@ -3,6 +3,7 @@ import axios from '../../utils/axiosConfig';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useTranslation } from 'react-i18next';
 import { readFirstTouchRef } from '../utils/firstTouch';
+import { rememberInviteOAuthStart } from '../utils/pendingInvite';
 
 // Social sign-in buttons shared by V2Login and V2Register. Renders nothing
 // until /api/auth/oauth/providers confirms a provider is configured, so
@@ -98,25 +99,10 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
     const qs = startParams().toString();
     return `${startPath(id)}${qs ? `?${qs}` : ''}`;
   };
-  // With an invite code, start the same flow as a form POST so the code rides
-  // in the request body and never appears in a URL (history, request logs).
-  const startWithInvite = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
-    if (!invite) return;
-    e.preventDefault();
-    const form = document.createElement('form');
-    form.method = 'post';
-    form.action = startPath(id);
+  const inviteParams = () => {
     const params = startParams();
-    params.set('invite', invite);
-    params.forEach((value, name) => {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = name;
-      input.value = value;
-      form.appendChild(input);
-    });
-    document.body.appendChild(form);
-    form.submit();
+    params.set('invite', invite || '');
+    return params;
   };
 
   return (
@@ -124,15 +110,32 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
       <div className="v2-login__or"><span>{t('auth.oauth.or')}</span></div>
       <div className="v2-login__oauth">
         {providers.map((p) => (
-          <a
-            key={p.id}
-            className="v2-login__oauth-btn"
-            href={startUrl(p.id)}
-            onClick={(e) => startWithInvite(e, p.id)}
-          >
-            {PROVIDER_ICONS[p.id]}
-            {t('auth.oauth.continueWith', { provider: p.label })}
-          </a>
+          invite ? (
+            <form
+              key={p.id}
+              method="post"
+              action={startPath(p.id)}
+              className="v2-login__oauth-form"
+              onSubmit={rememberInviteOAuthStart}
+            >
+              {Array.from(inviteParams()).map(([name, value]) => (
+                <input key={name} type="hidden" name={name} value={value} />
+              ))}
+              <button type="submit" className="v2-login__oauth-btn">
+                {PROVIDER_ICONS[p.id]}
+                {t('auth.oauth.continueWith', { provider: p.label })}
+              </button>
+            </form>
+          ) : (
+            <a
+              key={p.id}
+              className="v2-login__oauth-btn"
+              href={startUrl(p.id)}
+            >
+              {PROVIDER_ICONS[p.id]}
+              {t('auth.oauth.continueWith', { provider: p.label })}
+            </a>
+          )
         ))}
       </div>
     </>

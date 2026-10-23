@@ -4,6 +4,9 @@ import axios from '../../utils/axiosConfig';
 import { useAuth } from '../../context/AuthContext';
 import V2AuthBrand from './V2AuthBrand';
 import { safeNextPath } from '../utils/safeNextPath';
+import {
+  forgetInvite, forgetInviteOAuthStart, hasInviteOAuthStart,
+} from '../utils/pendingInvite';
 import { useTranslation } from 'react-i18next';
 
 // Landing pad for the OAuth redirect chain. The backend callback hands us a
@@ -29,8 +32,12 @@ const V2OAuthComplete: React.FC = () => {
 
     const code = searchParams.get('code') || '';
     const next = safeNextPath(searchParams.get('next')) || '/v2';
+    // The backend marks only a newly-created invited account. The session
+    // marker prevents a stale callback from consuming an invite in another tab.
+    const inviteSignup = searchParams.get('inviteSignup') === '1' && hasInviteOAuthStart();
 
     if (!code) {
+      forgetInviteOAuthStart();
       navigate('/v2/login?oauthError=exchange_failed', { replace: true });
       return;
     }
@@ -39,6 +46,8 @@ const V2OAuthComplete: React.FC = () => {
       .then((res) => {
         const token = (res.data as { token?: string })?.token;
         if (!token) throw new Error('no token');
+        if (inviteSignup) forgetInvite();
+        forgetInviteOAuthStart();
         signInWithToken(token);
         // In-app inside /v2, which stays mounted. Elsewhere (V1 routes, `/`)
         // keep the full load: V2App's unmount would strip the v2-canvas body
@@ -49,6 +58,9 @@ const V2OAuthComplete: React.FC = () => {
         else window.location.replace(next);
       })
       .catch(() => {
+        // Keep the invite for a retry, but do not let a later ordinary login
+        // mistake it for a successful invite-bearing signup.
+        forgetInviteOAuthStart();
         navigate('/v2/login?oauthError=exchange_failed', { replace: true });
       });
   }, [searchParams, navigate, signInWithToken]);

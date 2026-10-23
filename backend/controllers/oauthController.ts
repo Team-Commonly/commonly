@@ -284,6 +284,7 @@ exports.oauthCallback = async (req: any, res: any) => {
       'authProviders.provider': provider,
       'authProviders.providerId': profile.providerId,
     });
+    let createdNewUser = false;
     // The provider arm matches a linked identity, and a converted agent row keeps
     // whatever the person had linked — so this arm can land on a bot row whose
     // email no longer matches anything. The email arm below already refuses bots;
@@ -340,6 +341,7 @@ exports.oauthCallback = async (req: any, res: any) => {
         }],
       });
       await user.save();
+      createdNewUser = true;
       await createDefaultWorkspacePod(user._id);
       joinCommunityPodBestEffort(user._id);
     }
@@ -351,6 +353,10 @@ exports.oauthCallback = async (req: any, res: any) => {
     await stateRow.save();
 
     const dest = new URLSearchParams({ code: exchangeCode, next: stateRow.next || '/v2' });
+    // This marker contains no invitation data. It lets the frontend clear its
+    // session-only continuation secret only for a newly-created invited user;
+    // an existing account logging in from a register page must retain it.
+    if (createdNewUser && stateRow.invitationCode) dest.set('inviteSignup', '1');
     return res.redirect(`${frontendUrl()}/v2/oauth/complete?${dest.toString()}`);
   } catch (err: any) {
     // provider is user-controlled (req.params) — keep it out of the format

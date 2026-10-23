@@ -11,6 +11,7 @@ import { safeNextPath } from '../utils/safeNextPath';
 import { readFirstTouchRef } from '../utils/firstTouch';
 import {
   readInviteFromUrl, searchWithoutInvite, rememberInvite, recallInvite, forgetInvite,
+  forgetInviteOAuthStart,
 } from '../utils/pendingInvite';
 
 // v2-native sign-up. Pairs with V2Login (reuses the .v2-login styles) so the
@@ -95,6 +96,7 @@ const V2Register: React.FC = () => {
       const data = res.data as { message?: string };
       const message = data?.message || t('auth.register.success.ready');
       forgetInvite();
+      forgetInviteOAuthStart();
 
       // Registration succeeds before a session exists. Sign in immediately
       // with the credentials already supplied so a new user reaches the

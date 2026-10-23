@@ -233,6 +233,7 @@ describe('OAuth Controller', () => {
       expect(redirectUrl.origin).toBe('https://app.test.local');
       expect(redirectUrl.pathname).toBe('/v2/oauth/complete');
       expect(redirectUrl.searchParams.get('code')).toBeTruthy();
+      expect(redirectUrl.searchParams.get('inviteSignup')).toBeNull();
 
       const state = await OAuthLoginState.findOne({ state: 'state-1' });
       expect(String(state.userId)).toBe(String(user._id));
@@ -257,11 +258,14 @@ describe('OAuth Controller', () => {
       });
       await seedState({ signupRef: 'x' });
       mockGithubProfile();
+      const res = mockRes();
 
-      await oauthController.oauthCallback(callbackReq(), mockRes());
+      await oauthController.oauthCallback(callbackReq(), res);
 
       const user = await User.findOne({ email: 'octo@example.com' });
       expect(user.onboarding?.signupRef).toBeUndefined();
+      const redirectUrl = new URL(res.redirect.mock.calls[0][0]);
+      expect(redirectUrl.searchParams.get('inviteSignup')).toBeNull();
     });
 
     it('links to an existing account with the same verified email', async () => {
@@ -369,6 +373,8 @@ describe('OAuth Controller', () => {
       expect(await User.countDocuments({ email: 'octo@example.com' })).toBe(1);
       const invite = await InvitationCode.findOne({ code: 'WELCOME1' });
       expect(invite.useCount).toBe(1);
+      const redirectUrl = new URL(res.redirect.mock.calls[0][0]);
+      expect(redirectUrl.searchParams.get('inviteSignup')).toBe('1');
     });
 
     it('grants cloudAgents when an invite code rides through /start under open registration', async () => {

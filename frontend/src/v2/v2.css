@@ -5023,9 +5023,13 @@ body.modern-ui.v2-canvas {
   margin-top: 12px;
 }
 
-/* Anchor styled as a button — prefixed with .v2-root a to beat the global
-   `.v2-root a { color: inherit }` rule, same trap as .v2-login__link. */
-.v2-root a.v2-login__oauth-btn {
+/* OAuth links and invite forms share one button treatment. Prefix with
+   `.v2-root` to beat the global button/link rules. */
+.v2-login__oauth-form {
+  margin: 0;
+}
+
+.v2-root :where(a, button).v2-login__oauth-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5038,10 +5042,11 @@ body.modern-ui.v2-canvas {
   font-weight: 600;
   font-size: 14px;
   text-decoration: none;
+  cursor: pointer;
   transition: background 80ms ease, border-color 80ms ease;
 }
 
-.v2-root a.v2-login__oauth-btn:hover {
+.v2-root :where(a, button).v2-login__oauth-btn:hover {
   background: var(--v2-bg-subtle);
   border-color: var(--v2-accent);
 }
