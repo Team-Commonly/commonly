@@ -9,7 +9,7 @@ const request = require('supertest');
 const express = require('express');
 
 jest.mock('../../../middleware/auth', () => {
-  const mw = (req, res, next) => { req.user = { id: global.__CALLER_ID }; next(); };
+  const mw = (req, res, next) => { req.user = { id: global.__CALLER_ID, role: global.__CALLER_ROLE }; next(); };
   mw.touchLastActive = jest.fn();
   return mw;
 });
@@ -45,6 +45,7 @@ beforeEach(async () => {
   ]);
   owner = await User.create({ username: `o${Date.now() % 1e6}`, email: `o${Date.now()}@x.com`, password: 'x'.repeat(12) });
   global.__CALLER_ID = String(owner._id);
+  global.__CALLER_ROLE = undefined;
   bot = await User.create({
     username: `b${Date.now() % 1e6}`, email: `b${Date.now()}@agents.commonly.local`, password: 'x'.repeat(12),
     isBot: true, botMetadata: { agentName: 'wren-test', instanceId: 'default' },
@@ -248,6 +249,14 @@ describe('owner-requested reconnect', () => {
     const refused = await requestReconnect();
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe('machine_key_revoked');
+  });
+
+  it('lets an instance admin request a bound computer reconnect', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    global.__CALLER_ID = String(new mongoose.Types.ObjectId());
+    global.__CALLER_ROLE = 'admin';
+    expect((await requestReconnect()).status).toBe(200);
+    expect((await assigned(DAEMON_A)).body.agents[0].reconnectRequestedAt).toBeTruthy();
   });
 });
 

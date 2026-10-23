@@ -189,23 +189,29 @@ const V2AgentProfile: React.FC = () => {
   // The public profile is deliberately tokenless. Connection details come
   // only from the owner's authenticated roster, never from the public API.
   useEffect(() => {
-    const podId = memIndex?.pods?.[0]?.id;
     const token = localStorage.getItem('token');
-    if (!podId || !token || !agentName || !['owner', 'admin'].includes(memIndex?.viewerRole || '')) {
+    if (!token || !agentName || !['owner', 'admin'].includes(memIndex?.viewerRole || '')) {
       setOwnedConnection(null);
       return undefined;
     }
     let cancelled = false;
-    getClient().get<{ agents?: Array<{
-      name: string; instanceId: string; runtime?: { runtimeType?: string }; connection?: AgentConnection;
-    }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }).then((response) => {
+    const headers = { Authorization: `Bearer ${token}` };
+    getClient().get<{ installations?: Array<{ podId: string }> }>(
+      `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings?instanceId=${encodeURIComponent(instanceId || 'default')}`,
+      { headers },
+    ).then(async (writable) => {
+      const podId = writable.data.installations?.[0]?.podId;
+      if (!podId) return null;
+      const roster = await getClient().get<{ agents?: Array<{
+        name: string; instanceId: string; runtime?: { runtimeType?: string }; connection?: AgentConnection;
+      }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`, { headers });
+      return { podId, roster };
+    }).then((result) => {
       if (cancelled) return;
-      const match = response.data.agents?.find((row) => row.name === agentName
+      const match = result?.roster.data.agents?.find((row) => row.name === agentName
         && row.instanceId === (instanceId || 'default') && row.connection);
       setOwnedConnection(match?.connection ? {
-        connection: match.connection, podId, runtimeType: match.runtime?.runtimeType,
+        connection: match.connection, podId: result!.podId, runtimeType: match.runtime?.runtimeType,
       } : null);
     }).catch(() => { if (!cancelled) setOwnedConnection(null); });
     return () => { cancelled = true; };

@@ -271,33 +271,41 @@ router.post('/request', logAgentInstallRefusal('/api/agent-binding/request', 'wr
 // The owner explicitly asks the already-bound daemon to rotate this agent's
 // runtime key. A placement request cannot do that: the daemon keeps its local
 // token until a distinct reconnect directive arrives.
-router.post('/reconnect', bindingRateLimit, auth, async (req: express.Request & { user?: { id?: string } }, res: express.Response) => {
+router.post('/reconnect', bindingRateLimit, auth, async (
+  req: express.Request & { user?: { id?: string; role?: string } },
+  res: express.Response,
+) => {
   try {
     const agentName = normalize(req.body?.agentName);
     const instanceId = normalize(req.body?.instanceId) || 'default';
     if (!agentName) return res.status(400).json({ message: 'agentName required' });
-    const ownership = await ownsAgent(req.user?.id, agentName, instanceId);
-    if (!ownership.owned) return res.status(403).json({
-      message: ownershipFailureMessage[ownership.failure], code: ownership.failure,
-    });
+    const isAdmin = req.user?.role === 'admin';
+    if (!isAdmin) {
+      const ownership = await ownsAgent(req.user?.id, agentName, instanceId);
+      if (!ownership.owned) return res.status(403).json({
+        message: ownershipFailureMessage[ownership.failure], code: ownership.failure,
+      });
+    }
     const identity = await User.findOne({
       isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
     }).select('_id botMetadata.machineId').lean();
     const machineId = identity?.botMetadata?.machineId;
     if (!machineId) return res.status(409).json({ message: 'Agent is not bound to a computer' });
-    const machine = await Machine.findOne({ machineId, ownerUserId: req.user?.id }).select('_id').lean();
+    const machine = await Machine.findOne(isAdmin ? { machineId } : { machineId, ownerUserId: req.user?.id })
+      .select('_id ownerUserId').lean();
     if (!machine) return res.status(403).json({ message: 'Computer is not owned by this installer' });
     const daemonCanReconnect = await AgentCredential.exists({
-      kind: 'daemon', machineId, ownerUserId: req.user?.id, status: 'active',
+      kind: 'daemon', machineId, ownerUserId: machine.ownerUserId, status: 'active',
     });
     if (!daemonCanReconnect) return res.status(409).json({
       message: 'Computer key revoked. Register the computer again before reconnecting this agent.',
       code: 'machine_key_revoked',
     });
     const requestedAt = new Date();
-    await User.updateOne({ _id: identity._id, 'botMetadata.machineId': machineId }, {
+    const update = await User.updateOne({ _id: identity._id, 'botMetadata.machineId': machineId }, {
       $set: { 'botMetadata.reconnectRequestedAt': requestedAt },
     });
+    if (!update.matchedCount) return res.status(409).json({ message: 'Agent binding changed. Reload and retry.' });
     return res.json({ requested: true, agentName, instanceId, machineId, requestedAt });
   } catch (err) {
     console.error('agent reconnect request error:', err);
