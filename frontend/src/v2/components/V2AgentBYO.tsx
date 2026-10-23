@@ -7,12 +7,13 @@
 // `config.runtime.runtimeType: 'webhook'` to synthesize an ephemeral
 // AgentRegistry row + AgentInstallation (per ADR-006 §Self-serve install).
 // Then POSTs `/api/registry/pods/:podId/agents/:name/runtime-tokens`
-// with `force: true` to retrieve the raw `cm_agent_*` token.
+// without rotation to retrieve a new `cm_agent_*` token. Replacing an
+// existing key requires an explicit second action.
 //
 // The token is displayed once + the `claude mcp add` snippet, copy-button
 // next to each. Token is NOT persisted by Commonly's UI — the user is
-// expected to paste into their MCP host config immediately. They can
-// reissue if lost (re-install + force-issue is idempotent on identity).
+// expected to paste into their MCP host config immediately. If lost, they
+// can explicitly replace the old key without changing the agent identity.
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -112,6 +113,15 @@ const sanitizeAgentName = (raw: string): string => raw
   .replace(/^-+|-+$/g, '')
   .slice(0, 64);
 
+const nextFreeAgentName = (base: string, installed: string[]): string => {
+  const taken = new Set(installed.map((item) => item.toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${base.slice(0, 64 - String(suffix).length - 1)}-${suffix}`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+};
+
 const V2AgentBYO: React.FC = () => {
   const { t } = useTranslation();
   const api = useV2Api();
@@ -160,6 +170,9 @@ const V2AgentBYO: React.FC = () => {
   };
   const [name, setName] = useState<string>(prefill.name || defaultNameFor(null, ''));
   const [nameTouched, setNameTouched] = useState<boolean>(Boolean(prefill.name));
+  const [installedNames, setInstalledNames] = useState<string[]>([]);
+  const [namesReady, setNamesReady] = useState(false);
+  const [pendingReplacement, setPendingReplacement] = useState<{ agentName: string; podId: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState<{ token: string; agentName: string; podId: string; issuedAt: number } | null>(null);
@@ -255,8 +268,8 @@ const V2AgentBYO: React.FC = () => {
   // after mount, and when the mode or the runner changes.
   const defaultAgentName = defaultNameFor(mode, mode === 'machine' ? adapter : listenAdapter);
   useEffect(() => {
-    if (!nameTouched) setName(defaultAgentName);
-  }, [defaultAgentName, nameTouched]);
+    if (!nameTouched) setName(nextFreeAgentName(defaultAgentName, installedNames));
+  }, [defaultAgentName, installedNames, nameTouched]);
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
 
@@ -341,11 +354,12 @@ const V2AgentBYO: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let installablePods: V2Pod[] = [];
       try {
         const data = await api.get<V2Pod[]>('/api/pods');
         if (cancelled) return;
         const list = Array.isArray(data) ? data : [];
-        const installablePods = list.filter((p) => (
+        installablePods = list.filter((p) => (
           // Non-DM only: agent-room/agent-dm/agent-admin are strict-1:1
           // surfaces and refuse third-party installs.
           !['agent-room', 'agent-dm', 'agent-admin'].includes(p.type || '')
@@ -406,6 +420,25 @@ const V2AgentBYO: React.FC = () => {
         }
       } catch {
         // No daemon machines — the "on my computer" card simply doesn't show.
+      }
+      // Names are global to the agent identity, even when the seat is in
+      // another pod. Keep the page's pods → availability → machines request
+      // order, then collect visible installs before enabling the BYO act.
+      const groups = await Promise.all(installablePods.map(async (p) => {
+        try {
+          const roster = await api.get<{ agents?: Array<{ name?: string }> }>(`/api/registry/pods/${p._id}/agents`);
+          return (roster?.agents || []).map((agent) => agent.name || '').filter(Boolean);
+        } catch {
+          return [];
+        }
+      }));
+      if (cancelled) return;
+      const names = groups.flat();
+      setInstalledNames(names);
+      setNamesReady(true);
+      if (prefill.name) {
+        setName((current) => current === prefill.name
+          ? nextFreeAgentName(sanitizeAgentName(prefill.name), names) : current);
       }
       if (!cancelled) setChoicesKnown(true);
     })();
@@ -523,6 +556,7 @@ const V2AgentBYO: React.FC = () => {
 
   const submit = async () => {
     setError(null);
+    setPendingReplacement(null);
     const cleanName = sanitizeAgentName(name);
     if (!cleanName) {
       setError(t('agentByo.errors.nameRequired'));
@@ -554,23 +588,24 @@ const V2AgentBYO: React.FC = () => {
           ...(personaCard ? { description: personaCard.card } : {}),
         });
       } catch (installErr) {
-        // "Already installed" is identity continuity (ADR-001), not a
-        // failure — this is exactly the lost-token recovery path the copy
-        // below promises ("come back here and rotate"). Fall through to
-        // force-reissue; anything else is a real error. Caught in the
-        // 2026-07-03 live smoke: the hard-fail here made token recovery
-        // impossible from the UI.
+        // A repeat install is the lost-token recovery path. Stop before
+        // revoking the running key and ask for an explicit replacement.
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
         if (!/already installed/i.test(msg)) throw installErr;
+        setPendingReplacement({ agentName: cleanName, podId });
+        return;
       }
-      // Force-issue a fresh runtime token — guarantees we get the raw
-      // `cm_agent_*` value (subsequent calls return `existing:true` with
-      // no plaintext; `force:true` rotates).
-      const tokenRes = await api.post<{ token?: string }>(
+      // An agent can have a token from another pod. A nonrotating issue
+      // returns existing:true in that case, so no key is revoked here.
+      const tokenRes = await api.post<{ token?: string; existing?: boolean }>(
         `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(cleanName)}/runtime-tokens`,
-        { label: 'BYO MCP — initial issue', force: true },
+        { label: 'BYO MCP — initial issue' },
       );
+      if (tokenRes?.existing) {
+        setPendingReplacement({ agentName: cleanName, podId });
+        return;
+      }
       const tok = tokenRes?.token;
       if (!tok) {
         setError(t('agentByo.errors.tokenEmpty'));
@@ -588,6 +623,34 @@ const V2AgentBYO: React.FC = () => {
       setError(e.response?.data?.code === IN_PROCESS_NAME_CODE
         ? t('agentByo.errors.nameIsHosted', { name: cleanName })
         : e.response?.data?.error || e.response?.data?.message || e.message || t('agentByo.errors.installFailed'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const replaceRunningKey = async () => {
+    if (!pendingReplacement) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { agentName, podId: targetPodId } = pendingReplacement;
+      const tokenRes = await api.post<{ token?: string }>(
+        `/api/registry/pods/${encodeURIComponent(targetPodId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`,
+        { label: 'BYO MCP — replacement', force: true },
+      );
+      if (!tokenRes?.token) {
+        setError(t('agentByo.errors.tokenEmpty'));
+        return;
+      }
+      setIssued({ token: tokenRes.token, agentName, podId: targetPodId, issuedAt: Date.now() });
+      setListenState('waiting');
+      setMemoryText('');
+      setMemoryDone(false);
+      setMemoryError(null);
+      setPendingReplacement(null);
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
+      setError(e.response?.data?.error || e.response?.data?.message || e.message || t('agentByo.errors.installFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -845,7 +908,7 @@ const V2AgentBYO: React.FC = () => {
           <button
             type="button"
             onClick={submit}
-            disabled={submitting || !pods.some((p) => p._id === podId)}
+            disabled={submitting || !namesReady || !pods.some((p) => p._id === podId)}
             className="v2-byo__submit"
           >
             {submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install')}
@@ -991,7 +1054,7 @@ const V2AgentBYO: React.FC = () => {
             <input
               type="text"
               value={name}
-              onChange={(e) => { setNameTouched(true); setName(e.target.value); }}
+              onChange={(e) => { setNameTouched(true); setPendingReplacement(null); setName(e.target.value); }}
               placeholder={DEFAULT_AGENT_NAME}
               className="v2-byo__input"
             />
@@ -1003,7 +1066,7 @@ const V2AgentBYO: React.FC = () => {
             <span className="v2-byo__label">{t('agentByo.form.podLabel')}</span>
             <select
               value={podId}
-              onChange={(e) => setPodId(e.target.value)}
+              onChange={(e) => { setPendingReplacement(null); setPodId(e.target.value); }}
               className="v2-byo__input"
             >
               {pods.length === 0 && <option value="">{t('agentByo.form.loadingPods')}</option>}
@@ -1033,7 +1096,7 @@ const V2AgentBYO: React.FC = () => {
             <button
               type="button"
               onClick={submit}
-              disabled={submitting || !podId}
+              disabled={submitting || (mode === 'byo' && !namesReady) || !podId}
               className="v2-byo__submit"
             >
               {(() => {
@@ -1078,6 +1141,20 @@ const V2AgentBYO: React.FC = () => {
             <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.fullWalkthrough')}</a>.
           </p>
           </details>
+        </div>
+      )}
+
+      {pendingReplacement && !issued && (
+        <div className="v2-byo__form" data-testid="byo-replace-key-confirmation">
+          <p className="v2-byo__error">
+            {t('agentByo.rekey.warning', { name: pendingReplacement.agentName })}
+          </p>
+          <button type="button" className="v2-byo__submit" disabled={submitting} onClick={replaceRunningKey}>
+            {submitting ? t('agentByo.actions.issuing') : t('agentByo.rekey.replace')}
+          </button>
+          <button type="button" className="v2-byo__link" onClick={() => setPendingReplacement(null)}>
+            {t('agentByo.rekey.cancel')}
+          </button>
         </div>
       )}
 
