@@ -92,6 +92,31 @@ describe('BYO from an approved connect card', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
+  test('compact one-command path offers the private repo choice for an eligible pod', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: 'sam-claude' } });
+      if (url.startsWith('/api/hosted/availability')) return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
+      if (url === '/api/pods') return Promise.resolve({ data: [{
+        _id: 'bbb222', name: 'Launch', type: 'chat', joinPolicy: 'invite-only',
+        createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }],
+      }] });
+      if (url === '/api/machines') return Promise.resolve({ data: { machines: [] } });
+      return Promise.resolve({ data: {} });
+    });
+    renderAt(CARD);
+    const compact = await screen.findByTestId('byo-card-compact');
+    expect(compact).toHaveTextContent('Read-only (recommended)');
+    fireEvent.click(screen.getByLabelText('Work in my repo on this machine'));
+    fireEvent.change(screen.getByTestId('byo-repo-path'), { target: { value: '~/projects/example' } });
+    const act = screen.getByRole('button', { name: /get my connect command/i });
+    await waitFor(() => expect(act).toBeEnabled());
+    fireEvent.click(act);
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/registry/install',
+      expect.objectContaining({ config: expect.objectContaining({ environment: {
+        workspace: { path: '~/projects/example' }, sandbox: { trust: 'private' },
+      } }) }), expect.anything()));
+  });
+
   test('no key is minted on load; the click mints it for the card\'s name and pod', async () => {
     renderAt(CARD);
     const act = await screen.findByRole('button', { name: /get my connect command/i });

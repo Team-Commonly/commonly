@@ -937,6 +937,35 @@ const V2AgentBYO: React.FC = () => {
     : '';
   const cursorInstallHref = cursorMcpInstallLink(apiUrl);
 
+  const trustChoice = (
+    <fieldset className="v2-byo__field" data-testid="byo-listener-trust">
+      <legend className="v2-byo__label">{t('agentByo.form.trustLabel')}</legend>
+      <label>
+        <input type="radio" name="listener-trust" value="read-only"
+          checked={listenerTrust === 'read-only'}
+          onChange={() => setListenerTrust('read-only')} />
+        {' '}{t('agentByo.form.readOnly')}
+      </label>
+      {privateListenerEligible && (
+        <label>
+          <input type="radio" name="listener-trust" value="private"
+            checked={listenerTrust === 'private'}
+            onChange={() => setListenerTrust('private')} />
+          {' '}{t('agentByo.form.privateTrust')}
+        </label>
+      )}
+      {listenerTrust === 'private' && privateListenerEligible && (
+        <label className="v2-byo__field">
+          <span className="v2-byo__label">{t('agentByo.form.repoPath')}</span>
+          <input type="text" value={repoPath} onChange={(event) => setRepoPath(event.target.value)}
+            className="v2-byo__input" data-testid="byo-repo-path"
+            placeholder="~/projects/my-repo" />
+          <span className="v2-byo__hint">{t('agentByo.form.privateWarning')}</span>
+        </label>
+      )}
+    </fieldset>
+  );
+
   return (
     <V2FeaturePage
       title={(() => {
@@ -1023,6 +1052,7 @@ const V2AgentBYO: React.FC = () => {
               </button>
             </p>
           )}
+          {trustChoice}
           {error && <div className="v2-byo__error">{error}</div>}
           {existingConnection && (
             <div className="v2-byo__hint" data-testid="byo-connection-state">
@@ -1223,34 +1253,7 @@ const V2AgentBYO: React.FC = () => {
               ))}
             </select>
           </label>
-          {(mode === 'byo' || mode === 'machine') && (
-            <fieldset className="v2-byo__field" data-testid="byo-listener-trust">
-              <legend className="v2-byo__label">{t('agentByo.form.trustLabel')}</legend>
-              <label>
-                <input type="radio" name="listener-trust" value="read-only"
-                  checked={listenerTrust === 'read-only'}
-                  onChange={() => setListenerTrust('read-only')} />
-                {' '}{t('agentByo.form.readOnly')}
-              </label>
-              {privateListenerEligible && (
-                <label>
-                  <input type="radio" name="listener-trust" value="private"
-                    checked={listenerTrust === 'private'}
-                    onChange={() => setListenerTrust('private')} />
-                  {' '}{t('agentByo.form.privateTrust')}
-                </label>
-              )}
-              {listenerTrust === 'private' && privateListenerEligible && (
-                <label className="v2-byo__field">
-                  <span className="v2-byo__label">{t('agentByo.form.repoPath')}</span>
-                  <input type="text" value={repoPath} onChange={(event) => setRepoPath(event.target.value)}
-                    className="v2-byo__input" data-testid="byo-repo-path"
-                    placeholder="~/projects/my-repo" />
-                  <span className="v2-byo__hint">{t('agentByo.form.privateWarning')}</span>
-                </label>
-              )}
-            </fieldset>
-          )}
+          {(mode === 'byo' || mode === 'machine') && trustChoice}
           {/* The act sits right under the fields it acts on. Below "Add a computer" it
               fell under the fold at 1440x900 with "Run it here" chosen (QA 2026-10-16:
               its top edge at y=882), so a stranger saw a selected card and no button. */}
