@@ -227,9 +227,113 @@ describe('revoking a runtime token kills it in every store', () => {
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
     const { token } = await issueRuntimeTokenForAgent(agentUser, 'orphan', null, { ownerUserId: mockOwner.id });
     await AgentInstallation.deleteMany({ agentName: AGENT });
+    await User.create({
+      _id: mockOwner.id, username: 'runtime-token-admin', email: 'runtime-token-admin@test.com',
+      password: 'password123', role: 'admin',
+    });
     expect((await request(app).delete(`/api/registry/agents/${AGENT}/pods/${workspace._id}`)).status).toBe(200);
     expect((await probe(token)).status).toBe(401);
     expect((await User.findById(agentUser._id)).agentRuntimeTokens).toHaveLength(0);
+  });
+
+  test('a pod creator cannot revoke identity-wide orphan credentials without a local artifact', async () => {
+    const { workspace } = await seed();
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    await issueRuntimeTokenForAgent(agentUser, 'orphan', null, { ownerUserId: mockOwner.id });
+    await AgentInstallation.deleteMany({ agentName: AGENT });
+
+    const result = await request(app).delete(`/api/registry/agents/${AGENT}/pods/${workspace._id}`);
+    expect(result.status).toBe(404);
+    expect((await User.findById(agentUser._id)).agentRuntimeTokens).toHaveLength(1);
+  });
+
+  test('a pod creator can clean orphan credentials when that bot is still a member', async () => {
+    const { workspace } = await seed();
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    workspace.members.push(agentUser._id);
+    await workspace.save();
+    const { token } = await issueRuntimeTokenForAgent(agentUser, 'orphan', null, { ownerUserId: mockOwner.id });
+    await AgentInstallation.deleteMany({ agentName: AGENT });
+
+    const result = await request(app).delete(`/api/registry/agents/${AGENT}/pods/${workspace._id}`);
+    expect(result.status).toBe(200);
+    expect((await probe(token)).status).toBe(401);
+    expect((await Pod.findById(workspace._id)).members.map(String)).not.toContain(String(agentUser._id));
+  });
+
+  test('an instance name or unknown name cannot report orphan removal while an install remains', async () => {
+    const { workspace } = await seed();
+    const hosted = await AgentInstallation.create({
+      agentName: 'native', instanceId: 'scout', podId: workspace._id,
+      installedBy: mockOwner.id, status: 'active', version: '1.0.0',
+    });
+
+    for (const name of ['scout', 'not-installed']) {
+      const result = await request(app).delete(`/api/registry/agents/${name}/pods/${workspace._id}`);
+      expect(result.status).toBe(404);
+      expect(result.body.error).toMatch(/agentName.*instanceId/);
+      expect(result.body.removedOrphan).toBeUndefined();
+      expect((await AgentInstallation.findById(hosted._id)).status).toBe('active');
+    }
+
+    const correct = await request(app)
+      .delete(`/api/registry/agents/native/pods/${workspace._id}?instanceId=scout`);
+    expect(correct.status).toBe(200);
+    expect((await AgentInstallation.findById(hosted._id)).status).toBe('uninstalled');
+  });
+
+  test('a token for an installation in another pod does not make an unknown pod uninstall succeed', async () => {
+    const { workspace } = await seed();
+    const other = await Pod.create({
+      name: 'Other', type: 'chat', createdBy: mockOwner.id, members: [mockOwner.id],
+    });
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    const { token } = await issueRuntimeTokenForAgent(agentUser, 'other-pod', null, {
+      ownerUserId: mockOwner.id,
+    });
+
+    const result = await request(app).delete(`/api/registry/agents/${AGENT}/pods/${other._id}`);
+    expect(result.status).toBe(404);
+    expect((await probe(token)).status).toBe(200);
+    expect((await AgentInstallation.findOne({ agentName: AGENT, podId: workspace._id })).status)
+      .toBe('active');
+  });
+
+  test('a colliding derived username cannot clean another installed agent identity', async () => {
+    const { workspace } = await seed();
+    const hosted = await AgentInstallation.create({
+      agentName: 'native', instanceId: 'scout', podId: workspace._id,
+      installedBy: mockOwner.id, status: 'active', version: '1.0.0',
+    });
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser('native', { instanceId: 'scout' });
+    const { token } = await issueRuntimeTokenForAgent(agentUser, 'colliding', null, {
+      ownerUserId: mockOwner.id,
+    });
+
+    const result = await request(app).delete(`/api/registry/agents/native-scout/pods/${workspace._id}`);
+    expect(result.status).toBe(404);
+    expect((await AgentInstallation.findById(hosted._id)).status).toBe('active');
+    expect((await probe(token)).status).toBe(200);
+  });
+
+  test('a legacy alias cannot remove the canonical installation membership', async () => {
+    const { workspace } = await seed();
+    const canonical = await AgentInstallation.create({
+      agentName: 'commonly-bot', instanceId: 'default', podId: workspace._id,
+      installedBy: mockOwner.id, status: 'active', version: '1.0.0',
+    });
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser('commonly-bot', {
+      instanceId: 'default',
+    });
+    workspace.members.push(agentUser._id);
+    await workspace.save();
+
+    const result = await request(app)
+      .delete(`/api/registry/agents/commonly-summarizer/pods/${workspace._id}`);
+    expect(result.status).toBe(404);
+    expect(result.body.error).toMatch(/commonly-bot.*instanceId/);
+    expect((await AgentInstallation.findById(canonical._id)).status).toBe('active');
+    expect((await Pod.findById(workspace._id)).members.map(String)).toContain(String(agentUser._id));
   });
 
   test('admin repeat uninstall cleans credentials stranded by an older path', async () => {

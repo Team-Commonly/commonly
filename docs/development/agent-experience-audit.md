@@ -4174,3 +4174,11 @@ Gates that never appear in metadata decided several more, including the client a
 **Repair:** a catalogue verdict now requires a second, independent pass that tries to refute it. That pass answers from vendor docs or measurement what the read token actually *reaches*: tools with side effects, proxies to third parties, token forwarding, plan or allowlist gates. The first pass's metadata is the starting point, not the verdict.
 
 **Lesson:** a scope's name is the vendor's label for a permission set, and the permission set is what the bar is about. Measure what the credential can reach, and refute your own first reading before a capture or an account is spent on it.
+
+## 81. `removedOrphan` reported success when uninstall removed nothing (2026-10-23, flint)
+
+*Origin: TASK-375. A hosted agent had `agentName: native` and `instanceId: scout`. Calling `DELETE /api/registry/agents/scout/pods/:podId` missed the installation lookup, then returned HTTP 200 with `removedOrphan: true`; the installation remained active. A service test reproduces the response on the old route.*
+
+**Repair:** the orphan cleanup path now requires evidence it can remove a pod profile or membership. Only a global admin can revoke a credential with no pod artifact or active installation. It checks the bot's stored agent name and instance ID before touching a derived username, which can collide across identities. It also recognizes legacy aliases before deciding an installation is orphaned. Otherwise it returns 404 and tells the caller to use the agent name in the path and instance ID in the query. The real orphan token cleanup remains covered by a service test.
+
+**Lesson:** a cleanup fallback must prove it found something to clean before returning success. A successful HTTP status with an outcome-shaped field can make an agent stop retrying while the requested state never changed.
