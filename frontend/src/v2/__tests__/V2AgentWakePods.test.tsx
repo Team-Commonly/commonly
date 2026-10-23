@@ -28,8 +28,8 @@ describe('per-agent Wake and Pods settings', () => {
     updatePod.mockResolvedValue({});
     client.get.mockImplementation((url: string) => Promise.resolve(url.includes('/hosted/availability')
       ? { data: { caps: { turnsPerDay: 30 } } }
-      : { data: { activePodCount: 1, installations: [{
-        podId: 'pod-1', podName: 'Launch', wakeOnMessage: true, humanOnly: true,
+      : { data: { activePodCount: 1, podCount: 1, installations: [{
+        podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: true, humanOnly: true,
         boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
       }] } }));
     client.patch.mockResolvedValue({ data: {} });
@@ -62,7 +62,7 @@ describe('per-agent Wake and Pods settings', () => {
       ? new Promise((resolve) => { finishOld = resolve; })
       : Promise.resolve(url.includes('/hosted/availability') ? { data: { caps: { turnsPerDay: 30 } } }
         : { data: { installations: [{
-          podId: 'pod-new', podName: 'New pod', wakeOnMessage: false, humanOnly: false,
+          podId: 'pod-new', podName: 'New pod', status: 'active', wakeOnMessage: false, humanOnly: false,
           boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 30,
         }] } }));
     const view = render(
@@ -91,11 +91,28 @@ describe('per-agent Wake and Pods settings', () => {
   it('states the daily turn count clearly when availability cannot be loaded', async () => {
     client.get.mockImplementation((url: string) => url.includes('/hosted/availability')
       ? Promise.reject(new Error('offline'))
-      : Promise.resolve({ data: { activePodCount: 1, installations: [{
-        podId: 'pod-1', podName: 'Launch', wakeOnMessage: false, humanOnly: false,
+      : Promise.resolve({ data: { activePodCount: 1, podCount: 1, installations: [{
+        podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
         boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
       }] } }));
     renderSettings();
     expect(await screen.findByText('24 turns/day · plan cap unavailable')).toBeInTheDocument();
+  });
+
+  it('warns about key revocation when removing the only active installation beside a paused one', async () => {
+    client.get.mockImplementation((url: string) => Promise.resolve(url.includes('/hosted/availability')
+      ? { data: { caps: { turnsPerDay: 30 } } }
+      : { data: { activePodCount: 1, podCount: 2, installations: [
+        { podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: true,
+          humanOnly: true, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60 },
+        { podId: 'pod-2', podName: 'Paused', status: 'paused', wakeOnMessage: false,
+          humanOnly: false, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60 },
+      ] } }));
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+    renderSettings();
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Remove from pod' }))[0]);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('No active installation will remain'));
+    expect(client.delete).not.toHaveBeenCalled();
+    confirm.mockRestore();
   });
 });

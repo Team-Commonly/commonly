@@ -47,10 +47,21 @@ describe('per-installation agent settings', () => {
       .set('Authorization', `Bearer ${token(owner)}`);
     expect(response.status).toBe(200);
     expect(response.body.installations).toEqual([expect.objectContaining({
-      podId: String(podA._id), wakeOnMessage: true, humanOnly: true, boardWake: false,
+      podId: String(podA._id), status: 'active', wakeOnMessage: true, humanOnly: true, boardWake: false,
       heartbeatEnabled: false, heartbeatMinutes: 60,
     })]);
     expect(response.body.activePodCount).toBe(2);
+    expect(response.body.podCount).toBe(2);
+  });
+
+  it('counts active connections separately from installed pod rows', async () => {
+    await AgentInstallation.updateOne({ podId: podB._id, agentName: 'settings-agent' }, { status: 'paused' });
+    const response = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(admin)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.podCount).toBe(2);
+    expect(response.body.activePodCount).toBe(1);
+    expect(response.body.installations.find((entry) => entry.podId === String(podB._id)).status).toBe('paused');
   });
 
   it('writes one installation and preserves its human-only default and runtime', async () => {

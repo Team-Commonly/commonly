@@ -2272,6 +2272,7 @@
     "remove": "Remove from pod",
     "removeConfirm": "Remove this agent from {{podName}}? Its identity and memory stay intact.",
     "removeLastConfirm": "Remove this agent from its last pod, {{podName}}? Every key will be revoked and the agent will disconnect. Its identity and memory remain.",
+    "removeDisconnectConfirm": "Remove this agent from {{podName}}? No active installation will remain, so every key will be revoked and the agent will disconnect. Its identity and memory remain.",
     "forbidden": "Only the installer or an admin can change this setting.",
     "noPods": "No pods to manage",
     "loadError": "Could not load settings.",

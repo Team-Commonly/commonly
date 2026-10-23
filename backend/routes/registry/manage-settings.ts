@@ -29,6 +29,7 @@ const settings = (installation: any, podName: string) => {
   return {
     podId: String(installation.podId),
     podName,
+    status: installation.status,
     wakeOnMessage,
     humanOnly: config.wakeOnMessage?.humanOnly === true,
     boardWake: typeof config.boardWake?.enabled === 'boolean'
@@ -54,7 +55,9 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
       .select('name').lean();
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
-    return res.json({ activePodCount: installations.length, installations: manageable
+    return res.json({ podCount: installations.length,
+      activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
+      installations: manageable
       .filter((entry: any) => names.has(String(entry.podId)))
       .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod')) });
   } catch (error) {

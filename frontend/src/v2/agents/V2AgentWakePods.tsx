@@ -8,6 +8,7 @@ import './v2-agent-wake-pods.css';
 interface InstallationSettings {
   podId: string;
   podName: string;
+  status: string;
   wakeOnMessage: boolean;
   humanOnly: boolean;
   boardWake: boolean;
@@ -27,6 +28,7 @@ const V2AgentWakePods: React.FC<{
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activePodCount, setActivePodCount] = useState(0);
+  const [podCount, setPodCount] = useState(0);
   const [turnCap, setTurnCap] = useState<number | null>(null);
   const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
   const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
@@ -46,14 +48,15 @@ const V2AgentWakePods: React.FC<{
     const load = async () => {
       try {
         const [settingsResult, capResult] = await Promise.allSettled([
-          axios.get<{ installations: InstallationSettings[]; activePodCount: number }>(`${base}?${query}`),
+          axios.get<{ installations: InstallationSettings[]; activePodCount: number; podCount: number }>(`${base}?${query}`),
           axios.get<{ caps?: { turnsPerDay?: number } }>('/api/hosted/availability'),
         ]);
         if (!active) return;
         if (settingsResult.status === 'rejected') throw settingsResult.reason;
         const rows = Array.isArray(settingsResult.value.data.installations) ? settingsResult.value.data.installations : [];
         setInstallations(rows);
-        setActivePodCount(settingsResult.value.data.activePodCount ?? rows.length);
+        setActivePodCount(settingsResult.value.data.activePodCount ?? rows.filter((row) => row.status === 'active').length);
+        setPodCount(settingsResult.value.data.podCount ?? rows.length);
         setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
         setTurnCap(capResult.status === 'fulfilled' ? capResult.value.data.caps?.turnsPerDay ?? null : null);
       } catch (requestError) {
@@ -96,7 +99,10 @@ const V2AgentWakePods: React.FC<{
 
   const remove = async (entry: InstallationSettings) => {
     // eslint-disable-next-line no-alert
-    if (!window.confirm(t(activePodCount === 1 ? 'agentSettings.removeLastConfirm' : 'agentSettings.removeConfirm',
+    const willRevokeKeys = activePodCount <= (entry.status === 'active' ? 1 : 0);
+    const confirmKey = podCount === 1 ? 'agentSettings.removeLastConfirm'
+      : willRevokeKeys ? 'agentSettings.removeDisconnectConfirm' : 'agentSettings.removeConfirm';
+    if (!window.confirm(t(confirmKey,
       { podName: entry.podName }))) return;
     const requestedIdentity = identity;
     setBusyPod(entry.podId);
@@ -107,8 +113,9 @@ const V2AgentWakePods: React.FC<{
       );
       if (identityRef.current === requestedIdentity) {
         setInstallations((current) => current.filter((item) => item.podId !== entry.podId));
-        setActivePodCount((count) => Math.max(0, count - 1));
-        onRemoved?.(entry.podId, activePodCount === 1);
+        setPodCount((count) => Math.max(0, count - 1));
+        if (entry.status === 'active') setActivePodCount((count) => Math.max(0, count - 1));
+        onRemoved?.(entry.podId, podCount === 1);
       }
     } catch (requestError) {
       if (identityRef.current === requestedIdentity) setError((requestError as { response?: { status?: number } })?.response?.status === 403
