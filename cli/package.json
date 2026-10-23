@@ -42,7 +42,7 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "setupFiles": [
+    "setupFilesAfterEnv": [
       "<rootDir>/jest.setup.cjs"
     ],
     "transform": {},

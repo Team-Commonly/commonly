@@ -15,9 +15,15 @@
  * The lock suppresses an unrelated detached warm child that could still write
  * to this fixture after Jest has moved on to the next test file.
  */
-const { mkdtempSync, writeFileSync } = require('node:fs');
+const { mkdtempSync, realpathSync, rmSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 
-process.env.COMMONLY_MCP_HOME = mkdtempSync(join(tmpdir(), 'commonly-mcp-home-jest-'));
-writeFileSync(join(process.env.COMMONLY_MCP_HOME, '.warm.lock'), 'warming\n');
+const testHome = realpathSync(mkdtempSync(join(tmpdir(), 'commonly-mcp-home-jest-')));
+process.env.COMMONLY_MCP_HOME = testHome;
+writeFileSync(join(testHome, '.warm.lock'), 'warming\n');
+
+// Tests may override COMMONLY_MCP_HOME; remove only the directory created here.
+afterAll(() => {
+  rmSync(testHome, { recursive: true, force: true });
+});
