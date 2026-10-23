@@ -112,4 +112,30 @@ describe('owner memory editor', () => {
     expect(index.status).toBe(200);
     expect(index.body.pods).toHaveLength(1);
   });
+
+  it('denies a paused installer when another installer owns the same identity', async () => {
+    const otherPod = await Pod.create({ name: 'Other owner pod', type: 'chat',
+      createdBy: outsider._id, members: [outsider._id] });
+    await AgentInstallation.updateMany({ agentName: 'editor-agent' }, { $set: { status: 'paused' } });
+    await AgentInstallation.create({ agentName: 'editor-agent', instanceId: 'machine-1',
+      podId: otherPod._id, version: '1', installedBy: outsider._id });
+
+    const read = await request(app).get(base).set('Authorization', `Bearer ${token(owner)}`);
+    const index = await request(app).get('/api/agent-memory/editor-agent/machine-1')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    const write = await request(app).patch(`${base}/long_term`)
+      .set('Authorization', `Bearer ${token(owner)}`)
+      .send({ content: 'Stolen edit', expectedUpdatedAt: new Date('2026-01-01').toISOString() });
+    const otherOwnerRead = await request(app).get(base)
+      .set('Authorization', `Bearer ${token(outsider)}`);
+    const adminRead = await request(app).get(base).set('Authorization', `Bearer ${token(admin)}`);
+    expect(read.status).toBe(403);
+    expect(index.status).toBe(403);
+    expect(write.status).toBe(403);
+    expect(otherOwnerRead.status).toBe(403);
+    expect(adminRead.status).toBe(200);
+    const memory = await AgentMemory.findOne({ agentName: 'editor-agent', instanceId: 'machine-1' }).lean();
+    expect(memory.sections.long_term.content).toBe('Old note');
+    expect(memory.content).toBe('Old note');
+  });
 });

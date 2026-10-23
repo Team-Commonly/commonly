@@ -6,7 +6,7 @@
  *
  * Access:
  *   - admin (role === 'admin') → any agent
- *   - owner (installed this agent: AgentInstallation.installedBy === viewer) → their agent
+ *   - owner (every retained installation belongs to the viewer) → their agent
  *   - everyone else → 403
  *
  * Returns snippets, never full raw content — "a fraction of memory". Internal
@@ -109,27 +109,35 @@ const editableSection = (value: string): value is typeof EDITABLE_SECTIONS[numbe
   EDITABLE_SECTIONS.includes(value as typeof EDITABLE_SECTIONS[number])
 );
 
-const memoryEditorAccess = async (req: AuthReq, res: Res) => {
+const memoryOwnerAccess = async (req: AuthReq, res: Res) => {
   const userId = getUserId(req);
   if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return null; }
   const agentName = String(req.params?.agentName || '').trim().toLowerCase();
   const instanceId = String(req.params?.instanceId || 'default').trim() || 'default';
   if (!agentName) { res.status(404).json({ error: 'Not found' }); return null; }
   const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
-  const owns = isAdmin || await AgentInstallation.exists({
-    agentName, instanceId, installedBy: userId, status: { $ne: 'uninstalled' },
-  });
-  if (!owns) { res.status(403).json({ error: 'Forbidden' }); return null; }
-  return { agentName, instanceId };
+  if (!isAdmin) {
+    // Memory is one envelope per identity, not per pod installation. A paused
+    // install must not grant access to another installer's active agent memory.
+    const installs = await AgentInstallation.find({
+      agentName, instanceId, status: { $ne: 'uninstalled' },
+    }).select('installedBy').lean();
+    const anotherOwner = installs.some((install: { installedBy?: unknown }) => String(install.installedBy) !== userId);
+    if (!installs.length || anotherOwner) {
+      res.status(403).json({ error: 'Forbidden' }); return null;
+    }
+  }
+  return { agentName, instanceId, role: isAdmin ? 'admin' : 'owner' } as const;
 };
 
 // Full text is limited to the owner's durable document sections. Runtime and
 // dedup bookkeeping stay out of the human editor even for an admin.
 router.get('/:agentName/:instanceId/editable', auth, async (req: AuthReq, res: Res) => {
   try {
-    const identity = await memoryEditorAccess(req, res);
-    if (!identity) return;
-    const record = await AgentMemory.findOne(identity)
+    const access = await memoryOwnerAccess(req, res);
+    if (!access) return;
+    const { agentName, instanceId } = access;
+    const record = await AgentMemory.findOne({ agentName, instanceId })
       .select('content sections.soul sections.long_term sections.shared').lean();
     const sections = Object.fromEntries(EDITABLE_SECTIONS.map((key) => {
       const section = record?.sections?.[key];
@@ -146,8 +154,10 @@ router.get('/:agentName/:instanceId/editable', auth, async (req: AuthReq, res: R
 
 router.patch('/:agentName/:instanceId/editable/:section', auth, async (req: AuthReq & { body?: any }, res: Res) => {
   try {
-    const identity = await memoryEditorAccess(req, res);
-    if (!identity) return;
+    const access = await memoryOwnerAccess(req, res);
+    if (!access) return;
+    const { agentName, instanceId } = access;
+    const identity = { agentName, instanceId };
     const section = String((req.params as any).section || '');
     if (!editableSection(section)) { res.status(404).json({ error: 'Section not found' }); return; }
     const { content, expectedUpdatedAt } = req.body || {};
@@ -197,35 +207,9 @@ router.patch('/:agentName/:instanceId/editable/:section', auth, async (req: Auth
 // GET /api/agent-memory/:agentName/:instanceId? — owner/admin memory index.
 router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
   try {
-    const userId = getUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
-    const agentName = String(req.params?.agentName || '').trim().toLowerCase();
-    const instanceId = String(req.params?.instanceId || 'default').trim() || 'default';
-    if (!agentName) {
-      res.status(404).json({ error: 'Not found' });
-      return;
-    }
-
-    // Access gate: admin OR owner (installed this agent).
-    const viewer = await User.findById(userId).select('role').lean();
-    const isAdmin = viewer?.role === 'admin';
-    let role: 'admin' | 'owner' | null = isAdmin ? 'admin' : null;
-    if (!isAdmin) {
-      const owns = await AgentInstallation.findOne({
-        agentName,
-        instanceId,
-        installedBy: userId,
-        status: { $ne: 'uninstalled' },
-      }).select('_id').lean();
-      if (owns) role = 'owner';
-    }
-    if (!role) {
-      res.status(403).json({ error: 'Forbidden' });
-      return;
-    }
+    const access = await memoryOwnerAccess(req, res);
+    if (!access) return;
+    const { agentName, instanceId, role } = access;
 
     const agentUser = await User.findOne({
       isBot: true,
