@@ -3,7 +3,7 @@ import { useV2Api } from './useV2Api';
 
 export interface V2AttentionItem {
   id: string;
-  kind: 'mention' | 'approval' | 'decision' | 'handoff';
+  kind: 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
   title: string;
   detail?: string;
   actorName?: string;
