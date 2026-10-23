@@ -7,9 +7,16 @@ jest.mock('../../../models/AgentFirstContact', () => ({
 jest.mock('../../../services/agentEventService', () => ({
   enqueue: jest.fn(),
 }));
+jest.mock('../../../models/pg/Message', () => ({
+  hasMessageByUserInPod: jest.fn(),
+  recentContentByUser: jest.fn(),
+}));
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 
 const AgentFirstContact = require('../../../models/AgentFirstContact');
 const AgentEventService = require('../../../services/agentEventService');
+const Message = require('../../../models/pg/Message');
+const User = require('../../../models/User');
 const { maybeFireFirstContact } = require('../../../services/firstContactService');
 
 const USER_ID = new mongoose.Types.ObjectId().toString();
@@ -37,9 +44,12 @@ const baseOptions = (overrides = {}) => ({
 
 describe('firstContactService', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     AgentFirstContact.findOneAndUpdate.mockResolvedValue(firstInsert());
     AgentEventService.enqueue.mockResolvedValue({ _id: 'event-1' });
+    Message.hasMessageByUserInPod.mockResolvedValue(false);
+    Message.recentContentByUser.mockResolvedValue([]);
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({ timezone: 'UTC' }) }) });
   });
 
   test('first install creates the durable marker and enqueues first_contact once', async () => {
@@ -71,6 +81,7 @@ describe('firstContactService', () => {
         kind: 'first-contact',
       },
     });
+    expect(AgentEventService.enqueue.mock.calls[0][0].payload.content).toContain('This is your one first impression.');
   });
 
   // QA walk 2026-10-16: a hosted agent sees only its mentions, so a plain
@@ -100,6 +111,121 @@ describe('firstContactService', () => {
 
     expect(AgentFirstContact.findOneAndUpdate).toHaveBeenCalledTimes(1);
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+  });
+
+  test('a returning hosted owner gets one greeting when the old marker has no message in this pod', async () => {
+    AgentFirstContact.findOneAndUpdate
+      .mockResolvedValueOnce(existingMarker())
+      .mockResolvedValueOnce(existingMarker());
+    Message.recentContentByUser.mockResolvedValue(['你好，我想找一个助手']);
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({ timezone: 'Asia/Taipei' }) }) });
+
+    await expect(maybeFireFirstContact(baseOptions({
+      hostedAgentUserId: 'agent-user-1', mentionHandle: 'owner-agent',
+    }))).resolves.toBe(true);
+
+    expect(Message.hasMessageByUserInPod).toHaveBeenCalledWith(expect.any(mongoose.Types.ObjectId), 'agent-user-1');
+    const claim = AgentFirstContact.findOneAndUpdate.mock.calls[1];
+    expect(claim[0].$or).toEqual([
+      { [`greetedAtByPod.${POD_ID}`]: { $exists: false } },
+      { [`greetedAtByPod.${POD_ID}`]: { $lt: expect.any(Date) } },
+    ]);
+    expect(claim[1].$set[`greetedAtByPod.${POD_ID}`]).toBeInstanceOf(Date);
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    expect(cue).toContain('Traditional Chinese');
+    expect(cue).toContain('Do not introduce yourself using a human name');
+    expect(cue).toContain('@owner-agent');
+  });
+
+  test('a hosted seat that already spoke in this pod gets no second greeting', async () => {
+    AgentFirstContact.findOneAndUpdate.mockResolvedValueOnce(existingMarker());
+    Message.hasMessageByUserInPod.mockResolvedValue(true);
+
+    await expect(maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' })))
+      .resolves.toBe(false);
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+  });
+
+  test('a recent hosted greeting claim stops a repeat while its message is still absent', async () => {
+    AgentFirstContact.findOneAndUpdate
+      .mockResolvedValueOnce(existingMarker())
+      .mockResolvedValueOnce({ value: null });
+
+    await expect(maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' })))
+      .resolves.toBe(false);
+    expect(Message.hasMessageByUserInPod).toHaveBeenCalledTimes(1);
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+  });
+
+  test('concurrent legacy-marker claims enqueue only the winner', async () => {
+    AgentFirstContact.findOneAndUpdate
+      .mockResolvedValueOnce(existingMarker())
+      .mockResolvedValueOnce(existingMarker())
+      .mockResolvedValueOnce(existingMarker())
+      .mockResolvedValueOnce({ value: null });
+
+    await Promise.all([
+      maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' })),
+      maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' })),
+    ]);
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  test('a new hosted first greeting uses prior Japanese words and avoids the owner name', async () => {
+    Message.recentContentByUser.mockResolvedValue(['こんにちは、手伝ってください']);
+    await maybeFireFirstContact(baseOptions({
+      hostedAgentUserId: 'agent-user-1', mentionHandle: 'owners-name-agent',
+    }));
+
+    const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    expect(cue).toContain('Japanese');
+    expect(cue).toContain('Do not introduce yourself using a human name');
+  });
+
+  test.each([
+    ['hola, necesito ayuda', 'Europe/Madrid'],
+    ['hola, necesito ayuda', 'Asia/Tokyo'],
+    ['bonjour, je cherche un assistant', 'Europe/Paris'],
+    ['안녕하세요, 도움이 필요합니다', 'Asia/Taipei'],
+  ])('unknown language is never instructed to greet in English: %s', async (words, timezone) => {
+    Message.recentContentByUser.mockResolvedValue([words]);
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({ timezone }) }) });
+
+    await maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' }));
+
+    const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    expect(cue).not.toContain("Use the person's language for this greeting: English");
+    expect(cue).not.toContain("Use the person's language for this greeting:");
+  });
+
+  test('timezone guides the first greeting only when the person has no prior words', async () => {
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({ timezone: 'Asia/Taipei' }) }) });
+
+    await maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' }));
+
+    const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    expect(cue).toContain("Use the person's language for this greeting: Traditional Chinese.");
+  });
+
+  test.each(['ok', 'lgtm', '🙂'])('a short %s reply does not hide earlier Chinese words', async (reply) => {
+    Message.recentContentByUser.mockResolvedValue([reply, '你好，我想找一个助手']);
+
+    await maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' }));
+
+    const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    expect(cue).toContain("Use the person's language for this greeting: Chinese.");
+  });
+
+  test('a recent Spanish sentence outranks older Chinese words and Japanese timezone', async () => {
+    Message.recentContentByUser.mockResolvedValue(['hola amigo, necesito ayuda', '你好']);
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({ timezone: 'Asia/Tokyo' }) }) });
+
+    await maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' }));
+
+    const cue = AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    expect(cue).not.toContain("Use the person's language for this greeting:");
   });
 
   test('concurrent installs enqueue exactly once when only one atomic upsert inserts', async () => {

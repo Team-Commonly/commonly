@@ -817,6 +817,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         installedByUserId: userId,
         installerIsAgent: installerUser?.isBot === true,
         ...(greetsItself ? { mentionHandle: handle } : {}),
+        ...(greetsItself ? { hostedAgentUserId: String(agentUser._id) } : {}),
       });
     } catch (firstContactError: unknown) {
       console.warn('[first-contact] trigger failed after install', {

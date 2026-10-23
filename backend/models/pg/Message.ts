@@ -365,6 +365,18 @@ class Message {
     return (result.rows as Array<{ content?: unknown }>).map((row) => String(row.content || ''));
   }
 
+  /** Recent words by one person across pods, for their first greeting language. */
+  static async recentContentByUser(userId: unknown, limit = 10): Promise<string[]> {
+    if (!userId) return [];
+    const result = await (pool as PgPool).query(
+      `SELECT content FROM messages
+       WHERE user_id = $1 AND message_type = 'text' AND content <> ''
+       ORDER BY id DESC LIMIT $2`,
+      [String(userId), limit],
+    );
+    return (result.rows as Array<{ content?: unknown }>).map((row) => String(row.content || ''));
+  }
+
   static async update(id: string, content: string): Promise<MessageRow | undefined> {
     const query = `
       UPDATE messages
