@@ -128,27 +128,7 @@ agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLimi
     const agentUser = await User.findOne({ username: agentUsername, isBot: true })
       .select('agentRuntimeTokens')
       .lean();
-    const embedded = agentUser?.agentRuntimeTokens || [];
-    const credentials = agentUser?._id
-      ? await AgentCredential.find({ agentUserId: agentUser._id, kind: 'runtime' })
-        .select('tokenHash label status createdAt lastUsedAt revokedAt').lean()
-      : [];
-    const credentialByHash = new Map(credentials.map((row: any) => [row.tokenHash, row]));
-    const tokens = serializeRuntimeTokens(embedded).map((token: any, index: number) => {
-      const credential: any = credentialByHash.get(embedded[index]?.tokenHash);
-      return { ...token, lastUsedAt: credential?.lastUsedAt || token.lastUsedAt || null, revokedAt: null };
-    });
-    const activeHashes = new Set(embedded.map((row: any) => row.tokenHash));
-    for (const credential of credentials) {
-      if (credential.status !== 'revoked' || activeHashes.has(credential.tokenHash)) continue;
-      tokens.push({
-        id: String(credential._id),
-        label: credential.label || 'Runtime token',
-        createdAt: credential.createdAt,
-        lastUsedAt: credential.lastUsedAt || null,
-        revokedAt: credential.revokedAt || null,
-      });
-    }
+    const tokens = serializeRuntimeTokens(agentUser?.agentRuntimeTokens || []);
 
     return res.json({ tokens });
   } catch (error) {

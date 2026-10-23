@@ -26,9 +26,9 @@ beforeEach(() => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
-    return Promise.resolve({ data: { tokens: [{
-      id: 'tok-1', label: 'Laptop', createdAt: '2026-10-01T00:00:00Z', lastUsedAt: null, revokedAt: null,
-    }] } });
+    return Promise.resolve({ data: [{
+      _id: 'tok-1', label: 'Laptop', createdAt: '2026-10-01T00:00:00Z', lastUsedAt: null, revokedAt: null, status: 'active',
+    }] });
   });
 });
 
@@ -56,4 +56,16 @@ test('a denied owner probe renders no key controls or metadata', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Forbidden');
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByText('Laptop')).not.toBeInTheDocument();
+});
+
+test('revocation uses the credential id only after confirmation', async () => {
+  axios.delete.mockResolvedValue({ data: { revoked: 1 } });
+  renderPage();
+  await screen.findByText('Laptop');
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+  expect(axios.delete).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke key' }));
+  await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/credentials/tok-1', {
+    params: { agentName: 'maya-claude', instanceId: 'default' },
+  }));
 });

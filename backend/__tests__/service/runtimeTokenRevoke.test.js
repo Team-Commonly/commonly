@@ -47,6 +47,7 @@ const agentRuntimeAuth = require('../../middleware/agentRuntimeAuth');
 const app = express();
 app.use(express.json());
 app.use('/api/registry', require('../../routes/registry/agent-tokens'));
+app.use('/api/credentials', require('../../routes/credentials'));
 app.use('/api/registry', require('../../routes/registry/admin'));
 app.use('/api/registry', require('../../routes/registry/pod-agents'));
 // A limiter far above anything this suite sends: the probe is a test route,
@@ -113,10 +114,10 @@ describe('revoking a runtime token kills it in every store', () => {
 
     expect((await probe(token)).status).toBe(401);
     expect(await storesHolding(tokenHash)).toEqual({ users: 0, installations: 0 });
-    const history = await request(app).get(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`);
+    const history = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
     expect(history.status).toBe(200);
-    expect(history.body.tokens).toEqual([expect.objectContaining({
-      label: 'laptop', revokedAt: expect.any(String),
+    expect(history.body).toEqual([expect.objectContaining({
+      label: 'laptop', status: 'revoked', revokedAt: expect.any(String),
     })]);
     expect(JSON.stringify(history.body)).not.toContain(token);
   });
@@ -128,11 +129,51 @@ describe('revoking a runtime token kills it in every store', () => {
       .send({ label: 'private laptop' });
     expect(issued.status).toBe(200);
     const otherId = new mongoose.Types.ObjectId().toString();
+    const credential = await AgentCredential.findOne({ label: 'private laptop' }).lean();
     await Pod.updateOne({ _id: workspace._id }, { $push: { members: otherId } });
     mockOwner.id = otherId;
     const listed = await request(app).get(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`);
     expect(listed.status).toBe(403);
     expect(JSON.stringify(listed.body)).not.toContain('private laptop');
+    const credentials = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(credentials.status).toBe(403);
+    expect(JSON.stringify(credentials.body)).not.toContain('private laptop');
+    const revoke = await request(app).delete(`/api/credentials/${credential._id}?agentName=${AGENT}&instanceId=default`);
+    expect(revoke.status).toBe(403);
+    expect((await AgentCredential.findById(credential._id).lean()).status).toBe('active');
+  });
+
+  test('the Settings credential revoke stops the agent token and keeps its history', async () => {
+    const { workspace } = await seed();
+    const issued = await request(app)
+      .post(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`)
+      .send({ label: 'Settings key' });
+    expect((await probe(issued.body.token)).status).toBe(200);
+    const listed = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual([expect.objectContaining({ label: 'Settings key', status: 'active' })]);
+    const revoked = await request(app).delete(`/api/credentials/${listed.body[0]._id}?agentName=${AGENT}&instanceId=default`);
+    expect(revoked.status).toBe(200);
+    expect((await probe(issued.body.token)).status).toBe(401);
+    const after = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(after.body).toEqual([expect.objectContaining({ label: 'Settings key', status: 'revoked' })]);
+  });
+
+  test('an existing embedded key is imported into Settings before it is revoked', async () => {
+    const { workspaceInstall } = await seed();
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
+    const issued = await issueRuntimeTokenForAgent(agentUser, 'Old CLI key', workspaceInstall);
+    expect(await AgentCredential.countDocuments({ agentUserId: agentUser._id })).toBe(0);
+    const listed = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual([expect.objectContaining({ label: 'Old CLI key', status: 'active' })]);
+    const revoked = await request(app).delete(`/api/credentials/${listed.body[0]._id}?agentName=${AGENT}&instanceId=default`);
+    expect(revoked.status).toBe(200);
+    expect((await probe(issued.token)).status).toBe(401);
+    expect((await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`)).body)
+      .toEqual([expect.objectContaining({ label: 'Old CLI key', status: 'revoked' })]);
+    expect((await User.findById(agentUser._id).lean()).agentRuntimeTokens).toHaveLength(1);
+    expect((await AgentInstallation.findById(workspaceInstall._id).lean()).runtimeTokens).toHaveLength(1);
   });
 
   test('a copy on a sibling installation dies too, and so does a ledger row', async () => {
@@ -201,11 +242,11 @@ describe('revoking a runtime token kills it in every store', () => {
 
     expect((await probe(first.token)).status).toBe(401);
     expect((await probe(second)).status).toBe(200);
-    const history = await request(app).get(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`);
+    const history = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
     expect(history.status).toBe(200);
-    expect(history.body.tokens).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'laptop', revokedAt: expect.any(String) }),
-      expect.objectContaining({ label: 'desktop', revokedAt: null }),
+    expect(history.body).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'laptop', status: 'revoked', revokedAt: expect.any(String) }),
+      expect.objectContaining({ label: 'desktop', status: 'active', revokedAt: null }),
     ]));
   });
 

@@ -11,11 +11,12 @@ interface AgentAccess {
 }
 
 interface RuntimeKey {
-  id: string;
+  _id: string;
   label: string;
   createdAt?: string;
   lastUsedAt?: string | null;
   revokedAt?: string | null;
+  status: 'active' | 'revoked';
 }
 
 const dateLabel = (value: string | null | undefined, t: (key: string) => string): string => {
@@ -45,12 +46,12 @@ const V2AgentSettingsPage: React.FC = () => {
     `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`
   ), [agentName]);
 
-  const loadKeys = useCallback(async (podId: string) => {
-    const response = await axios.get<{ tokens: RuntimeKey[] }>(keyUrl(podId), {
-      params: { instanceId },
+  const loadKeys = useCallback(async () => {
+    const response = await axios.get<RuntimeKey[]>('/api/credentials', {
+      params: { agentName, instanceId },
     });
-    setKeys(response.data.tokens || []);
-  }, [instanceId, keyUrl]);
+    setKeys(response.data || []);
+  }, [agentName, instanceId]);
 
   useEffect(() => {
     let active = true;
@@ -71,7 +72,7 @@ const V2AgentSettingsPage: React.FC = () => {
         if (!active) return;
         const next = response.data;
         if (!next.pods?.length) throw new Error(t('agentSettings.noPod'));
-        await loadKeys(next.pods[0].id);
+        await loadKeys();
         if (active) setAccess(next);
       } catch (requestError) {
         if (active) setError(errorLabel(requestError, t('agentSettings.unavailable')));
@@ -96,7 +97,7 @@ const V2AgentSettingsPage: React.FC = () => {
       if (!response.data.token) throw new Error(t('agentSettings.missingReplacement'));
       setOneTimeKey(response.data.token);
       setPendingAction(null);
-      await loadKeys(access.pods[0].id);
+      await loadKeys();
     } catch (requestError) {
       setError(errorLabel(requestError, t('agentSettings.updateError')));
     } finally {
@@ -109,12 +110,12 @@ const V2AgentSettingsPage: React.FC = () => {
     setBusy(true);
     setError(null);
     try {
-      await axios.delete(`${keyUrl(access.pods[0].id)}/${encodeURIComponent(tokenId)}`, {
-        params: { instanceId },
+      await axios.delete(`/api/credentials/${encodeURIComponent(tokenId)}`, {
+        params: { agentName, instanceId },
       });
       setPendingAction(null);
       setOneTimeKey(null);
-      await loadKeys(access.pods[0].id);
+      await loadKeys();
     } catch (requestError) {
       setError(errorLabel(requestError, t('agentSettings.updateError')));
     } finally {
@@ -159,27 +160,27 @@ const V2AgentSettingsPage: React.FC = () => {
         {keys.length === 0 ? <p className="v2-agent-settings__empty">{t('agentSettings.empty')}</p> : (
           <ul className="v2-agent-settings__keys">
             {keys.map((key) => (
-              <li key={key.id} className="v2-agent-settings__key">
+              <li key={key._id} className="v2-agent-settings__key">
                 <div className="v2-agent-settings__key-main">
                   <strong>{key.label || t('agentSettings.runtimeKey')}</strong>
-                  <span>{key.revokedAt ? t('agentSettings.revoked') : t('agentSettings.active')}</span>
+                  <span>{key.status === 'revoked' ? t('agentSettings.revoked') : t('agentSettings.active')}</span>
                 </div>
                 <div className="v2-agent-settings__key-meta">
                   <span>{t('agentSettings.created', { date: dateLabel(key.createdAt, t) })}</span>
                   <span>{t('agentSettings.lastUsed', { date: dateLabel(key.lastUsedAt, t) })}</span>
-                  {key.revokedAt && <span>{t('agentSettings.revokedAt', { date: dateLabel(key.revokedAt, t) })}</span>}
+                  {key.status === 'revoked' && <span>{t('agentSettings.revokedAt', { date: dateLabel(key.revokedAt, t) })}</span>}
                 </div>
-                {!key.revokedAt && pendingAction === key.id && (
+                {key.status === 'active' && pendingAction === key._id && (
                   <div className="v2-agent-settings__confirm">
                     <p>{t('agentSettings.revokeWarning')}</p>
                     <div className="v2-agent-settings__actions">
-                      <button type="button" disabled={busy} onClick={() => revokeKey(key.id)}>{t('agentSettings.revokeKey')}</button>
+                      <button type="button" disabled={busy} onClick={() => revokeKey(key._id)}>{t('agentSettings.revokeKey')}</button>
                       <button type="button" disabled={busy} onClick={() => setPendingAction(null)}>{t('agentSettings.keepKey')}</button>
                     </div>
                   </div>
                 )}
-                {!key.revokedAt && pendingAction !== key.id && (
-                  <button type="button" className="v2-agent-settings__quiet" disabled={busy} onClick={() => setPendingAction(key.id)}>
+                {key.status === 'active' && pendingAction !== key._id && (
+                  <button type="button" className="v2-agent-settings__quiet" disabled={busy} onClick={() => setPendingAction(key._id)}>
                     {t('agentSettings.revoke')}
                   </button>
                 )}
