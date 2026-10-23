@@ -272,6 +272,24 @@ describe('agent config PATCH — installer gate', () => {
     expect(AgentIdentityService.renameAgentDisplayName).not.toHaveBeenCalled();
   });
 
+  it('returns a distinct refusal before changing projections when a peer owns the requested label', async () => {
+    const primary = installation({ installedBy: MEMBER });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+    AgentIdentityService.renameAgentDisplayName.mockRejectedValue(
+      Object.assign(new Error('Another agent already uses this name'), { code: 'agent_display_name_taken' }),
+    );
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', displayName: 'Scout (Cody)' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('agent_display_name_taken');
+    expect(primary.save).not.toHaveBeenCalled();
+  });
+
   it('does not claim a completed rename when the chat mirror is behind', async () => {
     const primary = installation({ installedBy: MEMBER });
     setPod();

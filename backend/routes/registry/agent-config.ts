@@ -324,8 +324,16 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
 
     // The User row is the name source for chat and the pod roster. An explicit
     // rename must update that portable identity, not only per-pod projections.
-    const renamedIdentity = displayName === undefined ? undefined
-      : await AgentIdentityService.renameAgentDisplayName(name, normalizedInstanceId, displayName.trim());
+    let renamedIdentity;
+    try {
+      renamedIdentity = displayName === undefined ? undefined
+        : await AgentIdentityService.renameAgentDisplayName(name, normalizedInstanceId, displayName.trim());
+    } catch (renameError: any) {
+      if (renameError?.code === 'agent_display_name_taken') {
+        return res.status(409).json({ code: renameError.code, error: renameError.message });
+      }
+      throw renameError;
+    }
     if (renamedIdentity === null) {
       return res.status(404).json({ error: 'Agent identity not found' });
     }

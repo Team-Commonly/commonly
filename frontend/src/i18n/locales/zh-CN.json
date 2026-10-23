@@ -2309,6 +2309,7 @@
     "saving": "正在保存…",
     "identitySaved": "已保存",
     "identityNameError": "显示名称须为1–80个字符。",
+    "identityNameTakenError": "其他智能体已使用此名称。",
     "identityPermissionError": "你没有权限修改此智能体的身份。",
     "identityScopeError": "此智能体也安装在你无权管理的 Pod 中。管理员可以为所有 Pod 更改其名称。",
     "identityMirrorError": "名称已保存，但聊天尚未同步。请稍后重试。",

@@ -68,7 +68,10 @@ jest.mock('../../../models/User', () => {
       lean: async () => {
         const dn = query['botMetadata.displayName'];
         return mockPeers
-          .filter((p) => p.botMetadata?.displayName === dn)
+          .filter((p) => (dn instanceof RegExp
+            ? dn.test(p.botMetadata?.displayName || '')
+            : p.botMetadata?.displayName === dn))
+          .filter((p) => !query.$or || p.isBot || p.botType === 'agent')
           .filter((p) => {
             if (!query._id || !query._id.$ne) return true;
             return String(p._id) !== String(query._id.$ne);
@@ -102,6 +105,22 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     expect(mockSaved[0].botMetadata).toEqual(expect.objectContaining({
       agentName: 'my-private', instanceId: 'seat', displayName: 'New name',
     }));
+  });
+
+  test('an explicit rename cannot impersonate another agent with a parenthetical label', async () => {
+    reset();
+    mockExisting = {
+      _id: 'curator-user', username: 'my-private-seat', isBot: true,
+      botMetadata: { agentName: 'my-private', instanceId: 'seat', displayName: 'Old name' },
+    };
+    mockPeers = [{
+      _id: 'other-agent', isBot: true,
+      botMetadata: { agentName: 'openclaw', instanceId: 'cody', displayName: 'Scout (Cody)' },
+    }];
+
+    await expect(AgentIdentityService.renameAgentDisplayName('my-private', 'seat', 'scout (cody)'))
+      .rejects.toMatchObject({ code: 'agent_display_name_taken' });
+    expect(mockSaved).toHaveLength(0);
   });
 
   test('a rename cannot adopt a human or another agent principal', async () => {

@@ -105,9 +105,12 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
         409: 'agentSettings.identityScopeError',
         503: 'agentSettings.identityMirrorError',
       };
-      setError(t(response?.data?.code === 'identity_projection_retryable'
-        ? 'agentSettings.identityProjectionError'
-        : messageKey[status || 0] || 'agentSettings.identitySaveError'));
+      const code = response?.data?.code;
+      setError(t(code === 'agent_display_name_taken'
+        ? 'agentSettings.identityNameTakenError'
+        : code === 'identity_projection_retryable'
+          ? 'agentSettings.identityProjectionError'
+          : messageKey[status || 0] || 'agentSettings.identitySaveError'));
     } finally {
       setBusy(false);
     }

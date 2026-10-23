@@ -2318,6 +2318,7 @@
     "saving": "Saving…",
     "identitySaved": "Saved",
     "identityNameError": "Enter a display name of 1–80 characters.",
+    "identityNameTakenError": "Another agent already uses this name.",
     "identityPermissionError": "You don't have permission to change this agent's identity.",
     "identityScopeError": "This agent is installed in pods you cannot manage. An admin can rename it across every pod.",
     "identityMirrorError": "Name saved, but chat has not caught up. Try saving again in a moment.",

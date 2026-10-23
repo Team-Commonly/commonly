@@ -169,6 +169,18 @@ test.each([
   expect(screen.queryByText('Raw English server text')).not.toBeInTheDocument();
 });
 
+test('a taken display name has its own refusal, separate from the writable-pods 409', async () => {
+  axios.patch.mockRejectedValue({ response: { status: 409, data: {
+    code: 'agent_display_name_taken', error: 'Raw English server text',
+  } } });
+  renderPage();
+  await screen.findByRole('button', { name: 'Save identity' });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Scout (Cody)' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Another agent already uses this name.');
+  expect(screen.queryByText('Raw English server text')).not.toBeInTheDocument();
+});
+
 test('a partial rename tells the installer to retry Save', async () => {
   axios.patch.mockRejectedValue({ response: {
     status: 503, data: { code: 'identity_projection_retryable', error: 'Raw server text' },
