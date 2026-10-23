@@ -168,10 +168,9 @@ export class DigestEmailService {
     const summaries = await Summary.find({
       _id: { $in: summaryIds },
       type: 'daily-digest',
-      'metadata.totalItems': { $gt: 0 },
       'metadata.emailedAt': { $exists: false },
     }) as DigestSummary[];
-    result.eligible = summaries.length;
+    result.eligible = summaries.filter((summary) => Number(summary.metadata?.totalItems || 0) > 0).length;
 
     for (const summary of summaries) {
       // Read again per recipient (sprint-review on #2275): the switch is for an
@@ -207,6 +206,18 @@ export class DigestEmailService {
           continue;
         }
 
+        const overflow = await NeedsYouEmail.find({
+          recipientUserId: user._id, status: 'overflow', includedInDigestAt: { $exists: false },
+        }).select('_id attentionItemId').lean();
+        const asks = overflow.length ? await AttentionItem.find({
+          _id: { $in: overflow.map((row: any) => row.attentionItemId) }, status: 'open',
+        }).select('title podName').lean() : [];
+        const heldAsks = asks.map((ask: any) => `${ask.title} · ${ask.podName || 'Pod'}`);
+        if (Number(summary.metadata?.totalItems || 0) <= 0) {
+          if (!heldAsks.length) continue;
+          result.eligible += 1;
+        }
+
         let unsubscribeToken = user.digestUnsubscribeToken;
         if (!unsubscribeToken) {
           const candidate = user.getOrCreateDigestUnsubscribeToken();
@@ -235,13 +246,6 @@ export class DigestEmailService {
         }
         if (summary.metadata) summary.metadata.emailedAt = emailedAt;
 
-        const overflow = await NeedsYouEmail.find({
-          recipientUserId: user._id, status: 'overflow', includedInDigestAt: { $exists: false },
-        }).select('_id attentionItemId').lean();
-        const asks = overflow.length ? await AttentionItem.find({
-          _id: { $in: overflow.map((row: any) => row.attentionItemId) }, status: 'open',
-        }).select('title podName').lean() : [];
-        const heldAsks = asks.map((ask: any) => `${ask.title} · ${ask.podName || 'Pod'}`);
         const bodies = buildEmailBodies(summary, unsubscribeToken, heldAsks);
         await sendEmail({
           to: user.email,

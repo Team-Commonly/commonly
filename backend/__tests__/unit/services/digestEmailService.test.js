@@ -145,6 +145,25 @@ describe('digestEmailService', () => {
     expect((await NeedsYouEmail.findById(held._id)).includedInDigestAt).toBeInstanceOf(Date);
   });
 
+  it('sends held asks even when the daily recap has no lines', async () => {
+    const user = await createUser({ email: `empty-held-${sequence + 1}@gmail.com` });
+    const ask = await AttentionItem.create({
+      recipientUserId: user._id, podId: user._id, kind: 'blocked',
+      source: { type: 'message', id: 'blocked-empty' },
+      title: 'Scout needs a key', podName: 'Research', status: 'open',
+    });
+    await NeedsYouEmail.create({
+      attentionItemId: ask._id, recipientUserId: user._id,
+      clickToken: 'b'.repeat(48), status: 'overflow',
+    });
+    const digest = await createDigest(user, 0, 'No updates today.');
+
+    const result = await digestEmailService.sendDigestEmails([runEntry(digest)]);
+
+    expect(result).toEqual(expect.objectContaining({ eligible: 1, sent: 1 }));
+    expect(mockSendEmail.mock.calls[0][0].textBody).toContain('Scout needs a key · Research');
+  });
+
   it('never sends an empty digest', async () => {
     const user = await createUser();
     const digest = await createDigest(user, 0);

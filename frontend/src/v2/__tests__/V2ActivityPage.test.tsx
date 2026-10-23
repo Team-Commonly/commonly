@@ -117,6 +117,41 @@ describe('V2ActivityPage', () => {
     expect(screen.getByRole('button', { name: 'Mark handled' })).toBeInTheDocument();
   });
 
+  test('an email ask overrides a saved filter for another pod', async () => {
+    sessionStorage.setItem('v2:activity:snapshot:user-a', JSON.stringify({
+      window: 'today', podId: 'pod-a', recap, queue: [], queueCount: 0, queueRemaining: 0,
+      composeDraft: 'keep this draft', focusedItemId: 'old-row', scrollY: 400, savedAt: Date.now(),
+    }));
+    const blocked = {
+      id: 'message-46', attentionItemId: 'attention-46', kind: 'blocked',
+      title: 'Scout needs the key', detail: 'Pod B is blocked',
+      podId: 'pod-b', podName: 'Another pod', createdAt: new Date().toISOString(),
+    };
+    mockGet.mockImplementation((url: string, config: any) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: {
+        items: config?.params?.podId === 'pod-a' ? [] : [blocked], count: 1,
+        countsByPod: { 'pod-b': 1 },
+      } });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+      return Promise.resolve({ data: recap });
+    });
+    HTMLElement.prototype.scrollIntoView = jest.fn();
+    render(
+      <AuthContext.Provider value={{ currentUser: { _id: 'user-a' }, loading: false } as any}>
+        <MemoryRouter initialEntries={['/v2/activity?item=attention-46']}>
+          <V2ActivityPage />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+
+    expect(await screen.findByText('Scout needs the key')).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-attention-id="attention-46"]')).toHaveFocus());
+    expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
+      params: expect.not.objectContaining({ podId: 'pod-a' }),
+    }));
+    expect(screen.getByDisplayValue('keep this draft')).toBeInTheDocument();
+  });
+
   test('projects the needs-you queue and moved-forward groups without inventing a count', async () => {
     mockGet.mockImplementation((url: string) => {
       if (url === '/api/activity/decision-queue') return Promise.resolve({ data: decisionQueue });

@@ -249,7 +249,11 @@ const V2ActivityPage: React.FC = () => {
     if (authLoading || snapshotAccountRef.current === accountId) return;
     snapshotAccountRef.current = accountId;
     const snapshot = accountId ? readActivitySnapshot(accountId) : null;
-    restoredSnapshotRef.current = snapshot;
+    const fromEmail = Boolean(emailTargetRef.current);
+    // A saved Back snapshot can be scoped to a different pod. An email link
+    // names a particular ask, so search across pods and let that ask win focus.
+    restoredSnapshotRef.current = fromEmail ? null : snapshot;
+    if (fromEmail && accountId) sessionStorage.removeItem(snapshotKey(accountId));
     setRuledDecisions({});
     setSettledQueueDecisions({});
     setHistoryRemaining(0);
@@ -257,21 +261,23 @@ const V2ActivityPage: React.FC = () => {
     setHistoryLoadingMore(false);
     historyOffsetRef.current = 0;
     if (snapshot) {
+      const startingScope = fromEmail ? 'all' : snapshot.podId || 'all';
+      const startingQueue = fromEmail ? [] : snapshot.queue || [];
       setWindow(snapshot.window || 'today');
-      setPodId(snapshot.podId || 'all');
+      setPodId(startingScope);
       setRecap(snapshot.recap || null);
-      queueScopeRef.current = snapshot.podId || 'all';
-      queueRef.current = snapshot.queue || [];
+      queueScopeRef.current = startingScope;
+      queueRef.current = startingQueue;
       setQueue(queueRef.current);
-      setQueueCount(snapshot.queueCount ?? null);
-      setQueueCountsByPod(snapshot.queueCountsByPod || {});
-      setQueueRemaining(snapshot.queueRemaining || 0);
+      setQueueCount(fromEmail ? null : snapshot.queueCount ?? null);
+      setQueueCountsByPod(fromEmail ? {} : snapshot.queueCountsByPod || {});
+      setQueueRemaining(fromEmail ? 0 : snapshot.queueRemaining || 0);
       setReplyDrafts(snapshot.replyDrafts || {});
       setComposePodId(snapshot.composePodId || '');
       setComposeDraft(snapshot.composeDraft || '');
       setComposeMenuOpen(false);
-      revalidationExtentRef.current = snapshot.queue?.length || 0;
-      revalidationScopeRef.current = snapshot.podId || 'all';
+      revalidationExtentRef.current = startingQueue.length;
+      revalidationScopeRef.current = startingScope;
       setLoading(!snapshot.recap);
     } else {
       setWindow('today');
