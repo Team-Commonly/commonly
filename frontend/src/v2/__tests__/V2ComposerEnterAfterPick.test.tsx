@@ -135,3 +135,34 @@ describe('V2Thread composer: Enter after the @ picker (TASK-413)', () => {
     expect(detail.sendMessage).not.toHaveBeenCalled();
   });
 });
+
+// Keystroke-level replay of the GTM sequence: type @, pick from the picker
+// with Enter, then press Enter in the composer. Each key gets a keydown,
+// a value change and a keyup, as a browser delivers them.
+describe('V2Thread composer: keystroke replay of the GTM sequence (TASK-413)', () => {
+  const typeKey = (el, char) => {
+    fireEvent.keyDown(el, { key: char });
+    const next = el.value + char;
+    fireEvent.change(el, { target: { value: next } });
+    el.setSelectionRange(next.length, next.length);
+    fireEvent.keyUp(el, { key: char });
+  };
+
+  test('type @, type a name, pick with Enter, then Enter sends', async () => {
+    const detail = makeDetail();
+    renderChat(detail);
+    const el = composer();
+    typeKey(el, '@');
+    typeKey(el, 's');
+    typeKey(el, 'a');
+    typeKey(el, 'm');
+    await screen.findByRole('option');
+
+    fireEvent.keyDown(el, { key: 'Enter' });
+    fireEvent.keyUp(el, { key: 'Enter' });
+    expect(detail.sendMessage).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(el, { key: 'Enter' });
+    await waitFor(() => expect(detail.sendMessage).toHaveBeenCalledTimes(1));
+  });
+});
