@@ -901,6 +901,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(shortNav).toContain('overflow-x: hidden');
   });
 
+  test('the Activity badge stays inside the rail: capped at 99+, with the exact count kept on the element', () => {
+    // TASK-363. A three-digit count ("230") pushed the badge 6px past the rail
+    // edge, and the nav scrolled sideways. The visible text caps at 99+; the
+    // exact count stays on the badge as a title, and in the aria-label.
+    expect(navRail).toContain('max={99}');
+    expect(navRail).toContain('title={String(count)}');
+    expect(navRail).not.toContain('Number.MAX_SAFE_INTEGER');
+    // A -14px right offset put the badge outside the nav box; -6px keeps it in.
+    expect(ruleBody(v2, '.v2-rail__item-icon .MuiBadge-badge')).toContain('right: -6px');
+  });
+
   test('team-card actions wrap on narrow screens so the agent name keeps width', () => {
     // At <=560px the Profile+Talk-to actions row must wrap to its own line —
     // inline, it squeezes the flex body to zero and the agent NAME disappears

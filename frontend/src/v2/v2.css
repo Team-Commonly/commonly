@@ -12713,7 +12713,7 @@ body.modern-ui.v2-canvas {
 /* Rail badge (66390): the exact count at any size — 118 reads as 118. Mono, bordered, cobalt, no clip. */
 .v2-rail__item-icon .MuiBadge-badge {
   top: -8px;
-  right: -14px;
+  right: -6px;
   height: 16px;
   min-width: 16px;
   padding: 0 4px;
