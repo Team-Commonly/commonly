@@ -1,0 +1,9 @@
+TASK-377 Connectors Tools grouping — 2026-10-23
+
+Local Chromium/Vite fixture rendered the production V2ConnectorTools component and v2.css with a non-admin user and five catalog offers (GitHub, Linear, Atlassian, Airtable, Sentry). API reads were mocked only to supply the two requested states; this is not a signed-in production screenshot.
+
+task-377-offers-1440.png: zero grants, five offer rows, no inactive fold.
+task-377-ended-1440.png: eight ended grants, five visible offer rows, closed inactive · 8 fold.
+task-377-ended-390.png: same ended state at 390px; five offers and the fold remain visible. document.body.scrollWidth = 390, viewport = 390.
+
+The fixture source was removed after capture. The fold tests in V2ConnectorTools.fold.test.tsx supply the reproducible data and assertions.
