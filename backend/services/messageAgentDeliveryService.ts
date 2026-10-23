@@ -2,8 +2,11 @@
 const AgentMentionService = require('./agentMentionService');
 // eslint-disable-next-line global-require
 const { AgentInstallation } = require('../models/AgentRegistry');
+// eslint-disable-next-line global-require
+const { findNonMemberMentionNotices } = require('./mentionNonMemberNoticeService');
 
 export interface MessageForAgentDelivery {
+  content?: string;
   userId?: { username?: string } | string;
   username?: string;
   user?: { username?: string };
@@ -34,7 +37,18 @@ interface AgentDelivery {
   woken: number;
 }
 
-type DeliveredMessage<T> = T | (T & { agentDelivery: AgentDelivery });
+type DeliveredMessage<T> = T | (T & { mentionNotices: unknown[]; agentDelivery?: AgentDelivery });
+
+const senderNotices = async (podId: string, message: { content?: string }): Promise<unknown[]> => {
+  try {
+    return await findNonMemberMentionNotices(podId, message.content || '');
+  } catch (error) {
+    // The message is already stored. Advisory feedback cannot turn a send
+    // into an apparent failure and tempt the caller to post it again.
+    console.warn('[messageAgentDelivery] mention notice lookup failed:', (error as Error).message);
+    return [];
+  }
+};
 
 // The persisted message is the authoritative sender frame. Request auth can
 // have only an id (JWT) while either PG or Mongo may have joined the author.
@@ -66,11 +80,12 @@ export const deliverMessageToAgents = async <T extends MessageForAgentDelivery>(
   onlyExplicitMentions = false,
 }: DeliveryOptions<T>): Promise<DeliveredMessage<T>> => {
   const username = authorUsername(message, requestUser);
+  const mentionNotices = await senderNotices(podId, message);
 
   if (AgentMentionService.isAutoRoutedDmPod(podType)) {
-    if (suppressImplicitReply) return message;
+    if (suppressImplicitReply) return mentionNotices.length ? { ...message, mentionNotices } : message;
     await AgentMentionService.enqueueDmEvent({ podId, message, userId, username });
-    return message;
+    return mentionNotices.length ? { ...message, mentionNotices } : message;
   }
 
   const mentionOptions = {
@@ -95,6 +110,7 @@ export const deliverMessageToAgents = async <T extends MessageForAgentDelivery>(
 
   return {
     ...message,
+    mentionNotices,
     agentDelivery: {
       enqueued: mentionResult.enqueued.length,
       implicit: mentionResult.implicit || [],

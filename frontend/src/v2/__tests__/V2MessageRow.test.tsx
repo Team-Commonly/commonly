@@ -14,6 +14,21 @@ describe('V2MessageRow', () => {
     process.env.REACT_APP_API_URL = previousApiUrl;
   });
 
+  it('shows a sender-only non-member notice as a quiet system line', () => {
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={{
+          id: 'unreachable-mention', pod_id: 'pod-1', user_id: 'viewer-1',
+          message_type: 'text', content: 'Please review @rhea',
+          created_at: '2026-10-23T21:00:00.000Z', user: { username: 'viewer' },
+          mentionNotices: [{ code: 'MENTION_NOT_IN_POD', handle: 'rhea', message: "rhea isn't in this pod. Invite them, or ask in a pod they're in." }],
+        }} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('status')).toHaveClass('v2-msg__sender-notice');
+    expect(screen.getByRole('status')).toHaveTextContent("rhea isn't in this pod");
+  });
+
   it('keeps the runtime beside the agent name before its timestamp', () => {
     render(
       <MemoryRouter>

@@ -46,6 +46,7 @@ describe('useV2PodDetail reply threading (#646)', () => {
 
   it('grafts the POST copy replyTo onto a socket copy that won the dedupe race', async () => {
     const replyTo = { id: 'm1', content: 'original', username: 'bob' };
+    const mentionNotices = [{ code: 'MENTION_NOT_IN_POD', handle: 'rhea', message: "rhea isn't in this pod." }];
     let resolvePost;
     mockApi.post.mockReturnValue(new Promise((resolve) => { resolvePost = resolve; }));
 
@@ -66,7 +67,7 @@ describe('useV2PodDetail reply threading (#646)', () => {
     // POST response (carries replyTo) resolves second.
     await act(async () => {
       resolvePost({
-        id: 'm9', pod_id: 'p1', content: 'a reply', created_at: '2026-07-07T00:00:00Z', replyTo,
+        id: 'm9', pod_id: 'p1', content: 'a reply', created_at: '2026-07-07T00:00:00Z', replyTo, mentionNotices,
       });
       await sendPromise;
     });
@@ -74,6 +75,7 @@ describe('useV2PodDetail reply threading (#646)', () => {
     const sent = result.current.messages.filter((m) => m.id === 'm9');
     expect(sent).toHaveLength(1);
     expect(sent[0].replyTo).toEqual(replyTo);
+    expect(sent[0].mentionNotices).toEqual(mentionNotices);
   });
 
   it('keeps a single copy when the POST response wins the race', async () => {

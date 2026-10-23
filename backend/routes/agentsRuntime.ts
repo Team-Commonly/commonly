@@ -25,6 +25,7 @@ const AgentEventService = require('../services/agentEventService');
 const HostedRuntimeMeter = require('../services/hostedRuntimeService');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
+const { findNonMemberMentionNotices } = require('../services/mentionNonMemberNoticeService');
 const AgentThreadService = require('../services/agentThreadService');
 const PodContextService = require('../services/podContextService');
 const GlobalModelConfigService = require('../services/globalModelConfigService');
@@ -2117,7 +2118,25 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
         .catch((err: any) => console.warn('agent post-message DM/mention enqueue failed:', err.message));
     }
 
-    return res.json(result);
+    let mentionNotices: Array<{ code: 'MENTION_NOT_IN_POD'; handle: string; message: string }> = [];
+    if (result.success && !result.skipped && result.message) {
+      try {
+        mentionNotices = await findNonMemberMentionNotices(
+          podId, String((result.message as { content?: string }).content || ''),
+        );
+      } catch (noticeError) {
+        // The post already landed. A failed advisory lookup cannot make the
+        // tool report a failed send and invite a duplicate retry.
+        console.warn('[agent post-message] mention notice lookup failed:', (noticeError as Error).message);
+      }
+    }
+    return res.json({
+      ...result,
+      mentionNotices,
+      ...(mentionNotices.length > 0
+        ? { notice: mentionNotices.map((item) => item.message).join(' ') }
+        : {}),
+    });
   } catch (error: any) {
     const err = error as Error & { code?: string; statusCode?: number; name?: string };
     // A bad thread target is caller-fixable input, same as on the human
