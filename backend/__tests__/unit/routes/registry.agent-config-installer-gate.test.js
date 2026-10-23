@@ -228,7 +228,8 @@ describe('agent config PATCH — installer gate', () => {
     expect(primary.save).toHaveBeenCalledTimes(1);
     expect(AgentProfile.updateMany).toHaveBeenCalledWith(
       { agentId: 'openclaw:curator', podId: { $in: ['pod-1'] } },
-      expect.objectContaining({ name: 'New name', instructions: 'Help the pod', persona }),
+      { $set: expect.objectContaining({ name: 'New name', instructions: 'Help the pod', persona }) },
+      { runValidators: true },
     );
   });
 
@@ -342,7 +343,8 @@ describe('agent config PATCH — installer gate', () => {
     expect(otherOwnersRow.save).toHaveBeenCalledTimes(1);
     expect(AgentProfile.updateMany).toHaveBeenCalledWith(
       { agentId: 'openclaw:curator', podId: { $in: ['pod-1', 'pod-2'] } },
-      expect.objectContaining({ name: 'Renamed' }),
+      { $set: expect.objectContaining({ name: 'Renamed' }) },
+      { runValidators: true },
     );
   });
 
