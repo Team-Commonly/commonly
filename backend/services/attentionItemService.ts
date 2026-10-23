@@ -52,14 +52,16 @@ const installerForAgent = async (
   try {
     const agent = agentUserId
       ? await User.findById(agentUserId).select('isBot username botMetadata').lean() : null;
-    if (agent?.isBot && agent.botMetadata?.ownerUserId) return String(agent.botMetadata.ownerUserId);
     const name = String(declaredName || (agent?.isBot && (agent.botMetadata?.agentName || agent.username)) || '').toLowerCase();
-    if (!name) return null;
-    const instanceId = String(declaredInstanceId || agent?.botMetadata?.instanceId || 'default');
-    const installation = await AgentInstallation.findOne({
-      podId, agentName: name, instanceId, status: { $ne: 'uninstalled' },
-    }).select('installedBy').lean();
-    return installation?.installedBy ? String(installation.installedBy) : null;
+    if (name) {
+      const instanceId = String(declaredInstanceId || agent?.botMetadata?.instanceId || 'default');
+      const installation = await AgentInstallation.findOne({
+        podId, agentName: name, instanceId, status: { $ne: 'uninstalled' },
+      }).select('installedBy').lean();
+      if (installation?.installedBy) return String(installation.installedBy);
+    }
+    return agent?.isBot && agent.botMetadata?.ownerUserId
+      ? String(agent.botMetadata.ownerUserId) : null;
   } catch (error) {
     // The attention row still matters if its optional email owner cannot be
     // resolved. Never send to the pod creator as a fallback.

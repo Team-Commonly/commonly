@@ -133,6 +133,31 @@ describe('attentionItemService', () => {
     expect(mockSendNeedsYouEmail).toHaveBeenCalledWith(expect.objectContaining({ recipientUserId: 'sam' }));
   });
 
+  it('uses the installation in this pod before a global bot owner', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: ['sam', 'lee'] }));
+    mockUserFind.mockReturnValue(chain([
+      { _id: 'sam', username: 'Sam', isBot: false },
+      { _id: 'lee', username: 'Lee', isBot: false },
+    ]));
+    mockUserFindById.mockReturnValue(chain({
+      _id: 'scout', username: 'scout', isBot: true,
+      botMetadata: { ownerUserId: 'sam', agentName: 'scout' },
+    }));
+    mockInstallationFindOne.mockReturnValue(chain({ installedBy: 'lee' }));
+    mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-1' });
+
+    await AttentionItemService.recordDecision({
+      _id: 'decision-1', podId: 'pod-1', agentUserId: 'scout', agentName: 'scout',
+      title: 'Which release?', options: [{ label: 'Now' }, { label: 'Later' }],
+    });
+
+    expect(mockInstallationFindOne).toHaveBeenCalledWith(expect.objectContaining({
+      podId: 'pod-1', agentName: 'scout', instanceId: 'default',
+    }));
+    expect(mockSendNeedsYouEmail).toHaveBeenCalledTimes(1);
+    expect(mockSendNeedsYouEmail).toHaveBeenCalledWith(expect.objectContaining({ recipientUserId: 'lee' }));
+  });
+
   it('does not re-materialize a legacy-acknowledged mention during backfill', async () => {
     mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: ['sam'] }));
     mockUserFind.mockReturnValue(chain([
