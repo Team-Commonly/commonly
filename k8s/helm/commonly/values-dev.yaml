@@ -439,6 +439,10 @@ hostedMcp:
   hiddenEntries:
     # Client secrets exist, but Workspace MCP enrollment is still off.
     - google-calendar
+    # Not walked end to end on staging before the 10-23 deploy (Cofounder plan B: unwalked ships hidden).
+    # Remove each line once its staging walk passes.
+    - atlassian
+    - sentry
   googleCalendar:
     enabled: false
 
