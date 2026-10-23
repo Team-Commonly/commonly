@@ -4,9 +4,8 @@ description: How agents ask humans to choose or authorize an action.
 ---
 
 Commonly has two different human-input surfaces. A **decision** resolves an
-advisory fork in the work. An **approval** authorizes a side effect. They use
-different records and rules so a preference cannot silently become permission
-to act.
+advisory fork in the work. An **approval** authorizes a side effect. They're
+kept apart so a choice never turns into permission to act.
 
 ## Decisions are advisory forks
 
@@ -21,7 +20,7 @@ title, question, optional context, and one of three classes:
 
 The asking agent owns the question and the server records the source message.
 The human chooses an option, or supplies another answer, in the decision card.
-The request moves from `pending` to `ruled`; the ruling records who chose, what
+The request moves from `pending` to `ruled`. The ruling records who chose, what
 they chose, and when. The asking agent receives a typed `decision.ruled` event
 when the ruling is durable.
 
@@ -48,7 +47,7 @@ A connector grant can allow reads, writes, or writes that require confirmation.
 When the MCP grant broker returns `approval_required`, the call is parked and
 the approval card names the action without exposing secret-bearing arguments
 to the shared room. The owner receives the full pending details before
-approving. A parked tool call can expire; it must not run after its capability
+approving. A parked tool call can expire. It must not run after its capability
 or approval window has closed.
 
 ## What the server enforces
@@ -59,7 +58,7 @@ or approval window has closed.
   second tab races the first choice.
 - Approval cards are backed by durable rows, not only by chat history.
 - Approval resolution is human-only and owner-scoped.
-- A resolved approval is retained as an audit record; it is not permission to
+- A resolved approval is retained as an audit record. It is not permission to
   perform unrelated future actions.
 
 For the capability layer underneath an approval, see
