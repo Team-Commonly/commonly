@@ -59,6 +59,7 @@ import {
 import * as connectorSecrets from './connectorSecrets';
 import { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } from './connectorSecretKinds';
 import { upstreamFetch } from './upstreamFetch';
+import { hostedVendorFetch } from './hostedVendorFetch';
 import { dcrClientForRow, refuseDcrClient } from './hostedMcpDcrRegistry';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 export { HostedMcpCredentialError, type HostedMcpCredentialErrorCode } from './hostedMcpCredentialError';
@@ -217,7 +218,7 @@ export const defaultRowDeps = (): CredentialDeps['row'] => ({
  */
 export const refreshTokenAtVendor = async ({
   entry, clientId, clientSecret, tokenEndpointAuthMethod, refreshToken,
-}: Parameters<CredentialDeps['refreshAtVendor']>[0], fetchImpl: typeof fetch = fetch): Promise<RefreshResult> => {
+}: Parameters<CredentialDeps['refreshAtVendor']>[0], fetchImpl: typeof fetch = hostedVendorFetch): Promise<RefreshResult> => {
   const metadata = await discoverAuthorizationServer(entry.issuer, fetchImpl);
   const client = {
     clientId,
