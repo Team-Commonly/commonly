@@ -149,9 +149,48 @@ describe('webAddressProvenance', () => {
       const page = Array.from({ length: 400 }, (_, i) => `https://h${i}.example/p${'!'.repeat(50)}x`).join(' ');
       [page, page, page].forEach((text) => given.add(text));
 
-      const started = process.hrtime.bigint();
-      for (let i = 0; i < 1000; i += 1) given.has(`https://attacker.example/c?d=${i}`);
-      expect(Number(process.hrtime.bigint() - started) / 1e6).toBeLessThan(50);
+      // Count work instead of wall time: a busy CI runner must not make an
+      // indexed lookup fail, and scanning 400 entries on each attempt must.
+      let indexed = 0;
+      let scanned = 0;
+      let rescannedPages = 0;
+      const addresses = given.given;
+      given.given = new Proxy(addresses, {
+        get(target, method) {
+          if (method === 'get') return (key) => { indexed += 1; return target.get(key); };
+          if ([Symbol.iterator, 'entries', 'keys', 'values'].includes(method)) {
+            return () => {
+              const iterator = target[method]();
+              return {
+                next() {
+                  const item = iterator.next();
+                  if (!item.done) scanned += 1;
+                  return item;
+                },
+                [Symbol.iterator]() { return this; },
+              };
+            };
+          }
+          if (method === 'forEach') {
+            return (callback) => target.forEach((...args) => { scanned += 1; callback(...args); });
+          }
+          const value = target[method];
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      const split = String.prototype.split;
+      const splitSpy = jest.spyOn(String.prototype, 'split').mockImplementation(function countPageScans(...args) {
+        if (String(this) === page) rescannedPages += 1;
+        return split.apply(this, args);
+      });
+      try {
+        for (let i = 0; i < 1000; i += 1) expect(given.has(`https://attacker.example/c?d=${i}`)).toBe(false);
+      } finally {
+        splitSpy.mockRestore();
+      }
+      expect(scanned).toBe(0);
+      expect(rescannedPages).toBe(0);
+      expect(indexed).toBeLessThanOrEqual(2000);
     });
   });
 });
