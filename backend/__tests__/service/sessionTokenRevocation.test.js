@@ -88,13 +88,15 @@ describe('human session revocation and absolute lifetime', () => {
 
   it('cannot mint the new version when revocation lands after middleware authentication', async () => {
     const versionZero = (await login().expect(200)).body.token;
-    const raceApp = express();
-    raceApp.post('/refresh-race', authMiddleware, async (req, _res, next) => {
-      await User.updateOne({ _id: req.userId }, { $inc: { tokenVersion: 1 } });
-      next();
-    }, refresh);
-    await request(raceApp).post('/refresh-race')
-      .set('Authorization', `Bearer ${versionZero}`).expect(401);
+    const req = { header: (name) => (name === 'Authorization' ? `Bearer ${versionZero}` : undefined) };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const next = jest.fn();
+    await authMiddleware(req, res, next);
+    expect(next).toHaveBeenCalledWith();
+    await User.updateOne({ _id: req.userId }, { $inc: { tokenVersion: 1 } });
+    await refresh(req, res);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Session has been revoked' });
     await getUser(versionZero).expect(401);
   });
 
