@@ -79,6 +79,7 @@ Walked `staging.commonly.me` with a non-admin walk user in an invite-only pod wh
 | A callback error page is unhelpful | TASK-405, P1 |
 | Staging `BACKEND_URL` had been set to production, so staging CIMD advertised production's callback | fixed by #2529 |
 | Staging had no connector key ring | fixed by #2533 |
+| Sentry's Authorized Apps page lists the hosted-MCP client as `mcp.sentry.dev`, not "Commonly (Sentry)"; vendor-side revocation there is per client and cuts every Sentry-MCP session on the account | Commonly disconnect is the supported per-token revoke path: it calls the vendor's RFC 7009 `revocation_endpoint` before deleting the row; staging removal returned 200 |
 
 ## Walk of 2026-09-25
 
