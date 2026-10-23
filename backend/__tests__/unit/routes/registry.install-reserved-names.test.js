@@ -87,7 +87,12 @@ const buildSelectLeanChain = (result) => ({
   select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(result) }),
 });
 
-const makeRes = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
+const makeRes = () => ({
+  statusCode: 200,
+  locals: {},
+  status: jest.fn(function status(code) { this.statusCode = code; return this; }),
+  json: jest.fn(),
+});
 
 
 const officialRow = (agentName) => ({
@@ -99,7 +104,7 @@ const officialRow = (agentName) => ({
   manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
 });
 
-const installAs = async ({ role = 'user', agentName, runtimeType }) => {
+const installAs = async ({ role = 'user', agentName, runtimeType, recordRefusal = false }) => {
   User.findById.mockReturnValue(buildSelectLeanChain({ username: 'installer', role, entitlements: { cloudAgents: true } }));
   const req = {
     body: {
@@ -113,6 +118,10 @@ const installAs = async ({ role = 'user', agentName, runtimeType }) => {
     userId: 'user-1',
   };
   const res = makeRes();
+  if (recordRefusal) {
+    const layer = installRouter.stack.find((entry) => entry.route?.path === '/install');
+    layer.route.stack[0].handle(req, res, () => {});
+  }
   await installHandler(req, res);
   return res;
 };
@@ -172,5 +181,26 @@ describe('registry install — built-in names are reserved for self-serve instal
     AgentRegistry.getByName.mockResolvedValue({ ...officialRow('standup-bot'), registry: 'commonly-community' });
     const res = await installAs({ agentName: 'standup-bot', runtimeType: 'webhook' });
     expect(reservedCalls(res)).toHaveLength(0);
+  });
+
+  test('the registry 404 emits one structured refusal line without credentials', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      AgentRegistry.getByName.mockResolvedValue(null);
+      const res = await installAs({ agentName: 'new-agent', runtimeType: 'unsupported', recordRefusal: true });
+      expect(res.statusCode).toBe(404);
+      const lines = warn.mock.calls.filter(([prefix]) => prefix === '[agent-install-refused]');
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0][1])).toEqual({
+        route: '/api/registry/install',
+        agentName: 'new-agent',
+        instanceId: 'default',
+        runtimeType: 'unsupported',
+        reason: 'agent_not_found_in_registry',
+        userId: 'user-1',
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

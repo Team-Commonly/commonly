@@ -20,6 +20,7 @@ import {
   seatEnvironmentKey,
 } from '../services/seatEnvironmentProjection';
 import { ownsRuntimeIdentity, OwnershipFailure } from '../services/runtimeIdentityOwnership';
+import { logAgentInstallRefusal } from '../middleware/logAgentInstallRefusal';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -201,7 +202,7 @@ router.post('/adopt', bindingRateLimit, daemonAuth('agents:adopt'), async (req: 
 // machine sees the request in /assigned and performs the adopt CAS itself,
 // so D3's "no adoption without a user choice" and "one binding writer" both
 // hold. machineId: null withdraws the request.
-router.post('/request', bindingRateLimit, auth, async (req: express.Request & { user?: { id?: string } }, res: express.Response) => {
+router.post('/request', logAgentInstallRefusal('/api/agent-binding/request', 'wrapper'), bindingRateLimit, auth, async (req: express.Request & { user?: { id?: string } }, res: express.Response) => {
   try {
     const agentName = normalize(req.body?.agentName);
     const instanceId = normalize(req.body?.instanceId) || 'default';

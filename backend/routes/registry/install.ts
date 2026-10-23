@@ -49,6 +49,7 @@ const {
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
+const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 
 // Inlined per-route limiter. This comment used to attribute its clean CodeQL
@@ -151,7 +152,7 @@ const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
  * POST /api/registry/install
  * Install an agent to a pod
  */
-installRouter.post('/install', installRateLimit, auth, async (req: any, res: any) => {
+installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), installRateLimit, auth, async (req: any, res: any) => {
   try {
     const {
       agentName, podId, version, config = {}, scopes = [], instanceId, displayName, gatewayId, description,
@@ -245,6 +246,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     } else {
       normalizedInstanceId = deriveInstanceId(displayName, agentName);
     }
+    res.locals.agentInstallInstanceId = normalizedInstanceId;
 
     let agent = await AgentRegistry.getByName(agentName);
 
