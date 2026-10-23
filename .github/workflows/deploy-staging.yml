@@ -204,6 +204,8 @@ jobs:
           SMOKE_API: https://api-staging.commonly.me
           SMOKE_EMAIL: ${{ secrets.STAGING_SMOKE_EMAIL }}
           SMOKE_PW: ${{ secrets.STAGING_SMOKE_PW }}
+          SMOKE_FRESH_EMAIL: ${{ secrets.STAGING_SMOKE_FRESH_EMAIL }}
+          SMOKE_FRESH_PW: ${{ secrets.STAGING_SMOKE_FRESH_PW }}
         run: |
           set -euo pipefail
           if [ -z "${SMOKE_EMAIL:-}" ] || [ -z "${SMOKE_PW:-}" ]; then
