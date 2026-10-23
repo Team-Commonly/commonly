@@ -196,6 +196,30 @@ const REACTION_TOKEN_RE = /\[\[reactions:([^\]]+)\]\]/g;
 const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // Absolute image URLs and the instance-relative upload reference the legacy
 // image send posted as bare content (`/api/uploads/<key>.png`).
+// Bare http(s) URLs become markdown links. The match runs to the end of the URL,
+// so `github.com/x` links whole. Trailing punctuation stays outside the link, and
+// so does a closing paren the URL does not open. Brackets are escaped in the link
+// text and percent-encoded in the destination, so a `]` or `(` in a URL cannot
+// close the markdown link early and leave the URL as plain text.
+const LINK_DEST_ENCODE: Record<string, string> = { '(': '%28', ')': '%29', '[': '%5B', ']': '%5D' };
+export const linkifyBareUrls = (text: string): string => text.replace(
+  /(?<![(<[])https?:\/\/[^\s<>"]+/g,
+  (raw) => {
+    let url = raw;
+    for (;;) {
+      const before = url;
+      url = url.replace(/[.,!?;:]+$/, '');
+      if (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
+        url = url.slice(0, -1);
+      }
+      if (url === before) break;
+    }
+    const label = url.replace(/[[\]]/g, '\\$&');
+    const dest = url.replace(/[()[\]]/g, (c) => LINK_DEST_ENCODE[c]);
+    return `[${label}](${dest})${raw.slice(url.length)}`;
+  },
+);
+
 const IMAGE_URL_RE = /^(?:https?:\/\/.+|\/api\/uploads\/[^\s]+)\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i;
 
 // Code spans and fences are quoted grammar, not attachments: mask them while
@@ -522,20 +546,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // syntax. Without this, agents posting raw URLs render as plain text and
   // the user can't click them.
   if (stripped && !externalBareImage) {
-    // The match runs to the end of the URL (a lazy match stopped at the first
-    // dot, so github.com/x linked only "https://github"). Trailing punctuation
-    // stays outside the link, and a trailing ")" stays outside unless the URL
-    // opens a paren of its own.
-    stripped = stripped.replace(
-      /(?<![(<[])https?:\/\/[^\s<>"]+/g,
-      (raw) => {
-        let url = raw.replace(/[.,!?;:]+$/, '');
-        while (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
-          url = url.slice(0, -1);
-        }
-        return `[${url}](${url})${raw.slice(url.length)}`;
-      },
-    );
+    stripped = linkifyBareUrls(stripped);
   }
 
   // Highlight messages that @-mention the current user. Word-boundary so

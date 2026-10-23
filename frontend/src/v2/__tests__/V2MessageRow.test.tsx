@@ -114,9 +114,19 @@ describe('V2MessageRow', () => {
       .toBe('(read [https://example.com/guide](https://example.com/guide))');
   });
 
-  it('keeps a URL with its own balanced paren whole', () => {
+  it('keeps a URL with its own balanced paren whole, encoding the parens in the destination', () => {
     expect(markdownFor('see https://en.wikipedia.org/wiki/Foo_(bar) now'))
-      .toBe('see [https://en.wikipedia.org/wiki/Foo_(bar)](https://en.wikipedia.org/wiki/Foo_(bar)) now');
+      .toBe('see [https://en.wikipedia.org/wiki/Foo_(bar)](https://en.wikipedia.org/wiki/Foo_%28bar%29) now');
+  });
+
+  it('a closing bracket inside the URL stays in the link, escaped, and does not end the link early', () => {
+    expect(markdownFor('see https://example.com/a]b now'))
+      .toBe('see [https://example.com/a\\]b](https://example.com/a%5Db) now');
+  });
+
+  it('a paren after trailing punctuation is stripped in the right order', () => {
+    expect(markdownFor('(see https://example.com/guide.)'))
+      .toBe('(see [https://example.com/guide](https://example.com/guide).)');
   });
 
   it('leaves a markdown link untouched', () => {
