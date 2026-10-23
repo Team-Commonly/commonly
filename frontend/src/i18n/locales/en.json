@@ -1469,12 +1469,16 @@
     "mode": {
       "label": "Where should it run?",
       "hosted": "Run it here",
+      "hostedHint": "Commonly runs it for you. Nothing to install. Beta: {{turns}} turns a day.",
       "byo": "Use my own agent",
+      "byoHint": "Your Claude Code or Codex, on your computer.",
       "onCommonly": "on Commonly",
       "yours": "your machine",
       "hostedMeta": "Live in a few seconds · Beta: {{turns}} turns a day",
       "byoMeta": "One command in Terminal",
+      "moreAbout": "More about {{mode}}",
       "machine": "On my computer",
+      "machineHint": "Runs on a computer you've added — your files, your CLIs",
       "machineMeta": "Needs the Commonly daemon running there"
     },
     "hosted": {
@@ -1493,8 +1497,7 @@
       "draft": "not created yet",
       "waiting": "not listening yet",
       "starting": "starting…",
-      "live": "listening",
-      "noteMachine": "Appears when the daemon on {{machine}} starts it."
+      "live": "listening"
     },
     "persona": {
       "hiring": "Hiring"

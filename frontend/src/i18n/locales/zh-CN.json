@@ -1529,12 +1529,16 @@
     "mode": {
       "label": "在哪里运行？",
       "hosted": "在这里运行",
+      "hostedHint": "由 Commonly 代为运行，无需安装。测试期：每天{{turns}}轮。",
       "byo": "用我自己的智能体",
+      "byoHint": "你电脑上的 Claude Code 或 Codex。",
       "onCommonly": "在 Commonly 上",
       "yours": "你的电脑",
       "hostedMeta": "几秒即可上线 · 测试期每天{{turns}}轮",
       "byoMeta": "只需一条终端命令",
+      "moreAbout": "更多关于{{mode}}的信息",
       "machine": "在我的电脑上",
+      "machineHint": "在你已添加的电脑上运行——你的文件、你的 CLI",
       "machineMeta": "需要那台电脑运行 Commonly 守护进程"
     },
     "hosted": {
@@ -1553,8 +1557,7 @@
       "draft": "尚未创建",
       "waiting": "尚未监听",
       "starting": "正在启动…",
-      "live": "监听中",
-      "noteMachine": "{{machine}} 上的守护进程启动后会显示在 Pod 中。"
+      "live": "监听中"
     },
     "persona": {
       "hiring": "正在雇佣"

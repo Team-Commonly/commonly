@@ -16,7 +16,9 @@ jest.mock('../../utils/axiosConfig', () => {
 });
 
 jest.mock('../../components/AppsManagement', () => {
-  const MockAppsManagement = ({ variant }: { variant?: string }) => <div data-variant={variant}>Connected app controls</div>;
+  const MockAppsManagement = ({ variant, showIntegrations }: { variant?: string; showIntegrations?: boolean }) => (
+    <div data-variant={variant} data-show-integrations={String(showIntegrations)}>Connected app controls</div>
+  );
   MockAppsManagement.displayName = 'MockAppsManagement';
   return MockAppsManagement;
 });
@@ -140,6 +142,9 @@ describe('V2SettingsPage', () => {
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('src', '/uploads/lily.png');
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('data-kind', 'human');
     expect(screen.getByText('Connected app controls')).toHaveAttribute('data-variant', 'settings');
+    expect(screen.getByText('Connected app controls')).toHaveAttribute('data-show-integrations', 'false');
+    expect(screen.getByRole('link', { name: /Connectors/ })).toHaveAttribute('href', '/v2/connectors');
+    expect(screen.getByText('Developer apps').closest('details')).not.toHaveAttribute('open');
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload photo' })).toBeInTheDocument();
     expect(screen.getByText('Regenerate for another, or upload a photo.')).toBeInTheDocument();

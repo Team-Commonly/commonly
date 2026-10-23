@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2FeaturePage from './V2FeaturePage';
 import V2Avatar from './V2Avatar';
+import V2Hint from './V2Hint';
 import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
@@ -167,6 +168,7 @@ const V2AgentBYO: React.FC = () => {
   const [pendingReplacement, setPendingReplacement] = useState<{ agentName: string; podId: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorField, setErrorField] = useState<'machine' | 'name' | 'pod' | null>(null);
   const [issued, setIssued] = useState<{ token: string; agentName: string; podId: string; issuedAt: number } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   // Which CLI the listener runs. Pinned in the command (`--adapter`), so a Mac
@@ -247,9 +249,6 @@ const V2AgentBYO: React.FC = () => {
   // must not open onto a page that shows no command. Elsewhere the full page
   // says why and what works instead.
   const showCompactByo = compactByo && listenerAvailable && !showCompactHosted && !personaCard && mode === 'byo';
-  // One lookup, two readers (TASK-163): the preview note and the placement
-  // payload must name the SAME machine, so it is derived once here rather
-  // than restated at each call site.
   const selectedMachineName = machines.find((m) => m.machineId === machineId)?.name || machineId;
   // Model choice for the on-my-computer path. Adapter and model travel
   // together: a Codex model slug must never be left behind if the user flips
@@ -498,6 +497,7 @@ const V2AgentBYO: React.FC = () => {
   // here either), and starts the agent — the page watches it come up.
   const submitMachine = async (cleanName: string) => {
     if (!machineId) {
+      setErrorField('machine');
       setError(t('agentByo.errors.machineRequired'));
       return;
     }
@@ -548,13 +548,16 @@ const V2AgentBYO: React.FC = () => {
 
   const submit = async () => {
     setError(null);
+    setErrorField(null);
     setPendingReplacement(null);
     const cleanName = sanitizeAgentName(name);
     if (!cleanName) {
+      setErrorField('name');
       setError(t('agentByo.errors.nameRequired'));
       return;
     }
     if (!podId) {
+      setErrorField('pod');
       setError(t('agentByo.errors.podRequired'));
       return;
     }
@@ -758,6 +761,8 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
+  const chooseMode = (nextMode: 'hosted' | 'byo' | 'machine') => setMode(nextMode);
+
   const apiUrl = typeof window !== 'undefined' && /api-dev|api\./.test(window.location.hostname)
     ? `https://${window.location.hostname.replace(/^app/, 'api')}`
     : 'https://api.commonly.me';
@@ -916,52 +921,67 @@ const V2AgentBYO: React.FC = () => {
             <>
             <p className="v2-byo__modes-question" id="byo-modes-question">{t('agentByo.mode.label')}</p>
             <div className="v2-byo__modes" role="group" aria-labelledby="byo-modes-question">
-              <button
-                type="button"
-                className="v2-byo__mode"
-                aria-pressed={mode === 'hosted'}
-                onClick={() => setMode('hosted')}
-                data-testid="byo-mode-hosted"
-              >
-                {/* A fact, not advice: nothing on this page steers the first
-                    choice (ruled 2026-10-15). */}
-                <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.onCommonly')}</span>
-                <span className="v2-byo__mode-title">{t('agentByo.mode.hosted')}</span>
-                <span className="v2-byo__mode-meta">{t('agentByo.mode.hostedMeta', { turns: hosting.caps.turnsPerDay })}</span>
-              </button>
-              {machines.length > 0 && (
+              <div className="v2-byo__mode-option">
                 <button
                   type="button"
                   className="v2-byo__mode"
-                  aria-pressed={mode === 'machine'}
-                  onClick={() => setMode('machine')}
-                  data-testid="byo-mode-machine"
+                  aria-pressed={mode === 'hosted'}
+                  onClick={() => chooseMode('hosted')}
+                  data-testid="byo-mode-hosted"
+                >
+                  {/* A fact, not advice: nothing on this page steers the first
+                      choice (ruled 2026-10-15). */}
+                  <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.onCommonly')}</span>
+                  <span className="v2-byo__mode-title">{t('agentByo.mode.hosted')}</span>
+                  <span className="v2-byo__hint">{t('agentByo.mode.hostedHint', { turns: hosting.caps.turnsPerDay })}</span>
+                </button>
+                <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.hosted') })}>
+                  {t('agentByo.mode.hostedMeta')}
+                </V2Hint>
+              </div>
+              {machines.length > 0 && (
+                <div className="v2-byo__mode-option">
+                  <button
+                    type="button"
+                    className="v2-byo__mode"
+                    aria-pressed={mode === 'machine'}
+                    onClick={() => chooseMode('machine')}
+                    data-testid="byo-mode-machine"
+                  >
+                    <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
+                    <span className="v2-byo__mode-title">{t('agentByo.mode.machine')}</span>
+                    <span className="v2-byo__hint">{t('agentByo.mode.machineHint')}</span>
+                  </button>
+                  <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.machine') })}>
+                    {t('agentByo.mode.machineMeta')}
+                  </V2Hint>
+                </div>
+              )}
+              <div className="v2-byo__mode-option">
+                <button
+                  type="button"
+                  className="v2-byo__mode"
+                  aria-pressed={mode === 'byo'}
+                  onClick={() => chooseMode('byo')}
+                  data-testid="byo-mode-byo"
                 >
                   <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
-                  <span className="v2-byo__mode-title">{t('agentByo.mode.machine')}</span>
-                  <span className="v2-byo__mode-meta">{t('agentByo.mode.machineMeta')}</span>
+                  <span className="v2-byo__mode-title">{t('agentByo.mode.byo')}</span>
+                  <span className="v2-byo__hint">{t('agentByo.mode.byoHint')}</span>
                 </button>
-              )}
-              <button
-                type="button"
-                className="v2-byo__mode"
-                aria-pressed={mode === 'byo'}
-                onClick={() => setMode('byo')}
-                data-testid="byo-mode-byo"
-              >
-                <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
-                <span className="v2-byo__mode-title">{t('agentByo.mode.byo')}</span>
-                <span className="v2-byo__mode-meta">{t('agentByo.mode.byoMeta')}</span>
-              </button>
+                <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.byo') })}>
+                  {t('agentByo.mode.byoMeta')}
+                </V2Hint>
+              </div>
             </div>
             </>
           )}
           {mode === 'machine' && (
-            <label className="v2-byo__field">
+            <label className={`v2-byo__field${errorField === 'machine' ? ' v2-byo__field--error' : ''}`}>
               <span className="v2-byo__label">{t('agentByo.form.machineLabel')}</span>
               <select
                 value={machineId}
-                onChange={(e) => setMachineId(e.target.value)}
+                onChange={(e) => { setErrorField(null); setMachineId(e.target.value); }}
                 className="v2-byo__input"
                 data-testid="byo-machine-select"
               >
@@ -979,6 +999,7 @@ const V2AgentBYO: React.FC = () => {
               <select
                 value={adapter}
                 onChange={(e) => {
+                  setErrorField(null);
                   setAdapter(e.target.value as MachineAdapter);
                   setModel('');
                 }}
@@ -1000,7 +1021,7 @@ const V2AgentBYO: React.FC = () => {
                     type="text"
                     list="byo-codex-models"
                     value={model}
-                    onChange={(e) => setModel(e.target.value)}
+                    onChange={(e) => { setErrorField(null); setModel(e.target.value); }}
                     placeholder={t('agentByo.form.modelDefault')}
                     className="v2-byo__input"
                     data-testid="byo-model-select"
@@ -1014,7 +1035,7 @@ const V2AgentBYO: React.FC = () => {
               ) : (
                 <select
                   value={model}
-                  onChange={(e) => setModel(e.target.value)}
+                  onChange={(e) => { setErrorField(null); setModel(e.target.value); }}
                   className="v2-byo__input"
                   data-testid="byo-model-select"
                 >
@@ -1031,12 +1052,12 @@ const V2AgentBYO: React.FC = () => {
               </span>
             </label>
           )}
-          <label className="v2-byo__field">
+          <label className={`v2-byo__field${errorField === 'name' || nameLookupError ? ' v2-byo__field--error' : ''}`}>
             <span className="v2-byo__label">{t('agentByo.form.nameLabel')}</span>
             <input
               type="text"
               value={name}
-              onChange={(e) => { setNameTouched(true); setPendingReplacement(null); setName(e.target.value); }}
+              onChange={(e) => { setErrorField(null); setNameTouched(true); setPendingReplacement(null); setName(e.target.value); }}
               placeholder={DEFAULT_AGENT_NAME}
               className="v2-byo__input"
             />
@@ -1044,11 +1065,11 @@ const V2AgentBYO: React.FC = () => {
               {t('agentByo.form.nameHint')}
             </span>
           </label>
-          <label className="v2-byo__field">
+          <label className={`v2-byo__field${errorField === 'pod' ? ' v2-byo__field--error' : ''}`}>
             <span className="v2-byo__label">{t('agentByo.form.podLabel')}</span>
             <select
               value={podId}
-              onChange={(e) => { setPendingReplacement(null); setPodId(e.target.value); }}
+              onChange={(e) => { setErrorField(null); setPendingReplacement(null); setPodId(e.target.value); }}
               className="v2-byo__input"
             >
               {pods.length === 0 && <option value="">{t('agentByo.form.loadingPods')}</option>}
@@ -1441,11 +1462,6 @@ const V2AgentBYO: React.FC = () => {
             {t(`agentByo.preview.${previewStatus}`)}
           </div>
         </div>
-        {mode === 'machine' && (
-          <p className="v2-byo__preview-note">
-            {t('agentByo.preview.noteMachine', { machine: selectedMachineName })}
-          </p>
-        )}
       </aside>
       </div>
     </V2FeaturePage>

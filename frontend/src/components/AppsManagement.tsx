@@ -96,6 +96,9 @@ interface AppsManagementProps {
    * the same functional controls without duplicating its page-level heading.
    */
   variant?: 'default' | 'settings';
+  /** Settings keeps connector rows on the Connectors page; this surface only
+   * needs the developer-app forms inside its collapsed disclosure. */
+  showIntegrations?: boolean;
 }
 
 interface AppSurfaceProps {
@@ -114,7 +117,7 @@ const AppSurface: React.FC<AppSurfaceProps> = ({ children, className, outlined =
     : <Card className={className} variant={outlined ? 'outlined' : undefined} sx={spaceAfter ? { mb: 3 } : undefined}>{children}</Card>
 );
 
-const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) => {
+const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default', showIntegrations = true }) => {
   const isSettingsVariant = variant === 'settings';
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -176,9 +179,10 @@ const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) 
   };
 
   useEffect(() => {
-    fetchIntegrations();
+    if (showIntegrations) fetchIntegrations();
+    else setLoading(false);
     fetchApps();
-  }, [user]);
+  }, [user, showIntegrations]);
 
   const handleDeleteClick = (integration: Integration): void => {
     setSelectedIntegration(integration);
@@ -568,7 +572,7 @@ const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) 
             </CardContent>
           </AppSurface>
 
-          <AppSurface className="apps-management__section" settings={isSettingsVariant}>
+          {showIntegrations && <AppSurface className="apps-management__section" settings={isSettingsVariant}>
             <CardContent>
               <Box display="flex" alignItems="center" mb={2}>
                 {!isSettingsVariant && <SettingsIcon color="primary" />}
@@ -642,7 +646,7 @@ const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) 
                 </Grid>
               )}
             </CardContent>
-          </AppSurface>
+          </AppSurface>}
         </Grid>
 
         {!isSettingsVariant && (

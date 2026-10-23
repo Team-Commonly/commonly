@@ -980,7 +980,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('className="v2-settings__avatar"');
     expect(settingsPage).toContain('src={currentUser?.profilePicture || undefined}');
     expect(settingsPage).toContain('kind="human"');
-    expect(settingsPage).toContain('<AppsManagement variant="settings" />');
+    expect(settingsPage).toContain('<AppsManagement variant="settings" showIntegrations={false} />');
+    expect(settingsPage).toContain('to="/v2/connectors"');
+    expect(settingsPage).toContain('<summary>Developer apps</summary>');
     expect(settingsPage).toContain('<V2BillingPanel showHeading={false} />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} />');
     expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 64px');
@@ -2873,10 +2875,10 @@ describe('the landing hero demo (TASK-147)', () => {
 // (5, 6), and the avatar is a 4px square with a cobalt live dot (7).
 //
 // Items 1–6 are presence lines. The reason they can be, rather than a cascade
-// comparison: `button.v2-byo__mode` and `button.v2-byo__submit` are already
-// rooted at `.v2-root`, so the bare reset at `v2.css:201` cannot outrank them
-// the way it did the landing pill in TASK-159. That trap is pre-avoided in this
-// component, not merely untested here.
+// comparison: the mode card owns its button reset locally, while
+// `button.v2-byo__submit` is rooted at `.v2-root`, so the bare reset at
+// `v2.css:201` cannot outrank them the way it did the landing pill in TASK-159.
+// That trap is pre-avoided in this component, not merely untested here.
 //
 // Item 7 gets three assertions, because each of its failure modes is invisible
 // to a presence line:
@@ -2958,14 +2960,14 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
   });
 
   test('the chosen mode card is a 2px accent border that holds its box (item 2)', () => {
-    const base = cssDeclarations(ruleBody(v2, '.v2-root button.v2-byo__mode'));
+    const base = cssDeclarations(ruleBody(v2, '.v2-byo__mode'));
     expect(base['border-radius']).toBe('4px');
     // The 1px-per-side compensation is derived from the base shorthand, so it is
     // pinned to it rather than restated as a magic number.
     expect(base.padding).toBe('16px 18px 14px');
 
     const pressed = cssDeclarations(
-      ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"]'),
+      ruleBody(v2, '.v2-byo__mode[aria-pressed="true"]'),
     );
     expect(pressed.border).toBe('2px solid var(--v2-accent)');
     expect(pressed.padding).toBe('15px 17px 13px');
@@ -2982,7 +2984,7 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     expect(kicker['text-transform']).toBeUndefined();
     expect(kicker.color).toBe('var(--v2-text-muted)');
     const chosen = cssDeclarations(
-      ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker'),
+      ruleBody(v2, '.v2-byo__mode[aria-pressed="true"] .v2-byo__mode-kicker'),
     );
     expect(chosen.color).toBe('var(--v2-accent-text)');
     // The caps were data, not only CSS, so the data is where they must not come
@@ -3133,9 +3135,10 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     // The negative that says what the fold-in removed: no status colour and no
     // pill fill anywhere in this block. A future edit that adds one back is the
     // regression, and a presence check on the new values cannot see it.
-    const to = v2.indexOf('.v2-byo__preview-note {');
-    expect(to).toBeGreaterThan(sectionFrom);
-    const block = v2.slice(sectionFrom, to);
+    expect(v2).not.toContain('.v2-byo__preview-note {');
+    const blockEnd = v2.indexOf('.v2-byo__result-hero {', sectionFrom);
+    expect(blockEnd).toBeGreaterThan(sectionFrom);
+    const block = v2.slice(sectionFrom, blockEnd);
     ['--v2-success', '--v2-success-text', '--v2-success-soft', '--v2-warning', '--v2-surface-hover']
       .forEach((token) => expect(block).not.toContain(token));
 
