@@ -2208,7 +2208,7 @@ ${digestLines.join('\n')}${digestEntries.length > visibleRawLimit ? `\n- ${diges
         admissionEvent.event.payload,
       );
       if (!admission.allowed) {
-        for (const entry of activeEntries) {
+        for (const entry of wakingEntries) {
           entry.result = batchAdmissionResult(entry.event, admission);
         }
         return { entries };
@@ -2269,7 +2269,7 @@ ${digestLines.join('\n')}${digestEntries.length > visibleRawLimit ? `\n- ${diges
       }
     }
 
-    const actionEntries = activeEntries.filter((entry) => !entry.result);
+    const actionEntries = wakingEntries.filter((entry) => !entry.result);
     if (actionEntries.length === 0) return { entries };
 
     const claimKeepers = actionEntries
@@ -2328,6 +2328,17 @@ ${digestLines.join('\n')}${digestEntries.length > visibleRawLimit ? `\n- ${diges
           trigger,
         });
         for (const entry of actionEntries) entry.result = turnResult;
+        // A digest was context in this successful waking turn, never an
+        // independent action. If the waking work stood down or the provider
+        // refused the batch, leave it unread for the next real turn.
+        if (turnResult?.outcome === 'posted'
+          || (turnResult?.outcome === 'no_action' && !turnResult?.reason)) {
+          for (const entry of activeEntries) {
+            if (entry.event.deliveryMode === 'digest') {
+              entry.result = { outcome: 'no_action', reason: 'digest-read' };
+            }
+          }
+        }
       } catch (err) {
         if (!isContentRefusal(err)) throw err;
         if (actionEntries.length === 1) {

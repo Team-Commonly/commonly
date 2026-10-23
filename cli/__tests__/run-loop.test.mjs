@@ -352,6 +352,62 @@ describe('performRun', () => {
     expect(ackPosts(post)).toHaveLength(0);
   });
 
+  test('a digest companion stays unread when the sole wake loses its binding claim', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-held', type: 'message.posted',
+        payload: { content: 'peer owns this', messageId: 'msg-held' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background', messageId: 'msg-ambient' } }),
+    ];
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/memory')) return { sections: {} };
+      return { events, inboxCount: 2 };
+    });
+    const post = jest.fn(async (route) => (
+      route.endsWith('/claim') ? { claimed: false, claimedBy: 'nova' } : {}
+    ));
+    createClient.mockReturnValue({ get, post, del: jest.fn() });
+    const spawn = jest.fn(async () => ({ text: 'must not run' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ackPosts(post)).toEqual([[
+      '/api/agents/runtime/events/evt-held/ack',
+      { result: { outcome: 'no_action', reason: 'claim-held' } },
+    ]]);
+  });
+
+  test('a provider refusal leaves digest unread even though the wake is acknowledged', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-refused', payload: { content: 'question' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background' } }),
+    ];
+    const get = jest.fn(async (route) => (
+      route.endsWith('/messages') ? { messages: [] } : { events, inboxCount: 2 }
+    ));
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: '', upstream: { status: 429, detail: 'budget' } }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(ackPosts(post).map(([route]) => route)).toEqual(['/api/agents/runtime/events/evt-refused/ack']);
+  });
+
   test('a lost binding item stays read-only context while another batch item may run', async () => {
     const events = [
       makeEvent({
