@@ -12743,6 +12743,11 @@ body.modern-ui.v2-canvas {
   transform: none;
   white-space: nowrap;
 }
+/* TASK-363: only the Activity badge is offset inward. Three-digit counts (230,
+   1234) overflowed the rail at -14px; the other rail badges keep the base offset. */
+.v2-rail__item-icon .v2-rail__badge--activity .MuiBadge-badge {
+  right: -6px;
+}
 .v2-root .v2-activity__queue-actions button.v2-activity__option--other { border-color: transparent; background: transparent; color: var(--v2-accent-text); padding: 0 4px; }
 /* ≤760 (66390): the two toggles stack. The card-action stack lives in the trailing ≤760
    block at the end of the Activity rules, after every row/action rule it must outrank. */

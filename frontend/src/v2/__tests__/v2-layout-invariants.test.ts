@@ -901,6 +901,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(shortNav).toContain('overflow-x: hidden');
   });
 
+  test('the Activity badge stays inside the rail at three digits, and keeps the exact count on the element', () => {
+    // TASK-363. A three-digit count ("230") pushed the badge 6px past the rail
+    // edge, and the nav scrolled sideways. The fix is the offset, not a cap:
+    // the full count stays visible (see V2CommunityNav "not a capped ... 99+").
+    expect(navRail).toContain('title={String(count)}');
+    expect(navRail).toContain('className="v2-rail__badge--activity"');
+    // Only the Activity badge takes the inward offset. The base rule keeps -14px,
+    // and the Activity selector outranks it (0,3,0 against 0,2,0).
+    expect(ruleBody(v2, '.v2-rail__item-icon .v2-rail__badge--activity .MuiBadge-badge')).toContain('right: -6px');
+    expect(ruleBody(v2, '.v2-rail__item-icon .MuiBadge-badge')).toContain('right: -14px');
+  });
+
   test('team-card actions wrap on narrow screens so the agent name keeps width', () => {
     // At <=560px the Profile+Talk-to actions row must wrap to its own line —
     // inline, it squeezes the flex body to zero and the agent NAME disappears
