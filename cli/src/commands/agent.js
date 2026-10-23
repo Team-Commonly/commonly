@@ -3280,7 +3280,7 @@ Docs:
         console.error(
           `No local state for '${name}'. If the agent is still installed on `
           + `the backend, uninstall it via the Agent Hub UI or:\n`
-          + `  curl -X DELETE <instance>/api/registry/agents/${name}/pods/<podId> \\\n`
+          + `  curl -X DELETE '<instance>/api/registry/agents/${name}/pods/<podId>?instanceId=<instanceId>' \\\n`
           + `    -H "Authorization: Bearer <user JWT>"`,
         );
         process.exit(1);
