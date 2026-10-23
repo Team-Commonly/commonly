@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 describe('V2OAuthButtons', () => {
-  test('renders a POST form for an invite; the code is never exposed by a link', async () => {
+  test('posts an invite without nesting a form or exposing the code in a link', async () => {
     axios.get.mockResolvedValueOnce({
       data: { providers: [{ id: 'github', label: 'GitHub' }, { id: 'google', label: 'Google' }] },
     });
@@ -59,9 +59,13 @@ describe('V2OAuthButtons', () => {
 
     const github = await screen.findByRole('button', { name: /continue with github/i });
     expect(github).not.toHaveAttribute('href');
+    expect(github.closest('form')).toBeNull();
     expect(screen.getByRole('button', { name: /continue with google/i })).toBeInTheDocument();
 
-    const form = github.closest('form');
+    const submit = jest.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {});
+    fireEvent.click(github);
+    const form = document.body.querySelector('form[action*="/api/auth/oauth/github/start"]') as HTMLFormElement;
+    expect(form).toBeTruthy();
     expect(form).toHaveAttribute('method', 'post');
     expect(form).toHaveAttribute('action', expect.stringContaining('/api/auth/oauth/github/start'));
     expect(form.method).toBe('post');
@@ -72,8 +76,9 @@ describe('V2OAuthButtons', () => {
       .map((el) => [el.name, el.value]));
     expect(fields).toEqual({ next: '/v2/pods/abc', invite: 'CODE1' });
 
-    fireEvent.submit(form);
     expect(sessionStorage.getItem('commonly.pendingInviteOAuth')).toBe('1');
+    form.remove();
+    submit.mockRestore();
   });
 
   test('without an invite the button is a plain link and submits no form', async () => {

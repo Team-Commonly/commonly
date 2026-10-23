@@ -10,9 +10,11 @@ const scrubInviteFromUrl = (raw: string): string => {
     url.searchParams.delete('invite');
     if (url.hash) {
       const hashParams = new URLSearchParams(url.hash.slice(1));
-      hashParams.delete('invite');
-      const nextHash = hashParams.toString();
-      url.hash = nextHash ? `#${nextHash}` : '';
+      if (hashParams.has('invite')) {
+        hashParams.delete('invite');
+        const nextHash = hashParams.toString();
+        url.hash = nextHash ? `#${nextHash}` : '';
+      }
     }
     if (isAbsolute) return url.toString();
     if (isProtocolRelative) return `//${url.host}${url.pathname}${url.search}${url.hash}`;

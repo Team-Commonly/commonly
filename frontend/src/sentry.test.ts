@@ -111,6 +111,11 @@ describe('Sentry frontend instrumentation', () => {
       request: { url: 'https://commonly.me/v2/register?next=%2Fv2&invite=CM-SECRET' },
     });
     expect(legacyQueryEvent.request.url).toBe('https://commonly.me/v2/register?next=%2Fv2');
+
+    const ordinaryFragmentEvent = options.beforeSend({
+      request: { url: 'https://commonly.me/v2/register#section' },
+    });
+    expect(ordinaryFragmentEvent.request.url).toBe('https://commonly.me/v2/register#section');
   });
 
   it('loads the SDK only through the DSN-gated dynamic import', () => {

@@ -53,6 +53,23 @@ const readProviderCache = (): OAuthProvider[] => {
   } catch { return []; }
 };
 
+const submitInviteOAuth = (action: string, params: URLSearchParams): void => {
+  rememberInviteOAuthStart();
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = action;
+  form.style.display = 'none';
+  for (const [name, value] of Array.from(params)) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
+  form.submit();
+};
+
 const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
   const { t } = useTranslation();
   // Seed from cache so repeat visitors see the buttons instantly; the fetch
@@ -111,21 +128,15 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
       <div className="v2-login__oauth">
         {providers.map((p) => (
           invite ? (
-            <form
+            <button
               key={p.id}
-              method="post"
-              action={startPath(p.id)}
-              className="v2-login__oauth-form"
-              onSubmit={rememberInviteOAuthStart}
+              type="button"
+              className="v2-login__oauth-btn"
+              onClick={() => submitInviteOAuth(startPath(p.id), inviteParams())}
             >
-              {Array.from(inviteParams()).map(([name, value]) => (
-                <input key={name} type="hidden" name={name} value={value} />
-              ))}
-              <button type="submit" className="v2-login__oauth-btn">
-                {PROVIDER_ICONS[p.id]}
-                {t('auth.oauth.continueWith', { provider: p.label })}
-              </button>
-            </form>
+              {PROVIDER_ICONS[p.id]}
+              {t('auth.oauth.continueWith', { provider: p.label })}
+            </button>
           ) : (
             <a
               key={p.id}
