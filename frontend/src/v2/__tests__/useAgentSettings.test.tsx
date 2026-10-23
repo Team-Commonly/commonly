@@ -21,8 +21,9 @@ const Probe = () => {
       Save
     </button>
     <button type="button" onClick={() => { void updatePod('pod-2', {
-      wakeOnMessage: true, boardWake: false, heartbeatMinutes: 60,
-    }); }}>Save pod</button>
+      wakeOnMessage: true, humanOnly: true, boardWake: false,
+      heartbeatEnabled: true, heartbeatMinutes: 60,
+    }); }}>Save Wake</button>
     <span data-testid="pod">{podId}</span>
   </div>;
 };
@@ -45,10 +46,11 @@ test('reads one accessible installation and patches it with the instance id', as
     { displayName: 'Maya Updated', instanceId: 'default' },
   ));
   expect(screen.getByTestId('pod')).toHaveTextContent('pod-1');
-  fireEvent.click(screen.getByRole('button', { name: 'Save pod' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save Wake' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
     '/api/registry/agents/maya-claude/manage-settings/pods/pod-2',
-    { wakeOnMessage: true, boardWake: false, heartbeatMinutes: 60 },
+    { wakeOnMessage: true, humanOnly: true, boardWake: false,
+      heartbeatEnabled: true, heartbeatMinutes: 60 },
     { params: { instanceId: 'default' } },
   ));
 });

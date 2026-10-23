@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import { AgentPodWakePatch } from './useAgentSettings';
 import './v2-agent-wake-pods.css';
 
 interface InstallationSettings {
@@ -17,8 +18,9 @@ interface InstallationSettings {
 const V2AgentWakePods: React.FC<{
   agentName: string;
   instanceId: string;
+  updatePod: (podId: string, patch: AgentPodWakePatch) => Promise<unknown>;
   onRemoved?: (podId: string) => void;
-}> = ({ agentName, instanceId, onRemoved }) => {
+}> = ({ agentName, instanceId, updatePod, onRemoved }) => {
   const { t } = useTranslation();
   const [installations, setInstallations] = useState<InstallationSettings[]>([]);
   const [busyPod, setBusyPod] = useState<string | null>(null);
@@ -74,7 +76,7 @@ const V2AgentWakePods: React.FC<{
     setError(null);
     try {
       const next = { ...entry, ...changes };
-      await axios.patch(`${base}/pods/${encodeURIComponent(entry.podId)}?${query}`, {
+      await updatePod(entry.podId, {
         wakeOnMessage: next.wakeOnMessage,
         boardWake: next.boardWake,
         humanOnly: next.humanOnly,

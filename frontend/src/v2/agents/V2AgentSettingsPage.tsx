@@ -31,7 +31,7 @@ const errorLabel = (error: unknown, fallback: string): string => (
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
-  const { access, installation, podId, loading, error: loadError, refresh } = useAgentSettings(agentName, instanceId);
+  const { access, installation, podId, loading, error: loadError, refresh, updatePod } = useAgentSettings(agentName, instanceId);
   const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
   const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
@@ -205,7 +205,7 @@ const V2AgentSettingsPage: React.FC = () => {
           </ul>
         )}
       </section>
-      <V2AgentWakePods agentName={agentName} instanceId={instanceId} onRemoved={onRemoved} />
+      <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
     </main>
   );
 };

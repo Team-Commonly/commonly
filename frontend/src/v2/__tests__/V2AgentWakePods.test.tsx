@@ -12,8 +12,9 @@ jest.mock('../../utils/axiosConfig', () => ({
 const client = (jest.requireMock('../../utils/axiosConfig') as {
   default: { get: jest.Mock; patch: jest.Mock; delete: jest.Mock };
 }).default;
+const updatePod = jest.fn().mockResolvedValue({});
 const renderSettings = () => render(
-  <MemoryRouter><V2AgentWakePods agentName="test-agent" instanceId="my-machine" /></MemoryRouter>,
+  <MemoryRouter><V2AgentWakePods agentName="test-agent" instanceId="my-machine" updatePod={updatePod} /></MemoryRouter>,
 );
 
 describe('per-agent Wake and Pods settings', () => {
@@ -24,6 +25,7 @@ describe('per-agent Wake and Pods settings', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    updatePod.mockResolvedValue({});
     client.get.mockImplementation((url: string) => Promise.resolve(url.includes('/hosted/availability')
       ? { data: { caps: { turnsPerDay: 30 } } }
       : { data: { activePodCount: 1, installations: [{
@@ -37,8 +39,8 @@ describe('per-agent Wake and Pods settings', () => {
   it('writes settings to the selected installation with the instance identity', async () => {
     renderSettings();
     fireEvent.click(await screen.findByLabelText('Wake on board changes'));
-    await waitFor(() => expect(client.patch).toHaveBeenCalledWith(
-      '/api/registry/agents/test-agent/manage-settings/pods/pod-1?instanceId=my-machine',
+    await waitFor(() => expect(updatePod).toHaveBeenCalledWith(
+      'pod-1',
       { wakeOnMessage: true, humanOnly: true, boardWake: true, heartbeatEnabled: false, heartbeatMinutes: 60 },
     ));
   });
@@ -64,10 +66,10 @@ describe('per-agent Wake and Pods settings', () => {
           boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 30,
         }] } }));
     const view = render(
-      <MemoryRouter><V2AgentWakePods agentName="old-agent" instanceId="default" /></MemoryRouter>,
+      <MemoryRouter><V2AgentWakePods agentName="old-agent" instanceId="default" updatePod={updatePod} /></MemoryRouter>,
     );
     view.rerender(
-      <MemoryRouter><V2AgentWakePods agentName="new-agent" instanceId="default" /></MemoryRouter>,
+      <MemoryRouter><V2AgentWakePods agentName="new-agent" instanceId="default" updatePod={updatePod} /></MemoryRouter>,
     );
     expect((await screen.findAllByText('New pod')).length).toBe(2);
     await act(async () => { finishOld({ data: { installations: [{
@@ -83,6 +85,6 @@ describe('per-agent Wake and Pods settings', () => {
     fireEvent.change(screen.getByLabelText('Interval'), { target: { value: '30' } });
     expect(screen.getByText(/48 turns\/day · 30 available/)).toBeInTheDocument();
     expect(screen.getByText(/This exceeds the daily cap/)).toBeInTheDocument();
-    expect(client.patch).not.toHaveBeenCalled();
+    expect(updatePod).not.toHaveBeenCalled();
   });
 });
