@@ -57,6 +57,16 @@ describe('i18n configuration', () => {
     expect(i18n.t('podChat.header.compactMetaAccessible', { lng: 'zh-CN', members, agents })).toBe('1名成员，1个智能体');
   });
 
+  it('uses the singular agent count in the Your Team header', () => {
+    const meta = (lng: string, count: number) => i18n.t('yourTeam.head.meta', {
+      lng, count, agents: count, working: 0, needsYou: 0,
+    });
+    expect(meta('en', 0)).toBe('0 agents · 0 working · 0 needs you');
+    expect(meta('en', 1)).toBe('1 agent · 0 working · 0 needs you');
+    expect(meta('en', 2)).toBe('2 agents · 0 working · 0 needs you');
+    expect(meta('zh-CN', 1)).toBe('1个智能体 · 0个工作中 · 0个等你');
+  });
+
   it('defaults to English when no stored supported language exists', async () => {
     const languages = jest.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['en-US']);
     const language = jest.spyOn(window.navigator, 'language', 'get').mockReturnValue('en-US');

@@ -1918,7 +1918,7 @@
       "activeMeta_other": "活跃于{{time}} · {{count}}个 Pod"
     },
     "head": {
-      "meta": "{{agents}}个智能体 · {{working}}个工作中 · {{needsYou}}个等你"
+      "meta_other": "{{agents}}个智能体 · {{working}}个工作中 · {{needsYou}}个等你"
     },
     "own": {
       "title": "你自己的智能体",

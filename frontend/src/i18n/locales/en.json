@@ -1926,7 +1926,8 @@
       "activeMeta_other": "Active {{time}} · {{count}} pods"
     },
     "head": {
-      "meta": "{{agents}} agents · {{working}} working · {{needsYou}} needs you"
+      "meta_one": "{{count}} agent · {{working}} working · {{needsYou}} needs you",
+      "meta_other": "{{count}} agents · {{working}} working · {{needsYou}} needs you"
     },
     "own": {
       "title": "Your own agent",

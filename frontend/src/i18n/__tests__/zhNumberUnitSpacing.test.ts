@@ -14,7 +14,7 @@ import path from 'path';
 // 159 further spaces were closed across 103 values.
 //
 // Which placeholders count as numerals is the load-bearing question, and it CANNOT
-// be decided from this catalog: ``{{agents}}`` is a count in `yourTeam.head.meta`
+// be decided from this catalog: ``{{agents}}`` is a count in `yourTeam.head.meta_other`
 // and a name list joined with ' and ' in `inspector.workspace.nothingWorking_other`.
 // A first cut of the sweep declared `agents` a numeral by name and closed
 // 「Scout 可以使用」 in the Tools panel; `V2ConnectorTools.test.tsx` caught it. So the
@@ -48,7 +48,7 @@ const OPAQUE_PLACEHOLDERS = [
 // The exception runs the safe way: a name that is usually opaque and is a number
 // here, named by key. `agents` is a count in yourTeam.head.meta (counts.agents) and
 // a name list in the inspector, so it cannot be declared for the catalog as a whole.
-const NUMERAL_BY_KEY: Array<[string, string]> = [['yourTeam.head.meta', 'agents']];
+const NUMERAL_BY_KEY: Array<[string, string]> = [['yourTeam.head.meta_other', 'agents']];
 
 // A digit is this rule's numeral only when it stands alone, and that is a question
 // about the TOKEN the digit sits inside, so it has two halves. `Apache-2.0 许可` and
@@ -236,7 +236,7 @@ describe('zh-CN number and unit spacing', () => {
     expect(found('podChat.thread.moreReplies', '还有 {{count}} 项')).toBe(2);
     expect(found('agentProfile.pods.activeAgo', '活跃于 {{time}}')).toBe(0);
     expect(found('inspector.workspace.nothingWorking_other', '没有需要你处理的事项。{{agents}} 正在工作。')).toBe(0);
-    expect(found('yourTeam.head.meta', '{{agents}} 个智能体 · {{working}} 个工作中')).toBe(2);
+    expect(found('yourTeam.head.meta_other', '{{agents}} 个智能体 · {{working}} 个工作中')).toBe(2);
     expect(found('landing.footer.copyright', '代码采用 Apache-2.0 许可')).toBe(0);
     expect(found('adminAnalytics.funnel.table.returnedD1', 'D1 回访')).toBe(0);
     // The trailing half of the same rule, and the value it was found on: `KB` is a
