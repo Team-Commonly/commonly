@@ -21,7 +21,8 @@ process.env.NODE_ENV = 'test';
 
 // The signed-in human. A jest.mock factory may only reach `mock`-prefixed
 // bindings, read at call time.
-const mockOwner = { id: new mongoose.Types.ObjectId().toString() };
+const primaryOwnerId = new mongoose.Types.ObjectId().toString();
+const mockOwner = { id: primaryOwnerId };
 
 jest.mock('../../middleware/auth', () => {
   const auth = (req, _res, next) => {
@@ -85,6 +86,7 @@ describe('revoking a runtime token kills it in every store', () => {
   beforeAll(async () => { await setupMongoDb(); });
   afterAll(async () => { await closeMongoDb(); });
   beforeEach(async () => {
+    mockOwner.id = primaryOwnerId;
     await clearMongoDb();
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -111,6 +113,26 @@ describe('revoking a runtime token kills it in every store', () => {
 
     expect((await probe(token)).status).toBe(401);
     expect(await storesHolding(tokenHash)).toEqual({ users: 0, installations: 0 });
+    const history = await request(app).get(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`);
+    expect(history.status).toBe(200);
+    expect(history.body.tokens).toEqual([expect.objectContaining({
+      label: 'laptop', revokedAt: expect.any(String),
+    })]);
+    expect(JSON.stringify(history.body)).not.toContain(token);
+  });
+
+  test('a pod member who did not install the identity cannot list key metadata', async () => {
+    const { workspace } = await seed();
+    const issued = await request(app)
+      .post(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`)
+      .send({ label: 'private laptop' });
+    expect(issued.status).toBe(200);
+    const otherId = new mongoose.Types.ObjectId().toString();
+    await Pod.updateOne({ _id: workspace._id }, { $push: { members: otherId } });
+    mockOwner.id = otherId;
+    const listed = await request(app).get(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`);
+    expect(listed.status).toBe(403);
+    expect(JSON.stringify(listed.body)).not.toContain('private laptop');
   });
 
   test('a copy on a sibling installation dies too, and so does a ledger row', async () => {
@@ -179,6 +201,12 @@ describe('revoking a runtime token kills it in every store', () => {
 
     expect((await probe(first.token)).status).toBe(401);
     expect((await probe(second)).status).toBe(200);
+    const history = await request(app).get(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`);
+    expect(history.status).toBe(200);
+    expect(history.body.tokens).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'laptop', revokedAt: expect.any(String) }),
+      expect.objectContaining({ label: 'desktop', revokedAt: null }),
+    ]));
   });
 
   test('pod uninstall keeps a shared token until the last installation, then revokes it and preserves identity', async () => {

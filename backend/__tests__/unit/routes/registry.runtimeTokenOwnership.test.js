@@ -41,6 +41,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
 
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn(), findOne: jest.fn() }));
+jest.mock('../../../models/AgentCredential', () => ({ updateOne: jest.fn().mockResolvedValue({}) }));
 
 jest.mock('../../../services/agentIdentityService', () => ({
   resolveAgentType: jest.fn((name) => String(name).toLowerCase()),
@@ -101,7 +102,7 @@ beforeEach(() => {
   mockIsAdmin.mockResolvedValue(false);
   // The caller is a member of the pod in every case: membership is not the question.
   Pod.findById.mockReturnValue({ lean: () => Promise.resolve({ _id: 'pod-a', createdBy: 'user-a', members: ['user-a'] }) });
-  User.findOne.mockResolvedValue({ agentRuntimeTokens: [{ _id: 'tok-1', tokenHash: 'hash-1' }], save: jest.fn() });
+  User.findOne.mockResolvedValue({ _id: 'bot-1', agentRuntimeTokens: [{ _id: 'tok-1', tokenHash: 'hash-1' }], save: jest.fn() });
 });
 
 const mint = (body = {}) => request(app).post('/api/registry/pods/pod-a/agents/quire/runtime-tokens').send(body);

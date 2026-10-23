@@ -34,6 +34,7 @@ const express = require('express');
 const auth = require('../../middleware/auth');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
+const AgentCredential = require('../../models/AgentCredential');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const {
   getUserId,
@@ -67,6 +68,21 @@ const credentialRefusal = async (userId: unknown, agentName: string, instanceId:
   return { code: check.failure, error: runtimeCredentialRefusal[check.failure] };
 };
 
+// Legacy embedded keys predate the credential ledger. Record their metadata
+// before a replacement or revoke removes the only embedded copy, so Settings
+// can still show the revoked state after the authenticating copies are pulled.
+const recordLegacyKeys = async (agentUser: any, ownerUserId: unknown, records: any[]) => {
+  await Promise.all(records.filter((record) => record?.tokenHash).map((record) => AgentCredential.updateOne(
+    { tokenHash: record.tokenHash },
+    { $setOnInsert: {
+      kind: 'runtime', ownerUserId, agentUserId: agentUser._id,
+      label: record.label || 'Runtime token', status: 'active',
+      createdAt: record.createdAt || new Date(), lastUsedAt: record.lastUsedAt || null,
+    } },
+    { upsert: true },
+  )));
+};
+
 /**
  * GET /api/registry/pods/:podId/agents/:name/runtime-tokens
  * List runtime tokens for an installed agent
@@ -96,7 +112,7 @@ agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLimi
       return memberId && memberId === userId.toString();
     });
 
-    if (!membership && !isCreator) {
+    if (!membership && !isCreator && !(await isGlobalAdminUser(userId))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -104,12 +120,35 @@ agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLimi
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
+    const refusal = await credentialRefusal(userId, installation.agentName || name, instanceId);
+    if (refusal) return res.status(403).json(refusal);
+
     const resolvedType = AgentIdentityService.resolveAgentType(name);
     const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
     const agentUser = await User.findOne({ username: agentUsername, isBot: true })
       .select('agentRuntimeTokens')
       .lean();
-    const tokens = serializeRuntimeTokens(agentUser?.agentRuntimeTokens || []);
+    const embedded = agentUser?.agentRuntimeTokens || [];
+    const credentials = agentUser?._id
+      ? await AgentCredential.find({ agentUserId: agentUser._id, kind: 'runtime' })
+        .select('tokenHash label status createdAt lastUsedAt revokedAt').lean()
+      : [];
+    const credentialByHash = new Map(credentials.map((row: any) => [row.tokenHash, row]));
+    const tokens = serializeRuntimeTokens(embedded).map((token: any, index: number) => {
+      const credential: any = credentialByHash.get(embedded[index]?.tokenHash);
+      return { ...token, lastUsedAt: credential?.lastUsedAt || token.lastUsedAt || null, revokedAt: null };
+    });
+    const activeHashes = new Set(embedded.map((row: any) => row.tokenHash));
+    for (const credential of credentials) {
+      if (credential.status !== 'revoked' || activeHashes.has(credential.tokenHash)) continue;
+      tokens.push({
+        id: String(credential._id),
+        label: credential.label || 'Runtime token',
+        createdAt: credential.createdAt,
+        lastUsedAt: credential.lastUsedAt || null,
+        revokedAt: credential.revokedAt || null,
+      });
+    }
 
     return res.json({ tokens });
   } catch (error) {
@@ -143,7 +182,7 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
       return memberId && memberId === userId.toString();
     });
 
-    if (!membership && !isCreator) {
+    if (!membership && !isCreator && !(await isGlobalAdminUser(userId))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -178,6 +217,7 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
     // User token and legacy installation copies, so revoke every hash before
     // issuing the replacement.
     if (force) {
+      await recordLegacyKeys(agentUser, installation.installedBy || userId, agentUser.agentRuntimeTokens || []);
       await revokeRuntimeTokensForAgent({
         agentUser,
         agentName: installation.agentName || name,
@@ -189,6 +229,7 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLim
       agentUser,
       label || `Provisioned ${normalizedInstanceId}`,
       installation,
+      { ownerUserId: userId },
     );
     return res.json(issued);
   } catch (error) {
@@ -229,7 +270,7 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', to
       return memberId && memberId === userId.toString();
     });
 
-    if (!membership && !isCreator) {
+    if (!membership && !isCreator && !(await isGlobalAdminUser(userId))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -257,6 +298,7 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', to
       return res.status(404).json({ error: 'Runtime token not found' });
     }
 
+    await recordLegacyKeys(agentUser, installation.installedBy || userId, [record]);
     await revokeRuntimeTokenEverywhere(record.tokenHash);
     return res.json({ success: true });
   } catch (error) {

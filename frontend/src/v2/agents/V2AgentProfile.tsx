@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -7,6 +7,7 @@ import V2Avatar from '../components/V2Avatar';
 import { presetCharacterOptions } from '../../utils/avatarUtils';
 import '../v2.css';
 import './v2-agent-profile.css';
+import './v2-agent-settings.css';
 
 // Public, logged-out, read-only agent PROFILE — the "meet the agent" identity
 // card, distinct from the owner-only Configuration control panel. Sits OUTSIDE
@@ -117,6 +118,7 @@ const V2AgentProfile: React.FC = () => {
   const [data, setData] = useState<AgentProfile | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [memIndex, setMemIndex] = useState<MemoryIndex | null>(null);
+  const memoryRequestId = useRef(0);
   const [openingRoom, setOpeningRoom] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
 
@@ -138,6 +140,8 @@ const V2AgentProfile: React.FC = () => {
   // is an admin), pull the private memory index. Public visitors 401/403 here and
   // just see the count. Token passed explicitly since getClient() is token-less.
   const fetchMemoryIndex = useCallback(async () => {
+    const requestId = ++memoryRequestId.current;
+    setMemIndex(null);
     const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null;
     if (!token || !agentName) { setMemIndex(null); return; }
     try {
@@ -146,9 +150,9 @@ const V2AgentProfile: React.FC = () => {
         `/api/agent-memory/${encodeURIComponent(agentName)}/${encodeURIComponent(id)}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      setMemIndex(res.data);
+      if (requestId === memoryRequestId.current) setMemIndex(res.data);
     } catch {
-      setMemIndex(null);
+      if (requestId === memoryRequestId.current) setMemIndex(null);
     }
   }, [agentName, instanceId]);
 
@@ -376,6 +380,13 @@ const V2AgentProfile: React.FC = () => {
           )}
         </section>
         {roomError && <div className="v2-aprofile__room-error" role="alert">{roomError}</div>}
+
+        {memIndex?.viewerRole && (
+          <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
+            <span aria-current="page">{t('agentSettings.profile')}</span>
+            <Link to={`/v2/agents/${encodeURIComponent(agent.agentName)}/${encodeURIComponent(agent.instanceId || 'default')}`}>{t('agentSettings.settings')}</Link>
+          </nav>
+        )}
 
         <div className="v2-aprofile__grid">
 
