@@ -13,6 +13,8 @@ const router: ReturnType<typeof express.Router> = express.Router();
 // eslint-disable-next-line global-require
 router.use(require('./registry/runtime'));
 // eslint-disable-next-line global-require
+router.use(require('./registry/manage-grants'));
+// eslint-disable-next-line global-require
 router.use(require('./registry/templates'));
 // eslint-disable-next-line global-require
 router.use(require('./registry/catalog'));

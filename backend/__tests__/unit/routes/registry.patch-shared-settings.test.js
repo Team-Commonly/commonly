@@ -180,4 +180,44 @@ describe('registry shared agent settings', () => {
       }),
     );
   });
+
+  it('updates each daemon environment model without replacing its declarations', async () => {
+    const primaryInstall = {
+      agentName: 'claude-code', podId: 'pod-1', instanceId: 'default',
+      status: 'active', installedBy: 'user-1',
+      config: new Map(Object.entries({
+        runtime: { runtimeType: 'claude-code', host: 'byo', model: 'old' },
+        environment: { version: 1, model: 'old', workspace: { path: '/one' } },
+      })),
+      save: jest.fn().mockResolvedValue(true),
+    };
+    const secondaryInstall = {
+      ...primaryInstall, podId: 'pod-2',
+      config: new Map(Object.entries({
+        runtime: { runtimeType: 'claude-code', host: 'byo', model: 'old' },
+        environment: { version: 1, model: 'old', mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '@commonlyai/mcp'] }] },
+      })),
+      save: jest.fn().mockResolvedValue(true),
+    };
+    Pod.findById.mockReturnValue({ lean: async () => ({
+      _id: 'pod-1', createdBy: 'user-1', members: ['user-1'],
+    }) });
+    Pod.find.mockReturnValue({ select: () => ({ lean: async () => [
+      { _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] },
+      { _id: 'pod-2', createdBy: 'user-1', members: ['user-1'] },
+    ] }) });
+    AgentInstallation.findOne.mockResolvedValue(primaryInstall);
+    AgentInstallation.find.mockResolvedValue([primaryInstall, secondaryInstall]);
+
+    const response = await request(app).patch('/api/registry/pods/pod-1/agents/claude-code')
+      .send({ instanceId: 'default', config: { runtime: { model: 'new', effort: 'high' } } });
+
+    expect(response.status).toBe(200);
+    expect(primaryInstall.config.get('runtime')).toMatchObject({ runtimeType: 'claude-code', model: 'new', effort: 'high' });
+    expect(primaryInstall.config.get('environment')).toEqual({ version: 1, model: 'new', effort: 'high', workspace: { path: '/one' } });
+    expect(secondaryInstall.config.get('environment')).toEqual({
+      version: 1, model: 'new', effort: 'high',
+      mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '@commonlyai/mcp'] }],
+    });
+  });
 });

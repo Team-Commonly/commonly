@@ -466,7 +466,10 @@ const revokeHandler = async (req: AuthenticatedRequest, res: express.Response): 
     if (!grant) return res.status(404).json({ error: 'grant_not_found' });
     const userId = callerId(req);
     const connection = await findConnection(grant.connectionId);
-    if (!connection || connectionOwnerId(connection) !== userId) {
+    const isOwner = Boolean(connection) && connectionOwnerId(connection) === userId;
+    const isAdmin = req.user?.role === 'admin'
+      || (Boolean(userId) && (await User.findById(userId).select('role').lean())?.role === 'admin');
+    if (!connection || (!isOwner && !isAdmin)) {
       return res.status(403).json({ error: 'access_denied' });
     }
     const revoked = await revokeGrant(grant.grantId, userId);
