@@ -99,6 +99,7 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     const executable = join(realpathSync(dirname(ctx._binaryPath)), basename(ctx._binaryPath));
     expect(cmd).toBe(executable);
     expect(args).toEqual(expect.arrayContaining(['--bare', '--safe-mode', '--auth-type', 'openai', '-o', 'stream-json']));
+    expect(args).not.toContain('--allowed-tools');
     expect(args[args.indexOf('--exclude-tools') + 1].split(','))
       .toEqual(expect.arrayContaining([
         'agent', 'workflow', 'advisor', 'replace', 'task', 'search_file_content',
@@ -238,6 +239,47 @@ test('an explicit MCP server reaches --mcp-config alongside --safe-mode', async 
     });
     expect(observed.args).toContain('--safe-mode');
     expect(observed.config.mcpServers.probe).toMatchObject({ command: '/usr/bin/true' });
+  });
+});
+
+test('private Qwen approves only declared Commonly MCP tools in the non-interactive run', async () => {
+  await withSeat(async (ctx) => {
+    let observed;
+    await qwen.spawn('hello', {
+      ...ctx,
+      environment: {
+        ...ctx.environment,
+        sandbox: undefined,
+        mcp: [
+          { name: 'commonly', transport: 'stdio', command: ['/usr/bin/true'] },
+          { name: 'other', transport: 'stdio', command: ['/usr/bin/true'] },
+        ],
+      },
+      _spawnImpl: (_cmd, args) => {
+        observed = {
+          args,
+          config: JSON.parse(readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8')),
+        };
+        return fakeChild();
+      },
+    });
+    expect(Object.keys(observed.config.mcpServers)).toEqual(['commonly', 'other']);
+    expect(observed.args[observed.args.indexOf('--allowed-tools') + 1]).toBe('mcp__commonly__*');
+    expect(observed.args).toContain('--safe-mode');
+    expect(observed.args).not.toContain('--approval-mode');
+    expect(observed.args).not.toContain('--yolo');
+  });
+});
+
+test('private Qwen does not approve Commonly tools when that server was not configured', async () => {
+  await withSeat(async (ctx) => {
+    let args;
+    await qwen.spawn('hello', {
+      ...ctx,
+      environment: { ...ctx.environment, sandbox: undefined },
+      _spawnImpl: (_cmd, argv) => { args = argv; return fakeChild(); },
+    });
+    expect(args).not.toContain('--allowed-tools');
   });
 });
 
