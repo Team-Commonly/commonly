@@ -1,0 +1,87 @@
+// Owner/admin controls for one agent installation at a time.
+const express = require('express');
+const auth = require('../../middleware/auth');
+const { AgentInstallation } = require('../../models/AgentRegistry');
+const Pod = require('../../models/Pod');
+const User = require('../../models/User');
+const { getUserId, normalizeConfigMap, normalizeInstanceId } = require('./helpers');
+
+const router = express.Router();
+
+const canManage = (installation: any, userId: string, isAdmin: boolean) => (
+  isAdmin || String(installation.installedBy) === String(userId)
+);
+
+const settings = (installation: any, podName: string) => {
+  const config = normalizeConfigMap(installation.config) || {};
+  const wakeOnMessage = config.wakeOnMessage?.enabled === true;
+  return {
+    podId: String(installation.podId),
+    podName,
+    wakeOnMessage,
+    boardWake: typeof config.boardWake?.enabled === 'boolean'
+      ? config.boardWake.enabled : wakeOnMessage,
+    heartbeatMinutes: Number.isFinite(Number(config.heartbeat?.everyMinutes))
+      && Number(config.heartbeat?.everyMinutes) > 0
+      ? Math.max(1, Math.min(1440, Math.trunc(Number(config.heartbeat.everyMinutes)))) : 60,
+  };
+};
+
+router.get('/agents/:name/manage-settings', auth, async (req: any, res: any) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
+    const installations = await AgentInstallation.find({
+      agentName: String(req.params.name).toLowerCase(),
+      instanceId: normalizeInstanceId(req.query.instanceId),
+      status: { $ne: 'uninstalled' },
+    }).lean();
+    const manageable = installations.filter((entry: any) => canManage(entry, userId, isAdmin));
+    const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
+      .select('name').lean();
+    const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
+    return res.json({ installations: manageable
+      .filter((entry: any) => names.has(String(entry.podId)))
+      .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod')) });
+  } catch (error) {
+    console.error('Error loading agent settings:', error);
+    return res.status(500).json({ error: 'Failed to load agent settings' });
+  }
+});
+
+router.patch('/agents/:name/manage-settings/pods/:podId', auth, async (req: any, res: any) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const { wakeOnMessage, boardWake, heartbeatMinutes } = req.body || {};
+    if (typeof wakeOnMessage !== 'boolean' || typeof boardWake !== 'boolean'
+      || !Number.isInteger(heartbeatMinutes) || heartbeatMinutes < 1 || heartbeatMinutes > 1440) {
+      return res.status(400).json({ error: 'Invalid wake settings' });
+    }
+    const installation = await AgentInstallation.findOne({
+      agentName: String(req.params.name).toLowerCase(),
+      instanceId: normalizeInstanceId(req.query.instanceId),
+      podId: req.params.podId,
+      status: { $ne: 'uninstalled' },
+    });
+    if (!installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
+    const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
+    if (!canManage(installation, userId, isAdmin)) return res.status(403).json({ error: 'Installer or admin required' });
+    const config = normalizeConfigMap(installation.config) || {};
+    installation.config = new Map(Object.entries({
+      ...config,
+      wakeOnMessage: { ...config.wakeOnMessage, enabled: wakeOnMessage },
+      boardWake: { ...config.boardWake, enabled: boardWake },
+      heartbeat: { ...config.heartbeat, everyMinutes: heartbeatMinutes },
+    }));
+    await installation.save();
+    return res.json({ settings: settings(installation, '') });
+  } catch (error) {
+    console.error('Error saving agent settings:', error);
+    return res.status(500).json({ error: 'Failed to save agent settings' });
+  }
+});
+
+module.exports = router;
+export {};

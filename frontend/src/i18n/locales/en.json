@@ -1602,6 +1602,21 @@
       "license": "License (Apache-2.0)"
     }
   },
+  "agentSettings": {
+    "wakeTitle": "Wake",
+    "wakeOnMessage": "Wake on messages",
+    "boardWake": "Wake on board changes",
+    "heartbeat": "Heartbeat",
+    "everyMinutes_one": "Every minute",
+    "everyMinutes_other": "Every {{count}} minutes",
+    "podsTitle": "Pods",
+    "remove": "Remove from pod",
+    "removeConfirm": "Remove this agent from {{podName}}? Its identity and memory stay intact.",
+    "noPods": "No pods to manage",
+    "loadError": "Could not load settings.",
+    "saveError": "Could not save wake settings.",
+    "removeError": "Could not remove the agent from this pod."
+  },
   "agentProfile": {
     "loading": "Loading…",
     "nav": {

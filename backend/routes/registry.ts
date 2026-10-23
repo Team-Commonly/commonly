@@ -35,6 +35,8 @@ router.use(require('./registry/provision'));
 // eslint-disable-next-line global-require
 router.use(require('./registry/agent-config'));
 // eslint-disable-next-line global-require
+router.use(require('./registry/manage-settings'));
+// eslint-disable-next-line global-require
 router.use(require('./registry/publish'));
 
 module.exports = router;
