@@ -42,6 +42,11 @@ const mentionLineCue = (handle: string): string => (
 );
 const MENTION_HANDLE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const HOSTED_GREETING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const LOW_SIGNAL_REPLY = /^(?:ok|okay|lgtm|yes|no|thanks|thank you|thx|hi|hey|hello)[.!?\s]*$/iu;
+
+const hasLanguageSignal = (words: string): boolean => (
+  /[\p{L}\p{N}]/u.test(words) && !LOW_SIGNAL_REPLY.test(words.trim())
+);
 
 const greetingLanguage = async (userId: Types.ObjectId): Promise<string | null> => {
   let zone = '';
@@ -57,16 +62,16 @@ const greetingLanguage = async (userId: Types.ObjectId): Promise<string | null> 
   } catch (error) {
     console.warn('[first-contact] language history unavailable', (error as Error).message);
   }
-  const words = previousWords.find((message) => message.trim());
+  const words = previousWords.find(hasLanguageSignal);
   if (words) {
     if (/[\u3040-\u30ff]/u.test(words)) return 'Japanese';
     if (/[\u4e00-\u9fff]/u.test(words)) {
       if (zone === 'Asia/Tokyo') return 'Japanese';
       return ['Asia/Taipei', 'Asia/Hong_Kong'].includes(zone) ? 'Traditional Chinese' : 'Chinese';
     }
-    // A person's actual words outrank timezone even when this small detector
-    // cannot name their language. Never turn a Spanish message in Tokyo into
-    // a Japanese instruction.
+    // A person's substantive words outrank timezone even when this small
+    // detector cannot name their language. Short replies and emoji can defer
+    // to earlier words; a Spanish sentence in Tokyo must not become Japanese.
     return null;
   }
   if (zone === 'Asia/Tokyo') return 'Japanese';
