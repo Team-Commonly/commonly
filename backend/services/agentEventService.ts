@@ -303,7 +303,9 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     let response: Record<string, unknown> = {};
     try { response = JSON.parse(res.text) as Record<string, unknown>; } catch (_) { /* no body is fine */ }
 
-    const { outcome = 'acknowledged', content } = response as { outcome?: string; content?: string };
+    const { outcome = 'acknowledged', content, reason } = response as {
+      outcome?: string; content?: string; reason?: string;
+    };
 
     if (outcome === 'posted' && content) {
       try {
@@ -336,7 +338,7 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
       'delivery.outcome': outcome,
       'delivery.updatedAt': new Date(),
     });
-    if (outcome !== 'error') {
+    if (outcome === 'posted' || outcome === 'acknowledged' || (outcome === 'no_action' && !reason)) {
       await AgentEventService.settleLegacyDigest(event).catch((err: Error) => {
         console.warn('[webhook] digest settle failed:', err.message);
       });
@@ -1684,10 +1686,13 @@ class AgentEventService {
     // if the gateway is dead." Typing_stop is still emitted when
     // AgentMessageService.postMessage runs.)
 
-    if (deliveryMode === 'wake') AgentInstallation.find({
-      agentName: event.agentName,
-      instanceId,
-      podId,
+    // Query from the persisted event and coerce the identifier to a scalar
+    // before it reaches Mongo. Callers of enqueue may supply a runtime payload.
+    const webhookPodId = String(event.podId || '');
+    if (deliveryMode === 'wake' && Types.ObjectId.isValid(webhookPodId)) AgentInstallation.find({
+      agentName: String(event.agentName || ''),
+      instanceId: String(event.instanceId || 'default'),
+      podId: new Types.ObjectId(webhookPodId),
       status: 'active',
     }).lean().then((installations: InstallationDoc[]) => {
       for (const inst of installations) {
@@ -1991,7 +1996,11 @@ class AgentEventService {
       { new: true },
     ) as EventDoc | null;
 
-    if (result && normalizedDelivery?.outcome !== 'error') {
+    const consumedDigest = !normalizedDelivery
+      || normalizedDelivery.outcome === 'posted'
+      || normalizedDelivery.outcome === 'acknowledged'
+      || (normalizedDelivery.outcome === 'no_action' && !normalizedDelivery.reason);
+    if (result && consumedDigest) {
       if (result.digestEventIds?.length) {
         await this.settleLegacyDigest(result).catch((err: Error) => {
           console.warn('[agent-event] legacy digest settle failed:', err.message);

@@ -143,6 +143,24 @@ describe('legacy ambient digest bridge', () => {
     expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('pending');
   });
 
+  test('a claim stand-down does not consume raw or folded digest', async () => {
+    const ambient = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest', payload: { content: 'later' },
+    });
+    await AgentDigestState.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      unreadCount: 2, revision: 1, lastEventIds: ['old-1', 'old-2'],
+    });
+    const wake = await seedEvent();
+    const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
+    await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,
+      { outcome: 'no_action', reason: 'claim-held' }, delivered.payload.deliveryId);
+
+    expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('pending');
+    expect((await AgentDigestState.findOne({ agentName: AGENT, podId: POD_ID }).lean()).unreadCount).toBe(2);
+  });
+
   test('a legacy wake carries a folded count and clears only the revision it showed', async () => {
     await AgentDigestState.create({
       agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
