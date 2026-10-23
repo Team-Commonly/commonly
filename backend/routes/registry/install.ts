@@ -246,7 +246,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     } else {
       normalizedInstanceId = deriveInstanceId(displayName, agentName);
     }
-    res.locals.agentInstallInstanceId = normalizedInstanceId;
+    if (res.locals) res.locals.agentInstallInstanceId = normalizedInstanceId;
 
     let agent = await AgentRegistry.getByName(agentName);
 
