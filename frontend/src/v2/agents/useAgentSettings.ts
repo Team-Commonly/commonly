@@ -58,27 +58,25 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
       `/api/agent-memory/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`,
     );
     const nextAccess = accessResponse.data;
-    // Memory lists every pod for the identity. A viewer can be a member of
-    // only some of them, so find a readable installation before writing.
-    for (const pod of nextAccess.pods || []) {
-      try {
-        const response = await axios.get<{ agent: AgentSettingsInstallation }>(installationUrl(pod.id), {
-          params: { instanceId },
-        });
-        if (currentRequest === requestId.current) {
-          setAccess(nextAccess);
-          setInstallation(response.data.agent);
-          setPodId(pod.id);
-          setError(null);
-        }
-        return response.data.agent;
-      } catch (candidateError) {
-        if (![403, 404].includes((candidateError as { response?: { status?: number } })?.response?.status || 0)) {
-          throw candidateError;
-        }
-      }
+    // Memory includes readable pods that may have another installer. Settings
+    // selects an installer/admin-owned row so every write targets a pod the
+    // viewer can actually manage.
+    const settingsResponse = await axios.get<{ writablePodId: string | null }>(
+      `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`,
+      { params: { instanceId } },
+    );
+    const writablePodId = settingsResponse.data.writablePodId;
+    if (!writablePodId) throw new Error('No manageable installation');
+    const response = await axios.get<{ agent: AgentSettingsInstallation }>(installationUrl(writablePodId), {
+      params: { instanceId },
+    });
+    if (currentRequest === requestId.current) {
+      setAccess(nextAccess);
+      setInstallation(response.data.agent);
+      setPodId(writablePodId);
+      setError(null);
     }
-    throw new Error('No accessible installation');
+    return response.data.agent;
   }, [agentName, instanceId, installationUrl]);
 
   useEffect(() => {

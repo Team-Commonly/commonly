@@ -34,6 +34,7 @@ beforeEach(() => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
     } } });
@@ -48,6 +49,7 @@ test('wrapper key replacement cannot bypass the daemon reconnect flow', async ()
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'wrapper' },
     } } });
@@ -107,6 +109,7 @@ test('identity edits go through the shared installation PATCH with the exact ins
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
       profile: { instructions: 'Old', persona: { tone: 'friendly', specialties: ['writing'] } },
@@ -134,6 +137,7 @@ test('nondefault wrapper instances never link to a default-instance reconnect', 
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'second', displayName: 'Maya', runtime: { runtimeType: 'wrapper' },
     } } });
@@ -171,6 +175,7 @@ test('an in-flight replacement never reveals its key on another agent page', asy
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: other ? 'Other agent' : 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: other ? 'other' : 'maya-claude', instanceId: 'default',
       displayName: other ? 'Other agent' : 'Maya', runtime: { runtimeType: 'webhook' },
@@ -213,6 +218,7 @@ test('a partial installation owner cannot see identity-wide key controls', async
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
     } } });
@@ -236,11 +242,12 @@ test('revocation uses the credential id only after confirmation', async () => {
   }));
 });
 
-test('selects a pod the owner can read when the first identity pod is inaccessible', async () => {
+test('selects the owner-writable pod even when another identity pod comes first', async () => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'foreign', name: 'Other pod' }, { id: 'owned', name: 'My pod' }],
     } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'owned' } });
     if (url.includes('/pods/foreign/')) return Promise.reject({ response: { status: 403 } });
     if (url.includes('/pods/owned/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
