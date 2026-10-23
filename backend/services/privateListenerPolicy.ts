@@ -28,7 +28,7 @@ export const privateListenerPodAllowed = async (podId: unknown, ownerUserId: unk
       || !(pod.members || []).some((member) => id(member) === id(ownerUserId))) return false;
   // A group bridge relays other people's words into the pod and can carry the
   // private seat's output out. It is a second human authority by proxy.
-  if (await podIsBridged(podIdString)) return false;
+  if (await podIsBridged(id(pod._id))) return false;
   const members = await User.find({ _id: { $in: pod.members } }).select('_id isBot botType').lean();
   // A missing member row has unknown authority. Refuse rather than assume bot.
   if (members.length !== new Set((pod.members || []).map(id)).size) return false;

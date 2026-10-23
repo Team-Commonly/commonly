@@ -79,6 +79,11 @@ beforeEach(async () => {
 test('a query-shaped pod id cannot broaden private-listener eligibility', async () => {
   expect(await privateListenerPodAllowed({ $ne: null }, mockOwner.id)).toBe(false);
   expect(await privateListenerPodAllowed(String(pod._id), mockOwner.id)).toBe(true);
+  await Integration.create({
+    podId: pod._id, scope: 'pod', type: 'slack', status: 'connected', isActive: true,
+    createdBy: mockOwner.id, config: {},
+  });
+  expect(await privateListenerPodAllowed(String(pod._id).toUpperCase(), mockOwner.id)).toBe(false);
 });
 
 test('sole owner can issue; runtime bootstrap receives only the selected path and trust', async () => {
