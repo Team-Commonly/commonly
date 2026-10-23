@@ -2052,8 +2052,16 @@ export const performRun = ({
     }
   };
 
-  // Spent at most once per run: see DEFERRABLE_SOLO_EVENT_TYPES.
-  let soloGreetingHeld = false;
+  // The greeting is CLAIMED the moment a poll returns it: claimPage reads
+  // `status: 'pending'` and marks each returned row `delivered`, and later
+  // polls read only pending. Leaving it unacked therefore does NOT bring it
+  // back next tick — garbageCollect requeues delivered rows only after
+  // AGENT_EVENT_REQUEUE_DELIVERED_MINUTES (10 by default, and its own comment
+  // notes the effective latency is worse). So the hold is in memory, not on
+  // the wire: carry the claimed event and prepend it to the next poll's batch.
+  // Spent at most once per run. (CTO review 5623358693.)
+  let heldGreeting = [];
+  let greetingHoldSpent = false;
 
   const processEventBatch = async (events, inboxCount = events.length) => {
     const eventPodId = events[0]?.podId || podId;
@@ -2312,8 +2320,21 @@ export const performRun = ({
       // returns multiple pods in one page. Preserve pod privacy in that
       // migration window by partitioning locally. Current servers produce one
       // group, so the normal path remains one tick → one turn.
+      // A carried greeting rejoins the inbox here, so it is grouped, ordered
+      // and acked by exactly the same path as anything the poll returned. The
+      // carried row is still 'delivered' on the server, so a requeue during the
+      // carry can hand the same id back in this very page: drop the copy rather
+      // than processing it twice.
+      const carried = heldGreeting;
+      heldGreeting = [];
+      const fetchedIds = new Set(events.map((event) => String(event._id)));
+      const carriedFresh = carried.filter((event) => !fetchedIds.has(String(event._id)));
+      const pageEvents = carriedFresh.length ? [...carriedFresh, ...events] : events;
+      const pageInboxCount = (Number.isFinite(inboxCount) ? inboxCount : events.length)
+        + carriedFresh.length;
+
       const eventGroups = new Map();
-      for (const event of events) {
+      for (const event of pageEvents) {
         const eventPodId = event.podId || podId;
         const key = PRIVATE_RESPONSE_EVENT_TYPES.has(event.type)
           ? `private:${event._id}`
@@ -2329,9 +2350,10 @@ export const performRun = ({
           // unacked for one interval so a person who mentions the agent in that
           // window is answered in the same turn instead of behind a greeting.
           // Spent once per run, so a quiet connect still greets on the next tick.
-          if (!soloGreetingHeld && group.every((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))) {
-            soloGreetingHeld = true;
-            log(`[inbox.batch] holding ${group.length} greeting event(s) one interval in case someone is mid-sentence`);
+          if (!greetingHoldSpent && group.every((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))) {
+            greetingHoldSpent = true;
+            heldGreeting = group;
+            log(`[inbox.batch] carrying ${group.length} greeting event(s) to the next poll in case someone is mid-sentence`);
             continue;
           }
           // One failure report for a batch whose items stay unacked, whether
@@ -2378,7 +2400,7 @@ export const performRun = ({
             // The person's item leads the prompt; the greeting rides along.
             batch = await processEventBatch(
               [...group].sort((a, b) => inboxPriority(a) - inboxPriority(b)),
-              inboxCount,
+              pageInboxCount,
             );
           } catch (err) {
             scheduleBatchRetry(err, group.length);

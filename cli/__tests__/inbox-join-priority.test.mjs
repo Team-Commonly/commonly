@@ -12,9 +12,17 @@
  *   2. after any turn the loop sleeps a full poll interval before looking
  *      again, even though a turn is exactly when events pile up.
  *
- * These tests pin (1): the greeting is held one interval, and when a mention
+ * These tests pin (1): the greeting is carried one interval, and when a mention
  * lands in that window it leads the same turn. (2) is a separate change to a
  * contract this suite does not own, measured and filed on its own row.
+ *
+ * The fixture models CLAIM-ONCE delivery, because that is what the kernel does:
+ * claimPage reads `status: 'pending'` and marks each returned row `delivered`,
+ * and later polls read only pending. An event a poll returned is therefore gone
+ * from the inbox until garbageCollect requeues it ten-plus minutes later. An
+ * earlier version of this fixture handed the greeting back on poll 2, which let
+ * a client-side "leave it unacked" hold look like it worked (CTO review
+ * 5623358693). A fixture that redelivers for free cannot test a hold.
  */
 
 import { jest } from '@jest/globals';
@@ -77,20 +85,29 @@ const drainMicrotasks = async () => {
   }
 };
 
-// Runs the loop for a bounded number of ticks and records the delay the loop
-// asked for after each one, which is the latency a waiting person pays.
-const runTicks = async ({ pages, ticks = 2, spawn }) => {
+// A claim-once inbox: each /events call returns everything currently pending
+// and marks it taken, exactly like claimPage. `arrivals[i]` is what lands in
+// the inbox before tick i.
+const runTicks = async ({ arrivals, ticks = 2, spawn }) => {
   const delays = [];
-  let pageIndex = 0;
+  const acked = [];
+  let pending = [];
+  let poll = 0;
   const mockGet = jest.fn(async (routePath) => {
     if (String(routePath).includes('/events')) {
-      const page = pages[Math.min(pageIndex, pages.length - 1)];
-      pageIndex += 1;
-      return page;
+      pending = pending.concat(arrivals[poll] || []);
+      poll += 1;
+      const claimed = pending;
+      pending = [];
+      return { events: claimed, inboxCount: claimed.length };
     }
     return {};
   });
-  const mockPost = jest.fn().mockResolvedValue({});
+  const mockPost = jest.fn(async (routePath) => {
+    const ack = String(routePath).match(/events\/([^/]+)\/ack/);
+    if (ack) acked.push(ack[1]);
+    return {};
+  });
   createClient.mockReturnValue({ get: mockGet, post: mockPost });
 
   const adapter = { name: 'codex', detect: stubAdapter.detect, spawn };
@@ -118,7 +135,7 @@ const runTicks = async ({ pages, ticks = 2, spawn }) => {
     await drainMicrotasks();
   }
   stop();
-  return { delays, mockGet, mockPost };
+  return { delays, mockGet, mockPost, acked };
 };
 
 describe('a waiting person outranks the seat\'s own join turn', () => {
@@ -127,65 +144,52 @@ describe('a waiting person outranks the seat\'s own join turn', () => {
     fs.rmSync(path.join(sessionsTmpDir, '.commonly'), { recursive: true, force: true });
   });
 
-  test('the held greeting waits one interval rather than spinning', async () => {
+  test('the carried greeting waits one interval rather than spinning', async () => {
     const spawn = jest.fn(async () => ({ text: 'on it' }));
-    const { delays } = await runTicks({
-      pages: [
-        { events: [joinEvent], inboxCount: 1 },
-        { events: [], inboxCount: 0 },
-        { events: [], inboxCount: 0 },
-      ],
-      ticks: 2,
+    const { delays, acked } = await runTicks({
+      arrivals: [[joinEvent], []],
+      ticks: 1,
       spawn,
     });
 
-    // The hold is what gives a person time to type; it must not become a
-    // tight loop, and it must not spawn the greeting on the held tick.
-    expect(delays[0]).toBe(INTERVAL);
+    // The carry is what gives a person time to type; it must not spawn on the
+    // held tick, must not ack the greeting yet, and must not spin.
     expect(spawn).not.toHaveBeenCalled();
+    expect(acked).toEqual([]);
+    expect(delays).toEqual([INTERVAL]);
   });
 
-  test('holds a lone greeting one tick so a waiting mention leads the same turn', async () => {
+  test('a mention arriving in the carry window leads the same turn', async () => {
     const spawn = jest.fn(async () => ({ text: 'on it' }));
-    const { mockGet } = await runTicks({
-      pages: [
-        { events: [joinEvent], inboxCount: 1 },
-        { events: [joinEvent, mentionEvent], inboxCount: 2 },
-        { events: [], inboxCount: 0 },
-      ],
+    const { acked } = await runTicks({
+      arrivals: [[joinEvent], [mentionEvent]],
       ticks: 2,
       spawn,
     });
 
-    expect(mockGet).toHaveBeenCalledWith(
-      '/api/agents/runtime/events',
-      expect.objectContaining({ agentName: 'my-stub' }),
-    );
-    // One turn, not two: the greeting waited for the person rather than
-    // spending a spawn ahead of them.
+    // One turn, not two: the greeting rode along behind the person's question.
     expect(spawn).toHaveBeenCalledTimes(1);
     const prompt = spawn.mock.calls[0][0];
     expect(prompt).toContain('Event 1/2: chat.mention');
     expect(prompt).toContain('Event 2/2: first_contact');
     expect(prompt.indexOf('can you summarise this repo?'))
       .toBeLessThan(prompt.indexOf('A human just added you to this workspace.'));
+    // Both are acked by that turn, including the one carried in memory.
+    expect(acked.sort()).toEqual(['evt-join', 'evt-mention']);
   });
 
-  test('still greets on the next tick when nobody is waiting', async () => {
+  test('a quiet connect greets on the next tick, with no redelivery to rely on', async () => {
     const spawn = jest.fn(async () => ({ text: 'hello' }));
-    const { mockPost } = await runTicks({
-      pages: [
-        { events: [joinEvent], inboxCount: 1 },
-        { events: [joinEvent], inboxCount: 1 },
-        { events: [], inboxCount: 0 },
-      ],
+    const { acked } = await runTicks({
+      // Nothing arrives after the greeting, and the kernel never hands it back:
+      // the only way it reaches the adapter is the in-memory carry.
+      arrivals: [[joinEvent], []],
       ticks: 2,
       spawn,
     });
 
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(spawn.mock.calls[0][0]).toContain('first_contact');
-    // The deferred greeting is still acked once it has been taken.
-    expect(mockPost.mock.calls.some(([p]) => String(p).includes('/events/evt-join/ack'))).toBe(true);
+    expect(acked).toEqual(['evt-join']);
   });
 });
