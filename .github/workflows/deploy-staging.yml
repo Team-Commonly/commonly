@@ -225,9 +225,11 @@ jobs:
               done
               kubectl logs "job/$JOB" -n "$NAMESPACE" --tail=12 || true
               [ "$(kubectl get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}')" = "1" ] && STATE=success
-            elif printf '%s' "$ERR" | grep -qiE 'not ?found'; then
-              # Confirmed absent — reachability-only fallback, LABELLED as such so a green
-              # status is not mistaken for a full stranger smoke.
+            elif printf '%s' "$ERR" | grep -qE 'NotFound.*cronjobs.*stranger-journey'; then
+              # Confirmed the stranger-journey CronJob specifically is absent — reachability-
+              # only fallback, LABELLED as such so a green status is not mistaken for a full
+              # stranger smoke. A missing namespace or any other "not found" does NOT match
+              # and falls through to the fail-closed branch below.
               CODE=$(curl -s -o /dev/null -w '%{http_code}' https://api-staging.commonly.me/api/health || true)
               echo "no stranger-journey CronJob in staging (NotFound); reachability-only probe api-staging/api/health = $CODE"
               DESC="staging deploy + reachability-only, no stranger CronJob ($TAG)"
