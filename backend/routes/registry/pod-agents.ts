@@ -6,7 +6,9 @@ const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry
 const AgentProfile = require('../../models/AgentProfile');
 const AgentTemplate = require('../../models/AgentTemplate');
 const AgentEvent = require('../../models/AgentEvent');
+const AgentCredential = require('../../models/AgentCredential');
 const Pod = require('../../models/Pod');
+const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
 const {
@@ -59,11 +61,32 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
         return res.status(404).json({ error: 'Agent not installed in this pod' });
       }
 
+      const resolvedType = AgentIdentityService.resolveAgentType(name);
+      const username = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
+      const agentUser = await User.findOne({ username, isBot: true })
+        .select('_id agentRuntimeTokens').lean();
+      const hasProfile = await AgentProfile.exists({ agentId: buildAgentProfileId(name, instanceId), podId });
+      const hasMembership = agentUser && pod.members?.some((member: any) => (
+        String(member?.userId || member) === String(agentUser._id)
+      ));
+      const hasCredential = agentUser && await AgentCredential.exists({
+        agentUserId: agentUser._id, kind: 'runtime', status: 'active',
+      });
+      const hasActiveInstallation = await AgentInstallation.exists({
+        agentName: name, instanceId, status: 'active',
+      });
+      const hasOrphanCredential = !hasActiveInstallation
+        && (agentUser?.agentRuntimeTokens?.length || hasCredential);
+      if (!hasProfile && !hasMembership && !hasOrphanCredential) {
+        return res.status(404).json({
+          error: 'Agent not installed in this pod. Pass its agentName in the URL and instanceId as a query parameter.',
+        });
+      }
+
       await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
       // Older uninstall paths could leave a bearer on an orphaned User row.
       await revokeRuntimeTokensAfterLastUninstall(name, instanceId);
       try {
-        const resolvedType = AgentIdentityService.resolveAgentType(name);
         await AgentIdentityService.removeAgentFromPod(
           AgentIdentityService.buildAgentUsername(resolvedType, instanceId),
           podId,
