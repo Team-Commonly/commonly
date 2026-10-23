@@ -206,7 +206,7 @@ const V2AgentSettingsPage: React.FC = () => {
             <button type="button" onClick={() => setOneTimeKey(null)}>{t('agentSettings.done')}</button>
           </div>
         )}
-        {keysForbidden ? <p className="v2-agent-settings__empty">{t('agentSettings.forbidden')}</p>
+        {keysForbidden ? <p className="v2-agent-settings__empty">{t('agentSettings.keyUnavailable')}</p>
           : keys.length === 0 ? <p className="v2-agent-settings__empty">{t('agentSettings.empty')}</p> : (
           <ul className="v2-agent-settings__keys">
             {keys.map((key) => (

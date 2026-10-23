@@ -2344,6 +2344,7 @@
     "removeLastConfirm": "从最后一个 Pod「{{podName}}」移除此智能体？所有密钥都会撤销，智能体会断开连接。身份和记忆仍会保留。",
     "removeDisconnectConfirm": "从「{{podName}}」移除此智能体？移除后没有活跃安装，所有密钥都会撤销，智能体会断开连接。身份和记忆仍会保留。",
     "forbidden": "只有安装者或管理员可以更改此设置。",
+    "keyUnavailable": "无法管理此智能体的密钥。请联系管理员获取权限。",
     "noPods": "没有可管理的 Pod",
     "loadError": "无法加载设置。",
     "saveError": "无法保存唤醒设置。",

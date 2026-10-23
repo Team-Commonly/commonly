@@ -2353,6 +2353,7 @@
     "removeLastConfirm": "Remove this agent from its last pod, {{podName}}? Every key will be revoked and the agent will disconnect. Its identity and memory remain.",
     "removeDisconnectConfirm": "Remove this agent from {{podName}}? No active installation will remain, so every key will be revoked and the agent will disconnect. Its identity and memory remain.",
     "forbidden": "Only the installer or an admin can change this setting.",
+    "keyUnavailable": "Key management is unavailable for this agent. Ask an admin for access.",
     "noPods": "No pods to manage",
     "loadError": "Could not load settings.",
     "saveError": "Could not save wake settings.",
