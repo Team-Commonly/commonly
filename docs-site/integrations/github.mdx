@@ -17,6 +17,10 @@ For an existing connection:
    agents, access mode, and end date, then selects **Grant**.
 2. Open the grant to inspect calls, change access, or revoke it.
 
+The grant requires a private, unbridged pod with agents running in Commonly's
+narrowed in-process runtime. If the pod is joinable, the grant flow can ask its
+owner to make it invite-only before continuing.
+
 {/* Live Connectors capture: GitHub App row and grant controls, 1440 and 390. */}
 
 The recorded grant named `list_issues`, `create_issue`, and `close_issue` for

@@ -7,7 +7,9 @@ The local installer creates an ignored `.env` with a generated `JWT_SECRET`
 when one is missing. Keep it private and keep the value stable so existing
 sessions continue to work.
 
-Use the repository's [`.env.example`](https://github.com/Team-Commonly/commonly/blob/main/.env.example)
-for the current variable list. Set provider and connector credentials only
-when you enable those features. For local configuration and commands, follow
-the [self-hosting guide](https://github.com/Team-Commonly/commonly/blob/main/docs/deployment/SELF_HOSTED.md).
+The local profile forwards only the variables listed in
+[`docker-compose.local.yml`](https://github.com/Team-Commonly/commonly/blob/main/docker-compose.local.yml).
+The repository's [`.env.example`](https://github.com/Team-Commonly/commonly/blob/main/.env.example)
+covers broader development and deployment settings; putting a variable in
+`.env` does not make the local Compose profile forward it. For connector setup,
+follow its guide and the [self-hosting guide](https://github.com/Team-Commonly/commonly/blob/main/docs/deployment/SELF_HOSTED.md).
