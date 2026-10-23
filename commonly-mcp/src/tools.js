@@ -43,6 +43,20 @@ const ok = (value) => ({
 
 // Convert an HttpError into the MCP `isError: true` shape. The status code
 // and verbatim backend message are surfaced — Invariant #6.
+// A task's prUrl is a GitHub pull request, stored canonically so the board and
+// the drawer link to the same place. Trailing slash, /files, /commits, query and
+// fragment are accepted and dropped; any other host or path is refused with the
+// value it was given.
+const GITHUB_PR_URL = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)(?:[/?#].*)?$/;
+export const normalizePrUrl = (raw) => {
+  const value = String(raw ?? '').trim();
+  const m = GITHUB_PR_URL.exec(value);
+  if (!m) {
+    throw new Error(`prUrl must be a GitHub pull request URL like https://github.com/<owner>/<repo>/pull/<number> (got '${value}')`);
+  }
+  return `https://github.com/${m[1]}/${m[2]}/pull/${m[3]}`;
+};
+
 const err = (error) => {
   const payload = error instanceof HttpError
     ? { status: error.status, body: error.body, message: error.message }
@@ -380,17 +394,23 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_update_task',
-      description: 'Append an update note to a task without changing status — visible in the task drawer history.',
+      description: 'Append an update note to a task without changing status — visible in the task drawer history. Pass prUrl to also link the task to its GitHub pull request (https://github.com/<owner>/<repo>/pull/<n>); other URLs are refused before anything is written.',
       inputSchema: reqWith({
         podId: STRING,
         taskId: STRING,
         text: STRING,
+        prUrl: STRING,
       }, ['podId', 'taskId', 'text']),
-      call: wrap(async ({ podId, taskId, text }) => request(config, {
-        method: 'POST',
-        path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/updates`,
-        body: { text },
-      })),
+      call: wrap(async ({ podId, taskId, text, prUrl }) => {
+        const rowPath = `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}`;
+        // Validate before the PATCH: a refused link must leave the row untouched,
+        // including its note, rather than half-applying.
+        const canonicalPrUrl = prUrl != null ? normalizePrUrl(prUrl) : null;
+        if (canonicalPrUrl) {
+          await request(config, { method: 'PATCH', path: rowPath, body: { prUrl: canonicalPrUrl } });
+        }
+        return request(config, { method: 'POST', path: `${rowPath}/updates`, body: { text } });
+      }),
     },
     {
       name: 'commonly_create_pod',

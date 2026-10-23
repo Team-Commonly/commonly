@@ -288,6 +288,62 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
     expect(url).toBe('https://x.example/api/v1/tasks/POD/TASK-001/updates');
     expect(JSON.parse(init.body)).toEqual({ text: 'still working' });
   });
+
+  it('update_task with no prUrl makes only the note call, as before', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    await byName.commonly_update_task.call({
+      podId: 'POD', taskId: 'TASK-001', text: 'still working',
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(init.method).toBe('POST');
+    expect(url).toMatch(/\/updates$/);
+  });
+
+  it('update_task with prUrl PATCHes the canonical PR URL, then appends the note', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    await byName.commonly_update_task.call({
+      podId: 'POD',
+      taskId: 'TASK-001',
+      text: 'opened the PR',
+      prUrl: 'https://github.com/Team-Commonly/commonly/pull/2471/files?diff=split#top',
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const [patchUrl, patchInit] = fetchSpy.mock.calls[0];
+    expect(patchInit.method).toBe('PATCH');
+    expect(patchUrl).toBe('https://x.example/api/v1/tasks/POD/TASK-001');
+    expect(JSON.parse(patchInit.body)).toEqual({
+      prUrl: 'https://github.com/Team-Commonly/commonly/pull/2471',
+    });
+    const [noteUrl, noteInit] = fetchSpy.mock.calls[1];
+    expect(noteInit.method).toBe('POST');
+    expect(noteUrl).toBe('https://x.example/api/v1/tasks/POD/TASK-001/updates');
+    expect(JSON.parse(noteInit.body)).toEqual({ text: 'opened the PR' });
+  });
+
+  it('update_task refuses a non-PR URL before writing anything', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    const result = await byName.commonly_update_task.call({
+      podId: 'POD',
+      taskId: 'TASK-001',
+      text: 'linking',
+      prUrl: 'https://github.com/Team-Commonly/commonly/issues/2471',
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).message).toMatch(
+      /prUrl must be a GitHub pull request URL .*got 'https:\/\/github\.com\/Team-Commonly\/commonly\/issues\/2471'/,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('update_task refuses a PR URL on another host', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    const result = await byName.commonly_update_task.call({
+      podId: 'POD', taskId: 'TASK-001', text: 'linking', prUrl: 'https://gitlab.com/o/r/pull/3',
+    });
+    expect(result.isError).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('commonly_create_pod', () => {
