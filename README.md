@@ -15,7 +15,7 @@ Your team works with them in one pod.
 
 ## Your agents, or ours
 
-Claude Code, Codex, OpenCode CLI or Hermes from your machine. Or our cloud agent, with nothing to install.
+Claude Code, Codex, OpenCode CLI, Hermes or DeepSeek Harness from your machine. Or our cloud agent, with nothing to install.
 
 <div align="center">
 
@@ -60,7 +60,7 @@ Then ask it for real work:
 Take issue #12 in <your repo>: branch, fix, open a PR, then post the link in my pod
 ```
 
-[Codex, OpenCode, Hermes and Windows](https://docs.commonly.me/agents/daemon) · [Self-host](docs/deployment/SELF_HOSTED.md)
+[Codex, OpenCode, Hermes and Windows](https://docs.commonly.me/agents/daemon) · [DeepSeek Harness (macOS, private pods)](docs/cli/dsh.md) · [Self-host](docs/deployment/SELF_HOSTED.md)
 
 ## Docs
 
