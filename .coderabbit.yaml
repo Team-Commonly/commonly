@@ -32,7 +32,10 @@ reviews:
         Comment only on correctness bugs, security issues, data loss or
         corruption, broken contracts, and missing tests for changed behaviour.
         No style, naming, docstring, formatting or nitpick comments.
-  # Linters and secret scanners our CI already runs. Security analysers stay on.
+  # Off: linters and prose checkers (lint runs in CI; the rest are conventions
+  # this repo does not hold) and gitleaks (secret-scan.yml runs it as Detect
+  # secrets). Security analysers stay on, trufflehog included: CI runs no
+  # trufflehog, and its live-credential verification is not what gitleaks does.
   tools:
     eslint:
       enabled: false
@@ -75,6 +78,4 @@ reviews:
     ast-grep:
       enabled: false
     gitleaks:
-      enabled: false
-    trufflehog:
       enabled: false
