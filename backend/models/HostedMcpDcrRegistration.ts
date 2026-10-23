@@ -1,11 +1,22 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
-/** One vendor-issued public OAuth client for an instance and catalogue entry. */
+/**
+ * One vendor-issued OAuth client for an instance and catalogue entry: public
+ * (`token_endpoint_auth_method: 'none'`) when the vendor offers that, otherwise
+ * confidential, with its secret kept encrypted in the connector-secret store
+ * and owned by this row (TASK-248).
+ */
 export interface IHostedMcpDcrRegistration extends Document {
   entryId: string;
   issuer: string;
   clientId: string;
   redirectUri: string;
+  /** How this client authenticates at the token and revocation endpoints. */
+  tokenEndpointAuthMethod?: 'none' | 'client_secret_basic' | 'client_secret_post';
+  /** connectorSecrets ref of the client secret; set only for a confidential client. */
+  clientSecretRef?: string | null;
+  /** When the vendor said the secret lapses; null means it never does. */
+  clientSecretExpiresAt?: Date | null;
   current: boolean;
   retiredAt?: Date | null;
   refusedAt?: Date | null;
@@ -18,6 +29,11 @@ const HostedMcpDcrRegistrationSchema = new Schema<IHostedMcpDcrRegistration>({
   issuer: { type: String, required: true },
   clientId: { type: String, required: true },
   redirectUri: { type: String, required: true },
+  tokenEndpointAuthMethod: {
+    type: String, enum: ['none', 'client_secret_basic', 'client_secret_post'], default: 'none',
+  },
+  clientSecretRef: { type: String, default: null },
+  clientSecretExpiresAt: { type: Date, default: null },
   current: { type: Boolean, required: true },
   retiredAt: { type: Date, default: null },
   refusedAt: { type: Date, default: null },

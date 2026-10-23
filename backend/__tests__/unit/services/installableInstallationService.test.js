@@ -22,7 +22,10 @@ const {
 const { sweep } = require('../../../services/installable/installableReconciler');
 const { TELEGRAM_CONNECTOR, SLACK_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
 const { put } = require('../../../services/connectorSecrets');
-const { DISCORD_WEBHOOK_URL, SLACK_BOT_TOKEN } = require('../../../services/connectorSecretKinds');
+const {
+  DISCORD_WEBHOOK_URL, HOSTED_MCP_DCR_CLIENT_SECRET, SLACK_BOT_TOKEN,
+} = require('../../../services/connectorSecretKinds');
+const HostedMcpDcrRegistration = require('../../../models/HostedMcpDcrRegistration');
 const telegramService = require('../../../services/telegramService');
 const { relayTelegramMessageToPod } = require('../../../services/telegramBridgeService');
 const {
@@ -942,6 +945,57 @@ describe('installable connector projection', () => {
     expect(integration.status).toBe('error');
     expect(integration.errorMessage).toBe('Discord connector webhook is unavailable');
     expect(integration.errorMessageUserFacing).toBe(true);
+  });
+
+  // TASK-248: a confidential hosted-MCP client's secret is owned by its
+  // registration, not by an Integration row. Read only through the Integration
+  // paths, the sweep would delete it ten minutes after registration, and every
+  // connection that client minted would fail its next refresh.
+  const seedDcrRegistrationWithSecret = async (overrides = {}) => {
+    const registrationId = new mongoose.Types.ObjectId();
+    const ref = await put(String(registrationId), HOSTED_MCP_DCR_CLIENT_SECRET, 'client-secret');
+    await HostedMcpDcrRegistration.create({
+      _id: registrationId,
+      entryId: 'gitlab',
+      issuer: 'https://gitlab.com',
+      clientId: `client-${registrationId}`,
+      redirectUri: 'https://api.example.test/callback',
+      tokenEndpointAuthMethod: 'client_secret_basic',
+      clientSecretRef: ref,
+      current: true,
+      ...overrides,
+    });
+    return { registrationId, ref };
+  };
+
+  it('keeps a hosted-MCP client secret past the grace window while its registration names it, retired or not', async () => {
+    const current = await seedDcrRegistrationWithSecret();
+    const retired = await seedDcrRegistrationWithSecret({ current: false, retiredAt: new Date() });
+    await backdateSecret(current.ref);
+    const now = await backdateSecret(retired.ref);
+
+    const swept = await sweep(now);
+
+    expect(swept.orphanedSecrets).toBe(0);
+    expect(await ConnectorSecret.findById(current.ref)).not.toBeNull();
+    expect(await ConnectorSecret.findById(retired.ref)).not.toBeNull();
+  });
+
+  it('revokes a hosted-MCP client secret once its registration is refused, gone, or names another', async () => {
+    const refused = await seedDcrRegistrationWithSecret({ current: false, refusedAt: new Date() });
+    const orphan = await put(new mongoose.Types.ObjectId().toString(), HOSTED_MCP_DCR_CLIENT_SECRET, 'lost');
+    const repointed = await seedDcrRegistrationWithSecret({ current: false });
+    await HostedMcpDcrRegistration.updateOne({ _id: repointed.registrationId }, { $set: { clientSecretRef: 'other' } });
+    await backdateSecret(refused.ref);
+    await backdateSecret(orphan);
+    const now = await backdateSecret(repointed.ref);
+
+    const swept = await sweep(now);
+
+    expect(swept.orphanedSecrets).toBe(3);
+    expect(await ConnectorSecret.findById(refused.ref)).toBeNull();
+    expect(await ConnectorSecret.findById(orphan)).toBeNull();
+    expect(await ConnectorSecret.findById(repointed.ref)).toBeNull();
   });
 
   it('keeps a secret whose kind it cannot place instead of deleting the ref it never looked for', async () => {

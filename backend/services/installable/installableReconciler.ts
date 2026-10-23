@@ -17,7 +17,9 @@ const connectorSecrets = require('../connectorSecrets');
 // Discord webhook secret ten minutes after it was written (vera 74130), and the
 // unavailable sweep named Slack for any provider (vera 74131).
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { allRefPaths, kindSpec, rowReferencesSecret } = require('../connectorSecretKinds');
+const {
+  allRefPaths, kindSpec, ownedByIntegration, rowReferencesSecret,
+} = require('../connectorSecretKinds');
 // The user-facing half of the error state: this module marks a row it cannot
 // decrypt, and the reason is written for the person reading the Connectors page
 // — the same flag the delivery-failure flip sets, so it comes from that service
@@ -295,9 +297,23 @@ const sweepOrphanedConnectorSecrets = async (now: Date): Promise<number> => {
       );
       continue;
     }
+    const ref = String(secret._id);
+    if (!ownedByIntegration(spec)) {
+      // A hosted-MCP client registration's secret (TASK-248). It is kept while
+      // its registration exists, has not been refused, and still names it:
+      // a RETIRED registration keeps serving the rows it minted, so retirement
+      // alone is not a reason to delete the secret those rows refresh with.
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const HostedMcpDcrRegistration = require('../../models/HostedMcpDcrRegistration');
+      const registration = await HostedMcpDcrRegistration.findById(secret.integrationId)
+        .select('refusedAt clientSecretRef').lean() as Record<string, unknown> | null;
+      if (registration && !registration.refusedAt && rowReferencesSecret(registration, spec, ref)) continue;
+      await connectorSecrets.revoke(ref);
+      revoked += 1;
+      continue;
+    }
     const integration = await Integration.findById(secret.integrationId)
       .select(select).lean() as Record<string, unknown> | null;
-    const ref = String(secret._id);
     if (integration?.isActive === true && rowReferencesSecret(integration, spec, ref)) continue;
     await connectorSecrets.revoke(ref);
     revoked += 1;

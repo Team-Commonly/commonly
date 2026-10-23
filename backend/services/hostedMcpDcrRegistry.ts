@@ -1,13 +1,41 @@
-/** Instance-scoped Dynamic Client Registration for hosted MCP public clients. */
-import HostedMcpDcrRegistration from '../models/HostedMcpDcrRegistration';
+/**
+ * Instance-scoped Dynamic Client Registration for hosted MCP clients.
+ *
+ * A vendor that offers public-client registration (`none` in its token
+ * endpoint auth methods) gets a public client, as before. One that offers only
+ * client_secret_basic or client_secret_post gets a confidential client
+ * (TASK-248, Wren's scope 2026-10-19): gitlab.com and api.supabase.com list
+ * only those two, so neither could connect. The issued secret is kept
+ * encrypted in the connector-secret store, owned by the registration row (the
+ * orphan sweep knows that owner), and authenticates the token, refresh and
+ * revocation calls; PKCE S256 is still sent. No registration_access_token is
+ * stored. A secret the vendor says will lapse is replaced by registering again
+ * before it does.
+ */
+import { Types } from 'mongoose';
+import HostedMcpDcrRegistration, { IHostedMcpDcrRegistration } from '../models/HostedMcpDcrRegistration';
 import type { HostedMcpEntry } from './hostedMcpEntryService';
 import {
+  CONFIDENTIAL_CLIENT_METHODS,
   HostedMcpClientError,
   type HostedMcpAuthorizationServer,
   type HostedMcpClientConfiguration,
 } from './hostedMcpIntakeService';
 import { upstreamFetch } from './upstreamFetch';
 import { hostedVendorFetch } from './hostedVendorFetch';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const connectorSecrets = require('./connectorSecrets');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { HOSTED_MCP_DCR_CLIENT_SECRET } = require('./connectorSecretKinds');
+
+type ConfidentialMethod = typeof CONFIDENTIAL_CLIENT_METHODS[number];
+type RegistrationMethod = 'none' | ConfidentialMethod;
+
+/**
+ * A secret that lapses within this margin is treated as lapsed, so a start
+ * never hands the vendor a client about to stop working mid-flow.
+ */
+export const CLIENT_SECRET_RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
 
 const currentFilter = (entry: HostedMcpEntry) => ({
   entryId: entry.id,
@@ -15,7 +43,47 @@ const currentFilter = (entry: HostedMcpEntry) => ({
   current: true,
 });
 
-const asClient = (clientId: string): HostedMcpClientConfiguration => ({ clientId });
+type RegistrationRow = Pick<IHostedMcpDcrRegistration,
+  'clientId' | 'tokenEndpointAuthMethod' | 'clientSecretRef' | 'clientSecretExpiresAt'>;
+
+const secretLapsing = (row: RegistrationRow, now: Date): boolean => Boolean(
+  row.clientSecretExpiresAt
+  && new Date(row.clientSecretExpiresAt).getTime() - now.getTime() <= CLIENT_SECRET_RENEW_MARGIN_MS,
+);
+
+/**
+ * The client a stored registration describes, with its secret decrypted for a
+ * confidential one. Null when a confidential client's secret can't be read
+ * (deleted, or its key left the ring): that registration can't authenticate.
+ */
+const clientFromRow = async (row: RegistrationRow): Promise<HostedMcpClientConfiguration | null> => {
+  const method = (row.tokenEndpointAuthMethod || 'none') as RegistrationMethod;
+  if (method === 'none') return { clientId: row.clientId };
+  if (!row.clientSecretRef) return null;
+  try {
+    const clientSecret = await connectorSecrets.get(row.clientSecretRef);
+    return clientSecret ? { clientId: row.clientId, clientSecret, tokenEndpointAuthMethod: method } : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Which method to register with, or a refusal before any POST. */
+const registrationMethod = (entry: HostedMcpEntry, metadata: HostedMcpAuthorizationServer): RegistrationMethod => {
+  const supported = metadata.token_endpoint_auth_methods_supported;
+  // RFC 8414 defaults an omitted list to client_secret_basic, but this registry
+  // registers only a method the vendor names: never POST hoping it accepts one.
+  if (Array.isArray(supported)) {
+    if (supported.includes('none')) return 'none';
+    // Basic, then post: the order the token calls choose by (hostedMcpIntakeService).
+    const confidential = CONFIDENTIAL_CLIENT_METHODS.find((method) => supported.includes(method));
+    if (confidential) return confidential;
+  }
+  throw new HostedMcpClientError(
+    'client_registration_unsupported',
+    `authorization server advertises no client registration this instance supports for ${entry.id}`,
+  );
+};
 
 /**
  * A registration has one callback. Changing the instance host retires the old
@@ -26,6 +94,7 @@ export const ensureDcrClient = async (
   metadata: HostedMcpAuthorizationServer,
   redirectUri: string,
   fetchImpl: typeof fetch = hostedVendorFetch,
+  now: Date = new Date(),
 ): Promise<HostedMcpClientConfiguration> => {
   if (entry.client !== 'dcr') {
     throw new HostedMcpClientError('client_registration_unsupported', 'entry does not use DCR');
@@ -34,24 +103,24 @@ export const ensureDcrClient = async (
   // The upsert is safe only once the unique current-registration index exists.
   await HostedMcpDcrRegistration.init();
   const existing = await HostedMcpDcrRegistration.findOne(currentFilter(entry));
-  if (existing?.redirectUri === redirectUri && !existing.refusedAt) return asClient(existing.clientId);
+  if (existing?.redirectUri === redirectUri && !existing.refusedAt && !secretLapsing(existing, now)) {
+    const reused = await clientFromRow(existing);
+    if (reused) return reused;
+  }
   if (existing) {
     await HostedMcpDcrRegistration.updateOne(
       { _id: existing._id, current: true },
-      { $set: { current: false, retiredAt: new Date() } },
+      { $set: { current: false, retiredAt: now } },
     );
   }
 
-  // RFC 8414 defaults an omitted auth-method list to client_secret_basic.
-  // These entries use public clients only; never POST hoping the AS accepts one.
-  if (!Array.isArray(metadata.token_endpoint_auth_methods_supported)
-    || !metadata.token_endpoint_auth_methods_supported.includes('none')
-    || !metadata.registration_endpoint) {
+  if (!metadata.registration_endpoint) {
     throw new HostedMcpClientError(
       'client_registration_unsupported',
-      `authorization server does not advertise public-client registration for ${entry.id}`,
+      `authorization server advertises no registration endpoint for ${entry.id}`,
     );
   }
+  const method = registrationMethod(entry, metadata);
   let registrationUrl: URL;
   try {
     registrationUrl = new URL(metadata.registration_endpoint);
@@ -70,7 +139,7 @@ export const ensureDcrClient = async (
       redirect_uris: [redirectUri],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
-      token_endpoint_auth_method: 'none',
+      token_endpoint_auth_method: method,
       scope: entry.scopes.join(' '),
     }),
   }, fetchImpl);
@@ -80,43 +149,100 @@ export const ensureDcrClient = async (
   const issued = await response.json().catch(() => null) as {
     client_id?: unknown;
     client_secret?: unknown;
+    client_secret_expires_at?: unknown;
     token_endpoint_auth_method?: unknown;
     redirect_uris?: unknown;
   } | null;
-  if (!issued || typeof issued.client_id !== 'string' || !issued.client_id
-    || issued.client_secret !== undefined
-    || issued.token_endpoint_auth_method !== 'none'
-    || !Array.isArray(issued.redirect_uris)
-    || issued.redirect_uris.length !== 1
-    || issued.redirect_uris[0] !== redirectUri) {
+  // RFC 7591 §2: an omitted token_endpoint_auth_method means client_secret_basic.
+  const issuedMethod = issued?.token_endpoint_auth_method === undefined
+    ? 'client_secret_basic'
+    : issued.token_endpoint_auth_method;
+  const confirmsCallback = Array.isArray(issued?.redirect_uris)
+    && issued.redirect_uris.length === 1
+    && issued.redirect_uris[0] === redirectUri;
+  if (!issued || typeof issued.client_id !== 'string' || !issued.client_id || !confirmsCallback) {
     throw new HostedMcpClientError(
       'client_registration_unsupported',
-      'registration answer did not confirm the public client and sole callback',
+      'registration answer did not confirm the client and its sole callback',
     );
   }
+  if (method === 'none') {
+    if (issued.client_secret !== undefined || issued.token_endpoint_auth_method !== 'none') {
+      throw new HostedMcpClientError(
+        'client_registration_unsupported',
+        'registration answer did not confirm the public client and sole callback',
+      );
+    }
+  } else if (typeof issued.client_secret !== 'string' || !issued.client_secret || issuedMethod !== method) {
+    throw new HostedMcpClientError(
+      'client_registration_unsupported',
+      'registration answer did not confirm the confidential client, its secret and its auth method',
+    );
+  }
+  // RFC 7591 §3.2.1: 0 means the secret never lapses; any other value is seconds since the epoch.
+  let clientSecretExpiresAt: Date | null = null;
+  if (method !== 'none' && issued.client_secret_expires_at !== undefined && issued.client_secret_expires_at !== 0) {
+    const seconds = Number(issued.client_secret_expires_at);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      throw new HostedMcpClientError(
+        'client_registration_unsupported',
+        'registration answer carried an unreadable secret expiry',
+      );
+    }
+    clientSecretExpiresAt = new Date(seconds * 1000);
+    if (secretLapsing({ clientId: issued.client_id, clientSecretExpiresAt }, now)) {
+      throw new HostedMcpClientError(
+        'client_registration_refused',
+        'registration answer carried a secret that lapses too soon',
+      );
+    }
+  }
+
+  // The secret is stored before the row so the row is never written without
+  // it; it is owned by the row's id, chosen here. A start that loses the
+  // insert race below deletes its own secret and uses the winner's client.
+  const registrationId = new Types.ObjectId();
+  const clientSecretRef = method === 'none'
+    ? null
+    : await connectorSecrets.put(String(registrationId), HOSTED_MCP_DCR_CLIENT_SECRET, issued.client_secret as string);
+  const discardOwnSecret = async () => {
+    if (clientSecretRef) await connectorSecrets.revoke(clientSecretRef).catch(() => {});
+  };
 
   // Two first starts may both POST. The unique current index admits only one
-  // registration; both starts then authorize with the stored winner's id.
+  // registration; both starts then authorize with the stored winner's client.
   try {
     const stored = await HostedMcpDcrRegistration.findOneAndUpdate(
       currentFilter(entry),
       { $setOnInsert: {
+        _id: registrationId,
         entryId: entry.id,
         issuer: entry.issuer,
         clientId: issued.client_id,
         redirectUri,
+        tokenEndpointAuthMethod: method,
+        clientSecretRef,
+        clientSecretExpiresAt,
         current: true,
       } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
     if (!stored || stored.redirectUri !== redirectUri || stored.refusedAt) {
+      await discardOwnSecret();
       throw new HostedMcpClientError('client_registration_refused', 'current registration changed during start');
     }
-    return asClient(stored.clientId);
+    if (String(stored._id) !== String(registrationId)) await discardOwnSecret();
+    const client = await clientFromRow(stored);
+    if (!client) {
+      throw new HostedMcpClientError('client_registration_refused', 'current registration has no usable secret');
+    }
+    return client;
   } catch (error) {
     if ((error as { code?: number })?.code !== 11000) throw error;
+    await discardOwnSecret();
     const winner = await HostedMcpDcrRegistration.findOne(currentFilter(entry));
-    if (winner?.redirectUri === redirectUri && !winner.refusedAt) return asClient(winner.clientId);
+    const client = winner?.redirectUri === redirectUri && !winner.refusedAt ? await clientFromRow(winner) : null;
+    if (client) return client;
     throw new HostedMcpClientError('client_registration_refused', 'concurrent registration changed');
   }
 };
@@ -133,15 +259,17 @@ export const dcrClientForRow = async (
     clientId: recordedClientId,
     refusedAt: null,
   });
-  return registration ? asClient(registration.clientId) : null;
+  return registration ? clientFromRow(registration) : null;
 };
 
 /** Invalid client on token/revoke poisons this registration, not every row. */
 export const refuseDcrClient = async (entry: HostedMcpEntry, clientId: string): Promise<void> => {
   if (entry.client !== 'dcr') return;
   const now = new Date();
-  await HostedMcpDcrRegistration.updateOne(
+  const refused = await HostedMcpDcrRegistration.findOneAndUpdate(
     { entryId: entry.id, issuer: entry.issuer, clientId, refusedAt: null },
     { $set: { refusedAt: now, retiredAt: now, current: false } },
   );
+  // A refused client's secret is useless; delete it now rather than at the sweep.
+  if (refused?.clientSecretRef) await connectorSecrets.revoke(refused.clientSecretRef).catch(() => {});
 };

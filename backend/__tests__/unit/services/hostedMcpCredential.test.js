@@ -28,6 +28,7 @@ const {
   EXPIRY_SKEW_MS,
   REFRESH_LEASE_MS,
   WINNER_WAIT_MS,
+  refreshTokenAtVendor,
 } = require('../../../services/hostedMcpCredentialService');
 const { undeclaredPaths } = require('../../utils/schemaPathGuard');
 
@@ -220,6 +221,49 @@ describe('the fast path', () => {
       entry: dcrEntry, clientId: 'retired-client', refreshToken: 'old-refresh',
     }));
     expect(h.deps.clientIdFor).not.toHaveBeenCalled();
+  });
+
+  test('a DCR confidential client refreshes with the method it registered (TASK-248, Vera #2377)', async () => {
+    const dcrEntry = { ...ENTRY, client: 'dcr' };
+    const row = stale({ clientId: 'conf-1' });
+    const h = harness({ row, entryFor: () => dcrEntry });
+    h.deps.dcrClientForRow = jest.fn(async () => ({
+      clientId: 'conf-1', clientSecret: 'registered-secret', tokenEndpointAuthMethod: 'client_secret_post',
+    }));
+    await credentialFor(row, h.deps);
+    expect(h.refreshAtVendor).toHaveBeenCalledWith(expect.objectContaining({
+      clientId: 'conf-1', clientSecret: 'registered-secret', tokenEndpointAuthMethod: 'client_secret_post',
+    }));
+  });
+
+  test('the vendor refresh sends a DCR client\'s recorded method, whatever the vendor lists', async () => {
+    // Discovery lists basic first, so a list lookup would pick Basic; the
+    // registration said post, and post is what must go out (Vera, #2377).
+    const dcrEntry = { ...ENTRY, client: 'dcr' };
+    const metadata = {
+      issuer: dcrEntry.issuer,
+      authorization_endpoint: `${dcrEntry.issuer}/authorize`,
+      token_endpoint: `${dcrEntry.issuer}/token`,
+      token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+    };
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => metadata })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ access_token: 'new-access', expires_in: 3600 }) });
+    const result = await refreshTokenAtVendor({
+      entry: dcrEntry,
+      clientId: 'conf-1',
+      clientSecret: 'registered-secret',
+      tokenEndpointAuthMethod: 'client_secret_post',
+      refreshToken: 'old-refresh',
+    }, fetchImpl);
+    expect(result.accessToken).toBe('new-access');
+    const [url, init] = fetchImpl.mock.calls[1];
+    expect(url).toBe(metadata.token_endpoint);
+    expect(init.headers.Authorization).toBeUndefined();
+    const body = new URLSearchParams(init.body);
+    expect(body.get('client_id')).toBe('conf-1');
+    expect(body.get('client_secret')).toBe('registered-secret');
+    expect(body.get('refresh_token')).toBe('old-refresh');
   });
 
   test('a refused or unknown DCR client requires reconnect before serving any token', async () => {

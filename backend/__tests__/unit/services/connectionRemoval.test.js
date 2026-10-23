@@ -101,6 +101,22 @@ describe('removeConnection (a hosted-MCP row)', () => {
     expect(deps.clientIdFor).not.toHaveBeenCalled();
   });
 
+  it('revokes a DCR confidential row with the method it registered (TASK-248, Vera #2377)', async () => {
+    const dcrEntry = { ...ENTRY, client: 'dcr' };
+    const { deps, revokeGrants } = recorder({ entryFor: () => dcrEntry });
+    deps.dcrClientForRow = jest.fn(async () => ({
+      clientId: 'conf-1', clientSecret: 'registered-secret', tokenEndpointAuthMethod: 'client_secret_post',
+    }));
+    const row = hostedRow({ config: {
+      entryId: 'linear', clientId: 'conf-1', credentialRef: 'access-ref', refreshTokenRef: 'refresh-ref',
+    } });
+    const result = await remove(row, deps, revokeGrants);
+    expect(result.removed).toBe(true);
+    expect(deps.revokeAtVendor).toHaveBeenCalledWith(expect.objectContaining({
+      clientId: 'conf-1', clientSecret: 'registered-secret', tokenEndpointAuthMethod: 'client_secret_post',
+    }));
+  });
+
   it('removes a refused DCR row locally and returns the vendor page without sending its token', async () => {
     const dcrEntry = { ...ENTRY, client: 'dcr' };
     const { deps, revokeGrants } = recorder({ entryFor: () => dcrEntry });
@@ -542,6 +558,25 @@ describe('revokeTokenAtVendor (RFC 7009)', () => {
       refuse.mockRestore();
     }
   });
+  it('a post-registered DCR client revokes with post, though a dcr removal reads no metadata', async () => {
+    const dcrEntry = { ...ENTRY, client: 'dcr' };
+    const fetchImpl = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    await revokeTokenAtVendor({
+      entry: dcrEntry,
+      clientId: 'conf-1',
+      clientSecret: 'registered-secret',
+      tokenEndpointAuthMethod: 'client_secret_post',
+      token: 'held-token',
+      tokenTypeHint: 'refresh_token',
+    }, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [, init] = fetchImpl.mock.calls[0];
+    expect(init.headers.Authorization).toBeUndefined();
+    const body = new URLSearchParams(init.body);
+    expect(body.get('client_id')).toBe('conf-1');
+    expect(body.get('client_secret')).toBe('registered-secret');
+  });
+
   const call = (response) => {
     const fetchImpl = jest.fn(async () => response);
     return {
