@@ -54,7 +54,7 @@ const platformFetchReferences = (source) => {
   const positions = [];
   const visit = (node) => {
     // `typeof fetch` is a type annotation, not a runtime reference.
-    if (ts.isTypeNode(node) || ts.isImportDeclaration(node)) return;
+    if (ts.isTypeNode(node)) return;
     if (ts.isIdentifier(node) && node.text === 'fetch') positions.push(node.getStart(file));
     if (ts.isElementAccessExpression(node)
       && ts.isStringLiteral(node.argumentExpression)
@@ -94,6 +94,8 @@ describe('hosted-MCP requests are wired through the outbound guard', () => {
     ['computed global fetch', "const request = globalThis['fetch'];", true],
     ['aliased fetch', 'const f = fetch; const request = (fetchImpl = f) => fetchImpl(url);', true],
     ['destructured global fetch', 'const { fetch: request } = globalThis;', true],
+    ['imported fetch alias', "import { fetch as vendorFetch } from 'undici'; const request = vendorFetch;", true],
+    ['default imported fetch', "import fetch from 'node-fetch'; const request = fetch;", true],
     ['shadowing alias', [
       'import { hostedVendorFetch } from "./hostedVendorFetch";',
       'function request() { const hostedVendorFetch: typeof fetch = fetch; return hostedVendorFetch(url); }',
