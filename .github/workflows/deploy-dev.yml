@@ -59,8 +59,10 @@ jobs:
             echo "::warning title=staging-smoke gate::bypassed via allow_without_staging_smoke=true"
             exit 0
           fi
+          # Latest staging-smoke by created_at, tiebreak id; if a failure and a success share the
+          # newest created_at (same-second race) prefer failure, so the gate fails closed.
           STATE=$(gh api "repos/$REPO/commits/$SHA/statuses" \
-            --jq '[.[] | select(.context=="staging-smoke")] | sort_by(.updated_at) | last | .state' 2>/dev/null || echo "")
+            --jq '[.[]|select(.context=="staging-smoke")] | if length==0 then "" else ((max_by(.created_at).created_at) as $m | [.[]|select(.created_at==$m)] | (if any(.[]; .state=="failure") then "failure" else (sort_by(.id)|last|.state) end)) end' 2>/dev/null || echo "")
           echo "staging-smoke on $SHA = ${STATE:-<none>}"
           if [ "$STATE" != "success" ]; then
             echo "::error title=staging-smoke gate::no green staging-smoke on $SHA (got: ${STATE:-none}). Deploy Staging on this SHA first (it runs the Tier-1 smoke and posts the status), or re-dispatch with allow_without_staging_smoke=true for an emergency."
