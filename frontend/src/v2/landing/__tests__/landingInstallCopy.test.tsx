@@ -40,29 +40,14 @@ const LANDING_CSS = fs.readFileSync(path.join(__dirname, '..', 'v2-landing.css')
 const V2_ROOT_CSS = fs.readFileSync(path.join(__dirname, '..', '..', 'v2.css'), 'utf8');
 
 /**
- * TASK-154, ux-lead's design gate. `.v2-root button:not(.MuiButtonBase-root)`
- * (v2.css:201) resets every button's padding, border, background and colour at
- * (0,2,1) — one class, the :not() argument, and the element — so the pill
- * written as a bare `.v2-landing__install-copy` (0,1,0) lost all four and
- * computed as text, 27×18 with a 27×44 phone target. The fix is to write it in
- * the reset's own tier, as .v2-byo__copy does.
- *
- * The comparator below is deliberately coarse and applied to BOTH selectors, so
- * it answers "is the pill at least at the reset's tier" without anyone having to
- * trust a specificity number restated by hand. A tie is resolved by sheet order,
- * which is why this file's rule comes from the lazily-loaded landing chunk.
+ * TASK-154, ux-lead's design gate. The global reset is intentionally a
+ * low-specificity default (`.v2-root :where(button:not(.MuiButtonBase-root))`)
+ * so the authored landing pill can own its padding, border, background and
+ * colour. Keep the reset selector and the pill's declarations in lockstep;
+ * neither test should silently model the old specificity workaround.
  */
-const BUTTON_RESET_SELECTOR = '.v2-root button:not(.MuiButtonBase-root)';
+const BUTTON_RESET_SELECTOR = '.v2-root :where(button:not(.MuiButtonBase-root))';
 const PILL_SELECTOR = '.v2-root button.v2-landing__install-copy';
-
-const specificity = (selector: string): number => {
-  const notArgs = (selector.match(/:not\(([^)]*)\)/g) ?? []) as string[];
-  const base = selector.replace(/:not\([^)]*\)/g, '');
-  const classes = (base.match(/\.[\w-]+/g) ?? []).length
-    + notArgs.reduce<number>((n, arg) => n + (arg.match(/\.[\w-]+/g) ?? []).length, 0);
-  const elements = (base.match(/(^|\s)[a-z]+/g) ?? []).length;
-  return classes * 10 + elements;
-};
 
 /** The shipped constant, read from source — never a copy of it. */
 const selfHostCommand = (): string => {
@@ -171,14 +156,13 @@ describe('landing install line copy control (TASK-154)', () => {
   });
 
   it('writes the pill in the button reset\u2019s own tier, so the reset cannot erase it', () => {
-    // The reset this guards against has to still be in the sheet, or the
-    // comparison below is against nothing.
+    // The reset this guards against has to still be in the sheet, and the old
+    // high-specificity selector must stay gone.
     expect(V2_ROOT_CSS).toContain(`${BUTTON_RESET_SELECTOR} {`);
-    expect(specificity(PILL_SELECTOR)).toBeGreaterThanOrEqual(specificity(BUTTON_RESET_SELECTOR));
+    expect(V2_ROOT_CSS).not.toContain('.v2-root button:not(.MuiButtonBase-root) {');
 
-    // Read the declarations THROUGH the qualified selector: ruleBody throws if
-    // the prefix is gone, so this cannot pass on a bare-class rule the reset
-    // would win against.
+    // Read the declarations through the qualified selector so the pill keeps
+    // its intentional surface treatment after the reset loses specificity.
     const pill = ruleBody(PILL_SELECTOR);
     expect(pill).toContain('padding: 4px 10px');
     expect(pill).toContain('flex: none');
