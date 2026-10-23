@@ -746,7 +746,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
         )}
         {message.mentionNotices?.map((notice) => (
           <div className="v2-msg__sender-notice" role="status" key={notice.handle}>
-            {notice.message}
+            {t('podChat.mentionNotInPod', { handle: notice.handle })}
           </div>
         ))}
         {galleryImages.length > 0 && (
