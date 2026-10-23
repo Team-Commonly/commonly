@@ -29,6 +29,11 @@ test('shows the last reported spawn state and installer controls', async () => {
   expect(screen.getByRole('button', { name: 'Add skill' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Add skill' }));
   expect(await screen.findByRole('button', { name: 'Add plan' })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Find a skill'), { target: { value: 'plan' } });
+  await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/skills/catalog', {
+    params: { source: 'awesome', limit: 60, q: 'plan' },
+  }));
+  expect(await screen.findByRole('button', { name: 'Add plan' })).toBeInTheDocument();
   axios.post.mockResolvedValue({ data: {} });
   fireEvent.click(screen.getByRole('button', { name: 'Add plan' }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/skills/import', expect.objectContaining({

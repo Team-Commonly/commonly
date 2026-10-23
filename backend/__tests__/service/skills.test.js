@@ -118,26 +118,30 @@ describe('Skills Catalog Routes', () => {
   });
 
   test('records mounted names for the authenticated agent and returns them to the page', async () => {
+    await request(app).post('/api/skills/import').set('Authorization', `Bearer ${authToken}`)
+      .send({ podId, name: 'review', content: '# Review', scope: 'agent', agentName: 'scout', instanceId: 'default' });
     const installation = await AgentInstallation.findOne({ podId, agentName: 'scout' });
     const agentUser = await AgentIdentityService.getOrCreateAgentUser('scout', { instanceId: 'default' });
     const { token } = await issueRuntimeTokenForAgent(agentUser, 'test skill mount', installation);
     const path = `/api/agents/runtime/pods/${podId}/skill-load`;
     const posted = await request(app).post(path).set('Authorization', `Bearer ${token}`)
-      .send({ mounted: ['review'], conflicted: ['draft'] });
+      .send({ mounted: ['review', 'private-operator-skill'], conflicted: ['draft'] });
     expect(posted.status).toBe(200);
     const installAfter = await AgentInstallation.findById(installation._id).lean();
-    expect(installAfter.skillLoad).toMatchObject({ mounted: ['review'], conflicted: ['draft'] });
+    expect(installAfter.skillLoad).toMatchObject({ mounted: ['review', 'private-operator-skill'], conflicted: ['draft'] });
     expect(installAfter.skillLoad.at).toBeInstanceOf(Date);
 
     const read = await request(app).get(`/api/skills/pods/${podId}/imported?scope=agent&agentName=scout&instanceId=default`)
       .set('Authorization', `Bearer ${authToken}`);
     expect(read.status).toBe(200);
-    expect(read.body.skillLoad).toMatchObject({ mounted: ['review'], conflicted: ['draft'] });
+    expect(read.body.skillLoad).toMatchObject({ mounted: ['review'], conflicted: [] });
+    expect(JSON.stringify(read.body)).not.toContain('private-operator-skill');
     expect(read.body.canEdit).toBe(true);
 
     const invalid = await request(app).post(path).set('Authorization', `Bearer ${token}`)
       .send({ mounted: ['/private/skill'], conflicted: [] });
     expect(invalid.status).toBe(400);
-    expect((await AgentInstallation.findById(installation._id).lean()).skillLoad.mounted).toEqual(['review']);
+    expect((await AgentInstallation.findById(installation._id).lean()).skillLoad.mounted)
+      .toEqual(['review', 'private-operator-skill']);
   });
 });

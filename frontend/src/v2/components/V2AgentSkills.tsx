@@ -31,6 +31,7 @@ const V2AgentSkills: React.FC<Props> = ({ pods, agentName, instanceId }) => {
   const [canEdit, setCanEdit] = useState(false);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,18 +65,22 @@ const V2AgentSkills: React.FC<Props> = ({ pods, agentName, instanceId }) => {
     return () => { active = false; };
   }, [podId, agentName, instanceId, t]);
 
-  const openCatalog = async () => {
-    setCatalogOpen(true);
-    setError(null);
-    try {
-      const response = await axios.get<{ items: CatalogItem[] }>('/api/skills/catalog', {
-        params: { source: 'awesome', limit: 200 },
-      });
-      setCatalog(response.data.items || []);
-    } catch (requestFailure) {
-      setError(requestError(requestFailure, t('agentSkills.catalogError')));
-    }
-  };
+  useEffect(() => {
+    if (!catalogOpen) return undefined;
+    let active = true;
+    setCatalog([]);
+    setCatalogLoading(true);
+    const timer = setTimeout(() => {
+      axios.get<{ items: CatalogItem[] }>('/api/skills/catalog', {
+        params: { source: 'awesome', limit: 60, q: query.trim() },
+      }).then((response) => {
+        if (active) setCatalog(response.data.items || []);
+      }).catch((requestFailure) => {
+        if (active) setError(requestError(requestFailure, t('agentSkills.catalogError')));
+      }).finally(() => { if (active) setCatalogLoading(false); });
+    }, 150);
+    return () => { active = false; clearTimeout(timer); };
+  }, [catalogOpen, query, t]);
 
   const add = async (item: CatalogItem) => {
     if (!canEdit || busy) return;
@@ -115,14 +120,13 @@ const V2AgentSkills: React.FC<Props> = ({ pods, agentName, instanceId }) => {
   };
 
   const installed = new Set(skills.map((skill) => skill.name.toLowerCase()));
-  const available = catalog.filter((item) => !installed.has(item.name.toLowerCase())
-    && `${item.name} ${item.description || ''}`.toLowerCase().includes(query.toLowerCase()));
+  const available = catalog.filter((item) => !installed.has(item.name.toLowerCase()));
 
   return (
     <section className="v2-agent-skills" aria-labelledby="v2-agent-skills-heading">
       <div className="v2-agent-skills__head">
         <h2 id="v2-agent-skills-heading">{t('agentSkills.title')}</h2>
-        {canEdit && <button type="button" onClick={() => { if (catalogOpen) setCatalogOpen(false); else void openCatalog(); }}>{t(catalogOpen ? 'agentSkills.closeCatalog' : 'agentSkills.addSkill')}</button>}
+        {canEdit && <button type="button" onClick={() => { setCatalogOpen(!catalogOpen); setError(null); }}>{t(catalogOpen ? 'agentSkills.closeCatalog' : 'agentSkills.addSkill')}</button>}
       </div>
       {pods.length > 1 && <label className="v2-agent-skills__pod-label" htmlFor="v2-agent-skills-pod">{t('agentSkills.pod')}
         <select id="v2-agent-skills-pod" value={podId} onChange={(event) => { setSelectedPodId(event.target.value); setCatalogOpen(false); }}>
@@ -153,7 +157,8 @@ const V2AgentSkills: React.FC<Props> = ({ pods, agentName, instanceId }) => {
             <div className="v2-agent-skills__copy"><strong>{item.name}</strong>{item.description && <span>{item.description}</span>}</div>
             <button type="button" disabled={busy !== null || (!item.content && !item.sourceUrl)} onClick={() => void add(item)} aria-label={t('agentSkills.addNamed', { name: item.name })}>{t('agentSkills.add')}</button>
           </div>)}
-          {available.length === 0 && <p className="v2-agent-skills__empty">{t('agentSkills.noMatches')}</p>}
+          {catalogLoading && <p className="v2-agent-skills__empty">{t('agentSkills.loading')}</p>}
+          {!catalogLoading && available.length === 0 && <p className="v2-agent-skills__empty">{t('agentSkills.noMatches')}</p>}
         </div>
       </div>}
     </section>

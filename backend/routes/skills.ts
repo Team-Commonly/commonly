@@ -293,14 +293,24 @@ router.get('/pods/:podId/imported', auth, async (req: AuthReq, res: Res) => {
     }));
     const installation = scope === 'agent'
       ? await AgentInstallation.findOne({ podId, agentName: agentName.toLowerCase(), instanceId, status: 'active' })
-        .select('installedBy skillLoad').lean() as { installedBy?: { toString: () => string }; skillLoad?: unknown } | null
+        .select('installedBy skillLoad').lean() as {
+          installedBy?: { toString: () => string };
+          skillLoad?: { at?: Date; mounted?: string[]; conflicted?: string[] };
+        } | null
       : null;
     if (scope === 'agent' && !installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
     const user = scope === 'agent' ? await User.findById(userId).select('role').lean() as { role?: string } | null : null;
     const canEdit = scope === 'agent' && Boolean(installation && (
       installation.installedBy?.toString() === userId?.toString() || user?.role === 'admin'
     ));
-    return res.json({ items, canEdit, skillLoad: installation?.skillLoad || null });
+    const installedNames = new Set(items.map((item) => String(item.name || '').toLowerCase()));
+    const load = installation?.skillLoad;
+    const skillLoad = load?.at ? {
+      at: load.at,
+      mounted: (load.mounted || []).filter((name) => installedNames.has(name.toLowerCase())),
+      conflicted: (load.conflicted || []).filter((name) => installedNames.has(name.toLowerCase())),
+    } : null;
+    return res.json({ items, canEdit, skillLoad });
   } catch (error) {
     console.error('Error loading imported skills:', error);
     return res.status(500).json({ error: 'Failed to load imported skills' });
