@@ -29,6 +29,9 @@ const hostedDefault = (name) => {
 
 const quickstart = read('docs-site/quickstart.mdx');
 const connect = read('docs-site/agents/connect.mdx');
+const byo = read('docs-site/bring-your-own/index.mdx');
+const repoWork = read('docs-site/bring-your-own/work-in-your-repo.mdx');
+const navigation = JSON.parse(read('docs-site/docs.json'));
 
 describe('docs.commonly.me says what the product does', () => {
   test('the quickstart starts on commonly.me, not with a clone', () => {
@@ -37,30 +40,29 @@ describe('docs.commonly.me says what the product does', () => {
     expect(quickstart).not.toMatch(/install\.sh/);
   });
 
-  test('the install and computer commands are the ones the Bring your own page shows', () => {
+  test('the quickstart is the hosted path and the deeper connect page keeps the CLI commands', () => {
     const install = constantFromPage('CLI_INSTALL_COMMAND');
     const daemon = constantFromPage('DAEMON_SETUP_COMMAND');
-    [quickstart, connect].forEach((page) => {
-      expect(page).toContain(install);
-      expect(page).toContain(daemon);
-      expect(page).toContain('export COMMONLY_API_URL=https://api.commonly.me');
-      expect(page).toContain('export COMMONLY_AGENT_TOKEN=');
-      expect(page).toContain('commonly agent run <agent-name>');
-    });
+    expect(quickstart).toContain('Run it here');
+    expect(quickstart).not.toContain('npm i -g');
+    expect(connect).toContain(install);
+    expect(connect).toContain(daemon);
+    expect(connect).toContain('export COMMONLY_API_URL=https://api.commonly.me');
+    expect(connect).toContain('export COMMONLY_AGENT_TOKEN=');
+    expect(connect).toContain('commonly agent run <agent-name>');
   });
 
-  test('the hosted limits match the code', () => {
-    const turns = hostedDefault('DEFAULT_TURNS_PER_DAY');
-    const proTurns = hostedDefault('DEFAULT_TURNS_PER_DAY_PRO');
+  test('the quickstart links live hosted limits instead of freezing plan numbers', () => {
     const agents = hostedDefault('DEFAULT_AGENTS_PER_USER');
-    expect(quickstart).toContain(`${turns} turns a day`);
-    expect(quickstart).toContain(`${proTurns} turns a day on Pro`);
     expect(agents).toBe(1);
-    expect(quickstart).toMatch(/run one hosted agent/);
+    expect(quickstart).toContain('https://commonly.me/v2/agents/byo?mode=hosted');
+    expect(quickstart).toMatch(/free plan's current agent and daily turn limits/);
+    expect(quickstart).not.toMatch(/\b\d+ turns? a day\b/);
   });
 
-  test('both pages say MCP alone does not answer mentions, and none calls MCP recommended', () => {
-    expect(quickstart).toMatch(/does not make your agent\s+answer @mentions/);
+  test('the agent guides separate MCP from a listener, and none calls MCP recommended', () => {
+    expect(byo).toMatch(/A listener is needed.*answer @mentions/);
+    expect(repoWork).toMatch(/MCP server does not listen for @mentions/);
     expect(connect).toMatch(/MCP alone does not answer @mentions/);
     const pages = fs.readdirSync(path.join(ROOT, 'docs-site'), { recursive: true })
       .filter((f) => String(f).endsWith('.mdx'))
@@ -74,13 +76,13 @@ describe('docs.commonly.me says what the product does', () => {
     expect(connect.indexOf('## The listener')).toBeLessThan(connect.indexOf('## The MCP server'));
   });
 
-  test('the listener claims only the adapters Scout is allowed to name', () => {
-    // Scout's verified facts: the connect page's listener runs Claude Code or
-    // Codex. OpenCode connects through its own guide (docs/cli/opencode.md),
-    // and the other CLI adapters are not ready for outside use.
-    [quickstart, connect].forEach((page) => {
-      expect(page).toMatch(/Claude Code if it\s+is\s+installed,\s+otherwise\s+Codex/);
-      expect(page).not.toMatch(/--adapter (qwen|opencode|pi)\b/);
-    });
+  test('the Bring your own navigation lists walked runtimes only', () => {
+    const groups = navigation.navigation.tabs[0].groups;
+    const guides = groups.find((group) => group.group === 'Bring Your Own Agent').pages;
+    ['claude-code', 'codex', 'opencode', 'hermes', 'deepseek-harness', 'work-in-your-repo']
+      .forEach((guide) => expect(guides).toContain(`bring-your-own/${guide}`));
+    ['qwen', 'pi', 'gemini', 'goose']
+      .forEach((guide) => expect(guides).not.toContain(`bring-your-own/${guide}`));
+    expect(connect).not.toMatch(/--adapter (qwen|opencode|pi)\b/);
   });
 });
