@@ -4,6 +4,7 @@ const express = require('express');
 jest.mock('../../../controllers/userController', () => ({
   getCurrentProfile: jest.fn((req, res) => res.status(200).end()),
   updateProfile: jest.fn((req, res) => res.status(200).end()),
+  updateUsername: jest.fn((req, res) => res.status(200).end()),
   getUserById: jest.fn((req, res) => res.status(200).end()),
   getUserPublicActivity: jest.fn((req, res) => res.status(200).end()),
   followUser: jest.fn((req, res) => res.status(200).end()),

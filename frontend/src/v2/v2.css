@@ -7801,7 +7801,7 @@ body.modern-ui.v2-canvas {
 
 .v2-settings__field-help {
   color: var(--v2-text-muted);
-  font: 400 11px/16px var(--v2-font);
+  font: 400 11px/16px var(--v2-font-mono);
 }
 
 .v2-settings__section .v2-billing,
