@@ -11,7 +11,10 @@ const { normalizeAvatarUrl } = require('../services/avatarService');
 const { cleanSignupRef } = require('../utils/signupRef');
 const { deriveUsernameFromEmail, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
-const { issueEmailVerificationToken, verifyEmailVerificationToken } = require('../services/emailVerificationTokenService');
+const {
+  issueEmailVerificationToken,
+  verifyEmailVerificationToken,
+} = require('../services/emailVerificationTokenService');
 const { disconnectUserSessionSockets } = require('../services/sessionSocketService');
 
 // The first-touch ref a signup arrived with (?ref=x), stored once on the new
@@ -809,7 +812,7 @@ exports.verifyEmail = async (req: any, res: any) => {
     joinCommunityPodBestEffort(user._id);
 
     res.json({ message: 'Email verified successfully' });
-  } catch (err) {
+  } catch {
     res.status(400).json({ error: 'Invalid or expired token' });
   }
 };
