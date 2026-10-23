@@ -28,6 +28,11 @@
     }
   },
   "settings": {
+    "username": {
+      "save": "保存用户名",
+      "saving": "保存中…",
+      "help": "2–40个小写字母、数字或连字符。你的旧用户名会继续保留，但旧提及不会通知你。"
+    },
     "avatar": {
       "regenerate": "换一个",
       "uploadPhoto": "上传照片",

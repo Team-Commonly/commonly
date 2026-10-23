@@ -7754,6 +7754,10 @@ body.modern-ui.v2-canvas {
   line-height: var(--v2-lh-meta);
 }
 
+.v2-settings__account-fields > label {
+  align-content: start;
+}
+
 .v2-settings__account-fields > .v2-settings__account-email {
   grid-column: 1 / -1;
 }

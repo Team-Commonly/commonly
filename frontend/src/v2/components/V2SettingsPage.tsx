@@ -74,6 +74,7 @@ const V2AccountSection: React.FC = () => {
     || (!profilePicture.startsWith('paper:') && Boolean(getAvatarSrc(profilePicture)));
   const [name, setName] = useState(accountName);
   const [username, setUsername] = useState(accountUsername);
+  const [savedUsername, setSavedUsername] = useState(accountUsername);
   const [email, setEmail] = useState(accountEmail);
   const [busy, setBusy] = useState(false);
   const [usernameBusy, setUsernameBusy] = useState(false);
@@ -89,6 +90,7 @@ const V2AccountSection: React.FC = () => {
   useEffect(() => {
     setName(accountName);
     setUsername(accountUsername);
+    setSavedUsername(accountUsername);
     setEmail(accountEmail);
   }, [accountEmail, accountName, accountUsername]);
 
@@ -136,6 +138,7 @@ const V2AccountSection: React.FC = () => {
           || nextUsername,
       );
       setUsername(updatedUsername);
+      setSavedUsername(updatedUsername);
       setNotice('Username saved.');
     } catch (requestError) {
       const message = (requestError as { response?: { data?: { error?: string; msg?: string } } })?.response?.data;
@@ -143,6 +146,12 @@ const V2AccountSection: React.FC = () => {
     } finally {
       setUsernameBusy(false);
     }
+  };
+
+  const handleUsernameKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    if (!usernameBusy) void saveUsername();
   };
 
   const choosePhoto = () => fileInputRef.current?.click();
@@ -217,7 +226,7 @@ const V2AccountSection: React.FC = () => {
         />
         <div className="v2-settings__account-copy">
           <div className="v2-settings__account-name">{name || accountName}</div>
-          <div className="v2-settings__meta">@{username}</div>
+          <div className="v2-settings__meta">@{savedUsername}</div>
         </div>
         <div className="v2-settings__account-type">{currentUser?.role === 'admin' ? 'administrator' : 'member'}</div>
       </div>
@@ -268,6 +277,7 @@ const V2AccountSection: React.FC = () => {
               aria-label="Username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
+              onKeyDown={handleUsernameKeyDown}
               minLength={2}
               maxLength={40}
               pattern="[a-z0-9][a-z0-9-]{1,39}"
@@ -280,11 +290,11 @@ const V2AccountSection: React.FC = () => {
               onClick={() => { if (!usernameBusy) void saveUsername(); }}
               disabled={usernameBusy}
             >
-              {usernameBusy ? 'Saving…' : 'Save username'}
+              {usernameBusy ? t('settings.username.saving') : t('settings.username.save')}
             </button>
           </div>
           <span className="v2-settings__field-help" id="v2-settings-username-help">
-            2–40 lowercase letters, numbers, or hyphens. Your previous username stays reserved, but old mentions do not notify you.
+            {t('settings.username.help')}
           </span>
         </label>
         <div className="v2-settings__account-email">

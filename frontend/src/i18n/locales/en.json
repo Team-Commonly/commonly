@@ -28,6 +28,11 @@
     }
   },
   "settings": {
+    "username": {
+      "save": "Save username",
+      "saving": "Saving…",
+      "help": "2–40 lowercase letters, numbers, or hyphens. Your previous username stays reserved, but old mentions do not notify you."
+    },
     "avatar": {
       "regenerate": "Regenerate",
       "uploadPhoto": "Upload photo",
