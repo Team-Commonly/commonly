@@ -69,7 +69,7 @@ publishRouter.post('/publish', auth, async (req: any, res: any) => {
         registry: 'commonly-community',
         publisher: {
           userId,
-          name: await resolveUsername(req),
+          name: resolveUsername(req),
         },
         categories,
         tags,

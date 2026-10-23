@@ -10,7 +10,6 @@
 
 jest.mock('../../../models/User', () => ({
   findOneAndUpdate: jest.fn(),
-  findById: jest.fn(),
 }));
 jest.mock('../../../models/Pod', () => ({}));
 jest.mock('../../../models/AgentMemory', () => ({}));
@@ -54,12 +53,6 @@ const installationLookup = (result) => {
   });
 };
 
-const callerRoleLookup = (role) => {
-  User.findById.mockReturnValue({
-    select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(role ? { role } : null) }),
-  });
-};
-
 const putAvatar = getHandler('put', '/:agentName/:instanceId?/avatar');
 const canEdit = getHandler('get', '/:agentName/:instanceId?/avatar/can-edit');
 
@@ -67,7 +60,6 @@ describe('agent avatar editing', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     User.findOneAndUpdate.mockResolvedValue({ _id: 'bot-1', profilePicture: 'bottts:theo:v3' });
-    callerRoleLookup(null);
     AgentRegistry.updateOne.mockResolvedValue({});
     AgentIdentityService.syncUserToPostgreSQL.mockResolvedValue(undefined);
   });
@@ -113,7 +105,7 @@ describe('agent avatar editing', () => {
     expect(AgentRegistry.updateOne).not.toHaveBeenCalled();
   });
 
-  it('lets an admin edit without owning an installation (API-token shape: role on req.user)', async () => {
+  it('lets an admin edit without owning an installation using req.user.role', async () => {
     const res = response();
 
     await putAvatar(reqFor({ id: 'admin-1', role: 'admin' }), res);
@@ -123,18 +115,14 @@ describe('agent avatar editing', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
   });
 
-  it('lets an admin edit on a JWT session, where req.user carries NO role', async () => {
-    // middleware/auth.ts sets req.user = { id } for JWT logins — the browser
-    // shape. The gate must load the role from DB or the admin path is dead for
-    // every human session (the bug found live on fc-verify, 2026-08-21).
-    callerRoleLookup('admin');
+  it('can-edit admits an admin without an installation', async () => {
     installationLookup(null);
     const res = response();
 
-    await putAvatar(reqFor({ id: 'admin-1' }), res);
+    await canEdit(reqFor({ id: 'admin-1', role: 'admin' }), res);
 
     expect(AgentInstallation.findOne).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
+    expect(res.json).toHaveBeenCalledWith({ canEdit: true });
   });
 
   it('400s anything that is not a bottts preset or an upload reference', async () => {
