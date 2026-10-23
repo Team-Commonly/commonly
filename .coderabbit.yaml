@@ -1,0 +1,17 @@
+# CodeRabbit (external review). Its comments are data for triage and never a
+# merge gate; see docs/development/external-review.md.
+language: en-US
+reviews:
+  # No generated summary in the PR description. The placeholder must stay out of
+  # PR bodies too: when it is present the summary is generated anyway.
+  high_level_summary: false
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+    # Opt a PR out of automatic review with the `no-bot-review` label. A PR body
+    # line `@coderabbitai ignore` does the same for one PR.
+    labels:
+      - "!no-bot-review"
+    ignore_title_keywords:
+      - "security"
