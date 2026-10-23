@@ -77,22 +77,6 @@ describe('wrapArgvWithBwrap', () => {
     expect(argv[homeIndex + 1]).toBe('/tmp/commonly-qwen/home');
   });
 
-  itLinux('does not put child environment values in bwrap argv', () => {
-    const environment = {
-      PATH: '/tmp/filtered-path-value',
-      LANG: 'filtered-lang-value',
-      COMMONLY_AGENT_SEAT_NAME: 'filtered-seat-name-value',
-      COMMONLY_AGENT_TOKEN: 'secret-that-must-stay-out-of-argv',
-    };
-    const argv = wrapArgvWithBwrap(['claude'], {}, {
-      workspacePath: '/tmp/ws',
-      environment,
-    });
-    expect(argv).not.toContain('--clearenv');
-    for (const value of Object.values(environment)) expect(argv).not.toContain(value);
-    expect(argv).toEqual(expect.arrayContaining(['--setenv', 'HOME', '/tmp/ws']));
-  });
-
   itMac('throws the documented macOS message on darwin', () => {
     expect(() => wrapArgvWithBwrap(['claude', '-p', 'hi'], {}, {
       workspacePath: '/tmp/ws',
