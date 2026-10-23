@@ -74,9 +74,18 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
       const hasCredential = agentUser && await AgentCredential.exists({
         agentUserId: agentUser._id, kind: 'runtime', status: 'active',
       });
-      const hasActiveInstallation = await AgentInstallation.exists({
-        agentName: name, instanceId, status: 'active',
-      });
+      const installationNames = Array.from(new Set([name.toLowerCase(), resolvedType]));
+      const activeIdentity = { agentName: { $in: installationNames }, instanceId, status: 'active' };
+      const hasActiveInstallationHere = await AgentInstallation.exists({
+        ...activeIdentity, podId,
+      }).collation({ locale: 'en', strength: 2 });
+      if (hasActiveInstallationHere) {
+        return res.status(404).json({
+          error: `Agent not installed under ${name}. Use agentName ${resolvedType} in the URL and instanceId as a query parameter.`,
+        });
+      }
+      const hasActiveInstallation = await AgentInstallation.exists(activeIdentity)
+        .collation({ locale: 'en', strength: 2 });
       const hasOrphanCredential = !hasActiveInstallation
         && (agentUser?.agentRuntimeTokens?.length || hasCredential);
       if (!hasProfile && !hasMembership && !hasOrphanCredential) {

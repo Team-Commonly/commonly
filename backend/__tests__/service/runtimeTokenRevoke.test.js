@@ -287,6 +287,26 @@ describe('revoking a runtime token kills it in every store', () => {
     expect((await probe(token)).status).toBe(200);
   });
 
+  test('a legacy alias cannot remove the canonical installation membership', async () => {
+    const { workspace } = await seed();
+    const canonical = await AgentInstallation.create({
+      agentName: 'commonly-bot', instanceId: 'default', podId: workspace._id,
+      installedBy: mockOwner.id, status: 'active', version: '1.0.0',
+    });
+    const agentUser = await AgentIdentityService.getOrCreateAgentUser('commonly-bot', {
+      instanceId: 'default',
+    });
+    workspace.members.push(agentUser._id);
+    await workspace.save();
+
+    const result = await request(app)
+      .delete(`/api/registry/agents/commonly-summarizer/pods/${workspace._id}`);
+    expect(result.status).toBe(404);
+    expect(result.body.error).toMatch(/commonly-bot.*instanceId/);
+    expect((await AgentInstallation.findById(canonical._id)).status).toBe('active');
+    expect((await Pod.findById(workspace._id)).members.map(String)).toContain(String(agentUser._id));
+  });
+
   test('admin repeat uninstall cleans credentials stranded by an older path', async () => {
     const { workspaceInstall } = await seed();
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(AGENT, { instanceId: 'default' });
