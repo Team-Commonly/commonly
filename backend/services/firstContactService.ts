@@ -1,5 +1,7 @@
 import mongoose, { Types } from 'mongoose';
 import AgentFirstContact from '../models/AgentFirstContact';
+import Message from '../models/pg/Message';
+import User from '../models/User';
 import AgentEventService from './agentEventService';
 
 interface FirstContactOptions {
@@ -14,18 +16,19 @@ interface FirstContactOptions {
    * typed plainly under the greeting's question never reaches the agent.
    */
   mentionHandle?: string;
+  /** Only hosted native seats can greet again in a pod with no visible history. */
+  hostedAgentUserId?: string;
 }
 
 interface RawUpsertResult {
-  value?: unknown;
+  value?: { greetedPodIds?: Types.ObjectId[] } | null;
   lastErrorObject?: {
     updatedExisting?: boolean;
   };
 }
 
 const FIRST_CONTACT_CUE =
-  'A human just added you to this workspace and is seeing you for the first time. '
-  + 'This is your one first impression. Do NOT list your capabilities. Post a SHORT, '
+  'Do NOT list your capabilities. Post a SHORT, '
   + 'warm greeting that ends with exactly ONE specific, answerable question that invites '
   + 'them to reply — something that gets them talking about what they want help with. '
   + 'One question mark, at the end.';
@@ -39,12 +42,39 @@ const mentionLineCue = (handle: string): string => (
 );
 const MENTION_HANDLE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+const greetingLanguage = async (userId: Types.ObjectId): Promise<string> => {
+  let zone = '';
+  try {
+    const user = await User.findById(userId).select('timezone').lean() as { timezone?: string } | null;
+    zone = String(user?.timezone || '');
+  } catch (error) {
+    console.warn('[first-contact] timezone unavailable', (error as Error).message);
+  }
+  let previousWords: string[] = [];
+  try {
+    previousWords = await Message.recentContentByUser(userId);
+  } catch (error) {
+    console.warn('[first-contact] language history unavailable', (error as Error).message);
+  }
+  for (const words of previousWords) {
+    if (/[\u3040-\u30ff]/u.test(words)) return 'Japanese';
+    if (/[\u4e00-\u9fff]/u.test(words)) {
+      if (zone === 'Asia/Tokyo') return 'Japanese';
+      return ['Asia/Taipei', 'Asia/Hong_Kong'].includes(zone) ? 'Traditional Chinese' : 'Chinese';
+    }
+    if (/[a-z]{3}/iu.test(words)) return 'English';
+  }
+  if (zone === 'Asia/Tokyo') return 'Japanese';
+  if (['Asia/Taipei', 'Asia/Hong_Kong'].includes(zone)) return 'Traditional Chinese';
+  if (['Asia/Shanghai', 'Asia/Chongqing'].includes(zone)) return 'Chinese';
+  return 'English';
+};
+
 /**
- * Enqueue onboarding exactly once for the lifetime of a human/agent-identity
- * relationship. AgentFirstContact, rather than AgentInstallation, owns the
- * idempotency marker because installation rows can be recreated after an
- * uninstall. Resolves true only when this call enqueued the greeting, so the
- * install route knows whether the agent is about to speak for itself.
+ * Enqueue onboarding once for a human/agent relationship, or once in a new
+ * hosted pod with no visible speech from that seat. AgentFirstContact owns
+ * the durable marker because installation rows can be recreated after an
+ * uninstall. Resolves true only when this call enqueued the greeting.
  */
 export async function maybeFireFirstContact({
   agentName,
@@ -53,6 +83,7 @@ export async function maybeFireFirstContact({
   installedByUserId,
   installerIsAgent,
   mentionHandle,
+  hostedAgentUserId,
 }: FirstContactOptions): Promise<boolean> {
   if (installerIsAgent) return false;
 
@@ -82,6 +113,7 @@ export async function maybeFireFirstContact({
           agentName: safeAgentName,
           instanceId: safeInstanceId,
           firstPodId: safePodId,
+          ...(hostedAgentUserId ? { greetedPodIds: [safePodId] } : {}),
           createdAt: new Date(),
         },
       },
@@ -101,20 +133,43 @@ export async function maybeFireFirstContact({
     throw error;
   }
 
-  if (result?.lastErrorObject?.updatedExisting === true || result?.value != null) {
-    return false;
+  const alreadyMet = result?.lastErrorObject?.updatedExisting === true || result?.value != null;
+  if (alreadyMet) {
+    if (!hostedAgentUserId) return false;
+    if (result.value?.greetedPodIds?.some((id) => String(id) === String(safePodId))) return false;
+
+    // A legacy relationship marker can predate a new hosted start by months.
+    // Recent speech in this pod means the person already met this seat here.
+    const hasVisibleGreeting = await Message.hasMessageByUserInPod(safePodId, hostedAgentUserId);
+    const podClaim = await AgentFirstContact.findOneAndUpdate(
+      {
+        userId: safeUserId, agentName: safeAgentName, instanceId: safeInstanceId,
+        greetedPodIds: { $ne: safePodId },
+      },
+      { $addToSet: { greetedPodIds: safePodId } },
+      { new: false, includeResultMetadata: true },
+    ) as unknown as RawUpsertResult;
+    if (!podClaim?.value || hasVisibleGreeting) return false;
   }
 
   const handle = String(mentionHandle || '').trim().toLowerCase();
 
   try {
+    const languageCue = hostedAgentUserId
+      ? ` Use the person's language for this greeting: ${await greetingLanguage(safeUserId)}. `
+        + 'Do not introduce yourself using a human name, including one inferred from your @handle. '
+      : '';
+    const opening = hostedAgentUserId
+      ? 'A person just started you in this pod and has not seen you speak here recently. '
+      : 'A human just added you to this workspace and is seeing you for the first time. ';
+    const mentionCue = MENTION_HANDLE.test(handle) ? mentionLineCue(handle) : '';
     await AgentEventService.enqueue({
       agentName: safeAgentName,
       instanceId: safeInstanceId,
       podId: safePodId,
       type: 'first_contact',
       payload: {
-        content: MENTION_HANDLE.test(handle) ? `${FIRST_CONTACT_CUE}${mentionLineCue(handle)}` : FIRST_CONTACT_CUE,
+        content: `${opening}${FIRST_CONTACT_CUE}${languageCue}${mentionCue}`,
         userId: String(safeUserId),
         kind: 'first-contact',
       },

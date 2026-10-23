@@ -150,7 +150,7 @@ describe('registry install — a hosted agent joins with one post', () => {
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
     expect(mockFireFirstContact).toHaveBeenCalledWith(expect.objectContaining({
-      agentName: 'my-agent', mentionHandle: 'my-agent',
+      agentName: 'my-agent', mentionHandle: 'my-agent', hostedAgentUserId: 'bot-1',
     }));
     expect(introPosts()).toHaveLength(0);
   });
