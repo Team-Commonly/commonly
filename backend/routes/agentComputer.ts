@@ -2,6 +2,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { agentComputerBroker, agentComputerEnabled } from '../services/agentComputerBroker';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 
 const auth = require('../middleware/auth');
 const { AgentInstallation } = require('../models/AgentRegistry');
@@ -9,7 +10,10 @@ const User = require('../models/User');
 const router = express.Router();
 const ID = /^[a-f\d]{24}$/i;
 
-router.use(rateLimit({ windowMs: 60_000, max: 180, standardHeaders: true, legacyHeaders: false }));
+router.use(rateLimit({
+  windowMs: 60_000, max: 180, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+}));
 router.use(auth);
 router.use('/:installationId', async (req: any, res: express.Response, next: express.NextFunction) => {
   if (!agentComputerEnabled()) return res.status(404).json({ code: 'computer_disabled', error: 'Agent computer is unavailable.' });
