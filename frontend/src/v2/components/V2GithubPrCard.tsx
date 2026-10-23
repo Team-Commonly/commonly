@@ -112,9 +112,19 @@ const V2GithubPrCard: React.FC<V2GithubPrCardProps> = ({ owner, repo, number }) 
   }
 
   if (!pr) {
-    // Fetch failed — fall back to nothing so the bubble's clickable URL
-    // is the only artifact (parent has already rendered the URL).
-    return null;
+    // Fetch failed (private repo, rate limit, network). The parent has taken
+    // the URL out of the text, so this link is the only way to reach the PR.
+    const url = `https://github.com/${owner}/${repo}/pull/${number}`;
+    return (
+      <a
+        className="v2-prcard v2-prcard--fallback"
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {url}
+      </a>
+    );
   }
 
   const stateLabel = pr.merged ? 'Merged' : (pr.state === 'open' ? 'Open' : 'Closed');
