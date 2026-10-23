@@ -71,6 +71,8 @@ export interface HostedMcpEntry {
    * person's screen and a seat's prompt with no review.
    */
   description?: string;
+  /** Setup instruction shown before a member starts this vendor's consent flow. */
+  connectNotice?: string;
   /** The MCP tools/call endpoint; also the RFC 8707 resource unless `audience` is set. */
   resource: string;
   /** The PRM resource identifier when it differs from the tools/call endpoint. */

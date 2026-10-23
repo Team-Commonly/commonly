@@ -70,6 +70,7 @@ export interface ToolCatalogEntry {
   list?: 'channels' | 'tools';
   label: string;
   description: string;
+  connectNotice?: string;
   /**
    * The connection type this row's tools run through, and — on a hosted entry —
    * the catalogue entry the start route takes. `entryId` is absent on
@@ -732,6 +733,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
                   : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' }))
                 : entryModeCopy(entry)}
           </span>
+          {canConnectHosted && entry.connectNotice && (
+            <span className="v2-connector-row__detail">{entry.connectNotice}</span>
+          )}
         </span>
         {!entry.available && (
           <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">

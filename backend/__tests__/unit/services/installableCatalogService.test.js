@@ -241,6 +241,7 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
     id: 'acme',
     title: 'Acme',
     description: 'Tickets in Acme.',
+    connectNotice: 'Ask your admin to allow this connection first.',
     resource: 'https://mcp.acme.example/mcp',
     issuer: 'https://mcp.acme.example',
     client: 'cimd',
@@ -281,6 +282,8 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
     // derivable from anything else the row carries.
     expect(linear).toMatchObject({ connectionType: 'hosted-mcp', entryId: 'linear', available: true, label: 'Linear' });
     expect(acmeRow).toMatchObject({ connectionType: 'hosted-mcp', entryId: 'acme' });
+    expect(acmeRow.connectNotice).toBe(acme.connectNotice);
+    expect(linear.connectNotice).toBeUndefined();
     // Each row sees its own vendor's connection and not the other's.
     expect(linear.connections).toEqual([
       { connectionId: 'conn-linear', owner: '', repo: '' },
