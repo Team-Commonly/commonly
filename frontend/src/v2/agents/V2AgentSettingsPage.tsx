@@ -40,6 +40,7 @@ const V2AgentSettingsPage: React.FC = () => {
   const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
   const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
+  const [keysForbidden, setKeysForbidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'replace' | string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,6 +71,7 @@ const V2AgentSettingsPage: React.FC = () => {
     let active = true;
     setKeys([]);
     setKeysReadyFor(null);
+    setKeysForbidden(false);
     setError(null);
     setOneTimeKey(null);
     setPendingAction(null);
@@ -82,7 +84,13 @@ const V2AgentSettingsPage: React.FC = () => {
           setKeysReadyFor(identityKey);
         }
       }).catch((requestError) => {
-        if (active) setError(errorLabel(requestError, t('agentSettings.unavailable')));
+        if (!active) return;
+        if ((requestError as { response?: { status?: number } })?.response?.status === 403) {
+          setKeysForbidden(true);
+          setKeysReadyFor(identityKey);
+        } else {
+          setError(errorLabel(requestError, t('agentSettings.unavailable')));
+        }
       });
     }
     return () => { active = false; };
@@ -173,7 +181,7 @@ const V2AgentSettingsPage: React.FC = () => {
       <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
         <div className="v2-agent-settings__section-head">
           <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>
-          {installation?.runtime?.runtimeType === 'wrapper' ? (
+          {keysForbidden ? null : installation?.runtime?.runtimeType === 'wrapper' ? (
             <span>{t('agentSettings.wrapperReconnect')}</span>
           ) : !disconnected && (
             <button type="button" onClick={() => setPendingAction('replace')} disabled={busy}>
@@ -182,7 +190,7 @@ const V2AgentSettingsPage: React.FC = () => {
           )}
         </div>
         {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}
-        {pendingAction === 'replace' && (
+        {pendingAction === 'replace' && !keysForbidden && (
           <div className="v2-agent-settings__confirm" data-testid="agent-key-replace-confirmation">
             <p>{t('agentByo.rekey.warning', { name: access.displayName || agentName })}</p>
             <div className="v2-agent-settings__actions">
@@ -198,7 +206,8 @@ const V2AgentSettingsPage: React.FC = () => {
             <button type="button" onClick={() => setOneTimeKey(null)}>{t('agentSettings.done')}</button>
           </div>
         )}
-        {keys.length === 0 ? <p className="v2-agent-settings__empty">{t('agentSettings.empty')}</p> : (
+        {keysForbidden ? <p className="v2-agent-settings__empty">{t('agentSettings.forbidden')}</p>
+          : keys.length === 0 ? <p className="v2-agent-settings__empty">{t('agentSettings.empty')}</p> : (
           <ul className="v2-agent-settings__keys">
             {keys.map((key) => (
               <li key={key._id} className="v2-agent-settings__key">
