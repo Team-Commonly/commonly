@@ -2410,7 +2410,16 @@ export const performRun = ({
             entry.result?.outcome === 'posted'
             || (entry.result?.outcome === 'no_action' && !entry.result?.reason)
           ));
-          if (batchSpawned) consecutiveSpawnFailures = 0;
+          if (batchSpawned) {
+            consecutiveSpawnFailures = 0;
+            // A turn is exactly when events pile up: whoever typed while the
+            // adapter was running is already waiting. Sleeping the interval on
+            // top of the turn charges them for it twice (TASK-343). Only a
+            // batch that actually spawned skips the wait; an idle poll and a
+            // batch that spawned nothing keep the interval, so this cannot
+            // become a spin.
+            nextPollDelayMs = 0;
+          }
           for (const entry of batch.entries) {
             const event = entry.event;
             // No result: an item a failure during refusal isolation never
