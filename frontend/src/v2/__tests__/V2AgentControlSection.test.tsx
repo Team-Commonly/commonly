@@ -1,8 +1,14 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2AgentControlSection from '../components/V2AgentControlSection';
+import V2AgentControlSection, { AgentControlLoader } from '../components/V2AgentControlSection';
 import i18n, { i18nReady } from '../../i18n';
+
+jest.mock('../../utils/axiosConfig', () => ({
+  __esModule: true,
+  default: { get: jest.fn() },
+}));
+const api = jest.requireMock('../../utils/axiosConfig').default;
 
 beforeAll(async () => { await i18nReady; await i18n.changeLanguage('en'); });
 
@@ -23,4 +29,22 @@ it('keeps a never-connected key off the reconnect path', () => {
   show('never');
   expect(screen.getByTestId('agent-control-section')).toHaveTextContent('Not connected yet');
   expect(screen.queryByRole('link', { name: 'Reconnect' })).toBeNull();
+});
+
+it('loads connection state from an installer-owned pod', async () => {
+  api.get.mockImplementation((url: string) => {
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      installations: [{ podId: 'owned-pod' }],
+    } });
+    if (url === '/api/registry/pods/owned-pod/agents') return Promise.resolve({ data: { agents: [{
+      name: 'local', instanceId: 'default', runtime: { runtimeType: 'wrapper' },
+      connection: { state: 'revoked', lastSeenAt: null },
+    }] } });
+    return Promise.reject(new Error('Unexpected request'));
+  });
+  render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" /></MemoryRouter>);
+  expect(await screen.findByRole('link', { name: 'Reconnect' }))
+    .toHaveAttribute('href', '/v2/agents/byo?pod=owned-pod&name=local&reconnect=1&mode=machine');
+  expect(api.get).toHaveBeenCalledWith('/api/registry/agents/local/manage-settings',
+    { params: { instanceId: 'default' } });
 });

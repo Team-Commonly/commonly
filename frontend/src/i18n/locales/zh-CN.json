@@ -1430,7 +1430,9 @@
     "reconnectWaiting": "正在等待电脑重新连接此智能体。",
     "reconnectDone": "已连接。",
     "reconnectSlow": "电脑尚未重新连接。请检查守护进程是否在运行。",
-    "machineKeyRevoked": "这台电脑的密钥已撤销。请重新注册电脑，再连接智能体。"
+    "machineKeyRevoked": "这台电脑的密钥已撤销。请重新注册电脑，再连接智能体。",
+    "checking": "正在检查连接…",
+    "unavailable": "暂时无法获取连接状态。"
   },
   "agentByo": {
     "title": "接入你自己的智能体",
