@@ -14,6 +14,7 @@ const { revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
 const {
   getUserId,
   isGlobalAdminUser,
+  normalizeInstanceId,
   normalizeDisplayName,
   resolveInstallation,
   buildAgentProfileId,
@@ -29,10 +30,12 @@ const podAgentsRouter = express.Router();
 podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: any) => {
   try {
     const { name, podId } = req.params;
-    const { installation, instanceId } = await resolveInstallation({
-      agentName: name,
-      podId,
-      instanceId: req.query.instanceId,
+    // Destructive writes must never use resolveInstallation's single-install
+    // fallback: a stale instanceId could otherwise remove a different agent.
+    const instanceId = normalizeInstanceId(req.query.instanceId);
+    const installation = await AgentInstallation.findOne({
+      agentName: String(name).toLowerCase(), podId, instanceId,
+      status: { $ne: 'uninstalled' },
     });
     const userId = getUserId(req);
     if (!userId) {

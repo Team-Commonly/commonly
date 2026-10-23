@@ -1,0 +1,17 @@
+.v2-agent-wake-pods { display: grid; gap: 24px; }
+.v2-agent-wake-pods__section { border: 1px solid var(--v2-border); border-radius: 6px; padding: 20px; background: var(--v2-surface); }
+.v2-agent-wake-pods__section h2 { margin: 0 0 16px; color: var(--v2-text-primary); font: 700 20px/28px var(--v2-font-display); }
+.v2-agent-wake-pods__pod + .v2-agent-wake-pods__pod { border-top: 1px solid var(--v2-border-soft); margin-top: 16px; padding-top: 16px; }
+.v2-agent-wake-pods__pod > a, .v2-agent-wake-pods__pod-row > a { color: var(--v2-accent-text); font: 600 14px/20px var(--v2-font); }
+.v2-agent-wake-pods__row, .v2-agent-wake-pods__pod-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; color: var(--v2-text-primary); font: 500 14px/20px var(--v2-font); }
+.v2-agent-wake-pods__row input { width: 18px; height: 18px; accent-color: var(--v2-ink); }
+.v2-agent-wake-pods__subrow { padding-left: 18px; }
+.v2-agent-wake-pods__hint { margin: 4px 0 12px; color: var(--v2-text-muted); font: 400 13px/19px var(--v2-font); }
+.v2-agent-settings .v2-agent-wake-pods .v2-agent-wake-pods__pod > button { border: 1px solid var(--v2-border); border-radius: 4px; padding: 7px 10px; background: var(--v2-surface); color: var(--v2-text-primary); cursor: pointer; }
+.v2-agent-wake-pods__row select { max-width: 55%; border: 1px solid var(--v2-border); border-radius: 4px; padding: 7px; background: var(--v2-surface); color: var(--v2-text-primary); }
+.v2-agent-wake-pods__pod-row + .v2-agent-wake-pods__pod-row { border-top: 1px solid var(--v2-border-soft); }
+.v2-agent-settings .v2-agent-wake-pods .v2-agent-wake-pods__pod-row button { border: 1px solid var(--v2-border); border-radius: 4px; padding: 7px 10px; background: var(--v2-surface); color: var(--v2-text-secondary); cursor: pointer; }
+.v2-agent-wake-pods__pod-row button:disabled { opacity: .5; cursor: default; }
+.v2-agent-wake-pods__error { margin: 0; color: var(--v2-danger); }
+.v2-agent-wake-pods__empty, .v2-agent-wake-pods__loading { margin: 0; color: var(--v2-text-muted); }
+@media (max-width: 600px) { .v2-agent-wake-pods__section { padding: 16px; } }

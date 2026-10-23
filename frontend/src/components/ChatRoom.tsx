@@ -1209,11 +1209,12 @@ const ChatRoom = () => {
         }
     };
 
-    const handleRemovePodAgent = async (agentName) => {
+    const handleRemovePodAgent = async (agentName, instanceId) => {
         const token = localStorage.getItem('token');
         if (!token || !agentName || !roomId) return;
         try {
             await axios.delete(`/api/registry/agents/${agentName}/pods/${roomId}`, {
+                params: { instanceId: instanceId || 'default' },
                 headers: { Authorization: `Bearer ${token}` }
             });
             await refreshPodAgents();
@@ -3000,7 +3001,7 @@ const ChatRoom = () => {
                                                 <Button
                                                     size="small"
                                                     color="error"
-                                                    onClick={() => handleRemovePodAgent(agent.name)}
+                                                    onClick={() => handleRemovePodAgent(agent.name, agent.instanceId)}
                                                 >
                                                     Remove
                                                 </Button>

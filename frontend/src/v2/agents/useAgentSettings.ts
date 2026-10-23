@@ -24,7 +24,9 @@ export interface AgentSettingsPatch {
 
 export interface AgentPodWakePatch {
   wakeOnMessage: boolean;
+  humanOnly: boolean;
   boardWake: boolean;
+  heartbeatEnabled: boolean;
   heartbeatMinutes: number;
 }
 
@@ -67,7 +69,9 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
         }
         return response.data.agent;
       } catch (candidateError) {
-        if ((candidateError as { response?: { status?: number } })?.response?.status !== 403) throw candidateError;
+        if (![403, 404].includes((candidateError as { response?: { status?: number } })?.response?.status || 0)) {
+          throw candidateError;
+        }
       }
     }
     throw new Error('No accessible installation');

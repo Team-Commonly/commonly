@@ -2681,6 +2681,7 @@ export const performDetach = async ({
   client,
   agentName,
   podId,
+  instanceId = 'default',
   skipBackend = false,
   log = () => {},
 }) => {
@@ -2696,7 +2697,7 @@ export const performDetach = async ({
   let backendResult = { skipped: true };
   if (!skipBackend) {
     try {
-      const body = await client.del(`/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(podId)}`);
+      const body = await client.del(`/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(podId)}?instanceId=${encodeURIComponent(instanceId)}`);
       backendResult = { skipped: false, body };
       log(`backend: uninstalled '${agentName}' from pod ${podId}`);
     } catch (err) {
@@ -3279,7 +3280,7 @@ Docs:
         console.error(
           `No local state for '${name}'. If the agent is still installed on `
           + `the backend, uninstall it via the Agent Hub UI or:\n`
-          + `  curl -X DELETE <instance>/api/registry/agents/${name}/pods/<podId> \\\n`
+          + `  curl -X DELETE '<instance>/api/registry/agents/${name}/pods/<podId>?instanceId=<instanceId>' \\\n`
           + `    -H "Authorization: Bearer <user JWT>"`,
         );
         process.exit(1);
@@ -3307,6 +3308,7 @@ Docs:
           client,
           agentName: record.agentName,
           podId: record.podId,
+          instanceId: record.instanceId || 'default',
           skipBackend: !!opts.force,
           log: (line) => console.warn(`[detach] ${line}`),
         });
