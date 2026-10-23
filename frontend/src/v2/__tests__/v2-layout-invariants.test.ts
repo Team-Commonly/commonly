@@ -1006,6 +1006,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).not.toContain('Email changes go through re-verification; ask us for now.');
     expect(settingsPage).not.toContain('v2-settings__nav-note');
     expect(ruleBody(v2, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-settings__account-fields > label')).toContain('align-content: start');
     expect(ruleBody(v2, '.v2-settings__account-fields > .v2-settings__account-email')).toContain('grid-column: 1 / -1');
     expect(ruleBody(v2, '.v2-settings__account-fields input')).toContain('border-radius: var(--v2-radius-sm)');
     expect(ruleBody(v2, '.v2-settings__email-control')).toContain('display: flex');

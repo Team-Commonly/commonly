@@ -210,6 +210,53 @@ describe('V2SettingsPage', () => {
     expect(screen.getByText(/previous username stays reserved/i)).toBeInTheDocument();
   });
 
+  test('submits the username rename from Enter without submitting the display-name form', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    auth.updateUsername.mockResolvedValue({ ...auth.currentUser, username: 'lily-shen' });
+    renderSettings();
+
+    const usernameInput = screen.getByLabelText('Username');
+    fireEvent.change(usernameInput, { target: { value: 'lily-shen' } });
+    fireEvent.keyDown(usernameInput, { key: 'Enter', code: 'Enter' });
+
+    await waitFor(() => expect(auth.updateUsername).toHaveBeenCalledWith('lily-shen'));
+    expect(auth.updateProfile).not.toHaveBeenCalled();
+    expect(screen.queryByText('No account changes to save.')).not.toBeInTheDocument();
+  });
+
+  test('keeps the saved username in the header when a rename is rejected', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    auth.updateUsername.mockRejectedValueOnce({ response: { data: { error: 'Username is already taken.' } } });
+    renderSettings();
+
+    const usernameInput = screen.getByLabelText('Username');
+    fireEvent.change(usernameInput, { target: { value: 'taken-name' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save username' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Username is already taken.');
+    expect(screen.getByText('@lily')).toBeInTheDocument();
+    expect(screen.queryByText('@taken-name')).not.toBeInTheDocument();
+  });
+
+  test('localizes the username save controls and help in Chinese', async () => {
+    await i18nReady;
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    let finishUpdate: ((value: unknown) => void) | undefined;
+    auth.updateUsername.mockReturnValue(new Promise((resolve) => { finishUpdate = resolve; }));
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    const view = renderSettings();
+
+    expect(screen.getByRole('button', { name: '保存用户名' })).toBeInTheDocument();
+    expect(screen.getByText(/你的旧用户名会继续保留/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'lily-shen' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存用户名' }));
+    expect(screen.getByRole('button', { name: '保存中…' })).toBeDisabled();
+
+    await act(async () => { finishUpdate?.({ ...auth.currentUser, username: 'lily-shen' }); });
+    view.unmount();
+    await act(async () => { await i18n.changeLanguage('en'); });
+  });
+
   test('Regenerate saves the next Paper seed instead of repeating the current look', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     auth.updateProfile.mockResolvedValue({ ...auth.currentUser, profilePicture: 'paper:u1-v1' });
