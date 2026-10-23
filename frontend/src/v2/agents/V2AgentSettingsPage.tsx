@@ -127,10 +127,8 @@ const V2AgentSettingsPage: React.FC = () => {
       <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
         <div className="v2-agent-settings__section-head">
           <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>
-          {installation?.runtime?.runtimeType === 'wrapper' ? (
-            <Link to={`/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&reconnect=1&mode=machine`}>
-              {t('agentSettings.reconnectToRegenerate')}
-            </Link>
+          {installation?.runtime?.runtimeType === 'wrapper' && instanceId !== 'default' ? (
+            <span>{t('agentSettings.reconnectNonDefault')}</span>
           ) : (
             <button type="button" onClick={() => setPendingAction('replace')} disabled={busy}>
               {t('agentSettings.regenerate')}
@@ -142,7 +140,11 @@ const V2AgentSettingsPage: React.FC = () => {
           <div className="v2-agent-settings__confirm" data-testid="agent-key-replace-confirmation">
             <p>{t('agentByo.rekey.warning', { name: access.displayName || agentName })}</p>
             <div className="v2-agent-settings__actions">
-              <button type="button" disabled={busy} onClick={replaceKey}>{t('agentByo.rekey.replace')}</button>
+              {installation?.runtime?.runtimeType === 'wrapper' ? (
+                <Link to={`/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&reconnect=1&mode=machine`}>
+                  {t('agentSettings.reconnectToRegenerate')}
+                </Link>
+              ) : <button type="button" disabled={busy} onClick={replaceKey}>{t('agentByo.rekey.replace')}</button>}
               <button type="button" disabled={busy} onClick={() => setPendingAction(null)}>{t('agentByo.rekey.cancel')}</button>
             </div>
           </div>

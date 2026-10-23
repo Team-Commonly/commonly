@@ -14,8 +14,8 @@ jest.mock('axios', () => {
 });
 const axios = jest.requireMock('axios').default;
 
-const renderPage = () => render(
-  <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+const renderPage = (path = '/v2/agents/maya-claude/default') => render(
+  <MemoryRouter initialEntries={[path]}>
     <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
   </MemoryRouter>,
 );
@@ -46,10 +46,29 @@ test('wrapper key replacement goes through reconnect instead of stranding its lo
     return Promise.resolve({ data: [] });
   });
   renderPage();
-  const reconnect = await screen.findByRole('link', { name: 'Reconnect to regenerate key' });
+  const regenerate = await screen.findByRole('button', { name: 'Regenerate key' });
+  expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
+  fireEvent.click(regenerate);
+  expect(screen.getByTestId('agent-key-replace-confirmation')).toHaveTextContent('Replacing it will disconnect');
+  const reconnect = screen.getByRole('link', { name: 'Reconnect to regenerate key' });
   expect(reconnect).toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=maya-claude&reconnect=1&mode=machine');
-  expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('nondefault wrapper instances never link to a default-instance reconnect', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'second', displayName: 'Maya', runtime: { runtimeType: 'wrapper' },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage('/v2/agents/maya-claude/second');
+  await screen.findByText('Reconnect this agent from its Control section to regenerate its key.');
+  expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
 });
 
 test('regeneration waits for the explicit running-key replacement confirmation', async () => {
