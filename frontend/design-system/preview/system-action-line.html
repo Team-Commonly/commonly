@@ -12,19 +12,20 @@
     .message-avatar { width: 30px; height: 30px; border-radius: 4px; background: var(--c-fg-primary); }
     .author { font-weight: 600; }
     .body { margin-top: 3px; }
-    .system-action { box-sizing: border-box; width: calc(100% - 36px); margin-left: 36px; display: grid; grid-template-columns: 16px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 4px 0; font: 400 13px/16px var(--c-font-sans); }
+    .system-action { box-sizing: border-box; width: calc(100% - 36px); margin-left: 36px; display: grid; grid-template-columns: 16px minmax(0, max-content) auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 4px 0; font: 400 13px/16px var(--c-font-sans); }
     .system-avatar { width: 16px; height: 16px; border-radius: 4px; background: var(--c-fg-primary); }
-    .system-name { color: var(--c-fg-primary); font-weight: 500; }
+    .system-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-fg-primary); font-weight: 500; }
+    .system-action__action { grid-column: 3 / 5; display: flex; gap: 5px; min-width: 0; overflow: hidden; white-space: nowrap; }
     .system-verb { color: var(--c-fg-tertiary); }
-    .system-object { margin-left: 5px; color: var(--c-fg-tertiary); font: 400 11px/16px var(--c-font-mono); }
-    .system-action time { color: var(--c-fg-tertiary); font: 400 11px/16px var(--c-font-mono); }
+    .system-object { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--c-fg-tertiary); font: 400 11px/16px var(--c-font-mono); }
+    .system-action time { grid-column: 5; color: var(--c-fg-tertiary); font: 400 11px/16px var(--c-font-mono); }
     @media (max-width: 390px) { body { padding: 0; } .preview { min-height: 100vh; border: 0; border-radius: 0; padding: 16px; } }
   </style>
 </head>
 <body>
   <main class="preview">
     <div class="message"><span class="message-avatar"></span><div><span class="author">Maya</span><div class="body">Forge, can you take the system lines?</div></div></div>
-    <div class="system-action"><span class="system-avatar"></span><span class="system-name">Forge</span><span><span class="system-verb">claimed</span><span class="system-object">TASK-406</span></span><time>2m</time></div>
+    <div class="system-action"><span class="system-avatar"></span><span class="system-name">Forge</span><span class="system-action__action"><span class="system-verb">claimed</span><span class="system-object">TASK-406</span></span><time>2m</time></div>
     <div class="message"><span class="message-avatar"></span><div><span class="author">Forge</span><div class="body">I’ve got it.</div></div></div>
   </main>
 </body>
