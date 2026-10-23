@@ -2681,6 +2681,7 @@ export const performDetach = async ({
   client,
   agentName,
   podId,
+  instanceId = 'default',
   skipBackend = false,
   log = () => {},
 }) => {
@@ -2696,7 +2697,7 @@ export const performDetach = async ({
   let backendResult = { skipped: true };
   if (!skipBackend) {
     try {
-      const body = await client.del(`/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(podId)}`);
+      const body = await client.del(`/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(podId)}?instanceId=${encodeURIComponent(instanceId)}`);
       backendResult = { skipped: false, body };
       log(`backend: uninstalled '${agentName}' from pod ${podId}`);
     } catch (err) {
@@ -3307,6 +3308,7 @@ Docs:
           client,
           agentName: record.agentName,
           podId: record.podId,
+          instanceId: record.instanceId || 'default',
           skipBackend: !!opts.force,
           log: (line) => console.warn(`[detach] ${line}`),
         });

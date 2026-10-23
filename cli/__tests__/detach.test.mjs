@@ -65,7 +65,7 @@ describe('performDetach', () => {
       client, agentName: 'my-bot', podId: 'pod-1',
     });
 
-    expect(del).toHaveBeenCalledWith('/api/registry/agents/my-bot/pods/pod-1');
+    expect(del).toHaveBeenCalledWith('/api/registry/agents/my-bot/pods/pod-1?instanceId=default');
     expect(result.backend.skipped).toBe(false);
     expect(result.backend.alreadyGone).toBeUndefined();
     expect(result.localCleaned).toBe(true);
@@ -73,6 +73,17 @@ describe('performDetach', () => {
     expect(loadAgentToken('my-bot')).toBeNull();
     expect(getSession('my-bot', 'pod-1')).toBeNull();
     expect(fs.existsSync(sessionFilePath('my-bot'))).toBe(false);
+  });
+
+  test('targets the saved nondefault installation when detaching', async () => {
+    seedAgentState('my-bot');
+    const del = jest.fn().mockResolvedValue({ success: true });
+
+    await performDetach({
+      client: { del }, agentName: 'my-bot', podId: 'pod-1', instanceId: 'machine-2',
+    });
+
+    expect(del).toHaveBeenCalledWith('/api/registry/agents/my-bot/pods/pod-1?instanceId=machine-2');
   });
 
   test('treats backend 404 as "already uninstalled" and still cleans local state', async () => {
