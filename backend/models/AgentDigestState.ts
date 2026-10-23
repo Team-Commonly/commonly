@@ -8,6 +8,7 @@ export interface IAgentDigestState extends Document {
   unreadCount: number;
   revision: number;
   lastEventIds: string[];
+  unreadSince?: Date | null;
   foldedThroughId?: Types.ObjectId | null;
   updatedAt: Date;
 }
@@ -19,10 +20,12 @@ const schema = new Schema<IAgentDigestState>({
   unreadCount: { type: Number, required: true, default: 0 },
   revision: { type: Number, required: true, default: 0 },
   lastEventIds: { type: [String], default: [] },
+  unreadSince: { type: Date, default: null },
   foldedThroughId: { type: Schema.Types.ObjectId, default: null },
 }, { timestamps: true });
 
 schema.index({ agentName: 1, instanceId: 1, podId: 1 }, { unique: true });
+schema.index({ unreadCount: 1, unreadSince: 1 });
 
 const AgentDigestState: Model<IAgentDigestState> = mongoose.model<IAgentDigestState>('AgentDigestState', schema);
 export default AgentDigestState;

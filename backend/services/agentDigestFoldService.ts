@@ -10,6 +10,7 @@ type FoldCandidate = {
   instanceId?: string;
   podId: unknown;
   status: string;
+  createdAt?: Date;
 };
 
 /**
@@ -65,7 +66,7 @@ export async function foldExpiredDigests(threshold: Date): Promise<number> {
     let recorded = false;
     for (let attempt = 0; attempt < 5 && !recorded; attempt += 1) {
       // eslint-disable-next-line no-await-in-loop
-      const state = await AgentDigestState.findOne(scope).select('foldedThroughId').lean();
+      const state = await AgentDigestState.findOne(scope).select('foldedThroughId unreadCount').lean();
       const cursor = state?.foldedThroughId;
       if (cursor && String(cursor) >= idString) {
         recorded = true;
@@ -75,7 +76,8 @@ export async function foldExpiredDigests(threshold: Date): Promise<number> {
         try {
           // eslint-disable-next-line no-await-in-loop
           await AgentDigestState.create({
-            ...scope, unreadCount: 1, revision: 1, lastEventIds: [idString], foldedThroughId: id,
+            ...scope, unreadCount: 1, revision: 1, lastEventIds: [idString],
+            unreadSince: candidate.createdAt || new Date(), foldedThroughId: id,
           });
           recorded = true;
         } catch (err) {
@@ -84,10 +86,13 @@ export async function foldExpiredDigests(threshold: Date): Promise<number> {
       } else {
         // eslint-disable-next-line no-await-in-loop
         const result = await AgentDigestState.updateOne(
-          { ...scope, foldedThroughId: cursor ?? null },
+          { ...scope, foldedThroughId: cursor ?? null, unreadCount: state.unreadCount },
           {
             $inc: { unreadCount: 1, revision: 1 },
-            $set: { foldedThroughId: id },
+            $set: {
+              foldedThroughId: id,
+              ...(state.unreadCount === 0 ? { unreadSince: candidate.createdAt || new Date() } : {}),
+            },
             $push: { lastEventIds: { $each: [idString], $slice: -LAST_IDS_LIMIT } },
           },
         );
@@ -125,7 +130,7 @@ export async function settleFoldedDigest(
   // the next turn may see some IDs twice, but never loses an unseen event.
   await AgentDigestState.updateOne(
     { ...scope, revision },
-    { $set: { unreadCount: 0, lastEventIds: [] }, $inc: { revision: 1 } },
+    { $set: { unreadCount: 0, lastEventIds: [], unreadSince: null }, $inc: { revision: 1 } },
   );
 }
 

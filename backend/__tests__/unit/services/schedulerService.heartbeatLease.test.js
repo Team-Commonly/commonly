@@ -134,7 +134,8 @@ describe('SchedulerService automatic heartbeat dispatch lease', () => {
     await AgentInstallation.collection.insertOne({ ...scope, status: 'active',
       version: '1.0.0', installedBy: new mongoose.Types.ObjectId() });
     await AgentDigestState.collection.insertOne({ ...scope, unreadCount: 2, revision: 2,
-      lastEventIds: ['old-1', 'old-2'], updatedAt: new Date(NOW.getTime() - 61 * 60000) });
+      lastEventIds: ['old-1', 'old-2'],
+      unreadSince: new Date(NOW.getTime() - 61 * 60000), updatedAt: NOW });
 
     expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(1);
     expect(enqueue).toHaveBeenCalledTimes(1);

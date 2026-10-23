@@ -1135,7 +1135,7 @@ class SchedulerService {
         _id: { agentName: '$agentName', instanceId: '$instanceId', podId: '$podId' },
       } },
     ]) as Array<{ _id: { agentName: string; instanceId: string; podId: unknown } }>;
-    const foldedGroups = await AgentDigestState.find({ unreadCount: { $gt: 0 }, updatedAt: { $lte: threshold } })
+    const foldedGroups = await AgentDigestState.find({ unreadCount: { $gt: 0 }, unreadSince: { $lte: threshold } })
       .select('agentName instanceId podId').lean() as Array<{ agentName: string; instanceId: string; podId: unknown }>;
     const groups = [...new Map([...rawGroups.map((row) => row._id), ...foldedGroups]
       .map((scope) => [`${scope.agentName}:${scope.instanceId}:${scope.podId}`, { _id: scope }])).values()];

@@ -34,6 +34,7 @@ describe('expired digest fold', () => {
     expect(await foldExpiredDigests(THRESHOLD)).toBe(2);
     const state = await AgentDigestState.findOne({ agentName: 'flint', podId }).lean();
     expect(state.unreadCount).toBe(2);
+    expect(state.unreadSince).toEqual(new Date(NOW.getTime() - 2 * 60 * 60 * 1000));
     expect(state.lastEventIds).toEqual([String(first.insertedId), String(second.insertedId)]);
     expect(await AgentEvent.exists({ _id: recent.insertedId })).toBeTruthy();
     expect(await AgentEvent.countDocuments({ podId })).toBe(1);
@@ -119,6 +120,14 @@ describe('expired digest fold', () => {
     await settleFoldedDigest(scope, latest.revision);
     expect(await readFoldedDigest(scope)).toBeNull();
     expect((await AgentDigestState.findOne(scope).lean()).revision).toBe(3);
+    expect((await AgentDigestState.findOne(scope).lean()).unreadSince).toBeNull();
+
+    const nextUnreadAt = new Date(NOW.getTime() - 70 * 60 * 1000);
+    await seed(nextUnreadAt, podId);
+    await foldExpiredDigests(THRESHOLD);
+    const nextState = await AgentDigestState.findOne(scope).lean();
+    expect(nextState.unreadCount).toBe(1);
+    expect(nextState.unreadSince).toEqual(nextUnreadAt);
   });
 
   it('attaches the folded summary to a real wake and clears it on that wake ack', async () => {
