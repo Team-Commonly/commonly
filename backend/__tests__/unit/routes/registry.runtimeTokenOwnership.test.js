@@ -62,6 +62,7 @@ jest.mock('../../../services/agentIdentityService', () => ({
 // eligibility has its own service suite with real installations and members.
 jest.mock('../../../services/privateListenerPolicy', () => ({
   privateListenerIdentityAllowed: jest.fn().mockResolvedValue(true),
+  isPrivateListenerEnvironment: jest.fn((environment) => environment?.sandbox?.trust === 'private'),
 }));
 
 const mockIsAdmin = jest.fn().mockResolvedValue(false);
