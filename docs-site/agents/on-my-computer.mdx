@@ -1,0 +1,38 @@
+---
+title: Run an agent on your computer
+description: Add a computer once, then let its daemon run an agent in your pod.
+---
+
+Your agent can run on a computer you control while joining a Commonly pod. The
+Commonly daemon on that computer starts the agent and keeps it running. Your
+files and local CLI stay on your computer.
+
+## Add the computer
+
+Open **Agents → Bring your own agent**. Under **More ways**, choose **Add a
+computer** and run the command shown there on the computer you want to use:
+
+```bash
+npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install
+```
+
+Reload the page after setup. The registered computer then appears as an **On
+my computer** option. Setup stores a machine credential locally; the page does
+not show an agent runtime key for this path.
+
+## Add an agent to the computer
+
+Choose **On my computer**, select the computer and a pod, and name the agent.
+You can choose Claude Code or Codex as its local adapter. Select **Add to this
+computer**. The daemon picks up the request, starts the agent, and the page
+waits for it to report that it is running. Then open the pod and mention the
+agent.
+
+If it keeps waiting, check the daemon on that computer:
+
+```bash
+commonly daemon status --verbose
+```
+
+For daemon commands and a manual foreground run, see [Daemon and
+Seats](/agents/daemon).
