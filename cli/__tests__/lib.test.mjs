@@ -538,6 +538,72 @@ describe('poller.js', () => {
     );
   });
 
+  test('keeps a digest-only page quiet and attaches its frame to the next wake', async () => {
+    const digest = {
+      ...makeEvent('digest-1'), deliveryMode: 'digest',
+      type: 'message.posted', payload: { content: 'ambient update', username: 'Ava', deliveryId: 'digest-nonce' },
+    };
+    const wake = {
+      ...makeEvent('wake-1'), deliveryMode: 'wake',
+      type: 'chat.mention', payload: { content: '@my-agent please help', deliveryId: 'wake-nonce' },
+    };
+    const mockGet = jest.fn()
+      .mockResolvedValueOnce({ events: [digest] })
+      .mockResolvedValueOnce({ events: [wake, digest] })
+      .mockResolvedValue({ events: [] });
+    const mockPost = jest.fn().mockResolvedValue({});
+    const onEvent = jest.fn().mockResolvedValue({ outcome: 'acknowledged' });
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const { stop } = startPoller({
+      instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+      intervalMs: 20, onEvent,
+    });
+    await new Promise((r) => setTimeout(r, 75));
+    stop();
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      _id: 'wake-1',
+      payload: expect.objectContaining({
+        content: expect.stringContaining('ambient update'),
+        digestSummary: expect.stringContaining('ambient update'),
+      }),
+    }));
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual([
+      '/api/agents/runtime/events/wake-1/ack',
+      '/api/agents/runtime/events/digest-1/ack',
+    ]);
+    expect(mockPost).toHaveBeenCalledWith('/api/agents/runtime/events/digest-1/ack', {
+      result: { outcome: 'no_action', reason: 'digest-read' }, deliveryId: 'digest-nonce',
+    });
+  });
+
+  test.each([
+    { outcome: 'error', reason: 'webhook failed' },
+    { outcome: 'no_action', reason: 'upstream-refused' },
+  ])('leaves digest unread when the waking handler returns $outcome with a reason', async (result) => {
+    const events = [
+      { ...makeEvent('wake-1'), deliveryMode: 'wake' },
+      { ...makeEvent('digest-1'), deliveryMode: 'digest', payload: { content: 'ambient' } },
+    ];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    const onEvent = jest.fn().mockResolvedValue(result);
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const { stop } = startPoller({
+      instanceUrl: 'http://localhost:5000', token: 'cm_test', agentName: 'my-agent',
+      intervalMs: 100_000, onEvent,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    stop();
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(mockPost.mock.calls.map(([url]) => url)).toEqual([
+      '/api/agents/runtime/events/wake-1/ack',
+    ]);
+  });
+
   test('stops after stale_delivery instead of polling against the replacement', async () => {
     const events = [{ ...makeEvent('stale-1'), payload: { deliveryId: 'e'.repeat(32) } }];
     const stale = Object.assign(new Error('This delivery was superseded'), {

@@ -28,6 +28,16 @@ export const terminalDeliveryAckError = (ackErr, eventId, runner = 'poller') => 
   return null;
 };
 
+const digestFrame = (events) => {
+  const lines = events.slice(-8).map((event) => {
+    const who = String(event.payload?.username || 'member').replace(/\s+/g, ' ').slice(0, 40);
+    const body = String(event.payload?.content || '').replace(/\s+/g, ' ').slice(0, 160);
+    const id = event.payload?.messageId;
+    return `- ${who}${id ? ` (message ${id})` : ''}: ${body}`;
+  });
+  return `[Since you last looked: ${events.length} ambient updates; context only, no reply needed.]\n${lines.join('\n')}`;
+};
+
 export const startPoller = ({
   instanceUrl,
   token,
@@ -57,10 +67,27 @@ export const startPoller = ({
         limit: 10,
       });
 
-      for (const event of events) {
+      // A digest is received context, not a webhook invocation. The runtime
+      // inbox claims it only alongside a wake from the same pod.
+      const wakeEvents = events.filter((event) => event.deliveryMode !== 'digest');
+      const digestEvents = events.filter((event) => event.deliveryMode === 'digest');
+      const frame = digestEvents.length > 0 ? digestFrame(digestEvents) : null;
+      let digestConsumed = false;
+      for (const [index, event] of wakeEvents.entries()) {
+        const attachedDigest = index === 0 && digestEvents.length > 0;
+        const forwarded = attachedDigest ? {
+          ...event,
+          payload: {
+            ...(event.payload || {}),
+            digestSummary: frame,
+            ...(typeof event.payload?.content === 'string' ? {
+              content: `${event.payload.content}\n\n${frame}`,
+            } : {}),
+          },
+        } : event;
         let result = { outcome: 'no_action' };
         try {
-          result = (await onEvent(event)) || { outcome: 'no_action' };
+          result = (await onEvent(forwarded)) || { outcome: 'no_action' };
         } catch (handlerErr) {
           result = { outcome: 'error', reason: handlerErr.message };
         }
@@ -72,6 +99,11 @@ export const startPoller = ({
             result,
             ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
           });
+          if (attachedDigest && (result.outcome === 'posted'
+            || result.outcome === 'acknowledged'
+            || (result.outcome === 'no_action' && !result.reason))) {
+            digestConsumed = true;
+          }
         } catch (ackErr) {
           const terminalError = terminalDeliveryAckError(ackErr, event._id);
           if (terminalError) {
@@ -81,6 +113,26 @@ export const startPoller = ({
           }
           // Non-fatal — event will be retried
           onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
+        }
+      }
+
+      if (digestConsumed) {
+        for (const event of digestEvents) {
+          try {
+            const deliveryId = event.payload?.deliveryId;
+            await client.post(`/api/agents/runtime/events/${event._id}/ack`, {
+              result: { outcome: 'no_action', reason: 'digest-read' },
+              ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
+            });
+          } catch (ackErr) {
+            const terminalError = terminalDeliveryAckError(ackErr, event._id);
+            if (terminalError) {
+              running = false;
+              onError?.(terminalError);
+              return;
+            }
+            onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
+          }
         }
       }
 
