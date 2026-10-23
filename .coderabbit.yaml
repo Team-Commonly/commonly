@@ -8,10 +8,16 @@ reviews:
   poem: false
   auto_review:
     enabled: true
-    drafts: false
+    # Drafts too: seats keep a PR draft until its gate, which is exactly when a
+    # finding can still be acted on.
+    drafts: true
     # Opt a PR out of automatic review with the `no-bot-review` label. A PR body
     # line `@coderabbitai ignore` does the same for one PR.
     labels:
       - "!no-bot-review"
     ignore_title_keywords:
       - "security"
+  pre_merge_checks:
+    # Docstring coverage is not a convention this codebase follows.
+    docstrings:
+      mode: "off"

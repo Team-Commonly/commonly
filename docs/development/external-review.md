@@ -27,5 +27,9 @@ two ways:
 - the line `@coderabbitai ignore` in the PR body, which works for that PR even
   before any config change reaches it.
 
-Add one of them **before** the next push. A push to an open PR is what triggers a
-new automatic review.
+Drafts are reviewed too. So for a new PR whose description must stay minimal,
+put `@coderabbitai ignore` in the body you open it with: the label can only be
+added after the PR exists, and opening it already triggers a review. On an open
+PR, add one of them **before** the next push, since a push triggers a new review.
+The title keyword `security` is not a way in for such a PR: its title stays
+neutral.
