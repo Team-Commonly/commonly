@@ -21,7 +21,6 @@ const context = ({ home, cwd }, extras = {}) => ({
   cwd, agentName: 'grok-test', runtimeToken: 'cm_agent_test_only_secret',
   instanceUrl: 'https://api.example.test',
   env: { HOME: home, PATH: '/bin', XAI_API_KEY: 'must-not-use-api-auth', GROK_HOME: '/wrong-home' },
-  _prepareMcpSpawn: (command) => command,
   _spawnSyncImpl: (_binary, _args, options) => ({
     status: 0,
     stdout: JSON.stringify([{

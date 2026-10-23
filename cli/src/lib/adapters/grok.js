@@ -8,7 +8,6 @@ import { buildMemoryPreamble } from '../memory-bridge.js';
 import { commonlyMcpServer } from '../default-environment.js';
 import { isShippedCommonlyMcpEntry } from '../declared-mcp-guard.js';
 import { effectiveSandboxTrust } from '../environment.js';
-import { prepareMcpSpawn } from '../mcp-home.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
@@ -192,7 +191,10 @@ export default {
     const userConfig = ancestorConfigs(cwd, env.HOME);
     await assertNoUserMcp(userConfig.userConfig, userConfig.content);
     const declared = ctx.environment?.mcp?.[0] || commonlyMcpServer();
-    const command = (ctx._prepareMcpSpawn || prepareMcpSpawn)(declared.command, { apiUrl: ctx.instanceUrl });
+    // A project config persists across turns. The MCP warm cache may move from
+    // npx to a versioned executable between them, so use the canonical stable
+    // declaration here instead of writing a one-turn warm path into TOML.
+    const command = declared.command;
     await writeManagedConfig(cwd, managedConfig(command));
     assertSoleMcpServer(cwd, env, command, ctx._spawnSyncImpl);
     const dir = await mkdtemp(join(tmpdir(), 'commonly-grok-prompt-'));
