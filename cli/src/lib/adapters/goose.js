@@ -43,6 +43,9 @@ export const PUBLIC_GOOSE_TOOLS = Object.freeze([
 export const assertSandboxSupported = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
   if (effectiveSandboxTrust(sandbox.trust) === 'public') {
+      if (sandbox.filesystem?.['read-outside']?.length) {
+        throw new Error('goose adapter: public seats do not allow sandbox.filesystem.read-outside');
+      }
     if (!['workspace', 'read-only', 'bwrap'].includes(resolvePublicSandboxMode(sandbox))) {
       throw new Error('goose adapter: public seats require an enforced sandbox');
     }

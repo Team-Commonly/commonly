@@ -4,6 +4,8 @@ TASK-236 admits only Goose 1.54.0 with a prepared Commonly stdio MCP server,
 an explicit model/provider key file, and an enforced Seatbelt (macOS) or bwrap
 (Linux) boundary. Other extensions, HTTP MCP declarations, untested versions,
 disabled sandboxes and restricted-network declarations fail before launch.
+Public filesystem `read-outside` declarations are refused, so operator-supplied
+paths cannot expand the host read grants of the public process.
 Goose remains ineligible for Commonly's grant broker.
 Public confinement must be declared explicitly with provider/model settings.
 Goose is excluded from automatic default sandbox derivation, which cannot

@@ -113,6 +113,15 @@ test('public Goose refuses a restricted network declaration it cannot enforce', 
   })).toThrow(/restricted networking/);
 });
 
+test.each(['public', 'internal'])('Goose %s trust refuses extra host read paths', (trust) => {
+  const environment = { provider: {}, model: 'fixture',
+    sandbox: { trust, filesystem: { 'read-outside': ['/'] } } };
+  expect(() => assertSandboxSupported(environment)).toThrow(/read-outside/);
+  expect(() => assertSandboxSupported({ ...environment,
+    sandbox: { trust, filesystem: { 'read-outside': [] } },
+  })).not.toThrow();
+});
+
 test('none mode is allowed, and missing provider key fails before spawning', async () => {
   expect(() => assertSandboxSupported({ sandbox: { trust: 'private', mode: 'none' } })).not.toThrow();
   const ctx = baseCtx();
