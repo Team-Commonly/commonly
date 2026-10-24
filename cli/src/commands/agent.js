@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 
 import { createClient } from '../lib/api.js';
+import { copyHandoffMemory } from '../lib/handoff-memory.js';
 import {
   buildSpawnId,
   createSpawnCredentialLease,
@@ -812,6 +813,8 @@ export const performAttach = async ({
   displayName,
   envPath = null,
   wakeOnMessage = false,
+  memoryFrom = null,
+  memoryInstance = 'default',
   log = () => {},
   adapterRegistry = { getAdapter, listAdapterNames },
 }) => {
@@ -984,6 +987,16 @@ export const performAttach = async ({
   }
   if (!runtimeToken) {
     throw new Error('Runtime token was not returned by install or tokens endpoint');
+  }
+
+  if (memoryFrom) {
+    const memoryCopy = await copyHandoffMemory(client, {
+      sourceAgentName: memoryFrom, sourceInstanceId: memoryInstance,
+      targetAgentName: installation.agentName, targetInstanceId: instanceId,
+    });
+    log(memoryCopy.reason === 'source-empty'
+      ? 'hosted agent has no long-term memory to copy'
+      : 'hosted long-term memory is present in the local agent');
   }
 
   return {
@@ -3069,6 +3082,8 @@ Docs:
     .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|opencode|qwen|dsh|…)')
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .requiredOption('--name <name>', 'Agent name (e.g. my-claude)')
+    .option('--memory-from <agent>', 'Copy long-term memory from a hosted agent you own')
+    .option('--memory-instance <id>', 'Hosted source instance for --memory-from', 'default')
     .option('--display <name>', 'Display name shown in the pod')
     .option('--env <path>', 'Path to environment.json (ADR-008 — sandbox/skills/MCP)')
     .option('--import-memory [path]', 'Import local memory (CLAUDE.md / MEMORY.md / ~/.claude project memory, or a given file/dir) into the agent after attach')
@@ -3095,6 +3110,8 @@ Docs:
           displayName: opts.display,
           envPath: envAbsPath,
           wakeOnMessage: Boolean(opts.wakeOnMessage),
+          memoryFrom: opts.memoryFrom,
+          memoryInstance: opts.memoryInstance,
           log: (line) => console.warn(`[attach] ${line}`),
         });
 

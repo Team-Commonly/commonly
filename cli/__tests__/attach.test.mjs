@@ -439,6 +439,22 @@ describe('performAttach', () => {
     );
   });
 
+  test('attach copies hosted memory before returning the local runnable token', async () => {
+    const client = makeClient({ runtimeToken: 'cm_agent_local' });
+    const get = client.get;
+    client.get = jest.fn(async (route) => {
+      if (route === '/api/agent-memory/hosted/source-1/editable') return { sections: { long_term: { content: 'remember X' } } };
+      if (route === '/api/agent-memory/local/default/editable') return { sections: { long_term: { content: '', updatedAt: null, visibility: 'private' } } };
+      return get(route);
+    });
+    client.patch = jest.fn().mockResolvedValue({});
+    const result = await performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1',
+      memoryFrom: 'hosted', memoryInstance: 'source-1' });
+    expect(result.runtimeToken).toBe('cm_agent_local');
+    expect(client.patch).toHaveBeenCalledWith('/api/agent-memory/local/default/editable/long_term',
+      { content: 'remember X', expectedUpdatedAt: null });
+  });
+
   test('omits config.wakeOnMessage by default (ADR-018 ambient wake is opt-in)', async () => {
     const client = makeClient({ runtimeToken: 'cm_agent_x' });
     await performAttach({

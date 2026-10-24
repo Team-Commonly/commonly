@@ -141,7 +141,7 @@ router.get('/:agentName/:instanceId/editable', auth, async (req: AuthReq, res: R
       .select('content sections.soul sections.long_term sections.shared').lean();
     const sections = Object.fromEntries(EDITABLE_SECTIONS.map((key) => {
       const section = record?.sections?.[key];
-      return [key, { content: section?.content || (key === 'long_term' ? record?.content || '' : ''),
+      return [key, { content: section?.content ?? (key === 'long_term' ? record?.content || '' : ''),
         updatedAt: section?.updatedAt || null,
         visibility: section?.visibility || 'private' }];
     }));
