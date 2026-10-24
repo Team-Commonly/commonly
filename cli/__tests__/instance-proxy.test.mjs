@@ -49,3 +49,36 @@ test.each(['client disconnect', 'proxy shutdown'])(
   }
   },
 );
+
+test('closes the downstream client when an upstream response ends incomplete', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'commonly-instance-proxy-'));
+  const target = createServer((_request, response) => {
+    response.writeHead(200, { 'content-length': '100' });
+    response.write('partial');
+    setTimeout(() => response.destroy(), 25);
+  });
+  await new Promise((resolve) => target.listen(0, '127.0.0.1', resolve));
+  let proxy;
+  let client;
+  let timeout;
+  try {
+    proxy = await startInstanceProxy({
+      instanceUrl: `http://127.0.0.1:${target.address().port}`,
+      socketPath: join(root, 'instance.sock'),
+    });
+    client = connect(proxy.socketPath);
+    await once(client, 'connect');
+    const closed = new Promise((resolve) => client.once('close', () => resolve(true)));
+    client.write('GET /v1/models HTTP/1.1\r\nHost: proxy\r\n\r\n');
+    await once(client, 'data');
+    const timedOut = new Promise((resolve) => { timeout = setTimeout(() => resolve(false), 500); });
+    expect(await Promise.race([closed, timedOut])).toBe(true);
+  } finally {
+    clearTimeout(timeout);
+    client?.destroy();
+    await proxy?.close();
+    target.closeAllConnections();
+    await new Promise((resolve) => target.close(resolve));
+    await rm(root, { recursive: true, force: true });
+  }
+});

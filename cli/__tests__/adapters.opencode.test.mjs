@@ -969,6 +969,7 @@ describe('opencode external provider config', () => {
           expect(opts.enableLoopback).toBe(true);
           expect(argv.slice(0, 2)).toEqual([process.execPath, expect.stringMatching(/opencode-loopback\.mjs$/)]);
           expect(argv[2]).toMatch(/provider-proxy\.sock$/);
+          expect(argv[4]).toBe('-');
           expect(opts.readOnlyPaths).not.toContain(realKey);
           expect(opts.readOnlyPaths).not.toContain(realAuthPath);
           return ['/usr/bin/bwrap', '--test', ...argv];
