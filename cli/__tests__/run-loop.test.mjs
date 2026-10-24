@@ -1578,6 +1578,21 @@ describe('performRun', () => {
     expect(ackPosts(post)).toHaveLength(1);
   });
 
+  test('an item without a delivery nonce gets no per-item checkpoint instruction', async () => {
+    createClient.mockReturnValue({ get: jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events: [makeEvent()] };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    }), post: jest.fn().mockResolvedValue({}) });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub', setTimeoutImpl: noopTimeout });
+    await drainMicrotasks();
+    handle.stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0]).not.toContain('call commonly_checkpoint_event(');
+  });
+
   test('three explicit event checkpoints survive a five-event turn timeout', async () => {
     const { buildTools } = await import('../../commonly-mcp/src/tools.js');
     const originalFetch = global.fetch;
@@ -1621,8 +1636,8 @@ describe('performRun', () => {
           .find((tool) => tool.name === 'commonly_checkpoint_event');
         expect(checkpoint).toBeDefined();
         for (const event of events.slice(0, 3)) {
-          expect(prompt).toContain(event._id);
-          expect(prompt).toContain(event.payload.deliveryId);
+          expect(prompt).toContain(`After completed tool-side work or intentional NO_REPLY for only this item, call commonly_checkpoint_event(${JSON.stringify({ eventId: event._id, deliveryId: event.payload.deliveryId })})`);
+          expect(prompt).toContain('Do not checkpoint a reply you are holding for final CLI output');
           const result = await checkpoint.call({ eventId: event._id, deliveryId: event.payload.deliveryId });
           expect(result.isError).not.toBe(true);
         }

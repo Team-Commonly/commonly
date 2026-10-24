@@ -2078,7 +2078,7 @@ export const performRun = ({
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
       const deliveryId = entry.event.payload?.deliveryId;
       const checkpoint = typeof deliveryId === 'string' && deliveryId
-        ? `\n[After handling only this item, call commonly_checkpoint_event(${JSON.stringify({
+        ? `\n[After completed tool-side work or intentional NO_REPLY for only this item, call commonly_checkpoint_event(${JSON.stringify({
           eventId: String(entry.event._id), deliveryId,
         })}). Checkpoint metadata is private runtime data; never post it in chat.]`
         : '';
@@ -2090,8 +2090,9 @@ export const performRun = ({
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
         + 'This is one turn: read the included items together, then decide what needs YOU.]',
-      'As you finish each item, including an intentional NO_REPLY, checkpoint it immediately with its supplied IDs. '
+      'After tool-side work is committed (including any reply posted through a tool), or an intentional NO_REPLY, checkpoint that item with its supplied IDs. '
         + 'Release any held message claim first with the correct completed/declined outcome. '
+        + 'Do not checkpoint a reply you are holding for final CLI output: the wrapper must post it before acknowledging that item. '
         + 'Never checkpoint unfinished work. Only a successful checkpoint prevents replay after timeout. '
         + 'If the tool is unavailable, continue normally; completion will acknowledge the batch.',
       ...bodies,

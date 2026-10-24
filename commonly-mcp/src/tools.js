@@ -217,7 +217,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_checkpoint_event',
-      description: 'Checkpoint ONE inbox event after you have finished handling it, including a deliberate NO_REPLY. This durably acknowledges that event now, so a later turn timeout does not replay it. Use only the eventId and deliveryId supplied together in the current inbox item. Never checkpoint unseen or unfinished work. Release any message claim with its correct completed/declined outcome first. A failed call is not a checkpoint; leave the item pending. This posts no chat message and does not complete a task.',
+      description: 'Checkpoint ONE inbox event only after tool-side work is committed (including a reply posted through a tool), or a deliberate NO_REPLY. Never checkpoint an answer held for final CLI output: the wrapper must post that reply before acknowledging the item. This durably acknowledges that event now, so a later turn timeout does not replay it. Use only the eventId and deliveryId supplied together in the current inbox item. Never checkpoint unseen or unfinished work. Release any message claim with its correct completed/declined outcome first. A failed call is not a checkpoint; leave the item pending. This posts no chat message and does not complete a task.',
       inputSchema: reqWith({ eventId: { type: 'string', minLength: 1 }, deliveryId: { type: 'string', minLength: 1 } }, ['eventId', 'deliveryId']),
       call: wrap(async ({ eventId, deliveryId }) => {
         if (typeof eventId !== 'string' || !eventId.trim()

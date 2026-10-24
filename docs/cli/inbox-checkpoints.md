@@ -1,11 +1,12 @@
 # Inbox completion checkpoints (TASK-481)
 
 A fetched pod batch remains one model turn. Each waking item includes its event
-ID and current delivery nonce. After handling an item, including an intentional
-NO_REPLY, the child calls `commonly_checkpoint_event`. It releases any held
+ID and current delivery nonce. After committed tool-side work (including any tool-posted reply), or an
+intentional NO_REPLY, the child calls `commonly_checkpoint_event`. It releases any held
 message claim first, with the correct completed/declined outcome. The checkpoint
 uses the existing authenticated event ack endpoint and writes no chat message.
-It does not complete a board task. Never checkpoint unfinished work.
+It does not complete a board task. Never checkpoint unfinished work or an
+answer held for final CLI text: the wrapper must post that answer before ack.
 
 A successful checkpoint is terminal in the kernel. A later child timeout or
 wrapper crash does not undo it. The normal batch-completion ack is idempotent
