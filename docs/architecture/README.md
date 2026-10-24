@@ -9,6 +9,7 @@ This directory contains high-level system architecture documentation.
 | Document | Description |
 |----------|-------------|
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System overview, component relationships, deployment architecture |
+| [long-term-review-2026-10.md](./long-term-review-2026-10.md) | Which refactors to do now, later, or never, with the number behind each; Commonly in 6 months |
 
 ## System Components
 
