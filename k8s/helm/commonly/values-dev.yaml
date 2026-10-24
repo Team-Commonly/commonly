@@ -433,6 +433,12 @@ hostedMcp:
     - notion
     - gitlab
     - supabase
+  # Mongo User _id(s) permitted to walk each hidden hosted-MCP entry (#2649, TASK-485).
+  # lily-shen is the designated walk user (keeps the walk off Sam's account, Cofounder 10-24).
+  # Sentry stays hidden for every other account.
+  hiddenEntryUserAllowlist:
+    sentry:
+      - "6a47891ee025ce2e0ca1d30b"
   googleCalendar:
     enabled: false
 
