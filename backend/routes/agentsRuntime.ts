@@ -1408,6 +1408,7 @@ router.get(
         return clamp(parsed, 1, max);
       };
 
+      const readStartedAt = AgentSendFreshness.readStart();
       const context = await PodContextService.getPodContext({
         podId,
         userId: user._id,
@@ -1421,7 +1422,11 @@ router.get(
         skillRefreshHours: parseLimit(req.query.skillRefreshHours, 6, 72),
       });
 
-      return res.json(context);
+      const { _recentMessagesRead, ...publicContext } = context as Record<string, unknown>;
+      if (_recentMessagesRead) {
+        await AgentSendFreshness.recordRead(user._id, podId, readStartedAt);
+      }
+      return res.json(publicContext);
     } catch (error: any) {
       console.error('Error fetching bot pod context:', error);
       return res.status(500).json({ message: 'Failed to fetch pod context' });
@@ -1463,7 +1468,11 @@ router.get(
 
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
       // Same server-computed `self` flag as the runtime-token route (#757).
+      const readStartedAt = AgentSendFreshness.readStart();
       const messages = await AgentMessageService.getRecentMessages(podId, limit, user._id);
+      if (!process.env.PG_HOST || (messages as typeof messages & { readSource?: string }).readSource === 'postgres') {
+        await AgentSendFreshness.recordRead(user._id, podId, readStartedAt);
+      }
       return res.json({ messages });
     } catch (error: any) {
       console.error('Error fetching bot messages:', error);
@@ -1505,6 +1514,11 @@ router.post(
       }
 
       const { content, metadata, messageType } = req.body || {};
+      const wouldPost = messageType === 'card' || Boolean(AgentMessageService.sanitizeAgentContent(content));
+      if (wouldPost && req.body?.continueAnyway !== true) {
+        const hold = await AgentSendFreshness.unseenMessages(user._id, podId);
+        if (hold) return res.status(409).json(hold);
+      }
       const result = await AgentMessageService.postMessage({
         agentName: resolvedAgentName,
         instanceId,
@@ -4090,6 +4104,21 @@ router.post('/asks/:requestId/respond', phase4RateLimit, agentRuntimeAuth, async
 const { handleUpload, uploadSingle } = require('./uploads');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { validateOfficeContent } = require('../services/officeContentValidator');
+router.get('/pods/:podId/send-freshness', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    if (!req.agentUser?._id) return res.status(401).json({ message: 'Agent identity required' });
+    const hold = await AgentSendFreshness.unseenMessages(req.agentUser._id, podId);
+    return hold ? res.status(409).json(hold) : res.json({ ok: true });
+  } catch (error: any) {
+    console.error('Agent freshness check error:', error);
+    return res.status(500).json({ message: 'Failed to check send freshness' });
+  }
+});
+
 router.post('/pods/:podId/uploads', phase4RateLimit, agentRuntimeAuth, uploadSingle('file'), async (req: any, res: any) => {
   try {
     const { podId } = req.params;
@@ -4124,6 +4153,24 @@ router.post('/pods/:podId/uploads', phase4RateLimit, agentRuntimeAuth, uploadSin
   } catch (error: any) {
     console.error('Agent upload error:', error);
     return res.status(500).json({ message: 'Failed to upload file' });
+  }
+});
+
+router.delete('/pods/:podId/uploads/:fileName', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { podId, fileName } = req.params;
+    if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    if (!req.agentUser?._id) return res.status(401).json({ message: 'Agent identity required' });
+    const file = await File.findOne({ fileName, podId, uploadedBy: req.agentUser._id }).select('_id fileName');
+    if (!file) return res.status(404).json({ message: 'Upload not found' });
+    await getObjectStore().delete(fileName);
+    await File.deleteOne({ _id: file._id, uploadedBy: req.agentUser._id });
+    return res.json({ deleted: true });
+  } catch (error: any) {
+    console.error('Agent upload cleanup error:', error);
+    return res.status(500).json({ message: 'Failed to remove upload' });
   }
 });
 

@@ -146,6 +146,46 @@ describe('commonly_get_messages', () => {
   });
 });
 
+describe('commonly_attach_file freshness', () => {
+  const filePath = new URL('../package.json', import.meta.url).pathname;
+  const held = { ok: false, status: 409, text: async () => JSON.stringify({ code: 'unseen_messages', unseenCount: 1 }) };
+
+  it('checks freshness before reading or uploading a file', async () => {
+    const fetchSpy = installFetch(async () => held);
+    const result = await byName.commonly_attach_file.call({ podId: 'POD', filePath });
+    expect(result.isError).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toContain('/pods/POD/send-freshness');
+  });
+
+  it('removes an uploaded file if a new message holds its card post', async () => {
+    const fetchSpy = installFetch(async (_url, _init) => {
+      const n = fetchSpy.mock.calls.length;
+      if (n === 1) return okResponse({ ok: true });
+      if (n === 2) return okResponse({ fileName: 'file-1.json', originalName: 'package.json', size: 42 });
+      if (n === 3) return held;
+      return okResponse({ deleted: true });
+    });
+    const result = await byName.commonly_attach_file.call({ podId: 'POD', filePath });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).status).toBe(409);
+    expect(fetchSpy.mock.calls.map(([, init]) => init.method)).toEqual(['GET', 'POST', 'POST', 'DELETE']);
+    expect(fetchSpy.mock.calls[3][0]).toContain('/pods/POD/uploads/file-1.json');
+  });
+
+  it('lets an explicit override attach without a freshness preflight', async () => {
+    const fetchSpy = installFetch(async (_url, _init) => (
+      fetchSpy.mock.calls.length === 1
+        ? okResponse({ fileName: 'file-2.json', originalName: 'package.json', size: 42 })
+        : okResponse({ id: 'm1' })
+    ));
+    const result = await byName.commonly_attach_file.call({ podId: 'POD', filePath, continueAnyway: true });
+    expect(result.isError).toBeUndefined();
+    expect(fetchSpy.mock.calls.map(([, init]) => init.method)).toEqual(['POST', 'POST']);
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body).continueAnyway).toBe(true);
+  });
+});
+
 describe('commonly_get_context', () => {
   it('GETs the pod context endpoint', async () => {
     const fetchSpy = installFetch(async () => okResponse({ pod: {}, recentMessages: [] }));

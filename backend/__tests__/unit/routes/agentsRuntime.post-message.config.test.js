@@ -10,19 +10,23 @@ jest.mock('../../../services/agentIdentityService', () => ({
     instanceId === 'default' ? agentName : `${agentName}-${instanceId}`
   )),
   getOrCreateAgentUser: jest.fn().mockResolvedValue({ _id: 'bot-1' }),
+  ensureAgentInPod: jest.fn(),
 }));
 jest.mock('../../../services/agentMessageService', () => ({
   postMessage: jest.fn(),
+  getRecentMessages: jest.fn(),
   sanitizeAgentContent: jest.fn((content) => content),
 }));
 jest.mock('../../../services/agentSendFreshness', () => ({
+  readStart: jest.fn(() => new Date('2026-10-24T00:00:00Z')),
+  recordRead: jest.fn(),
   unseenMessages: jest.fn().mockResolvedValue(null),
 }));
 jest.mock('../../../services/mentionNonMemberNoticeService', () => ({
   findNonMemberMentionNotices: jest.fn(),
 }));
 jest.mock('../../../services/agentThreadService', () => ({}));
-jest.mock('../../../services/podContextService', () => ({}));
+jest.mock('../../../services/podContextService', () => ({ getPodContext: jest.fn() }));
 jest.mock('../../../services/globalModelConfigService', () => ({}));
 jest.mock('../../../services/socialPolicyService', () => ({}));
 // agentsRuntime mounts its upload route at module load. This test exercises
@@ -36,6 +40,8 @@ jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../models/Activity', () => ({}));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/File', () => ({ findOne: jest.fn(), deleteOne: jest.fn() }));
+jest.mock('../../../services/objectStore', () => ({ getObjectStore: jest.fn() }));
 jest.mock('../../../models/Pod', () => ({
   find: jest.fn(),
   findById: jest.fn(() => ({ select: () => ({ lean: async () => ({ type: 'chat' }) }) })),
@@ -48,6 +54,9 @@ jest.mock('../../../models/AgentRegistry', () => ({
 
 const AgentMessageService = require('../../../services/agentMessageService');
 const AgentSendFreshness = require('../../../services/agentSendFreshness');
+const PodContextService = require('../../../services/podContextService');
+const File = require('../../../models/File');
+const { getObjectStore } = require('../../../services/objectStore');
 const { findNonMemberMentionNotices } = require('../../../services/mentionNonMemberNoticeService');
 const router = require('../../../routes/agentsRuntime');
 
@@ -202,5 +211,97 @@ describe('agentsRuntime post message installation config forwarding', () => {
     await handler(req, res);
     expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledTimes(1);
     expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('bot-token send-time freshness', () => {
+  const user = {
+    _id: 'bot-1', username: 'openclaw', isBot: true,
+    botMetadata: { agentName: 'openclaw', instanceId: 'default' },
+  };
+  const req = { params: { podId: 'pod-1' }, userId: 'bot-1', query: {}, body: { content: 'hello' } };
+  const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    require('../../../models/User').findById.mockReturnValue({ lean: async () => user });
+    require('../../../models/AgentRegistry').AgentInstallation.findOne.mockReturnValue({
+      lean: async () => ({ agentName: 'openclaw', instanceId: 'default', displayName: 'OpenClaw' }),
+    });
+  });
+
+  it('stamps only a successful bot-token message read and holds a stale post', async () => {
+    const messages = [{ id: 'm1', content: 'new message' }];
+    AgentMessageService.getRecentMessages.mockResolvedValue(messages);
+    const get = getRouteHandler('/bot/pods/:podId/messages', 'get');
+    const getRes = response();
+    await get(req, getRes);
+    expect(getRes.json).toHaveBeenCalledWith({ messages });
+    expect(AgentSendFreshness.recordRead).toHaveBeenCalledWith('bot-1', 'pod-1', expect.any(Date));
+
+    AgentSendFreshness.unseenMessages.mockResolvedValueOnce({ code: 'unseen_messages', unseenCount: 1 });
+    const post = getRouteHandler('/bot/pods/:podId/messages', 'post');
+    const heldRes = response();
+    await post(req, heldRes);
+    expect(heldRes.status).toHaveBeenCalledWith(409);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+
+    AgentMessageService.postMessage.mockResolvedValueOnce({ success: true });
+    const allowedRes = response();
+    await post({ ...req, body: { content: 'hello', continueAnyway: true } }, allowedRes);
+    expect(allowedRes.json).toHaveBeenCalledWith({ success: true });
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('stamps bot-token context only when its recent messages were read', async () => {
+    const get = getRouteHandler('/bot/pods/:podId/context', 'get');
+    PodContextService.getPodContext.mockResolvedValueOnce({ _recentMessagesRead: false, summary: 'cached' });
+    await get(req, response());
+    expect(AgentSendFreshness.recordRead).not.toHaveBeenCalled();
+
+    PodContextService.getPodContext.mockResolvedValueOnce({ _recentMessagesRead: true, summary: 'fresh' });
+    const res = response();
+    await get(req, res);
+    expect(AgentSendFreshness.recordRead).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ summary: 'fresh' });
+  });
+});
+
+describe('attachment freshness and cleanup', () => {
+  const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'default' };
+  const req = {
+    params: { podId: 'pod-1', fileName: 'file-1.txt' },
+    agentUser: { _id: 'bot-1' },
+    agentInstallation: installation,
+    agentInstallations: [installation],
+  };
+  const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('holds before upload when the pod has unseen messages', async () => {
+    const handler = getRouteHandler('/pods/:podId/send-freshness', 'get');
+    const hold = { code: 'unseen_messages', unseenCount: 1 };
+    AgentSendFreshness.unseenMessages.mockResolvedValueOnce(hold);
+    const res = response();
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(hold);
+  });
+
+  it('only removes an upload owned by the calling agent in this pod', async () => {
+    const handler = getRouteHandler('/pods/:podId/uploads/:fileName', 'delete');
+    const store = { delete: jest.fn().mockResolvedValue() };
+    getObjectStore.mockReturnValue(store);
+    File.findOne.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: 'file-id' }) });
+    File.deleteOne.mockResolvedValue({ deletedCount: 1 });
+    const res = response();
+    await handler(req, res);
+    expect(File.findOne).toHaveBeenCalledWith({
+      fileName: 'file-1.txt', podId: 'pod-1', uploadedBy: 'bot-1',
+    });
+    expect(store.delete).toHaveBeenCalledWith('file-1.txt');
+    expect(File.deleteOne).toHaveBeenCalledWith({ _id: 'file-id', uploadedBy: 'bot-1' });
+    expect(res.json).toHaveBeenCalledWith({ deleted: true });
   });
 });

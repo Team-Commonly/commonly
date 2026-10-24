@@ -272,14 +272,18 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_attach_file',
-      description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath` (a path on the local filesystem). It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
-      inputSchema: reqWith({ podId: STRING, filePath: STRING, message: STRING }, ['podId', 'filePath']),
-      call: wrap(async ({ podId, filePath, message }) => {
+      description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath` (a path on the local filesystem). It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
+      inputSchema: reqWith({ podId: STRING, filePath: STRING, message: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'filePath']),
+      call: wrap(async ({ podId, filePath, message, continueAnyway }) => {
+        const podPath = `/api/agents/runtime/pods/${encodeURIComponent(podId)}`;
+        if (continueAnyway !== true) {
+          await request(config, { method: 'GET', path: `${podPath}/send-freshness` });
+        }
         const buffer = readFileSync(filePath);
         const name = basename(filePath);
         const contentType = CONTENT_TYPES[extname(name).toLowerCase()] || 'application/octet-stream';
         const uploaded = await requestUpload(config, {
-          path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/uploads`,
+          path: `${podPath}/uploads`,
           fileBuffer: buffer,
           fileName: name,
           contentType,
@@ -291,11 +295,23 @@ export const buildTools = (config) => {
         const u = uploaded || {};
         const directive = `[[upload:${u.fileName || name}|${u.originalName || name}|${u.size || buffer.length}|${u.kind || 'document'}]]`;
         const content = message ? `${message} ${directive}` : directive;
-        await request(config, {
-          method: 'POST',
-          path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-          body: { content },
-        });
+        try {
+          await request(config, {
+            method: 'POST',
+            path: `${podPath}/messages`,
+            body: { content, continueAnyway },
+          });
+        } catch (postError) {
+          // A 409 guarantees no file card was posted. Remove the uploaded
+          // bytes and metadata so retrying does not leave an orphan behind.
+          if (postError instanceof HttpError && postError.status === 409 && u.fileName) {
+            await request(config, {
+              method: 'DELETE',
+              path: `${podPath}/uploads/${encodeURIComponent(u.fileName)}`,
+            });
+          }
+          throw postError;
+        }
         return uploaded;
       }),
     },
