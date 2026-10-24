@@ -93,8 +93,9 @@ export const agentsWithMultipleOutsiderGrantPods = async (
     agentName: string; instanceId?: string; podId?: unknown;
   }>;
   const podIds = [...new Set(installations.map((row) => objectId(row.podId)).filter((id): id is string => Boolean(id)))];
-  // Match the runtime middleware's fail-closed census if a grant read fails.
-  const narrowed = await podsWithOutsiderWritableGrants(podIds).catch(() => new Set(podIds));
+  // The human roster reports an unavailable status on census failure. Runtime
+  // authentication applies its own fail-closed policy to the same failure.
+  const narrowed = await podsWithOutsiderWritableGrants(podIds);
   const counts = new Map<string, Set<string>>();
   for (const row of installations) {
     const podId = objectId(row.podId);

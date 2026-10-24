@@ -93,6 +93,7 @@ beforeEach(() => {
   mockMessageFindById.mockReset();
   mockCredentialFindOne.mockReset().mockResolvedValue(null);
   mockCredentialFindById.mockReset();
+  require('../../../models/AgentCredential').updateOne.mockClear();
   mockSecret.hash.mockReset();
   mockSecret.hash.mockReturnValue('hashed-token');
   mockUserFindOne.mockReset();
@@ -366,6 +367,38 @@ describe('TASK-213 runtime token narrowing', () => {
     mockMessageFindById.mockResolvedValueOnce({ pod_id: 'pod-a' });
     await agentRuntimeAuth(req, res, next);
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['legacy', 'User-row'])('refused %s credential calls do not mark the credential used', async (shape) => {
+    setupLegacy();
+    if (shape === 'User-row') {
+      mockUserFindOne.mockResolvedValue({
+        _id: 'bot-a', isBot: true,
+        botMetadata: { agentName: 'codex', instanceId: 'rivet' },
+        agentRuntimeTokens: [{ tokenHash: 'hashed-token', lastUsedAt: new Date() }],
+      });
+      mockInstallationFind.mockReturnValue({ lean: async () => [{
+        podId: { toString: () => 'pod-a' }, status: 'active',
+      }] });
+    }
+    mockCredentialFindOne.mockResolvedValue({ _id: 'credential-a', kind: 'runtime', status: 'active' });
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/agent-dm' }, params: {} });
+    const res = buildRes();
+    const next = jest.fn();
+    const credentialUpdate = require('../../../models/AgentCredential').updateOne;
+    await agentRuntimeAuth(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(credentialUpdate).not.toHaveBeenCalled();
+    req.route.path = '/pods/:podId/messages';
+    req.params.podId = 'pod-a';
+    await agentRuntimeAuth(req, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(credentialUpdate).toHaveBeenCalledWith(
+      { _id: 'credential-a' }, { $set: { lastUsedAt: expect.any(Date) } },
+    );
   });
 
   test('spawn maintenance and event acknowledgement remain available across two grant pods', async () => {

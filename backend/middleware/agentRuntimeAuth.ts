@@ -161,14 +161,18 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       )) {
         return res.status(401).json({ message: 'Machine access revoked' });
       }
+    }
+
+    const markCredentialUsed = async () => {
+      if (!credential) return;
       try {
-        // Settings reads this ledger row. A successful authenticated request
-        // must be visible to the next credential read, including first use.
+        // Rejected narrowed calls are not successful token use. Settings reads
+        // this ledger row after an allowed call, including its first use.
         await AgentCredential.updateOne({ _id: credential._id }, { $set: { lastUsedAt: new Date() } });
       } catch (err) {
         console.warn('Failed to update credential usage:', (err as Error).message);
       }
-    }
+    };
 
     // TASK-094: expose the row so routes can key on the credential (the mint
     // route needs the caller's row) rather than hashing the bearer again.
@@ -225,6 +229,8 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       req.agentInstallation = (installations[0] as never) || null;
 
       if (!await checkOutsiderGrantRuntimeNarrowing(req, res, installationPodIds)) return undefined;
+
+      await markCredentialUsed();
 
       try {
         await User.updateOne(
@@ -335,6 +341,8 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     if (!await checkOutsiderGrantRuntimeNarrowing(
       req, res, identityInstallations.map((inst: { podId?: unknown }) => String(inst.podId || '')),
     )) return undefined;
+
+    await markCredentialUsed();
 
     try {
       await AgentInstallation.updateOne(
