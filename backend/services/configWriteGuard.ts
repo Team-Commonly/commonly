@@ -15,7 +15,9 @@
  *   hosted): its model, tools, prompt, caps and context size. Every new user
  *   is the installer of their own native Scout, so without this any user
  *   could pick a paid model route, add the approval-proposing tool, or set
- *   `dailyRunCap: 0` to lift the cap. Admins may still change them.
+ *   `dailyRunCap: 0` to lift the cap. Admins may still change them. The same
+ *   holds for `runtime.adapter`: grant-broker confinement and the daemon read
+ *   it, so a change to it is refused (TASK-474).
  * - The kernel's own records (`hosted`), which only the install and
  *   provision routes write. Refused for every caller, admins included: a
  *   hand-written engine or provision stamp is a record that no longer
@@ -56,6 +58,11 @@ const normalizeRuntimeType = (value: unknown): string => String(value ?? '').tri
 export const storedRuntimeType = (config: unknown): string => {
   const runtime = asObject(asObject(config)?.runtime);
   return normalizeRuntimeType(runtime?.runtimeType);
+};
+
+const storedAdapter = (config: unknown): string => {
+  const runtime = asObject(asObject(config)?.runtime);
+  return normalizeRuntimeType(runtime?.adapter);
 };
 
 /**
@@ -119,6 +126,22 @@ export const configWriteRefusal = ({
       error: 'Commonly runs this agent, so Commonly sets its model, tools and limits.',
       fields: compute.map((key) => `config.${key}`),
     };
+  }
+
+  // The adapter names the CLI a seat runs, and grant-broker confinement and the
+  // daemon read it. The settings page echoes the stored value on every save, so
+  // only a change is refused: an echo of what is stored passes.
+  if (runtime && 'adapter' in runtime) {
+    const requestedAdapter = normalizeRuntimeType(runtime.adapter);
+    if (targets.some((target) => KERNEL_RUN_RUNTIME_TYPES.has(storedRuntimeType(target))
+      && storedAdapter(target) !== requestedAdapter)) {
+      return {
+        code: 'kernel_run_field',
+        status: 403,
+        error: 'Commonly runs this agent, so Commonly sets its runtime adapter.',
+        fields: ['config.runtime.adapter'],
+      };
+    }
   }
   return null;
 };
