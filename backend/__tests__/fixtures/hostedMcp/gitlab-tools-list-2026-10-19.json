@@ -1,0 +1,2619 @@
+{
+  "server": "https://gitlab.com/api/v4/mcp",
+  "capturedAt": "2026-10-19T07:10:55.663Z",
+  "scopeRequested": "mcp",
+  "toolCount": 36,
+  "tools": [
+    {
+      "name": "get_artifact_file",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Read a file from inside the artifacts archive of a CI/CD job as text. To discover what a job or pipeline produced, use get_job or get_pipeline with include: artifacts. For large files, page through with byte_offset and byte_limit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the job, for example https://gitlab.com/gitlab-org/gitlab/-/jobs/123. Provide this, or project_id and job_id."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or full path of the project. Required if url is not provided."
+          },
+          "job_id": {
+            "type": "integer",
+            "description": "ID of the job. Required if url is not provided."
+          },
+          "artifact_path": {
+            "type": "string",
+            "description": "Path of the file inside the artifacts archive, for example coverage/index.html."
+          },
+          "byte_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20971520,
+            "description": "Byte offset to start reading the file from."
+          },
+          "byte_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1048576,
+            "description": "Maximum number of bytes to return."
+          }
+        },
+        "required": [
+          "artifact_path"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_job",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Get a CI/CD job in a GitLab project. Add include: log to also get the job's trace/log, which you can page through with byte_offset and byte_limit. Add include: artifacts to also list the artifacts the job produced (name, size, file type); read one with the get_artifact_file tool.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID or full path of the project"
+          },
+          "job_id": {
+            "type": "integer",
+            "description": "ID of the job"
+          },
+          "include": {
+            "type": "array",
+            "description": "Facet to include alongside the job, one per call: log or artifacts.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "log",
+                "artifacts"
+              ]
+            },
+            "maxItems": 1
+          },
+          "byte_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Byte offset to start reading the job's log from. Only applies when include is log. Default is 0."
+          },
+          "byte_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 512000,
+            "description": "Maximum number of bytes of the job's log to return. Only applies when include is log. Default and max is 512000."
+          }
+        },
+        "required": [
+          "id",
+          "job_id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_mcp_server_version",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Get the current version of MCP server.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_releases",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List releases in a GitLab project, most recently released first. Identify the project with exactly one of url or project_id. Returns release metadata and asset links, not release assets themselves. Releases scheduled for a future date are omitted unless state is upcoming or all, and carry upcoming true when returned.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the project."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or full path of the project."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number to retrieve. Default is 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Releases to return per page. Default is 20, maximum is 100."
+          },
+          "state": {
+            "type": "string",
+            "description": "Filter by release state. released covers releases already out, upcoming covers releases scheduled for a future date. Default is released.",
+            "enum": [
+              "released",
+              "upcoming",
+              "all"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_tags",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List tags in a GitLab project, most recently updated first. Identify the project with exactly one of url or project_id. When search is given, a tag whose name matches it exactly is listed first. Returns each tag name and its tip commit, not the tag message, commit diff, or file contents. When metadata.has_next_page is true, pass metadata.end_cursor as after to fetch the next page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the project."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or full path of the project."
+          },
+          "search": {
+            "type": "string",
+            "description": "Filter tags by name. Supports ^ to anchor the start, $ to anchor the end, and * as a wildcard."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for forward pagination. Use metadata.end_cursor from the previous response."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Number of tags to return. Default is 20, maximum is 100."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "accept_merge_request",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Merge a merge request, or schedule it to merge automatically. Without strategy the merge starts immediately and completes asynchronously; with strategy, auto-merge is armed and the merge request merges once its checks pass. Identify the merge request by url, or by project_id and merge_request_iid. To approve a merge request instead, use save_merge_request_review.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the merge request. Provide this, or project_id and merge_request_iid."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required if url is not provided."
+          },
+          "merge_request_iid": {
+            "type": "integer",
+            "description": "Internal ID of the merge request. Required if url is not provided."
+          },
+          "sha": {
+            "type": "string",
+            "description": "Head SHA guard. When it no longer matches the merge request head, the merge is refused instead of merging content you have not seen. Pass the diff_head_sha returned by get_merge_request."
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "merge_train",
+              "add_to_merge_train_when_checks_pass",
+              "merge_when_checks_pass"
+            ],
+            "description": "Auto-merge strategy. When given, arms auto-merge instead of merging immediately."
+          },
+          "squash": {
+            "type": "boolean",
+            "description": "Squash the commits into a single commit on merge."
+          },
+          "commit_message": {
+            "type": "string",
+            "description": "Custom merge commit message."
+          },
+          "squash_commit_message": {
+            "type": "string",
+            "description": "Custom squash commit message. Applies when squash is true."
+          },
+          "should_remove_source_branch": {
+            "type": "boolean",
+            "description": "Remove the source branch after merging."
+          }
+        },
+        "required": [
+          "sha"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "add_branch",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Add a branch to a GitLab project from a source ref.\n\nExamples:\n- Use branch and ref to create a new branch from an existing branch or commit SHA",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the project. Provide this, or project_id."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required if url is not provided."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Name of the new branch"
+          },
+          "ref": {
+            "type": "string",
+            "description": "Branch name or commit SHA to create the new branch from"
+          }
+        },
+        "required": [
+          "branch",
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "add_commit",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Add a commit with one or more file actions to a project branch.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the project. Provide this or project_id."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Provide this or url."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Name of the branch to commit into."
+          },
+          "start_branch": {
+            "type": "string",
+            "description": "Name of the branch from which to create a new branch. Required when branch does not exist yet."
+          },
+          "start_sha": {
+            "type": "string",
+            "description": "SHA of the commit to start a new branch from. Mutually exclusive with start_branch."
+          },
+          "start_project": {
+            "type": "string",
+            "description": "Full path of the project to start the commit from. Must be the project itself or a project it was forked from."
+          },
+          "commit_message": {
+            "type": "string",
+            "description": "Commit message."
+          },
+          "actions": {
+            "type": "array",
+            "description": "File actions to commit as a single batch.",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "create",
+                    "update",
+                    "delete",
+                    "move",
+                    "chmod"
+                  ],
+                  "description": "Action to perform."
+                },
+                "file_path": {
+                  "type": "string",
+                  "description": "Full path to the file."
+                },
+                "content": {
+                  "type": "string",
+                  "description": "File content for create, update, or move actions. Mutually exclusive with old_str and new_str."
+                },
+                "old_str": {
+                  "type": "string",
+                  "description": "Existing text to replace in an update action. Requires new_str."
+                },
+                "new_str": {
+                  "type": "string",
+                  "description": "Replacement text for old_str in an update action."
+                },
+                "previous_path": {
+                  "type": "string",
+                  "description": "Original file path for a move action."
+                },
+                "encoding": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "base64"
+                  ],
+                  "description": "Encoding of the file content."
+                },
+                "last_commit_id": {
+                  "type": "string",
+                  "description": "Last commit that touched the file, used for optimistic concurrency."
+                },
+                "execute_filemode": {
+                  "type": "boolean",
+                  "description": "Whether the file is executable."
+                }
+              },
+              "required": [
+                "action",
+                "file_path"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "branch",
+          "commit_message",
+          "actions"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "get_commit",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Get a single commit's metadata, optionally including its diff or notes. Identify the commit with either url, or project_id and commit_sha.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the commit. Provide this, or project_id and commit_sha."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required if url is not provided."
+          },
+          "commit_sha": {
+            "type": "string",
+            "description": "Commit to look up. Accepts a full or short SHA, branch name, or tag name. Required if url is not provided."
+          },
+          "include": {
+            "type": "array",
+            "description": "Associated facet to fetch inline, one per call. \"diff\" returns the commit diff (bounded by diff_detail); \"notes\" returns the commit notes (paginated with notes_after/notes_first).",
+            "items": {
+              "type": "string",
+              "enum": [
+                "diff",
+                "notes"
+              ]
+            },
+            "maxItems": 1
+          },
+          "diff_detail": {
+            "type": "string",
+            "description": "Level of diff detail to return. Applies only when \"diff\" is in include. \"stats\" returns per-file and summary line counts; \"full_patch\" returns the patch text. Defaults to \"stats\".",
+            "enum": [
+              "stats",
+              "full_patch"
+            ]
+          },
+          "notes_first": {
+            "type": "integer",
+            "description": "Number of notes to return after the cursor (forward pagination). Max 100. Applies only when notes is in include.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "notes_after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of notes. Use pageInfo.endCursor from a previous response. Applies only when notes is in include."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_merge_request",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Get a merge request and optionally its diffs, commits, notes, pipelines, discussions, approvals, or conflicts. By default only the base merge request metadata is returned; request associated data through the `include` parameter so nothing extra is fetched unless asked for.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the merge request. Provide this, or project_id and merge_request_iid."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required if url is not provided."
+          },
+          "merge_request_iid": {
+            "type": "integer",
+            "description": "Internal ID of the merge request. Required if url is not provided."
+          },
+          "include": {
+            "type": "array",
+            "description": "Associated facets to fetch inline, one per call. diffs returns aggregate change stats and a per-file breakdown by default; set detail=full_patch for raw per-file patch text or detail=none for summary counts only. conflicts returns raw conflict file content (Git conflict markers), only when the merge request cannot be merged and the caller can push to the source branch. diffs, notes, commits, and pipelines support pagination (diffs_*, notes_*, commits_*, pipelines_*); for the newest notes, use notes_last without notes_first or notes_after. approvals returns approved and approvedBy on every tier. approvalsRequired, approvalsLeft, and the rule breakdown in approvalState need GitLab Premium or Ultimate; otherwise these keys are present but zeroed or empty, not omitted.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "diffs",
+                "commits",
+                "notes",
+                "pipelines",
+                "discussions",
+                "approvals",
+                "conflicts"
+              ]
+            },
+            "maxItems": 1
+          },
+          "detail": {
+            "type": "string",
+            "description": "Level of diff detail, applies only when diffs is in include. none: summary counts only; stats: per-file additions and deletions (default); full_patch: per-file patch text (raw diff), plus the per-file stats.",
+            "enum": [
+              "none",
+              "stats",
+              "full_patch"
+            ]
+          },
+          "diffs_first": {
+            "type": "integer",
+            "description": "Number of files to return after the cursor (forward pagination). Max 100. Applies only when diffs is in include and detail is full_patch.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "diffs_after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of files. Use pageInfo.endCursor from a previous response. Applies only when diffs is in include and detail is full_patch."
+          },
+          "notes_first": {
+            "type": "integer",
+            "description": "Number of notes to return after the cursor (forward pagination). Max 100. Applies only when notes is in include.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "notes_after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of notes. Use pageInfo.endCursor from a previous response. Applies only when notes is in include."
+          },
+          "notes_last": {
+            "type": "integer",
+            "description": "Number of notes to return before the cursor (backward pagination). Max 100. Applies only when notes is in include.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "notes_before": {
+            "type": "string",
+            "description": "Cursor for backward pagination of notes. Use pageInfo.startCursor from a previous response. Applies only when notes is in include."
+          },
+          "commits_first": {
+            "type": "integer",
+            "description": "Number of commits to return after the cursor (forward pagination). Max 100. Applies only when commits is in include.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "commits_after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of commits. Use pageInfo.endCursor from a previous response. Applies only when commits is in include."
+          },
+          "pipelines_first": {
+            "type": "integer",
+            "description": "Number of pipelines to return after the cursor (forward pagination). Max 100. Applies only when pipelines is in include.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pipelines_after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of pipelines. Use pageInfo.endCursor from a previous response. Applies only when pipelines is in include."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_repository_file",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Read a file from a GitLab repository at a given ref. Reads from GitLab, not the local filesystem: use it for a project you have not checked out, or a specific branch, tag, or commit — not your local working copy. Returns the file as committed at ref. For large files, use offset and limit to read in windows; when the response is partial, system_instruction gives the next offset.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the file, for example https://gitlab.com/gitlab-org/gitlab/-/blob/master/app/models/user.rb. Provide this, or project_id, file_path, and ref."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or full path of the project. Required if url is not provided. If url is also provided, both must refer to the same project."
+          },
+          "file_path": {
+            "type": "string",
+            "description": "Path of the file relative to the repository root, for example app/models/user.rb. Required if url is not provided."
+          },
+          "ref": {
+            "type": "string",
+            "description": "Branch name, tag name, or commit SHA. Use HEAD for the default branch. Required if url is not provided."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-indexed line number to start reading from. Omit to start at the beginning of the file.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of lines to return. The maximum is 2000.",
+            "minimum": 1,
+            "maximum": 2000
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_pipeline",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Get a CI/CD pipeline in a GitLab project, and optionally its jobs, downstream pipelines,\nbridge (trigger) jobs, or the artifacts its jobs produced. A bridge job's downstream\npipeline is omitted if you do not have access to it. The artifacts facet pages over the\npipeline's jobs; read one artifact file with the get_artifact_file tool. To list\npipelines, use the list_pipelines tool instead.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID or full path of the project"
+          },
+          "pipeline_id": {
+            "type": "integer",
+            "description": "ID of the pipeline"
+          },
+          "include": {
+            "type": "array",
+            "description": "Facet to include alongside the pipeline, one per call: jobs, downstream_pipelines, bridge_jobs, or artifacts.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "jobs",
+                "downstream_pipelines",
+                "bridge_jobs",
+                "artifacts"
+              ]
+            },
+            "maxItems": 1
+          },
+          "job_status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "waiting_for_resource",
+              "preparing",
+              "waiting_for_callback",
+              "pending",
+              "running",
+              "success",
+              "failed",
+              "canceling",
+              "canceled",
+              "skipped",
+              "manual",
+              "scheduled"
+            ],
+            "description": "Filters the jobs facet by status (for example, failed). Only applies when include is jobs."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Number of items for the selected include facet to return after the cursor (forward pagination). Max 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of items for the selected include facet. Use page_info.end_cursor from a previous response."
+          }
+        },
+        "required": [
+          "id",
+          "pipeline_id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_project",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Get metadata for a single GitLab project: numeric ID, full path, default branch, visibility, and web URL. Identify the project with exactly one of url or project_id. Use search with scope projects to find a project you cannot name yet.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the project."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project ID or full path. Provide exactly one of url or project_id."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_saved_view_work_items",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Fetch a saved view and its work items list from a namespace",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL for the namespace (project or group)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "ID or path of the group. Required if URL and project_id are not provided."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required if URL and group_id are not provided."
+          },
+          "saved_view_id": {
+            "type": "string",
+            "description": "The global ID of the saved view (format: gid://gitlab/WorkItems::SavedViews::SavedView/<id>)."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Number of work items to return after the cursor (forward pagination). Max 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of work items. Use pageInfo.endCursor from a previous response."
+          }
+        },
+        "required": [
+          "saved_view_id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_user",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Get a single GitLab user. Use me: true to look up the authenticated user, for example to find your own user id before setting assignee_ids or reviewer_ids. Provide exactly one of username, id, or me. Returns the numeric id, username, name, state, and web URL.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Username of the user to look up."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Numeric ID of the user to look up."
+          },
+          "me": {
+            "type": "boolean",
+            "description": "Set to true to look up the authenticated user. Omit username and id when set. false behaves as if me was omitted."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_work_item",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Get a single work item (issue, epic, task, incident, objective, key result) with its type, dates, assignees, labels, milestone, and parent. Optionally include its notes, its discussions, or the merge requests related to it. Identify the work item by url, or by work_item_iid plus group_id or project_id. Widgets the work item type does not support are omitted.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the work item (a /-/work_items/, /-/issues/, or /-/epics/ URL). Provide this, or work_item_iid with group_id or project_id."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "ID or path of the group. Required if URL and project_id are not provided."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required if URL and group_id are not provided."
+          },
+          "work_item_iid": {
+            "type": "integer",
+            "description": "Internal ID of the work item. Required if url is not provided."
+          },
+          "include": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "notes",
+                "discussions",
+                "related_merge_requests"
+              ]
+            },
+            "maxItems": 1,
+            "description": "Associated data to return with the work item, one facet per call. notes returns up to 100 notes per call and paginates with the notes_* parameters; for the newest notes, use notes_last without notes_first or notes_after. discussions returns threads with their resolvable and resolved state and the notes of each thread, and paginates forward with the discussions_* parameters; use it for thread structure or unresolved threads. An unresolved thread has resolvable true and resolved false. Use notes for a flat chronological history. related_merge_requests paginates with the related_merge_requests_* parameters and is empty for group-level work items such as epics."
+          },
+          "notes_first": {
+            "type": "integer",
+            "description": "Number of notes to return after the cursor (forward pagination). Max 100. Applies only when notes is in include.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "notes_after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of notes. Use pageInfo.endCursor from a previous response. Applies only when notes is in include."
+          },
+          "notes_last": {
+            "type": "integer",
+            "description": "Number of notes to return before the cursor (backward pagination). Max 100. Applies only when notes is in include.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "notes_before": {
+            "type": "string",
+            "description": "Cursor for backward pagination of notes. Use pageInfo.startCursor from a previous response. Applies only when notes is in include."
+          },
+          "discussions_first": {
+            "type": "integer",
+            "description": "Number of discussions to return after the cursor (forward pagination). Max 100. Applies only when discussions is in include.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "discussions_after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of discussions. Use pageInfo.endCursor from a previous response. Applies only when discussions is in include."
+          },
+          "discussions_filter": {
+            "type": "string",
+            "enum": [
+              "all_notes",
+              "only_comments",
+              "only_activity"
+            ],
+            "description": "Which discussions to return: all_notes, only_comments to leave out system notes, or only_activity for system notes only. Applies only when discussions is in include."
+          },
+          "related_merge_requests_first": {
+            "type": "integer",
+            "description": "Number of related merge requests to return after the cursor (forward pagination). Max 100. Applies only when related_merge_requests is in include.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "related_merge_requests_after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of related merge requests. Use pageInfo.endCursor from a previous response. Applies only when related_merge_requests is in include."
+          },
+          "mr_page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "DEPRECATED: use related_merge_requests_first instead."
+          },
+          "mr_pagination_cursor": {
+            "type": "string",
+            "description": "DEPRECATED: use related_merge_requests_after instead."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_work_item_types",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List the work item types available in a namespace (group or project), including system-defined types (Issue, Epic, Task, etc.) and custom types. Each returned type includes its global ID, name, icon, and the widget types enabled on it so the agent can avoid setting fields the type does not support.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL for the namespace (project or group)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "ID or path of the group. Required if URL and project_id are not provided."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required if URL and group_id are not provided."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "link_work_items",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Link a work item to other work items with a relationship type (relates_to, blocks, blocked_by)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL for the source work item."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "ID or path of the group. Required if URL and project_id are not provided."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required if URL and group_id are not provided."
+          },
+          "work_item_iid": {
+            "type": "integer",
+            "description": "Internal ID of the source work item. Required if URL is not provided."
+          },
+          "work_items_ids": {
+            "type": "array",
+            "description": "Work items to link to: plain iids (resolved in the same project or group as the source) or global IDs (gid://gitlab/WorkItem/<id>) for work items in other projects or groups. Maximum 10 items.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "link_type": {
+            "type": "string",
+            "description": "Type of relationship between the work items. Defaults to \"relates_to\".",
+            "enum": [
+              "relates_to",
+              "blocks",
+              "blocked_by"
+            ],
+            "default": "relates_to"
+          }
+        },
+        "required": [
+          "work_items_ids"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "list_commits",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List commits in a GitLab project, filtered by ref, author, path, or date. Identify the project with exactly one of url or project_id. Returns compact commit metadata; use get_commit for a single commit's diff or notes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the project."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or full path of the project."
+          },
+          "ref_name": {
+            "type": "string",
+            "description": "Branch or tag to list commits from. Omit to use the default branch."
+          },
+          "author": {
+            "type": "string",
+            "description": "Filter by commit author name or email."
+          },
+          "path": {
+            "type": "string",
+            "description": "Only return commits that touch this file path."
+          },
+          "since": {
+            "type": "string",
+            "description": "Only return commits with a committed date after this ISO 8601 date or time."
+          },
+          "until": {
+            "type": "string",
+            "description": "Only return commits with a committed date before this ISO 8601 date or time."
+          },
+          "order": {
+            "type": "string",
+            "description": "Ordering strategy. Omit for reverse chronological order.",
+            "enum": [
+              "topo",
+              "date"
+            ]
+          },
+          "first_parent": {
+            "type": "boolean",
+            "description": "Follow only the first parent of merge commits."
+          },
+          "with_stats": {
+            "type": "boolean",
+            "description": "Include per-commit line-count stats (additions, deletions, files changed). Each commit costs a Gitaly call, so the page is capped at 10 when set."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for forward pagination. Use endCursor from the previous response."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Number of commits to return (forward pagination, max 100). A maximum of 10 applies when with_stats is set.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_groups",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List GitLab groups. Without group_id, lists top-level groups where you are a member. With group_id, lists the direct subgroups of that group, regardless of membership. Set include_subgroups to true to recurse into all descendant subgroups (with no group_id, this lists your groups at any depth). Archived groups and groups pending deletion are excluded. Useful for discovering group IDs and full paths for other tools.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "ID or full path of a parent group to list subgroups of. Omit to list top-level groups where you are a member."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search groups by name or full path."
+          },
+          "visibility": {
+            "type": "string",
+            "description": "Filter by visibility level.",
+            "enum": [
+              "private",
+              "internal",
+              "public"
+            ]
+          },
+          "include_subgroups": {
+            "type": "boolean",
+            "description": "Include all descendant subgroups recursively instead of direct children only."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Number of groups to return after the cursor (forward pagination). Max 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of groups. Use pageInfo.endCursor from a previous response."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_merge_requests",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List or search merge requests in a GitLab project or group by author, assignee, reviewer, state, milestone, labels, or text. Identify the project or group with exactly one of url, project_id, or group_id. Group results always include merge requests from subgroups. Returns compact merge request metadata; use get_merge_request for the full detail of a single merge request, or search for full-text search across resource types.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the project or group."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or full path of the project."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "ID or full path of the group. Includes merge requests from subgroups."
+          },
+          "author_username": {
+            "type": "string",
+            "description": "Filter by the username of the merge request author."
+          },
+          "assignee_username": {
+            "type": "string",
+            "description": "Filter by the username of an assignee."
+          },
+          "reviewer_username": {
+            "type": "string",
+            "description": "Filter by the username of a reviewer."
+          },
+          "state": {
+            "type": "string",
+            "description": "Filter by merge request state. Omit to include merge requests in any state.",
+            "enum": [
+              "opened",
+              "closed",
+              "merged",
+              "locked",
+              "all"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "description": "Filter relative to the authenticated user, for requests such as \"my merge requests\" or \"merge requests awaiting my review\". created_by_me sets author_username, assigned_to_me sets assignee_username, review_requested sets reviewer_username. An explicit username wins for that field.",
+            "enum": [
+              "created_by_me",
+              "assigned_to_me",
+              "review_requested"
+            ]
+          },
+          "milestone": {
+            "type": "string",
+            "description": "Filter by the title of the milestone."
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated list of label names. Only merge requests with all of these labels are returned."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search query matched against merge request title and description."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Number of merge requests to return after the cursor (forward pagination). Max 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of merge requests. Use pageInfo.endCursor from a previous response."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_projects",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List GitLab projects. Without group_id, defaults to projects you have at least guest access to; pass min_access_level to raise the threshold. With group_id, lists every project in that group and its subgroups regardless of access level; adding min_access_level or visibility narrows the listing to that group only, not its subgroups. When group_id is given, the response includes subgroupsIncluded so you know which case applied.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "ID or full path of a group."
+          },
+          "min_access_level": {
+            "type": "string",
+            "description": "Minimum access level a project must grant you to be included.",
+            "enum": [
+              "guest",
+              "planner",
+              "reporter",
+              "developer",
+              "maintainer",
+              "owner"
+            ]
+          },
+          "search": {
+            "type": "string",
+            "description": "Search projects by name, path, or description."
+          },
+          "visibility": {
+            "type": "string",
+            "description": "Filter by visibility level.",
+            "enum": [
+              "private",
+              "internal",
+              "public"
+            ]
+          },
+          "archived": {
+            "type": "string",
+            "description": "Filter by archived state: only returns archived projects, include returns both, exclude returns only non-archived projects (default).",
+            "enum": [
+              "only",
+              "include",
+              "exclude"
+            ]
+          },
+          "first": {
+            "type": "integer",
+            "description": "Number of projects to return after the cursor (forward pagination). Max 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of projects. Use pageInfo.endCursor from a previous response."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_repository_tree",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List files and directories in a GitLab repository at a given path and ref. Identify the project with exactly one of url or project_id. Returns entry metadata only, never file contents; use get_repository_file to read a file. Each call returns up to 100 entries; when pageInfo.hasNextPage is true, pass pageInfo.endCursor as after to fetch the next page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the project. Provide exactly one of url or project_id."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project ID or full path. Provide exactly one of url or project_id."
+          },
+          "path": {
+            "type": "string",
+            "description": "Path of the directory to list, relative to the repository root. Omit to list the root."
+          },
+          "ref": {
+            "type": "string",
+            "description": "Branch name, tag name, or commit SHA. Omit to use the default branch."
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "When true, lists entries of all subdirectories recursively."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of entries. Use pageInfo.endCursor from a previous response."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_project_members",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List the members of a GitLab project with their role and access level. Direct members only, unless include_inherited is true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "ID or full path of the project"
+          },
+          "include_inherited": {
+            "type": "boolean",
+            "description": "Include members inherited from parent groups."
+          },
+          "query": {
+            "type": "string",
+            "description": "Filter by name or username."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Number of members to return after the cursor (forward pagination). Max 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of members. Use metadata.end_cursor from a previous response."
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_work_items",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List or search work items (ISSUE, INCIDENT, TEST_CASE, REQUIREMENT, TASK, TICKET, OBJECTIVE, KEY_RESULT, EPIC) in a group or project. Filter by state, author, assignees, labels, milestone, dates, type, or free text. Group scope includes work items of descendant projects and subgroups. Each row carries only compact identifying fields: id, iid, title, state, web URL, reference, created and updated timestamps, and work item type. Use get_work_item for full details of one work item, including description, assignees, labels, and milestone.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL for the project or group."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "ID or path of the group. Required if URL and project_id are not provided."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required if URL and group_id are not provided."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "opened",
+              "closed",
+              "all"
+            ],
+            "description": "Filter by state. Default is all."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search in title and description."
+          },
+          "author_username": {
+            "type": "string",
+            "description": "Username of the author."
+          },
+          "assignee_usernames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Usernames of assignees. A work item must match all of them."
+          },
+          "label_name": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Label names. A work item must have all of them."
+          },
+          "milestone_title": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Milestone titles. Cannot be combined with milestone_wildcard_id."
+          },
+          "milestone_wildcard_id": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "ANY",
+              "STARTED",
+              "UPCOMING"
+            ],
+            "description": "Milestone wildcard. Cannot be combined with milestone_title."
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ISSUE",
+                "INCIDENT",
+                "TEST_CASE",
+                "REQUIREMENT",
+                "TASK",
+                "TICKET",
+                "OBJECTIVE",
+                "KEY_RESULT",
+                "EPIC"
+              ]
+            },
+            "description": "Work item types to include, for example [\"ISSUE\", \"TASK\"]."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Created after this time (ISO 8601; date-only means start of day, offsets honored)."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Created before this time (ISO 8601; date-only means start of day, offsets honored)."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Updated after this time (ISO 8601; date-only means start of day, offsets honored)."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Updated before this time (ISO 8601; date-only means start of day, offsets honored)."
+          },
+          "due_after": {
+            "type": "string",
+            "description": "Due after this time (ISO 8601; date-only means start of day, offsets honored)."
+          },
+          "due_before": {
+            "type": "string",
+            "description": "Due before this time (ISO 8601; date-only means start of day, offsets honored)."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "CLOSED_AT_ASC",
+              "CLOSED_AT_DESC",
+              "ESCALATION_STATUS_ASC",
+              "ESCALATION_STATUS_DESC",
+              "POPULARITY_ASC",
+              "POPULARITY_DESC",
+              "PRIORITY_ASC",
+              "PRIORITY_DESC",
+              "RELATIVE_POSITION_ASC",
+              "SEVERITY_ASC",
+              "SEVERITY_DESC",
+              "UPDATED_DESC",
+              "UPDATED_ASC",
+              "CREATED_DESC",
+              "CREATED_ASC",
+              "TITLE_ASC",
+              "TITLE_DESC"
+            ],
+            "description": "Sort order. Default is CREATED_DESC."
+          },
+          "first": {
+            "type": "integer",
+            "description": "Number of work items to return after the cursor (forward pagination). Max 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for forward pagination of work items. Use pageInfo.endCursor from a previous response."
+          },
+          "health_status_filter": {
+            "type": "string",
+            "enum": [
+              "onTrack",
+              "needsAttention",
+              "atRisk"
+            ],
+            "description": "Filter by health status."
+          },
+          "status": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Status name, for example \"In progress\"."
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false,
+            "description": "Filter by custom status."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "save_merge_request_review",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Write merge request review artifacts as the authenticated user. Exactly one method per call: create_note adds a top-level comment; reply_discussion replies within an existing discussion; create_diff_note comments on a specific diff line; resolve_discussion resolves or unresolves a discussion; submit_review posts multiple diff comments plus an optional summary in one call; post_duo_review asks GitLab Duo to review the merge request; approve records your approval (pass sha to avoid approving stale content); unapprove removes your approval. Identify the merge request by url, or by project_id and merge_request_iid. Each parameter below names the methods that use it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the merge request. Provide this, or project_id and merge_request_iid."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required if url is not provided."
+          },
+          "merge_request_iid": {
+            "type": "integer",
+            "description": "Internal ID of the merge request. Required if url is not provided."
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "create_note",
+              "reply_discussion",
+              "create_diff_note",
+              "resolve_discussion",
+              "submit_review",
+              "post_duo_review",
+              "approve",
+              "unapprove"
+            ],
+            "description": "The write operation to perform. Fill only the parameters listed for the chosen method; other parameters are rejected."
+          },
+          "body": {
+            "type": "string",
+            "description": "Note text (create_note, reply_discussion, create_diff_note; max 1048576 characters). Lines that begin with \"/\" are rejected to avoid triggering quick actions such as /merge.",
+            "maxLength": 1048576
+          },
+          "discussion_id": {
+            "type": "string",
+            "description": "Discussion to act on (reply_discussion, resolve_discussion). Accepts the global ID (gid://gitlab/Discussion/<id>) or the bare <id> returned by get_merge_request with include: [\"discussions\"]."
+          },
+          "internal": {
+            "type": "boolean",
+            "description": "Mark the note as internal, visible only to users who can see internal notes (create_note). Default is false."
+          },
+          "resolved": {
+            "type": "boolean",
+            "description": "true resolves the discussion, false unresolves it (resolve_discussion)."
+          },
+          "old_path": {
+            "type": "string",
+            "description": "File path before the change (create_diff_note). Provide old_path and/or new_path; for a file that was not renamed, use the same path for both."
+          },
+          "new_path": {
+            "type": "string",
+            "description": "File path after the change (create_diff_note)."
+          },
+          "old_line": {
+            "type": "integer",
+            "description": "Line number in the old version of the file (create_diff_note). Use for deleted or unchanged lines. Provide old_line and/or new_line."
+          },
+          "new_line": {
+            "type": "integer",
+            "description": "Line number in the new version of the file (create_diff_note). Use for added or unchanged lines."
+          },
+          "comments": {
+            "type": "array",
+            "description": "Diff comments to post (submit_review; 1-20 entries). Each entry becomes one diff note.",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "description": "Path of the file to comment on, as it appears after the change. For a file renamed in the diff, use the create_diff_note method with old_path and new_path instead."
+                },
+                "old_line": {
+                  "type": "integer",
+                  "description": "Line number in the old version of the file. Provide old_line and/or new_line."
+                },
+                "new_line": {
+                  "type": "integer",
+                  "description": "Line number in the new version of the file."
+                },
+                "body": {
+                  "type": "string",
+                  "description": "Comment text for this line."
+                },
+                "suggestion": {
+                  "type": "string",
+                  "description": "Replacement code for the commented line, appended to the comment as a suggestion block the author can apply with one click."
+                }
+              },
+              "required": [
+                "file",
+                "body"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "verdict": {
+            "type": "string",
+            "description": "Overall review verdict, prefixed to the summary note (submit_review)."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Summary note posted after the diff comments (submit_review). When both summary and verdict are omitted, only the diff comments are posted."
+          },
+          "summary_internal": {
+            "type": "boolean",
+            "description": "Mark the summary note as internal (submit_review). Default is false."
+          },
+          "sha": {
+            "type": "string",
+            "description": "Head SHA guard (approve). When given and it no longer matches the merge request head, the approval is refused. Pass the full 40-character diff_head_sha returned by get_merge_request."
+          }
+        },
+        "required": [
+          "method"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "save_note",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Add a comment to a GitLab merge request or work item, or reply to an existing discussion thread. Identify the target with url, or with merge_request_iid or work_item_iid plus its project_id or group_id",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of a merge request or work item, including issues and epics (.../-/merge_requests/<iid>, .../-/work_items/<iid>, .../-/issues/<iid>, or .../groups/<full_path>/-/epics/<iid>). Issue URLs are project-scoped; epic URLs are group-scoped and must include the groups/ prefix. The URL determines the target type, so no other identifier is needed"
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required with merge_request_iid, and with work_item_iid for project-level work items"
+          },
+          "group_id": {
+            "type": "string",
+            "description": "ID or path of the group. Required with work_item_iid for group-level work items"
+          },
+          "merge_request_iid": {
+            "type": "integer",
+            "description": "Internal ID of the merge request. Provide with project_id. Mutually exclusive with work_item_iid"
+          },
+          "work_item_iid": {
+            "type": "integer",
+            "description": "Internal ID of the work item. Provide with project_id or group_id. Mutually exclusive with merge_request_iid"
+          },
+          "body": {
+            "type": "string",
+            "description": "Content of the note/comment (max 1048576 characters). Lines beginning with \"/\" are rejected to avoid triggering quick actions such as /merge",
+            "maxLength": 1048576
+          },
+          "internal": {
+            "type": "boolean",
+            "description": "Mark note as internal (visible only to members with at least the Reporter role)",
+            "default": false
+          },
+          "discussion_id": {
+            "type": "string",
+            "description": "Global ID of the discussion to reply to (format: gid://gitlab/Discussion/<id>). If omitted, creates a new top-level note"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "save_pipeline",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Run, retry, cancel, or rename a CI/CD pipeline in a GitLab project. Omit pipeline_id and pass ref to run a new pipeline, and identify the project with exactly one of url or project_id. Pass pipeline_id with action to retry, cancel, or update an existing pipeline; update renames it and requires name.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL of the project. Used only when creating a pipeline."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or full path of the project. Used only when creating a pipeline."
+          },
+          "pipeline_id": {
+            "type": "integer",
+            "description": "ID of an existing pipeline to target. When set, requires action. Omit to create a new pipeline."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "retry",
+              "cancel",
+              "update"
+            ],
+            "description": "Lifecycle action to perform on pipeline_id. Required when pipeline_id is set."
+          },
+          "ref": {
+            "type": "string",
+            "description": "Branch or tag name. Required to create a pipeline (when pipeline_id is absent)."
+          },
+          "name": {
+            "type": "string",
+            "description": "New pipeline name. Required for action: \"update\"."
+          },
+          "variables": {
+            "type": "array",
+            "description": "Pipeline variables to create the pipeline with.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "Name of the variable."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value of the variable."
+                },
+                "variable_type": {
+                  "type": "string",
+                  "enum": [
+                    "env_var",
+                    "file"
+                  ],
+                  "description": "Type of the variable. Defaults to env_var."
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ]
+            }
+          },
+          "inputs": {
+            "type": "object",
+            "description": "Pipeline input parameters as key-value pairs."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "save_work_item",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Create or update a GitLab work item, such as an issue, task, or epic.\nOmit work_item_iid to create a new work item; provide work_item_iid or a\nwork item URL to update an existing one. Send only the fields you intend\nto set, and omit the rest.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "GitLab URL for the project, group, or work item. Provide exactly one of url, project_id, or group_id."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "ID or path of the group. Required if URL and project_id are not provided."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "ID or path of the project. Required if URL and group_id are not provided."
+          },
+          "work_item_iid": {
+            "type": "integer",
+            "description": "Positive internal ID of the work item to update. Omit to create a new work item."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title. Required on create."
+          },
+          "type_name": {
+            "type": "string",
+            "description": "Work item type name, for example \"Issue\", \"Task\", \"Epic\". Required on create. Valid types depend on the namespace and license; invalid values return the list of valid ones."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description in GitLab Flavored Markdown (max 1048576 characters). Lines beginning with \"/\" are rejected to avoid triggering quick actions. Use add_labels, assignee_ids, and the other fields instead.",
+            "maxLength": 1048576
+          },
+          "assignee_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "description": "User IDs to assign to the work item."
+          },
+          "label_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Label IDs or global IDs. Create only; on update use add_label_ids/remove_label_ids."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Names of the labels to set, resolved in the project or group and its ancestor groups. Create only; on update use add_labels/remove_labels."
+          },
+          "add_label_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Update only. Label IDs or global IDs to add."
+          },
+          "add_labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Update only. Names of the labels to add."
+          },
+          "remove_label_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Update only. Label IDs or global IDs to remove."
+          },
+          "remove_labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Update only. Names of the labels to remove."
+          },
+          "milestone_id": {
+            "type": "string",
+            "description": "ID or global ID of the milestone to assign, validated against the project or group and its ancestor groups. Wins over milestone when both are given."
+          },
+          "milestone": {
+            "type": "string",
+            "description": "Title of the milestone to assign, resolved among the milestones of the project or group and its ancestor groups."
+          },
+          "confidential": {
+            "type": "boolean",
+            "description": "Sets the work item confidentiality."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "opened",
+              "closed"
+            ],
+            "description": "Update only. closed closes the work item, opened reopens it."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Global ID or numeric ID of the parent work item (hierarchy)."
+          },
+          "todo_action": {
+            "type": "string",
+            "enum": [
+              "add",
+              "mark_as_done"
+            ],
+            "description": "Update only. add adds a to-do for the current user, mark_as_done marks to-dos as done."
+          },
+          "todo_id": {
+            "type": "string",
+            "description": "Update only. Global ID or numeric ID of the to-do; omit to update all to-dos on the work item."
+          },
+          "health_status": {
+            "type": "string",
+            "enum": [
+              "onTrack",
+              "needsAttention",
+              "atRisk"
+            ],
+            "description": "Health status of the work item."
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Weight of the work item."
+          },
+          "clear_weight": {
+            "type": "boolean",
+            "description": "Update only. Removes the weight; wins over weight."
+          },
+          "status_id": {
+            "type": "string",
+            "description": "Global ID of the status to set."
+          },
+          "is_fixed": {
+            "type": "boolean",
+            "description": "Whether start and due dates are fixed. When false, dates roll up from child items and start_date/due_date are ignored."
+          },
+          "agent_plan": {
+            "type": "string",
+            "description": "Markdown content of the agent plan. Requires the workplan feature."
+          },
+          "readiness_score": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Readiness score of the agent plan (0-100). Requires the workplan_score feature flag. Omit to leave the existing score unchanged."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "search_labels",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Search labels in a GitLab project or group by multiple terms",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "full_path": {
+            "type": "string",
+            "description": "Full path of the project or group. Required."
+          },
+          "is_project": {
+            "type": "boolean",
+            "description": "Whether to search in a project (true) or group (false). Required."
+          },
+          "search": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "maxItems": 10
+              }
+            ],
+            "description": "Search term, or up to 10 terms, to filter labels by title. Omit to list labels."
+          }
+        },
+        "required": [
+          "full_path",
+          "is_project"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fork_repository",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Create a fork of a project",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID or URL-encoded path of the project."
+          },
+          "namespace_id": {
+            "type": "integer",
+            "description": "ID of the namespace to fork the new project into."
+          },
+          "namespace_path": {
+            "type": "string",
+            "description": "Path of the namespace to fork the new project into."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name assigned to the new project after forking."
+          },
+          "path": {
+            "type": "string",
+            "description": "Path assigned to the new project after forking."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description assigned to the new project after forking."
+          },
+          "visibility": {
+            "type": "string",
+            "description": "[Visibility level](https://docs.gitlab.com/api/projects/#project-visibility-level) assigned to the new project after forking.",
+            "enum": [
+              "private",
+              "internal",
+              "public"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "list_pipelines",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List all project pipelines",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID or URL-encoded path of the project."
+          },
+          "ref": {
+            "type": "string",
+            "description": "Return pipelines for the specified branch or tag."
+          },
+          "status": {
+            "type": "string",
+            "description": "Return pipelines with the specified status.",
+            "enum": [
+              "created",
+              "waiting_for_resource",
+              "preparing",
+              "waiting_for_callback",
+              "pending",
+              "running",
+              "success",
+              "failed",
+              "canceling",
+              "canceled",
+              "skipped",
+              "manual",
+              "scheduled"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "description": "The source of pipelines",
+            "enum": [
+              "unknown",
+              "push",
+              "web",
+              "trigger",
+              "schedule",
+              "api",
+              "external",
+              "pipeline",
+              "chat",
+              "webide",
+              "merge_request_event",
+              "external_pull_request_event",
+              "parent_pipeline",
+              "ondemand_dast_scan",
+              "ondemand_dast_validation",
+              "security_orchestration_policy",
+              "container_registry_push",
+              "duo_workflow",
+              "pipeline_execution_policy_schedule",
+              "dependency_management_security_update"
+            ]
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Return pipelines created after the specified time."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Return pipelines created before the specified time."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort results by the specified field.",
+            "enum": [
+              "id",
+              "status",
+              "ref",
+              "updated_at",
+              "user_id"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort results in ascending or descending order.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of results to retrieve."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Number of items to list per page."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_branches",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "List all repository branches",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID or URL-encoded path of the project."
+          },
+          "search": {
+            "type": "string",
+            "description": "Return branches containing the search string. Use `^term` to find branches that begin with `term`, and `term$` to find branches that end with `term`."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number of results to retrieve."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Number of items to list per page."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_search",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Semantic (meaning-based) search over different types of content.\n\nSearches indexed project content using embedding-based similarity rather than\nkeyword matching. Use this when you do not know the exact symbol or file name,\nor to discover how a behavior is implemented across the codebase.\n\nPrimary use cases:\n- When you do not know the exact symbol or file path\n- To see how a behavior or feature is implemented across the codebase\n- To discover related implementations (clients, jobs, workers)\n\nHow to use:\n- Provide a concise, specific query with concrete keywords\n- Use directory_path to narrow scope when scope is \"code\"\n- Prefer precise intent over broad terms\n\nResults are grouped by file. Each file includes merged line ranges with content\nand a relevance score (0.0-1.0). The response includes an overall confidence\nlevel (high/medium/low/unknown) based on score distribution.\n\nRequires semantic search to be enabled and indexed for the project namespace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "code"
+            ],
+            "description": "Specify the type of content to search for. Supported values:  - 'code' - search code files."
+          },
+          "q": {
+            "type": "string",
+            "description": "Natural language search query"
+          },
+          "project_id": {
+            "type": "string",
+            "description": "The ID or full path of the project"
+          },
+          "directory_path": {
+            "type": "string",
+            "description": "Restrict search to files under this directory path. Must be a relative path - no leading slash, no .. segments. Applies to scope \"code\" only."
+          },
+          "knn": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Number of nearest neighbours to retrieve internally (default: 64). Higher values improve recall at the cost of latency. Applies to scope \"code\" only."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Maximum number of results to return (default: 20). Applies to scope \"code\" only."
+          }
+        },
+        "required": [
+          "scope",
+          "q",
+          "project_id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "search",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Search across GitLab with automatic selection of the best available search method.\n\n**Capabilities:** basic (keywords, file filters), advanced (boolean operators), exact code (exact match, regex, symbols)\n\n**Syntax Examples:**\n- Basic: \"bug fix\", \"filename:*.rb\", \"extension:js\"\n- Advanced: \"bug AND critical\", \"display | banner\", \"#23456\"\n- Exact code: \"class User\", \"foo lang:ruby\", \"sym:initialize\"",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "projects",
+              "groups",
+              "work_items",
+              "merge_requests",
+              "notes",
+              "milestones",
+              "users",
+              "snippet_titles",
+              "blobs",
+              "wiki_blobs",
+              "commits"
+            ],
+            "description": "Specify the type of content to search for. Available content types vary by search context:\n\n- GitLab instance: projects, groups, work_items, merge_requests, notes, milestones, users, snippet_titles\n- Group: projects, groups, blobs, work_items, merge_requests, wiki_blobs, commits, notes, milestones, users\n- Project: blobs, work_items, merge_requests, wiki_blobs, commits, notes, milestones, users\n\nExamples:\n- Use \"work_items\" to search for issues, tasks, epics, and other work items\n- Use \"merge_requests\" to search for merge requests\n- Use \"blobs\" to search code files\n- Use \"notes\" to search comments across different content\n- Use \"commits\" to search commit messages"
+          },
+          "search": {
+            "type": "string",
+            "description": "The term to search for"
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Provide to search within a group. The ID or full path of the group"
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Provide to search within a project. The ID or full path of the project"
+          },
+          "state": {
+            "type": "string",
+            "description": "Filter results by state. Available states:\n- Work items: opened, closed\n- Merge requests: opened, closed, merged, locked\n\nOnly applies to work_items and merge_requests scopes."
+          },
+          "confidential": {
+            "type": "boolean",
+            "description": "Filter results by confidentiality. Available for work_items scope; other scopes are ignored."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Specify how to order search results.\n- Allowed values: created_at only\n- Default behavior:\n  * Basic search: sorted by created_at descending\n  * Advanced search: sorted by relevance"
+          },
+          "sort": {
+            "type": "string",
+            "description": "Specify the sort direction for results. Works with order_by parameter\n- Allowed values: asc, desc\n- Default: desc"
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Number of items to list per page. (default: 20)",
+            "minimum": 1
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number to retrieve. (default: 1)",
+            "minimum": 1
+          },
+          "regex": {
+            "type": "boolean",
+            "description": "Performs a regex code search. Available for blobs scope; other scopes are ignored."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Specify which fields to search within. Currently supported:\n- Allowed values: title only\n- Applicable scopes: work_items, merge_requests"
+          },
+          "type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter work items by type. Only applies to work_items scope.\nAvailable types: issue, task, epic, incident, test_case, requirement, objective, key_result, ticket"
+          }
+        },
+        "required": [
+          "scope",
+          "search"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "save_merge_request",
+      "icons": [
+        {
+          "src": "https://gitlab.com/assets/gitlab_logo-2957169c8ef64c58616a1ac3f4fc626e8a35ce4eb3ed31bb0d873712f2a041a0.png",
+          "mimeType": "image/png",
+          "theme": "dark"
+        }
+      ],
+      "description": "Create or update a merge request in a GitLab project.\n\nmerge_request_iid alone decides the operation. Omitting it always creates a new\nmerge request; provide it to update an existing one.\n- Create: omit merge_request_iid. title, source_branch, and target_branch are required.\n- Update: provide merge_request_iid.\n\nUse state_event (close or reopen) to change an existing merge request's state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "ID or full path of the project."
+          },
+          "merge_request_iid": {
+            "type": "integer",
+            "description": "Internal ID of the merge request. Provide to update an existing merge request; omit to create a new one."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the merge request. Required when creating."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the merge request."
+          },
+          "source_branch": {
+            "type": "string",
+            "description": "Source branch. Required when creating."
+          },
+          "target_branch": {
+            "type": "string",
+            "description": "Target branch. Required when creating."
+          },
+          "target_project_id": {
+            "type": "integer",
+            "description": "Target project ID. Defaults to the source project. Applies when creating."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label names. Replaces all existing labels."
+          },
+          "add_labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label names to add. Applies when updating."
+          },
+          "remove_labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label names to remove. Applies when updating."
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Usernames to assign. Alternative to assignee_ids; provide one. Pass an empty array to remove all assignees."
+          },
+          "assignee_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "User IDs to assign. Alternative to assignees; provide one."
+          },
+          "reviewers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Usernames to request review from. Alternative to reviewer_ids; provide one. Pass an empty array to remove all reviewers."
+          },
+          "reviewer_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "User IDs to request review from. Alternative to reviewers; provide one."
+          },
+          "milestone_id": {
+            "type": "integer",
+            "description": "Milestone ID to assign."
+          },
+          "milestone": {
+            "type": "string",
+            "description": "Title of a project or ancestor-group milestone to assign. Mutually exclusive with milestone_id."
+          },
+          "remove_source_branch": {
+            "type": "boolean",
+            "description": "Remove the source branch when the merge request is merged."
+          },
+          "squash": {
+            "type": "boolean",
+            "description": "Squash commits into a single commit when merging."
+          },
+          "state_event": {
+            "type": "string",
+            "enum": [
+              "close",
+              "reopen"
+            ],
+            "description": "State transition to perform. Applies when updating."
+          },
+          "discussion_locked": {
+            "type": "boolean",
+            "description": "Lock the merge request discussion. Applies when updating."
+          },
+          "allow_collaboration": {
+            "type": "boolean",
+            "description": "Allow commits from members who can merge to the target branch. Applies when updating."
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    }
+  ]
+}
