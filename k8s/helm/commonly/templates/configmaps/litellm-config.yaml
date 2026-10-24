@@ -418,7 +418,10 @@ data:
       # accounts immediately (instead of waiting for its next scheduled tick).
       # The callback module is installed at /tmp/callbacks/rate_limit_signal.py by
       # the container startup script; PYTHONPATH is set accordingly.
-      callbacks: rate_limit_signal.proxy_handler_instance
+      # deepseek_tool_shim flattens codex's namespace tools into plain function
+      # tools for the deepseek-flash-1017 group only, which DeepSeek requires;
+      # source in files/litellm/deepseek_tool_shim.py, mounted from this ConfigMap.
+      callbacks: ["rate_limit_signal.proxy_handler_instance", "deepseek_tool_shim.proxy_handler_instance"]
 
     guardrails:
       # Anti-pattern content guardrails for the public-launch exposure. Both are
@@ -481,4 +484,11 @@ data:
       # row is large; a 7-day window is plenty for dev debugging.
       maximum_spend_logs_retention_period: "7d"
       maximum_spend_logs_retention_interval: "6h"
+  # Mounted at /app/, next to config.yaml (see the callbacks list above).
+  # deepseek_tool_shim.py is the callback and loads the core inside a try, so a
+  # broken core refuses only the deepseek group instead of stopping the proxy.
+  deepseek_tool_shim.py: |
+    {{- .Files.Get "files/litellm/deepseek_tool_shim.py" | nindent 4 }}
+  deepseek_tool_shim_core.py: |
+    {{- .Files.Get "files/litellm/deepseek_tool_shim_core.py" | nindent 4 }}
 {{- end }}

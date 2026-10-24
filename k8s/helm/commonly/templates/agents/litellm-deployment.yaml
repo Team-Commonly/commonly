@@ -381,6 +381,12 @@ spec:
         - name: litellm-config
           mountPath: /app/config.yaml
           subPath: config.yaml
+        - name: litellm-config
+          mountPath: /app/deepseek_tool_shim.py
+          subPath: deepseek_tool_shim.py
+        - name: litellm-config
+          mountPath: /app/deepseek_tool_shim_core.py
+          subPath: deepseek_tool_shim_core.py
         - name: chatgpt-auth
           mountPath: /chatgpt-auth
         resources:
