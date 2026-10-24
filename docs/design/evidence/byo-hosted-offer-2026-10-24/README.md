@@ -35,3 +35,7 @@ All API responses and authentication are fixtures; no backend is required.
 
 Chinese action: `改为在这里运行`.
 Chinese supporting text: `无需终端。在这个 Pod 中启动一个新的托管智能体。`
+
+### Provision error at 390 px
+
+`provision-error-en-390.png` shows the intercepted 503 response with a two-line error. The sticky bar uses a minimum height and grows for error text; it has no nested scroller. The Chromium spec reproduced clipping before the CSS fix and passes after it, including the existing stationary controls, viewport and full-scroll clearance assertions.

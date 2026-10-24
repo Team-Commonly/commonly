@@ -5986,7 +5986,7 @@ body.modern-ui.v2-canvas {
   bottom: 0;
   z-index: 5;
   box-sizing: border-box;
-  height: var(--v2-byo-offer-height);
+  min-height: var(--v2-byo-offer-height);
   margin-top: calc(-1 * var(--v2-byo-offer-height));
   padding: 12px 24px;
   display: grid;
@@ -5994,7 +5994,6 @@ body.modern-ui.v2-canvas {
   align-items: center;
   align-content: center;
   gap: 8px 16px;
-  overflow: auto;
   border-top: 1px solid var(--v2-border);
   background: var(--v2-surface);
 }

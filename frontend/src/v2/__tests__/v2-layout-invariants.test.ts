@@ -4944,6 +4944,9 @@ test('TASK-482 sticky bar overlays reserved space with a top border and no shado
   const bar = ruleBody(css, '.v2-byo__hosted-offer');
   expect(bar).toContain('position: sticky');
   expect(bar).toContain('bottom: 0');
+  expect(bar).toContain('min-height: var(--v2-byo-offer-height)');
+  expect(bar).not.toMatch(/(?:^|[;\s])height:/);
+  expect(bar).not.toContain('overflow:');
   expect(bar).toContain('margin-top: calc(-1 * var(--v2-byo-offer-height))');
   expect(bar).toContain('border-top: 1px solid var(--v2-border)');
   expect(bar).toContain('background: var(--v2-surface)');

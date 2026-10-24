@@ -83,5 +83,25 @@ for (const width of [1440, 390]) {
       contentType: 'application/json',
     });
 
+    if (width === 390) {
+      const provisionError = 'The hosted service could not start this agent. Please try again in a few minutes.';
+      await page.route('**/api/registry/agents/next-free-name?*', (route) => route.fulfill({ json: { name: 'alex-hosted-agent' } }));
+      await page.route('**/api/hosted/provision', (route) => route.fulfill({ status: 503, json: { error: provisionError } }));
+      await bar.getByRole('button', { name: 'Run it here instead', exact: true }).click();
+      const error = bar.locator('.v2-byo__error');
+      await expect(error).toHaveText(provisionError);
+      await expect(error).toBeInViewport({ ratio: 1 });
+      const errorGeometry = await error.evaluate((el) => ({
+        height: el.getBoundingClientRect().height,
+        lineHeight: parseFloat(getComputedStyle(el).lineHeight),
+      }));
+      expect(errorGeometry.height).toBeGreaterThanOrEqual(errorGeometry.lineHeight * 2);
+      expect(await bar.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+      expect(await bar.evaluate((el) => getComputedStyle(el).overflowY)).toBe('visible');
+      await testInfo.attach('phone-two-line-provision-error', { body: await page.screenshot({ path: testInfo.outputPath('phone-two-line-provision-error.png') }), contentType: 'image/png' });
+      await expect(bar).toBeInViewport({ ratio: 1 });
+      await expect(bar.getByRole('button', { name: 'Run it here instead', exact: true })).toBeInViewport({ ratio: 1 });
+    }
+
   });
 }
