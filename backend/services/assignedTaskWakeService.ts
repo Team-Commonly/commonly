@@ -98,6 +98,21 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
     if (last?.status !== 'acked' || !last.delivery?.updatedAt
       || !(['posted', 'acknowledged'].includes(outcome || '')
         || (outcome === 'no_action' && !last.delivery.reason))) continue;
+    // Older webhook writers dropped skip reasons. Their reasonless silent
+    // results remain ambiguous until a newly recorded completion arrives.
+    const reasonRecorded = (last.delivery.details as { webhookReasonRecorded?: boolean } | undefined)
+      ?.webhookReasonRecorded === true;
+    if (outcome === 'no_action' && !reasonRecorded) {
+      // eslint-disable-next-line no-await-in-loop
+      const webhook = await AgentInstallation.exists({
+        agentName: install.agentName, instanceId: install.instanceId,
+        $or: [
+          { 'config.runtime.webhookUrl': { $type: 'string', $ne: '' } },
+          { 'config.runtime.runtimeType': 'webhook' },
+        ],
+      });
+      if (webhook) continue;
+    }
     const dueAt = new Date(new Date(last.delivery.updatedAt).getTime() + DELAY_MS);
     if (dueAt > now) continue;
     // eslint-disable-next-line no-await-in-loop

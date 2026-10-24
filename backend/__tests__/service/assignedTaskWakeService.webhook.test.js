@@ -50,3 +50,24 @@ it.each([
   expect(Boolean(continuation)).toBe(Boolean(expected));
   if (continuation) await awaitAck(continuation._id);
 });
+
+it('does not trust an already-stored ambiguous webhook completion', async () => {
+  const podId = new mongoose.Types.ObjectId();
+  const user = await User.create({
+    username: 'legacy-webhook', email: 'legacy-webhook@example.test', password: 'test-password',
+    isBot: true, botType: 'agent', botMetadata: { agentName: 'codex', instanceId: 'forge' },
+  });
+  await AgentInstallation.create({
+    agentName: 'codex', instanceId: 'forge', podId, version: '1', installedBy: user._id,
+    config: { runtime: { webhookUrl: 'https://example.test/events' } }, status: 'active',
+  });
+  await Task.create({ podId, taskNum: 1, taskId: 'TASK-1', title: 'Assigned work', assignee: 'forge' });
+  const completedAt = new Date(Date.now() - 6 * 60000);
+  await AgentEvent.collection.insertOne({
+    agentName: 'codex', instanceId: 'forge', podId, type: 'chat.mention', status: 'acked',
+    delivery: { outcome: 'no_action', updatedAt: completedAt },
+    createdAt: completedAt, updatedAt: completedAt,
+  });
+  expect((await dispatchAssignedTaskWakes()).woken).toBe(0);
+  expect(await AgentEvent.countDocuments({ 'payload.assignedTaskWake': true })).toBe(0);
+});

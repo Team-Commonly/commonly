@@ -165,7 +165,15 @@ it('releases a failed preflight slot and continues to the next seat', async () =
   await AgentInstallation.create({ agentName: 'codex', instanceId: 'other', podId, version: '1', installedBy: other._id });
   await Task.create({ podId, taskNum: 2, taskId: 'TASK-2', title: 'Other seat', assignee: 'other' });
   await completed({ instanceId: 'other' });
-  const exists = jest.spyOn(AgentInstallation, 'exists').mockRejectedValueOnce(new Error('preflight unavailable'));
+  const originalExists = AgentInstallation.exists.bind(AgentInstallation);
+  let failed = false;
+  const exists = jest.spyOn(AgentInstallation, 'exists').mockImplementation((query) => {
+    if (query.status === 'active' && !failed) {
+      failed = true;
+      return Promise.reject(new Error('preflight unavailable'));
+    }
+    return originalExists(query);
+  });
   const log = jest.spyOn(console, 'error').mockImplementation(() => {});
   try {
     expect((await dispatchAssignedTaskWakes(NOW)).woken).toBe(1);
