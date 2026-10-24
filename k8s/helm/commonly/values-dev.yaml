@@ -337,13 +337,9 @@ cloudflared:
 
 litellm:
   enabled: true
-  # v1.106.2 includes spend-log tool-index retention and the headless
-  # device-login guard. Both replaced Commonly boot-time source patches.
-  # Keep this override pinned until the ChatGPT Responses input fix in
-  # BerriAI/litellm#48153 is released; the remaining patch is in the chart.
-  image:
-    repository: ghcr.io/berriai/litellm
-    tag: v1.106.2
+  # The base image pin must match the shared boot script. v1.106.2 includes
+  # spend-log tool-index retention and the headless device-login guard;
+  # BerriAI/litellm#48153 tracks the remaining ChatGPT Responses input patch.
   # BerriAI/litellm#25429 workaround used to live here. Now off — acpx is
   # being deprecated in commonly (see ADR-005 Stage 3) and we'd rather route
   # everything through LiteLLM than chase an upstream bug for a code path

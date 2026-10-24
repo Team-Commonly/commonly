@@ -572,7 +572,8 @@ litellm:
       # storageClass defaults to the cluster's default StorageClass.
   image:
     repository: ghcr.io/berriai/litellm
-    tag: v1.82.3-stable
+    # The shared boot script targets this image's ChatGPT Responses transform.
+    tag: v1.106.2
   port: 4000
   resources:
     requests:

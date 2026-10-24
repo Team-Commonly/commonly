@@ -12,6 +12,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const yaml = require('js-yaml');
 
 const root = path.resolve(__dirname, '..');
 const chart = process.env.LITELLM_CHART || path.join(root, 'k8s/helm/commonly/templates/agents/litellm-deployment.yaml');
@@ -99,6 +100,17 @@ function main() {
   const src = runner();
   const p = patchInfo(src);
   assert(p.name === 'responses-input', `unexpected local patch: ${p.name}`);
+
+  check('base and dev chart use the canaried LiteLLM image', () => {
+    // Helm accepts the existing duplicate keys in these values files.
+    const base = yaml.load(fs.readFileSync(path.join(root, 'k8s/helm/commonly/values.yaml'), 'utf8'), { json: true });
+    const dev = yaml.load(fs.readFileSync(path.join(root, 'k8s/helm/commonly/values-dev.yaml'), 'utf8'), { json: true });
+    const expectedTag = 'v1.106.2'; // Reverify the boot patch before moving this pin.
+    assert(base.litellm.image.repository === 'ghcr.io/berriai/litellm'
+      && base.litellm.image.tag === expectedTag, 'base chart selects an untested LiteLLM image');
+    assert(!dev.litellm.image || (dev.litellm.image.repository === base.litellm.image.repository
+      && dev.litellm.image.tag === expectedTag), 'dev chart overrides the tested LiteLLM image');
+  });
 
   check('proxy copy receives and verifies the patch', () => fixture((f) => {
     seed(f, p);
