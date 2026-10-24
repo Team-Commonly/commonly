@@ -160,6 +160,138 @@ export function mirrorContentFromSections(
   return sections?.long_term?.content ?? '';
 }
 
+export interface AppendLongTermMemoryArgs {
+  agentName: string;
+  instanceId: string;
+  content: string;
+  now?: Date;
+}
+
+/**
+ * Append one native memory note without a read-modify-write race.
+ *
+ * Native writes and the runtime memory API address the same AgentMemory
+ * document. A client-side read followed by `$set` lets two writers observe
+ * the same prefix and makes whichever update arrives last erase the other
+ * note. The aggregation update below computes the prefix from Mongo's current
+ * document while taking the document lock, so overlapping appends serialize
+ * and both `content` (v1) and `sections.long_term` (v2) receive the same
+ * result.
+ */
+export async function appendLongTermMemory(
+  args: AppendLongTermMemoryArgs,
+): Promise<boolean> {
+  const { agentName, instanceId, now = new Date() } = args;
+  const content = typeof args.content === 'string' ? args.content.trim() : '';
+  if (!agentName || !instanceId || !content) return false;
+
+  const note = `[${now.toISOString()}] ${content}`;
+  const priorContent = {
+    $cond: [
+      { $eq: [{ $type: '$sections.long_term.content' }, 'string'] },
+      '$sections.long_term.content',
+      { $ifNull: ['$content', ''] },
+    ],
+  };
+  const withPrior = (expression: unknown) => ({
+    $let: { vars: { prior: priorContent }, in: expression },
+  });
+  const nextContent = withPrior({
+    $concat: [
+      '$$prior',
+      { $cond: [{ $gt: [{ $strLenBytes: '$$prior' }, 0] }, '\n\n', ''] },
+      note,
+    ],
+  });
+  const historyEntry = {
+    $mergeObjects: [
+      { content: '$$prior', replacedAt: now },
+      {
+        $cond: [
+          { $eq: [{ $type: '$sections.long_term.source' }, 'missing'] },
+          {},
+          { source: '$sections.long_term.source' },
+        ],
+      },
+    ],
+  };
+  const history = withPrior({
+    $cond: [
+      { $gt: [{ $strLenBytes: '$$prior' }, 0] },
+      {
+        history: {
+          $slice: [
+            {
+              $concatArrays: [
+                [historyEntry],
+                { $ifNull: ['$sections.long_term.history', []] },
+              ],
+            },
+            MEMORY_HISTORY_CAP,
+          ],
+        },
+      },
+      {
+        $cond: [
+          { $eq: [{ $type: '$sections.long_term.history' }, 'missing'] },
+          {},
+          { history: '$sections.long_term.history' },
+        ],
+      },
+    ],
+  });
+
+  await AgentMemory.findOneAndUpdate(
+    { agentName, instanceId },
+    [
+      {
+        $set: {
+          agentName: { $ifNull: ['$agentName', agentName] },
+          instanceId: { $ifNull: ['$instanceId', instanceId] },
+          content: nextContent,
+          sourceRuntime: 'native',
+          schemaVersion: 2,
+          lastSyncKey: '$$REMOVE',
+          lastSyncAt: '$$REMOVE',
+          'sections.long_term': withPrior({
+            $mergeObjects: [
+              {
+                content: {
+                  $concat: [
+                    '$$prior',
+                    { $cond: [{ $gt: [{ $strLenBytes: '$$prior' }, 0] }, '\n\n', ''] },
+                    note,
+                  ],
+                },
+                visibility: 'private',
+                updatedAt: now,
+                byteSize: {
+                  $strLenBytes: {
+                    $concat: [
+                      '$$prior',
+                      { $cond: [{ $gt: [{ $strLenBytes: '$$prior' }, 0] }, '\n\n', ''] },
+                      note,
+                    ],
+                  },
+                },
+                source: {
+                  runtime: 'native',
+                  via: 'native-tool',
+                  writtenAt: now,
+                },
+              },
+              history,
+            ],
+          }),
+        },
+      },
+    ] as any,
+    { upsert: true, new: true },
+  );
+
+  return true;
+}
+
 // Server-stamp metadata the caller shouldn't be trusted to compute: `byteSize`
 // (derived from `content`) and `updatedAt` (now). Callers supply `content` +
 // `visibility`; everything else is enforced server-side. Only stamps the

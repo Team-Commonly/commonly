@@ -11,7 +11,7 @@
  *    within 30 minutes, reaches exactly that agent as one chat.mention carrying
  *    the replies-to-you frame;
  *  - a second person, an older or human or system previous message, a thread
- *    reply, or a DM-shaped pod: nothing;
+ *    reply, or a DM-shaped pod: no adjacency address;
  *  - an @mention or a reply edge is addressing already, and adjacency adds
  *    nothing on top;
  *  - a wake-on agent already hears every message, so it is not delivered twice;
@@ -162,7 +162,7 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
   test('a second person in the room: nothing, because the line may be for them', async () => {
     setup({ members: [OWNER, SECOND_HUMAN, SEAT_A_BOT] });
     const res = await send('what do you both think?');
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(calls('chat.mention')).toHaveLength(0);
     expect(res.implicit).toEqual([]);
   });
 
@@ -197,11 +197,10 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
   ])('a previous message that is %s: nothing', async (_label, previous) => {
     setup({ previous });
     await send('hello?');
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(calls('chat.mention')).toHaveLength(0);
     // Each of these is refused from the previous row alone: the only User
     // lookup is the sender's own, never the previous author's.
     expect(User.findById).toHaveBeenCalledTimes(1);
-    expect(Pod.findById).not.toHaveBeenCalled();
   });
 
   test('a previous message by a person whose row carries agent metadata: nothing, isBot decides', async () => {
@@ -210,20 +209,19 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
       previous: { user_id: PERSON_WITH_STALE_BOT_METADATA, created_at: new Date(NOW.getTime() - 5000), message_type: 'text' },
     });
     await send('hello?');
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
-    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(calls('chat.mention')).toHaveLength(0);
   });
 
   test('a previous message from an agent no longer installed here: nothing', async () => {
     setup({ installations: [install('other-seat')] });
     await send('hello?');
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(calls('chat.mention')).toHaveLength(0);
   });
 
   test('a thread reply is not adjacent to the room', async () => {
     setup();
     await send('in the thread', { message: { thread_root_id: 79400 } });
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(calls('chat.mention')).toHaveLength(0);
     expect(PGMessage.findPreviousTopLevel).not.toHaveBeenCalled();
   });
 

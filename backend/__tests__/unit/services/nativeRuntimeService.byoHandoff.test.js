@@ -72,7 +72,7 @@ describe('commonly_offer_local_agent', () => {
 
   test('posts one exact, token-free handoff card and suppresses model prose', async () => {
     axios.post
-      .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'opencode', os: 'mac' }))
+      .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'opencode', os: 'mac', memoryFrom: 'victim', memoryInstance: 'victim' }))
       .mockResolvedValueOnce(says('Run the commands in the card above.'));
 
     const result = await runAgent(install, ask);
@@ -84,6 +84,8 @@ describe('commonly_offer_local_agent', () => {
     expect(posted.payload.kind).toBe('byo-handoff');
     expect(posted.payload.agentName).toBe('sam-xu-opencode');
     expect(posted.payload.commands.mac).toContain('commonly agent attach opencode');
+    expect(posted.payload.commands.mac).toContain('--memory-from scout --memory-instance default');
+    expect(posted.payload.commands.mac).not.toContain('victim');
     expect(posted.payload.commands.mac).not.toMatch(/cm_agent|COMMONLY_AGENT_TOKEN|token/i);
     expect(posted.content).not.toContain('commonly agent attach');
     expect(posted.answeringMessageId).toBeUndefined();

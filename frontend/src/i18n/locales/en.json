@@ -275,7 +275,8 @@
         "stateInvalid": "That sign-in attempt expired. Please try again.",
         "exchangeFailed": "Sign-in could not be completed. Please try again.",
         "providerError": "Something went wrong talking to the sign-in provider. Please try again.",
-        "botAccount": "This email belongs to an agent account and can't be used for social sign-in."
+        "botAccount": "This email belongs to an agent account and can't be used for social sign-in.",
+        "teamOnly": "This instance is limited to the team. Sign in with your approved email."
       }
     },
     "register": {
@@ -296,6 +297,7 @@
         "createdTitle": "Account created",
         "checkEmailMessage": "Verify your email to join the Community pod — link sent to {{email}}.",
         "verifyThenSignIn": "You can <signIn>sign in now</signIn>; a reminder stays visible until you verify.",
+        "verifyBeforeSignIn": "Verify your email first, then <signIn>sign in</signIn>.",
         "continue": "Continue to sign in"
       }
     },
@@ -491,6 +493,7 @@
     "replyingTo": "Replying to <author>{{author}}</author>:",
     "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle>@{{handle}}</handle>.",
     "mentionNotInPod": "{{handle}} isn't in this pod. Invite them, or ask in a pod they're in.",
+    "mentionNotInPodWithPods": "{{handle}} isn't in this pod. Ask in:",
     "noAgentsInPod": {
       "kicker": "no agent in this pod",
       "body": "Nobody here answers yet — people will see this when they open the pod.",
@@ -1264,7 +1267,6 @@
   },
   "board": {
     "title": "Board",
-    "claimUntil": "{{holder}} holds this until {{time}}",
     "backToChat": "Back to chat",
     "newTask": "New task",
     "taskCount_one": "{{count}} task",
@@ -1326,15 +1328,38 @@
     },
     "detail": {
       "updates": "Updates",
-      "pr": "View PR"
+      "pr": "View PR",
+      "priority": "Priority",
+      "assignedTo": "Assigned to",
+      "claimedBy": "Claimed by",
+      "leaseLeft": "Lease left",
+      "unassigned": "Unassigned",
+      "notClaimed": "Not claimed",
+      "expiredAt": "Lease expired at {{time}}",
+      "remaining": "{{minutes}}m · until {{time}}",
+      "timeUnavailable": "Lease time unavailable",
+      "follow": "Follow task",
+      "following": "Following",
+      "watchers": "Watchers",
+      "digestHint": "Updates appear in your digest.",
+      "memberUnavailable": "Member unavailable",
+      "saveError": "Could not save this change. Try again."
     },
     "form": {
       "title": "Title",
       "titlePlaceholder": "What needs to happen?",
       "assignee": "Assignee (optional)",
-      "assigneePlaceholder": "agent or teammate name",
+      "assigneePlaceholder": "agent handle, e.g. nova",
       "create": "Create task",
-      "creating": "Creating…"
+      "creating": "Creating…",
+      "priorityHint": "P0 comes first. New tasks start at P2.",
+      "defaultPriority": "default"
+    },
+    "owner": {
+      "left": "{{holder}} · <minutes>{{minutes}}m left</minutes>",
+      "assigned": "{{assignee}} · not claimed",
+      "expired": "lease expired · {{holder}}",
+      "claimed": "{{holder}} · claimed"
     }
   },
   "approvalCard": {
@@ -1395,6 +1420,7 @@
   "agentConnection": {
     "control": "Control",
     "connected": "Connected",
+    "available": "Ready on Commonly",
     "revoked": "Disconnected: key revoked",
     "stale": "Not seen in {{count}} min",
     "never": "Not connected yet",
@@ -1463,6 +1489,8 @@
       "runtimeToken": "The key on its own",
       "claudeCode": "Optional: let Claude Code use the pod in your own sessions",
       "cursor": "Use the pod from Cursor via MCP — add to ~/.cursor/mcp.json",
+      "cursorInstall": "Add to Cursor",
+      "cursorInstallHint": "The link adds Commonly with a placeholder key. Replace it in Cursor’s MCP settings with the key above.",
       "memory": "Bring its memory (optional)",
       "claudeCodeBody": "Gives your own Claude Code sessions Commonly’s tools. It does not make {{name}} answer @mentions; the command above does.",
       "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
@@ -1490,6 +1518,7 @@
       "fileTooLarge": "That file is over the 256KB import ceiling — trim it or paste the relevant part.",
       "importFailed": "Import failed.",
       "hostedCap": "You already have a hosted agent (beta allows {{cap}}). Connect your own runtime for more.",
+      "hostedCapHeld": "{{holder}} already holds your hosted agent slot (beta allows {{cap}}). Find it under your agents, or run on your computer instead.",
       "hostedUnavailable": "Hosting isn't available on this instance yet. Connect your own runtime instead.",
       "machineRequired": "Pick a computer first."
     },
@@ -1938,6 +1967,7 @@
       "answer": "Answer",
       "talk": "Talk",
       "podsAria": "Pods",
+      "morePodsAria": "{{count}} more pods",
       "age": {
         "now": "now",
         "minutes": "{{count}}m",
@@ -2304,6 +2334,7 @@
     "runtime": {
       "title": "Runtime",
       "how": "How it runs",
+      "native": "Native engine",
       "hosted": "Hosted",
       "daemon": "On a computer, via the daemon",
       "cli": "Single CLI",
@@ -2316,7 +2347,25 @@
       "changeEffort": "Effort",
       "effortUnset": "Choose effort",
       "save": "Save runtime",
-      "saveError": "Could not save the model."
+      "saveError": "Could not save the model.",
+      "machineRevoked": "This computer’s key was revoked. Choose another computer to run this agent.",
+      "currentMachine": "Running on {{name}}",
+      "machineRequested": "Waiting for {{name}} to start this agent",
+      "moveLabel": "Run on",
+      "move": "Move agent",
+      "moving": "Moving…",
+      "noActiveMachine": "Register another computer to move this agent:",
+      "blocker": "{{podName}} ({{installerName}})",
+      "blockerSeparator": ", ",
+      "blockedBy": "This agent is also installed in {{blockers}}. Ask that installer to remove their installation before moving it.",
+      "blockedGeneric": "This agent is also installed in another pod. Its installer must remove that installation before it can move.",
+      "placementOwnerMissing": "You need to add this agent to a pod you own before moving it.",
+      "placementUnknownInstaller": "An older installation has no recorded installer, so this agent cannot be moved yet.",
+      "hostedCannotMove": "A hosted agent cannot run on a computer.",
+      "targetUnavailable": "That computer is no longer available. Choose another computer.",
+      "placementChanged": "This agent’s computer changed. Review its current placement before moving it.",
+      "placementError": "Could not load this agent’s computer placement.",
+      "moveError": "Could not move this agent. Try again."
     },
     "grants": {
       "title": "Connector grants",
@@ -2338,7 +2387,6 @@
   "agentSettings": {
     "identityTitle": "Identity",
     "displayName": "Display name",
-    "instructions": "Instructions",
     "persona": "Persona",
     "tone": "Tone",
     "toneOptions": { "friendly": "Friendly", "professional": "Professional", "casual": "Casual", "formal": "Formal", "technical": "Technical" },
@@ -2402,6 +2450,9 @@
     "done": "Done",
     "empty": "No runtime keys yet.",
     "runtimeKey": "Runtime key",
+    "cliKey": "CLI key",
+    "noActiveKeys": "No active keys.",
+    "revokedCount": "{{count}} revoked",
     "active": "Active",
     "revoked": "Revoked",
     "created": "Created {{date}}",
@@ -2419,19 +2470,6 @@
   },
   "agentPolicy": {
     "title": "Policy",
-    "approvals": "Tool approvals",
-    "commaHint": "Separate tool names with commas.",
-    "allowed": "Allowed tools",
-    "blocked": "Blocked tools",
-    "requireApproval": "Require approval",
-    "context": "Context",
-    "maxTokens": "Maximum tokens",
-    "compactionThreshold": "Compact after",
-    "summaryHours": "Summary window (hours)",
-    "includeMemory": "Include memory",
-    "includeSkills": "Include skills",
-    "includeSummaries": "Include summaries",
-    "savePolicy": "Save policy",
     "trust": "Trust mode",
     "repoAccess": "Repository access",
     "chooseAccess": "Choose access",
@@ -2446,7 +2484,6 @@
     "quotas": "Quotas",
     "turnsPerDay": "Hosted turns per day",
     "userRunCeiling": "Runs per day",
-    "contextInvalid": "Check the context limits.",
     "loadError": "Could not load policy data.",
     "saveError": "Could not save changes.",
     "saved": "Saved"

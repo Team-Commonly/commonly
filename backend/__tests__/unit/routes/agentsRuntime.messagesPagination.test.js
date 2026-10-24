@@ -27,6 +27,11 @@ jest.mock('../../../services/agentIdentityService', () => ({
 jest.mock('../../../services/agentMessageService', () => ({
   getRecentMessages: jest.fn(),
 }));
+jest.mock('../../../services/agentSendFreshness', () => ({
+  readStart: jest.fn(async () => ({ at: new Date() })),
+  recordRead: jest.fn().mockResolvedValue(undefined),
+  unseenMessages: jest.fn().mockResolvedValue(null),
+}));
 jest.mock('../../../services/agentThreadService', () => ({}));
 jest.mock('../../../services/podContextService', () => ({}));
 jest.mock('../../../services/globalModelConfigService', () => ({}));
@@ -45,6 +50,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
 const express = require('express');
 const request = require('supertest');
 const AgentMessageService = require('../../../services/agentMessageService');
+const AgentSendFreshness = require('../../../services/agentSendFreshness');
 const router = require('../../../routes/agentsRuntime');
 
 const app = express();
@@ -77,6 +83,7 @@ describe('GET /pods/:podId/messages pagination contract (#795)', () => {
       ],
       hasMore: true,
     });
+    expect(AgentSendFreshness.recordRead).not.toHaveBeenCalled();
   });
 
   test('reports end-of-history when the extra row is absent', async () => {
@@ -91,6 +98,23 @@ describe('GET /pods/:podId/messages pagination contract (#795)', () => {
     expect(res.status).toBe(200);
     expect(res.body.hasMore).toBe(false);
     expect(res.body.messages.map((message) => message.id)).toEqual(['oldest', 'newest']);
+    expect(AgentSendFreshness.recordRead).toHaveBeenCalledWith(
+      'bot-1', 'pod-1', expect.objectContaining({ at: expect.any(Date) }), ['oldest', 'newest'],
+    );
+  });
+
+  test('does not acknowledge a Mongo fallback while PostgreSQL is configured', async () => {
+    const originalHost = process.env.PG_HOST;
+    process.env.PG_HOST = 'configured';
+    AgentMessageService.getRecentMessages.mockResolvedValue([]); // no postgres provenance
+    try {
+      const res = await request(app).get('/api/agents/runtime/pods/pod-1/messages');
+      expect(res.status).toBe(200);
+      expect(AgentSendFreshness.recordRead).not.toHaveBeenCalled();
+    } finally {
+      if (originalHost === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = originalHost;
+    }
   });
 
   test('keeps the documented 50-message clamp while fetching a proof row', async () => {

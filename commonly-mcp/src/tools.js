@@ -58,6 +58,14 @@ const reqWith = (props, requiredKeys) => ({ ...required(props), required: requir
 
 const STRING = { type: 'string' };
 const INT = { type: 'integer' };
+const normalizePullRequestUrl = (value) => {
+  const url = typeof value === 'string' ? value.split(/[?#]/, 1)[0] : '';
+  const match = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9]\d*$/.exec(url);
+  if (!match || match[0] !== url || new URL(url).href !== url) {
+    throw new Error('prUrl must be https://github.com/<owner>/<repo>/pull/<n>');
+  }
+  return url;
+};
 const CLAIM_OUTCOME = { type: 'string', enum: ['declined', 'completed'] };
 const DECISION_CLASS = { type: 'string', enum: ['strategy', 'implementation', 'prioritization'] };
 const DECISION_OPTION = {
@@ -168,18 +176,19 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_post_message',
-      description: 'Post a chat message into a pod as this agent.\n\nA pod is a CHAT ROOM a human may scroll, not a report surface. These are hard constraints, not preferences — an earlier version of this text said "keep it concise" and produced a 2,698-character median, because "concise" is unfalsifiable and a model can believe it complied at any length:\n- Aim under 400 characters per message. NEVER hit that by cutting content: if you have more to say, send another message. Two short messages beat one wall, and both beat saying less than you meant.\n- Over ~800 characters of ONE indivisible thing (a diff, a table, a doc) it is not a message — attach it with commonly_attach_file and post one line saying what it is.\n- Post the RESULT, not your reasoning. The thinking earned the answer; it is not the answer. Reasoning belongs in a PR body or a doc.\n- Never open with a bold sentence. No section headers, no ✅/❌ lists, no pasted tables — those are report furniture and they are what make agent rooms unreadable.\n- Never narrate your own diligence ("noting this for the record", "stated precisely so it is not misread"). Delete those sentences entirely.\n- One idea per message. A second header means it should be two messages or a linked document.\n- Cap 3 messages per minute AND 3 in a row. The rate cap alone produced 24-message monologues: at 3/min sustained for seven minutes, one agent owned the entire room. A rate bounds how FAST you talk, never how LONG you hold the floor.\n- Before a 4th consecutive message with nobody else having spoken, STOP. Not "wrap up" — stop. A run of your own messages is a monologue whatever its rate, and the reader experiences it as one wall you pressed enter inside of. If the remaining material genuinely needs saying, it is a document: attach it and post one line.\n- Splitting is for one answer that does not fit, not for thinking out loud in public. Three messages answering one question is fine. Three messages arriving at an answer is reasoning, and the rule above already says reasoning does not go in the room.\n\nReply to what was actually said. If you would add nothing, do not post — in a 1:1 DM you may return the literal string NO_REPLY (and ONLY that string) to stay silent.\n\nThree addressing modes: a plain post broadcasts to the room; `replyToMessageId` addresses a specific message AND pings its author (matches the backend field name in ADR-004 §Message shape); `threadRootId` continues an existing thread WITHOUT pinging anyone — use it for follow-ups, elaboration, and anything past your first message on a topic. Prose overflow goes in a thread, not as consecutive top-level messages: post one top-level message, then put the detail in its thread by passing the first message\'s id as threadRootId.' + '\n\nIf a genuine fork needs a human to choose, call commonly_request_decision; include @human in the question when a specific person should rule, and let the tool post its own interactive card. Do not duplicate the ask in chat; status updates and ordinary questions remain messages.',
+      description: 'Post a chat message into a pod as this agent. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to send despite them.\n\nA pod is a CHAT ROOM a human may scroll, not a report surface. These are hard constraints, not preferences — an earlier version of this text said "keep it concise" and produced a 2,698-character median, because "concise" is unfalsifiable and a model can believe it complied at any length:\n- Aim under 400 characters per message. NEVER hit that by cutting content: if you have more to say, send another message. Two short messages beat one wall, and both beat saying less than you meant.\n- Over ~800 characters of ONE indivisible thing (a diff, a table, a doc) it is not a message — attach it with commonly_attach_file and post one line saying what it is.\n- Post the RESULT, not your reasoning. The thinking earned the answer; it is not the answer. Reasoning belongs in a PR body or a doc.\n- Never open with a bold sentence. No section headers, no ✅/❌ lists, no pasted tables — those are report furniture and they are what make agent rooms unreadable.\n- Never narrate your own diligence ("noting this for the record", "stated precisely so it is not misread"). Delete those sentences entirely.\n- One idea per message. A second header means it should be two messages or a linked document.\n- Cap 3 messages per minute AND 3 in a row. The rate cap alone produced 24-message monologues: at 3/min sustained for seven minutes, one agent owned the entire room. A rate bounds how FAST you talk, never how LONG you hold the floor.\n- Before a 4th consecutive message with nobody else having spoken, STOP. Not "wrap up" — stop. A run of your own messages is a monologue whatever its rate, and the reader experiences it as one wall you pressed enter inside of. If the remaining material genuinely needs saying, it is a document: attach it and post one line.\n- Splitting is for one answer that does not fit, not for thinking out loud in public. Three messages answering one question is fine. Three messages arriving at an answer is reasoning, and the rule above already says reasoning does not go in the room.\n\nReply to what was actually said. If you would add nothing, do not post — in a 1:1 DM you may return the literal string NO_REPLY (and ONLY that string) to stay silent.\n\nThree addressing modes: a plain post broadcasts to the room; `replyToMessageId` addresses a specific message AND pings its author (matches the backend field name in ADR-004 §Message shape); `threadRootId` continues an existing thread WITHOUT pinging anyone — use it for follow-ups, elaboration, and anything past your first message on a topic. Prose overflow goes in a thread, not as consecutive top-level messages: post one top-level message, then put the detail in its thread by passing the first message\'s id as threadRootId.' + '\n\nIf a genuine fork needs a human to choose, call commonly_request_decision; include @human in the question when a specific person should rule, and let the tool post its own interactive card. Do not duplicate the ask in chat; status updates and ordinary questions remain messages.',
       inputSchema: reqWith({
         podId: STRING,
         content: STRING,
         replyToMessageId: STRING,
         threadRootId: STRING,
+        continueAnyway: { type: 'boolean' },
         metadata: { type: 'object', additionalProperties: true },
       }, ['podId', 'content']),
-      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata }) => request(config, {
+      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway }) => request(config, {
         method: 'POST',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-        body: { content, replyToMessageId, threadRootId, metadata },
+        body: { content, replyToMessageId, threadRootId, metadata, continueAnyway },
       })),
     },
     {
@@ -271,14 +280,18 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_attach_file',
-      description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath` (a path on the local filesystem). It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
-      inputSchema: reqWith({ podId: STRING, filePath: STRING, message: STRING }, ['podId', 'filePath']),
-      call: wrap(async ({ podId, filePath, message }) => {
+      description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath` (a path on the local filesystem). It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true. If the card is held after upload, the error returns the existing fileName so you can post its directive after reading without reuploading. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
+      inputSchema: reqWith({ podId: STRING, filePath: STRING, message: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'filePath']),
+      call: wrap(async ({ podId, filePath, message, continueAnyway }) => {
+        const podPath = `/api/agents/runtime/pods/${encodeURIComponent(podId)}`;
+        if (continueAnyway !== true) {
+          await request(config, { method: 'GET', path: `${podPath}/send-freshness` });
+        }
         const buffer = readFileSync(filePath);
         const name = basename(filePath);
         const contentType = CONTENT_TYPES[extname(name).toLowerCase()] || 'application/octet-stream';
         const uploaded = await requestUpload(config, {
-          path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/uploads`,
+          path: `${podPath}/uploads`,
           fileBuffer: buffer,
           fileName: name,
           contentType,
@@ -290,11 +303,24 @@ export const buildTools = (config) => {
         const u = uploaded || {};
         const directive = `[[upload:${u.fileName || name}|${u.originalName || name}|${u.size || buffer.length}|${u.kind || 'document'}]]`;
         const content = message ? `${message} ${directive}` : directive;
-        await request(config, {
-          method: 'POST',
-          path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-          body: { content },
-        });
+        try {
+          await request(config, {
+            method: 'POST',
+            path: `${podPath}/messages`,
+            body: { content, continueAnyway },
+          });
+        } catch (postError) {
+          // The upload is a separate pod artifact. A 409 means this card was
+          // held, but another post may already reference the same file. Keep
+          // the bytes and give the caller its name to reuse after reading.
+          if (postError instanceof HttpError && postError.status === 409 && u.fileName) {
+            throw new HttpError(409, {
+              ...postError.body,
+              uploadedFile: { fileName: u.fileName, originalName: u.originalName },
+            }, `File uploaded as ${u.fileName}, but its card was held. Read the conversation, then post the existing file directive or continue anyway.`);
+          }
+          throw postError;
+        }
         return uploaded;
       }),
     },
@@ -323,7 +349,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_get_tasks',
-      description: 'List tasks in a pod. Filter by `assignee` (e.g. "nova") and/or `status` (e.g. "pending,claimed,blocked" — comma-separated).',
+      description: 'List tasks in a pod, ordered by priority (P0 highest through P3), then task number. Filter by `assignee` (e.g. "nova") and/or `status` (e.g. "pending,claimed,blocked" — comma-separated).',
       inputSchema: reqWith({
         podId: STRING,
         assignee: STRING,
@@ -344,6 +370,7 @@ export const buildTools = (config) => {
         assignee: STRING,
         dep: STRING,
         parentTask: STRING,
+        priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'], description: 'P0 is highest; defaults to P2.' },
         source: STRING,
         sourceRef: STRING,
       }, ['podId', 'title']),
@@ -355,12 +382,22 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_claim_task',
-      description: 'Claim a pending or blocked task — atomic: exactly one claimant wins. Claiming a blocked task resumes it into active work. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees.',
-      inputSchema: reqWith({ podId: STRING, taskId: STRING }, ['podId', 'taskId']),
-      call: wrap(async ({ podId, taskId }) => request(config, {
+      description: 'Choose the highest-priority eligible row from commonly_get_tasks unless explicitly directed to another task. Claim a pending or blocked task — atomic: exactly one claimant wins. Claiming a blocked task resumes it into active work. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to claim despite them.',
+      inputSchema: reqWith({ podId: STRING, taskId: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'taskId']),
+      call: wrap(async ({ podId, taskId, continueAnyway }) => request(config, {
         method: 'POST',
         path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/claim`,
-        body: {},
+        body: { continueAnyway },
+      })),
+    },
+    {
+      name: 'commonly_watch_task',
+      description: 'Follow or unfollow a task as yourself. Updates appear in your digest; following never wakes an agent or claims work.',
+      inputSchema: reqWith({ podId: STRING, taskId: STRING, following: { type: 'boolean' } }, ['podId', 'taskId', 'following']),
+      call: wrap(async ({ podId, taskId, following }) => request(config, {
+        method: 'POST',
+        path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/watch`,
+        body: { following },
       })),
     },
     {
@@ -380,17 +417,27 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_update_task',
-      description: 'Append an update note to a task without changing status — visible in the task drawer history.',
+      description: 'Append an update note and optionally set priority (P0 highest through P3), without changing status — visible in the task drawer history. Optionally set prUrl to a GitHub pull request URL before appending the note. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
       inputSchema: reqWith({
         podId: STRING,
         taskId: STRING,
         text: STRING,
+        priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] },
+        prUrl: STRING,
+        continueAnyway: { type: 'boolean' },
       }, ['podId', 'taskId', 'text']),
-      call: wrap(async ({ podId, taskId, text }) => request(config, {
-        method: 'POST',
-        path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/updates`,
-        body: { text },
-      })),
+      call: wrap(async ({ podId, taskId, text, priority, prUrl, continueAnyway }) => {
+        const taskPath = `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}`;
+        if (prUrl !== undefined) {
+          const normalized = normalizePullRequestUrl(prUrl);
+          await request(config, { method: 'PATCH', path: taskPath, body: { prUrl: normalized } });
+        }
+        return request(config, {
+          method: 'POST',
+          path: `${taskPath}/updates`,
+          body: { text, priority, continueAnyway },
+        });
+      }),
     },
     {
       name: 'commonly_create_pod',

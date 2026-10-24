@@ -1,3 +1,6 @@
+import { resolveTokenAgentIdentity } from '../utils/agentTokenIdentity';
+import { Types } from 'mongoose';
+import { compareTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 /**
  * taskEventService
  *
@@ -19,6 +22,69 @@ let ioRef: SocketIOLike | null = null;
 export type TaskEventKind = 'created' | 'updated' | 'deleted';
 const MAX_NAMED_ITEMS = 5;
 const MAX_ASSIGNED_ROWS = 5;
+const FOUND_WORK_BATCH_INTERVAL_MS = 60 * 60 * 1000;
+type BoardTask = Record<string, unknown>;
+
+function seatMatchesAssignee(install: Record<string, unknown>, assignee: unknown): boolean {
+  if (!assignee) return false;
+  const name = String(install.agentName || '').toLowerCase();
+  const instance = String(install.instanceId || 'default').toLowerCase();
+  const assigned = String(assignee).toLowerCase();
+  return instance === 'default' ? assigned === name : assigned === instance;
+}
+
+function exactSeatKeyIgnoringCase(key: unknown): RegExp {
+  const escaped = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${escaped}$`, 'i');
+}
+
+async function claimHolderKey(claimedBy: unknown): Promise<string | null> {
+  if (!claimedBy) return null;
+  const claim = String(claimedBy);
+  if (!/^[0-9a-f]{24}$/i.test(claim)) return `::${claim.toLowerCase()}`;
+  // Claims store the bot User id; installedBy can instead name the human.
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const User = require('../models/User');
+  const holder = await User.findById(claim).select('isBot botMetadata username').lean();
+  if (!holder?.isBot) return null;
+  const identity = resolveTokenAgentIdentity(holder);
+  return identity.agentName ? `${identity.agentName}::${identity.instanceId}` : null;
+}
+
+function seatHoldsClaim(install: Record<string, unknown>, holderKey: string | null): boolean {
+  if (!holderKey) return false;
+  const name = String(install.agentName || '').toLowerCase();
+  const instance = String(install.instanceId || 'default').toLowerCase();
+  return holderKey === `${name}::${instance}`
+    || (instance !== 'default' && holderKey === `::${instance}`)
+    || (instance === 'default' && holderKey === `::${name}`);
+}
+
+async function usesHostedBoardWake(
+  install: Record<string, unknown>,
+  AgentInstallation: any,
+): Promise<boolean> {
+  // Match agentEventService.resolveInProcessInstallation: a mention-created
+  // pod projection can omit runtime and inherit it from the identity's latest
+  // configured installation. Both hosted engines answer chat.mention.
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { isHostedInstallation, readRuntimeConfig } = require('./hostedRuntimeService');
+  if (readRuntimeConfig(install).runtimeType) return isHostedInstallation(install);
+  try {
+    const sibling = await AgentInstallation.findOne({
+      agentName: String(install.agentName || '').toLowerCase(),
+      instanceId: String(install.instanceId || 'default'),
+      status: 'active',
+      'config.runtime.runtimeType': { $exists: true },
+    }).sort({ createdAt: -1 }).lean();
+    return isHostedInstallation(sibling);
+  } catch (err) {
+    // chat.mention is answered by hosted and external drivers. Failing toward
+    // that route keeps an addressed owner awake when classification is down.
+    console.warn('[task-event] runtime lookup failed:', (err as Error).message);
+    return true;
+  }
+}
 
 export interface TaskEventPayload {
   podId: string;
@@ -97,14 +163,12 @@ async function stampOfferedRevisions(revisions: OfferRevision[]): Promise<void> 
 }
 
 /**
- * Wake the pod's agents on a board change (ADR-024 D1, "producer parity").
+ * Wake a task's owning seats on a board change (ADR-024 D1).
  *
  * `emitTaskUpdated` above reaches Socket.io and stops, so a human watching the
- * Kanban sees the board move and an agent installed in the same pod learns
- * nothing. That asymmetry is why the fleet is 100% reactive: an agent can only
- * respond to being named, because being named is the only thing that reaches
- * it. Seven socket-emitting producers in this backend have zero enqueues
- * between them; this makes one of them do both.
+ * Kanban sees the board move while the agent owning that row learns nothing.
+ * Seven socket-emitting producers in this backend have zero enqueues between
+ * them; this one also delivers an addressed wake to the row's owner.
  *
  * Three deliberate choices, each with a cheaper wrong version:
  *
@@ -128,10 +192,9 @@ async function stampOfferedRevisions(revisions: OfferRevision[]): Promise<void> 
  *
  *    So the bound has to be on DELIVERY. At most one *pending* board wake per
  *    (agent, instance, pod): a second change folds into the undrained first
- *    instead of appending. 39 writes become 1 wake, and each seat looks at the
- *    board once rather than once per row. There is no messageId, deliberately
- *    — every seat SHOULD look; the per-task claim CAS already arbitrates who
- *    actually takes what, one layer down, where the contention really is.
+ *    instead of appending. Only the row's current or prior owner receives that
+ *    wake; unrelated movement remains on the durable board. There is no
+ *    messageId because an assignment is addressed to its owner.
  *
  *    This is a step toward ADR-024 D3's inbox, not a workaround around it:
  *    "collapse what is still undelivered" is what an inbox does.
@@ -168,6 +231,8 @@ export async function notifyPodAgents(
     agentName?: string;
     instanceId?: string;
   },
+  previousTask?: BoardTask | null,
+  watchersOnly = false,
 ): Promise<void> {
   // A deletion leaves nothing to pick up, and a tombstone wake spends a model
   // turn to discover there is no work.
@@ -179,26 +244,61 @@ export async function notifyPodAgents(
     const { AgentInstallation } = require('../models/AgentRegistry');
     const AgentEventService = require('./agentEventService');
     const Task = require('../models/Task');
-    // Lazy so this never forms a load-time cycle with the mention service.
-    const { boardWakeEnabled } = require('./agentMentionService');
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
 
     const normalizedPodId = String(podId);
-    const active = await AgentInstallation.find({
+    const pendingRevision = watchersOnly ? task.watcherDeliveryPendingAt : task.updatedAt || new Date();
+    const hasWatchers = Array.isArray(task.watchers) && task.watchers.length > 0;
+    if (hasWatchers && !watchersOnly) {
+      await Task.updateOne({ _id: task._id }, { $max: { watcherDeliveryPendingAt: pendingRevision } }, { timestamps: false });
+    }
+    const clearWatcherRetry = async () => {
+      if (!hasWatchers && !task.watcherDeliveryPendingAt) return;
+      if (pendingRevision) await Task.updateOne(
+        { _id: task._id, watcherDeliveryPendingAt: pendingRevision },
+        { $unset: { watcherDeliveryPendingAt: 1 } }, { timestamps: false },
+      );
+    };
+    let watcherLookupFailed = false;
+    const active = watchersOnly ? [] : await AgentInstallation.find({
       podId: normalizedPodId,
       status: 'active',
     }).lean();
 
-    // Gate on the SAME per-install opt-in as ADR-018 D8 wake-on-message. A
-    // board change is ambient pod activity that nobody addressed to you, which
-    // is precisely what that switch governs — so an agent whose owner turned
-    // ambient wakes OFF must not start receiving them through a second door.
-    // Measured before choosing this: of 367 active installs, 128 have it on
-    // (including every sprint seat), and the 169 that do not are `commonly-bot`
-    // and `openclaw` — user-facing and community seats where an unrequested
-    // wake is a noise incident, not a feature.
-    const installs = (active || []).filter(boardWakeEnabled);
-    if (!installs.length) return;
+    // Ownership addresses a seat directly, independent of ambient wake opt-in.
+    // Other seats still receive durable board context without a model turn.
+    const installs: Array<Record<string, unknown>> = [...(active || [])];
+    // A bot can be a pod member without an active runtime projection. Its
+    // explicit task subscription still needs durable receipt, never a wake.
+    if (Array.isArray(task.watchers) && task.watchers.length) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const User = require('../models/User');
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const Pod = require('../models/Pod');
+        const [watchers, pod] = await Promise.all([
+          User.find({ _id: { $in: task.watchers }, isBot: true }).select('username botMetadata').lean(),
+          Pod.findById(normalizedPodId).select('members').lean(),
+        ]);
+        const memberIds = new Set((pod?.members || []).map((member: any) => String(member?.userId || member?._id || member)));
+        const seats = new Set(installs.map((install) => `${String(install.agentName).toLowerCase()}::${String(install.instanceId || 'default').toLowerCase()}`));
+        for (const watcher of watchers) {
+          if (!memberIds.has(String(watcher._id))) continue;
+          const identity = resolveTokenAgentIdentity(watcher);
+          const key = `${identity.agentName}::${identity.instanceId}`;
+          if (!identity.agentName || seats.has(key)) continue;
+          installs.push({ ...identity, digestOnlyWatcher: true });
+          seats.add(key);
+        }
+      } catch (error) {
+        watcherLookupFailed = true;
+        console.warn('[task-event] watcher lookup failed; retry retained:', (error as Error).message);
+      }
+    }
+    if (!installs.length) {
+      if (!watcherLookupFailed) await clearWatcherRetry();
+      return;
+    }
 
     const taskId = String(task.taskId || task.id || task._id || 'unknown');
     const title = String(task.title || '(untitled)').replace(/\s+/g, ' ');
@@ -209,12 +309,12 @@ export async function notifyPodAgents(
         : `[The board moved in this pod — ${taskId} was ${kind}: ${title}.]`,
       ...(assignedRows.length ? [
         '',
-        '[Your assigned rows (pending/claimed; newest first):]',
+        '[Your assigned rows (pending/claimed; highest priority first):]',
         ...assignedRows.map((row) => {
           const updates = row.updates as Array<{ text?: string }> | undefined;
           const latest = updates?.[updates.length - 1]?.text;
           const change = latest || (String(row.taskId) === taskId ? kind : 'current assignment');
-          return `- ${String(row.taskId)} — ${String(row.title || '(untitled)').replace(/\s+/g, ' ').slice(0, 80)} [${String(row.status)}] — ${String(change).replace(/\s+/g, ' ').slice(0, 120)}`;
+          return `- ${String(row.taskId)} — [${String(row.priority || 'P2')}] ${String(row.title || '(untitled)').replace(/\s+/g, ' ').slice(0, 80)} [${String(row.status)}] — ${String(change).replace(/\s+/g, ' ').slice(0, 120)}`;
         }),
       ] : []),
       '',
@@ -253,12 +353,52 @@ export async function notifyPodAgents(
     const actorKey = actor?.isAgent && actor?.agentName
       ? `${String(actor.agentName).toLowerCase()}::${String(actor.instanceId || 'default')}`
       : null;
+    let currentHolder: string | null = null;
+    let previousHolder: string | null = null;
+    let dependentRows: BoardTask[] = [];
+    let dependentHolders: Array<string | null> = [];
+    try {
+      [currentHolder, previousHolder] = await Promise.all([
+        claimHolderKey(task.claimedBy), claimHolderKey(previousTask?.claimedBy),
+      ]);
+      if (String(task.status) === 'done' && previousTask && String(previousTask.status) !== 'done') {
+        dependentRows = await Task.find(
+          { podId: normalizedPodId, dep: taskId, status: { $in: ['pending', 'claimed', 'blocked'] } },
+          { assignee: 1, claimedBy: 1 },
+        ).lean();
+        dependentHolders = await Promise.all(dependentRows.map((row) => claimHolderKey(row.claimedBy)));
+      }
+    } catch (err) {
+      // Preserve known assignees even if a claim or dependency lookup fails.
+      console.warn('[task-event] own-row lookup failed:', (err as Error).message);
+    }
     const outcomes = await Promise.all(installs.map(async (install: Record<string, unknown>) => {
       const installKey = `${String(install.agentName || '').toLowerCase()}::${String(install.instanceId || 'default')}`;
       if (actorKey && installKey === actorKey) return null;
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
+      const ownRow = !install.digestOnlyWatcher && (seatMatchesAssignee(install, task.assignee)
+        || seatMatchesAssignee(install, previousTask?.assignee)
+        || seatHoldsClaim(install, currentHolder)
+        || seatHoldsClaim(install, previousHolder)
+        || dependentRows.some((row) => seatMatchesAssignee(install, row.assignee))
+        || dependentHolders.some((holder) => seatHoldsClaim(install, holder)));
       try {
+        if (!ownRow) {
+          await AgentEventService.enqueue({
+            agentName, instanceId, podId: normalizedPodId, type: 'message.posted',
+            deliveryMode: 'digest',
+            payload: {
+              podId: normalizedPodId, boardDigest: true, taskId, taskKind: kind,
+              content: `${taskId} ${kind}: ${title}`,
+            },
+          });
+          return true;
+        }
+        // Both hosted engines answer chat.mention; they acknowledge a generic
+        // message.posted without a turn. Other drivers use message.posted.
+        const eventType = await usesHostedBoardWake(install, AgentInstallation)
+          ? 'chat.mention' : 'message.posted';
         // Assignee is the board's agent-name string. Query the current board
         // for this seat rather than replaying only the latest pod-wide edit:
         // an assignment must be visible even when another edit folds into it.
@@ -266,19 +406,21 @@ export async function notifyPodAgents(
         let assignedRows: Array<Record<string, unknown>> = [];
         try {
           const assignees = instanceId === 'default' || instanceId === agentName
-            ? [agentName] : [agentName, instanceId];
-          assignedRows = await Task.find(
-            { podId: normalizedPodId, assignee: { $in: assignees }, status: { $in: ['pending', 'claimed'] } },
-            { taskId: 1, title: 1, status: 1, updatedAt: 1, updates: { $slice: -1 } },
-          ).sort({ updatedAt: -1, _id: -1 }).limit(MAX_ASSIGNED_ROWS).lean();
+            ? [agentName] : [instanceId];
+          assignedRows = await Task.aggregate([
+            { $match: { podId: new Types.ObjectId(normalizedPodId), assignee: { $in: assignees }, status: { $in: ['pending', 'claimed'] } } },
+            ...TASK_PRIORITY_ORDER,
+            { $limit: MAX_ASSIGNED_ROWS },
+            { $project: { taskId: 1, title: 1, priority: 1, taskNum: 1, status: 1, updatedAt: 1, updates: { $slice: ['$updates', -1] } } },
+          ]);
         } catch (err) {
           // A listing failure must not turn the entire board wake into silence.
           console.warn(`[task-event] assigned rows lookup failed for ${agentName}:`, (err as Error).message);
         }
         // Fold into this seat's undrained board wake if it has one. Matches on
-        // `payload.boardWake` rather than the event type, because the type is
-        // deliberately `message.posted` (shared with ordinary chat) and folding
-        // a board change into someone's unread MESSAGE would destroy it.
+        // Match `payload.boardWake`, never the event type: non-hosted wakes
+        // share message.posted with chat, and hosted wakes use chat.mention.
+        // Folding into an unread chat message would destroy it.
         const folded = await AgentEvent.findOneAndUpdate(
           {
             agentName,
@@ -292,7 +434,11 @@ export async function notifyPodAgents(
             // A human edit arriving on top of agent churn must re-price the
             // whole batch as human — otherwise one agent write early in a sweep
             // permanently marks a wake the human later contributed to.
-            ...(dmKind === 'user-agent' ? { $set: { 'payload.dmKind': 'user-agent' } } : {}),
+            ...(eventType === 'chat.mention' || dmKind === 'user-agent'
+              ? { $set: {
+                ...(eventType === 'chat.mention' ? { type: 'chat.mention' } : {}),
+                ...(dmKind === 'user-agent' ? { 'payload.dmKind': 'user-agent' } : {}),
+              } } : {}),
           },
           { new: true },
         );
@@ -313,11 +459,10 @@ export async function notifyPodAgents(
           agentName,
           instanceId,
           podId: normalizedPodId,
-          type: 'message.posted',
+          type: eventType,
           payload: {
             content: buildContent(0, assignedRows),
-            // No messageId, deliberately — see choice 2. Every seat should
-            // look; the per-task claim CAS arbitrates who takes what.
+            // No messageId; ownership itself is the address.
             podId: normalizedPodId,
             boardWake: true,
             boardChanges: 0,
@@ -333,13 +478,46 @@ export async function notifyPodAgents(
       }
     }));
     const failed = outcomes.some((outcome) => outcome === undefined);
+    if (!failed && !watcherLookupFailed) await clearWatcherRetry();
+    // Retry receipts never repeat ownership wakes or stamp discovery revisions.
+    if (watchersOnly) return;
     const offered = outcomes.some((outcome) => outcome === true);
-    if (offered && !failed) {
+    // A wake to the prior owner after unassignment cannot retire a pending
+    // unassigned row from the kernel's found-work scan.
+    // Match wakeForFoundWork's status/assignee predicate exactly; legacy rows
+    // can retain a stale claimedBy even while pending and unassigned.
+    const unclaimedWork = String(task.status) === 'pending' && !task.assignee;
+    if (offered && !failed && !unclaimedWork) {
       await stampOfferedRevisions([task]);
     }
   } catch (err) {
     // A board change must never fail because the agent fan-out did.
     console.warn('[task-event] agent notify failed:', (err as Error).message);
+  }
+}
+
+/** Coalesced durable watcher retries, driven by the existing kernel sweep.
+ * At-least-once on a crash after enqueue; each retry rechecks current membership.
+ */
+let watcherRetryAfter: { revision: Date; id: unknown } | null = null;
+export async function retryTaskWatcherDigests(): Promise<void> {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const Task = require('../models/Task');
+  const pending = { watcherDeliveryPendingAt: { $type: 'date' } };
+  const after = watcherRetryAfter;
+  let rows = await Task.find({ ...pending, ...(after ? { $or: [
+    { watcherDeliveryPendingAt: { $gt: after.revision } },
+    { watcherDeliveryPendingAt: after.revision, _id: { $gt: after.id } },
+  ] } : {}) }).sort({ watcherDeliveryPendingAt: 1, _id: 1 }).limit(100).lean();
+  if (!rows.length && after) {
+    watcherRetryAfter = null;
+    rows = await Task.find(pending).sort({ watcherDeliveryPendingAt: 1, _id: 1 }).limit(100).lean();
+  }
+  // Advance even when every enqueue fails; the next batch must get a turn.
+  const last = rows[rows.length - 1];
+  if (last) watcherRetryAfter = { revision: last.watcherDeliveryPendingAt, id: last._id };
+  for (const task of rows) {
+    await notifyPodAgents(task.podId, task, 'updated', undefined, undefined, true);
   }
 }
 
@@ -369,7 +547,7 @@ export async function notifyPodAgents(
  */
 export async function notifyFoundWork(
   podId: unknown,
-  items: Array<OfferRevision & { title?: string; lapsedFrom?: string | null }>,
+  items: Array<OfferRevision & { title?: string; priority?: string; taskNum?: number; lapsedFrom?: string | null }>,
   totalCount: number,
   now: Date = new Date(),
 ): Promise<{ woken: number }> {
@@ -380,11 +558,21 @@ export async function notifyFoundWork(
     const AgentEventService = require('./agentEventService');
     const { boardWakeEnabled } = require('./agentMentionService');
     const AgentEvent = require('../models/AgentEvent');
+    const Task = require('../models/Task');
+    const User = require('../models/User');
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
 
     const normalizedPodId = String(podId);
     const active = await AgentInstallation.find({ podId: normalizedPodId, status: 'active' }).lean();
-    const installs = (active || []).filter(boardWakeEnabled);
+    // Board subscriptions include reviewers. Discovery is an implementer-only
+    // opt-in, independent of whether a seat receives addressed row changes.
+    const installs = (active || []).filter((install: Record<string, unknown>) => {
+      if (!boardWakeEnabled(install)) return false;
+      const config = install.config as Map<string, unknown> | Record<string, unknown> | undefined;
+      const discovery = config instanceof Map ? config.get('workDiscovery') : config?.workDiscovery;
+      return (discovery as { enabled?: unknown; role?: unknown } | undefined)?.enabled === true
+        && (discovery as { role?: unknown })?.role === 'implementer';
+    });
     if (!installs.length) return { woken: 0 };
 
     // #1080 part 3: a rescued row names who it lapsed from. Without it the wake
@@ -392,10 +580,10 @@ export async function notifyFoundWork(
     // thing standing between that and a duplicate implementation is whether a
     // peer happens to be reading the pod. Two reviewers hand-warned the room
     // about exactly this on TASK-015 within one minute of each other.
-    const namedItems = items.slice(0, MAX_NAMED_ITEMS);
+    const namedItems = [...items].sort(compareTaskPriority).slice(0, MAX_NAMED_ITEMS);
     const listed = namedItems
       .map((t) => {
-        const line = `- ${t.taskId || '?'} — ${String(t.title || '(untitled)').slice(0, 80)}`;
+        const line = `- ${t.taskId || '?'} — [${t.priority || 'P2'}] ${String(t.title || '(untitled)').slice(0, 80)}`;
         return t.lapsedFrom ? `${line}  [lapsed from ${t.lapsedFrom} — check their work before starting]` : line;
       })
       .join('\n');
@@ -417,7 +605,59 @@ export async function notifyFoundWork(
     const outcomes = await Promise.all(installs.map(async (install: Record<string, unknown>) => {
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
+      const isDefaultInstance = String(instanceId).toLowerCase() === 'default';
+      let reservedSlot = false;
       try {
+        // Assigned pending work and active claims already occupy this seat in
+        // this pod. The unclaimed nudge is only for spare capacity; do not
+        // spend a turn offering more work to a seat with an open row.
+        const seatKey = exactSeatKeyIgnoringCase(isDefaultInstance ? agentName : instanceId);
+        let hasOpenWork = await Task.exists({
+          podId: normalizedPodId,
+          status: { $in: ['pending', 'claimed'] },
+          $or: [
+            { assignee: seatKey },
+            { status: 'claimed', claimedBy: seatKey },
+          ],
+        });
+        if (!hasOpenWork) {
+          // Wrapper/MCP claim writers often store the bot User ObjectId,
+          // whereas board assignments store the seat key. Resolve those
+          // principals before deciding that an unassigned-looking seat is idle.
+          const principalInstances = isDefaultInstance
+            ? [exactSeatKeyIgnoringCase('default'), exactSeatKeyIgnoringCase(agentName), null]
+            : [exactSeatKeyIgnoringCase(instanceId)];
+          const principals = await User.find({
+            isBot: true,
+            'botMetadata.agentName': exactSeatKeyIgnoringCase(agentName),
+            'botMetadata.instanceId': { $in: principalInstances },
+          }).select('_id').lean();
+          if (principals.length) {
+            hasOpenWork = await Task.exists({
+              podId: normalizedPodId,
+              status: 'claimed',
+              claimedBy: { $in: principals.map((principal: { _id: unknown }) => String(principal._id)) },
+            });
+          }
+        }
+        if (hasOpenWork) return false;
+
+        // Reserve the one-hour slot on the installation itself. A read of
+        // prior events followed by enqueue races another sweep during rollout;
+        // this CAS makes at most one worker win for a seat and pod.
+        const reserved = await AgentInstallation.findOneAndUpdate(
+          {
+            agentName, instanceId, podId: normalizedPodId, status: 'active',
+            $or: [
+              { lastFoundWorkAt: { $lte: new Date(now.getTime() - FOUND_WORK_BATCH_INTERVAL_MS) } },
+              { lastFoundWorkAt: null },
+            ],
+          },
+          { $set: { lastFoundWorkAt: now } },
+          { new: true, timestamps: false },
+        );
+        if (!reserved) return false;
+        reservedSlot = true;
         const folded = await AgentEvent.findOneAndUpdate(
           {
             agentName, instanceId, podId: normalizedPodId, status: 'pending', 'payload.boardWake': true,
@@ -445,6 +685,17 @@ export async function notifyFoundWork(
         return true;
       } catch (err) {
         console.warn(`[task-event] found-work enqueue failed for ${agentName}:`, (err as Error).message);
+        // A failed enqueue did not send a nudge. Restore eligibility only if
+        // this reservation is still ours; work remains due for the next sweep.
+        if (reservedSlot) {
+          await AgentInstallation.updateOne(
+            { agentName, instanceId, podId: normalizedPodId, lastFoundWorkAt: now },
+            { $unset: { lastFoundWorkAt: 1 } },
+            { timestamps: false },
+          ).catch((rollbackErr: Error) => {
+            console.warn(`[task-event] found-work reservation rollback failed for ${agentName}:`, rollbackErr.message);
+          });
+        }
       }
     }));
     if (woken > 0 && outcomes.every((outcome) => outcome === true)) {

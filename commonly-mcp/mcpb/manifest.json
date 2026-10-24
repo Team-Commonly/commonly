@@ -1,0 +1,48 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json",
+  "manifest_version": "0.4",
+  "name": "commonly",
+  "display_name": "Commonly",
+  "version": "0.3.14",
+  "description": "Read Commonly pods and post as a Commonly agent you create, with a token from your Commonly account.",
+  "author": {
+    "name": "Team Commonly",
+    "url": "https://github.com/Team-Commonly/commonly"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Team-Commonly/commonly.git"
+  },
+  "homepage": "https://commonly.me",
+  "documentation": "https://github.com/Team-Commonly/commonly/tree/main/commonly-mcp",
+  "license": "Apache-2.0",
+  "keywords": ["commonly", "collaboration", "pods", "agents"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/src/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/src/index.js"],
+      "env": {
+        "COMMONLY_API_URL": "${user_config.api_url}",
+        "COMMONLY_AGENT_TOKEN": "${user_config.agent_token}"
+      }
+    }
+  },
+  "user_config": {
+    "api_url": {
+      "type": "string",
+      "title": "Commonly API URL",
+      "description": "API URL for your Commonly instance.",
+      "default": "https://api.commonly.me",
+      "required": true
+    },
+    "agent_token": {
+      "type": "string",
+      "title": "Commonly agent token",
+      "description": "The cm_agent_ token from Bring your own agent in your Commonly account.",
+      "sensitive": true,
+      "required": true
+    }
+  }
+}

@@ -302,6 +302,150 @@ describe('performRun', () => {
     );
   });
 
+  test('a wake carries compact digest context without claiming ambient messages', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-wake', type: 'chat.mention', payload: {
+        content: 'please review', digestRollup: { unreadCount: 3, lastEventIds: ['old-1', 'old-2'],
+          conversations: [{ label: 'thread 40', count: 3 }] },
+      } }),
+      makeEvent({ _id: 'evt-digest', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'daily update', username: 'alice', messageId: '42', threadRootId: '40' } }),
+    ];
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/memory')) return { sections: {} };
+      return { events, inboxCount: 2 };
+    });
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'reviewed' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0]).toContain('[Since you last looked: 4 ambient updates');
+    expect(spawn.mock.calls[0][0]).toContain('4 ambient updates in 1 conversation');
+    expect(spawn.mock.calls[0][0]).toContain('thread 40: 4 unread');
+    expect(spawn.mock.calls[0][0]).toContain('8 conversations, 5 messages each, 20 messages total');
+    expect(spawn.mock.calls[0][0]).not.toContain('daily update');
+    expect(spawn.mock.calls[0][0]).not.toContain('Event 2/2: message.posted');
+    expect(post.mock.calls.filter(([route]) => route.endsWith('/claim'))).toHaveLength(0);
+    expect(ackPosts(post)).toHaveLength(2);
+  });
+
+  test('digest notices group unread threads, dedupe one source, and batch the next read for three seconds', async () => {
+    const events = [
+      makeEvent({ _id: 'wake', type: 'chat.mention', payload: { content: 'review this' } }),
+      makeEvent({ _id: 'ambient-a', type: 'message.posted', deliveryMode: 'digest',
+        payload: { messageId: '41', threadRootId: 40, content: 'secret first body' } }),
+      makeEvent({ _id: 'ambient-a-copy', type: 'message.posted', deliveryMode: 'digest',
+        payload: { messageId: '41', threadRootId: 40, content: 'secret first body' } }),
+      makeEvent({ _id: 'ambient-b', type: 'message.posted', deliveryMode: 'digest',
+        payload: { messageId: '42', threadRootId: 40, content: 'secret second body' } }),
+    ];
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/memory')) return { sections: {} };
+      return { events, inboxCount: events.length };
+    });
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'handled' }));
+    const schedule = jest.fn();
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', intervalMs: 100, setTimeoutImpl: schedule,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const prompt = spawn.mock.calls[0][0];
+    expect(prompt).toContain('2 ambient updates in 1 conversation');
+    expect(prompt).toContain('thread 40: 2 unread');
+    expect(prompt).not.toContain('secret first body');
+    expect(prompt).not.toContain('secret second body');
+    expect(schedule).toHaveBeenCalledWith(expect.any(Function), 3000);
+  });
+
+  test('a digest-only page never starts a turn or acknowledges the ambient event', async () => {
+    const event = makeEvent({ deliveryMode: 'digest', type: 'message.posted',
+      payload: { content: 'ambient', messageId: '42' } });
+    const get = jest.fn(async () => ({ events: [event], inboxCount: 1 }));
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'should not run' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ackPosts(post)).toHaveLength(0);
+  });
+
+  test('a digest companion stays unread when the sole wake loses its binding claim', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-held', type: 'message.posted',
+        payload: { content: 'peer owns this', messageId: 'msg-held' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background', messageId: 'msg-ambient' } }),
+    ];
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/memory')) return { sections: {} };
+      return { events, inboxCount: 2 };
+    });
+    const post = jest.fn(async (route) => (
+      route.endsWith('/claim') ? { claimed: false, claimedBy: 'nova' } : {}
+    ));
+    createClient.mockReturnValue({ get, post, del: jest.fn() });
+    const spawn = jest.fn(async () => ({ text: 'must not run' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(ackPosts(post)).toEqual([[
+      '/api/agents/runtime/events/evt-held/ack',
+      { result: { outcome: 'no_action', reason: 'claim-held' } },
+    ]]);
+  });
+
+  test('a provider refusal leaves digest unread even though the wake is acknowledged', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-refused', payload: { content: 'question' } }),
+      makeEvent({ _id: 'evt-ambient', type: 'message.posted', deliveryMode: 'digest',
+        payload: { content: 'background' } }),
+    ];
+    const get = jest.fn(async (route) => (
+      route.endsWith('/messages') ? { messages: [] } : { events, inboxCount: 2 }
+    ));
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: '', upstream: { status: 429, detail: 'budget' } }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(ackPosts(post).map(([route]) => route)).toEqual(['/api/agents/runtime/events/evt-refused/ack']);
+  });
+
   test('a lost binding item stays read-only context while another batch item may run', async () => {
     const events = [
       makeEvent({
@@ -1493,7 +1637,7 @@ describe('performRun', () => {
     };
     await runNext(5000); // first failure → second probe
     await runNext(10000); // second failure → recovery probe
-    await runNext(0); // success → look again at once (TASK-343), not after the interval
+    await runNext(3000); // success → mid-turn notice batch window
 
     handle.stop();
     expect(spawn).toHaveBeenCalledTimes(4);

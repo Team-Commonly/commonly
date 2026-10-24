@@ -41,16 +41,9 @@ export interface ISession extends Document {
   };
   state: SessionState;
   lastActivityAt: Date;
-  contextSettings: {
-    maxTokens: number;
-    compactionThreshold: number;
-    includeMemory: boolean;
-    includeSkills: boolean;
-  };
   createdAt: Date;
   updatedAt: Date;
   appendTranscript(entry: ITranscriptEntry): Promise<ISession>;
-  shouldCompact(): boolean;
   shouldReset(): boolean;
   compact(summaryContent: string): Promise<ISession>;
   reset(): Promise<ISession>;
@@ -114,12 +107,6 @@ const SessionSchema = new Schema<ISession>(
       default: 'active',
     },
     lastActivityAt: { type: Date, default: Date.now },
-    contextSettings: {
-      maxTokens: { type: Number, default: 8000 },
-      compactionThreshold: { type: Number, default: 6000 },
-      includeMemory: { type: Boolean, default: true },
-      includeSkills: { type: Boolean, default: true },
-    },
   },
   { timestamps: true },
 );
@@ -157,10 +144,6 @@ SessionSchema.methods.appendTranscript = async function (entry: ITranscriptEntry
   }
 
   return this.save();
-};
-
-SessionSchema.methods.shouldCompact = function (): boolean {
-  return this.tokenUsage.context >= this.contextSettings.compactionThreshold;
 };
 
 SessionSchema.methods.shouldReset = function (): boolean {

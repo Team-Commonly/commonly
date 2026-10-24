@@ -42,7 +42,7 @@ jest.mock('../../../middleware/integrationRateLimit', () => ({
   listIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 
-jest.mock('../../../models/Integration', () => ({ findOneAndUpdate: jest.fn() }));
+jest.mock('../../../models/Integration', () => ({ findOne: jest.fn(), findOneAndUpdate: jest.fn() }));
 jest.mock('../../../services/hostedMcpDcrRegistry', () => ({
   ensureDcrClient: jest.fn(),
   dcrClientForRow: jest.fn(),
@@ -76,6 +76,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockAuthedUser = { id: 'user-1' };
   intake.discoverAuthorizationServer.mockResolvedValue(AS_METADATA);
+  Integration.findOne.mockReturnValue({
+    select: () => ({ lean: async () => null }),
+  });
   Integration.findOneAndUpdate.mockResolvedValue({ _id: 'integration-1' });
   FIXTURE_ENTRY.client = 'cimd';
 });

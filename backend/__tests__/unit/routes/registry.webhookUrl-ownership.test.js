@@ -46,7 +46,9 @@ jest.mock('../../../models/AgentRegistry', () => ({
     findOne: jest.fn((filter) => queryResult(
       'installedBy' in filter ? (mockInstalls.find((doc) => matches(doc, filter)) || null) : mockPrimary,
     )),
-    find: jest.fn(),
+    find: jest.fn((filter) => (
+      filter.status === 'active' ? queryResult(mockInstalls) : queryResult([mockPrimary])
+    )),
     install: jest.fn(),
   },
 }));
@@ -112,6 +114,7 @@ beforeEach(() => {
   mockPrimary = null;
   setCallerRole('user');
   setPod();
+  Pod.find.mockReturnValue(queryResult([]));
 });
 
 describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
@@ -132,7 +135,6 @@ describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
   test('the sole installer can change it', async () => {
     mockPrimary = row();
     mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
-    AgentInstallation.find.mockResolvedValue([mockPrimary]);
 
     const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: NEW_URL } });
 
@@ -144,7 +146,6 @@ describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
   test('this row\'s installer is refused when another user also has the agent installed, and nothing is written', async () => {
     mockPrimary = row();
     mockInstalls = [activeInstall(INSTALLER, 'pod-1'), activeInstall(OTHER, 'pod-9')];
-    AgentInstallation.find.mockResolvedValue([mockPrimary]);
 
     const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: NEW_URL } });
 
@@ -159,7 +160,6 @@ describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
     mockCaller = MEMBER;
     mockPrimary = row();
     mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
-    AgentInstallation.find.mockResolvedValue([mockPrimary]);
 
     const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: NEW_URL } });
 
@@ -175,7 +175,6 @@ describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
     setCallerRole('admin');
     mockPrimary = row();
     mockInstalls = [activeInstall(INSTALLER, 'pod-1'), activeInstall(OTHER, 'pod-9')];
-    AgentInstallation.find.mockResolvedValue([mockPrimary]);
 
     const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: NEW_URL } });
 
@@ -186,7 +185,6 @@ describe('PATCH /pods/:podId/agents/:name — setting the webhook URL', () => {
   test('resending the stored URL is not a change, so a shared agent\'s installer can still patch its config', async () => {
     mockPrimary = row();
     mockInstalls = [activeInstall(INSTALLER, 'pod-1'), activeInstall(OTHER, 'pod-9')];
-    AgentInstallation.find.mockResolvedValue([mockPrimary]);
 
     const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: STORED_URL }, note: 'renamed' });
 
@@ -215,7 +213,15 @@ describe('POST /install — supplying a webhook URL', () => {
       manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
     });
     AgentRegistry.incrementInstalls.mockResolvedValue({ acknowledged: true });
-    AgentInstallation.find.mockReturnValue({ lean: () => Promise.resolve([]) });
+    AgentInstallation.find.mockImplementation(() => {
+      let ownershipRead = false;
+      const chain = {
+        collation: () => { ownershipRead = true; return chain; },
+        select: () => chain,
+        lean: () => Promise.resolve(ownershipRead ? mockInstalls : []),
+      };
+      return chain;
+    });
     AgentInstallation.install.mockImplementation(async (agentName, podId, options) => ({
       _id: { toString: () => 'install-1' },
       agentName,

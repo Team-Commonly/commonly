@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import GlobalModelConfigService from './globalModelConfigService';
+import { allowedFromEnv, selectAllowedBaseUrl } from '../utils/allowedBaseUrl';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -77,14 +78,30 @@ const getLiteLLMConfig = (): LiteLLMConfig | null => {
   };
 };
 
-const getOpenRouterConfig = (globalConfig: Record<string, unknown> | null = null): OpenRouterConfig => {
+// The OpenRouter base URL is one the operator set: the default,
+// OPENROUTER_BASE_URL, or an entry in OPENROUTER_ALLOWED_BASE_URLS. The global
+// model config may name one of those; any other value is ignored with one
+// warning. See utils/allowedBaseUrl.ts.
+let warnedDisallowedBaseUrl = false;
+const allowedOpenRouterBaseUrls = (): string[] => [
+  DEFAULT_OPENROUTER_BASE_URL,
+  process.env.OPENROUTER_BASE_URL || '',
+  ...allowedFromEnv('OPENROUTER_ALLOWED_BASE_URLS'),
+];
+
+export const getOpenRouterConfig = (globalConfig: Record<string, unknown> | null = null): OpenRouterConfig => {
   const settings = globalConfig || {};
   const openrouterSettings = (settings?.llmService as unknown as Record<string, unknown>)?.openrouter as unknown as Record<string, unknown> || {};
-  const baseUrl = String(
-    openrouterSettings.baseUrl
-    || process.env.OPENROUTER_BASE_URL
-    || DEFAULT_OPENROUTER_BASE_URL,
-  ).trim().replace(/\/$/, '');
+  const allowed = allowedOpenRouterBaseUrls();
+  const configured = selectAllowedBaseUrl(openrouterSettings.baseUrl, allowed);
+  if (openrouterSettings.baseUrl && !configured && !warnedDisallowedBaseUrl) {
+    warnedDisallowedBaseUrl = true;
+    console.warn('[llm-service] ignoring llmService.openrouter.baseUrl from the global model config: '
+      + 'it is not one of the allowed base URLs (OPENROUTER_ALLOWED_BASE_URLS)');
+  }
+  const baseUrl = configured
+    || selectAllowedBaseUrl(process.env.OPENROUTER_BASE_URL, allowed)
+    || DEFAULT_OPENROUTER_BASE_URL;
   const apiKey = String(process.env.OPENROUTER_API_KEY || '').trim();
   const model = String(
     openrouterSettings.model

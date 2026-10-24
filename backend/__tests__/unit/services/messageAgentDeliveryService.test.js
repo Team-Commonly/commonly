@@ -80,6 +80,7 @@ describe('messageAgentDeliveryService', () => {
     });
 
     expect(response.mentionNotices).toEqual([notice]);
+    expect(findNonMemberMentionNotices).toHaveBeenCalledWith('p1', '@rhea please review', 'u1');
     expect(message).not.toHaveProperty('mentionNotices');
   });
 

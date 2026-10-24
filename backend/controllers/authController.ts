@@ -16,6 +16,8 @@ const {
   verifyEmailVerificationToken,
 } = require('../services/emailVerificationTokenService');
 const { disconnectUserSessionSockets } = require('../services/sessionSocketService');
+const { isInstanceAccessRestricted, isInstanceEmailAllowed,
+  INSTANCE_ACCESS_ERROR } = require('../services/instanceAccessPolicy');
 
 // The first-touch ref a signup arrived with (?ref=x), stored once on the new
 // account. Anything that is not a short plain code is dropped, not refused.
@@ -418,6 +420,17 @@ exports.register = async (req: any, res: any) => {
 
     if (!normalizedEmail || !rawPassword) {
       return res.status(400).json({ error: 'Email and password are required.' });
+    }
+    if (!isInstanceEmailAllowed(normalizedEmail)) {
+      return res.status(403).json({ error: INSTANCE_ACCESS_ERROR, code: 'INSTANCE_ACCESS_RESTRICTED' });
+    }
+    // An allowlisted spelling is not proof of mailbox ownership. Without
+    // delivery, the ordinary signup fallback auto-verifies every new account.
+    if (isInstanceAccessRestricted() && !hasEmailDeliveryConfig()) {
+      return res.status(503).json({
+        error: 'Email verification is unavailable. Sign in with a verified GitHub or Google account.',
+        code: 'INSTANCE_VERIFICATION_UNAVAILABLE',
+      });
     }
 
     // The register page asks only for an email and a password (TASK-290 A), so
@@ -852,6 +865,12 @@ exports.login = async (req: any, res: any) => {
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
+
+    // Apply the team gate only after a valid password, so the refusal does not
+    // disclose whether a guessed address belongs to an unverified account.
+    if (!isInstanceEmailAllowed(user.email) || (isInstanceAccessRestricted() && !user.verified)) {
+      return res.status(403).json({ error: INSTANCE_ACCESS_ERROR, code: 'INSTANCE_ACCESS_RESTRICTED' });
+    }
 
     // Verification is a post-login reminder, not an authentication wall.
     // A correct password always starts a session; the shell receives the

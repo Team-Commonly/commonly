@@ -13,9 +13,10 @@
  *
  * Two mechanisms, stated separately because they can break separately:
  *
- *  1. A handle that resolves to a human enqueues no `AgentEvent` of any type.
- *     `enqueueMentions` has no human delivery branch at all — the handle is
- *     filtered into `humanMentionHandles` and never reaches an enqueue. The
+ *  1. A handle that resolves to a human enqueues no addressed `AgentEvent`.
+ *     Ambient activity is now received as a digest by installed agents, but
+ *     the human handle must not turn that receipt into a model wake. The
+ *     handle is filtered into `humanMentionHandles` and never reaches an address. The
  *     realistic future edit is TASK-070b (should a bare name route?): an
  *     implementer who answers "yes, and push it" makes the cue a lie taught on
  *     every wake, fleet-wide, and nothing in the suite objects.
@@ -47,6 +48,13 @@ jest.mock('../../../services/welcomeWakeService', () => ({ maybeFireWelcomeWake:
 jest.mock('../../../models/pg/Message', () => ({ findById: jest.fn(async () => null) }));
 jest.mock('../../../models/pg/ThreadUserState', () => ({
   followByParticipation: jest.fn().mockResolvedValue(true),
+}));
+jest.mock('../../../services/threadWakeScopeService', () => ({
+  threadAuthorIds: jest.fn().mockResolvedValue(new Set()),
+  narrowToThread: jest.fn().mockResolvedValue([]),
+}));
+jest.mock('../../../services/messageClaimService', () => ({
+  liveClaimantsInThread: jest.fn().mockResolvedValue(new Set()),
 }));
 
 const AgentMentionService = require('../../../services/agentMentionService');
@@ -104,12 +112,13 @@ beforeEach(() => {
 });
 
 describe('a human handle is not a delivery target', () => {
-  test('@handle for a human enqueues no event of any kind', async () => {
+  test('@handle for a human is ambient receipt, never an addressed wake', async () => {
     await send({ id: 'm-1', content: 'can you decide this @sam' });
 
-    // Not "no chat.mention" — no event at all. A future human-push branch is
-    // as likely to invent a type as to reuse this one.
-    expect(enqueued()).toHaveLength(0);
+    expect(enqueued()).toEqual([expect.objectContaining({
+      agentName: 'seat-a', type: 'message.posted', deliveryMode: 'digest',
+    })]);
+    expect(mentions()).toHaveLength(0);
   });
 
   test('CONTROL: the same sentence addressed to an installed agent DOES enqueue', async () => {
@@ -149,7 +158,7 @@ describe('the thread-follow half is guarded by threadRootId', () => {
     expect(ThreadUserState.followByParticipation).toHaveBeenCalledWith(101, 'user-sam', 'pod-1');
   });
 
-  test('a follow is not a wake — the threaded case still enqueues no event', async () => {
+  test('a human follow does not add the agent to the threaded wake set', async () => {
     // Both halves of the cue's ceiling in one assertion: the handle bought a
     // pull-surface row, and nothing was pushed.
     await send({

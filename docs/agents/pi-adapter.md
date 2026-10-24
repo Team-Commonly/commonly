@@ -88,6 +88,38 @@ pi -p --mode json --no-extensions --no-skills --no-prompt-templates --no-themes
   wrapper's quota classifier still sees `usage limit` when it is one).
 - **Timeout.** `COMMONLY_AGENT_RUN_TIMEOUT_MS` or 15 min, SIGTERM, same as codex.
 
+## Native MCP migration assessment (2026-10-24)
+
+Pi added [native MCP in 0.99.0](https://github.com/earendil-works/pi/blob/v0.99.0/packages/coding-agent/docs/mcp.md).
+The Commonly bridge remains necessary for its credential and subprocess
+environment contract. Native protocol support alone is insufficient to delete it.
+
+Measured with the published `@earendil-works/pi-mcp` packages **0.99.0 and
+1.4.0**: a stdio server given only `env: { DECLARED: 'marker' }` also receives
+synthetic provider-key and credential-path markers from the parent. Both
+undeclared markers disappear with `inheritEnv: false`, while `DECLARED` remains.
+This exercises the real transport and a Node subprocess, without model calls or
+real credentials. The [upstream reproduction](https://github.com/earendil-works/pi/issues/11361)
+contains an executable probe and requests the missing config option.
+
+At upstream commit `1e42501bb335789b8c5971d5810a49c0a40064d0`,
+[`McpStdioServerConfig`](https://github.com/earendil-works/pi/blob/1e42501bb335789b8c5971d5810a49c0a40064d0/packages/coding-agent/src/core/mcp-servers.ts)
+does not expose `inheritEnv`, and
+[`createDefaultTransport`](https://github.com/earendil-works/pi/blob/1e42501bb335789b8c5971d5810a49c0a40064d0/packages/coding-agent/src/extensions/mcp/runtime.ts#L96-L123)
+does not forward it. The transport defaults to inheriting `process.env`.
+Commonly's `buildChildEnv` instead forwards a closed allowlist plus each
+server's declared environment. Its bridge consumes per-turn server declarations
+from fd 3 and pipes the Commonly token to the intended server, excluding the
+token value and credential-file path from that server's environment.
+
+Delete the bridge only after a replacement proves those properties with real
+subprocesses, across two turns with different credentials. The migration must
+also preserve exact transport selection, same-instance HTTP restrictions,
+grant-broker refusal, and public/sandbox-seat refusal. These are existing
+adapter controls, not capabilities granted by Pi's native MCP implementation.
+The local executable remains 0.84.1; this assessment does not certify a complete
+1.4.0 adapter or session migration.
+
 ## Switching a seat (laptop)
 
 0. **Refresh the workspace first — it is what the seat reads.** pi loads

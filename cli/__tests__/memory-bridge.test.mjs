@@ -47,6 +47,18 @@ describe('readLongTerm', () => {
     expect(await readLongTerm(client)).toBe('');
   });
 
+  test('reads legacy content when the long_term section is missing', async () => {
+    const client = makeClient({ memoryPayload: { content: '[2026-10-24] Hosted memory' } });
+    expect(await readLongTerm(client)).toBe('[2026-10-24] Hosted memory');
+  });
+
+  test('an explicit empty long_term section takes precedence over legacy content', async () => {
+    const client = makeClient({
+      memoryPayload: { content: 'stale legacy memory', sections: { long_term: { content: '' } } },
+    });
+    expect(await readLongTerm(client)).toBe('');
+  });
+
   test('returns empty string on 404 and does NOT surface via onError (fresh agent)', async () => {
     const err404 = Object.assign(new Error('not found'), { status: 404 });
     const client = {

@@ -20,6 +20,8 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require
+const AgentDigestState = require('../models/AgentDigestState');
+// eslint-disable-next-line global-require
 const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
 // eslint-disable-next-line global-require
 const AgentEnsembleService = require('./agentEnsembleService');
@@ -470,6 +472,23 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // TASK-469: completion timestamps provide the five-minute due time. The
+    // per-identity Mongo CAS in the service bounds overlap between replicas.
+    const assignedTaskWakeJob: CronJob = cron.schedule(
+      '* * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { dispatchAssignedTaskWakes } = require('./assignedTaskWakeService');
+          const result = await dispatchAssignedTaskWakes();
+          if (result.eligible) console.log('[assigned-task-wake]', result);
+        } catch (error) {
+          console.error('[assigned-task-wake] dispatch failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     // Installable cleanup is deliberately lease-free. A rollout can run this
     // on two replicas, but every sweep mutation is a status+claimId CAS and
     // revoke/delete is idempotent. A duplicate pass is wasted work, never a
@@ -522,6 +541,21 @@ class SchedulerService {
           if (expired) console.log(`[approval] expired tool calls=${expired}`);
         } catch (error) {
           console.error('[approval] tool-call expiry sweep failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
+    const spawnCredentialReapJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { reapSpawnCredentials } = require('./spawnCredentialReaper');
+          const removed = await reapSpawnCredentials();
+          if (removed) console.log(`[spawn-credentials] reaped=${removed}`);
+        } catch (error) {
+          console.error('[spawn-credentials] reap failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -584,9 +618,11 @@ class SchedulerService {
       stalledConnectJob,
       missedAgentMentionJob,
       kernelWorkSweepJob,
+      assignedTaskWakeJob,
       installableReconcileJob,
       decisionCardReconcileJob,
       approvalToolCallSweepJob,
+      spawnCredentialReapJob,
       spendAlarmJob,
       ...(process.env.SYNTHETIC_ACCOUNT_PURGE === 'true' ? [syntheticAccountPurgeJob] : []),
     ];
@@ -1104,7 +1140,64 @@ class SchedulerService {
     }
 
     const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now });
-    return { ...result, skippedByLease: false };
+    const unreadWakes = await SchedulerService.dispatchUnreadDigestHeartbeats(now);
+    return { ...result, enqueued: result.enqueued + unreadWakes, skippedByLease: false };
+  }
+
+  /** One slow wake for a pod with unread digest, never for an empty inbox. */
+  static async dispatchUnreadDigestHeartbeats(now: Date = new Date()): Promise<number> {
+    const threshold = new Date(now.getTime() - 60 * 60 * 1000);
+    const rawGroups = await AgentEvent.aggregate([
+      { $match: { status: 'pending', deliveryMode: 'digest', createdAt: { $lte: threshold } } },
+      { $group: {
+        _id: { agentName: '$agentName', instanceId: '$instanceId', podId: '$podId' },
+      } },
+    ]) as Array<{ _id: { agentName: string; instanceId: string; podId: unknown } }>;
+    const foldedGroups = await AgentDigestState.find({ unreadCount: { $gt: 0 }, unreadSince: { $lte: threshold } })
+      .select('agentName instanceId podId').lean() as Array<{ agentName: string; instanceId: string; podId: unknown }>;
+    const groups = [...new Map([...rawGroups.map((row) => row._id), ...foldedGroups]
+      .map((scope) => [`${scope.agentName}:${scope.instanceId}:${scope.podId}`, { _id: scope }])).values()];
+    let enqueued = 0;
+    for (const row of groups) {
+      const scope = {
+        agentName: row._id.agentName,
+        instanceId: row._id.instanceId || 'default',
+        podId: row._id.podId,
+      };
+      // A retired projection has no listener. Its old digest remains for GC,
+      // but must not create a new wake every hour.
+      // eslint-disable-next-line no-await-in-loop
+      const active = await AgentInstallation.exists({
+        ...scope, status: 'active', 'config.autonomy.enabled': { $ne: false },
+      });
+      if (!active) continue;
+      // An existing wake will carry the digest. A recent completed wake says
+      // the seat has already had a turn inside this 60-minute window.
+      // eslint-disable-next-line no-await-in-loop
+      const [pendingWake, recentWake] = await Promise.all([
+        AgentEvent.exists({ ...scope, status: 'pending', deliveryMode: { $ne: 'digest' } }),
+        AgentEvent.exists({ ...scope, deliveryMode: { $ne: 'digest' }, $or: [
+          { status: { $in: ['delivered', 'acked'] }, deliveredAt: { $gte: threshold } },
+          // AgentEvent timestamps update on every failed transition, including
+          // failures before delivery and failures after an older delivery.
+          { status: 'failed', updatedAt: { $gte: threshold } },
+        ] }),
+      ]);
+      if (pendingWake || recentWake) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await AgentEventService.enqueue({
+        ...scope,
+        type: 'heartbeat',
+        payload: {
+          trigger: 'unread-digest',
+          podId: String(scope.podId),
+          generatedAt: now.toISOString(),
+          content: '[Unread pod activity is waiting. Read the digest in this inbox batch; respond only if useful.]',
+        },
+      });
+      enqueued += 1;
+    }
+    return enqueued;
   }
 
   static async dispatchAgentHeartbeats(

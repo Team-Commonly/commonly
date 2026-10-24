@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS messages (
   -- addressing. NULL means "not in a thread"; a root is an ordinary message
   -- other messages point at, and a root's own thread_root_id stays NULL.
   thread_root_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+  -- Per-pod commit-order fence for agent send freshness. Existing rows stay 0.
+  freshness_revision BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -104,6 +106,44 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS author_kind VARCHAR(20);
 -- caveat on #1106, not by anything I ran.
 ALTER TABLE messages
   ADD COLUMN IF NOT EXISTS thread_root_id INTEGER REFERENCES messages(id) ON DELETE SET NULL;
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS freshness_revision BIGINT NOT NULL DEFAULT 0;
+
+-- TASK-313 part 2. The Mongo id of a fallback message this row was reconciled
+-- from. Nullable: ordinary rows carry NULL, and several NULLs never collide.
+-- The UNIQUE index is NOT declared here: CONCURRENTLY cannot run inside this
+-- multi-statement script, which executes as one transaction. The reconciler
+-- builds it (services/pgMessageReconcileService.ensureLegacyIdIndex) before
+-- its first insert, so it never blocks writes on messages.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS legacy_mongo_id TEXT;
+
+CREATE TABLE IF NOT EXISTS pod_message_revisions (
+  pod_id VARCHAR(24) PRIMARY KEY REFERENCES pods(id) ON DELETE CASCADE,
+  revision BIGINT NOT NULL DEFAULT 0
+);
+
+-- The counter update and message insert commit together. Concurrent inserts
+-- into one pod serialize on this row, so revision order is commit order even
+-- when an INSERT began before a reader and committed after it.
+CREATE OR REPLACE FUNCTION assign_message_freshness_revision()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO pod_message_revisions (pod_id, revision)
+  VALUES (NEW.pod_id, 1)
+  ON CONFLICT (pod_id) DO UPDATE
+    SET revision = pod_message_revisions.revision + 1
+  RETURNING revision INTO NEW.freshness_revision;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS messages_freshness_revision ON messages;
+CREATE TRIGGER messages_freshness_revision
+  BEFORE INSERT ON messages
+  FOR EACH ROW EXECUTE FUNCTION assign_message_freshness_revision();
+
+CREATE INDEX IF NOT EXISTS idx_messages_pod_freshness_revision
+  ON messages(pod_id, freshness_revision);
 
 -- Migration records. There was no such table anywhere under backend/ before
 -- this (@sprint-review, 56859, checked with a positive control): schema.sql is

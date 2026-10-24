@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { V2ApiClient } from './useV2Api';
 import type { V2Start } from './useV2PodDetail';
 import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
+import { hostedCapNotice } from '../components/hostedCapNotice';
 
 /** The action on Scout's welcome "Run an agent here" (backend/services/welcomeHostedStart.ts). */
 export const WELCOME_HOSTED_ACTION = 'run-hosted';
@@ -20,7 +21,7 @@ export type WelcomeHostedStartState =
   | null;
 
 type ApiError = {
-  response?: { status?: number; data?: { code?: string; message?: string; error?: string; cap?: number } };
+  response?: { status?: number; data?: { code?: string; message?: string; error?: string; cap?: number; holders?: Array<{ agentName?: string }> } };
   message?: string;
 };
 
@@ -88,7 +89,7 @@ export function useWelcomeHostedStart(
         return;
       }
       let error: string;
-      if (data?.code === 'hosted_cap_reached') error = t('agentByo.errors.hostedCap', { cap: data.cap ?? 1 });
+      if (data?.code === 'hosted_cap_reached') error = hostedCapNotice(t, data);
       else if (data?.code === 'hosted_runtime_unconfigured') error = t('agentByo.errors.hostedUnavailable');
       else error = data?.message || data?.error || t('agentByo.errors.installFailed');
       setState({ messageId, status: 'failed', error });

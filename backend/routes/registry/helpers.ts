@@ -391,16 +391,28 @@ const buildAgentInstallationPayload = (installation: any, {
   lastActiveAt = null,
   user = null,
   lastMessage = null,
+  revealWebhookUrl = false,
 }: {
   profile?: any; iconUrl?: string; lastHeartbeatAt?: any; lastActiveAt?: any; user?: any;
   lastMessage?: { content?: any; createdAt?: any } | null;
+  /**
+   * Only the installer and instance admins see a push webhook's URL. Every
+   * pod member reads this payload, and a URL can carry a credential in its
+   * query string (`?secret=`), so it is withheld unless the caller opts in.
+   */
+  revealWebhookUrl?: boolean;
 } = {}) => {
   if (!installation) return null;
   const normalizedConfig = normalizeConfigMap(installation.config);
-  const runtimeConfig = sanitizeRuntimeConfig(
+  const sanitizedRuntime = sanitizeRuntimeConfig(
     normalizedConfig?.runtime || installation.config?.runtime || null,
     installation.agentName,
   );
+  const runtimeConfig = (() => {
+    if (revealWebhookUrl || !sanitizedRuntime || !('webhookUrl' in sanitizedRuntime)) return sanitizedRuntime;
+    const { webhookUrl: _withheld, ...rest } = sanitizedRuntime as Record<string, unknown>;
+    return rest;
+  })();
   // Settings may edit these model controls, and the daemon prefers an explicit
   // ADR-008 environment over the runtime overlay. Expose only these benign
   // scalar fields; never project environment secrets or tool declarations.
@@ -452,6 +464,9 @@ const buildAgentInstallationPayload = (installation: any, {
     // (AttentionItem.actorUserId) on it instead of matching names — three
     // writers store three different name shapes (ux-lead, Sharpen 66164).
     userId: user?._id ? String(user._id) : null,
+    // Chat reads this image from the same User principal. Installation and
+    // registry artwork must not stand in for an agent's account avatar.
+    profilePicture: user?.profilePicture || null,
     // Direction C Your Team card, line 3: one sentence from the curated
     // `botMetadata.description`. Null when unset — the card renders no line,
     // never a quote (ux-lead 66163).

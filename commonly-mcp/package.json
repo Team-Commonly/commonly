@@ -1,7 +1,7 @@
 {
   "name": "@commonlyai/mcp",
   "mcpName": "io.github.Team-Commonly/commonly",
-  "version": "0.3.14",
+  "version": "0.3.16",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -20,6 +20,7 @@
   ],
   "scripts": {
     "start": "node src/index.js",
+    "build:mcpb": "node mcpb/build.mjs",
     "test": "node --experimental-vm-modules node_modules/.bin/jest"
   },
   "dependencies": {

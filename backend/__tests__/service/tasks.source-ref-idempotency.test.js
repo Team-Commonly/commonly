@@ -115,6 +115,12 @@ describe('POST /api/v1/tasks/:podId sourceRef idempotency', () => {
 
   it('keeps the pre-check reopen behavior for a completed task', async () => {
     const existing = await seedTask({ status: 'done', completedAt: new Date() });
+    const priorRevision = new Date(Date.now() + 1000);
+    await Task.updateOne(
+      { _id: existing._id },
+      { $set: { updatedAt: priorRevision } },
+      { timestamps: false },
+    );
 
     const response = await postTask({
       title: 'Existing task',
@@ -137,6 +143,7 @@ describe('POST /api/v1/tasks/:podId sourceRef idempotency', () => {
       },
     });
     expect(await Task.countDocuments({ podId: pod._id, sourceRef: 'external:ticket:697' })).toBe(1);
+    expect(new Date(response.body.task.updatedAt).getTime()).toBeGreaterThan(priorRevision.getTime());
   });
 
   it('clears the assignee when a same-pair reopen is submitted without one', async () => {

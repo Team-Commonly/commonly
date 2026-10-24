@@ -172,6 +172,19 @@ describe('platformIpRateLimit — the bucket is the caller', () => {
     await probe(app, { 'cf-connecting-ip': '203.0.113.8' }).expect(429);
   });
 
+  test('header-free req.ip has a limited bucket independent of CF clients', async () => {
+    const app = buildApp({ windowMs: 60000, limit: 1, label: 'fallback proof' });
+    // All requests share Supertest's loopback req.ip. Only these two carry
+    // distinct edge client addresses; exhausting one must not affect either
+    // the other CF client or the header-free fallback.
+    await probe(app, { 'cf-connecting-ip': '203.0.113.20' }).expect(200);
+    await probe(app, { 'cf-connecting-ip': '203.0.113.20' }).expect(429);
+    await probe(app).expect(200);
+    await probe(app).expect(429);
+    await probe(app, { 'cf-connecting-ip': '203.0.113.21' }).expect(200);
+    await probe(app, { 'cf-connecting-ip': '203.0.113.21' }).expect(429);
+  });
+
   test('the budget is enforced per caller, so the shared bucket is not what expires', async () => {
     const app = buildApp({ windowMs: 60000, limit: 2, label: 'test budget' });
     const spendTwo = async (ip) => {

@@ -28,9 +28,16 @@ jest.mock('../../../models/AgentEvent', () => ({
   create: jest.fn(),
   findOneAndUpdate: jest.fn(),
   findByIdAndUpdate: jest.fn(),
+  updateOne: jest.fn(),
   find: jest.fn(),
   updateMany: jest.fn(),
   deleteMany: jest.fn(),
+}));
+
+jest.mock('../../../services/agentDigestFoldService', () => ({
+  foldExpiredDigests: jest.fn().mockResolvedValue(0),
+  readFoldedDigest: jest.fn().mockResolvedValue(null),
+  settleFoldedDigest: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../../models/AgentMemory', () => ({
@@ -76,6 +83,7 @@ const Task = require('../../../models/Task');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentEventService = require('../../../services/agentEventService');
 const { runAgent } = require('../../../services/nativeRuntimeService');
+const { settleFoldedDigest } = require('../../../services/agentDigestFoldService');
 const { postToPublicAddress } = require('../../../services/outboundUrlGuard');
 
 // Let fire-and-forget promise chains (webhook delivery, native settle) run.
@@ -133,6 +141,20 @@ describe('attempts is a delivery counter with exactly one writer', () => {
     // Double-counting here is what made a normally-handled event read
     // `attempts: 2` and turned the field into "deliveries plus transitions."
     expect(update.$inc).toBeUndefined();
+  });
+
+  test('a no-turn ack leaves folded digest and the memory read cursor unread', async () => {
+    AgentEvent.findOneAndUpdate.mockResolvedValue({
+      _id: 'evt-1', agentName: 'pixel', instanceId: 'default', podId: POD_P1,
+      type: 'heartbeat', status: 'acked', digestRollupRevision: 3,
+      memoryRevisionAtDelivery: 7,
+    });
+
+    await AgentEventService.acknowledge('evt-1', 'pixel', 'default',
+      { outcome: 'no_action', reason: 'native-no-turn' });
+
+    expect(settleFoldedDigest).not.toHaveBeenCalled();
+    expect(AgentMemory.updateOne).not.toHaveBeenCalled();
   });
 
   test('recordFailure() does NOT increment either', async () => {
@@ -326,13 +348,14 @@ describe('garbageCollect: the requeue predicate and its cap', () => {
     await AgentEventService.garbageCollect({});
 
     const pending = deletes().find((f) => f.status === 'pending');
-    const settled = deletes().find((f) => Array.isArray(f.status?.$in));
+    const settled = deletes().find((f) => f.status === 'acked');
 
     expect(pending).toBeDefined();
     expect(settled).toBeDefined();
     // Same instant, not merely "both long": a shorter pending horizon is exactly
     // what let the sweep outrun the retry lifecycle.
     expect(pending.createdAt.$lt.getTime()).toBe(settled.createdAt.$lt.getTime());
+    expect(pending.deliveryMode).toEqual({ $ne: 'digest' });
   });
 
   test('no delete predicate can destroy a pending event inside the retry window', async () => {
@@ -394,7 +417,94 @@ describe('driver paths reach a terminal state', () => {
     // 'delivered' here is what fed a handled event back into the requeue
     // population and re-POSTed it ~10-20 min later, indefinitely.
     expect(update.status).toBe('acked');
-    expect(update['delivery.outcome']).toBe('no_action');
+    expect(update.delivery).toMatchObject({ outcome: 'no_action', reasonRecorded: true });
+    expect(update.delivery.reason).toBeUndefined();
+    expect(update.delivery.updatedAt).toBeInstanceOf(Date);
+  });
+
+  test.each(['http', 'timeout', 'error', 'non-error'])('webhook %s logs exclude secrets', async (failure) => {
+    const webhookUrl = 'https://fake-user:fake-password@example.test/private-fake-path'
+      + '?token=fake-query-secret#fake-fragment';
+    const event = {
+      _id: 'evt-private-hook',
+      agentName: 'hookbot',
+      instanceId: 'default',
+      podId: POD_P1,
+      type: 'chat.mention',
+      payload: {},
+      status: 'pending',
+      attempts: 0,
+    };
+    AgentEvent.create.mockResolvedValue(event);
+    AgentInstallation.findOne.mockReturnValue({ lean: async () => null });
+    AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [] }) }) });
+    AgentInstallation.find.mockReturnValue({
+      lean: async () => [{ config: { runtime: { webhookUrl } } }],
+    });
+    if (failure === 'http') {
+      postToPublicAddress.mockResolvedValueOnce({ ok: false, status: 503, text: webhookUrl });
+    } else {
+      const error = new Error(`Request to ${webhookUrl} failed: fake-query-secret`);
+      if (failure === 'timeout') error.name = 'AbortError';
+      postToPublicAddress.mockRejectedValueOnce(failure === 'non-error' ? null : error);
+    }
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await AgentEventService.enqueue({
+        agentName: 'hookbot', instanceId: 'default', podId: POD_P1, type: 'chat.mention', payload: {},
+      });
+      await flush();
+
+      expect(postToPublicAddress).toHaveBeenCalledWith(webhookUrl, expect.any(Object));
+      expect(AgentEvent.findByIdAndUpdate).not.toHaveBeenCalled();
+      const logs = JSON.stringify(warning.mock.calls);
+      const sensitiveParts = [
+        'fake-user', 'fake-password', 'fake-query-secret', 'private-fake-path', 'fake-fragment', 'example.test',
+      ];
+      sensitiveParts.forEach((secret) => {
+        expect(logs).not.toContain(secret);
+      });
+      const diagnostic = {
+        http: 'HTTP 503', timeout: 'timed out after 10s', error: 'delivery failed', 'non-error': 'delivery failed',
+      }[failure];
+      expect(warning).toHaveBeenCalledWith(`[webhook] hookbot ${diagnostic}`);
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
+  test.each([{ text: 'original text' }, { prompt: 'original prompt' }])('a webhook wake preserves fallback text and settles context after accepted delivery: %j', async (wakePayload) => {
+    const ambient = {
+      _id: 'ambient-1', agentName: 'hookbot', instanceId: 'default', podId: POD_P1,
+      payload: { username: 'Alice', messageId: '42', threadRootId: 40, content: 'ambient note' },
+    };
+    const duplicate = { ...ambient, _id: 'ambient-2' };
+    AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [ambient, duplicate] }) }) });
+    AgentEvent.updateOne.mockResolvedValue({ matchedCount: 1 });
+    AgentEvent.updateMany.mockResolvedValue({ modifiedCount: 1 });
+    AgentEvent.create.mockResolvedValue({
+      _id: 'evt-digest-wake', agentName: 'hookbot', instanceId: 'default', podId: POD_P1,
+      type: 'chat.mention', payload: wakePayload, status: 'pending', attempts: 0,
+    });
+    AgentInstallation.find.mockReturnValue({
+      lean: async () => [{ config: { runtime: { webhookUrl: 'https://example.test/hook' } } }],
+    });
+    postToPublicAddress.mockResolvedValueOnce({ ok: true, status: 200, text: '{"outcome":"no_action"}' });
+
+    await AgentEventService.enqueue({
+      agentName: 'hookbot', instanceId: 'default', podId: POD_P1, type: 'chat.mention', payload: {},
+    });
+    await flush();
+
+    const body = JSON.parse(postToPublicAddress.mock.calls[0][1].body);
+    expect(body.payload.content).toContain(wakePayload.prompt || wakePayload.text);
+    expect(body.payload.digestSummary).toContain('thread 40: 1 unread');
+    expect(body.payload.digestSummary).toContain('1 ambient update in 1 conversation');
+    expect(body.payload.digestSummary).not.toContain('ambient note');
+    expect(AgentEvent.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: { $in: ['ambient-1', 'ambient-2'] }, deliveryMode: 'digest' }),
+      expect.objectContaining({ $set: expect.objectContaining({ status: 'acked' }) }),
+    );
   });
 
   test('a webhook URL the guard refuses gets no request, and the event is not acked', async () => {
@@ -424,7 +534,7 @@ describe('driver paths reach a terminal state', () => {
     expect(httpSpy).not.toHaveBeenCalled();
     expect(httpsSpy).not.toHaveBeenCalled();
     expect(AgentEvent.findByIdAndUpdate.mock.calls.some(([, u]) => u && u.status === 'acked')).toBe(false);
-    expect(warn.mock.calls.some((args) => String(args[1] || '').includes('outbound URL refused'))).toBe(true);
+    expect(warn).toHaveBeenCalledWith('[webhook] hookbot delivery failed');
   });
 
   describe('native runtime', () => {
@@ -447,6 +557,58 @@ describe('driver paths reach a terminal state', () => {
       await flush();
       await flush();
     };
+
+    test('a digest for a native installation remains pending without starting a turn', async () => {
+      AgentInstallation.findOne.mockReturnValue({ lean: () => Promise.resolve(nativeInstall) });
+      AgentEvent.create.mockResolvedValue({
+        _id: 'evt-digest', agentName: 'clerk', instanceId: 'default', podId: POD_P1,
+        type: 'message.posted', payload: {}, status: 'pending', deliveryMode: 'digest',
+      });
+
+      await AgentEventService.enqueue({
+        agentName: 'clerk', instanceId: 'default', podId: POD_P1,
+        type: 'message.posted', payload: {}, deliveryMode: 'digest',
+      });
+
+      expect(AgentEvent.create).toHaveBeenCalledWith(expect.objectContaining({ deliveryMode: 'digest' }));
+      expect(AgentEvent.create.mock.calls[0][0]).not.toHaveProperty('status');
+      expect(runAgent).not.toHaveBeenCalled();
+    });
+
+    test('a later native wake carries digest context and settles only included rows on success', async () => {
+      const digest = { _id: 'evt-d', payload: { username: 'alice', messageId: '42', content: 'daily update' } };
+      AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: () => Promise.resolve([digest]) }) }) });
+      AgentEvent.updateMany.mockResolvedValue({ modifiedCount: 1 });
+      runAgent.mockResolvedValue({ status: 'succeeded', runId: 'run-1', totalTurns: 1 });
+
+      await enqueueNative();
+
+      expect(runAgent.mock.calls[0][1].payload.content).toContain('pod conversation: 1 unread');
+      expect(runAgent.mock.calls[0][1].payload.content).not.toContain('daily update');
+      expect(AgentEvent.updateMany).toHaveBeenCalledWith(
+        { _id: { $in: ['evt-d'] }, status: 'pending', deliveryMode: 'digest' },
+        { $set: { status: 'acked' } },
+      );
+
+      jest.clearAllMocks();
+      AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: () => Promise.resolve([digest]) }) }) });
+      runAgent.mockResolvedValue({ status: 'failed' });
+      await enqueueNative();
+      expect(AgentEvent.updateMany).not.toHaveBeenCalled();
+
+      jest.clearAllMocks();
+      AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: () => Promise.resolve([digest]) }) }) });
+      runAgent.mockResolvedValue({ status: 'succeeded', runId: '', totalTurns: 0 });
+      const acknowledge = jest.spyOn(AgentEventService, 'acknowledge').mockResolvedValue({});
+      await enqueueNative();
+      expect(AgentEvent.updateMany).not.toHaveBeenCalled();
+      expect(acknowledge).toHaveBeenCalledWith(
+        'evt-n', 'clerk', 'default',
+        { outcome: 'no_action', reason: 'native-no-turn' },
+        null, 'native',
+      );
+      acknowledge.mockRestore();
+    });
 
     test('a podId shaped like a query operator is never looked up or run in-process', async () => {
       AgentInstallation.findOne.mockReturnValue({ lean: () => Promise.resolve(nativeInstall) });

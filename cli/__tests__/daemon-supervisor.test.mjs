@@ -2,14 +2,20 @@
 // effect injected — no processes, no network, no real timers.
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 import {
   backoffMs,
   BACKOFF_BASE_MS,
   BACKOFF_MAX_MS,
   createDaemonSupervisor,
+  reconnectDelayMs,
+  MAX_CONCURRENT_AGENT_STARTS,
 } from '../src/lib/daemon-supervisor.js';
 import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
+import claude from '../src/lib/adapters/claude.js';
 
 const record = {
   machineDbId: '507f1f77bcf86cd799439011',
@@ -76,6 +82,49 @@ describe('backoff', () => {
     expect(backoffMs(1)).toBe(BACKOFF_BASE_MS * 2);
     expect(backoffMs(20)).toBe(BACKOFF_MAX_MS);
   });
+});
+
+test('reconnect delay is jittered and bounded', () => {
+  expect(reconnectDelayMs(1, () => 0)).toBe(1_000);
+  expect(reconnectDelayMs(1, () => 1)).toBe(2_000);
+  expect(reconnectDelayMs(20, () => 1)).toBe(60_000);
+});
+
+test('a revoked machine key ends supervision instead of polling forever', async () => {
+  const denied = Object.assign(new Error('Machine access revoked'), { status: 401 });
+  const onTerminalAuthError = jest.fn();
+  const client = { get: jest.fn().mockRejectedValue(denied), post: jest.fn() };
+  const supervisor = createDaemonSupervisor({
+    record, client, spawnChild: jest.fn(), loadToken: jest.fn(), saveToken: jest.fn(),
+    resolveAdapter: jest.fn(), isTerminalAuthError: (error) => error === denied,
+    onTerminalAuthError,
+  });
+  await supervisor.tick();
+  await supervisor.tick();
+  expect(onTerminalAuthError).toHaveBeenCalledTimes(1);
+  expect(client.get).toHaveBeenCalledTimes(1);
+});
+
+test('initial and queued starts share a three-per-window limit', async () => {
+  const children = [];
+  const timers = [];
+  let time = 0;
+  const supervisor = createDaemonSupervisor({
+    record,
+    client: { get: jest.fn(async () => ({ agents: Array.from({ length: 5 }, (_, i) => boundRow({ agentName: `seat-${i}` })) })), post: jest.fn() },
+    spawnChild: jest.fn(() => { const child = makeChild(); children.push(child); return child; }),
+    loadToken: jest.fn((name) => ({ agentName: name, adapter: 'claude' })),
+    saveToken: jest.fn(), resolveAdapter: jest.fn(),
+    now: () => time,
+    setTimeoutFn: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+  });
+  await supervisor.tick();
+  expect(children).toHaveLength(MAX_CONCURRENT_AGENT_STARTS);
+  expect(timers).toHaveLength(2);
+  time = 5_000;
+  timers.forEach(({ fn }) => fn());
+  expect(children).toHaveLength(5);
+  supervisor.stop();
 });
 
 describe('tick', () => {
@@ -450,6 +499,32 @@ describe('tick', () => {
     expect(supervisor.agentStates()).toEqual([
       expect.objectContaining({ adapter: 'claude', model: 'sonnet', effort: 'high' }),
     ]);
+
+    // The environment value selected from the Settings declaration must be
+    // the value the actual adapter places in argv, not the runtime overlay.
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'runtime-effort-argv-'));
+    const calls = [];
+    try {
+      await claude.spawn('check', {
+        cwd, sessionId: null,
+        environment: {
+          model: tokens['wren-test'].environment.model,
+          effort: tokens['wren-test'].environment.effort,
+        },
+        _spawnImpl: (command, args) => {
+          calls.push(args);
+          const child = new EventEmitter();
+          child.stdout = new EventEmitter();
+          child.stderr = new EventEmitter();
+          setImmediate(() => child.emit('close', 0));
+          return child;
+        },
+      });
+      expect(calls[0][calls[0].indexOf('--effort') + 1]).toBe('high');
+      expect(calls[0][calls[0].indexOf('--model') + 1]).toBe('sonnet');
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   test('a refused adapter change is reported as the adapter that kept running (TASK-065)', async () => {

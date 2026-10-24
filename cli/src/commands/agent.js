@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 
 import { createClient } from '../lib/api.js';
+import { copyHandoffMemory } from '../lib/handoff-memory.js';
 import {
   buildSpawnId,
   createSpawnCredentialLease,
@@ -27,15 +28,23 @@ import {
 } from '../lib/spawn-credential.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
+import { formatDigestFrame } from '../lib/digest-frame.js';
 import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import {
   getSession,
+  getSessionEntry,
   setSession,
   clearSessions,
   wasEventHandled,
   recordHandledEvent,
 } from '../lib/session-store.js';
+import {
+  buildRecycleBriefing,
+  idleMinutesSince,
+  recycleThresholds,
+  shouldStartFreshSession,
+} from '../lib/session-recycle.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
@@ -463,7 +472,10 @@ const DEFERRABLE_SOLO_EVENT_TYPES = new Set(['first_contact']);
 // Inside one batch the person's item leads the prompt; the greeting follows it.
 const PERSON_WAITING_EVENT_TYPES = new Set(['chat.mention', 'message.posted', 'dm.message']);
 
-const inboxPriority = (event) => (PERSON_WAITING_EVENT_TYPES.has(event?.type) ? 0 : 1);
+const inboxPriority = (event) => {
+  if (event?.deliveryMode === 'digest') return 2;
+  return PERSON_WAITING_EVENT_TYPES.has(event?.type) ? 0 : 1;
+};
 
 // Consultations have a per-request private response channel, rather than a
 // pod-chat delivery. They stay on their existing single-event path; every
@@ -808,6 +820,8 @@ export const performAttach = async ({
   displayName,
   envPath = null,
   wakeOnMessage = false,
+  memoryFrom = null,
+  memoryInstance = 'default',
   log = () => {},
   adapterRegistry = { getAdapter, listAdapterNames },
 }) => {
@@ -942,6 +956,7 @@ export const performAttach = async ({
   // on config.environment so cross-driver implementations can realize it
   // server-side without re-reading the user's file.
   const installResult = await client.post('/api/registry/install', {
+    ...(memoryFrom ? { resumeExisting: true } : {}),
     agentName,
     podId,
     displayName: displayName || agentName,
@@ -964,6 +979,16 @@ export const performAttach = async ({
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
 
+  if (memoryFrom) {
+    const memoryCopy = await copyHandoffMemory(client, {
+      sourceAgentName: memoryFrom, sourceInstanceId: memoryInstance,
+      targetAgentName: installation.agentName, targetInstanceId: instanceId,
+    });
+    log(memoryCopy.reason === 'source-empty'
+      ? 'hosted agent has no long-term memory to copy'
+      : 'hosted long-term memory is present in the local agent');
+  }
+
   let runtimeToken = installResult.runtimeToken;
   if (!runtimeToken) {
     // ADR-005 §detach + reattach: the agent User row's hashed token persists
@@ -981,6 +1006,8 @@ export const performAttach = async ({
   if (!runtimeToken) {
     throw new Error('Runtime token was not returned by install or tokens endpoint');
   }
+
+
 
   return {
     installation,
@@ -1506,7 +1533,7 @@ export const performRun = ({
         // own conversation (Sage stood down twice on Anvil's thread
         // replies, 2026-08-24). Interim for TASK-058.
         const repliesToThisSeat = event.payload?.repliesToYourMessage === true;
-        if (ADDRESSED_EVENT_TYPES.has(event.type) || repliesToThisSeat) {
+        if (ADDRESSED_EVENT_TYPES.has(event.type) || event.payload?.addressed === true || repliesToThisSeat) {
           log(
             `[${event.type}] message ${claimMessageId} held by ${claim.holder} — `
             + (repliesToThisSeat
@@ -1564,7 +1591,26 @@ export const performRun = ({
   const runTurn = async ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
   }) => {
-    const sessionId = getSession(agentName, eventPodId, { binding: sessionBinding });
+    // TASK-440: a cold, large session starts fresh at wake instead of being
+    // resumed. The restart note leads the prompt; memory still reaches the
+    // fresh session through the adapter's preamble.
+    const sessionEntry = getSessionEntry(agentName, eventPodId, { binding: sessionBinding });
+    let sessionId = getSession(agentName, eventPodId, { binding: sessionBinding });
+    let recycleBriefing = null;
+    if (sessionId && shouldStartFreshSession({
+      lastTurn: sessionEntry?.lastTurn,
+      contextTokens: sessionEntry?.contextTokens,
+      thresholds: recycleThresholds(),
+    })) {
+      recycleBriefing = buildRecycleBriefing({
+        agentName,
+        idleMinutes: idleMinutesSince(sessionEntry.lastTurn),
+        contextTokens: sessionEntry.contextTokens,
+      });
+      log(`session recycled: idle ${idleMinutesSince(sessionEntry.lastTurn)} min, `
+        + `${sessionEntry.contextTokens} context tokens; starting fresh`);
+      sessionId = null;
+    }
     // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
     // and (if the adapter returns a summary) patch-sync back after.
     const memoryLongTerm = await readLongTerm(client, { onError });
@@ -1609,6 +1655,9 @@ export const performRun = ({
     const promptWithSkills = serverSkills.text
       ? `${focusFrame}\n\n${serverSkills.text}\n\n${prompt}`
       : promptWithFocus;
+    const promptForSpawn = recycleBriefing
+      ? `${recycleBriefing}\n\n${promptWithSkills}`
+      : promptWithSkills;
 
     log(`[${event.type}] spawning ${adapter.name}`);
     // TASK-102 part B. The CHILD gets a scoped credential; the wrapper keeps
@@ -1692,7 +1741,7 @@ export const performRun = ({
           effort: seatEnvironment?.effort,
         });
       }
-      result = await adapter.spawn(frameDecisionForkRule(promptWithSkills), {
+      result = await adapter.spawn(frameDecisionForkRule(promptForSpawn), {
         sessionId,
         cwd: agentCwd,
         env: commitAttribution?.env || process.env,
@@ -1737,7 +1786,13 @@ export const performRun = ({
     }
 
     if (result.newSessionId) {
-      setSession(agentName, eventPodId, result.newSessionId, { binding: sessionBinding });
+      // TASK-440: record the context size this turn left behind, so the next
+      // wake can decide whether to recycle. Adapters that report nothing keep
+      // resuming.
+      setSession(agentName, eventPodId, result.newSessionId, {
+        binding: sessionBinding,
+        contextTokens: result.contextTokens ?? null,
+      });
     }
     // Decide whether to post the CLI's final text. The agent owns its posting:
     // if it already spoke this turn through commonly_post_message, echoing its
@@ -2008,10 +2063,12 @@ export const performRun = ({
   // pull, rather than being silently consumed here.
   const buildInboxPrompt = (entries, inboxCount = entries.length) => {
     const BODY_LIMIT = batchLimit;
-    const bodies = entries.slice(0, BODY_LIMIT).map((entry, index) => {
+    const wakeEntries = entries.filter((entry) => entry.event.deliveryMode !== 'digest');
+    const digestEntries = entries.filter((entry) => entry.event.deliveryMode === 'digest');
+    const bodies = wakeEntries.slice(0, BODY_LIMIT).map((entry, index) => {
       const messageId = entry.event.payload?.messageId;
       const prefix = [
-        `Event ${index + 1}/${entries.length}: ${entry.event.type}`,
+        `Event ${index + 1}/${wakeEntries.length}: ${entry.event.type}`,
         messageId ? `message ${messageId}` : null,
       ].filter(Boolean).join(' — ');
       const claimContext = entry.readOnly
@@ -2021,11 +2078,14 @@ export const performRun = ({
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
       return `${prefix}\n${claimContext}${body}`;
     });
-    const omitted = Math.max(0, inboxCount - bodies.length);
+    const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
+    const digestFrame = formatDigestFrame(digestEntries.map((entry) => entry.event), rollup);
+    const omitted = Math.max(0, inboxCount - entries.length);
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
         + 'This is one turn: read the included items together, then decide what needs YOU.]',
       ...bodies,
+      ...(digestFrame ? [digestFrame] : []),
       ...(omitted > 0
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
         : []),
@@ -2168,12 +2228,17 @@ export const performRun = ({
       ? new Set(preSpawn.map((message) => String(message._id || message.id)))
       : null;
     const activeEntries = entries.filter((entry) => !entry.result);
-    const triggers = activeEntries.map((entry) => classifyTrigger(entry.event, preSpawn));
+    // Ambient digest entries provide context for this turn, but must never
+    // determine its admission or count as the trigger that woke the seat.
+    const wakingEntries = activeEntries.filter((entry) => entry.event.deliveryMode !== 'digest');
+    const triggers = wakingEntries.map((entry) => classifyTrigger(entry.event, preSpawn));
     const trigger = triggers.includes('human') ? 'human'
       : (triggers.includes('agent') ? 'agent' : 'unknown');
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
-    const admissionEvent = activeEntries.find((entry) => ADDRESSED_EVENT_TYPES.has(entry.event.type))
-      || activeEntries[0];
+    const admissionEvent = wakingEntries.find((entry) => (
+      ADDRESSED_EVENT_TYPES.has(entry.event.type) || entry.event.payload?.addressed === true
+    ))
+      || wakingEntries[0];
     if (admissionEvent) {
       const admission = cascadeGovernor.admit(
         eventPodId,
@@ -2182,7 +2247,7 @@ export const performRun = ({
         admissionEvent.event.payload,
       );
       if (!admission.allowed) {
-        for (const entry of activeEntries) {
+        for (const entry of wakingEntries) {
           entry.result = batchAdmissionResult(entry.event, admission);
         }
         return { entries };
@@ -2190,7 +2255,8 @@ export const performRun = ({
     }
 
     const bindingEntries = activeEntries.filter((entry) => (
-      entry.event.type === 'message.posted' && entry.event.payload?.messageId
+      entry.event.deliveryMode !== 'digest'
+      && entry.event.type === 'message.posted' && entry.event.payload?.messageId
     ));
     if (bindingEntries.length > 0) {
       const yieldMs = claimHandicap.yieldDelayMs(eventPodId);
@@ -2201,6 +2267,7 @@ export const performRun = ({
     }
 
     for (const entry of activeEntries) {
+      if (entry.event.deliveryMode === 'digest') continue;
       const messageId = entry.event.payload?.messageId;
       if (!messageId || !CLAIMABLE_EVENT_TYPES.has(entry.event.type)) continue;
       const claimKeeper = createClaimKeeper(client, {
@@ -2224,7 +2291,7 @@ export const performRun = ({
           // `message.posted`. Preserve the existing ADR-018/TASK-058
           // peer-aware exception; D3a otherwise partitions lost bindings as
           // read-only so a generic broadcast cannot widen itself after CAS.
-          if (entry.event.payload?.repliesToYourMessage === true) {
+          if (entry.event.payload?.repliesToYourMessage === true || entry.event.payload?.addressed === true) {
             entry.peerFrame = peerHoldsFrame(claim.holder, messageId);
             continue;
           }
@@ -2241,7 +2308,7 @@ export const performRun = ({
       }
     }
 
-    const actionEntries = activeEntries.filter((entry) => !entry.result);
+    const actionEntries = wakingEntries.filter((entry) => !entry.result);
     if (actionEntries.length === 0) return { entries };
 
     const claimKeepers = actionEntries
@@ -2300,6 +2367,17 @@ export const performRun = ({
           trigger,
         });
         for (const entry of actionEntries) entry.result = turnResult;
+        // A digest was context in this successful waking turn, never an
+        // independent action. If the waking work stood down or the provider
+        // refused the batch, leave it unread for the next real turn.
+        if (turnResult?.outcome === 'posted'
+          || (turnResult?.outcome === 'no_action' && !turnResult?.reason)) {
+          for (const entry of activeEntries) {
+            if (entry.event.deliveryMode === 'digest') {
+              entry.result = { outcome: 'no_action', reason: 'digest-read' };
+            }
+          }
+        }
       } catch (err) {
         if (!isContentRefusal(err)) throw err;
         if (actionEntries.length === 1) {
@@ -2352,6 +2430,7 @@ export const performRun = ({
   const tick = async () => {
     if (!running) return;
     let nextPollDelayMs = intervalMs;
+    let completedModelTurn = false;
     try {
       // ADR-024 D3: this is an inbox fetch, not a stream of interrupts. The
       // backend returns one pod's oldest pending batch, so every delivered row
@@ -2392,6 +2471,12 @@ export const performRun = ({
       }
       for (const group of eventGroups.values()) {
         if (!running) break;
+        // A current kernel never claims a digest-only page. Guard a mixed
+        // version rollout too: an ambient batch must not start a model turn.
+        if (group.every((event) => event.deliveryMode === 'digest')) {
+          log(`[inbox.batch] digest-only page (${group.length}) — no spawn or ack`);
+          continue;
+        }
         if ((group[0].podId || podId) && !PRIVATE_RESPONSE_EVENT_TYPES.has(group[0].type)) {
           // Nothing in this batch but the seat introducing itself: leave it
           // unacked for one interval so a person who mentions the agent in that
@@ -2459,13 +2544,9 @@ export const performRun = ({
           ));
           if (batchSpawned) {
             consecutiveSpawnFailures = 0;
-            // A turn is exactly when events pile up: whoever typed while the
-            // adapter was running is already waiting. Sleeping the interval on
-            // top of the turn charges them for it twice (TASK-343). Only a
-            // batch that actually spawned skips the wait; an idle poll and a
-            // batch that spawned nothing keep the interval, so this cannot
-            // become a spin.
-            nextPollDelayMs = 0;
+            // Notices arriving mid-turn get one bounded collection window.
+            // Idle polls and batches with no model turn keep their cadence.
+            completedModelTurn = true;
           }
           for (const entry of batch.entries) {
             const event = entry.event;
@@ -2643,7 +2724,9 @@ export const performRun = ({
       }
       onError?.(err);
     }
-    if (running) setTimeoutImpl(tick, nextPollDelayMs);
+    // Notices landing during a turn share one three-second collection window
+    // before the next inbox read, independent of the idle polling cadence.
+    if (running) setTimeoutImpl(tick, completedModelTurn ? 3000 : nextPollDelayMs);
   };
 
   tick();
@@ -3037,6 +3120,8 @@ Docs:
     .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|opencode|qwen|dsh|…)')
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .requiredOption('--name <name>', 'Agent name (e.g. my-claude)')
+    .option('--memory-from <agent>', 'Copy long-term memory from a hosted agent you own')
+    .option('--memory-instance <id>', 'Hosted source instance for --memory-from', 'default')
     .option('--display <name>', 'Display name shown in the pod')
     .option('--env <path>', 'Path to environment.json (ADR-008 — sandbox/skills/MCP)')
     .option('--import-memory [path]', 'Import local memory (CLAUDE.md / MEMORY.md / ~/.claude project memory, or a given file/dir) into the agent after attach')
@@ -3063,6 +3148,8 @@ Docs:
           displayName: opts.display,
           envPath: envAbsPath,
           wakeOnMessage: Boolean(opts.wakeOnMessage),
+          memoryFrom: opts.memoryFrom,
+          memoryInstance: opts.memoryInstance,
           log: (line) => console.warn(`[attach] ${line}`),
         });
 

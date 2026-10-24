@@ -9,6 +9,7 @@ export interface Runtime {
   adapter?: string;
   model?: string;
   effort?: string;
+  managed?: boolean;
 }
 
 interface AgentGrant {
@@ -27,6 +28,17 @@ interface AgentGrantsResponse {
   grants: AgentGrant[];
 }
 
+interface Placement {
+  boundMachineId: string | null;
+  requestedMachineId: string | null;
+  boundMachineRevoked: boolean;
+  activeMachines: Array<{ machineId: string; name: string }>;
+}
+
+interface PlacementFailure {
+  response?: { data?: { code?: string; blockers?: Array<{ podName: string; installerName: string }> } };
+}
+
 interface Props {
   name: string;
   instanceId: string;
@@ -43,12 +55,14 @@ const WALKED_ADAPTERS: Record<string, string> = {
   hermes: 'Hermes',
   dsh: 'DeepSeek Harness',
 };
+const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install';
 
-export const describeRuntime = (runtime: Runtime): { mode: 'hosted' | 'daemon' | 'cli' | 'unknown'; adapter: string | null } => {
+export const describeRuntime = (runtime: Runtime): { mode: 'native' | 'hosted' | 'daemon' | 'cli' | 'unknown'; adapter: string | null } => {
   const type = String(runtime.runtimeType || '').toLowerCase();
   const adapterKey = String(runtime.adapter || type).toLowerCase();
-  const mode = type === 'wrapper' ? 'daemon'
-    : type === 'hosted' || type === 'native' || type === 'internal' || runtime.host === 'cloud' ? 'hosted'
+  const mode = type === 'wrapper' ? (runtime.managed === false ? 'cli' : 'daemon')
+    : type === 'native' ? 'native'
+      : type === 'hosted' || type === 'internal' || runtime.host === 'cloud' ? 'hosted'
       : runtime.host === 'byo' && WALKED_ADAPTERS[adapterKey] ? 'cli' : 'unknown';
   return { mode, adapter: WALKED_ADAPTERS[adapterKey] || null };
 };
@@ -72,6 +86,35 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   const [modelDraft, setModelDraft] = useState(runtime.model || '');
   const [effortDraft, setEffortDraft] = useState(runtime.effort || '');
   const [confirmGrantId, setConfirmGrantId] = useState<string | null>(null);
+  const [placement, setPlacement] = useState<Placement | null>(null);
+  const [machineChoice, setMachineChoice] = useState('');
+  const [placementError, setPlacementError] = useState('');
+  const [moving, setMoving] = useState(false);
+
+  const placementFailure = (error: unknown, fallback: string): string => {
+    const data = (error as PlacementFailure)?.response?.data;
+    if (data?.code === 'another_installer') {
+      const blockers = (data.blockers || []).map(({ podName, installerName }) => t('agentManage.runtime.blocker', { podName, installerName }))
+        .join(t('agentManage.runtime.blockerSeparator'));
+      return blockers ? t('agentManage.runtime.blockedBy', { blockers }) : t('agentManage.runtime.blockedGeneric');
+    }
+    const key: Record<string, string> = {
+      owner_installation_missing: 'placementOwnerMissing', unknown_installer: 'placementUnknownInstaller',
+      target_revoked: 'targetUnavailable', target_missing: 'targetUnavailable',
+      binding_changed: 'placementChanged', agent_missing: 'placementError',
+      in_process_agent_no_token: 'hostedCannotMove',
+    };
+    return data?.code && key[data.code] ? t(`agentManage.runtime.${key[data.code]}`) : t(fallback);
+  };
+
+  const loadPlacement = useCallback(async () => {
+    const response = await api.get<Placement>('/api/agent-binding/placement', { params: { agentName: name, instanceId } });
+    const next = { ...response, activeMachines: response.activeMachines || [] };
+    setPlacement(next);
+    setMachineChoice((current) => next.activeMachines.some((machine) => machine.machineId === current)
+      ? current : next.activeMachines.find((machine) => machine.machineId !== next.boundMachineId)?.machineId || '');
+    return next;
+  }, [api, name, instanceId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,11 +132,18 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   }, [api, name, instanceId, t]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (runtime.runtimeType !== 'wrapper') return;
+    setPlacement(null);
+    setPlacementError('');
+    void loadPlacement().catch((error) => setPlacementError(placementFailure(error, 'agentManage.runtime.placementError')));
+  }, [runtime.runtimeType, loadPlacement, t]);
   useEffect(() => setModelDraft(runtime.model || ''), [runtime.model]);
   useEffect(() => setEffortDraft(runtime.effort || ''), [runtime.effort]);
 
   const details = useMemo(() => describeRuntime(runtime), [runtime]);
   const modeLabel = {
+    native: t('agentManage.runtime.native', { defaultValue: 'Native engine' }),
     hosted: t('agentManage.runtime.hosted', { defaultValue: 'Hosted' }),
     daemon: t('agentManage.runtime.daemon', { defaultValue: 'On a computer, via the daemon' }),
     cli: t('agentManage.runtime.cli', { defaultValue: 'Single CLI' }),
@@ -139,6 +189,33 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     }
   };
 
+  const moveAgent = async () => {
+    if (!placement || !machineChoice || moving) return;
+    setMoving(true);
+    setPlacementError('');
+    try {
+      // Recheck sole ownership and the target for immediate feedback. The
+      // server move route checks again and updates the binding in one write.
+      const current = await loadPlacement();
+      if (current.boundMachineId !== placement.boundMachineId || (current.boundMachineId && !current.boundMachineRevoked)) {
+        throw new Error(t('agentManage.runtime.placementChanged'));
+      }
+      if (!current.activeMachines.some((machine) => machine.machineId === machineChoice)) {
+        throw new Error(t('agentManage.runtime.targetUnavailable'));
+      }
+      await api.post('/api/agent-binding/move', {
+        agentName: name, instanceId, machineId: machineChoice, fromMachineId: current.boundMachineId,
+      });
+      await loadPlacement();
+    } catch (error) {
+      setPlacementError((error instanceof Error && !('response' in error) && error.message)
+        || placementFailure(error, 'agentManage.runtime.moveError'));
+      void loadPlacement().catch(() => {});
+    } finally {
+      setMoving(false);
+    }
+  };
+
   return (
     <div className="v2-agent-runtime-grants">
       <section className="v2-agent-settings__section" aria-labelledby="agent-runtime-heading">
@@ -149,6 +226,29 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
           <div><dt>{t('agentManage.runtime.model', { defaultValue: 'Model' })}</dt><dd>{model || t('agentManage.runtime.modelUnknown', { defaultValue: 'Set by the runtime' })}</dd></div>
           {runtime.effort && <div><dt>{t('agentManage.runtime.effort', { defaultValue: 'Effort' })}</dt><dd>{runtime.effort}</dd></div>}
         </dl>
+        {details.mode === 'daemon' && placement && (
+          <div className="v2-agent-runtime-grants__edit" data-testid="agent-machine-placement">
+            {placement.boundMachineRevoked && <p role="status">{t('agentManage.runtime.machineRevoked')}</p>}
+            {!placement.boundMachineRevoked && placement.boundMachineId && <p>{t('agentManage.runtime.currentMachine', {
+              name: placement.activeMachines.find((machine) => machine.machineId === placement.boundMachineId)?.name || placement.boundMachineId,
+            })}</p>}
+            {placement.requestedMachineId && !placement.boundMachineId && <p role="status">{t('agentManage.runtime.machineRequested', {
+              name: placement.activeMachines.find((machine) => machine.machineId === placement.requestedMachineId)?.name || placement.requestedMachineId,
+            })}</p>}
+            {(placement.boundMachineRevoked || !placement.boundMachineId) && (
+              placement.activeMachines.length > 0 ? <>
+                <label htmlFor="agent-runtime-machine">{t('agentManage.runtime.moveLabel')}</label>
+                <select id="agent-runtime-machine" value={machineChoice} onChange={(event) => setMachineChoice(event.target.value)}>
+                  {placement.activeMachines.map((machine) => <option key={machine.machineId} value={machine.machineId}>{machine.name}</option>)}
+                </select>
+                <button type="button" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
+                  {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
+                </button>
+              </> : <p>{t('agentManage.runtime.noActiveMachine')} <code>{DAEMON_SETUP_COMMAND}</code></p>
+            )}
+          </div>
+        )}
+        {placementError && <p role="alert">{placementError}</p>}
         {mayEditRuntime && (
           <div className="v2-agent-runtime-grants__edit">
             <label htmlFor="agent-runtime-model">{t('agentManage.runtime.changeModel', { defaultValue: 'Model' })}</label>

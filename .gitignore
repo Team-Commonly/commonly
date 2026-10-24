@@ -4,6 +4,7 @@
 *.log
 .DS_Store
 npm-debug.log
+commonly-mcp/*.mcpb
 
 # no trailing slash: the dir-only form let node_modules SYMLINKS get committed (#818, #867)
 node_modules
@@ -18,7 +19,10 @@ dist/
 
 *.pem
 
-.cursor/
+/.cursor/*
+!/.cursor/rules/
+/.cursor/rules/*
+!/.cursor/rules/commonly.mdc
 
 # Playwright
 /test-results/

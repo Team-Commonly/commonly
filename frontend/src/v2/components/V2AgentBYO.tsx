@@ -19,6 +19,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2FeaturePage from './V2FeaturePage';
 import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
@@ -27,8 +28,10 @@ import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PERSONA_CARDS } from '../agents/personaCatalogData';
 import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
+import { hostedCapNotice } from './hostedCapNotice';
 import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
+import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
 // The token routes refuse a name that belongs to an agent Commonly runs (the
@@ -543,10 +546,10 @@ const V2AgentBYO: React.FC = () => {
           ...(personaCard ? { description: personaCard.card } : {}),
         });
       } catch (installErr) {
-        const data = (installErr as { response?: { data?: { error?: string; code?: string; cap?: number } } })
+        const data = (installErr as { response?: { data?: { error?: string; code?: string; cap?: number; holders?: Array<{ agentName?: string }> } } })
           ?.response?.data;
         if (data?.code === 'hosted_cap_reached') {
-          setError(t('agentByo.errors.hostedCap', { cap: data.cap ?? hosting?.caps.agentsPerUser ?? 1 }));
+          setError(hostedCapNotice(t, data, hosting?.caps.agentsPerUser));
           return;
         }
         if (!/already installed/i.test(data?.error || '')) throw installErr;
@@ -855,9 +858,7 @@ const V2AgentBYO: React.FC = () => {
 
   const chooseMode = (nextMode: 'hosted' | 'byo' | 'machine') => setMode(nextMode);
 
-  const apiUrl = typeof window !== 'undefined' && /api-dev|api\./.test(window.location.hostname)
-    ? `https://${window.location.hostname.replace(/^app/, 'api')}`
-    : 'https://api.commonly.me';
+  const apiUrl = getApiBaseUrl().replace(/\/+$/, '');
 
   const claudeSnippet = issued
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`
@@ -897,6 +898,7 @@ const V2AgentBYO: React.FC = () => {
       },
     }, null, 2)
     : '';
+  const cursorInstallHref = cursorMcpInstallLink(apiUrl);
 
   return (
     <V2FeaturePage
@@ -1201,7 +1203,8 @@ const V2AgentBYO: React.FC = () => {
               {t('agentByo.actions.chooseFirst')}
             </div>
           ) : canReconnect ? (
-              <button type="button" className="v2-byo__submit" disabled={submitting || !podId} onClick={() => {
+              <button type="button" className="v2-byo__submit" disabled={submitting || !podId}
+                onMouseDown={(event) => event.preventDefault()} onClick={() => {
                 if (existingConnection.runtimeType === 'wrapper') void requestMachineReconnect(sanitizeAgentName(name));
                 else void replaceRunningKey({ agentName: sanitizeAgentName(name), podId });
               }}>
@@ -1210,6 +1213,9 @@ const V2AgentBYO: React.FC = () => {
             ) : isOtherOwner ? null : (
             <button
               type="button"
+              // Keep the focused field's hint visible through the press. If blur
+              // hides it on mousedown, this button can move before mouseup.
+              onMouseDown={(event) => event.preventDefault()}
               onClick={submit}
               disabled={submitting || (mode === 'byo' && !namesReady) || !podId}
               className="v2-byo__submit"
@@ -1224,7 +1230,10 @@ const V2AgentBYO: React.FC = () => {
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
               are real alternatives, but shown as equals beside the button they
               read as a choice a stranger has to make before starting. */}
-          <details className="v2-byo__more" data-testid="byo-more-ways">
+          <details className="v2-byo__more" data-testid="byo-more-ways"
+            onMouseDownCapture={(event) => {
+              if ((event.target as Element).closest('summary, button, a')) event.preventDefault();
+            }}>
             <summary>{t('agentByo.otherWays.title')}</summary>
           {machines.length === 0 && (
             <div className="v2-byo__add-computer" data-testid="byo-add-computer">
@@ -1486,6 +1495,8 @@ const V2AgentBYO: React.FC = () => {
               <div className="v2-byo__snippet-head">
                 <span>{t('agentByo.snippets.cursor')}</span>
               </div>
+              <a className="v2-byo__cursor-link" href={cursorInstallHref}>{t('agentByo.snippets.cursorInstall')}</a>
+              <p className="v2-byo__hint">{t('agentByo.snippets.cursorInstallHint')}</p>
               <div className="v2-byo__command">
                 <pre className="v2-byo__pre">{cursorSnippet}</pre>
                 <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">

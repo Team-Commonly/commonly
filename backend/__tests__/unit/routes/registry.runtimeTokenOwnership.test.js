@@ -26,8 +26,8 @@ const matches = (doc, filter) => Object.entries(filter).every(([key, want]) => {
 });
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
-    find: jest.fn(() => ({
-      collation: () => ({ select: () => ({ lean: () => Promise.resolve([]) }) }),
+    find: jest.fn((filter) => ({
+      collation: () => ({ select: () => ({ lean: () => Promise.resolve(mockInstalls.filter((doc) => matches(doc, filter))) }) }),
     })),
     findOne: jest.fn((filter) => {
       const hit = mockInstalls.find((doc) => matches(doc, filter)) || null;
@@ -42,7 +42,10 @@ jest.mock('../../../models/AgentRegistry', () => ({
   },
 }));
 
-jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({
+  findById: jest.fn(),
+  find: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve([]) }) })),
+}));
 jest.mock('../../../models/User', () => ({ findById: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/AgentCredential', () => ({ updateOne: jest.fn().mockResolvedValue({}) }));
 

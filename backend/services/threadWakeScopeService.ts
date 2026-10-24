@@ -78,6 +78,15 @@ export async function effectiveFollowerIds(threadRootId: number): Promise<Set<st
   return new Set(rows.map((r) => String(r.user_id)));
 }
 
+/** Authorship is an addressed cue; following alone is not. */
+export async function threadAuthorIds(threadRootId: number): Promise<Set<string>> {
+  const { rows } = await (pool as PgPool).query(
+    'SELECT DISTINCT user_id FROM messages WHERE thread_root_id = $1 OR id = $1',
+    [threadRootId],
+  );
+  return new Set(rows.map((row) => String(row.user_id)));
+}
+
 /**
  * Narrow an already-computed wake target list to the thread's effective
  * followers. Returns the input unchanged when the message is not threaded, so
@@ -112,5 +121,5 @@ export async function narrowToThread<T>(
   });
 }
 
-module.exports = { effectiveFollowerIds, narrowToThread };
+module.exports = { effectiveFollowerIds, threadAuthorIds, narrowToThread };
 Object.assign(module.exports, exports);

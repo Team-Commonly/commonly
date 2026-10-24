@@ -50,6 +50,9 @@ jest.mock('../../../models/pg/ThreadUserState', () => ({
 jest.mock('../../../services/threadWakeScopeService', () => ({
   narrowToThread: jest.fn(async (_rootId, targets) => targets),
 }));
+jest.mock('../../../services/messageDeliveryModeService', () => ({
+  addressedMessageTargets: jest.fn(async () => new Set()),
+}));
 
 const AgentMentionService = require('../../../services/agentMentionService');
 const AgentEventService = require('../../../services/agentEventService');
@@ -158,9 +161,9 @@ describe('the addressing fan-out never consults thread scope', () => {
     });
 
     expect(mentions()).toHaveLength(1);
-    expect(narrowToThread).toHaveBeenCalledTimes(1);
+    expect(narrowToThread).not.toHaveBeenCalled();
     // The mentioned seat is excluded from its own ambient companion, so the
-    // narrowing cannot double-deliver — it can only remove.
+    // empty companion does not need a scoping read.
     expect(wakes()).toHaveLength(0);
   });
 

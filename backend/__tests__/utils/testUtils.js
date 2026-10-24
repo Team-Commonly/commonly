@@ -5,6 +5,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const { newDb } = require('pg-mem');
 const jwt = require('jsonwebtoken');
 const { MONGO_BINARY_VERSION, MONGOMS_DOWNLOAD_DIR } = require('./mongoBinaryConfig');
+const { markMongoMemoryServerSuiteManaged } = require('./mongoCleanup');
 
 const useRealServices = () => process.env.INTEGRATION_TEST === 'true';
 
@@ -81,6 +82,7 @@ const setupMongoDb = async () => {
     mongoServer = await createMongoServer();
 
     await mongoose.connect(mongoServer.getUri());
+    markMongoMemoryServerSuiteManaged(mongoServer);
     console.log('Connected to in-memory MongoDB');
   } catch (error) {
     console.error('Error setting up MongoDB:', error);
@@ -92,7 +94,7 @@ const closeMongoDb = async () => {
   try {
     await mongoose.disconnect();
     if (mongoServer) {
-      await mongoServer.stop();
+      await mongoServer.stop({ doCleanup: true, force: true });
       mongoServer = undefined;
     }
     console.log(useRealServices() ? 'Real MongoDB disconnected' : 'In-memory MongoDB stopped');

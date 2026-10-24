@@ -117,6 +117,7 @@ const upsertEncrypted = async (
   integrationId: Types.ObjectId,
   spec: ConnectorSecretKindSpec,
   encrypted: Pick<IConnectorSecret, 'ciphertext' | 'iv' | 'tag' | 'keyId'>,
+  writeGeneration?: number,
 ): Promise<IConnectorSecret> => {
   // The filter carries `kind` as well as `integrationId`, on BOTH the upsert and
   // the retry. Filtered on `integrationId` alone the second kind does not
@@ -124,8 +125,19 @@ const upsertEncrypted = async (
   // so the first ref stays valid and silently starts decrypting to the second
   // secret (vera 74141). `kind` is read from the caller's spec, and the index in
   // `models/ConnectorSecret` is on the same pair.
-  const filter = { integrationId, kind: spec.kind };
-  const update = { $set: { provider: spec.provider, ...encrypted } };
+  const filter = writeGeneration === undefined
+    ? { integrationId, kind: spec.kind }
+    : {
+      integrationId,
+      kind: spec.kind,
+      $or: [
+        { writeGeneration: { $exists: false } },
+        { writeGeneration: { $lte: writeGeneration } },
+      ],
+    };
+  const update = {
+    $set: { provider: spec.provider, ...encrypted, ...(writeGeneration === undefined ? {} : { writeGeneration }) },
+  };
   try {
     return await ConnectorSecret.findOneAndUpdate(
       filter,
@@ -136,17 +148,29 @@ const upsertEncrypted = async (
     // Concurrent OAuth callbacks may race the first upsert. The unique
     // (integrationId, kind) key makes the loser retry as an ordinary update.
     if ((error as { code?: number }).code !== 11000) throw error;
-    return ConnectorSecret.findOneAndUpdate(filter, update, { new: true }) as Promise<IConnectorSecret>;
+    const retried = await ConnectorSecret.findOneAndUpdate(filter, update, { new: true }) as IConnectorSecret | null;
+    if (!retried) throw new ConnectorSecretStaleWrite();
+    return retried;
   }
 };
+
+export class ConnectorSecretStaleWrite extends Error {
+  constructor() {
+    super('A newer connector authorization owns this secret.');
+    this.name = 'ConnectorSecretStaleWrite';
+  }
+}
 
 export const put = async (
   integrationId: string,
   spec: ConnectorSecretKindSpec,
   material: string,
+  writeGeneration?: number,
 ): Promise<string> => {
   if (!material) throw new ConnectorSecretConfigurationError('Connector secret material must not be empty.');
-  const secret = await upsertEncrypted(asObjectId(integrationId), spec, encrypt(material, parseKeyRing()));
+  const secret = await upsertEncrypted(
+    asObjectId(integrationId), spec, encrypt(material, parseKeyRing()), writeGeneration,
+  );
   return String(secret._id);
 };
 
@@ -180,6 +204,7 @@ module.exports = {
   ConnectorSecretKeyMissing,
   ConnectorSecretConfigurationError,
   ConnectorSecretNotFoundError,
+  ConnectorSecretStaleWrite,
   put,
   get,
   revoke,

@@ -11,6 +11,7 @@ import { createHash } from 'crypto';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from '../services/installable/toolInstallables';
 import { GrantBrokerRefusal, grantBrokerRefusal } from '../services/grantBrokerConfinement';
+import { KERNEL_RUN_RUNTIME_TYPES } from '../services/configWriteGuard';
 import {
   grantBrokerServer,
   selectLiveGrantsForIdentities,
@@ -19,7 +20,7 @@ import {
   projectSeatEnvironments,
   seatEnvironmentKey,
 } from '../services/seatEnvironmentProjection';
-import { ownsRuntimeIdentity, OwnershipFailure } from '../services/runtimeIdentityOwnership';
+import { ownsRuntimeIdentity, OwnershipFailure, describeRuntimeIdentityBlockers } from '../services/runtimeIdentityOwnership';
 import { logAgentInstallRefusal } from '../middleware/logAgentInstallRefusal';
 import { machineHasLiveAuthorization } from '../services/machineService';
 
@@ -154,6 +155,54 @@ const ownershipFailureMessage: Record<OwnershipFailure, string> = {
   unknown_installer: 'An active legacy installation has no recorded installer',
 };
 
+const ownershipRefusal = async (ownerUserId: unknown, agentName: string, instanceId: string, failure: OwnershipFailure) => {
+  if (failure !== 'another_installer') return { message: ownershipFailureMessage[failure], code: failure };
+  const blockers = await describeRuntimeIdentityBlockers(ownerUserId, agentName, instanceId);
+  const names = blockers.map((blocker) => `${blocker.podName} (${blocker.installerName})`).join(', ');
+  return {
+    message: names
+      ? `This agent is also installed in ${names}. Ask that installer to remove their installation before moving it.`
+      : 'This agent is also installed in another pod. Its installer must remove that installation before it can move.',
+    code: failure,
+    blockers,
+  };
+};
+
+// Owner-only view for Settings. A removed machine can still be named by the
+// identity binding; keep that fact visible while offering only live targets.
+router.get('/placement', bindingRateLimit, auth, async (req: express.Request & { user?: { id?: string } }, res: express.Response) => {
+  try {
+    const agentName = normalize(req.query.agentName);
+    const instanceId = normalize(req.query.instanceId) || 'default';
+    if (!agentName) return res.status(400).json({ message: 'agentName required' });
+    const ownership = await ownsAgent(req.user?.id, agentName, instanceId);
+    if (!ownership.owned) return res.status(403).json(await ownershipRefusal(req.user?.id, agentName, instanceId, ownership.failure));
+    const identity = await User.findOne({
+      isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
+    }).select('botMetadata.machineId botMetadata.requestedMachineId').lean();
+    if (!identity) return res.status(404).json({ message: 'Agent identity not found' });
+    const machines = await Machine.find({ ownerUserId: req.user?.id }).select('machineId name').lean();
+    const activeMachines = (await Promise.all(machines.map(async (machine: { machineId: string; name: string }) => ({
+      machineId: machine.machineId,
+      name: machine.name,
+      active: Boolean(await AgentCredential.exists({ kind: 'daemon', ownerUserId: req.user?.id,
+        machineId: machine.machineId, status: 'active',
+        $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] }))
+        && await machineHasLiveAuthorization(machine.machineId, req.user!.id!),
+    })))).filter((machine) => machine.active).map(({ machineId, name }) => ({ machineId, name }));
+    const boundMachineId = identity.botMetadata?.machineId || null;
+    return res.json({
+      boundMachineId,
+      requestedMachineId: identity.botMetadata?.requestedMachineId || null,
+      boundMachineRevoked: Boolean(boundMachineId && !activeMachines.some((machine) => machine.machineId === boundMachineId)),
+      activeMachines,
+    });
+  } catch (err) {
+    console.error('placement status error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.post('/adopt', bindingRateLimit, daemonAuth('agents:adopt'), async (req: DaemonAuthedRequest, res: express.Response) => {
   try {
     const agentName = normalize(req.body?.agentName);
@@ -217,10 +266,7 @@ router.post('/request', logAgentInstallRefusal('/api/agent-binding/request', 'wr
 
     const ownership = await ownsAgent(req.user?.id, agentName, instanceId);
     if (!ownership.owned) {
-      return res.status(403).json({
-        message: ownershipFailureMessage[ownership.failure],
-        code: ownership.failure,
-      });
+      return res.status(403).json(await ownershipRefusal(req.user?.id, agentName, instanceId, ownership.failure));
     }
 
     // An agent Commonly runs in-process (the person's hosted agent) can't also
@@ -238,10 +284,15 @@ router.post('/request', logAgentInstallRefusal('/api/agent-binding/request', 'wr
     }
 
     if (requestedMachineId) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const Machine = require('../models/Machine');
       const machine = await Machine.findOne({ machineId: requestedMachineId, ownerUserId: req.user?.id }).select('_id').lean();
       if (!machine) return res.status(404).json({ message: 'Machine not found' });
+      const daemonActive = await AgentCredential.exists({
+        kind: 'daemon', machineId: requestedMachineId, ownerUserId: req.user?.id, status: 'active',
+        $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+      });
+      if (!daemonActive || !await machineHasLiveAuthorization(requestedMachineId, req.user!.id!)) {
+        return res.status(409).json({ message: 'Machine access revoked' });
+      }
     }
 
     const identity = await User.findOne({
@@ -265,6 +316,53 @@ router.post('/request', logAgentInstallRefusal('/api/agent-binding/request', 'wr
     });
   } catch (err) {
     console.error('placement request error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Owner-approved handoff: release the old binding and write the placement
+// directive in ONE identity update. Two HTTP calls can strand an agent when
+// the target is revoked between them. The target daemon still owns adopt CAS.
+router.post('/move', bindingRateLimit, auth, async (req: express.Request & { user?: { id?: string } }, res: express.Response) => {
+  try {
+    const agentName = normalize(req.body?.agentName);
+    const instanceId = normalize(req.body?.instanceId) || 'default';
+    const machineId = String(req.body?.machineId || '').trim();
+    const fromMachineId = req.body?.fromMachineId === null ? null : String(req.body?.fromMachineId || '').trim();
+    if (!agentName || !machineId || (fromMachineId === '' && req.body?.fromMachineId !== null)) {
+      return res.status(400).json({ message: 'agentName, machineId and fromMachineId required' });
+    }
+    const ownership = await ownsAgent(req.user?.id, agentName, instanceId);
+    if (!ownership.owned) return res.status(403).json(await ownershipRefusal(req.user?.id, agentName, instanceId, ownership.failure));
+    if (await runsInProcess(null, { agentName, instanceId })) {
+      return res.status(409).json({ code: 'in_process_agent_no_token', message: 'A hosted agent cannot run on a computer' });
+    }
+    const target = await Machine.findOne({ machineId, ownerUserId: req.user?.id }).select('_id').lean();
+    if (!target) return res.status(404).json({ code: 'target_missing', message: 'Machine not found' });
+    const daemonActive = await AgentCredential.exists({
+      kind: 'daemon', machineId, ownerUserId: req.user?.id, status: 'active',
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+    });
+    if (!daemonActive || !await machineHasLiveAuthorization(machineId, req.user!.id!)) {
+      return res.status(409).json({ code: 'target_revoked', message: 'Machine access revoked' });
+    }
+    const binding = fromMachineId === null
+      ? { $or: [{ 'botMetadata.machineId': null }, { 'botMetadata.machineId': { $exists: false } }] }
+      : { 'botMetadata.machineId': fromMachineId };
+    const changed = await User.updateOne({
+      isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId, ...binding,
+    }, { $set: { 'botMetadata.machineId': null, 'botMetadata.requestedMachineId': machineId } });
+    if (!changed.matchedCount) {
+      const exists = await User.exists({ isBot: true, 'botMetadata.agentName': agentName,
+        'botMetadata.instanceId': instanceId });
+      return res.status(exists ? 409 : 404).json({
+        code: exists ? 'binding_changed' : 'agent_missing',
+        message: exists ? 'Agent binding changed; refresh before moving' : 'Agent identity not found',
+      });
+    }
+    return res.json({ requested: true, agentName, instanceId, machineId });
+  } catch (err) {
+    console.error('placement move error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -345,6 +443,10 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
       // An identity outside the owner's installation set (shared, or another
       // user's) never appears in this daemon's work list.
       if (!entry) return [];
+      // A seat Commonly runs is not the daemon's to run, even when its identity
+      // still names this machine from before it turned native or hosted (TASK-474).
+      const runtime = entry.runtime as { runtimeType?: unknown } | null;
+      if (KERNEL_RUN_RUNTIME_TYPES.has(String(runtime?.runtimeType ?? '').trim().toLowerCase())) return [];
       const agentId = String(identity._id || '');
       const grantProjection = grantServers.get(agentId);
       const brokerServers = grantProjection?.servers || [];
@@ -483,10 +585,7 @@ router.post('/release', bindingRateLimit, auth, async (req: express.Request & { 
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const caller = await User.findById(req.user?.id).select('role').lean();
       if (caller?.role !== 'admin') {
-        return res.status(403).json({
-          message: ownershipFailureMessage[ownership.failure],
-          code: ownership.failure,
-        });
+        return res.status(403).json(await ownershipRefusal(req.user?.id, agentName, instanceId, ownership.failure));
       }
     }
     const result = await User.updateOne(

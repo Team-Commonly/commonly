@@ -23,6 +23,16 @@ jest.mock('../../../models/Pod', () => ({
 
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
 
+jest.mock('../../../models/AgentMemory', () => ({
+  findOne: jest.fn(),
+  findOneAndUpdate: jest.fn(),
+}));
+
+jest.mock('../../../services/agentMemoryService', () => ({
+  ...jest.requireActual('../../../services/agentMemoryService'),
+  appendLongTermMemory: jest.fn().mockResolvedValue(true),
+}));
+
 let mockOwnerPro = false;
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) })),
@@ -86,6 +96,7 @@ jest.mock('../../../services/outboundUrlGuard', () => ({
 const mockTaskRows = jest.fn();
 const mockTaskCount = jest.fn();
 jest.mock('../../../models/Task', () => ({
+  aggregate: jest.fn(() => mockTaskRows()),
   find: jest.fn(() => ({
     sort: () => ({ limit: () => ({ select: () => ({ lean: () => mockTaskRows() }) }) }),
   })),
@@ -101,6 +112,8 @@ jest.mock('../../../models/Message', () => {
 
 const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
+const AgentMemory = require('../../../models/AgentMemory');
+const { appendLongTermMemory } = require('../../../services/agentMemoryService');
 const { runAgent } = require('../../../services/nativeRuntimeService');
 const { HOSTED_NATIVE_TOOLS } = require('../../../services/hostedEngine');
 
@@ -158,6 +171,8 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     mockSandboxRun.mockResolvedValue({ ok: true, stdout: '4\n', stderr: '' });
     mockSandboxClose.mockResolvedValue(0);
     AgentRun.countDocuments.mockResolvedValue(0);
+    AgentMemory.findOne.mockResolvedValue(null);
+    AgentMemory.findOneAndUpdate.mockResolvedValue({});
     AgentRun.create.mockImplementation(async (doc) => {
       savedRun = { _id: 'run-1', ...doc, save: jest.fn().mockResolvedValue(undefined) };
       return savedRun;
@@ -195,6 +210,17 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     expect(body.messages[0].role).toBe('system');
     expect(body.messages[0].content).toMatch(/You are Maya, a hosted agent on Commonly/);
     expect(body.messages[0].content).toMatch(/Keeps the research log\./);
+  });
+
+  test('an own-row board wake reaches the hosted model through the mention route', async () => {
+    const result = await runAgent(hostedInstall(), {
+      type: 'chat.mention', eventId: '507f1f77bcf86cd799439014',
+      payload: { boardWake: true, taskId: 'TASK-414', content: '[The board moved: TASK-414 was assigned to you.]' },
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(AgentRun.create).toHaveBeenCalledTimes(1);
+    expect(axios.post).toHaveBeenCalledTimes(1);
   });
 
   // Search and code runs are on every plan (Cofounder, 2026-10-16), offered
@@ -344,10 +370,19 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       await runAgent(hostedInstall(), mention);
 
       const Task = require('../../../models/Task');
-      expect(Task.find).toHaveBeenCalledWith({ podId: POD, status: { $in: ['pending', 'claimed', 'blocked'] } });
+      expect(Task.aggregate).toHaveBeenCalledWith(expect.arrayContaining([
+        { $match: { podId: expect.objectContaining({}), status: { $in: ['pending', 'claimed', 'blocked'] } } },
+      ]));
+      const pipeline = Task.aggregate.mock.calls[0][0];
+      expect(String(pipeline[0].$match.podId)).toBe(POD);
+      expect(pipeline).toContainEqual({ $set: { priority: { $ifNull: ['$priority', 'P2'] } } });
+      const sortIndex = pipeline.findIndex((stage) => stage.$sort?.priority === 1);
+      const limitIndex = pipeline.findIndex((stage) => stage.$limit);
+      expect(sortIndex).toBeGreaterThan(-1);
+      expect(limitIndex).toBeGreaterThan(sortIndex);
       const listed = JSON.parse(toolMessages(1)[0].content);
       expect(listed).toEqual({
-        status: 'open', total: 3, tasks: [{ taskId: 'TASK-1', title: 'Say hello to the pod', status: 'pending', assignee: null }],
+        status: 'open', total: 3, tasks: [{ taskId: 'TASK-1', title: 'Say hello to the pod', priority: 'P2', status: 'pending', assignee: null }],
       });
       expect(systemPromptIn(0)).toMatch(/check the board with commonly_list_tasks before saying what is or is not on it/);
       // Walk 5: it offered to "mark TASK-002 done" with no tool that can.
@@ -404,6 +439,37 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     await runAgent(hostedInstall(), mention);
 
     expect(axios.post.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('a hosted memory write uses the atomic append with its own identity', async () => {
+    axios.post.mockResolvedValueOnce(toolCalls(call('c1', 'commonly_write_memory', { content: 'hosted note' })));
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result.status).toBe('succeeded');
+    expect(appendLongTermMemory).toHaveBeenCalledWith({
+      agentName: 'maya-agent', instanceId: 'default', content: 'hosted note',
+    });
+    expect(AgentMemory.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('native memory reads prefer canonical long_term over the legacy copy', async () => {
+    AgentMemory.findOne.mockImplementationOnce(() => ({ lean: () => Promise.resolve({
+      content: 'stale legacy copy',
+      sections: { long_term: { content: 'current memory' } },
+    }) }));
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_read_memory', {})))
+      .mockResolvedValueOnce(toolCalls(call('c2', 'commonly_write_memory', { content: 'new note' })));
+
+    const result = await runAgent(hostedInstall(), mention);
+
+    expect(result.status).toBe('succeeded');
+    const secondRequest = axios.post.mock.calls[1][1];
+    expect(secondRequest.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'tool', content: expect.stringContaining('current memory') }),
+    ]));
+    expect(appendLongTermMemory).toHaveBeenCalledWith(expect.objectContaining({ content: 'new note' }));
   });
 
   test('in a pod holding an outsider-writable grant, a hosted turn is narrowed like any native one', async () => {

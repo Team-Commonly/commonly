@@ -61,6 +61,13 @@ AgentCredentialSchema.index({ ownerUserId: 1, status: 1 });
 AgentCredentialSchema.index({ parentId: 1 });
 AgentCredentialSchema.index({ agentUserId: 1 });
 AgentCredentialSchema.index({ machineId: 1, kind: 1, status: 1 });
+// Mongo's TTL monitor is the storage backstop for per-spawn children. The
+// scheduler also reaps them so cleanup is observable and does not depend on
+// the monitor catching up after a rollout.
+AgentCredentialSchema.index(
+  { expiresAt: 1 },
+  { expireAfterSeconds: 3600, partialFilterExpression: { scopes: 'spawn' } },
+);
 
 // Revoke a credential AND every descendant, breadth-first. One level deep
 // today (daemon → runtime), but written as a walk so a deeper chain can

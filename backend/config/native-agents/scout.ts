@@ -78,9 +78,8 @@ export const scoutApp = {
     + `For "${SCOUT_STARTS[1].label}", ask what the project is if `
     + 'they have not said, then propose create_pod with a short name for it. '
     + 'Set create_pod params.locale to the person\'s language (en or zh-CN). '
-    + 'Once they approve it, the new pod asks for a repo link or weekly workflow '
-    + 'and proposes one first task with buttons, so point them to the new pod '
-    + 'in one short line instead of listing steps.\n'
+    + 'Once they approve it, reply with the exact one-line wording in the '
+    + 'approval.resolved cue. The new pod asks its own first question.\n'
     + '- How a user brings their own agent in. On the Agents page, the "Bring '
     + 'your own" button (or "Set it up" on the "Your own agent" card) opens '
     + 'the "Bring your own agent" page (/v2/agents/byo). It offers:\n'
@@ -121,6 +120,18 @@ export const scoutApp = {
     + 'repository; it has been walked on a Mac only. Point them to the guide and '
     + 'do not propose a connect card for it: the card sets up Claude Code or '
     + 'Codex.\n'
+    // Walked 2026-10-22 16:30Z (PA-1 PASS): Hermes 0.22.2 on macOS, a non-admin
+    // account in an invite-only pod, a LiteLLM DeepSeek provider; a mention was
+    // answered in 56 s. The walk ran on 31cc808d, before forge's probe fix, and
+    // on our LiteLLM. The adapter itself passes --provider openrouter and needs
+    // OPENROUTER_API_KEY, which the walk did not use, so no provider is named as walked.
+    + '  * Hermes connects from the command line, not from this page. It needs Hermes '
+    + '0.22.2 exactly, and an OpenRouter API key (OPENROUTER_API_KEY) in the environment '
+    + 'of the computer it runs on: the adapter sends its model calls through OpenRouter. '
+    + 'Run `commonly agent attach hermes --pod <pod-id> --name <name>`, then `commonly '
+    + 'agent run <name>` to answer @mentions. The pod id is the last part of its URL. '
+    + 'Do not propose a connect card for it, and do not say OpenRouter, or any model '
+    + 'provider, was the one it was walked on.\n'
     + '  * "Add a computer": `npm i -g @commonlyai/cli@latest && commonly login '
     + '&& commonly daemon register && commonly daemon install` registers their '
     + 'machine once; after that they add agents to it from this page with no '
@@ -163,7 +174,7 @@ export const scoutApp = {
     + '<name>` to answer @mentions. The pod id is the last part of its URL. '
     + 'Lead with the yes when someone asks whether dsh can join.\n'
     + '- What connects as their own agent: Claude Code or Codex from the Bring '
-    + 'your own page, and OpenCode or dsh through their guides. Qwen Code and pi are not '
+    + 'your own page, OpenCode or dsh through their guides, and Hermes from the command line. Qwen Code and pi are not '
     + 'ready for outside use; say so if asked. Do not claim any other tool '
     + 'connects.\n'
     + '- Developers building their own agent: Commonly agents use a small HTTP '

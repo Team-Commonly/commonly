@@ -37,6 +37,34 @@ data:
           model: deepseek/deepseek-v4-flash
           api_key: os.environ/DEEPSEEK_API_KEY
 
+      # DeepSeek V4.1 Flash, 1017 build. DeepSeek publishes no dated snapshot
+      # id: per api-docs.deepseek.com/updates, 2026-10-17, `deepseek-flash` is
+      # "the latest model" and was upgraded to DeepSeek-V4.1-Flash-1017 that
+      # day, while `deepseek-v4-flash` above is only "temporarily routed" to
+      # V4.1 for compatibility. The group name carries the build so a key
+      # scoped to it says what it buys; re-check the changelog before trusting
+      # the name after DeepSeek's next Flash update. Used by the dsh writer
+      # seats (D50), through their own budget-capped virtual key.
+      #
+      # Budget (Sam, D50: the DeepSeek writers are budget-capped). Two caps:
+      #   1. This deployment: $200 per month across EVERY caller of the group.
+      #      Over it, LiteLLM answers 429 "crossed budget" and does not reroute
+      #      (there is no fallback for this group). Spend for this cap is
+      #      tracked in the router's cache; with one replica and no Redis, a
+      #      LiteLLM restart can reset the month-to-date figure, so it is a
+      #      ceiling, not the ledger.
+      #   2. The writers' virtual key: models=[deepseek-flash-1017],
+      #      max_budget 200, budget_duration 30d. Stored in LiteLLM's Postgres,
+      #      so it survives restarts and is the auditable record
+      #      (/key/info). Minted after this ships; the file lives 0600 on the
+      #      fleet host, never in the repo.
+      - model_name: deepseek-flash-1017
+        litellm_params:
+          model: deepseek/deepseek-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          max_budget: 200
+          budget_duration: 1mo
+
       # --- Cloudflare Workers AI (fallback; own-account, unrevokable) ---
       # Added 2026-08-08 to unblock the guide agent, which had no working model:
       # every other provider in this file was returning 401 (OpenRouter's account
@@ -390,7 +418,10 @@ data:
       # accounts immediately (instead of waiting for its next scheduled tick).
       # The callback module is installed at /tmp/callbacks/rate_limit_signal.py by
       # the container startup script; PYTHONPATH is set accordingly.
-      callbacks: rate_limit_signal.proxy_handler_instance
+      # deepseek_tool_shim flattens codex's namespace tools into plain function
+      # tools for the deepseek-flash-1017 group only, which DeepSeek requires;
+      # source in files/litellm/deepseek_tool_shim.py, mounted from this ConfigMap.
+      callbacks: ["rate_limit_signal.proxy_handler_instance", "deepseek_tool_shim.proxy_handler_instance"]
 
     guardrails:
       # Anti-pattern content guardrails for the public-launch exposure. Both are
@@ -449,8 +480,15 @@ data:
       ui_access_mode: "all"
       # Spend log retention — without these, LiteLLM_SpendLogs grows unbounded
       # (prod dev observed 5+ GB on the 8 GiB Cloud SQL tier before this cap).
-      # STORE_PROMPTS_IN_SPEND_LOGS=true is set in the deployment env, so each
-      # row is large; a 7-day window is plenty for dev debugging.
+      # STORE_PROMPTS_IN_SPEND_LOGS=false keeps raw prompt and response text
+      # out of each row; a 7-day window is plenty for dev debugging.
       maximum_spend_logs_retention_period: "7d"
       maximum_spend_logs_retention_interval: "6h"
+  # Mounted at /app/, next to config.yaml (see the callbacks list above).
+  # deepseek_tool_shim.py is the callback and loads the core inside a try, so a
+  # broken core refuses only the deepseek group instead of stopping the proxy.
+  deepseek_tool_shim.py: |
+    {{- .Files.Get "files/litellm/deepseek_tool_shim.py" | nindent 4 }}
+  deepseek_tool_shim_core.py: |
+    {{- .Files.Get "files/litellm/deepseek_tool_shim_core.py" | nindent 4 }}
 {{- end }}

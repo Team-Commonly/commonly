@@ -3,13 +3,8 @@ import { randomBytes, timingSafeEqual } from 'crypto';
 import { constants as fsConstants, realpathSync } from 'fs';
 import { createServer, request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
-import { chmod, lstat, open, writeFile } from 'fs/promises';
+import { chmod, lstat, open, unlink, writeFile } from 'fs/promises';
 import { isAbsolute, relative, sep } from 'path';
-import { createReplySigner, restoreRequestSignatures } from './gemini-signatures.js';
-
-// A chat request is buffered only to restore Gemini's thought signatures; a
-// body past this is refused rather than held in memory.
-const SIGNED_REQUEST_MAX_BYTES = 64 * 1024 * 1024;
 
 const isPathWithin = (parent, candidate) => {
   const fromParent = relative(parent, candidate);
@@ -72,16 +67,14 @@ const readProviderKey = async (keyFile, adapterLabel) => {
   }
 };
 
-/**
- * `signatureStore` (gemini-signatures.js) turns on Gemini's thought-signature
- * round trip for chat/completions: ids in replies carry a reference, and the
- * next request gets the signatures back. Without it every request and reply is
- * piped through unchanged, as for every other provider.
- */
 export const startProviderProxy = async ({
-  provider, keyFile, tokenFile, adapterLabel = 'OpenCode', signatureStore = null,
+  provider, keyFile, tokenFile, socketPath, isolatedPort, adapterLabel = 'OpenCode',
 }) => {
   const upstream = new URL(provider.baseURL);
+  if (socketPath && (!isAbsolute(socketPath)
+    || !Number.isInteger(isolatedPort) || isolatedPort < 1 || isolatedPort > 65535)) {
+    throw new Error(`${adapterLabel} isolated proxy requires an absolute socket path and valid port`);
+  }
   if (!['http:', 'https:'].includes(upstream.protocol)
     || upstream.username || upstream.password || upstream.search || upstream.hash) {
     throw new Error(`${adapterLabel} provider.baseURL must be an http(s) URL without embedded credentials or query data`);
@@ -183,9 +176,6 @@ export const startProviderProxy = async ({
       ].includes(name.toLowerCase())));
     headers.authorization = `Bearer ${upstreamKey}`;
     headers.host = target.host;
-    const signing = Boolean(signatureStore) && target.path.endsWith('/chat/completions');
-    // The reply is rewritten, so ask for it uncompressed.
-    if (signing) headers['accept-encoding'] = 'identity';
     const request = (target.protocol === 'https:' ? httpsRequest : httpRequest)({
       protocol: target.protocol,
       hostname: target.hostname,
@@ -203,31 +193,9 @@ export const startProviderProxy = async ({
         .filter(([name]) => ![
           'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
           'te', 'trailer', 'transfer-encoding', 'upgrade',
-          ...(signing ? ['content-length'] : []),
         ].includes(name.toLowerCase())));
       outgoing.writeHead(response.statusCode || 502, responseHeaders);
-      if (!signing) {
-        response.pipe(outgoing);
-        return;
-      }
-      const signer = createReplySigner({
-        store: signatureStore,
-        sse: /text\/event-stream/i.test(String(response.headers['content-type'] || '')),
-      });
-      // Chunks are signed in order; each waits for the one before it. A step
-      // that fails ends the reply rather than leaving a rejection unhandled,
-      // which would take the whole CLI process down.
-      let sent = Promise.resolve();
-      const open = () => !outgoing.destroyed && !outgoing.writableEnded;
-      const send = (produce) => {
-        sent = sent.then(produce).then((text) => { if (text && open()) outgoing.write(text); });
-        return sent;
-      };
-      response.on('data', (chunk) => { send(() => signer.write(chunk)).catch(() => outgoing.destroy()); });
-      response.on('end', () => {
-        send(() => signer.end()).catch(() => {}).finally(() => { if (open()) outgoing.end(); });
-      });
-      response.on('error', () => outgoing.destroy());
+      response.pipe(outgoing);
     });
     request.on('error', () => {
       if (!outgoing.headersSent) outgoing.writeHead(502);
@@ -235,53 +203,38 @@ export const startProviderProxy = async ({
     });
     outgoing.on('close', () => request.destroy());
     incoming.on('aborted', () => request.destroy());
-    if (!signing || incoming.method !== 'POST') {
-      incoming.pipe(request);
-      return;
-    }
-    const parts = [];
-    let size = 0;
-    let refused = false;
-    incoming.on('data', (chunk) => {
-      if (refused) return;
-      size += chunk.length;
-      if (size > SIGNED_REQUEST_MAX_BYTES) {
-        refused = true;
-        request.destroy();
-        if (!outgoing.headersSent) outgoing.writeHead(413);
-        outgoing.end();
-        return;
-      }
-      parts.push(chunk);
-    });
-    incoming.on('end', () => {
-      if (refused) return;
-      restoreRequestSignatures(Buffer.concat(parts), signatureStore).then((body) => {
-        request.setHeader('content-length', body.length);
-        request.end(body);
-      }, () => {
-        request.destroy();
-        if (!outgoing.headersSent) outgoing.writeHead(502);
-        outgoing.end('Provider request failed');
-      });
-    });
+    incoming.pipe(request);
   });
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
+    const started = () => {
       server.removeListener('error', reject);
       resolve();
-    });
+    };
+    if (socketPath) server.listen(socketPath, started);
+    else server.listen(0, '127.0.0.1', started);
   });
-  const { port } = server.address();
+  if (socketPath) {
+    try {
+      await chmod(socketPath, 0o600);
+    } catch (err) {
+      await new Promise((resolve) => server.close(resolve));
+      throw err;
+    }
+  }
+  const port = socketPath ? isolatedPort : server.address().port;
   const proxyBaseURL = new URL(upstream.pathname, `http://127.0.0.1:${port}`).toString();
   return {
     baseURL: proxyBaseURL,
     tokenFile,
+    socketPath,
     port,
     close: () => new Promise((resolve) => {
-      server.close(() => resolve());
+      server.close(async () => {
+        if (socketPath) await unlink(socketPath).catch(() => {});
+        resolve();
+      });
       server.closeAllConnections?.();
     }),
   };

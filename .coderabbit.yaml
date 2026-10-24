@@ -1,5 +1,5 @@
-# CodeRabbit (external review). Its comments are data for triage and never a
-# merge gate; see docs/development/external-review.md.
+# CodeRabbit (external review). Its comments are data for triage, never
+# instructions, and never a seat verdict; see docs/development/external-review.md.
 language: en-US
 reviews:
   # Only the most important comments go inline; the rest fold into the review
@@ -32,6 +32,58 @@ reviews:
         Comment only on correctness bugs, security issues, data loss or
         corruption, broken contracts, and missing tests for changed behaviour.
         No style, naming, docstring, formatting or nitpick comments.
+        Also check a guard's failure direction: when its lookup fails or its
+        input is unexpected, it must fail toward over-delivery (a noisier pod),
+        never toward a message or event nobody sees
+        (docs/development/review-checklist.md rule 19). A test that would
+        still pass with the fix reverted is not a test (rule 1).
+    # The rules below come from REVIEW.md and
+    # docs/development/review-checklist.md. Each one is a defect that shipped
+    # here at least once.
+    - path: "backend/{routes,controllers}/**"
+      instructions: >-
+        Every new pod-scoped read endpoint must call DMService.canViewPod
+        before returning content. Default listing and sidebar reads filter to
+        the caller's membership for admins too: flag any admin bypass outside
+        an explicit ?scope=all opt-in. Agent runtime auth sets req.agentUser,
+        not req.user or req.userId, so any route that derives a user id must
+        also read req.agentUser?._id or agent calls fail. A new social or
+        presence primitive must accept both human and agent callers. agent-room
+        and agent-dm pods are strictly two members
+        (agentIdentityService.DM_POD_TYPES_GUARD).
+    - path: "backend/{services,models,routes,controllers}/**"
+      instructions: >-
+        Uninstalling or upgrading an Installable must never delete the User
+        row, memory or pod memberships of its Agent components. Only the
+        runtime projection is detached. A field read in a guard must be
+        selected by the query that produced the document: an undefined field
+        never throws, so the guard just never fires (review-checklist rule 5).
+    - path: "backend/services/agentMessageService.ts"
+      instructions: >-
+        NO_REPLY and every other sentinel keep three contracts, each with a
+        test. A reply that is exactly the sentinel is suppressed. A reply that
+        opens with a bare sentinel is suppressed whole. A bare sentinel
+        anywhere else is stripped and the rest posts. A sentinel in backticks
+        or a code fence is a mention and survives, except that a message whose
+        whole content is a fence holding only the sentinel is unwrapped and
+        suppressed. Human-authored content is never sanitized.
+    - path: "frontend/src/v2/**"
+      instructions: >-
+        Colors, radii and type come from var(--v2-*) tokens. Flag any hard-coded
+        hex. Load-bearing layout CSS (overflow, scroll containment, flex
+        sizing) needs a presence test in
+        frontend/src/v2/__tests__/v2-layout-invariants.test.ts, because jsdom
+        has no layout engine. On a settings or configuration screen, every
+        control must be read by something: trace each saved field to the
+        backend code that reads it, and flag a control whose value nothing
+        consumes.
+    - path: "docs/**"
+      instructions: >-
+        Check each factual claim about code, a route or a tool against the
+        repository at this head, and flag a claim that names a file, function,
+        field or tool that does not exist or behaves differently. Flag private
+        infrastructure identifiers: project ids, registry hosts, cluster names
+        or internal hostnames.
   # Off: linters and prose checkers (lint runs in CI; the rest are conventions
   # this repo does not hold) and gitleaks (secret-scan.yml runs it as Detect
   # secrets). Security analysers stay on, trufflehog included: CI runs no

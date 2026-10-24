@@ -17,6 +17,15 @@ const mongoose = require('mongoose');
 
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 
+// This suite exercises the legacy Mongo-backed Clawdbot flow. Freshness has
+// its own real-database service coverage; Tier 1's PostgreSQL host is present
+// here without a message schema for this fixture.
+jest.mock('../../services/agentSendFreshness', () => ({
+  readStart: jest.fn().mockResolvedValue({ at: new Date(0) }),
+  recordRead: jest.fn().mockResolvedValue(undefined),
+  unseenMessages: jest.fn().mockResolvedValue(null),
+}));
+
 // Models
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
@@ -652,6 +661,12 @@ describe('Clawdbot E2E Integration Tests', () => {
         .send({ label: 'Message Test Token' });
 
       agentToken = tokenRes.body.token;
+      // Read the current pod tail before writing; send-time freshness holds
+      // a blind first post when other participants already spoke here.
+      const contextRead = await request(app)
+        .get(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${agentToken}`);
+      expect(contextRead.status).toBe(200);
     });
 
     test('should post a message to pod via runtime API', async () => {
@@ -659,6 +674,7 @@ describe('Clawdbot E2E Integration Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
         .send({
+          continueAnyway: true,
           content: 'Hello from Clawdbot! Based on the recent discussions, here are my insights...',
           messageType: 'text',
           metadata: {
@@ -678,7 +694,7 @@ describe('Clawdbot E2E Integration Tests', () => {
       const bareRes = await request(app)
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
-        .send({ content: bareContent, messageType: 'text' });
+        .send({ content: bareContent, messageType: 'text', continueAnyway: true });
 
       expect(bareRes.status).toBe(200);
       expect(bareRes.body.success).toBe(true);
@@ -689,7 +705,7 @@ describe('Clawdbot E2E Integration Tests', () => {
       const escapedRes = await request(app)
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
-        .send({ content: escapedContent, messageType: 'text' });
+        .send({ content: escapedContent, messageType: 'text', continueAnyway: true });
 
       expect(escapedRes.status).toBe(200);
       expect(escapedRes.body.success).toBe(true);
@@ -723,6 +739,7 @@ describe('Clawdbot E2E Integration Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
         .send({
+          continueAnyway: true,
           messageType: 'text',
         });
 
@@ -738,6 +755,7 @@ describe('Clawdbot E2E Integration Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
         .send({
+          continueAnyway: true,
           content: 'RGCTX',
           messageType: 'text',
         });
@@ -820,10 +838,14 @@ describe('Clawdbot E2E Integration Tests', () => {
 3. Set up daily standups to track progress`;
 
       // 4. Post response to pod
+      await request(app)
+        .get(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${agentToken}`);
       const postRes = await request(app)
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
         .send({
+          continueAnyway: true,
           content: clawdbotResponse,
           messageType: 'text',
           metadata: {
@@ -891,6 +913,7 @@ describe('Clawdbot E2E Integration Tests', () => {
           .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
           .set('Authorization', `Bearer ${agentToken}`)
           .send({
+            continueAnyway: true,
             content: `Response to batch ${i + 1}`,
             messageType: 'text',
           });
@@ -982,22 +1005,30 @@ describe('Clawdbot E2E Integration Tests', () => {
     });
 
     test('should allow both agents to post messages to the same pod', async () => {
+      await request(app)
+        .get(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${clawdbotToken}`);
       // Clawdbot posts
       const clawdbotPost = await request(app)
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${clawdbotToken}`)
         .send({
+          continueAnyway: true,
           content: 'Message from Clawdbot Bridge',
           messageType: 'text',
         });
 
       expect(clawdbotPost.status).toBe(200);
 
+      await request(app)
+        .get(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${commonlyBotToken}`);
       // Commonly Bot posts
       const commonlyBotPost = await request(app)
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${commonlyBotToken}`)
         .send({
+          continueAnyway: true,
           content: 'Message from Commonly Bot',
           messageType: 'text',
         });

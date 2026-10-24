@@ -22,6 +22,7 @@ const OAUTH_ERROR_KEYS: Record<string, string> = {
   exchange_failed: 'auth.login.oauthErrors.exchangeFailed',
   provider_error: 'auth.login.oauthErrors.providerError',
   bot_account: 'auth.login.oauthErrors.botAccount',
+  team_only: 'auth.login.oauthErrors.teamOnly',
 };
 
 const V2Login: React.FC = () => {

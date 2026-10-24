@@ -20,6 +20,7 @@ export interface IConnectorSecret extends Document {
   iv: string;
   tag: string;
   keyId: string;
+  writeGeneration?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +41,7 @@ const ConnectorSecretSchema = new Schema<IConnectorSecret>(
     iv: { type: String, required: true },
     tag: { type: String, required: true },
     keyId: { type: String, required: true },
+    writeGeneration: Number, // OAuth attempt fence; absent on older secrets
   },
   { timestamps: true, collection: 'connector_secrets' },
 );

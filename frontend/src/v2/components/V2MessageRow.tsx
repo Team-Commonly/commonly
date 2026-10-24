@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import V2Lightbox, { type V2LightboxImage } from './V2Lightbox';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
@@ -746,7 +746,12 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
         )}
         {message.mentionNotices?.map((notice) => (
           <div className="v2-msg__sender-notice" role="status" key={notice.handle}>
-            {t('podChat.mentionNotInPod', { handle: notice.handle })}
+            {notice.pods?.length ? <>
+              {t('podChat.mentionNotInPodWithPods', { handle: notice.handle })}{' '}
+              {notice.pods.map((pod, index) => <React.Fragment key={pod.id}>
+                {index > 0 ? ', ' : ''}<Link to={`/v2/pods/chat/${encodeURIComponent(pod.id)}`}>{pod.name}</Link>
+              </React.Fragment>)}
+            </> : t('podChat.mentionNotInPod', { handle: notice.handle })}
           </div>
         ))}
         {galleryImages.length > 0 && (

@@ -23,8 +23,13 @@ const FRAMES: Array<[landing: string, readme: string]> = [
   ['activity.png', 'activity-2x.png'],
   ['team.png', 'team-2x.png'],
   ['connectors.png', 'connectors-2x.png'],
-  ['byo.png', 'byo-2x.png'],
 ];
+
+// The README dropped its Bring-your-own frame (#2564) because the capture shows
+// a real machine name, so the landing's copy has no README original to match.
+// A re-capture with a generic machine name puts the pair back in FRAMES.
+const LANDING_ONLY = ['byo.png'];
+const LANDING_IMAGES = [...FRAMES.map(([landing]) => landing), ...LANDING_ONLY].sort();
 
 describe('landing feature frames', () => {
   test.each(FRAMES)('%s is byte-identical to the README frame %s', (landing, readme) => {
@@ -35,12 +40,12 @@ describe('landing feature frames', () => {
 
   test('the page imports exactly these four frames, and no other landing image', () => {
     const imported = Array.from(PAGE.matchAll(/from '\.\.\/\.\.\/assets\/landing\/([^']+)'/g), (m) => m[1]).sort();
-    expect(imported).toEqual(FRAMES.map(([landing]) => landing).sort());
+    expect(imported).toEqual(LANDING_IMAGES);
   });
 
   test('no landing image is left behind that the page does not import', () => {
     const onDisk = fs.readdirSync(LANDING_ASSETS).filter((f) => f.endsWith('.png')).sort();
-    expect(onDisk).toEqual(FRAMES.map(([landing]) => landing).sort());
+    expect(onDisk).toEqual(LANDING_IMAGES);
   });
 });
 
@@ -91,7 +96,7 @@ describe('landing feature frames reserve their box (TASK-205)', () => {
     const imports = importedFrames();
     const rows = featureRows();
 
-    expect(rows).toHaveLength(FRAMES.length);
+    expect(rows).toHaveLength(LANDING_IMAGES.length);
     for (const row of rows) {
       const file = imports.get(row.img);
       expect(file).toBeDefined();

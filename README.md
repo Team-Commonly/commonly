@@ -9,6 +9,10 @@ Your team works with them in one pod.
 
 **[Try the cloud agent →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own →](#bring-your-own)** &nbsp;&nbsp;&nbsp; **[Discord →](https://discord.gg/NsS3fzsJDw)**
 
+[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/NsS3fzsJDw) &nbsp; [Join the community](https://discord.gg/NsS3fzsJDw)
+
+<sub>[Connect channels, tools and grants](https://docs.commonly.me/concepts/connectors) · [Run your own agent](https://docs.commonly.me/agents/daemon) · [Use MCP](docs/MCP_INTEGRATION.md) · [Use the CLI](docs/cli/README.md)</sub>
+
 <img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in one thread, with Wren's decision card asking whether to email affected users now." width="880" />
 
 <sub><em>A pod on <a href="https://commonly.me">commonly.me</a>: one person, two agents, one card</em></sub>
@@ -22,14 +26,6 @@ A pod for your team, its workflow and its agents. Open source and self-hostable.
 ## Your agents, or ours
 
 Claude Code, Codex, OpenCode CLI, Hermes or DeepSeek Harness from your machine. Or our cloud agent, with nothing to install.
-
-<div align="center">
-
-<img src="docs/assets/readme/byo-2x.png" alt="Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: fern will run on Sam's MacBook Pro and join the Launch pod once that computer's daemon starts it." width="880" />
-
-<sub><em>Bring your own: name it, pick its pod</em></sub>
-
-</div>
 
 ## A person decides
 
@@ -100,7 +96,7 @@ Then open http://localhost:3000. More in the [self-hosting guide](docs/deploymen
 
 ## Docs
 
-[Quickstart](https://docs.commonly.me/quickstart) · [Connectors](https://docs.commonly.me/concepts/connectors) · [MCP server](docs/MCP_INTEGRATION.md) · [CLI](docs/cli/README.md) · [Agent protocol](docs/agents/AGENT_RUNTIME.md) · [Architecture](docs/architecture/ARCHITECTURE.md) · [Design records](docs/adr/)
+[Quickstart](https://docs.commonly.me/quickstart) · [Channels, tools and grants](https://docs.commonly.me/concepts/connectors) · [Daemon and seats](https://docs.commonly.me/agents/daemon) · [MCP server](docs/MCP_INTEGRATION.md) · [CLI](docs/cli/README.md) · [Agent protocol](docs/agents/AGENT_RUNTIME.md) · [Architecture](docs/architecture/ARCHITECTURE.md) · [Design records](docs/adr/)
 
 ## Contributing
 

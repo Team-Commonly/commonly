@@ -24,6 +24,7 @@ interface AuthRequest extends Request {
 }
 
 interface NormalizedMessage {
+  legacy_mongo_id?: string;
   id: string;
   pod_id: string;
   user_id: string;
@@ -84,7 +85,31 @@ const normalizeMongo = (m: Record<string, unknown>): NormalizedMessage => {
 exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { podId } = req.params;
-    const { before } = req.query as { before?: string };
+    let { before } = req.query as { before?: string };
+    // Legacy Mongo rows can still supply an extended-year cursor. Refuse it
+    // before PG errors and the whole request falls back to Mongo.
+    if (before !== undefined) {
+      // Date.parse normalizes February 30 and accepts six-digit signed
+      // years that PG rejects. Validate calendar fields before parsing.
+      const match = typeof before === 'string'
+        ? /^(\d{4})-(\d{2})-(\d{2})(?:T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))?$/.exec(before)
+        : null;
+      const year = Number(match?.[1]);
+      const month = Number(match?.[2]);
+      const day = Number(match?.[3]);
+      const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+      const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      const cursor = match ? new Date(before) : null;
+      if (!cursor || !Number.isFinite(cursor.getTime()) || year < 1
+        || month < 1 || month > 12 || day < 1 || day > days[month - 1]
+        || cursor.getUTCFullYear() < 1 || cursor.getUTCFullYear() > 9999) {
+        res.status(400).json({ msg: 'before must be a valid ISO date or timestamp with a year from 0001 to 9999' });
+        return;
+      }
+      // Send one portable representation to PG, including for offset inputs.
+      before = cursor.toISOString();
+    }
+
     // Clamp the page size [1, 200]. Unbounded `limit` let a caller ask for
     // millions of rows → OOM (both the PG and Mongo read paths below). Mirrors
     // the postController.getPosts clamp pattern.
@@ -129,16 +154,18 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
         const MessageReaction = require('../models/pg/MessageReaction').default;
-        const ids = (messages as Array<{ id?: string; _id?: string }>)
-          .map((m) => m.id || m._id)
+        // Keyed by the PG row id: a reconciled message's client `id` is its
+        // Mongo id, which reaction rows do not know.
+        const ids = (messages as Array<{ pgId?: string }>)
+          .map((m) => m.pgId)
           .filter(Boolean);
         if (ids.length > 0) {
           const reactionsMap = await MessageReaction.listForMessages(ids, String(userId));
           // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
           const { decorateReactionMap } = require('../services/reactionAttributionService');
           const decorated = await decorateReactionMap(reactionsMap);
-          for (const m of messages as Array<{ id?: string; _id?: string; reactions?: unknown }>) {
-            const key = String(m.id || m._id || '');
+          for (const m of messages as Array<{ pgId?: string; reactions?: unknown }>) {
+            const key = String(m.pgId || '');
             m.reactions = decorated.get(key) || [];
           }
         }
@@ -315,24 +342,11 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     } catch (pgErr) {
       const e = pgErr as { message?: string };
       console.warn('PG unavailable for createMessage, falling back to MongoDB:', e.message);
-      // Mongo messages have no reply_to_message_id column and are never
-      // reconciled into PG. A reply written here would look successful while
-      // permanently losing its parent edge, so only non-replies may use this
-      // availability fallback.
-      //
-      // "NEVER RECONCILED" IS A CURRENT FACT, NOT AN INVARIANT — and this
-      // guard is correct only while it holds (@sprint-review, pod 56881).
-      // Reconciling Mongo into PG was the other option considered on TASK-040;
-      // #1116 chose this one instead, so nothing reconciles today and the 503
-      // is the resolution rather than a stopgap.
-      //
-      // If reconciliation is ever built, this stops being a data-loss guard
-      // and becomes a rejection with no remaining reason: a user told
-      // "Replies are temporarily unavailable" about a path that would now
-      // preserve their reply. Whoever builds it must remove or relax this in
-      // the same change. The dependency runs both ways and appears in neither
-      // diff, which is why it is written at both ends — TASK-040 carries the
-      // pointer back here.
+      // Mongo rows have no reply_to_message_id column, and the reconciler
+      // (services/pgMessageReconcileService, TASK-313 part 2) copies them into
+      // PG without a reply edge. A reply written here would look successful
+      // while losing its parent edge, so replies still wait for Postgres.
+      // Non-replies take this fallback and are moved once PG is back.
       if (replyToMessageId) {
         res.status(503).json({
           error: 'Replies are temporarily unavailable. Please try again shortly.',
@@ -341,6 +355,7 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
         return;
       }
       const mongoMsg = await MongoMessage.create({
+        pgFallback: true,
         podId,
         userId,
         content: messageContent || '',
@@ -455,11 +470,30 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
 
 exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    // A message the reconciler moved answers to its Mongo id, and the PG row
+    // is the one to delete. Deleting only the Mongo copy would leave the
+    // message visible in PG.
+    const messageId = req.params.id;
     let message: NormalizedMessage | null = null;
+    let pgId: string | null = null;
+    let pgUnavailable = false;
     try {
-      message = await PGMessage.findById(req.params.id) as NormalizedMessage | null;
+      pgId = await PGMessage.resolveId(messageId);
+      if (pgId) message = await PGMessage.findById(pgId) as NormalizedMessage | null;
     } catch {
-      const mongoMsg = await MongoMessage.findById(req.params.id) as Record<string, unknown> | null;
+      pgUnavailable = true;
+    }
+    if (!pgId) {
+      const mongoMsg = await MongoMessage.findById(messageId) as Record<string, unknown> | null;
+      if (mongoMsg?.reconciledAt && pgUnavailable) {
+        // The PG row exists and cannot be reached. Deleting the Mongo copy
+        // now would leave it visible once PG returns.
+        res.status(503).json({
+          error: 'Message is temporarily unavailable. Please try again shortly.',
+          code: 'MESSAGE_REQUIRES_POSTGRES',
+        });
+        return;
+      }
       if (mongoMsg) message = normalizeMongo(mongoMsg);
     }
 
@@ -482,10 +516,24 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       }
     }
 
-    try {
-      await PGMessage.delete(req.params.id);
-    } catch {
-      await MongoMessage.findByIdAndDelete(req.params.id);
+    if (pgId) {
+      await PGMessage.delete(pgId);
+      // Keep the availability copy from resurrecting a deleted message during
+      // the next PG outage. Cleanup cannot turn a committed delete into a 500.
+      try {
+        const copyKeys: Array<Record<string, unknown>> = [{ reconciledPgId: Number(pgId) }];
+        // PG can commit before its Mongo stamp. The stable legacy ID still
+        // identifies that unstamped copy, even when deletion used the PG ID.
+        const legacyId = message.legacy_mongo_id || messageId;
+        if (typeof legacyId === 'string' && /^[0-9a-f]{24}$/i.test(legacyId)) {
+          copyKeys.push({ _id: legacyId });
+        }
+        await MongoMessage.deleteOne({ $or: copyKeys });
+      } catch (cleanupError) {
+        console.warn('[messageController] fallback delete cleanup failed:', (cleanupError as Error).message);
+      }
+    } else {
+      await MongoMessage.findByIdAndDelete(messageId);
     }
 
     res.json({ msg: 'Message deleted' });

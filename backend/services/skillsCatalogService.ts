@@ -332,7 +332,8 @@ export const fetchSkillDirectoryFiles = async (sourceUrl: string, options: Fetch
 // repo went 404 in early May 2026, but the same skills are served by ClawHub
 // at canonical URLs:
 //   GET /api/skill?owner=<owner>&slug=<slug>          → metadata JSON (incl. latestVersion.version)
-//   GET /api/v1/download?slug=<slug>&version=<v>      → ZIP bundle (SKILL.md + sub-files)
+//   GET /api/v1/download?slug=<slug>&ownerHandle=<owner>&version=<v>
+//                                                   → ZIP bundle (SKILL.md + sub-files)
 //
 // We use this both to recover dead catalog entries (presetSkillsAutoImport
 // rewrites openclaw/skills URLs to ClawHub fetches) and for any future
@@ -372,9 +373,8 @@ export const parseLegacyOpenclawSkillsUrl = (sourceUrl: string): { owner: string
  * Resolve and download a skill from ClawHub. Returns the SKILL.md content +
  * any sub-files (sub-skills, references/, scripts/) up to size budgets.
  *
- * Note: the metadata endpoint requires `owner` to be passed; the download
- * endpoint only takes `slug` (slugs appear to be globally unique). If two
- * authors publish the same slug ClawHub presumably disambiguates server-side.
+ * Both calls must retain the catalog publisher. ClawHub returns 409 for a
+ * download by slug alone when multiple publishers use that slug.
  */
 export const fetchSkillBundleFromClawHub = async (
   owner: string,
@@ -412,7 +412,7 @@ export const fetchSkillBundleFromClawHub = async (
   let buf: Buffer;
   try {
     const dlResp = await fetchBytesFromAllowedHost(
-      `${CLAWHUB_BASE}/api/v1/download?slug=${safeSlug}&version=${encodeURIComponent(version)}`,
+      `${CLAWHUB_BASE}/api/v1/download?slug=${safeSlug}&ownerHandle=${safeOwner}&version=${encodeURIComponent(version)}`,
       { allowedOrigins: CLAWHUB_ORIGINS, maxBytes: CLAWHUB_MAX_ZIP_BYTES },
     );
     if (!dlResp.ok) throw unavailableForStatus('ClawHub download', dlResp.status);

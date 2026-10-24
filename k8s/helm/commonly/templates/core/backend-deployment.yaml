@@ -571,6 +571,22 @@ spec:
           value: {{ .Values.backend.env.codexBypassLitellm | default "true" | quote }}
         - name: SKILLS_CATALOG_PATH
           value: /app/docs/skills/awesome-agent-skills-index.json
+        - name: AGENT_COMPUTER_ENABLED
+          value: {{ .Values.backend.env.agentComputerEnabled | default "false" | quote }}
+        - name: AGENT_COMPUTER_STEEL_API_URL_TEMPLATE
+          value: {{ .Values.backend.env.agentComputerSteelApiUrlTemplate | default "" | quote }}
+        - name: AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE
+          value: {{ .Values.backend.env.agentComputerSteelCdpUrlTemplate | default "" | quote }}
+        - name: AGENT_COMPUTER_ALLOWED_HOSTS
+          value: {{ .Values.backend.env.agentComputerAllowedHosts | default "" | quote }}
+        - name: AGENT_COMPUTER_WAKER_URL
+          value: {{ .Values.backend.env.agentComputerWakerUrl | default "" | quote }}
+        - name: AGENT_COMPUTER_WAKER_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: agent-computer-waker
+              key: token
+              optional: true
         - name: MARKETPLACE_MANIFEST_PATH
           value: {{ .Values.backend.env.marketplaceManifestPath | default "/app/packages/commonly-marketplace/marketplace.json" | quote }}
 

@@ -24,6 +24,11 @@ jest.mock('../../../models/Pod', () => ({
   }),
 }));
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
+const mockTaskCreate = jest.fn();
+jest.mock('../../../models/Task', () => ({
+  countDocuments: jest.fn().mockResolvedValue(0),
+  create: (...args) => mockTaskCreate(...args),
+}));
 // The agent's own bot User (its seat). Null in the arm where it cannot be found.
 const SEAT_ID = '507f1f77bcf86cd799439077';
 const SAM_ID = '507f1f77bcf86cd7994390aa';
@@ -80,6 +85,17 @@ jest.mock('../../../models/Message', () => {
   return { find: jest.fn(() => chain) };
 });
 const mockBrokerDispatch = jest.fn();
+const mockComputerSnapshot = jest.fn();
+const mockComputerScreenshot = jest.fn();
+const mockComputerNavigate = jest.fn();
+jest.mock('../../../services/agentComputerBroker', () => ({
+  agentComputerEnabled: () => true,
+  agentComputerBroker: {
+    navigate: (...args) => mockComputerNavigate(...args),
+    snapshot: (...args) => mockComputerSnapshot(...args),
+    screenshot: (...args) => mockComputerScreenshot(...args),
+  },
+}));
 jest.mock('../../../services/grantBrokerProjectionService', () => ({
   hostedBrokerToolsForRun: jest.fn().mockResolvedValue({
     tools: [{ type: 'function', function: { name: 'linear_list_issues', description: 'List issues.', parameters: { type: 'object', properties: {} } } }],
@@ -155,6 +171,36 @@ describe('native turn with commonly_fetch_url', () => {
     mockBrokerDispatch.mockImplementation(async ({ name }) => (name === 'linear_list_issues'
       ? { callId: 'tc-1', outcome: 'ok', content: { issues: [{ title: 'Private roadmap' }] } }
       : null));
+    mockComputerSnapshot.mockResolvedValue({ url: 'https://www.linkedin.com/', title: 'LinkedIn', text: 'Untrusted profile' });
+    mockComputerScreenshot.mockResolvedValue(Buffer.from('dummy-png'));
+    mockComputerNavigate.mockResolvedValue({ url: 'https://www.linkedin.com/in/a', title: 'Untrusted profile' });
+  });
+
+  test.each([
+    ['computer_navigate', mockComputerNavigate],
+    ['computer_snapshot', mockComputerSnapshot],
+    ['computer_screenshot', mockComputerScreenshot],
+  ])('%s taints the turn and blocks a bridged post', async (computerTool, reader) => {
+    mockBridged.mockResolvedValue(true);
+    const installation = {
+      ...install({ tools: [computerTool, 'computer_click', 'computer_type', 'commonly_post_message', 'commonly_create_task'] }),
+      _id: '507f1f77bcf86cd7994390cc',
+      installedBy: SAM_ID,
+    };
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', computerTool, computerTool === 'computer_navigate'
+        ? { url: 'https://www.linkedin.com/in/a' } : {}), call('c2', 'commonly_post_message', { content: 'Private profile text' })))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(installation, mention());
+
+    if (computerTool === 'computer_navigate') {
+      expect(reader).toHaveBeenCalledWith(SAM_ID, installation._id, 'https://www.linkedin.com/in/a');
+      expect(toolMessages(1)[0].content).toContain('untrusted third-party content');
+    } else expect(reader).toHaveBeenCalledWith(SAM_ID, installation._id);
+    expect(toolMessages(1)[1].content).toMatch(/cannot post in it/);
+    expect(offeredIn(1)).not.toContain('commonly_create_task');
+    expect(offeredIn(1)).toContain('computer_click');
   });
 
   test('opens a link from the mention, marked untrusted; the run keeps the address and size only', async () => {
@@ -483,6 +529,31 @@ describe('native turn with commonly_fetch_url', () => {
     const [, codeMessage, taskMessage] = toolMessages(1);
     expect(codeMessage.content).toMatch(/unavailable for the rest of this turn because web results are in it/);
     expect(taskMessage.content).toMatch(/unavailable for the rest of this turn because web results are in it/);
+  });
+
+  test('commonly_create_task accepts an assignee handle and stores it (TASK-354)', async () => {
+    mockTaskCreate.mockClear();
+    mockTaskCreate.mockResolvedValue({ taskId: 'N-1', toObject: () => ({}) });
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_create_task', { title: 'Ship it', assignee: 'nova' })))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention());
+
+    expect(mockTaskCreate).toHaveBeenCalledWith(expect.objectContaining({ title: 'Ship it', assignee: 'nova' }));
+    expect(toolMessages(1)[0].content).not.toMatch(/assign by handle/);
+  });
+
+  test('commonly_create_task refuses a display-name assignee before it writes a row (TASK-354)', async () => {
+    mockTaskCreate.mockClear();
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_create_task', { title: 'Ship it', assignee: 'Sprint Impl' })))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention());
+
+    expect(toolMessages(1)[0].content).toMatch(/assign by handle/);
+    expect(mockTaskCreate).not.toHaveBeenCalled();
   });
 
   test('a guard refusal reaches the model and does not narrow the turn', async () => {

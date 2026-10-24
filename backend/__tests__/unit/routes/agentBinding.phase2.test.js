@@ -104,6 +104,10 @@ const requestPlacement = (machineId) => request(app)
   .post('/api/agent-binding/request')
   .send({ agentName: 'wren-test', instanceId: 'default', machineId });
 
+const movePlacement = (machineId, fromMachineId = 'machine-a') => request(app)
+  .post('/api/agent-binding/move')
+  .send({ agentName: 'wren-test', instanceId: 'default', machineId, fromMachineId });
+
 const requestReconnect = () => request(app)
   .post('/api/agent-binding/reconnect')
   .send({ agentName: 'wren-test', instanceId: 'default' });
@@ -135,6 +139,97 @@ const runtimeAuthProbe = (token) => new Promise((resolve, reject) => {
 });
 
 describe('placement request', () => {
+  it('moves a revoked binding in one update and preserves it if the target is revoked after preflight', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { status: 'revoked', revokedAt: new Date() } });
+    await request(app).get('/api/agent-binding/placement').query({ agentName: 'wren-test' }).expect(200);
+    await AgentCredential.updateOne({ machineId: 'machine-b' }, { $set: { status: 'revoked', revokedAt: new Date() } });
+    const refused = await movePlacement('machine-b').expect(409);
+    expect(refused.body.code).toBe('target_revoked');
+    expect((await User.findById(bot._id)).botMetadata).toMatchObject({ machineId: 'machine-a' });
+    await AgentCredential.updateOne({ machineId: 'machine-b' }, { $set: { status: 'active', revokedAt: null } });
+    await movePlacement('machine-b').expect(200);
+    expect((await User.findById(bot._id)).botMetadata).toMatchObject({ machineId: null, requestedMachineId: 'machine-b' });
+  });
+
+  it('does not offer or select an expired daemon credential', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    await AgentCredential.updateOne({ machineId: 'machine-b' }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+    const placement = await request(app).get('/api/agent-binding/placement').query({ agentName: 'wren-test' }).expect(200);
+    expect(placement.body.activeMachines).not.toContainEqual(expect.objectContaining({ machineId: 'machine-b' }));
+    const refused = await movePlacement('machine-b').expect(409);
+    expect(refused.body.code).toBe('target_revoked');
+    expect((await User.findById(bot._id)).botMetadata.machineId).toBe('machine-a');
+  });
+
+  it('lets only the sole installer view a revoked binding and request a live replacement after release', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { status: 'revoked', revokedAt: new Date() } });
+    const placement = () => request(app).get('/api/agent-binding/placement')
+      .query({ agentName: 'wren-test', instanceId: 'default' });
+
+    global.__CALLER_ID = String(new mongoose.Types.ObjectId());
+    await placement().expect(403);
+    await request(app).post('/api/agent-binding/release')
+      .send({ agentName: 'wren-test', instanceId: 'default' }).expect(403);
+    global.__CALLER_ID = String(owner._id);
+
+    const state = await placement().expect(200);
+    expect(state.body).toMatchObject({ boundMachineId: 'machine-a', boundMachineRevoked: true,
+      activeMachines: [{ machineId: 'machine-b', name: 'Mac B' }] });
+    await requestPlacement('machine-a').expect(409);
+    await request(app).post('/api/agent-binding/release')
+      .send({ agentName: 'wren-test', instanceId: 'default' }).expect(200);
+    await requestPlacement('machine-b').expect(200);
+    expect((await User.findById(bot._id)).botMetadata).toMatchObject({ machineId: null, requestedMachineId: 'machine-b' });
+  });
+
+  it('ignores agent-DM projections but names a second human installation before releasing', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { status: 'revoked', revokedAt: new Date() } });
+    const peer = await User.create({ username: `peer${Date.now() % 1e6}`, email: `peer${Date.now()}@agents.commonly.local`,
+      password: 'x'.repeat(12), isBot: true });
+    const peer2 = await User.create({ username: `peer2${Date.now() % 1e6}`, email: `peer2${Date.now()}@agents.commonly.local`,
+      password: 'x'.repeat(12), isBot: true });
+    for (const installer of [peer, bot]) {
+      // eslint-disable-next-line no-await-in-loop
+      const dm = await Pod.create({ name: `DM ${installer.username}`, type: 'agent-dm',
+        createdBy: installer._id, members: installer === bot ? [bot._id, peer2._id] : [peer._id, bot._id] });
+      // eslint-disable-next-line no-await-in-loop
+      await AgentInstallation.create({ agentName: 'wren-test', instanceId: 'default', podId: dm._id,
+        version: '1.0.0', status: 'active', installedBy: installer._id });
+    }
+    const placement = () => request(app).get('/api/agent-binding/placement')
+      .query({ agentName: 'wren-test', instanceId: 'default' });
+    await placement().expect(200);
+    await request(app).post('/api/agent-binding/release')
+      .send({ agentName: 'wren-test', instanceId: 'default' }).expect(200);
+    await requestPlacement('machine-b').expect(200);
+    await adopt(DAEMON_B).expect(200);
+
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    const secondHuman = await User.create({ username: `second${Date.now() % 1e6}`,
+      email: `second${Date.now()}@x.com`, password: 'x'.repeat(12) });
+    const otherPod = await Pod.create({ name: 'Other human pod', type: 'team',
+      createdBy: secondHuman._id, members: [secondHuman._id, bot._id] });
+    await AgentInstallation.create({ agentName: 'wren-test', instanceId: 'default', podId: otherPod._id,
+      version: '1.0.0', status: 'active', installedBy: secondHuman._id });
+    const refusal = await placement().expect(403);
+    expect(refusal.body.code).toBe('another_installer');
+    expect(refusal.body.message).toContain('another pod');
+    expect(JSON.stringify(refusal.body)).not.toContain('Other human pod');
+    expect(JSON.stringify(refusal.body)).not.toContain(secondHuman.username);
+    expect(refusal.body.blockers).toEqual([]);
+    await Pod.updateOne({ _id: otherPod._id }, { $addToSet: { members: owner._id } });
+    const visibleRefusal = await placement().expect(403);
+    expect(visibleRefusal.body.message).toContain(`Other human pod (${secondHuman.username})`);
+    expect(visibleRefusal.body.blockers).toContainEqual({ podName: 'Other human pod', installerName: secondHuman.username });
+    await movePlacement('machine-b').expect(403);
+    await request(app).post('/api/agent-binding/release')
+      .send({ agentName: 'wren-test', instanceId: 'default' }).expect(403);
+    expect((await User.findById(bot._id)).botMetadata.machineId).toBe('machine-a');
+  });
+
   it('records a directive without binding, and null withdraws it', async () => {
     const res = await requestPlacement('machine-a');
     expect(res.status).toBe(200);
@@ -314,6 +409,21 @@ describe('daemon work list', () => {
 
     const seenByB = await assigned(DAEMON_B);
     expect(seenByB.body.agents).toEqual([]);
+  });
+
+  // TASK-474: a seat placed on a machine before it turned native or hosted keeps
+  // the machineId, so the work list must filter on the runtime, not the binding.
+  it.each([
+    ['native', { runtime: { runtimeType: 'native' } }],
+    ['hosted on the Durable Object engine', { runtime: { runtimeType: 'hosted' } }],
+  ])('stops listing a %s seat to the machine it was placed on before the switch', async (_label, config) => {
+    await requestPlacement('machine-a');
+    expect((await assigned(DAEMON_A)).body.agents).toHaveLength(1);
+
+    await AgentInstallation.updateOne({ agentName: 'wren-test', instanceId: 'default' }, { $set: { config } });
+    const res = await assigned(DAEMON_A);
+    expect(res.status).toBe(200);
+    expect(res.body.agents).toEqual([]);
   });
 
   it('projects live broker grants into the audience seat environment', async () => {

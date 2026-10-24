@@ -15,7 +15,9 @@
  *   hosted): its model, tools, prompt, caps and context size. Every new user
  *   is the installer of their own native Scout, so without this any user
  *   could pick a paid model route, add the approval-proposing tool, or set
- *   `dailyRunCap: 0` to lift the cap. Admins may still change them.
+ *   `dailyRunCap: 0` to lift the cap. Admins may still change them. The same
+ *   holds for `runtime.adapter`: grant-broker confinement and the daemon read
+ *   it, so a change to it is refused (TASK-474).
  * - The kernel's own records (`hosted`), which only the install and
  *   provision routes write. Refused for every caller, admins included: a
  *   hand-written engine or provision stamp is a record that no longer
@@ -56,6 +58,11 @@ const normalizeRuntimeType = (value: unknown): string => String(value ?? '').tri
 export const storedRuntimeType = (config: unknown): string => {
   const runtime = asObject(asObject(config)?.runtime);
   return normalizeRuntimeType(runtime?.runtimeType);
+};
+
+const storedAdapter = (config: unknown): string => {
+  const runtime = asObject(asObject(config)?.runtime);
+  return normalizeRuntimeType(runtime?.adapter);
 };
 
 /**
@@ -120,6 +127,22 @@ export const configWriteRefusal = ({
       fields: compute.map((key) => `config.${key}`),
     };
   }
+
+  // The adapter names the CLI a seat runs, and grant-broker confinement and the
+  // daemon read it. The settings page echoes the stored value on every save, so
+  // only a change is refused: an echo of what is stored passes.
+  if (runtime && 'adapter' in runtime) {
+    const requestedAdapter = normalizeRuntimeType(runtime.adapter);
+    if (targets.some((target) => KERNEL_RUN_RUNTIME_TYPES.has(storedRuntimeType(target))
+      && storedAdapter(target) !== requestedAdapter)) {
+      return {
+        code: 'kernel_run_field',
+        status: 403,
+        error: 'Commonly runs this agent, so Commonly sets its runtime adapter.',
+        fields: ['config.runtime.adapter'],
+      };
+    }
+  }
   return null;
 };
 
@@ -137,10 +160,19 @@ export const runtimeKeepingType = (
   existingConfig: unknown,
   { mayChangeType }: { mayChangeType: boolean },
 ): Record<string, any> => {
-  const storedType = asObject(asObject(existingConfig)?.runtime)?.runtimeType;
+  const stored = asObject(asObject(existingConfig)?.runtime);
+  const storedType = stored?.runtimeType;
   if (mayChangeType && 'runtimeType' in requestedRuntime) {
     return { ...requestedRuntime, runtimeType: normalizeRuntimeType(requestedRuntime.runtimeType) };
   }
   const { runtimeType: _sent, ...rest } = requestedRuntime;
+  // The adapter is kept the same way for a caller who may not change it: a save
+  // that omits it must not erase it, or the guard's stored-value check is bypassed.
+  // An echo in another spelling (' CODEX ' for 'codex') saves the stored value,
+  // so the raw spelling never reaches a reader that matches exactly (CodeRabbit on #2626).
+  if (!mayChangeType && stored && 'adapter' in stored) {
+    const sameAdapter = normalizeRuntimeType(requestedRuntime.adapter) === normalizeRuntimeType(stored.adapter);
+    if (!('adapter' in requestedRuntime) || sameAdapter) rest.adapter = stored.adapter;
+  }
   return storedType ? { ...rest, runtimeType: normalizeRuntimeType(storedType) } : rest;
 };

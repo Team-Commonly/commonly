@@ -8,6 +8,8 @@ const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentMemory = require('../../models/AgentMemory');
 const manageSettings = require('../../routes/registry/manage-settings');
 const podAgents = require('../../routes/registry/pod-agents');
+const agentConfig = require('../../routes/registry/agent-config');
+const { projectSeatEnvironments, seatEnvironmentKey } = require('../../services/seatEnvironmentProjection');
 
 const SECRET = 'agent-manage-settings-test';
 const token = (user) => jwt.sign({ id: String(user._id) }, SECRET);
@@ -23,6 +25,7 @@ describe('per-installation agent settings', () => {
     app.use(express.json());
     app.use('/api/registry', manageSettings);
     app.use('/api/registry', podAgents);
+    app.use('/api/registry', agentConfig);
     owner = await User.create({ username: 'settings-owner', email: 'settings-owner@test.com', password: 'password123' });
     other = await User.create({ username: 'settings-other', email: 'settings-other@test.com', password: 'password123' });
     admin = await User.create({ username: 'settings-admin', email: 'settings-admin@test.com', password: 'password123', role: 'admin' });
@@ -42,6 +45,10 @@ describe('per-installation agent settings', () => {
     ]);
   });
 
+  afterEach(async () => {
+    await User.deleteMany({ username: 'settings-runtime-bot' });
+  });
+
   it('lists only installations the caller may manage', async () => {
     const response = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
       .set('Authorization', `Bearer ${token(owner)}`);
@@ -58,6 +65,70 @@ describe('per-installation agent settings', () => {
     const otherResponse = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
       .set('Authorization', `Bearer ${token(other)}`);
     expect(otherResponse.body.writablePodId).toBe(String(podB._id));
+  });
+
+  it('reads and writes the same effort declaration the daemon selects', async () => {
+    await User.create({
+      username: 'settings-runtime-bot', email: 'settings-runtime-bot@test.com', password: 'password123',
+      isBot: true, botMetadata: { agentName: 'settings-agent', instanceId: 'same', machineId: 'machine-a' },
+    });
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { config: {} },
+    });
+    await AgentInstallation.updateOne({ podId: podB._id, agentName: 'settings-agent' }, {
+      $set: { installedBy: owner._id, 'config.environment': { model: 'opus', effort: 'high' } },
+    });
+    const url = '/api/registry/agents/settings-agent/manage-settings?instanceId=same';
+    const before = await request(app).get(url).set('Authorization', `Bearer ${token(owner)}`);
+    expect(before.status).toBe(200);
+    expect(before.body.writablePodId).toBe(String(podA._id));
+    expect(before.body.runtimeSourcePodId).toBe(String(podB._id));
+    expect(before.body.runtimeEditable).toBe(true);
+    expect(before.body.runtimeManaged).toBe(true);
+    expect(before.body.runtimeControls).toEqual(expect.objectContaining({ effort: 'high' }));
+
+    const saved = await request(app)
+      .patch(`/api/registry/pods/${before.body.runtimeSourcePodId}/agents/settings-agent`)
+      .set('Authorization', `Bearer ${token(owner)}`)
+      .send({ instanceId: 'same', config: { environment: { effort: 'xhigh' } } });
+    expect(saved.status).toBe(200);
+    const seat = (await projectSeatEnvironments({ installedBy: owner._id }))
+      .get(seatEnvironmentKey('settings-agent', 'same'));
+    expect(seat.environment.effort).toBe('xhigh');
+    expect(seat.sourcePodId).toBe(String(podA._id));
+    const after = await request(app).get(url).set('Authorization', `Bearer ${token(owner)}`);
+    expect(after.body.runtimeManaged).toBe(true);
+    expect(after.body.runtimeControls.runtimeType).toBe('wrapper');
+    expect(after.body.runtimeControls.effort).toBe('xhigh');
+  });
+
+  it('does not present a standalone CLI preference as a running effort', async () => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.environment': { model: 'opus', effort: 'max' } },
+    });
+    const response = await request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.runtimeManaged).toBe(false);
+    expect(response.body.runtimeEditable).toBe(false);
+    expect(response.body.runtimeControls.effort).toBe('');
+  });
+
+  it('does not present a hosted runtime preference as its running model or effort', async () => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'internal' },
+        'config.environment': { model: 'opus', effort: 'max' } },
+    });
+    const response = await request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.runtimeManaged).toBe(false);
+    expect(response.body.runtimeEditable).toBe(false);
+    expect(response.body.runtimeSourcePodId).toBeNull();
+    expect(response.body.runtimeControls.model).toBe('');
+    expect(response.body.runtimeControls.effort).toBe('');
   });
 
   it('shows the installation owner’s quota when an admin opens settings', async () => {

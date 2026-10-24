@@ -20,6 +20,12 @@ if (process.env.TEST_VERBOSE !== 'true') {
 // Set longer timeout for database operations
 jest.setTimeout(30000);
 
+// Every backend test file gets its own Jest environment. Patch the in-memory
+// Mongo teardown in that environment so direct MongoMemoryServer users and the
+// shared testUtils helper both remove their own dbPath and temporary directory.
+// eslint-disable-next-line global-require
+require('./utils/mongoCleanup').installMongoMemoryServerCleanup();
+
 if (process.env.INTEGRATION_TEST) {
   // Connect to real services — expects Docker Compose dev stack running:
   //   ./dev.sh up   (starts mongo on :27017 and postgres on :5432)
@@ -51,5 +57,6 @@ if (process.env.INTEGRATION_TEST) {
   // worst files ~460 s -> ~8 s. Scoped to in-memory mode on purpose: the
   // INTEGRATION_TEST branch above runs against a real Mongo, where an op racing
   // connection setup must keep the 10 s default rather than fail at 250 ms.
+  // eslint-disable-next-line global-require
   require('mongoose').set('bufferTimeoutMS', 250);
 }

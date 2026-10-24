@@ -47,6 +47,17 @@ describe('V2MessageRow', () => {
     expect(screen.getByRole('status')).not.toHaveTextContent('English MCP text');
   });
 
+  it('links the sender to a visible pod where the mentioned agent is installed', () => {
+    render(<MemoryRouter><V2MessageRow message={{
+      id: 'mention-location', pod_id: 'pod-1', user_id: 'viewer-1', message_type: 'text',
+      content: '@rhea review', created_at: '2026-10-24T10:00:00.000Z', user: { username: 'viewer' },
+      mentionNotices: [{ code: 'MENTION_NOT_IN_POD', handle: 'rhea', message: 'API feedback',
+        pods: [{ id: 'reviews-pod', name: 'Reviews' }] }],
+    }} /></MemoryRouter>);
+    expect(screen.getByRole('status')).toHaveTextContent("rhea isn't in this pod. Ask in:");
+    expect(screen.getByRole('link', { name: 'Reviews' })).toHaveAttribute('href', '/v2/pods/chat/reviews-pod');
+  });
+
   it('keeps the runtime beside the agent name before its timestamp', () => {
     render(
       <MemoryRouter>

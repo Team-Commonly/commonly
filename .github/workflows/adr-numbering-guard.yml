@@ -26,6 +26,14 @@ on:
     # package-version-guard.yml: a stacked PR retargeted to main after its
     # parent merges otherwise enters this population with no event firing.
     types: [opened, synchronize, reopened, ready_for_review, edited]
+    # Only PRs that can change this guard's answer run it. Every other PR
+    # paid a runner for a no-op, and on a rebase wave those no-ops queue
+    # ahead of the merge-group build (10-24: 165 runs queued, merge
+    # group waited 16+ min). Not a required check, so a skip never blocks.
+    paths:
+      - 'docs/adr/**'
+      - 'scripts/verify-adr-numbering.js'
+      - '.github/workflows/adr-numbering-guard.yml'
 
 permissions:
   contents: read

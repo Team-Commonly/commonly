@@ -140,23 +140,78 @@ test('identity edits go through the shared installation PATCH with the exact ins
     } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
-      profile: { instructions: 'Old', persona: { tone: 'friendly', specialties: ['writing'] } },
+      profile: {
+        instructions: 'Old', persona: { tone: 'friendly', specialties: ['writing'] },
+        toolPolicy: { requireApproval: ['search'] }, contextPolicy: { maxTokens: 8000 },
+      },
     } } });
     return Promise.resolve({ data: [] });
   });
   axios.patch.mockResolvedValue({ data: { success: true } });
   renderPage();
-  await screen.findByRole('button', { name: 'Save identity' });
+  const save = await screen.findByRole('button', { name: 'Save identity' });
+  expect(save).toBeDisabled();
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Maya 2' } });
-  fireEvent.change(screen.getByRole('textbox', { name: 'Instructions' }), { target: { value: 'New instructions' } });
-  fireEvent.change(screen.getByRole('combobox', { name: 'Tone' }), { target: { value: 'technical' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  expect(screen.queryByRole('textbox', { name: 'Instructions' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'Persona' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'Tone' })).not.toBeInTheDocument();
+  expect(save).toBeEnabled();
+  fireEvent.click(save);
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
     '/api/registry/pods/pod-1/agents/maya-claude',
-    expect.objectContaining({
-      instanceId: 'default', displayName: 'Maya 2', instructions: 'New instructions',
-      persona: expect.objectContaining({ tone: 'technical', specialties: ['writing'] }),
-    }),
+    { instanceId: 'default', displayName: 'Maya 2' },
+  ));
+});
+
+test('OpenClaw identity keeps the live Persona editor and saves its changes', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Scout', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'openclaw', instanceId: 'scout', displayName: 'Scout',
+      profile: { persona: { tone: 'friendly', specialties: ['writing'], customInstructions: 'Stay clear' } },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  axios.patch.mockResolvedValue({ data: { success: true } });
+  renderPage('/v2/agents/openclaw/scout');
+  expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Persona notes' }), { target: { value: 'Keep detail' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    '/api/registry/pods/pod-1/agents/openclaw',
+    { instanceId: 'scout', persona: {
+      tone: 'friendly', specialties: ['writing'], boundaries: [], customInstructions: 'Keep detail',
+    } },
+  ));
+});
+
+test('OpenClaw name-only edits leave Persona out of the PATCH', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Scout', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'openclaw', instanceId: 'scout', displayName: 'Scout',
+      profile: { persona: { tone: 'friendly', specialties: ['writing'] } },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  axios.patch.mockResolvedValue({ data: { success: true } });
+  renderPage('/v2/agents/openclaw/scout');
+  expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Scout 2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    '/api/registry/pods/pod-1/agents/openclaw',
+    { instanceId: 'scout', displayName: 'Scout 2' },
   ));
 });
 
@@ -218,7 +273,7 @@ test('nondefault wrapper instances never link to a default-instance reconnect', 
 test('regeneration waits for the explicit running-key replacement confirmation', async () => {
   axios.post.mockResolvedValue({ data: { token: 'cm_agent_once' } });
   renderPage();
-  await screen.findByText('Laptop');
+  await screen.findByText('Runtime key · Laptop');
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
   expect(axios.post).not.toHaveBeenCalled();
   expect(screen.getByTestId('agent-key-replace-confirmation')).toHaveTextContent('Replacing it will disconnect');
@@ -260,7 +315,7 @@ test('an in-flight replacement never reveals its key on another agent page', asy
       </MemoryRouter>
     </AuthContext.Provider>,
   );
-  await screen.findByText('Laptop');
+  await screen.findByText('Runtime key · Laptop');
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
   fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
@@ -302,13 +357,42 @@ test('a partial installation owner cannot see identity-wide key controls', async
 test('revocation uses the credential id only after confirmation', async () => {
   axios.delete.mockResolvedValue({ data: { revoked: 1 } });
   renderPage();
-  await screen.findByText('Laptop');
+  await screen.findByText('Runtime key · Laptop');
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
   expect(axios.delete).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Revoke key' }));
   await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/credentials/tok-1', {
     params: { agentName: 'maya-claude', instanceId: 'default' },
   }));
+});
+
+test('shows active keys first and keeps revoked history collapsed', async () => {
+  const defaultGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => (
+    url === '/api/credentials' ? Promise.resolve({ data: [
+      { _id: 'old', label: 'Old token', status: 'revoked', revokedAt: '2026-10-02T00:00:00Z' },
+      { _id: 'daemon', label: 'Runtime token', machineId: 'opaque-id', machineName: "Sam's MacBook", status: 'active' },
+    ] }) : defaultGet(url, options)
+  ));
+  renderPage();
+  expect(await screen.findByText("Runtime key · Sam's MacBook")).toBeInTheDocument();
+  const disclosure = screen.getByText('1 revoked');
+  expect(disclosure.closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(disclosure);
+  expect(disclosure.closest('details')).toHaveAttribute('open');
+  expect(screen.getByText('Runtime key · Old token')).toBeInTheDocument();
+});
+
+test('a revoked-only key list has a useful empty state and accessible history', async () => {
+  const defaultGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => (
+    url === '/api/credentials' ? Promise.resolve({ data: [
+      { _id: 'old', label: 'Previous key', status: 'revoked' },
+    ] }) : defaultGet(url, options)
+  ));
+  renderPage();
+  expect(await screen.findByText('No active keys.')).toBeInTheDocument();
+  expect(screen.getByText('1 revoked').closest('details')).not.toHaveAttribute('open');
 });
 
 test('selects an installation the owner can manage without exposing a foreign pod', async () => {
@@ -402,4 +486,53 @@ test('runtime editor keeps a wrapper model when no environment override exists',
   renderPage();
   expect(await screen.findByLabelText('Model')).toHaveValue('selected-model');
   expect(screen.getByLabelText('Effort')).toHaveValue('medium');
+});
+
+test('runtime editor shows the daemon-selected effort instead of a different pod config', async () => {
+  axios.patch.mockResolvedValue({ data: { updated: true } });
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'skills-pod', runtimeSourcePodId: 'source-pod',
+      runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: 'opus', effort: 'high' },
+      runtimeEditable: true, installations: [
+        { podId: 'skills-pod', podName: 'Work', status: 'active' },
+        { podId: 'source-pod', podName: 'Source', status: 'active' },
+      ],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
+      runtime: { runtimeType: 'wrapper', adapter: 'claude' },
+      config: { environment: { model: 'opus', effort: 'max' } },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage();
+  const effort = await screen.findByLabelText('Effort');
+  expect(effort).toHaveValue('high');
+  fireEvent.change(effort, { target: { value: 'xhigh' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    '/api/registry/pods/source-pod/agents/maya-claude',
+    { config: { environment: { effort: 'xhigh' } }, instanceId: 'default' },
+  ));
+});
+
+test('standalone CLI settings do not claim a local effort or offer a remote save', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', runtimeSourcePodId: null, runtimeManaged: false,
+      runtimeEditable: false, runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: '', effort: '' },
+      installations: [{ podId: 'pod-1', podName: 'Work', status: 'active' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
+      runtime: { runtimeType: 'wrapper', adapter: 'claude' },
+      config: { environment: { model: 'opus', effort: 'max' } },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage();
+  expect(await screen.findByText('Single CLI')).toBeInTheDocument();
+  expect(screen.queryByText('max')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save runtime' })).not.toBeInTheDocument();
 });

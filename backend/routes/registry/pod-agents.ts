@@ -9,6 +9,7 @@ const AgentEvent = require('../../models/AgentEvent');
 const AgentCredential = require('../../models/AgentCredential');
 const Machine = require('../../models/Machine');
 const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
+const { hostedRunsNative } = require('../../services/hostedEngine');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
@@ -17,6 +18,7 @@ const {
   getUserId,
   isGlobalAdminUser,
   normalizeInstanceId,
+  normalizeConfigMap,
   normalizeDisplayName,
   resolveInstallation,
   buildAgentProfileId,
@@ -260,7 +262,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
     const userRows = usernameSet.size > 0
       ? await User.find({ username: { $in: Array.from(usernameSet) } })
-        .select('username botMetadata agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt agentRuntimeTokens.expiresAt')
+        .select('username profilePicture botMetadata agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt agentRuntimeTokens.expiresAt')
         .lean()
       : [];
     const userByUsername = new Map<string, any>(
@@ -328,6 +330,17 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       console.warn('[pod-agents] caller-spoke lookup failed:', (spokeErr as Error).message);
     }
 
+    // A push webhook's URL can carry a credential in its query string, so only
+    // its installer and instance admins see it (Cofounder's hardening ruling,
+    // 2026-10-21). The admin lookup runs only when the roster holds a URL the
+    // viewer did not install.
+    const viewerId = String(userId);
+    const installedByViewer = (i: any) => String(i.installedBy || '') === viewerId;
+    const needsAdminCheck = (installations as any[]).some((i: any) => (
+      !installedByViewer(i) && Boolean(normalizeConfigMap(i.config)?.runtime?.webhookUrl)
+    ));
+    const viewerIsAdmin = needsAdminCheck ? await isGlobalAdminUser(userId) : false;
+
     res.json({
       callerSpoke,
       agents: installations.map((i: any) => {
@@ -346,10 +359,22 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           lastActiveAt,
           user,
           lastMessage: (user && lastMessageByUserId.get(String(user._id))) || null,
+          revealWebhookUrl: viewerIsAdmin || installedByViewer(i),
         });
         const runtimeType = payload?.runtime?.runtimeType;
-        if (!connectionAvailable || !user || !['webhook', 'wrapper'].includes(runtimeType)
-          || (runtimeType === 'webhook' && payload?.runtime?.webhookUrl)) return payload;
+        // A provisioned in-process seat needs no external connection. Its
+        // runtime is available by construction, without a credential ledger.
+        if (runtimeType === 'native' || hostedRunsNative(i)) {
+          return { ...payload, connection: { state: 'available', lastSeenAt: null } };
+        }
+        // Legacy local-cli installs are normalized to their harness name
+        // (codex/claude-code) in the public payload. Host, not that label,
+        // identifies a BYO listener whose credential use proves liveness.
+        const hasRuntimeConnection = payload?.runtime?.host === 'byo'
+          || runtimeType === 'wrapper'
+          || (runtimeType === 'webhook' && !payload?.runtime?.host);
+        if (!connectionAvailable || !user || !hasRuntimeConnection
+          || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return payload;
         const machineId = user.botMetadata?.machineId;
         return {
           ...payload,
@@ -432,6 +457,9 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
       agent: buildAgentInstallationPayload(installation, {
         profile,
         iconUrl: templateIcon || registryEntry?.iconUrl || '',
+        revealWebhookUrl: installedBy === String(userId)
+          || (Boolean(normalizeConfigMap(installation.config)?.runtime?.webhookUrl)
+            && await isGlobalAdminUser(userId)),
       }),
     });
   } catch (error) {

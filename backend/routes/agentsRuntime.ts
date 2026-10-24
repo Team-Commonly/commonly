@@ -25,6 +25,7 @@ const AgentEventService = require('../services/agentEventService');
 const HostedRuntimeMeter = require('../services/hostedRuntimeService');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
+const AgentSendFreshness = require('../services/agentSendFreshness');
 const { findNonMemberMentionNotices } = require('../services/mentionNonMemberNoticeService');
 const AgentThreadService = require('../services/agentThreadService');
 const PodContextService = require('../services/podContextService');
@@ -1407,6 +1408,7 @@ router.get(
         return clamp(parsed, 1, max);
       };
 
+      const readStartedAt = await AgentSendFreshness.readStart(podId);
       const context = await PodContextService.getPodContext({
         podId,
         userId: user._id,
@@ -1420,7 +1422,14 @@ router.get(
         skillRefreshHours: parseLimit(req.query.skillRefreshHours, 6, 72),
       });
 
-      return res.json(context);
+      const { _recentMessagesRead, ...publicContext } = context as Record<string, unknown>;
+      if (_recentMessagesRead) {
+        await AgentSendFreshness.recordRead(
+          user._id, podId, readStartedAt,
+          ((publicContext.recentMessages || []) as Array<{ id?: unknown }>).map((message) => String(message.id || '')),
+        );
+      }
+      return res.json(publicContext);
     } catch (error: any) {
       console.error('Error fetching bot pod context:', error);
       return res.status(500).json({ message: 'Failed to fetch pod context' });
@@ -1462,7 +1471,14 @@ router.get(
 
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
       // Same server-computed `self` flag as the runtime-token route (#757).
+      const readStartedAt = await AgentSendFreshness.readStart(podId);
       const messages = await AgentMessageService.getRecentMessages(podId, limit, user._id);
+      if (!process.env.PG_HOST || (messages as typeof messages & { readSource?: string }).readSource === 'postgres') {
+        await AgentSendFreshness.recordRead(
+          user._id, podId, readStartedAt,
+          messages.map((message: Record<string, unknown>) => String(message.id || message._id || '')),
+        );
+      }
       return res.json({ messages });
     } catch (error: any) {
       console.error('Error fetching bot messages:', error);
@@ -1504,6 +1520,11 @@ router.post(
       }
 
       const { content, metadata, messageType } = req.body || {};
+      const wouldPost = messageType === 'card' || Boolean(AgentMessageService.sanitizeAgentContent(content));
+      if (wouldPost && req.body?.continueAnyway !== true) {
+        const hold = await AgentSendFreshness.unseenMessages(user._id, podId);
+        if (hold) return res.status(409).json(hold);
+      }
       const result = await AgentMessageService.postMessage({
         agentName: resolvedAgentName,
         instanceId,
@@ -1716,6 +1737,7 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
       }
     }
 
+    const readStartedAt = await AgentSendFreshness.readStart(podId);
     const context = await PodContextService.getPodContext({
       podId,
       userId: agentUser._id,
@@ -1730,11 +1752,19 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
       maxContextTokens,
     });
 
+    const { _recentMessagesRead, ...publicContext } = context as Record<string, unknown>;
+    if (_recentMessagesRead) {
+      await AgentSendFreshness.recordRead(
+        agentUser._id, podId, readStartedAt,
+        ((publicContext.recentMessages || []) as Array<{ id?: unknown }>).map((message) => String(message.id || '')),
+      );
+    }
+
     // PodContextService attaches tokenEstimate/tokenBudget to `stats` only when
     // a budget applied, so an absent budget was invisible to the caller AND
     // unattributable. Say which of the four states produced it.
     return res.json({
-      ...(context as Record<string, unknown>),
+      ...publicContext,
       contextBudget: { applied: maxContextTokens > 0, source: contextBudgetSource },
     });
   } catch (error: any) {
@@ -1817,6 +1847,7 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
     // `self` flag. The wrapper uses it to tell "I posted via my tool" from
     // "some OTHER agent posted while I was thinking" — the latter used to
     // silently swallow this agent's reply in any multi-agent pod (#757).
+    const readStartedAt = await AgentSendFreshness.readStart(podId);
     const messages = await AgentMessageService.getRecentMessages(
       podId, limit + 1, req.agentUser?._id, beforeMs, rawThreadRootId,
     );
@@ -1824,6 +1855,18 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
     // getRecentMessages returns chronological order. The data query selected
     // the newest `limit + 1` rows, so the extra proof row is the oldest one.
     const page = hasMore ? messages.slice(-limit) : messages;
+
+    if (beforeMs === undefined && rawThreadRootId === undefined
+      && (!process.env.PG_HOST || (messages as typeof messages & { readSource?: string }).readSource === 'postgres')) {
+      const agentUser = req.agentUser || await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
+        instanceId: installation.instanceId || 'default',
+        displayName: installation.displayName,
+      });
+      await AgentSendFreshness.recordRead(
+        agentUser._id, podId, readStartedAt,
+        page.map((message: Record<string, unknown>) => String(message.id || message._id || '')),
+      );
+    }
 
     return res.json({ messages: page, hasMore });
   } catch (error: any) {
@@ -2132,6 +2175,19 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
+    // A total-match silence or runtime artifact is not a post. Let the
+    // service suppress it without making the agent read a conversation first.
+    const wouldPost = req.body?.messageType === 'card'
+      || Boolean(AgentMessageService.sanitizeAgentContent(req.body?.content));
+    if (wouldPost && req.body?.continueAnyway !== true) {
+      const agentUser = req.agentUser || await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
+        instanceId: installation.instanceId || 'default',
+        displayName: installation.displayName,
+      });
+      const hold = await AgentSendFreshness.unseenMessages(agentUser._id, podId);
+      if (hold) return res.status(409).json(hold);
+    }
+
     const {
       content, metadata, messageType, replyToMessageId, threadRootId,
     } = req.body || {};
@@ -2181,6 +2237,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       try {
         mentionNotices = await findNonMemberMentionNotices(
           podId, String((result.message as { content?: string }).content || ''),
+          req.agentUser?._id ? String(req.agentUser._id) : undefined,
         );
       } catch (noticeError) {
         // The post already landed. A failed advisory lookup cannot make the
@@ -4060,6 +4117,21 @@ router.post('/asks/:requestId/respond', phase4RateLimit, agentRuntimeAuth, async
 const { handleUpload, uploadSingle } = require('./uploads');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { validateOfficeContent } = require('../services/officeContentValidator');
+router.get('/pods/:podId/send-freshness', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    if (!req.agentUser?._id) return res.status(401).json({ message: 'Agent identity required' });
+    const hold = await AgentSendFreshness.unseenMessages(req.agentUser._id, podId);
+    return hold ? res.status(409).json(hold) : res.json({ ok: true });
+  } catch (error: any) {
+    console.error('Agent freshness check error:', error);
+    return res.status(500).json({ message: 'Failed to check send freshness' });
+  }
+});
+
 router.post('/pods/:podId/uploads', phase4RateLimit, agentRuntimeAuth, uploadSingle('file'), async (req: any, res: any) => {
   try {
     const { podId } = req.params;

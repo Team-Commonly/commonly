@@ -5,6 +5,8 @@ import path from 'path';
 const express = require('express');
 // eslint-disable-next-line global-require
 const axios = require('axios');
+// eslint-disable-next-line global-require
+const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 
 interface MarifestCache {
   data: { version: string; entries: unknown[] } | null;
@@ -68,7 +70,16 @@ const loadManifest = async (): Promise<{ version: string; entries: unknown[] }> 
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
-router.get('/official', (_req: unknown, res: { json: (d: unknown) => void; status: (n: number) => { json: (d: unknown) => void } }) => {
+// Anonymous marketplace reads do a database query per hit, so they get the
+// IP tier (middleware/platformRateLimit.ts). A threat-model budget, not one
+// fitted to traffic: the ingress log shows almost none on these routes.
+const marketplaceReadLimit = platformIpRateLimit({
+  windowMs: 60 * 1000,
+  limit: 300,
+  label: '300 marketplace reads per minute per IP',
+});
+
+router.get('/official', marketplaceReadLimit, (_req: unknown, res: { json: (d: unknown) => void; status: (n: number) => { json: (d: unknown) => void } }) => {
   loadManifest()
     .then((manifest) => res.json(manifest))
     .catch((error) => {

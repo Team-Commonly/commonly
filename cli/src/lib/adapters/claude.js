@@ -79,6 +79,7 @@ import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { claudeConfigDirFor, claudeContextTokens } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
@@ -715,7 +716,10 @@ const prepareArgv = async (innerArgv, ctx) => {
       workspacePath: ctx.cwd,
       readOnlyPaths: [ctx.mcpConfigDir, commitHooksPath, originalHooksPath, ...(ctx.mcpReadDirectories || [])].filter(Boolean),
     });
-    return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv };
+    // bwrap sets the child's HOME to the workspace (wrapArgvWithBwrap's
+    // default), so the child's transcript lands under the workspace, not the
+    // HOME the host process sees. TASK-440 reads from here.
+    return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv, childHome: ctx.cwd };
   }
   return { cmd: 'claude', args: innerArgv, env: claudeEnv };
 };
@@ -881,7 +885,7 @@ export default {
         publicSkillArgs,
         claudeEnv,
       };
-      const { cmd, args, env } = await prepareArgv(baseArgs, spawnCtx);
+      const { cmd, args, env, childHome } = await prepareArgv(baseArgs, spawnCtx);
       const stdout = await runClaude({
         cmd,
         args,
@@ -895,7 +899,12 @@ export default {
         credentials: spawnCredentials(spawnCtx),
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
       });
-      return { text: stdout.trim(), newSessionId: sessionId };
+      // TASK-440: the context this turn left, read from the transcript the
+      // child wrote under its own env (an isolated HOME for public seats).
+      const contextTokens = claudeContextTokens({
+        cwd: ctx.cwd, sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
+      });
+      return { text: stdout.trim(), newSessionId: sessionId, contextTokens };
     } catch (err) {
       // A public seat's refusal is not a session-store failure, whatever its
       // message happens to contain: it must reach the run loop, never the
@@ -941,7 +950,11 @@ export default {
           credentials: spawnCredentials(retryCtx),
           spawnImpl: ctx._spawnImpl,
         });
-        return { text: stdout.trim(), newSessionId: freshId };
+        const contextTokens = claudeContextTokens({
+          cwd: ctx.cwd, sessionId: freshId,
+          configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
+        });
+        return { text: stdout.trim(), newSessionId: freshId, contextTokens };
       }
       throw err;
     } finally {

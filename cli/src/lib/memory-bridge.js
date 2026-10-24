@@ -4,7 +4,8 @@
  * Two thin CAP shims the run loop calls around every spawn cycle:
  *
  *   readLongTerm(client)            — GET  /api/agents/runtime/memory,
- *                                      returns sections.long_term.content or ''
+ *                                      returns sections.long_term.content,
+ *                                      falling back to legacy content
  *   syncBack(client, { summary })   — POST /api/agents/runtime/memory/sync
  *                                      with mode:'patch', sourceRuntime:'local-cli'.
  *                                      No-op when summary is falsy.
@@ -33,8 +34,8 @@ export const SOURCE_RUNTIME = 'local-cli';
  * cannot adopt a habit whose surface it has no evidence exists, so the empty
  * case now says so.
  *
- * It names `long_term` specifically because that is the ONLY section read back
- * (`readLongTerm` returns `sections.long_term.content`). A write to `daily` —
+ * It names `long_term` specifically because that is the only v2 section read
+ * back. Legacy `content` is a fallback for records without that section. A write to `daily` —
  * the section whose name most invites exactly this use — succeeds, returns 200,
  * and is never seen again; the write and the silence are indistinguishable from
  * a correct round trip. Naming the section is the whole point of the cue.
@@ -92,7 +93,7 @@ export const buildMemoryPreamble = (prompt, memoryLongTerm, { freshSession = fal
 export const readLongTerm = async (client, { onError } = {}) => {
   try {
     const body = await client.get('/api/agents/runtime/memory');
-    return body?.sections?.long_term?.content || '';
+    return body?.sections?.long_term?.content ?? body?.content ?? '';
   } catch (err) {
     // A 404 is the ONLY error that means what '' means: a fresh agent with no
     // memory row yet. The kernel upserts on first write, so this is genuine

@@ -261,7 +261,12 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
       {emptyState}
       {threadView.map((item, index, view) => {
         const renderMessage = (message: V2Message, previous: ThreadViewItem | undefined) => {
-          const liveHostedCaps = hostedStart?.status === 'live' && hostedStart.messageId === String(message.id)
+          // A held agent answers the welcome click with no install, so the
+          // running line must not depend on the start carrying its limits.
+          const liveHosted = hostedStart?.status === 'live' && hostedStart.messageId === String(message.id)
+            ? hostedStart
+            : null;
+          const liveHostedCaps = liveHosted
             ? message.payload?.starts?.find((start) => start.action === WELCOME_HOSTED_ACTION)?.caps
             : undefined;
           const settledRuling = settledDecisionByMessageId.get(String(message.id));
@@ -315,11 +320,15 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                   })}
                 </div>
               )}
-              {liveHostedCaps && (
+              {liveHosted && (
                 <p className="v2-chat__start-note" role="status">
-                  {t('agentByo.hosted.running', { name: hostedStart?.status === 'live' ? hostedStart.agentName : '' })}
-                  {' '}
-                  {t('agentByo.compact.limits', { agents: liveHostedCaps.agentsPerUser, turns: liveHostedCaps.turnsPerDay })}
+                  {t('agentByo.hosted.running', { name: liveHosted.agentName })}
+                  {liveHostedCaps && (
+                    <>
+                      {' '}
+                      {t('agentByo.compact.limits', { agents: liveHostedCaps.agentsPerUser, turns: liveHostedCaps.turnsPerDay })}
+                    </>
+                  )}
                 </p>
               )}
               {agentDeliveryHint?.messageId === message.id && (

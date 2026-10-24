@@ -160,6 +160,65 @@ describe('agent config PATCH — what an installer cannot write', () => {
     expect(retune.body.code).toBe('kernel_run_field');
   });
 
+  // TASK-474: the adapter names the CLI a seat runs, and grant-broker confinement
+  // and the daemon read it. The settings page echoes the stored value on save.
+  it.each(['hosted', 'native'])('refuses the installer of a %s agent changing its runtime adapter', async (runtimeType) => {
+    const row = installation({ runtime: { runtimeType, adapter: 'codex' } });
+    given(row);
+    const res = await patch({ runtime: { runtimeType, adapter: 'claude' } });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'kernel_run_field', fields: ['config.runtime.adapter'] });
+    expect(row.save).not.toHaveBeenCalled();
+  });
+
+  it('refuses the installer of a hosted agent setting an adapter where none is stored', async () => {
+    const row = installation({ runtime: { runtimeType: 'hosted' } });
+    given(row);
+    const res = await patch({ runtime: { runtimeType: 'hosted', adapter: 'codex' } });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('kernel_run_field');
+  });
+
+  it('lets the installer resend the stored adapter unchanged, as the settings page does', async () => {
+    const row = installation({ runtime: { runtimeType: 'hosted', adapter: 'codex' } });
+    given(row);
+    const res = await patch({ runtime: { runtimeType: 'hosted', adapter: 'codex' }, errorRouting: { ownerDm: true } });
+    expect(res.status).toBe(200);
+    expect(row.save).toHaveBeenCalled();
+  });
+
+  it.each(['native', 'hosted'])('keeps the stored adapter when the installer saves a %s runtime block that omits it', async (runtimeType) => {
+    const row = installation({ runtime: { runtimeType, adapter: 'codex' } });
+    given(row);
+    const res = await patch({ runtime: { runtimeType }, errorRouting: { ownerDm: true } });
+    expect(res.status).toBe(200);
+    expect(row.config.get('runtime')).toMatchObject({ runtimeType, adapter: 'codex' });
+  });
+
+  it('saves the stored adapter when the installer echoes it in another spelling', async () => {
+    const row = installation({ runtime: { runtimeType: 'hosted', adapter: 'codex' } });
+    given(row);
+    const res = await patch({ runtime: { runtimeType: 'hosted', adapter: ' CODEX ' } });
+    expect(res.status).toBe(200);
+    expect(row.config.get('runtime').adapter).toBe('codex');
+  });
+
+  it('lets the installer change the adapter of a webhook agent, which Commonly does not run', async () => {
+    const row = installation({ runtime: { runtimeType: 'webhook', host: 'byo' } });
+    given(row);
+    const res = await patch({ runtime: { runtimeType: 'webhook', adapter: 'claude' } });
+    expect(res.status).toBe(200);
+    expect(row.config.get('runtime')).toMatchObject({ adapter: 'claude' });
+  });
+
+  it('lets an admin change the adapter of a hosted agent', async () => {
+    const row = installation({ runtime: { runtimeType: 'hosted', adapter: 'codex' } });
+    given(row, 'admin');
+    const res = await patch({ runtime: { runtimeType: 'hosted', adapter: 'claude' } });
+    expect(res.status).toBe(200);
+    expect(row.config.get('runtime')).toMatchObject({ adapter: 'claude' });
+  });
+
   it('refuses a config that is not an object', async () => {
     const row = installation({ runtime: { runtimeType: 'webhook' } });
     given(row);

@@ -141,6 +141,43 @@ describe('V2Inspector', () => {
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 
+  test('uses the resolved agent label while matching attention under an old profile ID', () => {
+    renderInspector({ detail: { ...detail, agents: [{
+      agentName: 'scout', instanceId: 'default', displayName: 'Scout',
+      profile: { displayName: 'u1a9e5ecede' },
+    }] } as any, attentionItems: [{
+      id: 'legacy-request', kind: 'decision', title: 'Legacy request',
+      actorName: 'u1a9e5ecede', podId: 'pod-1',
+    }] });
+
+    expect(screen.getAllByText('Scout')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: /Scout needs you · Legacy request/ })).toBeInTheDocument();
+    expect(screen.queryByText('u1a9e5ecede')).not.toBeInTheDocument();
+  });
+
+  test('does not assign anonymous attention to an agent without a profile name', () => {
+    renderInspector({ detail: { ...detail, agents: [{
+      agentName: 'scout', instanceId: 'default', displayName: 'Scout',
+    }] } as any, attentionItems: [{
+      id: 'human-question', kind: 'decision', title: 'Human question', podId: 'pod-1',
+    }] });
+
+    expect(screen.getByText('Human question')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Scout idle/ })).toBeInTheDocument();
+  });
+
+  test('does not assign an unowned active task to an agent without a profile name', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve(url === '/api/v1/tasks/pod-1'
+      ? { tasks: [{ taskId: 'TASK-1', title: 'Unowned work', status: 'claimed' }] }
+      : { items: [], total: 0 }));
+    renderInspector({ detail: { ...detail, agents: [{
+      agentName: 'scout', instanceId: 'default', displayName: 'Scout',
+    }] } as any, attentionCount: 0, attentionItems: [] });
+
+    await screen.findByText('no files yet');
+    expect(screen.getByRole('button', { name: /Scout idle/ })).toBeInTheDocument();
+  });
+
   test('uses the short lowercase room name in the single-line agents label', () => {
     renderInspector({ detail: { ...detail, pod: { ...detail.pod, name: 'Sharpen · decision loop' } } as any });
 

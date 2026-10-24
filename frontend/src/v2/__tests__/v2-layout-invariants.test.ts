@@ -168,6 +168,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const mobileTabs = read('../components/V2MobileTabs.tsx');
   const podBoard = read('../components/V2PodBoard.tsx');
   const activityPage = read('../components/V2ActivityPage.tsx');
+  const yourTeamPage = read('../components/V2YourTeamPage.tsx');
   const featurePage = read('../components/V2FeaturePage.tsx');
   const v2App = read('../V2App.tsx');
   const app = read('../../App.tsx');
@@ -183,6 +184,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(agentSettings, '.v2-agent-settings')).toContain('width: min(100%, 960px)');
     expect(ruleBody(agentSettings, '.v2-agent-settings__key-meta')).toContain('flex-wrap: wrap');
     expect(mediaBlockContaining(agentSettings, '.v2-agent-settings__key-meta')).toContain('display: grid');
+  });
+
+  test('agent Settings section headers stack at phone width so the key hint stays visible', () => {
+    const phone = mediaBlockContaining(agentSettings, '.v2-agent-settings__section-head');
+    const header = selectorRuleBody(phone, '.v2-agent-settings__section-head');
+    expect(header).toContain('flex-direction: column');
+    expect(header).toContain('align-items: flex-start');
   });
 
   test('agent Settings buttons retain their chrome over the v2 button reset', () => {
@@ -211,6 +219,37 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('BYO hints do not add paragraph margins to flex gaps', () => {
     expect(ruleBody(v2, '.v2-byo__hint')).toContain('margin: 0');
+  });
+
+  test('BYO field hints take no space until focused or in error', () => {
+    expect(ruleBody(v2, '.v2-byo__field > .v2-byo__hint')).toContain('display: none');
+    expect(selectorRuleBody(v2, '.v2-byo__field:focus-within > .v2-byo__hint,\n.v2-byo__field--error > .v2-byo__hint'))
+      .toContain('display: block');
+  });
+
+  test('the global button reset stays a low-specificity default', () => {
+    const reset = ruleBody(v2, '.v2-root :where(button:not(.MuiButtonBase-root))');
+    expect(reset).toContain('font-family: inherit');
+    expect(reset).toContain('border: none');
+    expect(reset).toContain('background: none');
+    expect(reset).toContain('padding: 0');
+    expect(v2).not.toMatch(/^\.v2-root button:not\(\.MuiButtonBase-root\)\s*\{/m);
+  });
+
+  test('authored utility controls remain visible after the button reset loses specificity', () => {
+    const rail = selectorRuleBody(v2, '.v2-rail__feedback');
+    const languageTrigger = ruleBody(v2, '.v2-lang-switch__trigger');
+    const languageItem = ruleBody(v2, '.v2-lang-switch__item');
+    const mobile = mediaBlockContaining(v2, '.v2-inspector-backdrop');
+
+    // These are deliberate neutral controls, not accidental reset leaks.
+    expect(rail).toContain('color: var(--v2-text-tertiary)');
+    expect(rail).toContain('background: transparent');
+    expect(rail).toContain('border-radius: var(--v2-radius-sm)');
+    expect(languageTrigger).toContain('padding: 4px 6px');
+    expect(languageItem).toContain('padding: 8px 12px');
+    expect(languageItem).toContain('color: var(--v2-text-secondary)');
+    expect(mobile).toContain('background: rgba(15, 17, 21, 0.42)');
   });
 
   // #2287 (QA BYO walk 1): "Other ways to connect" folds the alternatives so the
@@ -244,6 +283,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).toContain('white-space: normal');
     expect(rule).toContain('-webkit-line-clamp: 2');
     expect(rule).not.toContain('white-space: nowrap');
+  });
+
+  test('Your Team keeps template copy out of cards and folds long pod lists', () => {
+    expect(yourTeamPage).toContain('isTemplateDescription(description, display)');
+    expect(yourTeamPage).toContain("(a.podNames || []).slice(0, 2)");
+    expect(yourTeamPage).toContain('v2-team-card__pod--more');
   });
 
   test('the workspace grid owns the measured 56 / 260 / fluid / 272 geometry', () => {
@@ -549,6 +594,32 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Every non-option card act is 32 tall at desktop, level with the options (ux-lead 67327):
     // Approve / Deny / Mark handled / Reply / Open read 30 from the shared row-button rule.
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('min-height: 32px');
+  });
+
+  test('Activity details clamp to two lines and reveal full copy on hover, focus, or expand', () => {
+    const detail = ruleBody(v2, '.v2-root .v2-activity__queue-detail');
+    expect(detail).toContain('display: -webkit-box');
+    expect(detail).toContain('-webkit-line-clamp: 2');
+    expect(detail).toContain('overflow: hidden');
+    const reveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail--expanded');
+    expect(reveal).toContain('display: block');
+    // Tab-in preview is kept; a reader's collapse is excluded so focus can't re-open it (Lumen HOLD on #2407).
+    const focusReveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail:focus-visible:not(.v2-activity__queue-detail--dismissed)');
+    expect(focusReveal).toContain('display: block');
+    expect(focusReveal).toContain('-webkit-line-clamp: unset');
+    expect(activityPage).toContain('v2-activity__queue-detail--dismissed');
+    expect(reveal).toContain('-webkit-line-clamp: unset');
+    const baseDetail = selectorRuleBody(v2, '.v2-root button.v2-activity__queue-detail');
+    expect(baseDetail).toContain('color: var(--v2-text-secondary)');
+    const mentionDetail = selectorRuleBody(v2, '.v2-root .v2-activity__queue-row--mention .v2-activity__queue-detail');
+    expect(mentionDetail).toContain('color: var(--v2-text-primary)');
+    expect(v2).toContain('.v2-root:lang(zh) .v2-activity__queue-detail,');
+    expect(v2).toContain('.v2-root .v2-activity__queue-detail:hover:not(:focus)');
+    expect(v2).toContain('@media (hover: hover)');
+    expect(activityPage).toContain('aria-expanded={expandedDetailIds.has(item.id)}');
+    expect(activityPage).toContain('v2-activity__queue-detail');
+    expect(activityPage).toContain('aria-label={t(\'activity.compose.placeholder\')}');
+    expect(activityPage).not.toContain('v2-activity__compose-label');
   });
 
   test('Activity pagination keeps the Show more affordance visible and keyboard-sized', () => {
@@ -915,6 +986,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(aprofile, '.v2-root.v2-aprofile')).toContain('overflow-y: auto');
   });
 
+  test('the authenticated agent-profile Talk button is ink, while public links stay cobalt', () => {
+    const linkPrimary = ruleBody(aprofile, '.v2-aprofile__btn--primary');
+    const buttonPrimary = ruleBody(aprofile, '.v2-root button.v2-aprofile__btn--primary');
+
+    expect(linkPrimary).toContain('background: var(--v2-accent)');
+    expect(buttonPrimary).toContain('background: var(--v2-ink)');
+    expect(buttonPrimary).toContain('border-color: var(--v2-ink)');
+    expect(aprofile).toContain('.v2-root button.v2-aprofile__btn--primary:hover');
+    expect(aprofile).toContain('background: var(--v2-ink-hover)');
+  });
+
   test('the nav rail pane lets its language dropdown escape the pane clip', () => {
     // The rail is 56px wide; its language menu is a wider floating popover.
     // Base `.v2-pane { overflow: hidden }` clips it to the rail edge, so the
@@ -1168,9 +1250,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('a board claim lease reads as secondary status rather than a blue mention', () => {
-    expect(podBoard).toContain('className="v2-board__card-claim-lease"');
-    const lease = ruleBody(v2, '.v2-board__card-claim-lease');
-    expect(lease).toContain('font-size: 12px');
+    expect(podBoard).toContain('className="v2-board__owner-line"');
+    const lease = ruleBody(v2, '.v2-board__owner-line');
+    expect(lease).toContain('var(--v2-font-mono)');
     expect(lease).toContain('color: var(--v2-text-secondary)');
   });
 
@@ -1181,6 +1263,22 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const chip = ruleBody(v2, '.v2-root button.v2-board__card-move');
     expect(chip).toContain('min-height: 32px');
     expect(chip).toContain('font-size: 12px');
+  });
+
+  test('UI-STRUCT B3 uses ink for primary actions and mono counts without pills', () => {
+    const boardNew = ruleBody(v2, '.v2-root button.v2-board__new');
+    expect(boardNew).toContain('background: var(--v2-ink)');
+    expect(boardNew).toContain('color: var(--v2-on-ink)');
+
+    const columnCount = ruleBody(v2, '.v2-board__col-count');
+    expect(columnCount).toContain('var(--v2-font-mono)');
+    expect(columnCount).not.toContain('background:');
+    expect(columnCount).not.toContain('border-radius:');
+    expect(columnCount).not.toContain('padding:');
+
+    const connectCta = lastRuleBody(v2, '.v2-root .v2-connect__cta');
+    expect(connectCta).toContain('background: var(--v2-ink)');
+    expect(connectCta).toContain('color: var(--v2-on-ink)');
   });
 
   test('the board craft-pass buttons use icon components instead of unicode glyphs', () => {
@@ -1949,10 +2047,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // as "slightly wrong depth" and an accent at rest destroys the ONE signal
     // the card has for being addressed.
     // Selector carries the `.v2-root button.` prefix ON PURPOSE: the global
-    // reset `.v2-root button:not(.MuiButtonBase-root)` is 0-2-1 and sets
-    // `color: inherit`, so a bare class rule loses and the card renders at
-    // body colour. Pinning the prefixed selector means dropping the prefix
-    // fails here rather than silently in production (#870's trap).
+    // The prefixed selector keeps the card's visual treatment explicit while
+    // the global reset remains a low-specificity default.
     const card = ruleBody(v2, '.v2-root button.v2-thread-card__main');
     expect(card).toContain('box-shadow: none');
     expect(card).toContain('min-height: 44px');
@@ -2907,9 +3003,9 @@ describe('the landing hero demo (TASK-147)', () => {
 //
 // Items 1–6 are presence lines. The reason they can be, rather than a cascade
 // comparison: the mode card owns its button reset locally, while
-// `button.v2-byo__submit` is rooted at `.v2-root`, so the bare reset at
-// `v2.css:201` cannot outrank them the way it did the landing pill in TASK-159.
-// That trap is pre-avoided in this component, not merely untested here.
+// `button.v2-byo__submit` is rooted at `.v2-root`, so the low-specificity
+// default at `v2.css:201` cannot override these declarations. The component
+// keeps its visual treatment explicit rather than relying on reset order.
 //
 // Item 7 gets three assertions, because each of its failure modes is invisible
 // to a presence line:
@@ -3410,7 +3506,7 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
 // Stated limits, so the next reader does not over-read this: the parser handles
 // simple selectors, max-/min-width conditions, and the `height` / `grid-row`
 // declarations asserted on. It does not resolve percentages against containing
-// blocks, does not model `!important`, and treats unmodelled media features
+// blocks or model cascade layers/origins, and treats unmodelled media features
 // (hover, prefers-reduced-motion) as applying — the conservative direction for a
 // guard whose job is to catch a rule that WINS. The chain matcher at the end of
 // this block walks the descendant axis for class-only compounds, and treats `>`
@@ -3438,8 +3534,8 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
   );
 
   // (ids, classes/attributes/pseudo-classes, elements). Enough for this sheet:
-  // the rules in dispute are 0,1,0 / 0,2,0 / 0,3,0 and no id or `!important` is
-  // involved.
+  // the rules in dispute are 0,1,0 / 0,2,0 / 0,3,0. Importance is ranked
+  // separately, per declaration, before specificity.
   const specificityOf = (selector: string): number[] => {
     const ids = (selector.match(/#[A-Za-z0-9_-]+/g) ?? []).length;
     const classes = (selector.match(/\.[A-Za-z0-9_-]+/g) ?? []).length
@@ -3498,15 +3594,33 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     return rules;
   };
 
-  const declarations = (body: string): Record<string, string> => {
-    const found: Record<string, string> = {};
+  type Declaration = { value: string; important: boolean };
+  const parsedDeclarations = (body: string): Record<string, Declaration> => {
+    const found: Record<string, Declaration> = {};
     body.split(';').forEach((entry) => {
       const at = entry.indexOf(':');
       if (at < 0) return;
-      found[entry.slice(0, at).trim()] = entry.slice(at + 1).trim();
+      const property = entry.slice(0, at).trim();
+      const raw = entry.slice(at + 1).trim();
+      const important = /!\s*important\s*$/i.test(raw);
+      const value = raw.replace(/!\s*important\s*$/i, '').trim();
+      const put = (key: string, next: string): void => {
+        if (!found[key]?.important || important) found[key] = { value: next, important };
+      };
+      put(property, value);
+      // Expand the one shorthand this guard resolves at declaration time, so
+      // longhand/shorthand importance and source order agree within a block.
+      if (property === 'padding') {
+        const parts = value.split(/\s+/).filter(Boolean);
+        const bottomIndex: Record<number, number> = { 1: 0, 2: 0, 3: 2, 4: 2 };
+        if (bottomIndex[parts.length] !== undefined) put('padding-bottom', parts[bottomIndex[parts.length]]);
+      }
     });
     return found;
   };
+  const declarations = (body: string): Record<string, string> => Object.fromEntries(
+    Object.entries(parsedDeclarations(body)).map(([key, declaration]) => [key, declaration.value]),
+  );
 
   // A rule applies at a width unless an at-rule it sits inside rules that width
   // out. Conditions the guard does not model are treated as applying.
@@ -3518,16 +3632,39 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     return true;
   });
 
-  const outranks = (a: ParsedRule, b: ParsedRule): boolean => {
+  const outranks = (a: ParsedRule, b: ParsedRule, property: string): boolean => {
+    const aImportant = parsedDeclarations(a.body)[property]?.important ?? false;
+    const bImportant = parsedDeclarations(b.body)[property]?.important ?? false;
+    if (aImportant !== bImportant) return aImportant;
     for (let i = 0; i < 3; i += 1) {
       if (a.specificity[i] !== b.specificity[i]) return a.specificity[i] > b.specificity[i];
     }
     return a.order > b.order;
   };
 
-  const winnerOf = (rules: ParsedRule[]): ParsedRule => rules.reduce(
-    (best, rule) => (outranks(rule, best) ? rule : best),
+  const winnerOf = (rules: ParsedRule[], property: string): ParsedRule => rules.reduce(
+    (best, rule) => (outranks(rule, best, property) ? rule : best),
   );
+
+  test('importance is parsed and outranks specificity/order for the property being resolved (TASK-158)', () => {
+    const fixture = parseCascade(`
+      .v2-pane { height: 100vh ! IMPORTANT; grid-row: 1; }
+      .v2-root .v2-shell .v2-pane { height: 100%; grid-row: 2; }
+    `);
+    expect(parsedDeclarations(fixture[0].body).height).toEqual({ value: '100vh', important: true });
+    expect(winnerOf(fixture, 'height').selector).toBe('.v2-pane');
+    expect(winnerOf(fixture, 'grid-row').selector).toBe('.v2-root .v2-shell .v2-pane');
+    const equal = parseCascade(`
+      .v2-shell .v2-pane { height: 90vh !important; }
+      .v2-pane { height: 100vh !important; }
+      .v2-shell .v2-pane { height: 80vh !important; }
+    `);
+    expect(winnerOf(equal.slice(0, 2), 'height').order).toBe(0);
+    expect(winnerOf(equal, 'height').order).toBe(2);
+    expect(parsedDeclarations('height: 100vh !important; height: 100%;').height.value).toBe('100vh');
+    expect(parsedDeclarations('padding-bottom: 56px !important; padding: 0;')['padding-bottom'].value).toBe('56px');
+    expect(parsedDeclarations('padding: 0 !important; padding-bottom: 56px;')['padding-bottom'].value).toBe('0');
+  });
 
   const rules = parseCascade(v2);
 
@@ -3547,7 +3684,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     // Non-vacuity: the assertions below are about a winner, and a winner chosen
     // from an empty set asserts nothing.
     expect(contentRules.length).toBeGreaterThan(0);
-    const winner = winnerOf(contentRules);
+    const winner = winnerOf(contentRules, 'grid-row');
     expect(declarations(winner.body)['grid-row']).toBe('2');
     expect(winner.selector).toContain('v2-authenticated-shell__content');
   });
@@ -3566,7 +3703,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     expect(bounded.length).toBeGreaterThan(0);
 
     viewportHeight.forEach((rule) => {
-      const dominator = bounded.find((candidate) => outranks(candidate, rule));
+      const dominator = bounded.find((candidate) => outranks(candidate, rule, 'height'));
       // Named, not counted: a bare `dominated: false` reports that something is
       // wrong without saying which rule now wins the phone.
       expect({
@@ -3580,7 +3717,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
       });
     });
 
-    const winner = winnerOf(atPhone);
+    const winner = winnerOf(atPhone, 'height');
     expect(declarations(winner.body)['height']).toBe('100%');
     expect(winner.selector).toBe(BOUNDED_PANE_SELECTOR);
   });
@@ -3621,9 +3758,8 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
   // wins `padding-bottom` on the list shell, and what wins `z-index` on the list
   // aside. Neither is visible to a presence check.
 
-  // Class-only compounds. Anything carrying a pseudo or an attribute is skipped
-  // rather than mis-ranked, which is the honest direction: the alternative is a
-  // matcher that guesses.
+  // Chain matching checks the known rendered family only. It must never
+  // decide cascade membership: an unlisted ancestor can still match the app.
   const MODELABLE_COMPOUND = /^[A-Za-z0-9_.-]+$/;
 
   // Outermost first; each entry is the class set of one rendered element.
@@ -3663,29 +3799,58 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     return true;
   };
 
-  const chainRules = (chain: string[][], width: number): ParsedRule[] => rules.filter(
-    (rule) => appliesAt(rule, width) && matchesChain(rule.selector, chain),
+  const LIST_SHELL = ['v2-shell', 'v2-shell--list'];
+  const LIST_ASIDE = ['v2-pane', 'v2-pods-aside', 'v2-pods-aside--page'];
+  // Conservative, like MAIN_PANE above: rank every rule whose target compound
+  // can bind to this element, regardless of ancestors we cannot place. This
+  // can over-include rules from another subtree; it cannot silently drop a
+  // real competitor just because LIST_CHAIN omits its ancestor (TASK-160).
+  const targetRules = (source: ParsedRule[], target: string[], width: number): ParsedRule[] => source.filter(
+    (rule) => appliesAt(rule, width) && rule.classes.length > 0
+      && rule.classes.every((token) => target.includes(token)),
   );
+
+  test('list candidates retain competitors with ancestors outside the known chain (TASK-160)', () => {
+    const fixture = parseCascade(`
+      .v2-shell.v2-shell--list { padding-bottom: 56px; }
+      .v2-root .v2-shell--list { padding: 0; }
+      .v2-shell--list .v2-pods-aside--page { z-index: auto; }
+      .v2-root .v2-shell--list .v2-pods-aside--page { z-index: 60; }
+      .elsewhere { padding: 999px; z-index: 999; }
+      @media (min-width: 761px) { .v2-shell--list { padding: 999px; } }
+    `);
+    expect(matchesChain(fixture[1].selector, LIST_CHAIN)).toBe(false);
+    expect(matchesChain(fixture[3].selector, LIST_CHAIN)).toBe(false);
+    const shell = targetRules(fixture, LIST_SHELL, 390);
+    const aside = targetRules(fixture, LIST_ASIDE, 390);
+    expect(shell.map((rule) => rule.order)).toEqual([0, 1]);
+    expect(aside.map((rule) => rule.order)).toEqual([2, 3]);
+    expect(winnerOf(shell, 'padding-bottom').selector).toBe('.v2-root .v2-shell--list');
+    expect(declarations(winnerOf(shell, 'padding-bottom').body)['padding-bottom']).toBe('0');
+    expect(declarations(winnerOf(aside, 'z-index').body)['z-index']).toBe('60');
+  });
+
+  test.each([
+    { marker: 'v2-shell--list', target: LIST_SHELL, property: 'padding-bottom' },
+    { marker: 'v2-pods-aside--page', target: LIST_ASIDE, property: 'z-index' },
+  ])('every parsed phone $marker $property competitor reaches the candidate set', ({ marker, target, property }) => {
+    const candidates = targetRules(rules, target, 390);
+    const competitors = rules.filter((rule) => appliesAt(rule, 390)
+      && classTokens(lastCompound(rule.selector)).includes(marker)
+      && declarations(rule.body)[property] !== undefined);
+    expect(competitors.length).toBeGreaterThan(0);
+    // Named omissions make a newly introduced target class actionable rather
+    // than silently narrowing the model. Coverage is of parsed rules only.
+    expect(competitors.filter((rule) => !candidates.includes(rule)).map((rule) => rule.selector)).toEqual([]);
+  });
 
   // `padding-bottom`, or the `padding` shorthand it may be written as. A guard
   // that read only the longhand would pass while the shorthand took the space
   // back — and the shorthand is how this rule is written.
-  const bottomPadding = (body: string): string | undefined => {
-    const found = declarations(body);
-    if (found['padding-bottom'] !== undefined) return found['padding-bottom'];
-    if (found.padding === undefined) return undefined;
-    const parts = found.padding.split(/\s+/).filter(Boolean);
-    // 2 values are vertical|horizontal, 3 are top|horizontal|bottom, 4 are
-    // top|right|bottom|left — so the bottom is the LAST value in 3- and 4-value
-    // form, and the first in 1- and 2-value form. Getting this wrong reads a
-    // `padding: 0 0 56px` as no reservation at all, which is how it was caught.
-    const bottomIndex: Record<number, number> = { 1: 0, 2: 0, 3: 2, 4: 2 };
-    const at = bottomIndex[parts.length];
-    return at === undefined ? undefined : parts[at];
-  };
+  const bottomPadding = (body: string): string | undefined => declarations(body)['padding-bottom'];
 
   test('the phone list reserves the tab bar\'s own height inside its box', () => {
-    const shellRules = chainRules(LIST_CHAIN, 390)
+    const shellRules = targetRules(rules, LIST_SHELL, 390)
       .filter((rule) => bottomPadding(rule.body) !== undefined);
     // Non-vacuity, both parts: a winner of an empty set asserts nothing, and the
     // specificity claim below needs a one-class competitor to be about.
@@ -3693,12 +3858,12 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     const oneClass = shellRules.filter((rule) => rule.specificity[1] <= 1);
     expect(oneClass.length).toBeGreaterThan(0);
 
-    const barRules = chainRules(TAB_BAR, 390)
+    const barRules = targetRules(rules, TAB_BAR[0], 390)
       .filter((rule) => declarations(rule.body)['height'] !== undefined);
     expect(barRules.length).toBeGreaterThan(0);
-    const barHeight = declarations(winnerOf(barRules).body)['height'];
+    const barHeight = declarations(winnerOf(barRules, 'height').body)['height'];
 
-    const winner = winnerOf(shellRules);
+    const winner = winnerOf(shellRules, 'padding-bottom');
     // Derived, not restated: the reserved space must equal the bar it reserves,
     // so a bar that grows reds this without anyone editing two numbers.
     expect(bottomPadding(winner.body)).toBe(barHeight);
@@ -3707,11 +3872,11 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     // rule of the same name below it takes the padding back — the shape that has
     // failed twice in this sheet, and why ux-lead's spec asks for the two-class
     // selector. Mutation m4 reds this line and only this line.
-    expect(winner.specificity[1]).toBeGreaterThan(winnerOf(oneClass).specificity[1]);
+    expect(winner.specificity[1]).toBeGreaterThan(winnerOf(oneClass, 'padding-bottom').specificity[1]);
   });
 
   test('the list aside does not stack over the tab bar', () => {
-    const asideRules = chainRules(LIST_CHAIN, 390)
+    const asideRules = targetRules(rules, LIST_ASIDE, 390)
       .filter((rule) => declarations(rule.body)['z-index'] !== undefined);
     // Non-vacuity: the reset needs something to beat. The drawer rule that
     // stacks the aside at 60 must be in the set, or this ranks a winner among
@@ -3719,13 +3884,13 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     expect(asideRules.length).toBeGreaterThan(1);
     expect(asideRules.map((rule) => declarations(rule.body)['z-index'])).toContain('60');
 
-    const barRules = chainRules(TAB_BAR, 390)
+    const barRules = targetRules(rules, TAB_BAR[0], 390)
       .filter((rule) => declarations(rule.body)['z-index'] !== undefined);
     expect(barRules.length).toBeGreaterThan(0);
-    const barZ = Number(declarations(winnerOf(barRules).body)['z-index']);
+    const barZ = Number(declarations(winnerOf(barRules, 'z-index').body)['z-index']);
     expect(Number.isNaN(barZ)).toBe(false);
 
-    const aside = winnerOf(asideRules);
+    const aside = winnerOf(asideRules, 'z-index');
     const z = declarations(aside.body)['z-index'];
     // `auto` never forms a stacking context; any number at or above the bar's own
     // z-index paints over it. The bar is fixed, so being under it in paint order
@@ -3741,6 +3906,8 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
   test('the list chain this guard ranks is the chain the components render', () => {
     const layout = read('../components/V2Layout.tsx');
     expect(layout).toContain('v2-shell v2-shell--list');
+    expect(matchesChain('.v2-shell.v2-shell--list', LIST_CHAIN)).toBe(true);
+    expect(matchesChain('.v2-shell--list .v2-pods-aside--page', LIST_CHAIN)).toBe(true);
     expect(layout).toContain('<V2MobileTabs');
     expect(read('../components/V2PodsSidebar.tsx')).toContain("' v2-pods-aside--page'");
   });
@@ -4661,18 +4828,18 @@ describe('BYO command boxes wrap at spaces', () => {
   });
 
   test('a mention item highlights on arrow-key and hover past the button reset', () => {
-    // `.v2-root button:not(.MuiButtonBase-root)` is 0,2,1 with background: none.
-    // The bare `.v2-mention-item--active` (0,1,0) and `:hover` (0,2,0) lose to it,
-    // so a <button> item never showed its highlight. The rules must be prefixed.
+    // The prefixed rules keep the interaction states explicit. The reset is
+    // intentionally low-specificity, so bare component rules can own their
+    // declarations without a specificity workaround.
     const active = ruleBody(v2, '.v2-root button.v2-mention-item--active');
     expect(active).toContain('background: var(--v2-surface-hover)');
     const hover = ruleBody(v2, '.v2-root button.v2-mention-item:hover');
     expect(hover).toContain('background: var(--v2-surface-hover)');
-    // The padding the reset erases (`padding: 0`, 0,2,1) comes back at 0,3,1.
+    // The dropdown explicitly owns the padding the reset defaults to zero.
     const padded = ruleBody(v2, '.v2-root .v2-mention-dropdown button.v2-mention-item');
     expect(padded).toContain('padding: 7px 9px');
-    // The reset stays as it was: the fix is additive, not a rewrite of the reset.
-    expect(ruleBody(v2, '.v2-root button:not(.MuiButtonBase-root)')).toContain('background: none');
+    expect(ruleBody(v2, '.v2-root :where(button:not(.MuiButtonBase-root))'))
+      .toContain('background: none');
   });
 });
 
@@ -4722,7 +4889,7 @@ describe('agent runtime and grants fit the Settings column', () => {
 describe('agent Identity editor', () => {
   const css = read('../agents/v2-agent-settings.css');
   test('form fields retain a visible boundary over the v2 input reset', () => {
-    const input = selectorRuleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__identity input,');
+    const input = ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__identity input');
     expect(input).toContain('border: 1px solid var(--v2-border)');
     expect(input).toContain('background: var(--v2-surface)');
   });
@@ -4731,4 +4898,43 @@ describe('agent Identity editor', () => {
     expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a')).toContain('color: var(--v2-accent)');
     expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
   });
+});
+
+describe('task priority and lease signals (TASK-443)', () => {
+  const css = read('../v2.css');
+  test('priority remains a monochrome text badge', () => {
+    const badge = ruleBody(css, '.v2-board__priority');
+    expect(badge).toContain('var(--v2-font-mono)');
+    expect(badge).toContain('border-radius: 4px');
+    expect(badge).toContain('background: none');
+    const urgent = ruleBody(css, '.v2-board__priority--p0');
+    expect(urgent).toContain('border-color: var(--v2-text-primary)');
+    expect(urgent).toContain('color: var(--v2-text-primary)');
+    expect(urgent).not.toMatch(/background/);
+  });
+  test('live, unclaimed and expired ownership retain distinct dots', () => {
+    expect(ruleBody(css, '.v2-board__owner-dot--live')).toContain('background: var(--v2-accent)');
+    expect(ruleBody(css, '.v2-board__owner-dot--not-claimed')).toContain('border: 1px dashed var(--v2-border-strong)');
+    const expired = ruleBody(css, '.v2-board__owner-dot--expired');
+    expect(expired).toContain('border: 1px solid var(--v2-border-strong)');
+    expect(expired).toContain('background: none');
+  });
+});
+
+
+test('TASK-443 phone ownership sheet keeps its inset and scroll containment', () => {
+  const css = read('../v2.css');
+  const sheet = ruleBody(css, '.v2-board .v2-board__detail');
+  expect(sheet).toContain('inset: 44px 0 0');
+  const modal = ruleBody(css, '.v2-modal');
+  expect(modal).toContain('overflow: auto');
+  expect(modal).toContain('display: flex');
+  expect(modal).toContain('flex-direction: column');
+  expect(read('../components/V2PodBoard.tsx')).toContain('className="v2-modal v2-board__detail"');
+});
+
+
+test('TASK-443 lease typography outranks the ownership cell font size', () => {
+  expect(ruleBody(read('../v2.css'), '.v2-board__ownership .v2-board__lease-value'))
+    .toContain('font: 500 12px/16px var(--v2-font-mono)');
 });

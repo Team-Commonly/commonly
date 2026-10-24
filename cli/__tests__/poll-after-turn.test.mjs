@@ -1,17 +1,12 @@
 /**
  * poll-after-turn.test.mjs — TASK-343
  *
- * A turn is exactly when new events pile up: the person who typed while the
- * adapter was running is already waiting by the time it finishes. The loop
- * nonetheless slept a full poll interval after every turn before looking
- * again, so that person paid the turn plus the interval.
+ * A turn is when new events pile up. Poll shortly after it ends, while
+ * collecting notices that arrive mid-turn into one inbox read.
  *
- * Carved out of TASK-289, which traded one interval of greeting latency to put
- * a waiting mention first; this removes the interval it was trading.
- *
- * The rule is narrow on purpose: only a batch that actually spawned looks
- * again at once. An idle poll, or a batch that spawned nothing, keeps the
- * interval — otherwise the loop spins.
+ * A successful turn waits three seconds before reading again so notices that
+ * arrived mid-turn can be collected in one inbox read. An idle poll, or a
+ * batch that spawned nothing, keeps the normal interval.
  */
 
 import { jest } from '@jest/globals';
@@ -46,6 +41,7 @@ const { performRun } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
 const INTERVAL = 5000;
+const POST_TURN_BATCH_MS = 3000;
 
 const mention = (overrides = {}) => ({
   _id: 'evt-mention',
@@ -91,13 +87,13 @@ const delayAfterOneTick = async ({ page, spawn }) => {
   return { delays, spawn, mockPost };
 };
 
-describe('the loop looks again as soon as a turn ends', () => {
+describe('the loop batches notices after a turn', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     fs.rmSync(path.join(sessionsTmpDir, '.commonly'), { recursive: true, force: true });
   });
 
-  test('a turn that answered somebody is followed by an immediate poll', async () => {
+  test('a turn that answered somebody waits three seconds before polling', async () => {
     const spawn = jest.fn(async () => ({ text: 'looking now' }));
     const { delays } = await delayAfterOneTick({
       page: { events: [mention()], inboxCount: 1 },
@@ -105,7 +101,7 @@ describe('the loop looks again as soon as a turn ends', () => {
     });
 
     expect(spawn).toHaveBeenCalledTimes(1);
-    expect(delays).toEqual([0]);
+    expect(delays).toEqual([POST_TURN_BATCH_MS]);
   });
 
   test('an idle poll still waits the interval', async () => {

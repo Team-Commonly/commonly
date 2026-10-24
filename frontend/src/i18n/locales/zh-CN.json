@@ -275,7 +275,8 @@
         "stateInvalid": "本次登录请求已过期，请重试。",
         "exchangeFailed": "未能完成登录，请重试。",
         "providerError": "连接第三方登录平台时出错，请重试。",
-        "botAccount": "该邮箱属于智能体账号，不能用于社交登录。"
+        "botAccount": "该邮箱属于智能体账号，不能用于社交登录。",
+        "teamOnly": "此实例仅供团队使用。请使用获准的邮箱登录。"
       }
     },
     "register": {
@@ -296,6 +297,7 @@
         "createdTitle": "注册完成",
         "checkEmailMessage": "验证邮箱后即可加入 Community Pod，链接已发送至 {{email}}。",
         "verifyThenSignIn": "你可以立即<signIn>登录</signIn>；在完成验证前，提醒会一直显示。",
+        "verifyBeforeSignIn": "请先验证邮箱，再<signIn>登录</signIn>。",
         "continue": "继续登录"
       }
     },
@@ -491,6 +493,7 @@
     "replyingTo": "回复 <author>{{author}}</author>：",
     "deliveryHint": "尚未通知任何智能体。@提及一个智能体即可让它回复，例如 <handle>@{{handle}}</handle>。",
     "mentionNotInPod": "{{handle}} 不在这个 Pod 中。请邀请对方加入，或到对方已加入的 Pod 中提问。",
+    "mentionNotInPodWithPods": "{{handle}} 不在这个 Pod 中。可前往这些 Pod 提问：",
     "noAgentsInPod": {
       "kicker": "此 Pod 暂无智能体",
       "body": "还没有人会回复 —— 别人打开这个 Pod 时会看到这条消息。",
@@ -1257,7 +1260,6 @@
   },
   "board": {
     "title": "看板",
-    "claimUntil": "{{holder}} 已认领 · 至{{time}}",
     "backToChat": "返回聊天",
     "newTask": "新建任务",
     "taskCount_other": "{{count}}个任务",
@@ -1318,15 +1320,38 @@
     },
     "detail": {
       "updates": "更新记录",
-      "pr": "查看 PR"
+      "pr": "查看 PR",
+      "priority": "优先级",
+      "assignedTo": "分配给",
+      "claimedBy": "认领人",
+      "leaseLeft": "认领剩余时间",
+      "unassigned": "未分配",
+      "notClaimed": "尚未认领",
+      "expiredAt": "认领已于{{time}}到期",
+      "remaining": "{{minutes}}分钟 · 至{{time}}",
+      "timeUnavailable": "认领时间不可用",
+      "follow": "关注任务",
+      "following": "已关注",
+      "watchers": "关注者",
+      "digestHint": "更新会显示在你的摘要中。",
+      "memberUnavailable": "成员不可用",
+      "saveError": "未能保存更改，请重试。"
     },
     "form": {
       "title": "标题",
       "titlePlaceholder": "需要做什么？",
       "assignee": "负责人（可选）",
-      "assigneePlaceholder": "智能体或队友名称",
+      "assigneePlaceholder": "智能体代号",
       "create": "创建任务",
-      "creating": "创建中…"
+      "creating": "创建中…",
+      "priorityHint": "P0 优先处理。新任务默认为 P2。",
+      "defaultPriority": "默认"
+    },
+    "owner": {
+      "left": "{{holder}} · <minutes>剩余{{minutes}}分钟</minutes>",
+      "assigned": "{{assignee}} · 尚未认领",
+      "expired": "认领已到期 · {{holder}}",
+      "claimed": "{{holder}} · 已认领"
     }
   },
   "approvalCard": {
@@ -1455,6 +1480,7 @@
   "agentConnection": {
     "control": "控制",
     "connected": "已连接",
+    "available": "可在 Commonly 使用",
     "revoked": "密钥已撤销，连接已断开",
     "stale": "已{{count}}分钟未连接",
     "never": "尚未连接",
@@ -1523,6 +1549,8 @@
       "runtimeToken": "仅密钥",
       "claudeCode": "可选：让 Claude Code 在你自己的会话里使用这个 Pod",
       "cursor": "通过 MCP 在 Cursor 中使用这个 Pod——添加到 ~/.cursor/mcp.json",
+      "cursorInstall": "添加到 Cursor",
+      "cursorInstallHint": "该链接会以占位密钥添加 Commonly。请在 Cursor 的 MCP 设置中将其替换为上面的密钥。",
       "memory": "导入它的记忆（可选）",
       "claudeCodeBody": "为你自己的 Claude Code 会话加上 Commonly 的工具。它不会让 {{name}} 回复 @提及，上面那条命令才会。",
       "claudeCodeBodyOwn": "为你自己的 Claude Code 会话加上 Commonly 的工具。",
@@ -1550,6 +1578,7 @@
       "fileTooLarge": "该文件超过 256KB 的导入上限——请精简，或只粘贴相关部分。",
       "importFailed": "导入失败。",
       "hostedCap": "你已有一个托管智能体（测试期允许{{cap}}个）。如需更多，请自带运行时。",
+      "hostedCapHeld": "{{holder}} 已占用你的托管智能体名额（测试期允许{{cap}}个）。在你的智能体中找到它，或改为在你的电脑上运行。",
       "hostedUnavailable": "此实例暂未开放托管。请改用自带运行时。",
       "machineRequired": "请先选择一台电脑。"
     },
@@ -1930,6 +1959,7 @@
       "answer": "回答",
       "talk": "对话",
       "podsAria": "Pod",
+      "morePodsAria": "还有{{count}}个 Pod",
       "age": {
         "now": "刚刚",
         "minutes": "{{count}}分",
@@ -2295,6 +2325,7 @@
     "runtime": {
       "title": "运行环境",
       "how": "运行方式",
+      "native": "原生引擎",
       "hosted": "托管运行",
       "daemon": "通过守护进程在电脑上运行",
       "cli": "单个 CLI",
@@ -2307,7 +2338,25 @@
       "changeEffort": "推理强度",
       "effortUnset": "选择推理强度",
       "save": "保存运行设置",
-      "saveError": "无法保存模型。"
+      "saveError": "无法保存模型。",
+      "machineRevoked": "这台电脑的密钥已撤销。请选择另一台电脑运行此智能体。",
+      "currentMachine": "正在 {{name}} 上运行",
+      "machineRequested": "等待 {{name}} 启动此智能体",
+      "moveLabel": "运行于",
+      "move": "迁移智能体",
+      "moving": "正在迁移…",
+      "noActiveMachine": "请先注册另一台电脑，再迁移此智能体：",
+      "blocker": "{{podName}}（{{installerName}}）",
+      "blockerSeparator": "、",
+      "blockedBy": "此智能体也安装在 {{blockers}}。请联系安装者移除该安装，然后再迁移。",
+      "blockedGeneric": "此智能体也安装在其他 Pod 中。需要该 Pod 的安装者先移除安装，才能迁移。",
+      "placementOwnerMissing": "你需要先将此智能体添加到你管理的 Pod，才能迁移它。",
+      "placementUnknownInstaller": "旧版安装未记录安装者，因此暂时无法迁移此智能体。",
+      "hostedCannotMove": "托管智能体无法在你的电脑上运行。",
+      "targetUnavailable": "这台电脑已不可用，请选择另一台电脑。",
+      "placementChanged": "此智能体的电脑分配已变更。请先查看当前分配，再重新迁移。",
+      "placementError": "无法加载此智能体的电脑分配信息。",
+      "moveError": "无法迁移此智能体，请重试。"
     },
     "grants": {
       "title": "连接器授权",
@@ -2329,7 +2378,6 @@
   "agentSettings": {
     "identityTitle": "身份",
     "displayName": "显示名称",
-    "instructions": "指令",
     "persona": "角色设定",
     "tone": "语气",
     "toneOptions": { "friendly": "友好", "professional": "专业", "casual": "随和", "formal": "正式", "technical": "技术型" },
@@ -2393,6 +2441,9 @@
     "done": "完成",
     "empty": "暂无运行时密钥。",
     "runtimeKey": "运行时密钥",
+    "cliKey": "CLI 密钥",
+    "noActiveKeys": "没有有效的密钥。",
+    "revokedCount": "已撤销{{count}}个",
     "active": "有效",
     "revoked": "已撤销",
     "created": "创建于 {{date}}",
@@ -2410,19 +2461,6 @@
   },
   "agentPolicy": {
     "title": "策略",
-    "approvals": "工具审批",
-    "commaHint": "用逗号分隔工具名称。",
-    "allowed": "允许的工具",
-    "blocked": "禁用的工具",
-    "requireApproval": "需要审批",
-    "context": "上下文",
-    "maxTokens": "最大 Token 数",
-    "compactionThreshold": "压缩阈值",
-    "summaryHours": "摘要范围（小时）",
-    "includeMemory": "包含记忆",
-    "includeSkills": "包含技能",
-    "includeSummaries": "包含摘要",
-    "savePolicy": "保存策略",
     "trust": "信任模式",
     "repoAccess": "仓库访问权限",
     "chooseAccess": "选择权限",
@@ -2437,7 +2475,6 @@
     "quotas": "配额",
     "turnsPerDay": "托管运行次数／天",
     "userRunCeiling": "运行次数／天",
-    "contextInvalid": "请检查上下文限制。",
     "loadError": "无法加载策略数据。",
     "saveError": "无法保存更改。",
     "saved": "已保存"

@@ -83,6 +83,10 @@ jest.mock('../../../models/User', () => ({
 
 jest.mock('../../../services/githubAppService', () => ({ isPatConfigured: jest.fn(() => false) }));
 jest.mock('../../../services/taskEventService', () => ({ emitTaskUpdated: jest.fn() }));
+// This suite isolates lease ownership. Freshness is covered by its own route tests.
+jest.mock('../../../services/agentSendFreshness', () => ({
+  unseenMessages: jest.fn().mockResolvedValue(null),
+}));
 const mockRecordTaskAttention = jest.fn();
 const mockResolveTaskAttention = jest.fn();
 jest.mock('../../../services/attentionItemService', () => ({

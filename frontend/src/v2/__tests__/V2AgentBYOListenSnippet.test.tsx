@@ -64,6 +64,58 @@ const issueToken = async () => {
 };
 
 describe('BYO listener snippet', () => {
+  test('connect commands use the configured staging API instead of production', async () => {
+    const previousApiUrl = process.env.REACT_APP_API_URL;
+    process.env.REACT_APP_API_URL = 'https://api-staging.commonly.me/';
+    try {
+      await issueToken();
+      const commands = Array.from(document.querySelectorAll('.v2-byo__pre'))
+        .map((el) => el.textContent || '')
+        .filter((text) => text.includes('COMMONLY_API_URL='));
+      expect(commands).toHaveLength(2);
+      commands.forEach((command) => {
+        expect(command).toContain('COMMONLY_API_URL=https://api-staging.commonly.me');
+        expect(command).not.toContain('api.commonly.me');
+      });
+      const cursorConfig = Array.from(document.querySelectorAll('.v2-byo__pre'))
+        .map((el) => el.textContent || '')
+        .find((text) => text.includes('mcpServers'));
+      expect(JSON.parse(cursorConfig || '').mcpServers.commonly.env.COMMONLY_API_URL)
+        .toBe('https://api-staging.commonly.me');
+    } finally {
+      if (previousApiUrl === undefined) delete process.env.REACT_APP_API_URL;
+      else process.env.REACT_APP_API_URL = previousApiUrl;
+    }
+  });
+
+  test('the Cursor install link uses this instance without putting the issued key in its URL', async () => {
+    const previousApiUrl = process.env.REACT_APP_API_URL;
+    process.env.REACT_APP_API_URL = 'https://api.example.test/';
+    try {
+      await issueToken();
+      const href = screen.getByRole('link', { name: 'Add to Cursor', hidden: true }).getAttribute('href') || '';
+      const config = JSON.parse(atob(decodeURIComponent(href.split('config=')[1])));
+      expect(config.env).toEqual({
+        COMMONLY_API_URL: 'https://api.example.test',
+        COMMONLY_AGENT_TOKEN: 'PASTE_AGENT_TOKEN_HERE',
+      });
+      expect(href).not.toContain('cm_agent_test_token');
+      expect(href).not.toContain('api.commonly.me');
+    } finally {
+      if (previousApiUrl === undefined) delete process.env.REACT_APP_API_URL;
+      else process.env.REACT_APP_API_URL = previousApiUrl;
+    }
+  });
+
+  test('the Cursor link leads its guidance, while the JSON still names its destination', async () => {
+    await issueToken();
+    const link = screen.getByRole('link', { name: 'Add to Cursor', hidden: true });
+    const hint = link.nextElementSibling;
+    expect(hint).toHaveClass('v2-byo__hint');
+    expect(hint).toHaveTextContent('The link adds Commonly with a placeholder key.');
+    expect(link.closest('.v2-byo__snippet')).toHaveTextContent('~/.cursor/mcp.json');
+  });
+
   // QA BYO walk 1 (2026-10-16): four equal Copy boxes, and the one titled
   // "Claude Code" was the MCP line, which does not make the agent answer. The
   // command that does is THE box: first, and the only one not marked optional

@@ -283,6 +283,7 @@ app.use('/api/mcp/grants', require('./routes/mcpGrants')); // ADR-001 tool broke
 app.use('/api/agent-binding', require('./routes/agentBinding')); // ADR-026 D3: machine adoption CAS
 app.use('/api/machines', require('./routes/machines')); // ADR-026 Phase 1: local daemon lifecycle
 app.use('/api/hosted', require('./routes/hosted')); // ADR-023 W2: hosted runtime provision surface (metered)
+app.use('/api/agent-computer', require('./routes/agentComputer')); // Staging-only owner takeover bridge
 // TASK-094: per-spawn scoped credentials (mint / renew / revoke / boot sweep).
 // Mounted before the runtime router so the path is unambiguous.
 app.use('/api/agents/runtime/spawn-credentials', require('./routes/spawnCredentials'));
@@ -450,6 +451,8 @@ if (process.env.PG_HOST) {
             retentionErr?.message || retentionErr,
           );
         }
+        // TASK-313 part 2: moves Mongo fallback messages into PG once it is back.
+        require('./services/pgMessageReconcileService').initPgMessageReconcile();
         try {
           require('./services/agentInstallationCleanupService').initInstallationCleanup();
         } catch (cleanupErr: any) {

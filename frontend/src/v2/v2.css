@@ -198,7 +198,7 @@ body.modern-ui.v2-canvas {
   scrollbar-color: var(--v2-border-strong) transparent;
 }
 
-.v2-root button:not(.MuiButtonBase-root) {
+.v2-root :where(button:not(.MuiButtonBase-root)) {
   font-family: inherit;
   cursor: pointer;
   border: none;
@@ -1104,9 +1104,10 @@ body.modern-ui.v2-canvas {
   overflow: visible;
 }
 
-/* `.v2-root button.` prefix is REQUIRED: the global button reset (0-1-1)
-   zeroes padding on any bare-class button rule (0-1-0). Third documented
-   hit of this trap — measured live as 25px chips hugging bare text. */
+/* Keep the explicit button prefix on the chip state rules so their visual
+   treatment remains intentional above the low-specificity default reset.
+   This used to be required to beat the reset; the reset is now scoped through
+   `:where()` so bare component rules can own their declarations. */
 .v2-root button.v2-pods__filter {
   height: 32px;
   min-width: 0;
@@ -1186,9 +1187,9 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 
-/* Specificity-matched against the global button reset
-   (.v2-root button:not(.MuiButtonBase-root)) which has 0,0,2,1.
-   Source order wins. Same pattern as .v2-inspector__btn. */
+/* The explicit root/button selector keeps the selected row treatment above
+   the low-specificity default reset. Source order then resolves the local
+   active-row variants. */
 .v2-root button.v2-pods__item--active {
   background: var(--v2-accent-soft);
   border-color: transparent;
@@ -1655,9 +1656,8 @@ body.modern-ui.v2-canvas {
   background: var(--v2-bg-subtle);
 }
 
-/* Specificity-prefix per feedback-v2-button-reset-specificity memory —
-   the global v2 button reset would otherwise flatten bg + color and the
-   active state would be visually identical to inactive. */
+/* Keep the explicit root/button selector on the mode control so the active
+   state owns its background and color rather than relying on reset order. */
 .v2-root button.v2-chat__mode-option {
   height: 26px;
   display: inline-flex;
@@ -2236,6 +2236,11 @@ body.modern-ui.v2-canvas {
   margin-top: 6px;
 }
 
+.v2-root .v2-msg__sender-notice a {
+  color: var(--v2-accent);
+  text-decoration: underline;
+}
+
 /* Agent typing indicator — sits between message list and composer.
    Collapses to nothing when typingAgents is empty. Subtle so it doesn't
    compete with the messages above; the animated dots carry the "alive" cue. */
@@ -2586,9 +2591,8 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-/* Specificity-matched against .v2-root button:not(.MuiButtonBase-root)
-   reset — prefix with .v2-root button.X. See
-   feedback-v2-button-reset-specificity memory. */
+/* Explicit root/button selector for the composer control; the global reset is
+   deliberately a low-specificity default and must not own this state. */
 .v2-root button.v2-chat__send {
   width: 36px;
   height: 36px;
@@ -2972,10 +2976,9 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 
-/* The global `.v2-root button:not(.MuiButtonBase-root)` reset (0,2,1) sets
-   background: none and outranks the two rules above (0,2,0 and 0,1,0), so the
-   arrow-key and hover highlight never painted on a <button> item. Prefixing
-   with `.v2-root button` lifts these to 0,3,1 — the reset itself stays. */
+/* Keep an explicit root/button selector for the interaction states. The reset
+   is a low-specificity default now, but these rules document the intended
+   highlight instead of relying on source order or browser defaults. */
 .v2-root button.v2-mention-item:hover {
   background: var(--v2-surface-hover);
 }
@@ -2984,8 +2987,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
 }
 
-/* The same reset also sets `padding: 0` (0,2,1), which erased the item's 7px 9px.
-   Scoped to the dropdown so the selector is 0,3,1 and the reset itself is unchanged. */
+/* The dropdown owns the item's 7px 9px padding explicitly. */
 .v2-root .v2-mention-dropdown button.v2-mention-item {
   padding: 7px 9px;
 }
@@ -3889,9 +3891,8 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Inspector: Members ---------- */
 
-/* Specificity-prefixed against the v2 button reset — agent rows are
-   <button>, the reset zeros their padding/background. Match its (0,0,2,1)
-   so per-row padding actually applies. See feedback-v2-button-reset-specificity. */
+/* Agent rows are buttons, so keep their row treatment explicit rather than
+   relying on the global default reset. */
 .v2-root button.v2-inspector__member-row,
 .v2-inspector__member-row {
   width: 100%;
@@ -4095,12 +4096,10 @@ body.modern-ui.v2-canvas {
 }
 
 /*
- * Specificity workaround: the v2 button reset
- * `.v2-root button:not(.MuiButtonBase-root)` (top of file) is 0,0,2,1
- * (one class + one type + one class for the :not arg) and would otherwise
- * flatten bg/border/padding. We match it 0,0,2,1 with `.v2-root button.X`
- * (two classes + one type) and win via source order. The `a.X` selector
- * covers the artifact "Open" link variant.
+ * Keep the explicit button selector for the inspector actions so their
+ * bg/border/padding remain component-owned. The global reset is intentionally
+ * low-specificity now; the `a.X` selector covers the artifact "Open" link
+ * variant.
  */
 .v2-root button.v2-inspector__btn,
 .v2-root a.v2-inspector__btn {
@@ -4963,9 +4962,8 @@ body.modern-ui.v2-canvas {
   border-color: var(--v2-accent);
 }
 
-/* Specificity-matched against the global .v2-root button:not(.MuiButtonBase-root)
-   reset (0,0,2,1) — prefix with .v2-root button.X so the accent fill wins.
-   Without this the submit button renders transparent (login + register). */
+/* Keep the explicit root/button selector so the accent fill remains owned by
+   the submit control (login + register). */
 .v2-root button.v2-login__submit {
   width: 100%;
   margin-top: 8px;
@@ -6481,6 +6479,13 @@ body.modern-ui.v2-canvas {
   color: var(--v2-accent-text);
   font: 500 13px/20px var(--v2-font);
 }
+.v2-root a.v2-byo__cursor-link {
+  align-self: flex-start;
+  color: var(--v2-accent-text);
+  font: 500 13px/20px var(--v2-font);
+  text-decoration: none;
+}
+.v2-root a.v2-byo__cursor-link:hover { text-decoration: underline; }
 .v2-root button.v2-byo__secondary {
   align-self: flex-start;
   padding: 10px 18px;
@@ -6725,14 +6730,14 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root .v2-connect__cta {
-  border: 1px solid var(--v2-accent);
-  background: var(--v2-accent);
-  color: #fff;
+  border: 1px solid var(--v2-ink);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
 }
 
 .v2-root .v2-connect__cta:hover:not(:disabled) {
-  border-color: var(--v2-accent-strong);
-  background: var(--v2-accent-strong);
+  border-color: var(--v2-ink-hover);
+  background: var(--v2-ink-hover);
 }
 
 .v2-root .v2-connect__cta:disabled {
@@ -6761,6 +6766,17 @@ body.modern-ui.v2-canvas {
 .v2-root a.v2-connect__link:hover {
   text-decoration: underline;
 }
+
+.v2-connect__cursor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 12px;
+  color: var(--v2-text-tertiary);
+  font: 400 13px/20px var(--v2-font);
+}
+.v2-root .v2-connect__cursor .v2-connect__link { margin-top: 0; }
 
 .v2-connect__actions {
   display: flex;
@@ -7351,10 +7367,9 @@ body.modern-ui.v2-canvas {
 }
 
 /* ---------- Billing panel (/v2/settings) ---------- */
-/* `.v2-root button.` prefix throughout: the global reset
- * (.v2-root button:not(.MuiButtonBase-root), specificity 0-2-1) strips
- * border/background/padding from any bare-class button — it ate the
- * create-pod options (#870) and the reaction chips (#867). */
+/* `.v2-root button.` prefix throughout keeps each billing action's visual
+ * treatment explicit. The global button reset is a low-specificity default,
+ * so ordinary component rules can now override it without a specificity hack. */
 .v2-billing {
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-md);
@@ -8303,8 +8318,8 @@ body.modern-ui.v2-canvas {
   align-items: center;
   gap: 6px;
   border: none;
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
   font-size: 13px;
   font-weight: 600;
   padding: 8px 14px;
@@ -8314,7 +8329,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-board__new:hover {
-  background: var(--v2-accent-strong);
+  background: var(--v2-ink-hover);
 }
 
 .v2-board__focus {
@@ -8683,12 +8698,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-board__col-count {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--v2-text-tertiary);
-  background: var(--v2-surface-tint);
-  border-radius: 999px;
-  padding: 1px 8px;
+  color: var(--v2-text-secondary);
+  font: 500 11px/16px var(--v2-font-mono);
 }
 
 .v2-board__col-empty {
@@ -8745,12 +8756,6 @@ body.modern-ui.v2-canvas {
 .v2-board__card-assignee {
   font-size: 12px;
   color: var(--v2-accent-text);
-  font-weight: 500;
-}
-
-.v2-board__card-claim-lease {
-  font-size: 12px;
-  color: var(--v2-text-secondary);
   font-weight: 500;
 }
 
@@ -9334,12 +9339,10 @@ body.modern-ui.v2-canvas {
 
 /* ── Threading: headline card + reply rail (W-T 4/4) ────────────────────────
    Built to @ux-lead's render brief. Numbers here are theirs, not invented:
-   NOTE the `.v2-root button.` prefix on every button rule below. The global
-   reset `.v2-root button:not(.MuiButtonBase-root)` is 0-2-1 and sets
-   `color: inherit`, so a bare `.v2-thread-card__main` (0-1-0) loses and the
-   card renders at body colour with no accent on the follow state. Same trap
-   as #870, recorded in the note above that reset. Caught here by measuring in
-   a real browser — computed colour was rgb(17,24,39) while the rule said
+   NOTE the `.v2-root button.` prefix on every button rule below. It keeps the
+   card's interactive treatment explicit while the global reset remains a
+   low-specificity default. This used to be a specificity workaround for a
+   real-browser defect: computed colour was rgb(17,24,39) while the rule said
    #4b5563 — which no presence guard can see, because the rule IS present.
 
    card radius 10 / border #e5e7eb / hover #d7dce7 / no shadow; type 13px
@@ -9683,17 +9686,6 @@ body.modern-ui.v2-canvas {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.v2-activity__compose h2.v2-activity__compose-label {
-  margin: 0;
-  color: var(--v2-text-muted);
-  font-size: var(--v2-fs-label);
-  font-family: var(--v2-font-mono);
-  line-height: var(--v2-lh-label);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .v2-activity__compose-pod {
@@ -10085,6 +10077,57 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-secondary);
   font-size: var(--v2-fs-body);
   line-height: var(--v2-lh-body);
+}
+
+/* Activity details stay compact until the reader hovers, focuses, or taps to
+   expand them. The button keeps the full copy available without adding a
+   permanent paragraph to every queue row. */
+.v2-root .v2-activity__queue-detail {
+  display: -webkit-box;
+  min-height: 0;
+  max-width: 100%;
+  margin: 3px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--v2-text-secondary);
+  font: 400 var(--v2-fs-body)/var(--v2-lh-body) var(--v2-font);
+  text-align: left;
+  white-space: normal;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.v2-root button.v2-activity__queue-detail {
+  color: var(--v2-text-secondary);
+}
+
+.v2-root .v2-activity__queue-row--mention .v2-activity__queue-detail {
+  color: var(--v2-text-primary);
+}
+
+/* Focus previews the full copy (Tab in), but a detail the reader just
+   collapsed is marked --dismissed and stays closed while focus remains on it,
+   so aria-expanded and the visible copy agree. Blur clears the mark. */
+.v2-root .v2-activity__queue-detail:focus-visible:not(.v2-activity__queue-detail--dismissed),
+.v2-root .v2-activity__queue-detail--expanded {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
+/* Pointer hover is only a reveal affordance on devices that have hover. A
+   focused button is intentionally excluded: after a pointer click the focus
+   must not keep a second click from collapsing the detail again. */
+@media (hover: hover) {
+  .v2-root .v2-activity__queue-detail:hover:not(:focus) {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+  }
 }
 
 .v2-activity__queue-actions,
@@ -10493,6 +10536,7 @@ body.modern-ui.v2-canvas {
  * zh-CN. Guarded by v2-layout-invariants.test.ts.
  * ------------------------------------------------------------------------ */
 .v2-root:lang(zh) .v2-rail__brand,
+.v2-root:lang(zh) .v2-board__detail .v2-modal__title,
 .v2-root:lang(zh) .v2-tools__title,
 .v2-root:lang(zh) .v2-tools__count strong,
 .v2-root:lang(zh) .v2-artifacts__title,
@@ -10524,7 +10568,6 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h5,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
 .v2-root:lang(zh) .v2-activity__title,
-.v2-root:lang(zh) .v2-activity__compose-label,
 .v2-root:lang(zh) .v2-activity__section h2,
 .v2-root:lang(zh) .v2-activity__agent-card h3,
 .v2-root:lang(zh) .v2-activity__board-row h3,
@@ -10573,6 +10616,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-pods__discover-description,
 .v2-root:lang(zh) .v2-pods__community-copy,
 .v2-root:lang(zh) .v2-activity__queue-copy p,
+.v2-root:lang(zh) .v2-activity__queue-detail,
 .v2-root:lang(zh) .v2-activity__board-row p,
 .v2-root:lang(zh) .v2-activity__agent-recap,
 .v2-root:lang(zh) .v2-activity__empty,
@@ -12859,8 +12903,6 @@ body.modern-ui.v2-canvas {
 /* Opening a reply or a free-text ruling gives that editor a full content row. */
 .v2-activity__queue-row .v2-activity__queue-actions:has(textarea) { grid-column: 2 / -1; grid-row: 2; max-width: none; justify-content: flex-start; }
 .v2-activity__empty--plain span { color: var(--v2-text-secondary); font: 400 13px/18px var(--v2-font); }
-.v2-activity__compose h2.v2-activity__compose-label { font: 600 11px/16px var(--v2-font-mono); }
-
 /* Keep filters on a separate row when the pane cannot fit them beside the
    title. Both rows stay in normal reading order, without a clipped title. */
 @media (max-width: 1100px) {
@@ -13158,3 +13200,78 @@ body.modern-ui.v2-canvas {
   .v2-artifacts__pod-line { display: block; flex: 1 1 100%; }
   .v2-root button.v2-artifacts__name { white-space: normal; overflow-wrap: anywhere; }
 }
+
+/* TASK-443: priority is text contrast; ownership is a lease, following is receipt. */
+.v2-board__col { border-radius: 6px; gap: 8px; }
+.v2-board__col-name { font-size: 13px; line-height: 20px; letter-spacing: 0; text-transform: none; }
+.v2-board__col-count { font: 500 11px/16px var(--v2-font-mono); background: none; padding: 0; }
+.v2-board__card { border-radius: 4px; }
+.v2-root button.v2-board__card-main { gap: 6px; padding: 12px; }
+.v2-board__card-kicker { display: flex; align-items: center; gap: 6px; }
+.v2-board__card-id { font: 500 11px/16px var(--v2-font-mono); }
+.v2-board__priority {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  font: 500 11px/16px var(--v2-font-mono);
+  color: var(--v2-text-secondary);
+  background: none;
+}
+.v2-board__priority--p0 { border-color: var(--v2-text-primary); color: var(--v2-text-primary); }
+.v2-board__card-title { font-size: 14px; line-height: 20px; }
+.v2-board__owner-line { display: flex; align-items: center; gap: 6px; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-secondary); }
+.v2-board__owner-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.v2-board__owner-dot--live { background: var(--v2-accent); }
+.v2-board__owner-dot--not-claimed { border: 1px dashed var(--v2-border-strong); }
+.v2-board__owner-dot--expired { border: 1px solid var(--v2-border-strong); background: none; }
+.v2-board__card--done { border-color: var(--v2-border-soft); }
+.v2-board__card--done .v2-board__card-title { color: var(--v2-text-secondary); }
+.v2-root button.v2-board__card-move { min-height: 32px; padding: 0 10px; border-radius: 4px; }
+.v2-board__overlay { background: color-mix(in srgb, var(--v2-text-primary) 32%, transparent); align-items: flex-start; padding-top: 72px; }
+.v2-board .v2-modal { border-radius: 6px; box-shadow: none; }
+.v2-board__detail { width: min(560px, 100%); max-height: calc(100dvh - 96px); }
+.v2-board__detail .v2-modal__head { padding: 20px 24px 16px; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-board__detail .v2-modal__title { font: 700 20px/26px var(--v2-font-display); letter-spacing: -0.02em; min-width: 0; overflow-wrap: anywhere; }
+.v2-board__detail .v2-modal__body { padding: 16px 24px 24px; display: grid; gap: 20px; }
+.v2-root .v2-board__detail button.v2-modal__close { width: 32px; height: 32px; border: 1px solid var(--v2-border); border-radius: 4px; flex-shrink: 0; }
+.v2-board__grab { display: none; }
+.v2-board__ownership { margin: 0; display: grid; grid-template-columns: 112px minmax(0, 1fr); border: 1px solid var(--v2-border-soft); border-radius: 4px; }
+.v2-board__ownership dt, .v2-board__ownership dd { margin: 0; padding: 10px 12px; min-height: 44px; display: flex; align-items: center; border-top: 1px solid var(--v2-border-soft); }
+.v2-board__ownership dt:first-of-type, .v2-board__ownership dd:first-of-type { border-top: 0; }
+.v2-board__ownership dt { font-size: 13px; font-weight: 500; color: var(--v2-text-secondary); }
+.v2-board__ownership dd { gap: 8px; font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
+.v2-board__ownership select { min-height: 32px; max-width: 100%; padding: 0 34px 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-bg); color: var(--v2-text-primary); font: 500 13px/20px var(--v2-font-mono); }
+.v2-board__empty-owner, .v2-board__ownership .v2-board__lease-value { font: 500 12px/16px var(--v2-font-mono); }
+.v2-board__empty-owner { color: var(--v2-text-muted); }
+.v2-board__watchers-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.v2-board__watchers-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.v2-board__watchers-count { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-root button.v2-board__follow { margin-left: auto; min-height: 32px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-bg); color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; }
+.v2-root button.v2-board__follow[aria-pressed="true"] { color: var(--v2-text-primary); }
+.v2-board__watcher-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.v2-board__watcher { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; max-width: 100%; padding: 0 8px 0 4px; border: 1px solid var(--v2-border-soft); border-radius: 4px; font-size: 12px; overflow-wrap: anywhere; }
+.v2-board .v2-board__member-avatar { width: 20px; height: 20px; min-width: 20px; border-radius: 4px; }
+.v2-board__watcher-hint, .v2-board__field small { margin: 8px 0 0; font-size: 12px; line-height: 16px; color: var(--v2-text-muted); }
+.v2-board__create-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 12px; }
+.v2-board__field input, .v2-board__field select { min-height: 40px; border-radius: 4px; }
+.v2-board__field select { font: 500 13px/20px var(--v2-font-mono); }
+@media (max-width: 760px) {
+  .v2-board__col { flex: 0 0 78%; min-width: 250px; }
+  .v2-root button.v2-board__card-move { min-height: 44px; padding: 0 14px; font-size: 13px; }
+  .v2-board .v2-board__detail { position: absolute; inset: 44px 0 0; width: 100%; max-height: none; border-radius: 6px 6px 0 0; }
+  .v2-board__grab { display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--v2-border-soft); margin: 8px auto 0; flex-shrink: 0; }
+  .v2-board__detail .v2-modal__head { padding: 12px 16px 14px; }
+  .v2-board__detail .v2-modal__body { padding: 14px 16px 24px; gap: 18px; }
+  .v2-root .v2-board__detail button.v2-modal__close { width: 44px; height: 44px; }
+  .v2-board__ownership { grid-template-columns: 104px minmax(0, 1fr); }
+  .v2-board__ownership select, .v2-root button.v2-board__follow { min-height: 44px; }
+  .v2-board__create-row { grid-template-columns: minmax(0, 1fr); }
+  .v2-board__field input, .v2-board__field select { min-height: 44px; }
+}
+
+.v2-board__detail-meta .v2-inspector__pill { padding: 2px 6px; border: 1px solid var(--v2-border); border-radius: 4px; background: none; color: var(--v2-text-secondary); font: 500 11px/16px var(--v2-font-mono); }
+.v2-root button.v2-board__new, .v2-root button.v2-board__create-submit { background: var(--v2-text-primary); border-color: var(--v2-text-primary); color: var(--v2-bg); border-radius: 4px; }
+.v2-root button.v2-board__new:hover, .v2-root button.v2-board__create-submit:not(:disabled):hover { background: var(--v2-text-secondary); border-color: var(--v2-text-secondary); }
+
+.v2-board__owner-time { color: var(--v2-text-muted); }
