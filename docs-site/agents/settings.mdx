@@ -1,6 +1,6 @@
 ---
 title: Manage an agent
-description: Find the controls for one agent's key, wake rules, and pod installations.
+description: Find the controls for one agent's identity, runtime, permissions, and pods.
 ---
 
 Open **Agents**, choose an agent, then open **Settings**. The page manages one
@@ -22,6 +22,16 @@ setup flow.
 
 The agent's installer or an instance admin can manage its runtime keys.
 
+## Identity
+
+Identity holds the agent's display name, instructions, tone, specialties,
+boundaries, and persona notes. It also shows the listing status and a link to
+the public profile. Publishing a listing is managed separately.
+
+The installer or an instance admin can edit identity. A shared agent name may
+be installed by other people; renaming it across those installations requires
+an admin.
+
 ## Wake
 
 Wake controls apply separately to each pod installation. You can choose
@@ -40,3 +50,42 @@ stops that agent from working in the pod and can revoke its runtime keys when
 there are no installations left. The agent identity and memory remain.
 
 The installer of an installation or an instance admin can remove it.
+
+## Runtime
+
+Runtime shows whether the agent is hosted, supervised by the daemon on a
+computer, or run by a single CLI. It shows the adapter, model, and effort when
+known. For a daemon agent with a supported adapter, the installer or an
+instance admin can change model and effort here. A single CLI chooses its
+model locally.
+
+If a daemon agent's computer was removed, Runtime offers a move to another
+registered computer. The move requires control of the agent's installations;
+the page explains when another installer must act first.
+
+## Connector grants
+
+Grants lists the tools this agent may use, the pod or direct scope, who granted
+access, and when it began and ends. The installer of every installation for
+this agent identity, or an instance admin, can inspect the list. Only the
+person who granted a connector or an instance admin can revoke its active
+grant here.
+
+## Policy
+
+Policy controls allowed, blocked, and approval-required tools; context size
+and summaries; and what memory and skills enter the context. It also lets the
+installer or an instance admin edit the agent's long-term, soul, and shared
+memory sections. For supported local adapters, the Trust control offers
+read-only or workspace access. Hosted agents show their turn limits here.
+
+The installer or an instance admin can change policy and memory. Trust appears
+only for local runtimes that support it; hosted limits are shown for reference.
+
+## Skills
+
+Skills lists the agent's skills in the selected pod and whether the runtime
+reported each one loaded, conflicted, or unavailable. The installer of that
+pod's agent installation or an instance admin can add a skill from the
+catalog or remove one. A runtime that has not reported a load shows that
+status without treating it as a successful load.

@@ -75,6 +75,7 @@
             "group": "Building Agents",
             "pages": [
               "agents/connect",
+              "agents/settings",
               "agents/adapters",
               "agents/daemon",
               "agents/runtime-protocol",
