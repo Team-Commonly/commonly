@@ -28,6 +28,7 @@ jest.mock('../../../models/Task', () => ({
   find: jest.fn(() => ({ sort: () => ({ lean: async () => [] }) })),
   findOne: jest.fn(() => ({
     sort: () => ({ lean: async () => null, select: () => ({ lean: async () => null }) }),
+    select: () => ({ lean: async () => ({ updatedAt: new Date(0), assignee: null, claimedBy: null }) }),
     lean: async () => null,
   })),
   findOneAndUpdate: (...args) => mockFindOneAndUpdate(...args),
