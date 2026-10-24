@@ -53,7 +53,14 @@ const MessageSchema = new Schema<IMessage>({
   authorKind: { type: String, enum: ['kernel', null], default: null },
   payload: { type: Schema.Types.Mixed },
   metadata: { type: Schema.Types.Mixed },
-  createdAt: { type: Date, default: Date.now },
+  // Client pagination and the PG timestamp parser require four-digit years.
+  // JS/Mongo accept extended ISO years (e.g. +078915), which PG rejects when
+  // a client sends the stored value back as its pagination cursor.
+  createdAt: {
+    type: Date, default: Date.now, required: true,
+    min: new Date('0001-01-01T00:00:00.000Z'),
+    max: new Date('9999-12-31T23:59:59.999Z'),
+  },
   updatedAt: { type: Date, default: Date.now },
   // New Mongo-only writes start pending. The post-save hook stamps a server
   // commit marker after the insert is acknowledged; a crash before that stamp

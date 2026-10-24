@@ -85,7 +85,31 @@ const normalizeMongo = (m: Record<string, unknown>): NormalizedMessage => {
 exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { podId } = req.params;
-    const { before } = req.query as { before?: string };
+    let { before } = req.query as { before?: string };
+    // Legacy Mongo rows can still supply an extended-year cursor. Refuse it
+    // before PG errors and the whole request falls back to Mongo.
+    if (before !== undefined) {
+      // Date.parse normalizes February 30 and accepts six-digit signed
+      // years that PG rejects. Validate calendar fields before parsing.
+      const match = typeof before === 'string'
+        ? /^(\d{4})-(\d{2})-(\d{2})(?:T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))?$/.exec(before)
+        : null;
+      const year = Number(match?.[1]);
+      const month = Number(match?.[2]);
+      const day = Number(match?.[3]);
+      const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+      const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      const cursor = match ? new Date(before) : null;
+      if (!cursor || !Number.isFinite(cursor.getTime()) || year < 1
+        || month < 1 || month > 12 || day < 1 || day > days[month - 1]
+        || cursor.getUTCFullYear() < 1 || cursor.getUTCFullYear() > 9999) {
+        res.status(400).json({ msg: 'before must be a valid ISO date or timestamp with a year from 0001 to 9999' });
+        return;
+      }
+      // Send one portable representation to PG, including for offset inputs.
+      before = cursor.toISOString();
+    }
+
     // Clamp the page size [1, 200]. Unbounded `limit` let a caller ask for
     // millions of rows → OOM (both the PG and Mongo read paths below). Mirrors
     // the postController.getPosts clamp pattern.
