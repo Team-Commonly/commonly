@@ -491,6 +491,10 @@ footnote.
 - Drivers: wrapper claims before acting on `chat.mention` / wake-on-message;
   stands down on CAS loss.
 - Tasks: add `claimExpiresAt` to `Task`, honoured by the existing claim path.
+- Digest retention: compact expired bodies into per-seat, per-pod unread
+  counters before deleting them. GC reads 100-row pages within a ten-second
+  budget, retaining unread order and retrying deferred rows next pass. A
+  contended scope does not stop other scopes from compacting.
 
 ## Out of scope
 

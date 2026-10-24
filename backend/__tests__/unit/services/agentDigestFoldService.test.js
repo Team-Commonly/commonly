@@ -26,6 +26,55 @@ describe('expired digest fold', () => {
     attempts: 0, createdAt, updatedAt: createdAt,
   });
 
+  it('drains multiple batches within one GC pass', async () => {
+    const podId = new mongoose.Types.ObjectId();
+    await Promise.all(Array.from({ length: 205 }, () => seed(new Date(THRESHOLD.getTime() - 1000), podId)));
+
+    expect(await foldExpiredDigests(THRESHOLD)).toBe(205);
+
+    expect(await AgentEvent.countDocuments({ podId })).toBe(0);
+    expect((await AgentDigestState.findOne({ podId }).lean()).unreadCount).toBe(205);
+  });
+
+  it('stops at its time budget and leaves remaining rows due for the next pass', async () => {
+    const podId = new mongoose.Types.ObjectId();
+    await Promise.all(Array.from({ length: 4 }, () => seed(new Date(THRESHOLD.getTime() - 1000), podId)));
+    let elapsed = 0;
+    const realDelete = AgentEvent.deleteOne.bind(AgentEvent);
+    const deletion = jest.spyOn(AgentEvent, 'deleteOne').mockImplementation(async (...args) => {
+      const result = await realDelete(...args);
+      elapsed += 5000;
+      return result;
+    });
+
+    expect(await foldExpiredDigests(THRESHOLD, () => elapsed)).toBe(2);
+    expect(await AgentEvent.countDocuments({ podId })).toBe(2);
+    deletion.mockRestore();
+    expect(await foldExpiredDigests(THRESHOLD)).toBe(2);
+    expect((await AgentDigestState.findOne({ podId }).lean()).unreadCount).toBe(4);
+  });
+
+  it('defers a contended scope without starving another scope beyond the first batch', async () => {
+    const blockedPod = new mongoose.Types.ObjectId();
+    const healthyPod = new mongoose.Types.ObjectId();
+    const old = new Date(THRESHOLD.getTime() - 1000);
+    await Promise.all(Array.from({ length: 102 }, () => seed(old, blockedPod)));
+    await seed(old, healthyPod);
+    await AgentDigestState.create({ agentName: 'flint', instanceId: 'default', podId: blockedPod });
+    const realUpdate = AgentDigestState.updateOne.bind(AgentDigestState);
+    const contention = jest.spyOn(AgentDigestState, 'updateOne').mockImplementation((filter, ...args) => (
+      String(filter.podId) === String(blockedPod)
+        ? Promise.resolve({ modifiedCount: 0 }) : realUpdate(filter, ...args)
+    ));
+
+    expect(await foldExpiredDigests(THRESHOLD)).toBe(1);
+    expect(await AgentEvent.countDocuments({ podId: blockedPod })).toBe(102);
+    expect((await AgentDigestState.findOne({ podId: healthyPod }).lean()).unreadCount).toBe(1);
+    contention.mockRestore();
+    expect(await foldExpiredDigests(THRESHOLD)).toBe(102);
+    expect((await AgentDigestState.findOne({ podId: blockedPod }).lean()).unreadCount).toBe(102);
+  });
+
   it('retains unread count and last IDs while deleting expired full events', async () => {
     const podId = new mongoose.Types.ObjectId();
     const first = await seed(new Date(NOW.getTime() - 2 * 60 * 60 * 1000), podId);

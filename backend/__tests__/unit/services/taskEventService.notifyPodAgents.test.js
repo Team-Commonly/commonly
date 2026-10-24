@@ -167,7 +167,8 @@ describe('notifyPodAgents', () => {
       updatedAt: new Date('2026-08-20T20:00:00.000Z'),
     }), 'updated', { userId: HUMAN_ID, isAgent: false });
 
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ deliveryMode: 'digest' }));
     expect(mockTaskUpdateOne).not.toHaveBeenCalled();
   });
 
