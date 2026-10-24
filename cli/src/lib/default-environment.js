@@ -75,8 +75,10 @@ export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex']);
  * moves a host fact into the database and breaks the day the seat is re-homed.
  * An explicit mode in a record still wins over the derived one.
  *
- * Confinement holds for claude, codex, opencode, qwen and goose; they are handed
- * this block (ADAPTERS_WITH_DEFAULT_SANDBOX). Grant-broker eligibility is
+ * Claude, codex, opencode and qwen receive this default block
+ * (ADAPTERS_WITH_DEFAULT_SANDBOX). Goose supports explicitly configured public
+ * confinement, but defaults cannot supply its required provider and model.
+ * Grant-broker eligibility is
  * narrower until the server admits OpenCode after its confinement proof.
  * A pi seat must never be handed this block: it fails closed on a declared
  * sandbox rather than run under a spec it cannot honour.
