@@ -484,8 +484,11 @@ data:
       # row is large; a 7-day window is plenty for dev debugging.
       maximum_spend_logs_retention_period: "7d"
       maximum_spend_logs_retention_interval: "6h"
-  # Mounted at /app/deepseek_tool_shim.py, next to config.yaml (see the
-  # callbacks list above).
+  # Mounted at /app/, next to config.yaml (see the callbacks list above).
+  # deepseek_tool_shim.py is the callback and loads the core inside a try, so a
+  # broken core refuses only the deepseek group instead of stopping the proxy.
   deepseek_tool_shim.py: |
     {{- .Files.Get "files/litellm/deepseek_tool_shim.py" | nindent 4 }}
+  deepseek_tool_shim_core.py: |
+    {{- .Files.Get "files/litellm/deepseek_tool_shim_core.py" | nindent 4 }}
 {{- end }}

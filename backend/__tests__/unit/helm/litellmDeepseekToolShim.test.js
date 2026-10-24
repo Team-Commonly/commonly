@@ -5,8 +5,9 @@
  *
  * Its logic is tested in Python (litellm_deepseek_tool_shim_test.py, beside
  * this file); this runs that suite and pins the chart wiring that loads the
- * module: the ConfigMap key, the mount next to config.yaml, and the callbacks
- * entry. No helm render, because this jest job has no helm.
+ * callback and its core (deepseek_tool_shim_core.py): the ConfigMap keys, the
+ * mounts next to config.yaml, and the callbacks entry. No helm render, because
+ * this jest job has no helm.
  */
 const fs = require('fs');
 const path = require('path');
@@ -29,17 +30,21 @@ describe('LiteLLM DeepSeek tool shim', () => {
 
   test('the ConfigMap carries the module and registers it as a callback', () => {
     const cm = read('templates/configmaps/litellm-config.yaml');
-    expect(cm).toContain('  deepseek_tool_shim.py: |\n    {{- .Files.Get "files/litellm/deepseek_tool_shim.py" | nindent 4 }}');
+    for (const file of ['deepseek_tool_shim.py', 'deepseek_tool_shim_core.py']) {
+      expect(cm).toContain(`  ${file}: |\n    {{- .Files.Get "files/litellm/${file}" | nindent 4 }}`);
+    }
     expect(cm).toContain('callbacks: ["rate_limit_signal.proxy_handler_instance", "deepseek_tool_shim.proxy_handler_instance"]');
   });
 
-  test('the module is mounted next to config.yaml, where LiteLLM resolves callbacks', () => {
+  test('both files are mounted next to config.yaml, where LiteLLM resolves callbacks', () => {
     const deploy = read('templates/agents/litellm-deployment.yaml');
-    expect(deploy).toContain([
-      '        - name: litellm-config',
-      '          mountPath: /app/deepseek_tool_shim.py',
-      '          subPath: deepseek_tool_shim.py',
-    ].join('\n'));
+    for (const file of ['deepseek_tool_shim.py', 'deepseek_tool_shim_core.py']) {
+      expect(deploy).toContain([
+        '        - name: litellm-config',
+        `          mountPath: /app/${file}`,
+        `          subPath: ${file}`,
+      ].join('\n'));
+    }
   });
 
   test('only the deepseek-flash-1017 group is shimmed', () => {

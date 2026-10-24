@@ -111,8 +111,14 @@ sub-agent tools) plus hosted tools such as `web_search`, and DeepSeek rejects an
 tool that isn't `function` with a 422 (`unknown variant 'namespace'`). The
 pre-call hook flattens each namespace into function tools named
 `<namespace>__<tool>` and drops the hosted ones. The success and streaming hooks
-map a call back to `name` + `namespace`, which is how codex resolves it.
-Verified 2026-10-24 on the pinned image, with a real codex turn going through
+map a call back to `name` + `namespace`, which is how codex resolves it. Flat
+names are unique within each request (a collision, with another flat name or a
+plain function, gets a hash suffix), and the map back is stored on that
+request's own logging object, so no request can restore with another's names.
+The callback file loads the transformation from `deepseek_tool_shim_core.py`
+inside a try: if the core fails to load, the proxy still starts, every other
+group is served, and `deepseek-flash-1017` requests are refused with the load
+error. Verified 2026-10-24 on the pinned image, with a real codex turn going through
 a fake upstream. One quirk to expect: the `response.created` echo of the request's
 tools still shows the flat names. To shim another DeepSeek group, add it to
 `SHIM_MODEL_GROUPS`. Tests are in `backend/__tests__/unit/helm/litellmDeepseekToolShim.test.js`.
