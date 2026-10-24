@@ -367,8 +367,13 @@ const readOpenClawIdentityFile = async (accountId: any, { gateway } : any = {}) 
   const result = await execInPod({
     podName,
     containerName: 'clawdbot-gateway',
-    // A failed cat must keep its exit status instead of becoming empty content.
-    command: ['sh', '-lc', `if [ -e "${identityPath}" ]; then cat "${identityPath}"; fi`],
+    // stat/test -e cannot distinguish an inaccessible parent from absence.
+    // Use the gateway's Node runtime to preserve every error except ENOENT.
+    command: ['node', '-e', `try {
+      process.stdout.write(require('fs').readFileSync(process.argv[1], 'utf8'));
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }`, identityPath],
   });
   return result.stdout || '';
 };

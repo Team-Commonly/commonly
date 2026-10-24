@@ -34,6 +34,7 @@ const mock = {
     // these, so this is the only place a test can assert on the delivered file
     // rather than on the source that composes it.
     execCommands: [],
+    execArgv: [],
     // What the next exec writes to its stdout sink; empty = no output.
     execStdout: '',
     execStatus: { status: 'Success' },
@@ -72,6 +73,7 @@ const mock = {
       statusCallback,
     ) {
       mock.execCommands.push(Array.isArray(_command) ? _command.join(' ') : String(_command));
+      mock.execArgv.push(_command);
       if (mock.execStdout && _stdout && typeof _stdout.write === 'function') {
         _stdout.write(mock.execStdout);
         if (typeof statusCallback === 'function') setImmediate(() => statusCallback({ status: 'Success' }));
@@ -105,28 +107,34 @@ describe('agentProvisionerServiceK8s', () => {
     k8s.__mock.replaceNamespacedDeployment.mockClear();
   });
 
-  it('propagates an identity cat failure instead of returning empty content', async () => {
+  it('distinguishes missing identities from read and parent-access failures', async () => {
     k8s.__mock.execStatus = { status: 'Failure', message: 'Permission denied' };
     try {
       await expect(readOpenClawIdentityFile('curator')).rejects.toThrow('Permission denied');
-      const script = k8s.__mock.execCommands.at(-1).replace(/^sh -lc /, '');
+      const command = k8s.__mock.execArgv.at(-1);
       const fs = require('fs');
       const os = require('os');
       const path = require('path');
       const { spawnSync } = require('child_process');
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'identity-reader-'));
       const identity = path.join(dir, 'IDENTITY.md');
-      const localScript = script.replaceAll('/workspace/curator/IDENTITY.md', identity);
+      const run = () => spawnSync(process.execPath, [...command.slice(1, -1), identity], { encoding: 'utf8' });
       try {
-        expect(spawnSync('sh', ['-c', localScript]).status).toBe(0);
+        expect(run().status).toBe(0);
         fs.writeFileSync(identity, 'Name: Curator');
-        const read = spawnSync('sh', ['-c', localScript], { encoding: 'utf8' });
+        const read = run();
         expect(read.status).toBe(0);
         expect(read.stdout).toBe('Name: Curator');
+        fs.chmodSync(dir, 0o000);
+        const inaccessible = run();
+        expect(inaccessible.status).not.toBe(0);
+        expect(inaccessible.stderr).toContain('EACCES');
+        fs.chmodSync(dir, 0o700);
         fs.unlinkSync(identity);
         fs.mkdirSync(identity);
-        expect(spawnSync('sh', ['-c', localScript]).status).not.toBe(0);
+        expect(run().status).not.toBe(0);
       } finally {
+        fs.chmodSync(dir, 0o700);
         fs.rmSync(dir, { recursive: true, force: true });
       }
     } finally {
