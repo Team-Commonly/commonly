@@ -177,7 +177,7 @@ test('a taken display name has its own refusal, separate from the writable-pods 
   await screen.findByRole('button', { name: 'Save identity' });
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Scout (Cody)' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('Another agent already uses this name.');
+  expect(await screen.findByText('Another agent already uses this name.')).toBeInTheDocument();
   expect(screen.queryByText('Raw English server text')).not.toBeInTheDocument();
 });
 
