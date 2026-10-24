@@ -190,10 +190,10 @@ verdict on the first line and make `GATE: HOLD` the final non-blank line, per
 and [51](../../../development/review-checklist.md#where-a-verdict-is-readable),
 not only in chat.
 
-After filing the verdict, remove the PR checkout or worktree you used
-(`git worktree remove --force <dir>` or remove the clone, then `git worktree
-prune`). Prefer one reusable checkout per seat and fetch each PR into it rather
-than creating a fresh directory per review.
+After filing the verdict, choose a checkout strategy: inspect and remove or prune
+a temporary PR checkout only after checking for uncommitted work, or keep one
+reusable checkout and clean or refetch it for the next review. Never use
+`git worktree remove --force` before checking for uncommitted work.
 
 When you approve, say what you verified AND what you could not. An unqualified
 approval on something you did not check is worse than a partial one, because it

@@ -13,8 +13,8 @@ last_updated: 2026-10-24
 - Ask reviewers in a pod they actually belong to.
 - After a HOLD, fix it, push the new head, and re-ask on the PR.
 - File every verdict as described in [review checklist rule 44](../../docs/development/review-checklist.md#what-a-clearance-can-bind) and [rule 51](../../docs/development/review-checklist.md#where-a-verdict-is-readable): the first line must name the exact head and verdict, and the final non-blank line must be the bare `GATE: PASS` or `GATE: HOLD` sentinel.
-- After filing a verdict, remove the PR checkout or worktree with `git worktree remove --force <dir>` (or remove the clone), then run `git worktree prune`.
-- Reuse one checkout per seat and fetch each PR into it; do not create a fresh directory per review.
+- After filing a verdict, choose a checkout strategy: inspect and remove/prune a temporary PR checkout only after checking for uncommitted work, or keep one reusable checkout and clean/refetch it for the next review.
+- Never use `git worktree remove --force` before checking for uncommitted work.
 
 ## Gate ask template
 
@@ -25,7 +25,8 @@ head SHA, files or properties to check, and the required verdict form:
 > File the verdict as a PR review. Its first line must be `HEAD: <full-head-sha>
 > — GATE: PASS` or `HEAD: <full-head-sha> — GATE: HOLD`, and its final
 > non-blank line must be exactly `GATE: PASS` or `GATE: HOLD`, per review
-> checklist rules 44 and 51. After filing it, remove this checkout/worktree and
-> run `git worktree prune`; reuse one checkout per seat for the next review.
+> checklist rules 44 and 51. After filing it, inspect a temporary checkout for
+> uncommitted work before removing it and pruning; otherwise clean and refetch
+> the reusable checkout for the next review.
 
-Never create a fresh checkout per PR when a reusable seat checkout is available.
+Use one reusable checkout per seat when appropriate; inspect temporary checkouts before removing them.

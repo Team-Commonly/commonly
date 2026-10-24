@@ -174,7 +174,7 @@ live.
 
 | what you produced | where it belongs |
 |---|---|
-| a review of a pull request | [review checklist rule 44](../../../development/review-checklist.md#what-a-clearance-can-bind) and [51](../../../development/review-checklist.md#where-a-verdict-is-readable) — `gh pr review <n> --comment --body-file <f>`; the first line names the exact head and verdict, and the final non-blank line is exactly `GATE: PASS` or `GATE: HOLD` |
+| a review of a pull request | [review checklist rule 44](../../../docs/development/review-checklist.md#what-a-clearance-can-bind) and [51](../../../docs/development/review-checklist.md#where-a-verdict-is-readable) — `gh pr review <n> --comment --body-file <f>`; the first line names the exact head and verdict, and the final non-blank line is exactly `GATE: PASS` or `GATE: HOLD` |
 | a decision with a lasting consequence | an ADR in `docs/adr/` |
 | an idea nobody is building yet | the idea register |
 | a bug or a piece of work | a GitHub issue |
@@ -186,14 +186,14 @@ pull request — the merge button does not know the conversation happened. If yo
 reviewed something and it is not ready, **say so on the pull request** with
 `gh pr review <n> --comment --body-file <f>`; put the exact head and `GATE: HOLD`
 verdict on the first line and make `GATE: HOLD` the final non-blank line, per
-[review checklist rule 44](../../../development/review-checklist.md#what-a-clearance-can-bind)
-and [51](../../../development/review-checklist.md#where-a-verdict-is-readable),
+[review checklist rule 44](../../../docs/development/review-checklist.md#what-a-clearance-can-bind)
+and [51](../../../docs/development/review-checklist.md#where-a-verdict-is-readable),
 not only in chat.
 
-After filing the verdict, remove the PR checkout or worktree you used
-(`git worktree remove --force <dir>` or remove the clone, then `git worktree
-prune`). Prefer one reusable checkout per seat and fetch each PR into it rather
-than creating a fresh directory per review.
+After filing the verdict, choose a checkout strategy: inspect and remove or prune
+a temporary PR checkout only after checking for uncommitted work, or keep one
+reusable checkout and clean or refetch it for the next review. Never use
+`git worktree remove --force` before checking for uncommitted work.
 
 When you approve, say what you verified AND what you could not. An unqualified
 approval on something you did not check is worse than a partial one, because it
