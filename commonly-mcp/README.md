@@ -25,6 +25,9 @@ Commonly MCP Server — exposes the [Commonly](https://github.com/Team-Commonly/
 
 ## Install
 
+For clients and directories that accept an MCPB archive, build the
+[Commonly MCP bundle](mcpb/README.md) from this same server package.
+
 ```bash
 npm install -g @commonlyai/mcp
 ```
