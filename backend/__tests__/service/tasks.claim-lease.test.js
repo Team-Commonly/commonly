@@ -478,7 +478,12 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     }
   });
 
-  test('PATCH unassignment offers the exact stored revision before the work sweep', async () => {
+  test('PATCH unassignment leaves the stored revision due for the work sweep', async () => {
+    await AgentInstallation.updateOne(
+      { agentName: 'claim-audit-agent', podId: pod._id },
+      { $set: { 'config.boardWake.enabled': true,
+        'config.workDiscovery': { enabled: true, role: 'implementer' } } },
+    );
     await seedTask({ assignee: 'claim-audit-agent' });
     // Force the same monotonic retry the PATCH takes when a competing writer
     // has committed after this request chose its timestamp.
@@ -501,10 +506,16 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     const realNotifyPodAgents = jest.requireActual('../../services/taskEventService').notifyPodAgents;
     await realNotifyPodAgents(pod._id, wake[1], wake[2], wake[3], wake[4]);
     const offered = await Task.findById(stored._id);
-    expect(offered.offeredAt?.getTime()).toBe(offered.updatedAt.getTime());
+    expect(offered.offeredAt).toBeUndefined();
 
-    const sweep = await require('../../services/kernelWorkSweepService').wakeForFoundWork(new Date());
-    expect(sweep.scannedPods).toBe(0);
+    // The prior-owner notice does not offer work to idle implementers.
+    // Only the opted-in discovery sweep offers the unassigned row. Use a clock past the forced monotonic revision above.
+    const sweep = await require('../../services/kernelWorkSweepService')
+      .wakeForFoundWork(new Date(stored.updatedAt.getTime() + 1000));
+    expect(sweep.scannedPods).toBe(1);
+    expect(sweep.woken).toBe(1);
+    const swept = await Task.findById(stored._id);
+    expect(swept.offeredAt?.getTime()).toBe(swept.updatedAt.getTime());
 
     const note = await request(app)
       .post(`/api/v1/tasks/${pod._id}/T-1/updates`)
@@ -512,8 +523,9 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       .send({ text: 'Still available for pickup' });
     expect(note.status).toBe(200);
     const afterNote = await Task.findById(stored._id);
-    expect(afterNote.updatedAt.getTime()).toBeGreaterThan(offered.offeredAt.getTime());
-    const dueSweep = await require('../../services/kernelWorkSweepService').wakeForFoundWork(new Date());
+    expect(afterNote.updatedAt.getTime()).toBeGreaterThan(swept.offeredAt.getTime());
+    const dueSweep = await require('../../services/kernelWorkSweepService')
+      .wakeForFoundWork(new Date(afterNote.updatedAt.getTime() + 1000));
     expect(dueSweep.scannedPods).toBe(1);
 
     const title = await request(app)
