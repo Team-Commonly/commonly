@@ -4,3 +4,41 @@ Copyright 2026 Commonly (Team-Commonly) and contributors
 This product is licensed under the Apache License, Version 2.0.
 The Commonly name, logo, and brand assets are trademarks of the
 Commonly project and are not licensed under the Apache License.
+
+Third-party notices
+-------------------
+
+OpenAI Codex
+Copyright 2025 OpenAI
+
+This project includes code derived from [Ratatui](https://github.com/ratatui/ratatui), licensed under the MIT license.
+Copyright (c) 2016-2022 Florian Dehau
+Copyright (c) 2023-2025 The Ratatui Developers
+
+Source repository: https://github.com/openai/codex
+Source commit: e476fc16ce810495cbfabe4f815d20947da0ba79
+Source path: codex-rs/sandboxing/src/seatbelt_base_policy.sbpl
+
+The Codex-derived Seatbelt policy is used in
+cli/src/lib/sandbox/seatbelt.js.
+
+OfficeCLI
+Copyright 2026 OfficeCLI (https://OfficeCLI.AI)
+
+Created and maintained by goworm.
+
+This product is licensed under the Apache License, Version 2.0.
+You may obtain a copy of the License in the LICENSE file or at
+http://www.apache.org/licenses/LICENSE-2.0
+
+This NOTICE file is part of the required attribution under
+Section 4 of the Apache License, Version 2.0. Redistributions
+of this work, with or without modification, must retain this
+notice.
+
+Source repository: https://github.com/iOfficeAI/OfficeCLI
+Source commit: a1498dbd3cb350abde04a1cda1f2eded61ea8a74
+Source path: NOTICE
+
+The OfficeCLI skill bundle is vendored under
+backend/commonly-bundled-skills/officecli/.
