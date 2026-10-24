@@ -22,6 +22,23 @@ walk (direction D44). This doc feeds the fixes (CTO) and the artboard (ux-lead).
    - The whole Context block (max tokens, compact after, summary window, include toggles)
 
    A person who edits them gets "Saved" and no change in behaviour.
+
+   **The one other reader is the ensemble payload, and nothing acts on it.**
+   `agentEnsembleService.ts:251-268` loads the `AgentProfile` and puts all four fields
+   (`instructions`, `persona`, `toolPolicy`, `contextPolicy`) into an `ensemble.turn`
+   event's `payload.agentProfile`; `schedulerService.ts:237` drives it through
+   `processScheduled()`. That is the only runtime path for any of them. Its consumers:
+   - openclaw: `extensions/commonly/src/channel.ts:66-98` (pin `5d88a3f1`) builds the turn
+     from `payload.context` and `payload.participants` only. It never reads
+     `agentProfile`.
+   - BYO (`cli/src`): no handler mentions `ensemble` at all.
+   - The `webhook-server.js:75` CLI bridge forwards the raw event JSON, so an external
+     webhook *could* read it. No Commonly code does.
+   - Hosted and native: no `ensemble.turn` handling.
+
+   It isn't firing anyway. On prod, of 2,306 ensemble states, 2,305 are `completed` (last
+   update 2026-02-08) and one is `active` but untouched since 2026-02-05. None was
+   updated in the last 30 days.
 2. **The "8000 max tokens" field isn't the context-bundle budget either.** `GET /context`
    takes its budget from `?maxContextTokens` or 75% of the global model's context limit.
    It never reads `contextPolicy`. Nothing on the page controls compaction.
@@ -106,11 +123,13 @@ Screens: `*-01-key`, `keys-confirm-desk`, `keys-after-2-regens-desk` (token mask
 
 - **Can change:**
   - Display name: works everywhere (User, installation, profile, hosted prompt).
-  - Tone, specialties, boundaries, persona notes: openclaw only (written into
-    IDENTITY.md). They are a no-op on BYO, hosted and native.
+  - Tone, specialties, boundaries, persona notes: openclaw only. The provisioner writes
+    them into the agent's IDENTITY.md (`agentProvisionerServiceK8s.ts:306`,
+    `agentProvisionerService.ts:1556`). They are a no-op on BYO, hosted and native.
+    Apart from that they reach only the ensemble payload (Summary, item 1).
 - **Shown, drives nothing:**
-  - **Instructions.** Stored as `AgentProfile.instructions`. Its only reader is the legacy
-    `agentEnsembleService` payload. Hosted builds its own prompt; native uses
+  - **Instructions.** Stored as `AgentProfile.instructions`. Its only reader is the
+    ensemble payload, which nothing acts on (Summary, item 1). Hosted builds its own prompt; native uses
     `cfg.systemPrompt`; BYO never fetches it.
   - **Marketplace listing**, which is a status line plus a link.
 - **Confusing:** the most prominent text box on the page is the one that does nothing.
@@ -130,9 +149,11 @@ Screens: `*-02-identity`.
   DO-engine hosted agent they enqueue events the worker drops, because
   `agent-do.ts` handles only `chat.mention` and `first_contact`. The page doesn't warn.
 - **Shown, drives nothing:**
-  - "24 turns/day · 30 available". It shows on BYO agents, which don't draw on the hosted
-    quota.
-  - It also shows when Heartbeat is **off**: it is the cost the interval *would* have.
+  - "24 turns/day · 30 available". `V2AgentWakePods.tsx:172-178` computes it as
+    `ceil(1440 / interval)` against the hosted turn cap, with no check on runtime or on
+    whether heartbeat is on. So it shows on BYO agents, which don't draw on the hosted
+    quota, and it shows when Heartbeat is **off**: it is the cost the interval *would*
+    have.
 - **Missing:**
   - Reach, and the cost of narrowing it (see *Argument*).
   - What "Mentions always wake this agent" means for someone else's mention.
@@ -181,21 +202,29 @@ Screens: `*-06-connector-grants`.
 This one heading holds five unrelated blocks.
 
 - **Tool approvals** (allowed / blocked / require approval): **drives nothing.**
-  - `canUseTool` has zero callers. Native and hosted gate on `cfg.tools`; BYO gates in
-    the local harness.
-  - On the hosted agent, "Allowed tools" arrives **prefilled with scope names**
-    (`context, summaries, messages, …`), which read as tool names
-    (`hosted-390-07-policy`).
+  - `canUseTool` (`backend/models/AgentProfile.ts:185`) has zero callers in `backend`,
+    `frontend/src` or `cli/src`. Native and hosted gate on `cfg.tools`; BYO gates in the
+    local harness. Otherwise `toolPolicy` reaches only the ensemble payload.
+  - "Allowed tools" arrives **prefilled with scope names** (`context, summaries,
+    messages, …`), which read as tool names (`hosted-390-07-policy`). This isn't
+    specific to hosted: the BYO and Claude-bound agent show the same prefill.
 - **Context** (max tokens 8000, compact after 6000, summary window 24 h, three include
-  toggles): **drives nothing** (Summary, items 1 and 2).
+  toggles): **drives nothing** (Summary, items 1 and 2). The `GET /context` budget is set
+  at `agentsRuntime.ts:1703-1734`: `?maxContextTokens`, else
+  `Math.floor(contextLimit * 0.75)` from the global model config.
 - **Trust mode / repository access:** shown only for BYO with an adapter.
   - It is a no-op for a single CLI, whose spawn reads the local record.
-  - On daemon seats the adapters apply it only when `sandbox.trust === 'public'`.
+  - On daemon seats the adapters apply it only when `sandbox.trust === 'public'`
+    (`cli/src/lib/adapters/claude.js:830`; the sandbox mode is chosen at
+    `cli/src/commands/agent.js:780-781`).
 - **Memory** (Long-term / Identity / Shared, each with a text box):
   - Edits work and are stored.
-  - BYO injects **long-term only**. Identity ("soul") and Shared reach an agent only if
-    it calls the memory tool.
-  - Hosted agents read none of it.
+  - BYO injects **long-term only**: `cli/src/lib/memory-bridge.js:6-7,36` reads back
+    `sections.long_term.content` and nothing else. Identity ("soul") and Shared reach
+    an agent only if it calls the memory tool.
+  - Hosted agents get **nothing injected**. They can still call `commonly_read_memory`
+    and `commonly_write_memory` (`hostedEngine.ts:169-170`), so memory reaches them
+    only when the model decides to read it.
   - The tab labelled "Identity" collides with the Identity section above.
 - **Quotas** (hosted only): display only. It shows two numbers, "Hosted turns per day 30"
   and "Runs per day 120", without explaining how they differ.
@@ -205,7 +234,8 @@ Screens: `*-07-policy`, `claude-*-07-policy` (trust mode).
 ### 9. Skills
 
 - **Can change:** add a skill from the catalog, or remove one. These load **for BYO
-  only**. Hosted and native agents don't read `PodAsset` skills. Openclaw syncs from
+  only**. The only caller of the skills route (`agentsRuntime.ts:1620`) is the CLI, at
+  `cli/src/commands/agent.js:1596`. Hosted and native agents don't read `PodAsset` skills. Openclaw syncs from
   `config.skillSync`, which this page never writes.
 - **Shown, drives nothing:** "Add skill" on hosted agents and Scout.
 - **Known:** ClawHub-sourced catalog entries failed with 409/404 on the D4 walk.
@@ -272,7 +302,8 @@ What to take from this:
    "only you can change this". *It merges Wake and Pods, and it is the one control
    that changes what people see.*
 4. **Memory, as its own section:** label which parts the agent actually reads (long-term
-   for BYO; none for hosted until that ships). *It moves out of Policy, and the label is
+   for BYO; on hosted, nothing is injected and the agent reads it only through the memory
+   tool). *It moves out of Policy, and the label is
    accurate.*
 5. **What it can use:** skills and connector grants together, hidden or explained where
    the runtime doesn't load them. *One question, "what can it touch", answered in one
