@@ -523,7 +523,6 @@ export const relaySlackMessageToPod = async (opts: {
     threadRootId = await resolveThreadRoot({ podId, replyToMessageId, threadRootId: cardReply.lateReply.threadRootId });
   }
   const created = await PGMessage.create(podId, linkedUserId, content, 'text', replyToMessageId, null, threadRootId);
-  if (plainMessage && !addressedLead) await replyNoLead(integration);
   let message: Record<string, unknown> = created;
   try {
     const populated = created?.id ? await PGMessage.findById(created.id) : null;
@@ -567,6 +566,9 @@ export const relaySlackMessageToPod = async (opts: {
   } catch (error) {
     console.warn('[slack-bridge] socket emit failed:', (error as Error).message);
   }
+  // Slack's notice is best effort. A slow Slack API must not hold the inbound
+  // webhook after the pod message has been stored and delivered.
+  if (plainMessage && !addressedLead) void replyNoLead(integration);
   return { relayed: true, routedAgent };
 };
 
