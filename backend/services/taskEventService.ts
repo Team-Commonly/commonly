@@ -19,7 +19,7 @@ let ioRef: SocketIOLike | null = null;
 export type TaskEventKind = 'created' | 'updated' | 'deleted';
 const MAX_NAMED_ITEMS = 5;
 const MAX_ASSIGNED_ROWS = 5;
-const FOUND_WORK_COOLDOWN_MS = 30 * 60 * 1000;
+const FOUND_WORK_BATCH_INTERVAL_MS = 60 * 60 * 1000;
 type BoardTask = Record<string, unknown>;
 
 function seatMatchesAssignee(install: Record<string, unknown>, assignee: unknown): boolean {
@@ -464,11 +464,21 @@ export async function notifyFoundWork(
     const AgentEventService = require('./agentEventService');
     const { boardWakeEnabled } = require('./agentMentionService');
     const AgentEvent = require('../models/AgentEvent');
+    const Task = require('../models/Task');
+    const User = require('../models/User');
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
 
     const normalizedPodId = String(podId);
     const active = await AgentInstallation.find({ podId: normalizedPodId, status: 'active' }).lean();
-    const installs = (active || []).filter(boardWakeEnabled);
+    // Board subscriptions include reviewers. Discovery is an implementer-only
+    // opt-in, independent of whether a seat receives addressed row changes.
+    const installs = (active || []).filter((install: Record<string, unknown>) => {
+      if (!boardWakeEnabled(install)) return false;
+      const config = install.config as Map<string, unknown> | Record<string, unknown> | undefined;
+      const discovery = config instanceof Map ? config.get('workDiscovery') : config?.workDiscovery;
+      return (discovery as { enabled?: unknown; role?: unknown } | undefined)?.enabled === true
+        && (discovery as { role?: unknown })?.role === 'implementer';
+    });
     if (!installs.length) return { woken: 0 };
 
     // #1080 part 3: a rescued row names who it lapsed from. Without it the wake
@@ -503,14 +513,47 @@ export async function notifyFoundWork(
       const instanceId = install.instanceId || 'default';
       let reservedSlot = false;
       try {
-        // Reserve the 30-minute slot on the installation itself. A read of
+        // Assigned pending work and active claims already occupy this seat in
+        // this pod. The unclaimed nudge is only for spare capacity; do not
+        // spend a turn offering more work to a seat with an open row.
+        const seatKey = instanceId === 'default' ? agentName : instanceId;
+        let hasOpenWork = await Task.exists({
+          podId: normalizedPodId,
+          status: { $in: ['pending', 'claimed'] },
+          $or: [
+            { assignee: seatKey },
+            { status: 'claimed', claimedBy: seatKey },
+          ],
+        });
+        if (!hasOpenWork) {
+          // Wrapper/MCP claim writers often store the bot User ObjectId,
+          // whereas board assignments store the seat key. Resolve those
+          // principals before deciding that an unassigned-looking seat is idle.
+          const principalInstances = instanceId === 'default'
+            ? ['default', agentName, null] : [instanceId];
+          const principals = await User.find({
+            isBot: true,
+            'botMetadata.agentName': agentName,
+            'botMetadata.instanceId': { $in: principalInstances },
+          }).select('_id').lean();
+          if (principals.length) {
+            hasOpenWork = await Task.exists({
+              podId: normalizedPodId,
+              status: 'claimed',
+              claimedBy: { $in: principals.map((principal: { _id: unknown }) => String(principal._id)) },
+            });
+          }
+        }
+        if (hasOpenWork) return false;
+
+        // Reserve the one-hour slot on the installation itself. A read of
         // prior events followed by enqueue races another sweep during rollout;
         // this CAS makes at most one worker win for a seat and pod.
         const reserved = await AgentInstallation.findOneAndUpdate(
           {
             agentName, instanceId, podId: normalizedPodId, status: 'active',
             $or: [
-              { lastFoundWorkAt: { $lt: new Date(now.getTime() - FOUND_WORK_COOLDOWN_MS) } },
+              { lastFoundWorkAt: { $lte: new Date(now.getTime() - FOUND_WORK_BATCH_INTERVAL_MS) } },
               { lastFoundWorkAt: null },
             ],
           },

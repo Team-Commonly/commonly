@@ -43,14 +43,16 @@ const KernelWorkSweepService = require('../../services/kernelWorkSweepService');
 
 const POD_ID = new mongoose.Types.ObjectId();
 const NOW = new Date('2026-08-20T20:00:00.000Z');
-const SINCE = new Date(NOW.getTime() - 10 * 60 * 1000);
 
 const install = (agentName = 'scout') => ({
   agentName,
   instanceId: 'default',
   podId: POD_ID.toString(),
   status: 'active',
-  config: { runtime: { runtimeType: 'wrapper' }, boardWake: { enabled: true } },
+  config: {
+    runtime: { runtimeType: 'wrapper' }, boardWake: { enabled: true },
+    workDiscovery: { enabled: true, role: 'implementer' },
+  },
 });
 
 const setInstalls = (installs) => {
@@ -117,6 +119,19 @@ afterAll(async () => {
 });
 
 describe('kernel sweep offeredAt filter', () => {
+  it('still offers a revision deferred past the ten-minute scan window by the hourly cap', async () => {
+    const old = await createTask({
+      taskId: 'TASK-DEFERRED', updatedAt: new Date(NOW.getTime() - 45 * 60 * 1000),
+    });
+
+    const sweep = await KernelWorkSweepService.wakeForFoundWork(NOW);
+
+    expect(sweep.woken).toBe(1);
+    expect(AgentEventService.enqueue.mock.calls[0][0].payload.content).toContain('TASK-DEFERRED');
+    const after = await Task.findById(old._id).lean();
+    expect(after.offeredAt).toEqual(after.updatedAt);
+  });
+
   it('keeps starter rows due until a Guide installation can receive them', async () => {
     const starter = await createTask({
       taskId: 'TASK-STARTER',
@@ -139,7 +154,7 @@ describe('kernel sweep offeredAt filter', () => {
     expect(afterOffer.offeredAt).toEqual(afterOffer.updatedAt);
   });
 
-  it('retries a swallowed enqueue while the unchanged revision remains in the scan window', async () => {
+  it('retries a swallowed enqueue while the unchanged revision remains due', async () => {
     const task = await createTask({
       taskId: 'TASK-RETRY',
       updatedAt: new Date(NOW.getTime() - 30000),
@@ -162,7 +177,7 @@ describe('kernel sweep offeredAt filter', () => {
     expect(afterRetry.offeredAt).toEqual(afterRetry.updatedAt);
   });
 
-  it('offers missing/rewritten revisions, skips offered/out-of-window rows, and offers each once', async () => {
+  it('offers missing, rewritten and old due revisions, but skips offered and assigned rows', async () => {
     const missing = await createTask({
       taskId: 'TASK-MISSING',
       updatedAt: new Date(NOW.getTime() - 30000),
@@ -177,9 +192,9 @@ describe('kernel sweep offeredAt filter', () => {
       updatedAt: new Date(NOW.getTime() - 20000),
       offeredAt: new Date(NOW.getTime() - 40000),
     });
-    const outsideWindow = await createTask({
+    const olderDue = await createTask({
       taskId: 'TASK-OLD',
-      updatedAt: new Date(SINCE.getTime() - 1),
+      updatedAt: new Date(NOW.getTime() - 11 * 60 * 1000),
     });
     const assigned = await createTask({
       taskId: 'TASK-ASSIGNED',
@@ -195,7 +210,7 @@ describe('kernel sweep offeredAt filter', () => {
     expect(content).toContain('TASK-MISSING');
     expect(content).toContain('TASK-REWRITTEN');
     expect(content).not.toContain('TASK-OFFERED');
-    expect(content).not.toContain('TASK-OLD');
+    expect(content).toContain('TASK-OLD');
     expect(content).not.toContain('TASK-ASSIGNED');
 
     const offeredMissing = await Task.findById(missing._id).lean();
@@ -204,7 +219,7 @@ describe('kernel sweep offeredAt filter', () => {
     expect(offeredRewritten.offeredAt).toEqual(offeredRewritten.updatedAt);
     expect((await Task.findById(alreadyOffered._id).lean()).offeredAt)
       .toEqual(alreadyOffered.offeredAt);
-    expect((await Task.findById(outsideWindow._id).lean()).offeredAt).toBeUndefined();
+    expect((await Task.findById(olderDue._id).lean()).offeredAt).toEqual(olderDue.updatedAt);
     expect((await Task.findById(assigned._id).lean()).offeredAt).toBeUndefined();
 
     const second = await KernelWorkSweepService.wakeForFoundWork(NOW);
@@ -485,7 +500,6 @@ describe('offeredAt race probe', () => {
       {
         $match: {
           _id: { $in: [casTask._id, nowTask._id] },
-          updatedAt: { $gte: SINCE },
           $expr: { $lt: ['$offeredAt', '$updatedAt'] },
         },
       },

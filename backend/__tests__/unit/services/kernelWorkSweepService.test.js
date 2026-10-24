@@ -338,14 +338,14 @@ describe('sweep', () => {
     expect(result.woken).toBe(1);
   });
 
-  it('matches due revisions within the 10-minute scan bound', async () => {
+  it('matches unoffered revisions regardless of age so the hourly batch can retry', async () => {
     Task.aggregate.mockResolvedValue([]);
 
     await KernelWorkSweepService.sweep(NOW);
 
     const [pipeline] = Task.aggregate.mock.calls[0];
     const match = pipeline[0].$match;
-    expect(match.updatedAt.$gte).toEqual(new Date(NOW.getTime() - 10 * 60 * 1000));
+    expect(match).not.toHaveProperty('updatedAt');
     expect(match.status).toBe('pending');
     expect(match.$expr).toEqual({ $lt: ['$offeredAt', '$updatedAt'] });
     expect(match.$or).toEqual([
