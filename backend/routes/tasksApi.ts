@@ -112,16 +112,27 @@ const updateTaskWithRevisionSnapshot = async (
     const writeTime = new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1));
     // eslint-disable-next-line no-await-in-loop
     const task = await Task.findOneAndUpdate(
-      { ...filter, updatedAt: current.updatedAt },
+      {
+        ...filter,
+        updatedAt: current.updatedAt,
+        assignee: current.assignee ?? null,
+        // A caller may already constrain claimedBy (note renewal). Preserve
+        // that predicate; otherwise bind the ownership snapshot to this CAS.
+        ...('claimedBy' in filter ? {} : { claimedBy: current.claimedBy ?? null }),
+      },
       { ...update, $set: { ...(update.$set as Record<string, unknown> || {}), updatedAt: writeTime } },
       { new: true, timestamps: false },
     );
-    // The revision CAS binds this ownership snapshot to the successful write.
+    // The revision and ownership predicates bind this snapshot to the write.
     if (task) return { task, previous: current };
-    // Distinguish a lost revision race from a failed status/lease predicate.
+    // Retry a changed revision, owner, or status; otherwise a caller predicate
+    // (such as a live lease) refused the write.
     // eslint-disable-next-line no-await-in-loop
-    const latest = await Task.findOne(key).select('updatedAt').lean();
-    if (!latest || latest.updatedAt.getTime() === current.updatedAt.getTime()) return null;
+    const latest = await Task.findOne(key).select('updatedAt assignee claimedBy status').lean();
+    if (!latest || (latest.updatedAt.getTime() === current.updatedAt.getTime()
+      && (latest.assignee ?? null) === (current.assignee ?? null)
+      && (latest.claimedBy ?? null) === (current.claimedBy ?? null)
+      && latest.status === current.status)) return null;
   }
   return null;
 };
