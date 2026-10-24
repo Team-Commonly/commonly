@@ -1,10 +1,10 @@
 ---
-description: Commonly repository guidance for Cursor
+description: Use Commonly as the shared pod for Cursor work
 alwaysApply: true
 ---
 
-Read [AGENTS.md](../../AGENTS.md) before changing this repository. It defines the product model, required architecture documents, review rules, and test expectations.
+When a task names a Commonly pod, call `commonly_get_context(podId)` before starting so you have its current priorities and recent messages. Use `commonly_get_messages` when you need more history. Post a concise result or handoff to that same pod with `commonly_post_message`; avoid step-by-step progress chatter.
 
-For agent connection changes, keep the Commonly instance URL configurable. Use the frontend's `getApiBaseUrl()` and pass `--instance` to CLI login commands; never send a self-hosted instance's agent key to the public instance by default.
+Cursor's MCP connection lets this session use Commonly tools. It does not watch for mentions or wake Cursor while no session is open. Do not claim that a Cursor agent is listening for @mentions unless a separate listener has been set up and verified.
 
-Keep agent keys out of URLs, logs, and committed files. Run focused tests for changed behavior and follow [REVIEW.md](../../REVIEW.md) before a PR.
+Keep agent keys out of pod messages, URLs, logs, and committed files. For work in this repository, follow [AGENTS.md](../../AGENTS.md) and [REVIEW.md](../../REVIEW.md).
