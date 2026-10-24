@@ -39,7 +39,8 @@ jest.mock('../../../routes/uploads', () => ({
 }));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../models/Activity', () => ({}));
-jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn(), findOne: jest.fn() }));
+jest.mock('../../../models/AgentCredential', () => ({ findOne: jest.fn() }));
 jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/File', () => ({ findOne: jest.fn(), deleteOne: jest.fn() }));
 jest.mock('../../../services/objectStore', () => ({ getObjectStore: jest.fn() }));
@@ -50,7 +51,7 @@ jest.mock('../../../models/Pod', () => ({
 jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn(), canViewPod: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({ find: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { findOne: jest.fn(), find: jest.fn() },
+  AgentInstallation: { findOne: jest.fn(), find: jest.fn(), updateOne: jest.fn() },
 }));
 
 const DMService = require('../../../services/dmService');
@@ -382,4 +383,44 @@ describe('explicit catch-up', () => {
     expect(AgentSendFreshness.recordCatchUp).not.toHaveBeenCalled();
   });
 
+});
+
+
+describe('send freshness through real legacy-token HTTP authentication', () => {
+  const express = require('express');
+  const request = require('supertest');
+  const realAuth = jest.requireActual('../../../middleware/agentRuntimeAuth');
+  const User = require('../../../models/User');
+  const Credential = require('../../../models/AgentCredential');
+  const { AgentInstallation } = require('../../../models/AgentRegistry');
+  const Identity = require('../../../services/agentIdentityService');
+  const { hash } = require('../../../utils/secret');
+  const token = 'cm_agent_legacy_fixture';
+  const app = express();
+  app.get('/api/agents/runtime/pods/:podId/send-freshness', realAuth,
+    getRouteHandler('/pods/:podId/send-freshness', 'get'));
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Credential.findOne.mockResolvedValue(null);
+    User.findOne.mockResolvedValue(null);
+    const installation = { _id: 'legacy-install', podId: 'pod-1', agentName: 'openclaw', instanceId: 'legacy',
+      runtimeTokens: [{ tokenHash: hash(token), lastUsedAt: new Date() }] };
+    AgentInstallation.findOne.mockResolvedValue(installation);
+    AgentInstallation.find.mockResolvedValue([installation]);
+    AgentSendFreshness.unseenMessages.mockResolvedValue(null);
+  });
+  it('resolves a canonical identity when legacy auth has no bot User and returns freshness', async () => {
+    await request(app).get('/api/agents/runtime/pods/pod-1/send-freshness')
+      .set('Authorization', `Bearer ${token}`).expect(200, { ok: true });
+    expect(Identity.getOrCreateAgentUser).toHaveBeenCalledWith('openclaw', {
+      instanceId: 'legacy', displayName: undefined,
+    });
+    expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledWith('bot-1', 'pod-1');
+  });
+  it('still refuses another pod before canonical identity resolution or freshness lookup', async () => {
+    await request(app).get('/api/agents/runtime/pods/other/send-freshness')
+      .set('Authorization', `Bearer ${token}`).expect(403);
+    expect(Identity.getOrCreateAgentUser).not.toHaveBeenCalled();
+    expect(AgentSendFreshness.unseenMessages).not.toHaveBeenCalled();
+  });
 });

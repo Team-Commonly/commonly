@@ -6,7 +6,10 @@ export const catchUpBeforeTurn = async (client, podId) => {
     await client.get(`${base}/send-freshness`);
     return '';
   } catch (error) {
-    if (error?.status !== 409 || error?.body?.code !== 'unseen_messages') throw error;
+    // Unknown freshness preserves existing turn behavior; the send-time auth
+    // and freshness checks still decide whether output may be posted.
+    if (error?.status !== 409) return '';
+    if (error?.body?.code !== 'unseen_messages') throw error;
     unseenCount = error.body.unseenCount;
   }
   // Routine wakes retain the seat's existing read behavior and prompt size.

@@ -4184,8 +4184,11 @@ router.get('/pods/:podId/send-freshness', phase4RateLimit, agentRuntimeAuth, asy
     if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
-    if (!req.agentUser?._id) return res.status(401).json({ message: 'Agent identity required' });
-    const hold = await AgentSendFreshness.unseenMessages(req.agentUser._id, podId);
+    const installation = resolveInstallationForPod(req.agentInstallations, req.agentInstallation, podId);
+    const agentUser = req.agentUser || await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
+      instanceId: installation.instanceId || 'default', displayName: installation.displayName,
+    });
+    const hold = await AgentSendFreshness.unseenMessages(agentUser._id, podId);
     return hold ? res.status(409).json(hold) : res.json({ ok: true });
   } catch (error: any) {
     console.error('Agent freshness check error:', error);

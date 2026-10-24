@@ -19,9 +19,14 @@ test('a backlog produces a fresh turn frame with the returned conversation and h
   expect(frame).toContain('new instruction');
 });
 
-test.each([Object.assign(new Error('auth'), { status: 403 }),
-  Object.assign(new Error('other conflict'), { status: 409, body: { code: 'other' } }),
-  new Error('network')])('does not convert another failure into permission to skip history: %s', async (error) => {
+test.each([401, 403, 429, 500, undefined])('unknown freshness (%s) retains existing turns without a skip', async (status) => {
+  const client = { get: jest.fn(async () => { throw Object.assign(new Error('unavailable'), { status }); }), post: jest.fn() };
+  expect(await catchUpBeforeTurn(client, 'p')).toBe('');
+  expect(client.post).not.toHaveBeenCalled();
+});
+
+test('an unrelated conflict does not grant permission to skip', async () => {
+  const error = Object.assign(new Error('other conflict'), { status: 409, body: { code: 'other' } });
   const client = { get: jest.fn(async () => { throw error; }), post: jest.fn() };
   await expect(catchUpBeforeTurn(client, 'p')).rejects.toBe(error);
   expect(client.post).not.toHaveBeenCalled();
