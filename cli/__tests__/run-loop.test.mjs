@@ -1493,7 +1493,7 @@ describe('performRun', () => {
     };
     await runNext(5000); // first failure → second probe
     await runNext(10000); // second failure → recovery probe
-    await runNext(5000); // success → normal poll interval
+    await runNext(0); // success → look again at once (TASK-343), not after the interval
 
     handle.stop();
     expect(spawn).toHaveBeenCalledTimes(4);
