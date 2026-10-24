@@ -52,7 +52,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       agentName: String(req.params.name).toLowerCase(),
       instanceId: normalizeInstanceId(req.query.instanceId),
       status: { $ne: 'uninstalled' },
-    }).lean();
+    }).sort({ createdAt: 1, _id: 1 }).lean();
     const manageable = installations.filter((entry: any) => canManage(entry, userId, isAdmin));
     const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
       .select('name').lean();
