@@ -354,7 +354,7 @@ describe('reactionController.addReaction — agent runtime path', () => {
     });
 
     await reactionController.addReaction({
-      params: { messageId: 'suffix-44' },
+      params: { messageId: '144' },
       body: { emoji: '👍' },
       user: { _id: 'human-reactor' },
     }, buildRes());
@@ -383,7 +383,7 @@ describe('reactionController.addReaction — agent runtime path', () => {
     const warning = jest.spyOn(console, 'warn').mockImplementation();
 
     await reactionController.addReaction({
-      params: { messageId: 'legacy-44' },
+      params: { messageId: '244' },
       body: { emoji: '👍' },
       user: { _id: 'human-reactor' },
     }, buildRes());

@@ -109,6 +109,14 @@ ALTER TABLE messages
 
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS freshness_revision BIGINT NOT NULL DEFAULT 0;
 
+-- TASK-313 part 2. The Mongo id of a fallback message this row was reconciled
+-- from. Nullable: ordinary rows carry NULL, and several NULLs never collide.
+-- The UNIQUE index is NOT declared here: CONCURRENTLY cannot run inside this
+-- multi-statement script, which executes as one transaction. The reconciler
+-- builds it (services/pgMessageReconcileService.ensureLegacyIdIndex) before
+-- its first insert, so it never blocks writes on messages.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS legacy_mongo_id TEXT;
+
 CREATE TABLE IF NOT EXISTS pod_message_revisions (
   pod_id VARCHAR(24) PRIMARY KEY REFERENCES pods(id) ON DELETE CASCADE,
   revision BIGINT NOT NULL DEFAULT 0

@@ -1,3 +1,4 @@
+import { resolvePgMessageId } from './pgMessageId';
 /**
  * Resolve and validate a message's thread root (W-T, TASK-029).
  *
@@ -57,7 +58,8 @@ export async function assertReplyTargetInPod({
   replyToMessageId?: number | string | null;
 }): Promise<void> {
   if (replyToMessageId == null || replyToMessageId === '') return;
-  const parentId = Number(replyToMessageId);
+  const resolved = await resolvePgMessageId(replyToMessageId);
+  const parentId = resolved == null ? NaN : Number(resolved);
   if (!Number.isInteger(parentId) || parentId <= 0) {
     throw new ThreadRootError('reply_target_invalid', 'replyToMessageId must be a positive integer');
   }
@@ -85,14 +87,15 @@ export async function resolveThreadRoot({
   replyToMessageId?: number | string | null;
   threadRootId?: number | string | null;
 }): Promise<number | null> {
-  const explicit = threadRootId == null || threadRootId === '' ? null : Number(threadRootId);
+  const rootId = threadRootId == null || threadRootId === '' ? null : await resolvePgMessageId(threadRootId);
+  const explicit = threadRootId == null || threadRootId === '' ? null : rootId == null ? NaN : Number(rootId);
   if (explicit !== null && (!Number.isInteger(explicit) || explicit <= 0)) {
     throw new ThreadRootError('thread_root_invalid', 'threadRootId must be a positive integer');
   }
 
   await assertReplyTargetInPod({ podId, replyToMessageId });
   const parentId = replyToMessageId == null || replyToMessageId === ''
-    ? null : Number(replyToMessageId);
+    ? null : Number(await resolvePgMessageId(replyToMessageId));
 
   // Derive first when there is a reply edge — needed both as the answer (no
   // explicit root) and as the cross-check (explicit root present).

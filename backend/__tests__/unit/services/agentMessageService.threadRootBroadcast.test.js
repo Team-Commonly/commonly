@@ -200,6 +200,7 @@ describe('agent broadcast carries author identity', () => {
     });
 
     const msg = emitted.find((e) => e.event === 'newMessage');
+    expect(Message).toHaveBeenCalledWith(expect.objectContaining({ pgFallback: true }));
     expect(msg.payload.userId).toEqual(expect.objectContaining({
       _id: 'agent-user-1',
       isBot: true,

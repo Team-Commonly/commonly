@@ -85,7 +85,7 @@ const router: ReturnType<typeof express.Router> = express.Router();
 
 router.get('/:podId', readMessageRateLimit, auth, getMessages);
 router.post('/:podId', sendMessageRateLimit, auth, createMessage);
-router.delete('/:id', auth, deleteMessage);
+router.delete('/:id', sendMessageRateLimit, auth, deleteMessage);
 
 // Sprint B5 — reactions. Lives under /:messageId/reactions so the
 // `:podId` route above doesn't shadow it (Express routes by order +
@@ -206,7 +206,7 @@ router.patch('/:id/created-at', auth, async (req: any, res: any) => {
     const { pool } = require('../config/db-pg');
     const r = await pool.query(
       'UPDATE messages SET created_at = $1, updated_at = $1 WHERE id = $2 RETURNING id, created_at',
-      [ts, id],
+      [ts, message.pgId],
     );
     if (r.rowCount === 0) return res.status(404).json({ msg: 'message not found in PG' });
     return res.json({ ok: true, id: r.rows[0].id, created_at: r.rows[0].created_at });
