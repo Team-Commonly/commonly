@@ -49,7 +49,14 @@ test('runtime labels only recognize walked adapters and distinguish daemon from 
   expect(describeRuntime({ runtimeType: 'webhook', host: 'byo', adapter: 'dsh' })).toEqual({ mode: 'cli', adapter: 'DeepSeek Harness' });
   expect(describeRuntime({ runtimeType: 'wrapper', adapter: 'unwalked' })).toEqual({ mode: 'daemon', adapter: null });
   expect(describeRuntime({ runtimeType: 'hosted' })).toEqual({ mode: 'hosted', adapter: null });
+  expect(describeRuntime({ runtimeType: 'native', host: 'cloud' })).toEqual({ mode: 'native', adapter: null });
   expect(describeRuntime({ runtimeType: 'webhook', host: 'byo' })).toEqual({ mode: 'unknown', adapter: null });
+});
+
+test('shows the native engine for a native agent', async () => {
+  renderSection({ runtimeType: 'native' });
+  expect(await screen.findByText('Native engine')).toBeInTheDocument();
+  expect(screen.queryByText('Hosted')).not.toBeInTheDocument();
 });
 
 test('revoked Runtime row offers an active computer and moves in one request', async () => {

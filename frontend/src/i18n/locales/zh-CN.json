@@ -2299,6 +2299,7 @@
     "runtime": {
       "title": "运行环境",
       "how": "运行方式",
+      "native": "原生引擎",
       "hosted": "托管运行",
       "daemon": "通过守护进程在电脑上运行",
       "cli": "单个 CLI",
