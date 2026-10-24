@@ -584,6 +584,8 @@ const readOpenCodeVersion = (binary, env) => {
   }
 };
 
+const isOpenCodePrerelease = (version) => version.split('+', 1)[0].includes('-');
+
 const compareOpenCodeVersions = (left, right) => {
   const leftParts = left.split(/[+-]/, 1)[0].split('.').map(Number);
   const rightParts = right.split(/[+-]/, 1)[0].split('.').map(Number);
@@ -594,8 +596,8 @@ const compareOpenCodeVersions = (left, right) => {
   }
   // The smoke-tested boundaries are stable releases. A matching prerelease
   // must not inherit their native signature-replay guarantee.
-  const leftPrerelease = left.split('+', 1)[0].includes('-');
-  const rightPrerelease = right.split('+', 1)[0].includes('-');
+  const leftPrerelease = isOpenCodePrerelease(left);
+  const rightPrerelease = isOpenCodePrerelease(right);
   if (leftPrerelease !== rightPrerelease) return leftPrerelease ? -1 : 1;
   return 0;
 };
@@ -670,12 +672,13 @@ export default {
       : childSourceEnv;
     const binary = ctx._binaryPath || spawnBinaryPath(runtimeEnv);
     const installedVersion = readOpenCodeVersion(binary, runtimeEnv);
-    // Trusted seats otherwise allow old binaries. Gemini must refuse versions
-    // that still drop tool-call signatures now that the proxy shim is gone.
+    // Trusted seats otherwise allow old binaries. Gemini requires a stable
+    // release with native signature replay now that the proxy shim is gone.
     if (provider && new URL(provider.baseURL).hostname.toLowerCase() === 'generativelanguage.googleapis.com'
-      && (!installedVersion || compareOpenCodeVersions(installedVersion, TESTED_OPENCODE_VERSIONS[0]) < 0)) {
+      && (!installedVersion || isOpenCodePrerelease(installedVersion)
+        || compareOpenCodeVersions(installedVersion, TESTED_OPENCODE_VERSIONS[0]) < 0)) {
       throw new Error(
-        `Gemini requires OpenCode ${TESTED_OPENCODE_VERSIONS[0]} or later for native thought-signature replay; `
+        `Gemini requires stable OpenCode ${TESTED_OPENCODE_VERSIONS[0]} or later for native thought-signature replay; `
         + `installed version is ${installedVersion || 'unknown'}`,
       );
     }

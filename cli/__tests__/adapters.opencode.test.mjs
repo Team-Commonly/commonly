@@ -781,9 +781,11 @@ describe('opencode external provider config', () => {
 
   test.each([
     ['older', { status: 0, stdout: 'OpenCode 1.18.0\n' }, '1.18.0'],
-    ['prerelease', { status: 0, stdout: 'OpenCode 1.18.35-rc.1\n' }, '1.18.35-rc.1'],
+    ['boundary prerelease', { status: 0, stdout: 'OpenCode 1.18.35-rc.1\n' }, '1.18.35-rc.1'],
+    ['later patch prerelease', { status: 0, stdout: 'OpenCode 1.18.36-rc.1\n' }, '1.18.36-rc.1'],
+    ['later minor prerelease', { status: 0, stdout: 'OpenCode 1.19.0-rc.1\n' }, '1.19.0-rc.1'],
     ['unknown', { status: 1, stdout: '' }, 'unknown'],
-  ])('a private Gemini seat refuses an %s OpenCode version before spawning', async (_label, result, version) => {
+  ])('a private Gemini seat refuses %s OpenCode before spawning', async (_label, result, version) => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
       const keyFile = join(root, 'secrets', 'gemini-key');
@@ -804,7 +806,7 @@ describe('opencode external provider config', () => {
         },
         _binaryPath: '/usr/local/bin/opencode',
         _spawnImpl: spawn.impl,
-      })).rejects.toThrow(`Gemini requires OpenCode 1.18.35 or later for native thought-signature replay; installed version is ${version}`);
+      })).rejects.toThrow(`Gemini requires stable OpenCode 1.18.35 or later for native thought-signature replay; installed version is ${version}`);
       expect(spawn.calls).toHaveLength(0);
     });
   });
