@@ -18,6 +18,7 @@ const {
   getUserId,
   isGlobalAdminUser,
   normalizeInstanceId,
+  normalizeConfigMap,
   normalizeDisplayName,
   resolveInstallation,
   buildAgentProfileId,
@@ -329,6 +330,17 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       console.warn('[pod-agents] caller-spoke lookup failed:', (spokeErr as Error).message);
     }
 
+    // A push webhook's URL can carry a credential in its query string, so only
+    // its installer and instance admins see it (Cofounder's hardening ruling,
+    // 2026-10-21). The admin lookup runs only when the roster holds a URL the
+    // viewer did not install.
+    const viewerId = String(userId);
+    const installedByViewer = (i: any) => String(i.installedBy || '') === viewerId;
+    const needsAdminCheck = (installations as any[]).some((i: any) => (
+      !installedByViewer(i) && Boolean(normalizeConfigMap(i.config)?.runtime?.webhookUrl)
+    ));
+    const viewerIsAdmin = needsAdminCheck ? await isGlobalAdminUser(userId) : false;
+
     res.json({
       callerSpoke,
       agents: installations.map((i: any) => {
@@ -347,6 +359,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           lastActiveAt,
           user,
           lastMessage: (user && lastMessageByUserId.get(String(user._id))) || null,
+          revealWebhookUrl: viewerIsAdmin || installedByViewer(i),
         });
         const runtimeType = payload?.runtime?.runtimeType;
         // A provisioned in-process seat needs no external connection. Its
@@ -361,7 +374,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           || runtimeType === 'wrapper'
           || (runtimeType === 'webhook' && !payload?.runtime?.host);
         if (!connectionAvailable || !user || !hasRuntimeConnection
-          || payload?.runtime?.webhookUrl) return payload;
+          || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return payload;
         const machineId = user.botMetadata?.machineId;
         return {
           ...payload,
@@ -444,6 +457,9 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
       agent: buildAgentInstallationPayload(installation, {
         profile,
         iconUrl: templateIcon || registryEntry?.iconUrl || '',
+        revealWebhookUrl: installedBy === String(userId)
+          || (Boolean(normalizeConfigMap(installation.config)?.runtime?.webhookUrl)
+            && await isGlobalAdminUser(userId)),
       }),
     });
   } catch (error) {

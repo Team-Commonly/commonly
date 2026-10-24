@@ -30,6 +30,13 @@ jest.mock('../../../models/AgentProfile', () => ({
 jest.mock('../../../models/AgentTemplate', () => ({
   find: jest.fn(),
 }));
+jest.mock('../../../models/AgentCredential', () => ({
+  find: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) }),
+}));
+jest.mock('../../../models/Machine', () => ({
+  find: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) }),
+}));
+
 jest.mock('../../../models/AgentEvent', () => ({
   aggregate: jest.fn().mockResolvedValue([]),
 }));
@@ -39,6 +46,12 @@ jest.mock('../../../models/User', () => ({
   find: jest.fn().mockReturnValue({
     select: jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue([]),
+    }),
+  }),
+  // isGlobalAdminUser: the viewer's role, for the webhookUrl reveal.
+  findById: jest.fn().mockReturnValue({
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ role: 'user' }),
     }),
   }),
 }));
@@ -174,6 +187,112 @@ describe('registry list pod agents config payload', () => {
       skillEnvKeys: ['github'],
     }));
     expect(res.body.agents[0].runtime).not.toHaveProperty('webhookSecret');
+  });
+
+  // Cofounder's hardening ruling (2026-10-21): every pod member reads this
+  // roster, and a push webhook's URL can carry a credential in its query
+  // string, so only the installer and instance admins see it.
+  describe('a push webhook URL is shown only to its installer and instance admins', () => {
+    const SECRET_URL = 'https://agent.example.test/events?secret=s3cr3t';
+    const seedWebhookAgent = (installedBy) => {
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'someone-else', members: ['user-1', 'user-2'] }),
+      });
+      AgentInstallation.getInstalledAgents.mockResolvedValue([{
+        agentName: 'webhook-bot',
+        instanceId: 'default',
+        displayName: 'Webhook Bot',
+        status: 'active',
+        scopes: [],
+        usage: {},
+        installedBy,
+        config: new Map(Object.entries({ runtime: { runtimeType: 'webhook', webhookUrl: SECRET_URL } })),
+      }]);
+      AgentRegistry.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      AgentTemplate.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
+    };
+    const viewerRole = (role) => User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ role }) }),
+    });
+
+    it('another member sees the runtime but never the URL', async () => {
+      seedWebhookAgent('user-2');
+      viewerRole('user');
+      const res = await request(app).get('/api/registry/pods/pod-1/agents');
+      expect(res.status).toBe(200);
+      expect(res.body.agents[0].runtime).toEqual(expect.objectContaining({ runtimeType: 'webhook' }));
+      expect(res.body.agents[0].runtime).not.toHaveProperty('webhookUrl');
+      expect(JSON.stringify(res.body)).not.toContain('s3cr3t');
+    });
+
+    it.each(['map', 'object'])('keeps push connection semantics independent of URL visibility (%s config)', async (shape) => {
+      User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+        _id: 'bot-1', username: 'webhook-bot-default', botMetadata: {}, agentRuntimeTokens: [],
+      }]) }) });
+      viewerRole('user');
+      const read = async (installer, url) => {
+        seedWebhookAgent(installer);
+        const [installation] = await AgentInstallation.getInstalledAgents();
+        const config = { runtime: { runtimeType: 'webhook', ...(url && { webhookUrl: url }) } };
+        installation.config = shape === 'map' ? new Map(Object.entries(config)) : config;
+        const res = await request(app).get('/api/registry/pods/pod-1/agents');
+        expect(res.status).toBe(200);
+        return res.body.agents[0];
+      };
+      const installer = await read('user-1', SECRET_URL);
+      const peer = await read('user-2', SECRET_URL);
+      expect(installer.runtime.webhookUrl).toBe(SECRET_URL);
+      expect(peer.runtime).not.toHaveProperty('webhookUrl');
+      expect(installer).not.toHaveProperty('connection');
+      expect(peer).not.toHaveProperty('connection');
+      // A poll-based webhook still derives connection health: prove the
+      // credential lookup was available, rather than taking its catch path.
+      const polling = await read('user-2', null);
+      expect(polling).toHaveProperty('connection.state');
+      User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
+    });
+
+    it('a caller that does not opt in gets no URL (the builder fails closed)', () => {
+      // eslint-disable-next-line global-require
+      const { buildAgentInstallationPayload } = require('../../../routes/registry/helpers');
+      const payload = buildAgentInstallationPayload({
+        agentName: 'webhook-bot', instanceId: 'default', status: 'active', scopes: [], usage: {},
+        config: new Map(Object.entries({ runtime: { runtimeType: 'webhook', webhookUrl: SECRET_URL } })),
+      });
+      expect(payload.runtime).not.toHaveProperty('webhookUrl');
+      expect(payload.runtime.runtimeType).toBe('webhook');
+    });
+
+    it('the installer sees the URL', async () => {
+      seedWebhookAgent('user-1');
+      const res = await request(app).get('/api/registry/pods/pod-1/agents');
+      expect(res.body.agents[0].runtime.webhookUrl).toBe(SECRET_URL);
+      expect(User.findById).not.toHaveBeenCalled();
+    });
+
+    it('an instance admin sees the URL', async () => {
+      seedWebhookAgent('user-2');
+      viewerRole('admin');
+      const res = await request(app).get('/api/registry/pods/pod-1/agents');
+      expect(res.body.agents[0].runtime.webhookUrl).toBe(SECRET_URL);
+    });
+
+    it('the single-agent route withholds it the same way', async () => {
+      seedWebhookAgent('user-2');
+      viewerRole('user');
+      const [installation] = await AgentInstallation.getInstalledAgents();
+      AgentInstallation.findOne = jest.fn().mockResolvedValue(installation);
+      AgentRegistry.findOne = jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }) });
+      AgentProfile.findOne = jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+      const res = await request(app).get('/api/registry/pods/pod-1/agents/webhook-bot?instanceId=default');
+      if (res.status === 200) {
+        expect(res.body.agent.runtime).not.toHaveProperty('webhookUrl');
+        expect(JSON.stringify(res.body)).not.toContain('s3cr3t');
+      } else {
+        throw new Error(`single-agent route answered ${res.status}: ${JSON.stringify(res.body).slice(0, 200)}`);
+      }
+    });
   });
 
   it('uses the chat principal label when scoped labels differ', async () => {
