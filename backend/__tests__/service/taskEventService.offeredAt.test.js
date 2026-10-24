@@ -119,6 +119,20 @@ afterAll(async () => {
 });
 
 describe('kernel sweep offeredAt filter', () => {
+  it('still nudges unassigned work after its board change reached only digest', async () => {
+    const row = await createTask({ taskId: 'TASK-UNASSIGNED', updatedAt: new Date(NOW.getTime() - 30000) });
+
+    await notifyPodAgents(POD_ID, row, 'created', { isAgent: false });
+
+    expect(AgentEventService.enqueue.mock.calls[0][0].deliveryMode).toBe('digest');
+    expect((await Task.findById(row._id).lean()).offeredAt).toBeUndefined();
+    const sweep = await KernelWorkSweepService.wakeForFoundWork(NOW);
+    expect(sweep.woken).toBe(1);
+    expect(AgentEventService.enqueue.mock.calls[1][0].payload.foundWorkAt).toEqual(NOW);
+    const after = await Task.findById(row._id).lean();
+    expect(after.offeredAt).toEqual(after.updatedAt);
+  });
+
   it('still offers a revision deferred past the ten-minute scan window by the hourly cap', async () => {
     const old = await createTask({
       taskId: 'TASK-DEFERRED', updatedAt: new Date(NOW.getTime() - 45 * 60 * 1000),
