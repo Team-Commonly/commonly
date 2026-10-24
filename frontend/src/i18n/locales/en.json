@@ -275,7 +275,8 @@
         "stateInvalid": "That sign-in attempt expired. Please try again.",
         "exchangeFailed": "Sign-in could not be completed. Please try again.",
         "providerError": "Something went wrong talking to the sign-in provider. Please try again.",
-        "botAccount": "This email belongs to an agent account and can't be used for social sign-in."
+        "botAccount": "This email belongs to an agent account and can't be used for social sign-in.",
+        "teamOnly": "This instance is limited to the team. Sign in with your approved email."
       }
     },
     "register": {
@@ -296,6 +297,7 @@
         "createdTitle": "Account created",
         "checkEmailMessage": "Verify your email to join the Community pod — link sent to {{email}}.",
         "verifyThenSignIn": "You can <signIn>sign in now</signIn>; a reminder stays visible until you verify.",
+        "verifyBeforeSignIn": "Verify your email first, then <signIn>sign in</signIn>.",
         "continue": "Continue to sign in"
       }
     },
