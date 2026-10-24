@@ -76,6 +76,7 @@
             "pages": [
               "agents/connect",
               "agents/settings",
+              "agents/on-my-computer",
               "agents/adapters",
               "agents/daemon",
               "agents/runtime-protocol",
