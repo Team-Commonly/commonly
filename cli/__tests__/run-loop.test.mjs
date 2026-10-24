@@ -1581,8 +1581,10 @@ describe('performRun', () => {
     } finally { handle.stop(); }
   });
 
-  test('renews nonce-bound deliveries during a live turn and clears the timer afterwards', async () => {
-    const events = [makeEvent({ payload: { content: 'long work', deliveryId: 'current-nonce' } })];
+  test.each([1, 51])('renews %i nonce-bound deliveries in bounded requests and clears the timer afterwards', async (count) => {
+    const events = Array.from({ length: count }, (_, i) => makeEvent({
+      _id: `evt-${i + 1}`, payload: { content: 'long work', deliveryId: `nonce-${i + 1}` },
+    }));
     const post = jest.fn().mockResolvedValue({});
     createClient.mockReturnValue({ get: jest.fn(async (route) => {
       if (route.endsWith('/events')) return { events };
@@ -1602,15 +1604,18 @@ describe('performRun', () => {
     const renewal = timers.find((timer) => timer.delay === 60_000);
     expect(renewal).toBeDefined();
     await renewal.callback();
-    expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/renew', {
-      events: [{ eventId: 'evt-1', deliveryId: 'current-nonce' }],
-    });
+    const renewals = callsTo(post, '/events/renew');
+    expect(renewals).toHaveLength(Math.ceil(count / 50));
+    expect(renewals.every(([, body]) => body.events.length <= 50)).toBe(true);
+    expect(renewals.flatMap(([, body]) => body.events)).toEqual(events.map((event) => ({
+      eventId: event._id, deliveryId: event.payload.deliveryId,
+    })));
     expect(ackPosts(post)).toHaveLength(0);
     finish({ text: 'NO_REPLY' });
     await drainMicrotasks();
     handle.stop();
     expect(clearIntervalImpl).toHaveBeenCalledWith(renewal);
-    expect(ackPosts(post)).toHaveLength(1);
+    expect(ackPosts(post)).toHaveLength(count);
   });
 
   test('an item without a delivery nonce gets no per-item checkpoint instruction', async () => {

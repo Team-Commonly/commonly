@@ -2454,7 +2454,11 @@ export const performRun = ({
       if (renewalStopped || renewing || deliveries.length === 0) return;
       renewing = true;
       try {
-        await client.post('/api/agents/runtime/events/renew', { events: deliveries });
+        for (let offset = 0; offset < deliveries.length && !renewalStopped; offset += 50) {
+          await client.post('/api/agents/runtime/events/renew', {
+            events: deliveries.slice(offset, offset + 50),
+          });
+        }
       } catch (error) {
         // An older server may lack this route. Never reinterpret a failed
         // renewal as an ack: stale checkpoint nonces still fail closed.
