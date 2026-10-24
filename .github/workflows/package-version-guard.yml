@@ -22,6 +22,14 @@ on:
     # merges enters this guard's population without any event in the list
     # below ever firing for it.
     types: [opened, synchronize, reopened, ready_for_review, edited]
+    # Only PRs that can change this guard's answer run it. Every other PR
+    # paid a runner for a no-op, and on a rebase wave those no-ops queue
+    # ahead of the merge-group build (10-24: 165 runs queued, merge
+    # group waited 16+ min). Not a required check, so a skip never blocks.
+    paths:
+      - 'cli/**'
+      - 'commonly-mcp/**'
+      - '.github/workflows/package-version-guard.yml'
 
 permissions:
   contents: read
