@@ -308,6 +308,11 @@ export default {
         '--mcp-config', mcpPath, '--exclude-tools', [
           ...EXCLUDED_TOOLS, ...(isPublic ? PUBLIC_READ_TOOLS : []),
         ].join(','),
+        // Qwen ignores settings permissions in bare/safe mode, but still
+        // honours CLI allow rules. A private seat needs its declared Commonly
+        // tools approved before non-interactive execution begins.
+        ...(!isPublic && Object.hasOwn(mcp.mcpServers, 'commonly')
+          ? ['--allowed-tools', 'mcp__commonly__*'] : []),
         '-o', 'stream-json', '-p', fullPrompt,
       ];
       let cmd = executable;
