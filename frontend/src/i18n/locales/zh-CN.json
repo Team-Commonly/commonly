@@ -2460,6 +2460,8 @@
     "turnsPerDay": "托管运行次数／天",
     "userRunCeiling": "运行次数／天",
     "contextInvalid": "请检查上下文限制。",
+    "profileUnavailable": "此智能体在这个 Pod 中的策略暂时无法修改。",
+    "profileUnavailableSave": "此智能体在这个 Pod 中的策略暂时无法修改，更改未保存。",
     "loadError": "无法加载策略数据。",
     "saveError": "无法保存更改。",
     "saved": "已保存"
