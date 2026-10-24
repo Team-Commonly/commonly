@@ -31,7 +31,12 @@ const clean = (value: string | null | undefined): string => (value || '').trim()
 
 /** The chip text for an agent's runtime, or null when no runtime is known. */
 export const runtimeChipLabel = (runtime?: RuntimeChipSource | null): string | null => {
+  // Commonly runs a hosted seat, and install stamps its type. A config write can
+  // still set runtime.adapter on it (configWriteGuard does not cover adapter), so
+  // the kernel-owned type wins here: a hosted agent never shows a CLI chip.
+  const runtimeType = clean(runtime?.runtimeType);
+  if (runtimeType === 'hosted' || runtimeType === 'internal') return 'hosted';
   const adapter = clean(runtime?.adapter) || clean(runtime?.wrappedCli);
   if (adapter) return ADAPTER_CHIP[adapter] || adapter;
-  return RUNTIME_TYPE_CHIP[clean(runtime?.runtimeType)] || null;
+  return RUNTIME_TYPE_CHIP[runtimeType] || null;
 };

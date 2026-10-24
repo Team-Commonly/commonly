@@ -24,6 +24,11 @@ describe('runtimeChipLabel (TASK-471)', () => {
     expect(runtimeChipLabel({ runtimeType: 'internal' })).toBe('hosted');
   });
 
+  it('keeps a hosted seat hosted even if a config write set an adapter on it', () => {
+    expect(runtimeChipLabel({ runtimeType: 'hosted', adapter: 'codex' })).toBe('hosted');
+    expect(runtimeChipLabel({ runtimeType: 'internal', adapter: 'claude' })).toBe('hosted');
+  });
+
   it('keeps the claude-code and openclaw runtime types', () => {
     expect(runtimeChipLabel({ runtimeType: 'claude-code' })).toBe('claude');
     expect(runtimeChipLabel({ runtimeType: 'moltbot' })).toBe('openclaw');
