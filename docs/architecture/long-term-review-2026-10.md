@@ -1,6 +1,6 @@
 # Long-term review: what to refactor, and what to leave alone (2026-10)
 
-**Status:** Full report. The row's notes and two database counts are still open (see *Still open*). Anything that arrives by 2026-10-25 01:00Z lands on this same PR, so don't merge before then.
+**Status:** Full report. Two database counts are still open (see *Still open*).
 **Asked by:** the CTO (TASK-438).
 **Measured at:** `main` `0b22729fa` (2026-10-24 03:59Z) and GitHub as of 2026-10-24 05:12Z, unless a line says otherwise.
 
@@ -17,7 +17,7 @@ An idea with no number behind it goes under **Don't**, along with the condition 
 ## The finding
 
 1. **The largest measured costs are in the pipeline, not in the code.** In 48 hours, 86% of agent turns posted nothing. A slow PR spends its time waiting. In the slowest tenth of merged PRs, 28% of the open time waited for a gate verdict, 23% fell inside a recorded merge freeze, and 21% came after every gate on record had passed the PR's head and its checks were green, before anyone queued it. The PR rarely records why it waited. The author answering a HOLD took 3%.
-2. **Most of tonight's incidents, and most of the 90-day fix hotspots, are one fact kept in several places.** Credentials live in three stores. Two URLs are read under four environment names. Agent identity is written from 11 places. The task revision is `updatedAt`.
+2. **Most of the 90-day fix hotspots, and four of tonight's twelve incidents, are one fact kept in several places.** Credentials live in three stores. Two URLs are read under four environment names. Agent identity is written from 11 places. The task revision is `updatedAt`. Of the other eight, three map to items 1 and 9, one maps to A, and four need no refactor.
 3. **The usual rewrite candidates have numbers that say to leave them alone.** That covers the language, microservices, CI speed, a token pipeline, auth and Socket.io.
 
 ## Sources
@@ -30,7 +30,7 @@ An idea with no number behind it goes under **Don't**, along with the condition 
 - **PR timelines** for the 150 PRs opened in the 48 hours to 2026-10-23 22:45Z, read from GitHub at 10-24 06:39–06:42Z and counted up to 05:12Z. Each PR's full timeline (every page) gives when it was opened, pushed, marked ready, gated, queued and merged, and the Tests runs give each head commit and its result. A gate verdict is a review whose last line is `GATE: PASS`, `GATE: HOLD` or `GATE: FAIL` and nothing more, and it belongs to the gate its byline names.
 - **Fleet logs** for 10-21 22:30Z to 10-23 22:45Z, from an internal SRE report. They give turns, wakes, timeouts, failures and LiteLLM status codes. The same report gives the row created → claimed times.
 - **Import-graph reachability** from `frontend/src/index.tsx`, `backend/server.ts` and `cli/src/index.js`, at `0afed7ba1`.
-- **Tonight's incident list**, as given with TASK-438.
+- **Tonight's incidents**: the list given with TASK-438, plus the incidents named in the row's own notes, read at 2026-10-24 13:20Z. Each incident's PRs were checked on GitHub at the same time.
 - **The Raft study** (internal, 2026-10-23), cited by name only.
 
 The commands are in *How to re-measure*, at the end. A count marked *keyword* comes from grepping commit subjects, so treat it as an upper bound.
@@ -103,8 +103,8 @@ Items are ranked by measured cost removed per day of effort.
 
 - **Three incidents in two days:**
   - staging's chart pointed the API URL at production (#2529);
-  - staging's API rejected its own frontend under CORS (#2481);
-  - connect commands printed production's API URL instead of the instance's (#2568, TASK-428, open).
+  - staging's chart left the frontend URL at production's, so CORS rejected staging's own frontend (#2481);
+  - connect commands printed production's API URL instead of the instance's (#2568, merged; TASK-428 is still open).
 - **Four environment names cover two values:**
 
   | Name | Reads |
@@ -330,6 +330,7 @@ Items are ranked by measured cost removed per day of effort.
 **Evidence:**
 
 - **One backend replica.** The backend runs one replica (`k8s/helm/commonly/values-dev.yaml:36`). The frontend has run two since the spot outages of 10-19 (`:142`).
+- **One crash reached every user.** On 10-23, an error in a hosted-MCP callback exited the only backend process on staging, so every user got a 502 until the pod restarted (TASK-405). #2555 has since added an async-route wrapper and an error redirect on every OAuth, hosted-MCP and integration callback, so that error now ends in an error response. A second replica limits the reach of the next crash that gets past them.
 - **The API process also runs other work:**
   - 24 cron jobs: 22 in `schedulerService.ts`, plus `agentInstallationCleanupService.ts` and `pgRetentionService.ts`;
   - the hosted agent turns (see B).
@@ -441,13 +442,15 @@ Items are ranked by measured cost removed per day of effort.
 | Port the CLI or the MCP server to TypeScript | `agent.js` took 26 fixes in 90 days, and none names a type error. They were semantics, which is item 1. | a type-class bug turns up |
 | Burn down backend `.js` lint as a project | It has 2,279 errors, and 277 of the 282 dirty files are under `__tests__` (measured 08-28). The `.ts` gate already catches new violations. | never as a project; fix files as they are touched |
 | Build a design-token pipeline | `tokens.css` (118 variables) and `v2.css` (86) share only 7 names, all motion, and those agree, so there is no drift to automate. Instead, fix the CLAUDE.md line that says the two "must move together". | the two files start sharing colour tokens |
-| Replace auth or Socket.io | No incident in the window points at either. The Redis adapter needed to scale out is already wired. | an incident points at one |
+| Replace auth or Socket.io | One incident in the window touched auth: a browser session could not be revoked (TASK-410). #2545 fixed it in place with a token version and an absolute session lifetime, and a fix that size argues for keeping auth. No incident touched Socket.io, and the Redis adapter needed to scale out is already wired. | an incident in either needs more than an in-place fix |
 | Adopt a hosted workflow engine | BullMQ on the Redis we already run covers the queue in A. | A outgrows BullMQ |
 | Do more LLM-gateway work | LiteLLM saw 0 real 429s in about 727 requests. The fleet's limit hits (41 in 48 hours, peaking at 23 in one hour) are provider session limits on seats that call their providers directly, which gateway work does not touch. | 429s appear at the gateway |
 | Move other collections to PostgreSQL | No incident outside messages traced back to the store. | an incident does |
 | Switch to ADR-001's Phase 3 read path | It is paused under ADR-011, and no drift bug showed up in the window. | ADR-011's trigger fires |
 
 ## Tonight's incidents, mapped
+
+The first six rows are the list given with the task. The rest are the incidents named in the row's own notes; one of those, TASK-428, is #2568, which is already in the URL row. *None* means no refactor in this review would have prevented it.
 
 | Incident | Item |
 |---|---|
@@ -456,7 +459,13 @@ Items are ranked by measured cost removed per day of effort.
 | Revoked keys still showed as connected (#2560, plus three follow-up rows). | 5 |
 | The deprecated agent manager was still being served (#2505). | 9 |
 | A skills directory resolved on one host only (fixed 10-23). | 1 (settings match what runs) |
-| Staging pointed at production URLs (#2529, #2481, #2568). | 3 |
+| Staging used production's URLs: the API URL (#2529), the frontend URL that CORS reads (#2481), and the URL in connect commands (#2568, TASK-428). | 3 |
+| Seats woke on pod messages that were not addressed to them (TASK-414). | 1. #2558 is the first part, live since the 10-24 deploy. |
+| An error in a hosted-MCP callback exited the only backend process on staging, so every user got a 502 (TASK-405). | A. #2555 now catches that error in every callback; one replica is why a single crash reached every user. |
+| A browser session could not be revoked, and refresh renewed it with no end (TASK-410). | None. #2545 added the missing check in place. See *Don't*, on auth. |
+| After a machine was revoked, its daemon could not register again, and its agents stayed bound to it (TASK-420, TASK-421). | None. The revoke itself worked. What was missing was a way back, which #2562 and #2563 added. Item 5 would not have caught it, because the daemon's local file and the agents' binding are not credential stores. |
+| CLI and backend tests left their temp dirs behind, about 40 GB from the CLI alone, until the fleet host had under 4 GB free (TASK-411, TASK-433, TASK-436). | None. Fixed by #2547, #2572 and #2574. CI now fails a CLI run that leaves a temp dir; the backend's matching check (`npm run test:temp-cleanup`) is not in CI yet. |
+| Each gate review left a full checkout behind, about 190 dirs and 14 GB (TASK-437). | None. The fix belongs in the reviewer skill, outside the product: one reusable checkout per seat. Still open. |
 
 ## By area
 
@@ -508,7 +517,6 @@ Re-measure these numbers monthly:
 
 ## Still open
 
-- **The row's notes.** This report works from tonight's incident list, as given with TASK-438. It has not yet been checked against the row's own notes. Any incident they add gets a line in *Tonight's incidents, mapped*.
 - **Two database counts.** Both queries are in *How to re-measure*.
   - MongoDB message rows created in the last 30 days decide whether C moves to Do now.
   - Whether backend restarts end hosted turns, and how often, is unresolved. The join of interrupted rows to backend restarts lists only candidates. One counts toward B's trigger once the operator supplies the restart times and evidence that its turn was still running at that restart. Neither a daily count nor an unconfirmed candidate settles it.
