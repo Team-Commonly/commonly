@@ -1785,8 +1785,6 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
-    const readStartedAt = await AgentSendFreshness.readStart(podId);
-
     const supportedQueryParams = new Set(['limit', 'before', 'threadRootId']);
     const unsupportedQueryParams = Object.keys(req.query || {})
       .filter((key) => !supportedQueryParams.has(key));
@@ -1841,6 +1839,7 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
     // `self` flag. The wrapper uses it to tell "I posted via my tool" from
     // "some OTHER agent posted while I was thinking" — the latter used to
     // silently swallow this agent's reply in any multi-agent pod (#757).
+    const readStartedAt = await AgentSendFreshness.readStart(podId);
     const messages = await AgentMessageService.getRecentMessages(
       podId, limit + 1, req.agentUser?._id, beforeMs, rawThreadRootId,
     );
