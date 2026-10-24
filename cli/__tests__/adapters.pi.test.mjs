@@ -84,7 +84,9 @@ describe('spawn', () => {
     expect(args[args.indexOf('--session-id') + 1]).toBe(res.newSessionId);
     expect(args).not.toContain('--session');
     expect(args[args.length - 1]).toContain('hello');
-    expect(args).not.toContain('-e'); // no MCP declared → no bridge
+    expect(args.filter((arg) => arg === '-e')).toHaveLength(1);
+    expect(args[args.indexOf('-e') + 1]).toMatch(/pi-shell-env\.mjs$/);
+    expect(opts.env.COMMONLY_PI_PROVIDER_KEY_ENV).toBe('COMMONLY_LITELLM_KEY');
     expect(opts.cwd).toBe('/tmp/seat');
     expect(opts.env.PI_CODING_AGENT_DIR).toBe(join(home, 'agent'));
     // Provider by env reference: the key never lands in models.json.
@@ -247,7 +249,8 @@ describe('spawn', () => {
       // No list means no fd 3 either: the pipe exists only when there is a secret.
       expect(calls[0].opts.stdio).toEqual(['ignore', 'pipe', 'pipe']);
       expect(calls[0].proc.fd3Payload).toBe('');
-      expect(calls[0].args).not.toContain('-e');
+      expect(calls[0].args).not.toContain('/x/bridge.mjs');
+      expect(calls[0].args[calls[0].args.indexOf('-e') + 1]).toMatch(/pi-shell-env\.mjs$/);
       expect(JSON.stringify(calls[0].opts.env)).not.toContain('cm_agent_secret');
       expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_REFUSAL))).toHaveLength(1);
     } finally {
@@ -258,6 +261,8 @@ describe('spawn', () => {
   test('the environment can name its own provider and model; effort maps onto pi\'s ladder', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('x') });
     await pi.spawn('p', baseCtx({ _spawnImpl: impl, env: { DS_KEY: 'k' }, environment: { model: 'deepseek-flash', effort: 'none', provider: { name: 'deepseek', baseUrl: 'https://api.deepseek.com/v1', apiKeyEnv: 'DS_KEY' } } }));
+    expect(calls[0].opts.env.COMMONLY_PI_PROVIDER_KEY_ENV).toBe('DS_KEY');
+    expect(calls[0].opts.env.DS_KEY).toBe('k');
     const models = JSON.parse(await readFile(join(home, 'agent', 'models.json'), 'utf8'));
     expect(models.providers.deepseek.apiKey).toBe('$DS_KEY');
     expect(calls[0].args).toEqual(expect.arrayContaining(['--provider', 'deepseek', '--model', 'deepseek-flash', '--thinking', 'off']));
