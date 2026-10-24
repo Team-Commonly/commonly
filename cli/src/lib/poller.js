@@ -28,8 +28,19 @@ export const terminalDeliveryAckError = (ackErr, eventId, runner = 'poller') => 
   return null;
 };
 
-const digestFrame = (events) => {
+const digestFrame = (events, rollup) => {
   const counts = new Map();
+  let knownOlder = 0;
+  for (const conversation of Array.isArray(rollup?.conversations) ? rollup.conversations : []) {
+    if (typeof conversation.label !== 'string' || !Number.isInteger(conversation.count)
+      || conversation.count < 1) continue;
+    counts.set(conversation.label, (counts.get(conversation.label) || 0) + conversation.count);
+    knownOlder += conversation.count;
+  }
+  if (rollup?.unreadCount > knownOlder) {
+    counts.set('older pod activity',
+      (counts.get('older pod activity') || 0) + rollup.unreadCount - knownOlder);
+  }
   const seen = new Set();
   for (const event of events) {
     const payload = event.payload || {};
@@ -85,10 +96,12 @@ export const startPoller = ({
       const wakeEvents = events.filter((event) => event.deliveryMode !== 'digest');
       const digestEvents = events.filter((event) => event.deliveryMode === 'digest'
         && wakeEvents[0] && String(event.podId) === String(wakeEvents[0].podId));
-      const frame = digestEvents.length > 0 ? digestFrame(digestEvents) : null;
+      const rollup = wakeEvents[0]?.payload?.digestRollup;
+      const frame = digestEvents.length > 0 || rollup?.unreadCount > 0
+        ? digestFrame(digestEvents, rollup) : null;
       let digestConsumed = false;
       for (const [index, event] of wakeEvents.entries()) {
-        const attachedDigest = index === 0 && digestEvents.length > 0;
+        const attachedDigest = index === 0 && frame !== null;
         const forwarded = attachedDigest ? {
           ...event,
           payload: {
