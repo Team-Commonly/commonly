@@ -800,7 +800,7 @@ test.each([400, 403])('a hosted grant HTTP %s stays open with the server refusal
   }), expect.any(Object));
 });
 
-test.each([undefined, {}, { error: 'invalid_target' }, '<html>fallback</html>', { grantId: '' }])(
+test.each([undefined, {}, { error: 'invalid_target' }, '<html>fallback</html>', { grantId: '' }, { grantId: '   ' }])(
   'an unconfirmed mint response keeps the form and old grant: %p', async (body) => {
     mockApi([githubEntry]);
     axios.post.mockResolvedValue({ data: body });
@@ -815,3 +815,41 @@ test.each([undefined, {}, { error: 'invalid_target' }, '<html>fallback</html>', 
     expect(axios.post.mock.calls.map(([url]) => url)).toEqual(['/api/grants']);
   },
 );
+
+
+test.each(['unavailable', 'removed'])('a catalogue refresh (%s) cannot hide a refused hosted grant draft', async (refresh) => {
+  mockTwoEntries({ catalog: [linearEntry], grants: { p1: [], p2: [] } });
+  const message = 'Agents can self-install into this pod. Make it invite-only to use this connector.';
+  axios.post.mockRejectedValue({ response: { status: 403, data: { error: 'outsider_grant_pod_joinable', message } } });
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+  const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+  fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+  expect(await within(form).findByRole('alert')).toHaveTextContent(message);
+  const previousGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, ...args) => url === '/api/installables'
+    ? (refresh === 'unavailable' ? Promise.reject(new Error('offline')) : Promise.resolve({ data: { installables: [] } }))
+    : previousGet(url, ...args));
+  const reads = axios.get.mock.calls.length;
+  await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+  await waitFor(() => expect(axios.get.mock.calls.length).toBeGreaterThan(reads));
+  expect(screen.getByRole('complementary', { name: 'Add Linear' })).toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent(message);
+  expect(screen.getByText('0 granted')).toBeInTheDocument();
+});
+
+test('hosted grant picker sends the selected pod ID and keeps the agent User ID in audience', async () => {
+  mockTwoEntries({ catalog: [linearEntry], grants: { p1: [], p2: [] } });
+  const previousGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, ...args) => url === '/api/registry/pods/p2/agents'
+    ? Promise.resolve({ data: { agents: [{ name: 'reed', userId: 'a2' }] } })
+    : previousGet(url, ...args));
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+  const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+  fireEvent.change(within(form).getByRole('combobox', { name: 'pod' }), { target: { value: 'p2' } });
+  fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({
+    target: { kind: 'pod', id: 'p2' }, audience: ['a2'],
+  }), expect.anything()));
+});

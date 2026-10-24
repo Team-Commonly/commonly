@@ -109,7 +109,7 @@ interface Props {
 }
 
 interface DraftGrant {
-  installableId: string;
+  entry: ToolCatalogEntry;
   podId: string;
   connectionId: string;
   writeMode: GrantWriteMode;
@@ -426,7 +426,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     const podId = from ? (grantPodId(from) || podIds[0] || '') : (podIds[0] || '');
     const modes = entryGrantModes(entry);
     setDraft({
-      installableId: entry.installableId,
+      entry,
       podId,
       connectionId: entry.connections[0]?.connectionId || '',
       writeMode: from && modes.includes(from.writeMode) ? from.writeMode : modes[0] || 'read',
@@ -447,7 +447,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     setConfirmRevoke(null);
     setError(null);
   };
-  const draftEntry = draft ? catalog.find((entry) => entry.installableId === draft.installableId) || null : null;
+  // A background catalogue read can fail or stop offering this connection.
+  // Keep the open draft (and any server refusal) visible in either case. The
+  // mint endpoint still validates the connection and current grant policy.
+  const draftEntry = draft
+    ? catalog.find((entry) => entry.installableId === draft.entry.installableId) || draft.entry
+    : null;
   const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode): string[] => (entry?.tools || [])
     .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
 
@@ -1069,7 +1074,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   if (grants === null) {
     return <div className="v2-connectors__loading">{t('tools.loading', { defaultValue: 'Loading tools…' })}</div>;
   }
-  if (grants.length === 0 && catalog.length === 0 && hiddenConnections.length === 0 && !removedHiddenNotice) return null;
+  if (grants.length === 0 && catalog.length === 0 && hiddenConnections.length === 0 && !removedHiddenNotice && !draft) return null;
 
   return (
     <div className="v2-connectors__content v2-tools">
