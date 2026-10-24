@@ -20,6 +20,9 @@ interface MessageRow {
   payload?: unknown;
   reply_to_message_id?: string;
   thread_root_id?: string | number | null;
+  // TASK-313 part 2: the Mongo id this row was reconciled from. Clients keep
+  // holding that id, so it is what they see as `id`.
+  legacy_mongo_id?: string | null;
   created_at: unknown;
   updated_at?: unknown;
   username?: string;
@@ -33,6 +36,9 @@ interface MessageRow {
 
 interface FormattedMessage extends MessageRow {
   _id: string;
+  // The PG row id. Reaction rows are keyed by it, so enrichment reads this
+  // field, never `id`, which is the client-facing id.
+  pgId: string;
   text: string;
   messageType: string;
   createdAt: unknown;
@@ -58,12 +64,15 @@ interface PodActivityEntry {
 }
 
 function formatMessage(msg: MessageRow): FormattedMessage {
-  const messageId = msg.id ? msg.id.toString() : '';
+  const pgId = msg.id ? msg.id.toString() : '';
+  // A reconciled row answers to the Mongo id its clients already hold.
+  const messageId = msg.legacy_mongo_id || pgId;
   const userId = msg.user_id || '';
   return {
     ...msg,
     _id: messageId,
     id: messageId,
+    pgId,
     content: msg.content || '',
     text: msg.content || '',
     messageType: msg.message_type || 'text',
@@ -235,7 +244,7 @@ class Message {
     try {
       let query = `
         SELECT
-          m.id, m.pod_id, m.user_id, m.content, m.message_type, m.author_kind, m.payload,
+          m.id, m.legacy_mongo_id, m.pod_id, m.user_id, m.content, m.message_type, m.author_kind, m.payload,
           m.reply_to_message_id,
           -- MUST be selected. Late columns are easy to miss in an explicit
           -- projection, and this one is read by the wake path.
@@ -273,11 +282,31 @@ class Message {
     }
   }
 
+  /**
+   * Maps a message id a client sent to the PG row id. A numeric id is already
+   * one. A 24-hex id is a Mongo id: it resolves only if the reconciler moved
+   * that message. Returns null for anything else, including a Mongo id that
+   * was never moved, which is the caller's to look up in Mongo.
+   */
+  static async resolveId(id: string | number): Promise<string | null> {
+    const raw = String(id);
+    if (/^\d+$/.test(raw)) return raw;
+    if (!/^[0-9a-f]{24}$/i.test(raw)) return null;
+    const result = await (pool as PgPool).query(
+      'SELECT id FROM messages WHERE legacy_mongo_id = $1 LIMIT 1',
+      [raw],
+    );
+    const row = result.rows[0] as { id?: string | number } | undefined;
+    return row?.id != null ? String(row.id) : null;
+  }
+
   static async findById(id: string): Promise<FormattedMessage | null> {
+    const pgId = await Message.resolveId(id);
+    if (!pgId) return null;
     try {
       const query = `
         SELECT
-          m.id, m.pod_id, m.user_id, m.content, m.message_type, m.author_kind, m.payload,
+          m.id, m.legacy_mongo_id, m.pod_id, m.user_id, m.content, m.message_type, m.author_kind, m.payload,
           m.reply_to_message_id,
           -- MUST be selected. The controller prefers THIS row over create()'s
           -- RETURNING * (message = populated || created) and hands it to
@@ -297,7 +326,7 @@ class Message {
         LEFT JOIN users ru ON rm.user_id = ru._id
         WHERE m.id = $1
       `;
-      const result = await (pool as PgPool).query(query, [id]);
+      const result = await (pool as PgPool).query(query, [pgId]);
       if (result.rows.length === 0) return null;
       return formatMessage(result.rows[0] as unknown as MessageRow);
     } catch (error) {
@@ -395,19 +424,23 @@ class Message {
   }
 
   static async update(id: string, content: string): Promise<MessageRow | undefined> {
+    const pgId = await Message.resolveId(id);
+    if (!pgId) return undefined;
     const query = `
       UPDATE messages
       SET content = $1, updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
       RETURNING *
     `;
-    const result = await (pool as PgPool).query(query, [content, id]);
+    const result = await (pool as PgPool).query(query, [content, pgId]);
     return result.rows[0] as unknown as MessageRow | undefined;
   }
 
   // ADR-020 D3: card status transitions rewrite the message's payload so
   // every client (and late loaders) see the authoritative card face.
   static async updatePayload(id: string, payload: unknown): Promise<MessageRow | undefined> {
+    const pgId = await Message.resolveId(id);
+    if (!pgId) return undefined;
     const query = `
       UPDATE messages
       SET payload = $1, updated_at = CURRENT_TIMESTAMP
@@ -415,18 +448,20 @@ class Message {
       RETURNING *
     `;
     const result = await (pool as PgPool).query(query, [
-      payload == null ? null : JSON.stringify(payload), id,
+      payload == null ? null : JSON.stringify(payload), pgId,
     ]);
     return result.rows[0] as unknown as MessageRow | undefined;
   }
 
   static async delete(id: string): Promise<MessageRow | undefined> {
+    const pgId = await Message.resolveId(id);
+    if (!pgId) return undefined;
     const query = `DELETE FROM messages WHERE id = $1 RETURNING *`;
-    const result = await (pool as PgPool).query(query, [id]);
+    const result = await (pool as PgPool).query(query, [pgId]);
     const deleted = result.rows[0] as unknown as MessageRow | undefined;
     // eslint-disable-next-line global-require
     const { resolve } = require('../../services/attentionItemService');
-    await resolve('message', id);
+    await resolve('message', pgId);
     return deleted;
   }
 

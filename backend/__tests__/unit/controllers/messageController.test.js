@@ -608,9 +608,10 @@ describe('messageController', () => {
 
     it('deletes message successfully for message owner', async () => {
       const mockMessage = { user_id: 'u1', pod_id: 'p1' };
+      PGMessage.resolveId.mockResolvedValue('1');
       PGMessage.findById.mockResolvedValue(mockMessage);
       PGMessage.delete.mockResolvedValue(true);
-      const req = { params: { id: 'm1' }, userId: 'u1', user: { id: 'u1' } };
+      const req = { params: { id: '1' }, userId: 'u1', user: { id: 'u1' } };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await messageController.deleteMessage(req, res);
       expect(res.json).toHaveBeenCalledWith({ msg: 'Message deleted' });

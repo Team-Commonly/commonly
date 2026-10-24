@@ -79,18 +79,27 @@ async function emitReactionChange(messageId: string | number, podId: string, rea
 interface MessageContext {
   podId: string;
   authorUserId: string;
+  // The PG row id. The client's messageId may be a Mongo id for a message the
+  // reconciler moved (TASK-313 part 2); reaction rows are keyed by this one.
+  pgId: string;
 }
 
 async function loadMessageContext(messageId: string | number): Promise<MessageContext | null> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const PGMessage = require('../models/pg/Message');
+  const pgId = await PGMessage.resolveId(String(messageId));
+  if (!pgId) return null;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { pool } = require('../config/db-pg');
   const result = await pool.query(
     'SELECT pod_id, user_id FROM messages WHERE id = $1 LIMIT 1',
-    [Number(messageId)],
+    [Number(pgId)],
   );
   const row = result.rows[0];
   if (!row?.pod_id || !row?.user_id) return null;
-  return { podId: String(row.pod_id), authorUserId: String(row.user_id) };
+  return {
+    podId: String(row.pod_id), authorUserId: String(row.user_id), pgId,
+  };
 }
 
 // A reaction is an acknowledgement of an already-posted agent message, not a
@@ -253,8 +262,8 @@ export async function addReaction(req: AuthedReq, res: AuthedRes): Promise<void>
       res.status(403).json({ msg: 'Not a member of this pod' });
       return;
     }
-    const added = await MessageReaction.add(messageId, userId, emoji);
-    const rawSummaries = await MessageReaction.listForMessage(messageId, userId);
+    const added = await MessageReaction.add(message.pgId, userId, emoji);
+    const rawSummaries = await MessageReaction.listForMessage(message.pgId, userId);
     const reactions = await decorateReactionSummaries(rawSummaries);
     void emitReactionChange(messageId, podId, reactions);
     if (added) {
@@ -300,8 +309,8 @@ export async function removeReaction(req: AuthedReq, res: AuthedRes): Promise<vo
       res.status(403).json({ msg: 'Not a member of this pod' });
       return;
     }
-    await MessageReaction.remove(messageId, userId, emoji);
-    const rawSummaries = await MessageReaction.listForMessage(messageId, userId);
+    await MessageReaction.remove(message.pgId, userId, emoji);
+    const rawSummaries = await MessageReaction.listForMessage(message.pgId, userId);
     const reactions = await decorateReactionSummaries(rawSummaries);
     void emitReactionChange(messageId, podId, reactions);
     res.json({ ok: true, reactions });

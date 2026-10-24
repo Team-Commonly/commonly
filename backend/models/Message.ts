@@ -25,6 +25,15 @@ export interface IMessage extends Document {
   updatedAt: Date;
   freshnessPending?: boolean;
   freshnessCommittedAt?: Date;
+  // TASK-313 part 2. Set once the reconciler has written this message into
+  // Postgres (reconciledPgId is the PG row). Set-once: the reconciler's
+  // updateOne filters on its absence, so concurrent passes cannot re-stamp.
+  reconciledAt?: Date;
+  reconciledPgId?: number;
+  // A permanent refusal (e.g. the pod is not in Postgres). Excluded from the
+  // reconciler's scan so one such row cannot hold back the rows behind it.
+  reconcileFailedAt?: Date;
+  reconcileError?: string;
 }
 
 const MessageSchema = new Schema<IMessage>({
@@ -48,6 +57,10 @@ const MessageSchema = new Schema<IMessage>({
   // leaves pending=true, which makes the send-time hold fail closed.
   freshnessPending: { type: Boolean },
   freshnessCommittedAt: { type: Date },
+  reconciledAt: { type: Date },
+  reconciledPgId: { type: Number },
+  reconcileFailedAt: { type: Date },
+  reconcileError: { type: String },
 });
 
 MessageSchema.pre('save', function rememberWhetherThisIsANewPost(next) {
