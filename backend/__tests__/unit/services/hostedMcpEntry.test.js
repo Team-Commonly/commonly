@@ -18,9 +18,10 @@ const {
 } = require('../../../integrations/hostedMcp/entries');
 const GOOGLE_CALENDAR_CAPTURE = require('../../fixtures/hostedMcp/google-calendar-tools-list-2026-10-01.json');
 // The first Linear capture (2026-10-01) is the one the entry was built from; the
-// second (2026-10-14) is the one it is pinned to now, after five schemas drifted.
+// second (2026-10-14) records the earlier five-schema drift; 10-19 adds writes.
 const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
-const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
+const LINEAR_READ_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
+const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-19.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
@@ -590,20 +591,21 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'google-calendar').title).toBe('Google Calendar');
   });
 
-  test('the shipped Linear entry is read-only, fully annotated and names a revoke page', () => {
+  test('the shipped Linear entry pins approval-required writers and names a revoke page', () => {
     const [entry] = HOSTED_MCP_ENTRIES;
-    // 38 tools were measured at scope `read`; two caller-chosen fetch paths are
-    // excluded by the v1 target-fetch rule, leaving the reviewed 36-tool pin.
-    expect(entry.tools).toHaveLength(36);
+    // 68 captured tools minus two caller-chosen fetches: 36 reads, 30 writes.
+    expect(entry.tools).toHaveLength(66);
     expect(entry.tools.map((tool) => tool.name)).not.toContain('get_attachment');
     expect(entry.tools.map((tool) => tool.name)).not.toContain('extract_images');
-    expect(new Set(entry.tools.map((tool) => tool.class))).toEqual(new Set(['read']));
-    expect(entry.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
-    expect(entry.tools.every((tool) => tool.annotations?.destructiveHint === false)).toBe(true);
+    expect(entry.tools.filter((tool) => tool.class === 'read')).toHaveLength(36);
+    expect(entry.tools.filter((tool) => tool.class === 'write')).toHaveLength(30);
+    expect(entry.tools.every((tool) => tool.annotations?.readOnlyHint === (tool.class === 'read'))).toBe(true);
+    expect(entry.tools.filter((tool) => tool.class === 'read').every((tool) => tool.annotations?.destructiveHint === false)).toBe(true);
+    expect(entryToolProjections(entry).filter((tool) => tool.requiredWriteMode === 'write-with-confirm')).toHaveLength(30);
     // Every name an agent sees is the upstream name, which the entry load
     // requires and the broker calls with.
     expect(entry.tools.every((tool) => tool.name === tool.upstreamName)).toBe(true);
-    expect(new Set(entry.tools.map((tool) => `${entry.id}.${tool.name}`)).size).toBe(36);
+    expect(new Set(entry.tools.map((tool) => `${entry.id}.${tool.name}`)).size).toBe(66);
     // The person's own "Authorized applications" list, where the grant shows as
     // "MCP · Read · Revoke" (fresh-account walk, 2026-10-15). `/settings/security`
     // is the workspace admin page and has no per-person app list.
@@ -615,7 +617,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entry.resource).toBe('https://mcp.linear.app/mcp');
     expect(entry.issuer).toBe('https://mcp.linear.app');
     expect(entry.client).toBe('cimd');
-    expect([...entry.scopes].sort()).toEqual(['openid', 'read']);
+    expect([...entry.scopes].sort()).toEqual(['openid', 'read', 'write']);
   });
 
   test('the Google Calendar entry is pre-registered and pins only its five read tools', () => {
@@ -813,7 +815,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {
-    // The latest capture `connector-ops` took (2026-10-14) is committed beside
+    // The latest capture `connector-ops` took (2026-10-19) is committed beside
     // this suite, so the pin's schemas are compared with the measurement rather
     // than with themselves. Drift is checked against the LIVE list at call time; this
     // is the other end, catching a hand-edit of the entry that would otherwise
@@ -821,7 +823,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     const capture = LINEAR_CAPTURE;
     const [entry] = HOSTED_MCP_ENTRIES;
     expect(capture.server).toBe(entry.resource);
-    expect(capture.requestedScope.split(' ').sort()).toEqual([...entry.scopes].sort());
+    expect(capture.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
     const excludedForCallerChosenFetch = new Set(['get_attachment', 'extract_images']);
     expect(entry.tools.map((tool) => tool.name)).toEqual(
@@ -833,14 +835,13 @@ describe('the shipped catalogue cannot land half-wired', () => {
       const found = measured.get(tool.name);
       expect(found).toBeDefined();
       expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(tool.class).toBe(found.annotations.readOnlyHint ? 'read' : 'write');
       expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
     }
-    // One annotation set across the whole list, which is what the header claims
-    // and what makes a single `READ_ANNOTATIONS` honest. Compared canonically:
-    // the 10-14 list serialises one tool's identical set in a different key order.
-    expect(new Set(capture.tools.map((tool) => canonicalJson(tool.annotations))).size).toBe(1);
-    expect(capture.tools).toHaveLength(38);
+    // Both read and write annotations come from the consenting capture.
+    expect(capture.tools.filter((tool) => tool.annotations.readOnlyHint)).toHaveLength(38);
+    expect(capture.tools).toHaveLength(68);
     expect(entry.tools.find((tool) => tool.name === 'get_diff').description).toContain('not fetch targets');
     expect(entry.tools.find((tool) => tool.name === 'get_diff_threads').description).toContain('not fetch targets');
   });
@@ -854,9 +855,9 @@ describe('the shipped catalogue cannot land half-wired', () => {
     const first = new Map(LINEAR_FIRST_CAPTURE.tools.map((tool) => [tool.name, tool]));
     const asFirstPinned = {
       ...entry,
-      tools: entry.tools.map((tool) => ({ ...tool, inputSchema: first.get(tool.name).inputSchema })),
+      tools: entry.tools.filter((tool) => tool.class === 'read').map((tool) => ({ ...tool, inputSchema: first.get(tool.name).inputSchema })),
     };
-    const assessed = assessEntryTools(asFirstPinned, LINEAR_CAPTURE.tools);
+    const assessed = assessEntryTools(asFirstPinned, LINEAR_READ_CAPTURE.tools);
     expect(assessed.every((assessment) => assessment.verdict === 'ok')).toBe(true);
     const changed = assessed.filter((assessment) => assessment.detail);
     expect(changed.map((assessment) => assessment.name).sort())

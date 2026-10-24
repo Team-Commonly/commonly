@@ -1087,6 +1087,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
           <p className="v2-connector-aside__note" role="alert">{error}</p>
         )}
         {removedHiddenNotice && <p className="v2-connector-aside__note" role="status">{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review Commonly access at {{label}}.', label: removedHiddenNotice.label })} <a href={removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></p>}
+        {catalog.some((entry) => entry.connectionType === 'hosted-mcp'
+          && entry.entryId === 'linear' && entry.connections.length > 0) && (
+          <p className="v2-connector-aside__note" role="note">
+            {t('tools.linearWriteReconnect', { defaultValue: 'Linear connections made before write access was added need to be removed and connected again to enable writes. Each write requires your approval.' })}
+          </p>
+        )}
         <div className="v2-connectors__rows">
           {liveRows.map(renderRow)}
           {notYet.map(renderNotYet)}
