@@ -123,9 +123,11 @@ const harness = (options = {}) => {
     return preImage;
   });
 
-  const commit = jest.fn(async (id, generation, fields) => {
+  const commit = jest.fn(async (id, generation, fields, authority, publishedAuthority) => {
     order.push('commit');
     if ((state.config.refreshGeneration ?? 0) !== generation) return false;
+    if (state.config.authGeneration !== authority
+      || state.config.credentialAuthGeneration !== publishedAuthority) return false;
     const next = { ...state, config: { ...state.config } };
     Object.entries(fields).forEach(([path, value]) => {
       if (path.startsWith('config.')) next.config[path.slice('config.'.length)] = value;
@@ -135,9 +137,11 @@ const harness = (options = {}) => {
     return true;
   });
 
-  const markError = jest.fn(async (id, generation, message) => {
+  const markError = jest.fn(async (id, generation, message, authority, publishedAuthority) => {
     order.push('markError');
     if ((state.config.refreshGeneration ?? 0) !== generation) return;
+    if (state.config.authGeneration !== authority
+      || state.config.credentialAuthGeneration !== publishedAuthority) return;
     state = {
       ...state,
       status: 'error',
@@ -450,7 +454,7 @@ describe('the winner of the fence', () => {
       // NEXT refresh a loser against a winner that has already finished.
       'config.refreshingUntil': null,
       errorMessage: null,
-    });
+    }, undefined, undefined);
     expect(h.state().config.expiresAt).toEqual(new Date(T0 + 3600 * 1000));
     expect(h.state().errorMessage).toBeNull();
   });
@@ -539,7 +543,7 @@ describe('the winner of the fence', () => {
 
     expect(error.code).toBe('connection_error');
     expect(error.retryable).toBe(false);
-    expect(h.markError).toHaveBeenCalledWith(ROW_ID, 4, 'refresh refused (400 invalid_grant)');
+    expect(h.markError).toHaveBeenCalledWith(ROW_ID, 4, 'refresh refused (400 invalid_grant)', undefined, undefined);
     expect(h.commit).not.toHaveBeenCalled();
     expect(h.state().status).toBe('error');
   });
@@ -580,7 +584,7 @@ describe('the winner of the fence', () => {
     // never told what would fix it. The mark is guarded on the generation the
     // winner bumped, so a concurrent loser cannot overwrite a newer verdict.
     expect(h.markError).toHaveBeenCalledTimes(1);
-    expect(h.markError).toHaveBeenCalledWith(row._id, 4, expect.stringContaining('reconnect'));
+    expect(h.markError).toHaveBeenCalledWith(row._id, 4, expect.stringContaining('reconnect'), undefined, undefined);
     expect(h.bumpGeneration).toHaveBeenCalledTimes(1);
     expect(h.refreshAtVendor).not.toHaveBeenCalled();
     expect(h.commit).not.toHaveBeenCalled();
@@ -787,7 +791,7 @@ describe('the refresh call carries the shared deadline', () => {
       expect(error.code).toBe('reconnect_required');
       expect(refuse).toHaveBeenCalledWith(dcrEntry, 'old-dcr-client');
       expect(h.markError).toHaveBeenCalledWith(
-        ROW_ID, 4, 'OAuth client was refused by the provider; reconnect to continue',
+        ROW_ID, 4, 'OAuth client was refused by the provider; reconnect to continue', undefined, undefined,
       );
     } finally {
       refuse.mockRestore();

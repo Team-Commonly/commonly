@@ -146,16 +146,28 @@ interface CredentialDeps {
       publishedAuthority: number | undefined,
     ) => Promise<HostedMcpRow | null>;
     /**
-     * Commit the winner's pair, guarded on the generation it now holds. Resolves
+     * Commit the winner's pair, guarded on its authorization and refresh generation. Resolves
      * false when the guard matched nothing: the caller lost its fence, and its pair
      * must not be served as the Connection's.
      */
-    commit: (id: unknown, generation: number, fields: Record<string, unknown>) => Promise<boolean>;
+    commit: (
+      id: unknown, generation: number, fields: Record<string, unknown>,
+      authority: number | undefined, publishedAuthority: number | undefined,
+    ) => Promise<boolean>;
     /** The winner's error mark. Guarded the same way, so only the generation holder can set it. */
-    markError: (id: unknown, generation: number, message: string) => Promise<void>;
+    markError: (
+      id: unknown, generation: number, message: string,
+      authority: number | undefined, publishedAuthority: number | undefined,
+    ) => Promise<void>;
   };
   sleep: (ms: number) => Promise<void>;
 }
+
+const refreshAuthorityFilter = (authority: number | undefined, publishedAuthority: number | undefined) => ({
+  'config.authGeneration': authority === undefined ? { $exists: false } : authority,
+  'config.credentialAuthGeneration': publishedAuthority === undefined
+    ? { $exists: false } : publishedAuthority,
+});
 
 /**
  * The row deps, as a factory so that a test can wrap ONE of them and leave the
@@ -177,9 +189,7 @@ export const defaultRowDeps = (): CredentialDeps['row'] => ({
       // credentials. Admit a refresh only for the authorization that published
       // the pair the caller read; a pending or newer callback cannot lend its
       // higher secret-write generation to the old refresh token.
-      'config.authGeneration': authority === undefined ? { $exists: false } : authority,
-      'config.credentialAuthGeneration': publishedAuthority === undefined
-        ? { $exists: false } : publishedAuthority,
+      ...refreshAuthorityFilter(authority, publishedAuthority),
       'config.pendingAuth': { $exists: false },
       // The lease in its takeable states: never taken, already released (a
       // clear is a VALUE, so the field is present and null), and expired. The
@@ -202,17 +212,17 @@ export const defaultRowDeps = (): CredentialDeps['row'] => ({
     },
     { new: false },
   ).lean() as unknown as Promise<HostedMcpRow | null>,
-  commit: async (id, generation, fields) => {
+  commit: async (id, generation, fields, authority, publishedAuthority) => {
     const updated = await Integration.findOneAndUpdate(
-      { _id: id, 'config.refreshGeneration': generation },
+      { _id: id, 'config.refreshGeneration': generation, ...refreshAuthorityFilter(authority, publishedAuthority) },
       { $set: fields },
       { new: true },
     );
     return updated !== null;
   },
-  markError: async (id, generation, message) => {
+  markError: async (id, generation, message, authority, publishedAuthority) => {
     await Integration.findOneAndUpdate(
-      { _id: id, 'config.refreshGeneration': generation },
+      { _id: id, 'config.refreshGeneration': generation, ...refreshAuthorityFilter(authority, publishedAuthority) },
       {
         $set: {
           status: 'error',
@@ -454,6 +464,11 @@ export const credentialFor = async (
   // We hold the fence from here on, so this is the value every write below — and
   // every mark — is guarded on.
   const nextGeneration = generation + 1;
+  // Reconnect resets refreshGeneration. Keep the winning admission's complete
+  // authorization identity through completion so a later authorization reusing
+  // this counter cannot accept this refresh's commit or error mark.
+  const authority = won.config?.authGeneration;
+  const publishedAuthority = won.config?.credentialAuthGeneration;
 
   const refreshTokenRef = row.config?.refreshTokenRef;
   if (!refreshTokenRef) {
@@ -469,7 +484,7 @@ export const credentialFor = async (
     // refresh token keeps the ref the row already holds (the commit below), so
     // this is only ever a grant that can no longer continue.
     const message = 'connection holds no refresh token and its access token has expired — reconnect to continue';
-    await deps.row.markError(id, nextGeneration, message);
+    await deps.row.markError(id, nextGeneration, message, authority, publishedAuthority);
     throw new HostedMcpCredentialError('credential_missing', message);
   }
 
@@ -487,7 +502,7 @@ export const credentialFor = async (
     if (failure.code === 'connection_error' || failure.code === 'reconnect_required') {
       // Only the generation holder may say a Connection is over, and it says so
       // only on the vendor's own refusal.
-      await deps.row.markError(id, nextGeneration, failure.message);
+      await deps.row.markError(id, nextGeneration, failure.message, authority, publishedAuthority);
     }
     // A RETRYABLE failure deliberately LEAVES the lease held. The three things
     // that release it are the commit below, the mark above, and its own expiry —
@@ -542,7 +557,7 @@ export const credentialFor = async (
     // Top-level, not `config.*`: the row's error text lives outside the strict
     // subdocument, and clearing it inside one would be dropped in silence.
     errorMessage: null,
-  });
+  }, authority, publishedAuthority);
 
   // A lost guard means a newer authorization or refresh already owns the row. This
   // caller's pair must not be served: the winner's live pair is the Connection's.
