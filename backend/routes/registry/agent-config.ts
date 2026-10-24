@@ -4,6 +4,7 @@ const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
+const AgentIdentityService = require('../../services/agentIdentityService');
 const Pod = require('../../models/Pod');
 const {
   writeWorkspaceIdentityFile,
@@ -127,6 +128,10 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       });
     }
 
+    if (displayName !== undefined && (typeof displayName !== 'string'
+      || !displayName.trim() || displayName.trim().length > 80)) {
+      return res.status(400).json({ error: 'Display name must be 1–80 characters' });
+    }
     // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is one of
     // TWO backend writers of `config.environment` (the other is
     // POST /api/registry/install, which checks the same thing), and that field
@@ -215,6 +220,22 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       instanceId: normalizedInstanceId,
       status: { $ne: 'uninstalled' },
     });
+    // A display name belongs to the portable User principal. Check every
+    // installed projection, including paused ones: runtime-token ownership
+    // intentionally looks only at active rows and would reject a paused seat
+    // even when this caller is its sole installer.
+    if (displayName !== undefined && !isInstanceAdmin) {
+      const missingInstaller = peerInstallations.some((entry: any) => !entry.installedBy);
+      const anotherInstaller = peerInstallations.some(
+        (entry: any) => entry.installedBy && entry.installedBy.toString() !== userId.toString(),
+      );
+      if (missingInstaller || anotherInstaller) {
+        return res.status(403).json({
+          code: missingInstaller ? 'unknown_installer' : 'another_installer',
+          error: 'Only the sole installer or an instance admin can rename this agent identity',
+        });
+      }
+    }
 
     const peerByPod = new Map(
       peerInstallations.map((entry: any) => [entry.podId?.toString?.() || '', entry]),
@@ -230,7 +251,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         .select('_id members createdBy')
         .lean();
       accessiblePodIds = peerPods
-        .filter((entry: any) => userHasPodAccess(entry, userId))
+        .filter((entry: any) => isInstanceAdmin || userHasPodAccess(entry, userId))
         .map((entry: any) => entry._id.toString());
       if (!accessiblePodIds.includes(podId.toString())) {
         accessiblePodIds.push(podId.toString());
@@ -253,6 +274,14 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     const installationsToUpdate: any[] = isInstanceAdmin
       ? accessibleInstallations
       : accessibleInstallations.filter(ownsInstallation);
+    // A rename changes the portable User label seen in every pod. Refuse it
+    // unless the same request will update every non-uninstalled projection.
+    if (displayName !== undefined && installationsToUpdate.length !== peerByPod.size) {
+      return res.status(409).json({
+        code: 'identity_rename_scope_incomplete',
+        error: 'This identity has installations outside your writable pods',
+      });
+    }
     const writablePodIds = Array.from(new Set(
       installationsToUpdate
         .map((entry: any) => entry.podId?.toString?.() || '')
@@ -293,43 +322,76 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       }
     }
 
-    for (const targetInstallation of installationsToUpdate) {
-      applyInstallationSettings(targetInstallation);
-      // eslint-disable-next-line no-await-in-loop
-      await targetInstallation.save();
+    // The User row is the name source for chat and the pod roster. An explicit
+    // rename must update that portable identity, not only per-pod projections.
+    let renamedIdentity;
+    try {
+      renamedIdentity = displayName === undefined ? undefined
+        : await AgentIdentityService.renameAgentDisplayName(name, normalizedInstanceId, displayName.trim());
+    } catch (renameError: any) {
+      if (renameError?.code === 'agent_display_name_taken') {
+        return res.status(409).json({ code: renameError.code, error: renameError.message });
+      }
+      throw renameError;
     }
+    if (renamedIdentity === null) {
+      return res.status(404).json({ error: 'Agent identity not found' });
+    }
+    const effectiveDisplayName = renamedIdentity?.displayName;
+    try {
+      for (const targetInstallation of installationsToUpdate) {
+        applyInstallationSettings(targetInstallation);
+        if (effectiveDisplayName) targetInstallation.displayName = effectiveDisplayName;
+        // eslint-disable-next-line no-await-in-loop
+        await targetInstallation.save();
+      }
 
-    if (
-      status
-      || modelPreferences
-      || displayName
-      || instructions !== undefined
-      || persona !== undefined
-      || normalizedToolPolicy !== null
-      || normalizedContextPolicy !== null
-    ) {
-      const updates: any = {};
-      if (status) updates.status = status;
-      if (modelPreferences) updates.modelPreferences = modelPreferences;
-      if (displayName) updates.name = displayName;
-      if (instructions !== undefined) updates.instructions = instructions;
-      if (persona !== undefined) updates.persona = persona;
-      if (normalizedToolPolicy !== null) updates.toolPolicy = normalizedToolPolicy;
-      if (normalizedContextPolicy !== null) updates.contextPolicy = normalizedContextPolicy;
-      await AgentProfile.updateMany(
-        {
-          agentId: buildAgentProfileId(name, normalizedInstanceId),
-          podId: { $in: writablePodIds },
-        },
-        updates,
-      );
+      if (
+        status
+        || modelPreferences
+        || displayName
+        || instructions !== undefined
+        || persona !== undefined
+        || normalizedToolPolicy !== null
+        || normalizedContextPolicy !== null
+      ) {
+        const updates: any = {};
+        if (status) updates.status = status;
+        if (modelPreferences) updates.modelPreferences = modelPreferences;
+        if (effectiveDisplayName) updates.name = effectiveDisplayName;
+        if (instructions !== undefined) updates.instructions = instructions;
+        if (persona !== undefined) updates.persona = persona;
+        if (normalizedToolPolicy !== null) updates.toolPolicy = normalizedToolPolicy;
+        if (normalizedContextPolicy !== null) updates.contextPolicy = normalizedContextPolicy;
+        await AgentProfile.updateMany(
+          {
+            agentId: buildAgentProfileId(name, normalizedInstanceId),
+            podId: { $in: writablePodIds },
+          },
+          { $set: updates },
+          { runValidators: true },
+        );
 
-      if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
-        const identityContent = buildIdentityContent(displayName || normalizedInstanceId, persona || {});
-        writeWorkspaceIdentityFile(normalizedInstanceId, identityContent).catch((err: any) => {
-          console.warn('[registry] Failed to sync IDENTITY.md for', normalizedInstanceId, err.message);
+        if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
+          const identityContent = buildIdentityContent(effectiveDisplayName || normalizedInstanceId, persona || {});
+          writeWorkspaceIdentityFile(normalizedInstanceId, identityContent).catch((err: any) => {
+            console.warn('[registry] Failed to sync IDENTITY.md for', normalizedInstanceId, err.message);
+          });
+        }
+      }
+    } catch (projectionError) {
+      if (displayName !== undefined) {
+        // A retry with the same name repairs any rows saved before this error.
+        // The collision resolver accepts the same User principal, and every
+        // projection write is idempotent. Expose the repair action explicitly
+        // instead of reporting a generic 500 over a partially saved rename.
+        console.error('Agent identity projection update interrupted');
+        return res.status(503).json({
+          code: 'identity_projection_retryable',
+          error: 'Identity update interrupted. Save again to finish syncing pod names.',
         });
       }
+      throw projectionError;
     }
 
     const skillSync = config?.skillSync || null;
@@ -360,6 +422,13 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         podIds: podIdsToSync,
         mode,
         skillNames: Array.isArray(skillSync.skillNames) ? skillSync.skillNames : [],
+      });
+    }
+
+    if (renamedIdentity && !renamedIdentity.mirrorSynced) {
+      return res.status(503).json({
+        code: 'identity_mirror_pending',
+        error: 'The name was saved, but chat is catching up. Save again in a moment.',
       });
     }
 

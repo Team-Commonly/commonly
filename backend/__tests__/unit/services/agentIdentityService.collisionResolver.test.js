@@ -34,7 +34,12 @@ jest.mock('../../../models/User', () => {
   // agent user with `.select('+apiToken')`. The mock therefore has to be a
   // thenable query builder, not a bare promise.
   const findOneResult = (query) => {
-    if (mockExisting && query.username === mockExisting.username) {
+    if (mockExisting && query.username === mockExisting.username
+      && (query.isBot === undefined || query.isBot === mockExisting.isBot)
+      && (query['botMetadata.agentName'] === undefined
+        || query['botMetadata.agentName'] === mockExisting.botMetadata?.agentName)
+      && (query['botMetadata.instanceId'] === undefined
+        || query['botMetadata.instanceId'] === mockExisting.botMetadata?.instanceId)) {
       const doc = JSON.parse(JSON.stringify(mockExisting));
       doc.save = async function save() {
         mockSaved.push(JSON.parse(JSON.stringify(this)));
@@ -63,7 +68,10 @@ jest.mock('../../../models/User', () => {
       lean: async () => {
         const dn = query['botMetadata.displayName'];
         return mockPeers
-          .filter((p) => p.botMetadata?.displayName === dn)
+          .filter((p) => (dn instanceof RegExp
+            ? dn.test(p.botMetadata?.displayName || '')
+            : p.botMetadata?.displayName === dn))
+          .filter((p) => !query.$or || p.isBot || p.botType === 'agent')
           .filter((p) => {
             if (!query._id || !query._id.$ne) return true;
             return String(p._id) !== String(query._id.$ne);
@@ -83,6 +91,48 @@ const reset = () => {
 };
 
 describe('inline displayName collision resolver (sticky dedup)', () => {
+  test('an explicit rename persists on the portable bot User', async () => {
+    reset();
+    mockExisting = {
+      _id: 'curator-user', username: 'my-private-seat', isBot: true,
+      botMetadata: { agentName: 'my-private', instanceId: 'seat', displayName: 'Old name' },
+    };
+    const mirror = jest.spyOn(AgentIdentityService, 'syncUserToPostgreSQL').mockResolvedValue(true);
+    const result = await AgentIdentityService.renameAgentDisplayName('my-private', 'seat', 'New name');
+    expect(result).toEqual({ displayName: 'New name', mirrorSynced: true });
+    expect(mirror).toHaveBeenCalledWith(expect.objectContaining({ botMetadata: expect.objectContaining({ displayName: 'New name' }) }));
+    mirror.mockRestore();
+    expect(mockSaved[0].botMetadata).toEqual(expect.objectContaining({
+      agentName: 'my-private', instanceId: 'seat', displayName: 'New name',
+    }));
+  });
+
+  test('an explicit rename cannot impersonate another agent with a parenthetical label', async () => {
+    reset();
+    mockExisting = {
+      _id: 'curator-user', username: 'my-private-seat', isBot: true,
+      botMetadata: { agentName: 'my-private', instanceId: 'seat', displayName: 'Old name' },
+    };
+    mockPeers = [{
+      _id: 'other-agent', isBot: true,
+      botMetadata: { agentName: 'openclaw', instanceId: 'cody', displayName: 'Scout (Cody)' },
+    }];
+
+    await expect(AgentIdentityService.renameAgentDisplayName('my-private', 'seat', 'scout (cody)'))
+      .rejects.toMatchObject({ code: 'agent_display_name_taken' });
+    expect(mockSaved).toHaveLength(0);
+  });
+
+  test('a rename cannot adopt a human or another agent principal', async () => {
+    reset();
+    mockExisting = {
+      _id: 'human', username: 'my-private-seat', isBot: false,
+      botMetadata: { agentName: 'my-private', instanceId: 'seat', displayName: 'Human' },
+    };
+    await AgentIdentityService.renameAgentDisplayName('my-private', 'seat', 'New name');
+    expect(mockSaved).toHaveLength(0);
+  });
+
   test('a username collision cannot adopt a bot for another agent identity', async () => {
     mockExisting = {
       _id: 'first-owner-bot',

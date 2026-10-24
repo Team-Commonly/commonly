@@ -31,8 +31,9 @@ const Probe = () => {
 test('reads one accessible installation and patches it with the instance id', async () => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
-      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+      displayName: 'Maya', pods: [{ id: 'pod-other', name: 'Other owner' }, { id: 'pod-1', name: 'Workspace' }],
     } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya', config: {},
     } } });
@@ -40,6 +41,12 @@ test('reads one accessible installation and patches it with the instance id', as
   axios.patch.mockResolvedValue({ data: { agent: {} } });
   render(<Probe />);
   await screen.findByText('Maya');
+  expect(axios.get).toHaveBeenCalledWith(
+    '/api/registry/pods/pod-1/agents/maya-claude', { params: { instanceId: 'default' } },
+  );
+  expect(axios.get).not.toHaveBeenCalledWith(
+    '/api/registry/pods/pod-other/agents/maya-claude', expect.anything(),
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
     '/api/registry/pods/pod-1/agents/maya-claude',
