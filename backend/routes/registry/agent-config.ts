@@ -327,10 +327,16 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       return res.status(refusalStatus).json(refusalBody);
     }
     // An installation can show a different label from its bot User. Guard
-    // against the names on the installer's active agent cards before renaming.
+    // every affected installer's active cards, including when an admin edits
+    // someone else's agent, before renaming the shared identity.
     if (displayName !== undefined) {
       const requestedName = displayName.trim().toLowerCase();
-      const ownerInstallations = await AgentInstallation.find({ installedBy: userId, status: 'active' });
+      const installerIds = Array.from(new Set(installationsToUpdate
+        .map((entry: any) => entry.installedBy?.toString?.())
+        .filter(Boolean)));
+      const ownerInstallations = await AgentInstallation.find({
+        installedBy: { $in: installerIds }, status: 'active',
+      });
       const nameTaken = ownerInstallations.some((entry: any) => (
         !(entry.agentName === name.toLowerCase()
           && (entry.instanceId || 'default') === normalizedInstanceId)
