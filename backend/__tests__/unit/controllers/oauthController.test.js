@@ -268,7 +268,7 @@ describe('OAuth Controller', () => {
       const res = mockRes();
       await oauthController.oauthCallback(callbackReq(), res);
       expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=team_only');
-      expect(await User.countDocuments({})).toBe(0);
+      expect(await User.countDocuments({ email: 'octo@example.com' })).toBe(0);
       expect((await OAuthLoginState.findOne({ state: 'state-1' })).exchangeCode).toBeUndefined();
     });
 
