@@ -289,6 +289,65 @@ describe('agent config PATCH — installer gate', () => {
     );
   });
 
+  it('awaits a name write and serializes an overlapping persona edit', async () => {
+    const primary = installation({ installedBy: MEMBER, displayName: 'Old name' });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+    let content = '# IDENTITY.md\n\n- **Name:** Old name\n- **Vibe:** Warm\n';
+    readOpenClawIdentityFile.mockImplementation(async () => content);
+    let releaseRename;
+    let markRenameStarted;
+    const renameStarted = new Promise((resolve) => { markRenameStarted = resolve; });
+    const renameGate = new Promise((resolve) => { releaseRename = resolve; });
+    writeWorkspaceIdentityFile.mockImplementationOnce(async (_id, next) => {
+      markRenameStarted();
+      await renameGate;
+      content = next;
+    }).mockImplementation(async (_id, next) => { content = next; });
+    let renameFinished = false;
+    const rename = request(app).patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', displayName: 'New name' })
+      .then((res) => { renameFinished = true; return res; });
+    await renameStarted;
+    const persona = { tone: 'professional', specialties: ['research'], boundaries: [], customInstructions: 'Be precise' };
+    let markPersonaSaved;
+    const personaSaved = new Promise((resolve) => { markPersonaSaved = resolve; });
+    AgentProfile.updateMany.mockImplementationOnce(async () => { markPersonaSaved(); });
+    const edit = request(app).patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', persona }).then((res) => res);
+    await personaSaved;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(renameFinished).toBe(false);
+    expect(readOpenClawIdentityFile).toHaveBeenCalledTimes(1);
+    releaseRename();
+    expect((await rename).status).toBe(200);
+    expect((await edit).status).toBe(200);
+    expect(content).toContain('- **Name:** New name\n');
+    expect(content).toContain('- **Domain:** research\n');
+    expect(AgentProfile.updateMany).toHaveBeenLastCalledWith(
+      { agentId: 'openclaw:curator', podId: { $in: ['pod-1'] } },
+      { $set: { persona } },
+      { runValidators: true },
+    );
+  });
+
+  it('reports a failed identity write and permits a subsequent retry', async () => {
+    const primary = installation({ installedBy: MEMBER, displayName: 'Old name' });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+    readOpenClawIdentityFile.mockResolvedValue('- **Name:** Old name\n');
+    writeWorkspaceIdentityFile.mockRejectedValueOnce(new Error('write unavailable'));
+    const save = () => request(app).patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', displayName: 'New name' });
+    const failed = await save();
+    expect(failed.status).toBe(503);
+    expect(failed.body.code).toBe('identity_projection_retryable');
+    expect((await save()).status).toBe(200);
+    expect(writeWorkspaceIdentityFile).toHaveBeenCalledTimes(2);
+  });
+
   it('refuses an identity rename by an installer who shares that identity', async () => {
     const primary = installation({ installedBy: MEMBER });
     const peer = installation({ podId: 'pod-2', installedBy: 'other-installer' });

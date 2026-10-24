@@ -33,6 +33,9 @@ const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAg
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 
 const agentConfigRouter = express.Router();
+// Serialize this route's IDENTITY.md read/modify/write operations per account.
+// This is process-local; it does not coordinate independent backend replicas.
+const identityWrites = new Map<string, Promise<void>>();
 
 /**
  * Every field this handler writes, and so every field the installer gate below
@@ -422,36 +425,37 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         );
 
         if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
-          if (persona !== undefined) {
-            // Persona-only edits do not rename the portable identity. Retain
-            // the runtime's current Name; a missing file falls back to the
-            // installation's saved display name before the instance id.
-            readOpenClawIdentityFile(normalizedInstanceId).then((existingContent: string) => {
-              const existingName = existingContent.match(/^- \*\*Name:\*\* ([^\r\n]*)/m)?.[1]?.trim();
+          const previousWrite = identityWrites.get(normalizedInstanceId) || Promise.resolve();
+          let releaseWrite!: () => void;
+          const currentWrite = new Promise<void>((resolve) => { releaseWrite = resolve; });
+          identityWrites.set(normalizedInstanceId, currentWrite);
+          try {
+            await previousWrite;
+            const identityContent = await readOpenClawIdentityFile(normalizedInstanceId);
+            if (persona !== undefined) {
+              // Persona-only edits retain the runtime Name. A missing file uses
+              // the installation label instead of renaming it to the instance id.
+              const existingName = identityContent.match(/^- \*\*Name:\*\* ([^\r\n]*)/m)?.[1]?.trim();
               const identityName = effectiveDisplayName || existingName || installation.displayName
                 || normalizedInstanceId;
-              return writeWorkspaceIdentityFile(
-                normalizedInstanceId,
-                buildIdentityContent(identityName, persona),
+              await writeWorkspaceIdentityFile(
+                normalizedInstanceId, buildIdentityContent(identityName, persona),
               );
-            }).catch((err: any) => {
-              console.warn('[registry] Failed to sync IDENTITY.md for', normalizedInstanceId, err.message);
-            });
-          } else {
-            // A name-only edit must not rebuild the file with an empty persona:
-            // OpenClaw reads its existing vibe, domain and notes from IDENTITY.md.
-            readOpenClawIdentityFile(normalizedInstanceId).then((identityContent: string) => {
+            } else {
+              // Keep manually edited persona content on a name-only save.
               const renamed = identityContent.replace(
                 /^(- \*\*Name:\*\* )[^\r\n]*/m,
                 (_line: string, prefix: string) => `${prefix}${effectiveDisplayName || normalizedInstanceId}`,
               );
               if (renamed !== identityContent) {
-                return writeWorkspaceIdentityFile(normalizedInstanceId, renamed);
+                await writeWorkspaceIdentityFile(normalizedInstanceId, renamed);
               }
-              return undefined;
-            }).catch((err: any) => {
-              console.warn('[registry] Failed to sync IDENTITY.md name for', normalizedInstanceId, err.message);
-            });
+            }
+          } finally {
+            releaseWrite();
+            if (identityWrites.get(normalizedInstanceId) === currentWrite) {
+              identityWrites.delete(normalizedInstanceId);
+            }
           }
         }
       }
