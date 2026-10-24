@@ -218,15 +218,16 @@ describe('validateEnvironmentSpec', () => {
       sandbox: { mode: 'workspace', trust: 'internal' },
     });
     expect(res.ok).toBe(false);
-    // The message has to name what DOES something, or the next author just
-    // guesses again: `public`, or no trust field at all.
+    // The message names both supported choices instead of teaching the old
+    // private-means-absence convention.
     expect(res.errors.join(' ')).toMatch(/sandbox\.trust must be 'public'/);
-    expect(res.errors.join(' ')).toMatch(/omit it for your own seat/);
+    expect(res.errors.join(' ')).toMatch(/'private'.*explicit full-tool owner choice/);
     expect(res.errors.join(' ')).toMatch(/got "internal"/);
   });
 
-  test('accepts the two declarations that do something: public trust, or none', () => {
+  test('accepts public, private, or an omitted trust declaration', () => {
     expect(validateEnvironmentSpec({ sandbox: { trust: 'public' } }).ok).toBe(true);
+    expect(validateEnvironmentSpec({ sandbox: { trust: 'private' } }).ok).toBe(true);
     expect(validateEnvironmentSpec({ sandbox: { mode: 'bwrap' } }).ok).toBe(true);
   });
 

@@ -534,6 +534,10 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
 
     const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};
+      const environment = inst?.config instanceof Map
+        ? inst.config.get('environment') : inst?.config?.environment;
+      const privateWorkspace = environment?.sandbox?.trust === 'private'
+        ? environment?.workspace?.path : null;
       return {
         podId: String(inst?.podId || ''),
         podName: pod.name || null,
@@ -545,6 +549,9 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // Known runtime kinds (such as a connect-page `webhook`) stay null.
         // Expose only this non-secret discriminator, never the full config.
         runtimeAdapter: adapterForRuntimeBinding(inst?.config?.runtime),
+        ...(typeof privateWorkspace === 'string' && privateWorkspace.trim()
+          ? { listenerEnvironment: { workspace: { path: privateWorkspace }, sandbox: { trust: 'private' } } }
+          : {}),
         type: 'installation',
       };
     });

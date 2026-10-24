@@ -11,8 +11,8 @@
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
-import { join, dirname, basename, resolve as pathResolve } from 'path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync, statSync } from 'fs';
+import { join, dirname, basename, resolve as pathResolve, isAbsolute } from 'path';
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
@@ -327,7 +327,9 @@ export const bootstrapAgentRecordFromEnv = async ({
   }
 
   const installs = Array.isArray(identity?.installations) ? identity.installations : [];
-  const primary = installs.find((i) => i.type === 'installation' && i.status === 'active')
+  const primary = installs.find((i) => i.type === 'installation' && i.status === 'active'
+    && i.listenerEnvironment?.sandbox?.trust === 'private')
+    || installs.find((i) => i.type === 'installation' && i.status === 'active')
     || installs[0] || null;
 
   // The adapter names a binary on THIS machine — the one fact the server
@@ -385,6 +387,29 @@ export const bootstrapAgentRecordFromEnv = async ({
   });
   if (bindingRefusal) throw new Error(bindingRefusal);
 
+  const privateSpec = primary?.listenerEnvironment;
+  let privateWorkspacePath = null;
+  if (privateSpec?.sandbox?.trust === 'private') {
+    if (!['claude', 'codex'].includes(adapterName)) {
+      throw new Error('Full local tools require Claude Code or Codex for this listener.');
+    }
+    const declared = privateSpec.workspace?.path;
+    if (typeof declared !== 'string' || !declared.trim()) {
+      throw new Error('Private listener is missing the owner-selected repo path.');
+    }
+    const expanded = declared === '~' ? homedir()
+      : (declared.startsWith('~/') ? join(homedir(), declared.slice(2)) : declared);
+    privateWorkspacePath = isAbsolute(expanded) ? expanded : pathResolve(expanded);
+    if (!existsSync(privateWorkspacePath) || !statSync(privateWorkspacePath).isDirectory()) {
+      throw new Error(`Selected repo path is not an existing directory on this machine: ${privateWorkspacePath}`);
+    }
+  }
+
+  const environment = {
+    ...(buildDefaultEnvironment(adapterName) || {}),
+    ...(privateSpec?.sandbox?.trust === 'private' ? privateSpec : {}),
+  };
+
   return {
     agentName,
     displayName: identity?.displayName || primary?.displayName || agentName,
@@ -395,8 +420,8 @@ export const bootstrapAgentRecordFromEnv = async ({
     adapter: adapterName,
     // The daemon's baseline for a seat nobody wrote a spec for, sandbox
     // included: this record is derived from nothing the person declared.
-    environment: seatBaseline(buildDefaultEnvironment(adapterName), adapterName, { sandbox: true }),
-    workspacePath: null,
+    environment: seatBaseline(environment, adapterName, { sandbox: true }),
+    workspacePath: privateWorkspacePath,
   };
 };
 

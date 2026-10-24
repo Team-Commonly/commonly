@@ -736,6 +736,56 @@ describe('bootstrapAgentRecordFromEnv', () => {
     expect(record.environment.sandbox).toEqual({ trust: 'public' });
   });
 
+  test('an owner-approved private listener starts in an existing repo with full-tool trust', async () => {
+    const repo = fs.mkdtempSync(path.join(tokensTmpDir, 'repo-'));
+    const response = {
+      ...identityResponse,
+      installations: [{ ...identityResponse.installations[1], listenerEnvironment: {
+        workspace: { path: repo }, sandbox: { trust: 'private' },
+      } }],
+    };
+    const record = await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent', env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123' },
+      clientFactory: makeFactory(response), adapterRegistry: makeRegistry(),
+    });
+    expect(record.workspacePath).toBe(repo);
+    expect(record.environment.sandbox).toEqual({ trust: 'private' });
+    expect(record.environment.mcp[0].name).toBe('commonly');
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  test('a private installation wins when another installation of the same identity is read-only', async () => {
+    const repo = fs.mkdtempSync(path.join(tokensTmpDir, 'repo-peer-'));
+    const response = { ...identityResponse, installations: [
+      identityResponse.installations[1],
+      { ...identityResponse.installations[1], podId: 'pod-private', listenerEnvironment: {
+        workspace: { path: repo }, sandbox: { trust: 'private' },
+      } },
+    ] };
+    const record = await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent', env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123' },
+      clientFactory: makeFactory(response), adapterRegistry: makeRegistry(),
+    });
+    expect(record.podId).toBe('pod-private');
+    expect(record.workspacePath).toBe(repo);
+    expect(record.environment.sandbox.trust).toBe('private');
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  test('a private listener refuses a missing repo rather than creating one', async () => {
+    const missing = path.join(tokensTmpDir, 'missing-repo');
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent', env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123' },
+      clientFactory: makeFactory({ ...identityResponse, installations: [
+        { ...identityResponse.installations[1], listenerEnvironment: {
+          workspace: { path: missing }, sandbox: { trust: 'private' },
+        } },
+      ] }),
+      adapterRegistry: makeRegistry(),
+    })).rejects.toThrow(/not an existing directory/);
+    expect(fs.existsSync(missing)).toBe(false);
+  });
+
   test('a pi seat bootstrapped from env gets the kernel server but no sandbox block, which pi refuses', async () => {
     const record = await bootstrapAgentRecordFromEnv({
       name: 'smoke-agent',

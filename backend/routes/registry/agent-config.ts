@@ -3,8 +3,9 @@
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
-const AgentProfile = require('../../models/AgentProfile');
+const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const AgentProfile = require('../../models/AgentProfile');
 const Pod = require('../../models/Pod');
 const {
   writeWorkspaceIdentityFile,
@@ -24,12 +25,17 @@ const {
 const {
   normalizeToolPolicy,
   normalizeContextPolicy,
+  revokeRuntimeTokensForAgent,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
 const { configWriteRefusal, runtimeKeepingType } = require('../../services/configWriteGuard');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
+const {
+  isPrivateListenerEnvironment, privateListenerConfigurationValid,
+  privateListenerPodAllowed, privateListenerIdentityAllowed,
+} = require('../../services/privateListenerPolicy');
 
 const agentConfigRouter = express.Router();
 
@@ -172,6 +178,19 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
           fields: environmentErrors,
         });
       }
+      if (isPrivateListenerEnvironment(config.environment)) {
+        const existingConfig = normalizeConfigMap(installation.config) || {};
+        const runtimeType = config.runtime?.runtimeType || existingConfig.runtime?.runtimeType;
+        const eligible = privateListenerConfigurationValid(config.environment)
+          && await privateListenerPodAllowed(podId, userId)
+          && await privateListenerIdentityAllowed(name.toLowerCase(), normalizedInstanceId, userId, true);
+        if (!eligible || !['wrapper', 'webhook'].includes(runtimeType)) {
+          return res.status(403).json({
+            code: 'private_listener_not_allowed',
+            error: 'Full computer access requires your sole-human invite-only pod and an absolute repo path',
+          });
+        }
+      }
     }
 
     // Being this row's installer is not enough to point its push webhook
@@ -207,6 +226,17 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
             ...(environmentControls.sandbox ? { sandbox: {
               ...(existingConfig.environment?.sandbox || {}), ...environmentControls.sandbox,
             } } : {}) };
+        }
+        const requestedTrust = config.environment?.sandbox?.trust;
+        if ((requestedTrust === 'private' || requestedTrust === 'public')
+          && existingConfig.environment && typeof existingConfig.environment === 'object') {
+          const nextEnvironment = { ...existingConfig.environment, ...config.environment };
+          if (isPrivateListenerEnvironment(existingConfig.environment)
+            && !isPrivateListenerEnvironment(nextEnvironment)
+            && !Object.prototype.hasOwnProperty.call(config.environment, 'workspace')) {
+            delete nextEnvironment.workspace;
+          }
+          nextConfig.environment = nextEnvironment;
         }
         if (config.runtime && typeof config.runtime === 'object') {
           nextConfig.runtime = runtimeKeepingType(config.runtime, existingConfig, { mayChangeType: isInstanceAdmin });
@@ -370,6 +400,29 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       }
     }
 
+    const downgradesPrivateListener = config?.environment !== undefined
+      && !isPrivateListenerEnvironment(config.environment)
+      && installationsToUpdate.some((entry: any) => isPrivateListenerEnvironment(
+        normalizeConfigMap(entry.config)?.environment,
+      ));
+    const revokePrivateListenerTokens = async () => {
+      // A running one-command listener cached its private environment at boot.
+      // Reload the User on each pass: a concurrent mint may have saved a new
+      // token on that row since the previous pass.
+      const resolvedType = AgentIdentityService.resolveAgentType(name.toLowerCase());
+      const username = AgentIdentityService.buildAgentUsername(resolvedType, normalizedInstanceId);
+      const agentUser = await User.findOne({ username, isBot: true });
+      await revokeRuntimeTokensForAgent({
+        agentUser, agentName: name.toLowerCase(), instanceId: normalizedInstanceId,
+      });
+    };
+    if (downgradesPrivateListener) {
+      // The first pass stops the running private listener before the public
+      // config is visible. The second catches any mint that passed its private
+      // eligibility read while this config write was in flight.
+      await revokePrivateListenerTokens();
+    }
+
     // The User row is the name source for chat and the pod roster. An explicit
     // rename must update that portable identity, not only per-pod projections.
     let renamedIdentity;
@@ -393,6 +446,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         // eslint-disable-next-line no-await-in-loop
         await targetInstallation.save();
       }
+      if (downgradesPrivateListener) await revokePrivateListenerTokens();
 
       if (
         status

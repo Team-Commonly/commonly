@@ -151,10 +151,24 @@ const V2AgentBYO: React.FC = () => {
   const personaCard = PERSONA_CARDS.find((c) => c.key === prefill.persona) || null;
   const [pods, setPods] = useState<V2Pod[]>([]);
   const [podId, setPodId] = useState<string>(prefill.pod);
+  const [listenerTrust, setListenerTrust] = useState<'read-only' | 'private'>('read-only');
+  const [repoPath, setRepoPath] = useState('');
   // Personalized default: a global-namespace collision guard (#613) means a
   // shared literal default ("my-mcp-agent") 409s for every user after the
   // first one to accept it. Seed from the username so defaults never collide.
   const { currentUser } = useAuth();
+  const selectedPod = pods.find((pod) => pod._id === podId);
+  const privateListenerEligible = Boolean(selectedPod
+    && selectedPod.joinPolicy === 'invite-only'
+    && selectedPod.publicRead !== true
+    && selectedPod.communityListed !== true
+    && String(selectedPod.createdBy?._id) === String(currentUser?._id)
+    && selectedPod.members?.filter((member) => typeof member !== 'string' && !member.isBot).length === 1
+    && selectedPod.members?.some((member) => typeof member !== 'string'
+      && !member.isBot && String(member._id) === String(currentUser?._id)));
+  useEffect(() => {
+    if (!privateListenerEligible) setListenerTrust('read-only');
+  }, [privateListenerEligible]);
   const userSlug = (currentUser?.username || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
   // The default name follows where the agent runs (C14 rehearsal, 2026-10-20):
   // "Run it here" takes `<user>-agent`, so an own agent defaulting to the same
@@ -591,6 +605,9 @@ const V2AgentBYO: React.FC = () => {
               ...(adapter ? { adapter } : {}),
               ...(model ? { model } : {}),
             },
+            ...(listenerTrust === 'private' ? {
+              environment: { workspace: { path: repoPath.trim() }, sandbox: { trust: 'private' } },
+            } : {}),
             ...(personaCard ? { persona: personaCard.key } : {}),
           },
           displayName: personaCard?.name || cleanName,
@@ -602,6 +619,14 @@ const V2AgentBYO: React.FC = () => {
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
         if (!/already installed/i.test(msg)) throw installErr;
+        // An existing machine listener keeps its previous environment. Apply
+        // the owner's current choice before placement can resume it.
+        await api.patch(
+          `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(cleanName)}`,
+          { config: { environment: listenerTrust === 'private'
+            ? { workspace: { path: repoPath.trim() }, sandbox: { trust: 'private' } }
+            : { sandbox: { trust: 'public' } } } },
+        );
       }
       await api.post('/api/agent-binding/request', {
         agentName: cleanName, instanceId: 'default', machineId,
@@ -656,6 +681,11 @@ const V2AgentBYO: React.FC = () => {
       setError(t('agentByo.errors.podRequired'));
       return;
     }
+    if (listenerTrust === 'private'
+      && (!privateListenerEligible || !repoPath.trim())) {
+      setError(t('agentByo.form.privateUnavailable'));
+      return;
+    }
     if (!mode) return;
     if (mode === 'hosted') {
       await submitHosted(cleanName);
@@ -672,7 +702,13 @@ const V2AgentBYO: React.FC = () => {
           agentName: cleanName,
           podId,
           scopes: DEFAULT_INSTALL_SCOPES,
-          config: { runtime: { runtimeType: 'webhook' }, ...(personaCard ? { persona: personaCard.key } : {}) },
+          config: {
+            runtime: { runtimeType: 'webhook' },
+            ...(listenerTrust === 'private' ? {
+              environment: { workspace: { path: repoPath.trim() }, sandbox: { trust: 'private' } },
+            } : {}),
+            ...(personaCard ? { persona: personaCard.key } : {}),
+          },
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
@@ -724,6 +760,15 @@ const V2AgentBYO: React.FC = () => {
     setError(null);
     try {
       const { agentName, podId: targetPodId } = target;
+      // A repeat connection can change the owner's trust choice. Apply it
+      // before rotating the key so a rejected private grant leaves the
+      // existing listener and token untouched.
+      await api.patch(
+        `/api/registry/pods/${encodeURIComponent(targetPodId)}/agents/${encodeURIComponent(agentName)}`,
+        { config: { environment: listenerTrust === 'private'
+          ? { workspace: { path: repoPath.trim() }, sandbox: { trust: 'private' } }
+          : { sandbox: { trust: 'public' } } } },
+      );
       const tokenRes = await api.post<{ token?: string }>(
         `/api/registry/pods/${encodeURIComponent(targetPodId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`,
         { label: 'BYO MCP — replacement', force: true, instanceId: prefill.instanceId },
@@ -900,6 +945,35 @@ const V2AgentBYO: React.FC = () => {
     : '';
   const cursorInstallHref = cursorMcpInstallLink(apiUrl);
 
+  const trustChoice = (
+    <fieldset className="v2-byo__field" data-testid="byo-listener-trust">
+      <legend className="v2-byo__label">{t('agentByo.form.trustLabel')}</legend>
+      <label>
+        <input type="radio" name="listener-trust" value="read-only"
+          checked={listenerTrust === 'read-only'}
+          onChange={() => setListenerTrust('read-only')} />
+        {' '}{t('agentByo.form.readOnly')}
+      </label>
+      {privateListenerEligible && (
+        <label>
+          <input type="radio" name="listener-trust" value="private"
+            checked={listenerTrust === 'private'}
+            onChange={() => setListenerTrust('private')} />
+          {' '}{t('agentByo.form.privateTrust')}
+        </label>
+      )}
+      {listenerTrust === 'private' && privateListenerEligible && (
+        <label className="v2-byo__field">
+          <span className="v2-byo__label">{t('agentByo.form.repoPath')}</span>
+          <input type="text" value={repoPath} onChange={(event) => setRepoPath(event.target.value)}
+            className="v2-byo__input" data-testid="byo-repo-path"
+            placeholder={t('agentByo.form.repoPathPlaceholder')} />
+          <span className="v2-byo__hint">{t('agentByo.form.privateWarning')}</span>
+        </label>
+      )}
+    </fieldset>
+  );
+
   return (
     <V2FeaturePage
       title={(() => {
@@ -986,6 +1060,7 @@ const V2AgentBYO: React.FC = () => {
               </button>
             </p>
           )}
+          {trustChoice}
           {error && <div className="v2-byo__error">{error}</div>}
           {existingConnection && (
             <div className="v2-byo__hint" data-testid="byo-connection-state">
@@ -1186,6 +1261,7 @@ const V2AgentBYO: React.FC = () => {
               ))}
             </select>
           </label>
+          {(mode === 'byo' || mode === 'machine') && trustChoice}
           {/* The act sits right under the fields it acts on. Below "Add a computer" it
               fell under the fold at 1440x900 with "Run it here" chosen (QA 2026-10-16:
               its top edge at y=882), so a stranger saw a selected card and no button. */}

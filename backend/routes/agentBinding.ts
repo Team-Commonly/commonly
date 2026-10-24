@@ -22,6 +22,7 @@ import {
 import { ownsRuntimeIdentity, OwnershipFailure, describeRuntimeIdentityBlockers } from '../services/runtimeIdentityOwnership';
 import { logAgentInstallRefusal } from '../middleware/logAgentInstallRefusal';
 import { machineHasLiveAuthorization } from '../services/machineService';
+import { privateListenerIdentityAllowed } from '../services/privateListenerPolicy';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -216,6 +217,9 @@ router.post('/adopt', bindingRateLimit, daemonAuth('agents:adopt'), async (req: 
         code: ownership.failure,
       });
     }
+    if (!await privateListenerIdentityAllowed(agentName, instanceId, machine.ownerUserId)) {
+      return res.status(403).json({ code: 'private_listener_not_allowed', message: 'Private listener pod is no longer owner-only' });
+    }
     // The CAS: only an UNBOUND identity transitions. matchedCount 0 with an
     // existing identity means someone else holds the binding → 409.
     const result = await User.updateOne(
@@ -266,6 +270,10 @@ router.post('/request', logAgentInstallRefusal('/api/agent-binding/request', 'wr
     const ownership = await ownsAgent(req.user?.id, agentName, instanceId);
     if (!ownership.owned) {
       return res.status(403).json(await ownershipRefusal(req.user?.id, agentName, instanceId, ownership.failure));
+    }
+
+    if (requestedMachineId && !await privateListenerIdentityAllowed(agentName, instanceId, req.user?.id)) {
+      return res.status(403).json({ code: 'private_listener_not_allowed', message: 'Private listener pod is no longer owner-only' });
     }
 
     // An agent Commonly runs in-process (the person's hosted agent) can't also
@@ -433,9 +441,13 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
       ],
     }).select('_id botMetadata.agentName botMetadata.instanceId botMetadata.machineId botMetadata.requestedMachineId botMetadata.reconnectRequestedAt').lean() as AssignedIdentity[];
 
-    const grantServers = await grantServersForIdentities(identities, byIdentity);
+    const allowed = await Promise.all(identities.map((identity) => privateListenerIdentityAllowed(
+      normalize(identity.botMetadata?.agentName), normalize(identity.botMetadata?.instanceId) || 'default', machine.ownerUserId,
+    )));
+    const safeIdentities = identities.filter((_identity, index) => allowed[index]);
+    const grantServers = await grantServersForIdentities(safeIdentities, byIdentity);
 
-    const agents = identities.flatMap((identity: AssignedIdentity) => {
+    const agents = safeIdentities.flatMap((identity: AssignedIdentity) => {
       const meta = identity.botMetadata || {};
       const key = seatEnvironmentKey(meta.agentName, meta.instanceId);
       const entry = byIdentity.get(key);
@@ -500,6 +512,10 @@ router.post('/runtime-token', bindingRateLimit, daemonAuth('agents:adopt'), asyn
         message: ownershipFailureMessage[ownership.failure],
         code: ownership.failure,
       });
+    }
+
+    if (!await privateListenerIdentityAllowed(agentName, instanceId, machine.ownerUserId)) {
+      return res.status(403).json({ code: 'private_listener_not_allowed', message: 'Private listener pod is no longer owner-only' });
     }
 
     const agentUser = await User.findOne({

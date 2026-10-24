@@ -70,6 +70,18 @@ describe('claude adapter — ctx.environment', () => {
     fs.rmSync(cwd, { recursive: true, force: true });
   });
 
+  test('explicit private trust runs full tools without the public deny policy', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await claude.spawn('hi', {
+      cwd, environment: { workspace: { path: cwd }, sandbox: { trust: 'private' } },
+      _spawnImpl: impl,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args).toContain('--dangerously-skip-permissions');
+    expect(calls[0].args).not.toContain('--setting-sources');
+    expect(calls[0].args).not.toContain('--disallowedTools');
+  });
+
   test('keeps MCP config outside the workspace at 0600 for only the spawn lifetime', async () => {
     const { impl, calls } = makeSpawnImpl();
     const environment = {

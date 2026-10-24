@@ -43,13 +43,13 @@ const machineRow = {
   id: 'm1', machineId: 'mach-a', name: 'Sam’s MacBook', status: 'online', agentStates: [],
 };
 
-const mockGet = ({ machines = [machineRow] } = {}) => {
+const mockGet = ({ machines = [machineRow], pods = [{ _id: 'p1', name: 'Workspace', type: 'chat', createdBy: { _id: 'u1' } }] } = {}) => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: false, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
     }
-    if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat', createdBy: { _id: 'u1' } }] });
+    if (url === '/api/pods') return Promise.resolve({ data: pods });
     if (url === '/api/machines') return Promise.resolve({ data: { machines, offlineAfterMs: 90000 } });
     return Promise.resolve({ data: {} });
   });
@@ -69,6 +69,116 @@ afterEach(() => {
 });
 
 describe('BYO on-my-computer mode', () => {
+  test.each([
+    ['Read-only', { sandbox: { trust: 'public' } }],
+    ['Work in my repo on this machine', { workspace: { path: '~/projects/example' }, sandbox: { trust: 'private' } }],
+  ])('existing machine listener applies %s before placement', async (choice, environment) => {
+    mockGet({ pods: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'invite-only',
+      createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }] }] });
+    axios.post.mockRejectedValueOnce({ response: { data: { error: 'Agent already installed in this pod' } } });
+    axios.post.mockResolvedValue({ data: {} });
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    if (choice !== 'Read-only') {
+      fireEvent.click(screen.getByLabelText(choice));
+      fireEvent.change(screen.getByTestId('byo-repo-path'), { target: { value: '~/projects/example' } });
+    }
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+    fireEvent.click(screen.getByText('Add to this computer'));
+    await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
+    expect(axios.patch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/registry\/pods\/p1\/agents\//),
+      { config: { environment } }, expect.anything(),
+    );
+    expect(axios.patch.mock.invocationCallOrder[0]).toBeLessThan(
+      axios.post.mock.invocationCallOrder[1],
+    );
+  });
+
+  test('existing machine listener is not placed when access change fails', async () => {
+    mockGet();
+    axios.post.mockRejectedValueOnce({ response: { data: { error: 'Agent already installed in this pod' } } });
+    axios.patch.mockRejectedValueOnce({ response: { data: { error: 'Access change refused' } } });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+    fireEvent.click(screen.getByText('Add to this computer'));
+    await waitFor(() => expect(screen.getByText('Access change refused')).toBeInTheDocument());
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
+  test('one-command listener installs with private trust and the selected repo path', async () => {
+    mockGet({ pods: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'invite-only',
+      createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }] }] });
+    axios.post.mockResolvedValue({ data: { token: 'cm_agent_test' } });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    fireEvent.click(screen.getByLabelText('Work in my repo on this machine'));
+    fireEvent.change(screen.getByTestId('byo-repo-path'), { target: { value: '~/projects/example' } });
+    await waitFor(() => expect(screen.getByText('Get my connect command')).toBeEnabled());
+    fireEvent.click(screen.getByText('Get my connect command'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/registry/install',
+      expect.objectContaining({ config: expect.objectContaining({ runtime: { runtimeType: 'webhook' },
+        environment: { workspace: { path: '~/projects/example' }, sandbox: { trust: 'private' } },
+      }) }), expect.anything()));
+  });
+
+  test('reconnecting an existing listener applies its chosen trust before key rotation', async () => {
+    mockGet({ pods: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'invite-only',
+      createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }] }] });
+    axios.post.mockRejectedValueOnce({ response: { data: { error: 'Agent already installed in this pod' } } });
+    axios.post.mockResolvedValueOnce({ data: { token: 'cm_agent_replaced' } });
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    fireEvent.click(screen.getByLabelText('Work in my repo on this machine'));
+    fireEvent.change(screen.getByTestId('byo-repo-path'), { target: { value: '~/projects/example' } });
+    await waitFor(() => expect(screen.getByText('Get my connect command')).toBeEnabled());
+    fireEvent.click(screen.getByText('Get my connect command'));
+    await waitFor(() => expect(screen.getByTestId('byo-replace-key-confirmation')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Replace the running agent’s key'));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/registry\/pods\/p1\/agents\//),
+      { config: { environment: { workspace: { path: '~/projects/example' }, sandbox: { trust: 'private' } } } },
+      expect.anything(),
+    ));
+    expect(axios.post).toHaveBeenCalledWith(
+      expect.stringMatching(/\/runtime-tokens$/),
+      { label: 'BYO MCP — replacement', force: true, instanceId: 'default' },
+      expect.anything(),
+    );
+  });
+
+  test('full tools are offered only in the owner-only invite pod and carry the repo path', async () => {
+    mockGet({ pods: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'invite-only',
+      createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }, { _id: 'b1', isBot: true }] }] });
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    fireEvent.click(screen.getByLabelText('Work in my repo on this machine'));
+    fireEvent.change(screen.getByTestId('byo-repo-path'), { target: { value: '~/projects/example' } });
+    fireEvent.click(screen.getByText('Add to this computer'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/registry/install',
+      expect.objectContaining({ config: expect.objectContaining({ environment: {
+        workspace: { path: '~/projects/example' }, sandbox: { trust: 'private' },
+      } }) }), expect.anything()));
+  });
+
+  test('shared invite pod and open pod expose read-only only', async () => {
+    mockGet({ pods: [{ _id: 'p1', name: 'Shared', type: 'chat', joinPolicy: 'invite-only',
+      createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }, { _id: 'u2', isBot: false }] }] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    expect(screen.getByLabelText('Read-only (recommended)')).toBeChecked();
+    expect(screen.queryByLabelText('Work in my repo on this machine')).toBeNull();
+  });
   test('a registered machine surfaces the mode card and picker', async () => {
     mockGet();
     renderPage();

@@ -151,6 +151,9 @@ export const withDefaultSandbox = (environment) => {
   // gate accepts — benign (same effective trust) but not a mirror, and the
   // comment would be false. The ORIGINAL block is what gets returned below.
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
+  // The owner explicitly chose full local tools for their sole-human pod.
+  // The backend re-checks that pod on every assignment and runtime request.
+  if (sandbox?.trust === 'private' && sandbox.mode === undefined) return environment;
   // An ENFORCED declaration is one the adapters act on: a public trust (whose
   // mode they resolve, and refuse to spawn without) or an explicit non-'none'
   // mode. `mode: 'none'`, an empty block and a missing one are all the same
