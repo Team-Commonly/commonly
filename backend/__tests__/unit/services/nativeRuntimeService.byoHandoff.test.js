@@ -87,7 +87,10 @@ describe('commonly_offer_local_agent', () => {
     mockUserFindOne.mockReturnValue(chain(null));
     mockUserFindById.mockReturnValue(chain({ username: 'Sam Xu' }));
     mockHostedBrokerToolsForRun.mockResolvedValue({ tools: [], dispatch: new Map() });
-    mockDispatchHostedBrokerTool.mockResolvedValue({ callId: 'broker-call', content: { ok: true }, outcome: 'ok' });
+    mockDispatchHostedBrokerTool.mockImplementation(async ({ projection, name }) => {
+      if (!projection?.dispatch?.has(name)) return null;
+      return { callId: 'broker-call', content: { ok: true }, outcome: 'ok' };
+    });
     mockPodIsBridged.mockResolvedValue(false);
     AgentRun.countDocuments.mockResolvedValue(0);
     AgentRun.create.mockImplementation(async (doc) => ({ _id: 'run-1', ...doc, save: jest.fn().mockResolvedValue(undefined) }));
