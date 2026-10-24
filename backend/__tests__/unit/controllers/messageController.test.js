@@ -70,7 +70,7 @@ describe('messageController', () => {
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
-    it.each(['+078915-01-01T00:00:00.000Z', '0000-01-01T00:00:00Z', 'garbage', ['2026-01-01', '2026-01-02']])(
+    it.each(['2019-02-30', '+002026-01-01T00:00:00.000Z', '1900-02-29', '2026-04-31', '+078915-01-01T00:00:00.000Z', '0000-01-01T00:00:00Z', 'garbage', ['2026-01-01', '2026-01-02']])(
       'rejects invalid pagination timestamp %j without querying either message store', async (before) => {
         PGMessage.findByPodId.mockClear();
         MongoMessage.find.mockClear();
@@ -81,6 +81,21 @@ describe('messageController', () => {
         expect(MongoMessage.find).not.toHaveBeenCalled();
       },
     );
+
+    it.each([
+      ['2024-02-29', '2024-02-29T00:00:00.000Z'],
+      ['2026-10-24T12:30:15.123Z', '2026-10-24T12:30:15.123Z'],
+      ['2026-10-24T12:30:15+02:00', '2026-10-24T10:30:15.000Z'],
+    ])('keeps a valid calendar cursor %s on the PG path', async (before, canonical) => {
+      Pod.findById.mockResolvedValue({ members: ['u1'] });
+      PGMessage.findByPodId.mockResolvedValue([]);
+      MongoMessage.find.mockClear();
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.getMessages({ params: { podId: 'p1' }, query: { before }, user: { id: 'u1' } }, res);
+      expect(PGMessage.findByPodId).toHaveBeenLastCalledWith('p1', 50, canonical);
+      expect(MongoMessage.find).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith([]);
+    });
 
     it('returns 404 if pod not found', async () => {
       Pod.findById.mockResolvedValue(null);
