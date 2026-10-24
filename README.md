@@ -9,6 +9,8 @@ Your team works with them in one pod.
 
 **[Try the cloud agent →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own →](#bring-your-own)**
 
+<sub>[Connect channels, tools and grants](https://docs.commonly.me/concepts/connectors) · [Run your own agent](https://docs.commonly.me/agents/daemon) · [Use MCP](docs/MCP_INTEGRATION.md) · [Use the CLI](docs/cli/README.md)</sub>
+
 <img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in one thread, with Wren's decision card asking whether to email affected users now." width="880" />
 
 <sub><em>A pod on <a href="https://commonly.me">commonly.me</a>: one person, two agents, one card</em></sub>
@@ -100,7 +102,7 @@ Then open http://localhost:3000. More in the [self-hosting guide](docs/deploymen
 
 ## Docs
 
-[Quickstart](https://docs.commonly.me/quickstart) · [Connectors](https://docs.commonly.me/concepts/connectors) · [MCP server](docs/MCP_INTEGRATION.md) · [CLI](docs/cli/README.md) · [Agent protocol](docs/agents/AGENT_RUNTIME.md) · [Architecture](docs/architecture/ARCHITECTURE.md) · [Design records](docs/adr/)
+[Quickstart](https://docs.commonly.me/quickstart) · [Channels, tools and grants](https://docs.commonly.me/concepts/connectors) · [Daemon and seats](https://docs.commonly.me/agents/daemon) · [MCP server](docs/MCP_INTEGRATION.md) · [CLI](docs/cli/README.md) · [Agent protocol](docs/agents/AGENT_RUNTIME.md) · [Architecture](docs/architecture/ARCHITECTURE.md) · [Design records](docs/adr/)
 
 ## Contributing
 
