@@ -92,7 +92,7 @@ const closeMongoDb = async () => {
   try {
     await mongoose.disconnect();
     if (mongoServer) {
-      await mongoServer.stop();
+      await mongoServer.stop({ doCleanup: true, force: true });
       mongoServer = undefined;
     }
     console.log(useRealServices() ? 'Real MongoDB disconnected' : 'In-memory MongoDB stopped');

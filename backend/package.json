@@ -9,6 +9,7 @@
     "dev": "nodemon --exec 'ts-node --transpile-only' server.ts",
     "migrate-files": "node migrations/migrateFilesToDB.js",
     "test": "jest",
+    "test:temp-cleanup": "node scripts/verify-jest-temp-cleanup.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:ci": "jest --forceExit --detectOpenHandles",
