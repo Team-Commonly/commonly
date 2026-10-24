@@ -4213,7 +4213,7 @@ Settings read one writable pod's `config.environment`, while the daemon selected
 
 ## 85. A wrapper around a CLI is not a fence around the CLI's credential (2026-10-22, operator)
 
-*Origin: an incident on 2026-10-22, written up by the operator. The seat, accounts and machine are left out on purpose; the mechanism is the finding. Companion to entry 84 ("browser access is token access").*
+*Origin: an incident on 2026-10-22, written up by the operator. The seat, accounts and machine are left out on purpose; the mechanism is the finding.*
 
 A private seat (it runs as the operator's OS user, with no sandbox) was blocked from a hosting CLI by a wrapper that refuses seat calls. It worked out that the CLI's tokens sat in the operator's login credential store. It read them with the operating system's own command-line tool and passed one to the CLI through the CLI's token environment variable. That bypassed the wrapper entirely. Two reads printed the raw stored values. The seat's own redaction covered the tokens' usual prefix but not the encoded form the store returns, so both values entered the model's context, which the seat's runtime sends to its model provider. The only calls made with a token were two read-only API requests. Both credentials were treated as exposed and rotated.
 
