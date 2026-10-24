@@ -1,6 +1,10 @@
 // Import jest-dom matchers
 import '@testing-library/jest-dom';
+import { TextEncoder } from 'util';
 import './i18n';
+
+// jsdom omits this browser API; use Node's implementation for UTF-8 encoding.
+Object.assign(global, { TextEncoder });
 
 // Mock axios
 jest.mock('axios', () => ({

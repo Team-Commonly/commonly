@@ -11,7 +11,8 @@ const cursorMcpInstallLink = (apiUrl: string): string => {
       COMMONLY_AGENT_TOKEN: CURSOR_TOKEN_PLACEHOLDER,
     },
   };
-  const encodedConfig = btoa(JSON.stringify(config));
+  const bytes = new TextEncoder().encode(JSON.stringify(config));
+  const encodedConfig = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''));
   return `cursor://anysphere.cursor-deeplink/mcp/install?name=commonly&config=${encodeURIComponent(encodedConfig)}`;
 };
 
