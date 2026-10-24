@@ -661,9 +661,10 @@ describe('the workflow calls that script under the publish gate', () => {
 
     expect(step).toContain('scripts/verify-npm-publish-readback.sh');
     expect(step).toContain("if: steps.cmp.outputs.action == 'publish'");
-    // The values the script polls for come from the compare step, not literals.
+    // The values the script polls for come from the compare step, not literals;
+    // WANT is the version that step assigned (TASK-466), not the repo floor.
     expect(step).toContain('NAME: ${{ steps.cmp.outputs.name }}');
-    expect(step).toContain('WANT: ${{ steps.cmp.outputs.repo_v }}');
+    expect(step).toContain('WANT: ${{ steps.cmp.outputs.next }}');
     // The interpreter is named: the file's exec bit does not survive every
     // checkout or archive path, and a bare path would fail there.
     expect(step).toMatch(/run: bash "\$GITHUB_WORKSPACE/);
