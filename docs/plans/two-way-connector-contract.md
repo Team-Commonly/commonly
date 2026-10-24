@@ -41,7 +41,7 @@ It ratifies none of them, and ADR-025 stays Proposed. ADR-025 also leaves D2's w
 - **ADR-027's phase 2**, two-way sync with a PM board ([ADR-027](../adr/ADR-027-pm-tool-projection-contract.md):254–260). Its trigger is "a team telling us the external board is where they edit, with the specific edit that got lost". Nothing here pulls it forward.
 - **Hosted MCP** ([hosted-mcp-connection-scope.md](hosted-mcp-connection-scope.md)). It is a tool source, not a chat connector.
 - **ADR-029's verdicts** ([ADR-029](../adr/ADR-029-attention-delegate.md)). Its D5 amendment puts the delegate check at "the single existing relay call" (ADR-029:40). The `shouldEscalate` step that amendment names runs once in each bridge today (`telegramBridgeService.ts:334`, `slackBridgeService.ts:250`). After step 2 (§7) it runs once, in the core, so D5 lands in one place whenever it is built.
-- **ADR-025's D18**, relayed outbound identity, proposed in #2620. It has every outbound action carry the agent and the human it acts for, rendered as well as each platform allows. Under this contract, the core resolves the pair and refuses an agent's send without one. The adapter renders it: `OutboundMessage.author` becomes the pair, `render` draws it as text, and `send` sets a per-message name and avatar where the platform has them. Either can land first.
+- **ADR-025's D18**, relayed outbound identity, proposed in #2620. It has every outbound action carry the agent and the human it acts for, rendered as well as each platform allows. If it is built, it splits along this contract's line. The core resolves the pair and refuses an agent's send without one. The adapter renders it: `render` draws it as text, and `send` sets a per-message name and avatar where the platform has them. That build also changes `OutboundMessage.author` (§3) from a display name to the pair. Neither waits on the other. Until D18 is built, `author` stays the display name, and this contract adds no refusal.
 - **Setup flows**: connect codes, OAuth, the enable commands and the Connectors page.
 
 ## 1. What is wrong
@@ -173,7 +173,7 @@ type Binding = IIntegration;               // the stored row; no new model
 // What the core asks an adapter to deliver. Every field is plain text.
 interface OutboundMessage {
   podName: string;                         // the [PodName] tag (ADR-025 D10)
-  author?: string;                         // absent on a notice
+  author?: string;                         // the display name; absent on a notice. D18 would make it the pair
   text: string;                            // already capped by the core
   link?: string;                           // the Commonly link
   card?: DecisionRelayCard;                // services/decisionCardRelay.ts
@@ -250,7 +250,7 @@ Today one module classifies both platforms' errors (`classifySlackDeliveryFailur
 
 The `rejected` row keeps two exclusions the module already makes. Telegram's 401 and Slack's three credential errors belong to the shared bot app, not to one connector (comment at :27–33). A 400 that is not "chat not found" is about content, such as an unescaped entity, and not about whether the chat is reachable (:61–78).
 
-The core logs every result that isn't `delivered`, once. Today the two bridges differ even here. Telegram returns quietly after noting the failure (tg :352–357). Slack throws (sl :268–273), which the dispatcher catches and logs (eventHandlers.ts:212–216).
+The core logs every result that isn't `delivered`, once. Today the two bridges differ even here. Telegram returns quietly after noting the failure (tg :352–357). Slack throws (sl :268–273) into the relay's own catch, which logs it (sl :299–305).
 
 ## 4. Directions (D3)
 
@@ -327,9 +327,11 @@ These are platform facts, so the adapter declares them and the core runs the one
 - the reconciler's `canSendClosingLine` (decisionCardReconcileService.ts:76–100);
 - the dispatcher's selection (eventHandlers.ts:74–108).
 
-They agree today only because of two defaults: `type` is required (`models/Integration.ts:226`), and `isActive` defaults to `true` (:453). Telegram's inbound check also ignores `status`. That is safe only because the flip that sets `status: 'error'` also unsets `config.chatId` (connectorDeliveryFailureService.ts:139–146), and the inbound check requires a chat id. A second writer of `status: 'error'` that kept the chat id would reopen inbound on a broken row. The lookups also fail differently: Telegram's fails closed and logs (tg :169–176), and Slack's has no catch.
+They agree today only because of two defaults: `type` is required (`models/Integration.ts:226`), and `isActive` defaults to `true` (:453). Telegram's inbound check also ignores `status`. That is safe only because the flip that sets `status: 'error'` also unsets `config.chatId` (connectorDeliveryFailureService.ts:139–146), and the inbound check requires a chat id. A second writer of `status: 'error'` that kept the chat id would reopen inbound on a broken row. The lookups fail the same way by different routes. Telegram's catches its own error, logs it and returns no row (tg :169–176). Slack's has no catch, so its error lands in the relay's catch, which logs it (sl :299–305). The dispatcher's selector does the same (eventHandlers.ts:200–203).
 
 The core has one predicate per question (may relay out, may relay in, may answer a command, may close a card), each written once beside its query form. A matrix test drives every predicate and its query form over the same rows (§8).
+
+A lookup that throws fails one way on each side. Outbound, it relays nothing, as both bridges and the dispatcher do today. With no row read there is no chat to send to, and none proven private (§6, 2). The core logs it once, as it logs a send that isn't delivered. Inbound, it is a failure before the write. The core releases the dedupe claim and fails the request, as Telegram's route does (telegram.ts:543–551), so a platform that redelivers retries it. Slack acks first, so there the message is lost, like the rest of row 4.
 
 ## 6. Invariants the core keeps
 
@@ -356,7 +358,7 @@ Each step ships on its own and changes no behaviour except the drift rows it nam
 | 2 | **The core and the Telegram adapter.** Move the flow into `core.ts` and the predicates into `eligibility.ts` (row 6). Telegram's adapter declares its dedupe timing (row 4). The bridge's exports become wrappers. | 2 |
 | 3 | **The Slack adapter.** Settle rows 1–3: the link, the pod tag and commands, with `tldr` and the full `status` reaching Slack. Move the two bind confirmations onto `adapter.send`. | 2 |
 | 4 | **Remove the literals.** The 16 lines in 7 files (§1) read the registered adapters instead. | 1 |
-| 5 | **The relay-map key (row 5).** Telegram writes both keys. Readers prefer `externalMessageId`. Backfill `config.relayMap` and `config.cards` on existing rows, then stop writing `tgMessageId`. | 0.5 |
+| 5 | **The relay-map key (row 5).** Telegram writes both keys. Readers prefer `externalMessageId` and fall back to `tgMessageId`, as the card-reply router already does. A backfill copies `tgMessageId` into `externalMessageId` in `config.relayMap` and `config.cards`, wherever the generic key is absent. It never overwrites or deletes either key, so a second run changes nothing. Then Telegram stops writing `tgMessageId`. | 0.5 |
 | 6 | **Directions and CI (§4).** Declare `directions` and `transport`, derive what's implemented from the code, and add the `Integration` equality check. Read the other four providers against their code, and stop to amend the vocabulary if one doesn't fit. | 1 |
 | 7 | **A third adapter**, only when a team asks for one. | — |
 
@@ -368,7 +370,9 @@ That totals 7.5 implementor-days for steps 1–6.
 
 - **A contract suite per adapter**, run against a fake platform client. It covers `render`, `send` and its `SendResult` mapping, `parseInbound`, `proveSender` and the dedupe declaration.
 - **Escaping.** Hostile values in every field (pod name, author, text, card options), driven through every path that sends.
-- **The eligibility matrix.** Each predicate and its query form, over the same rows, including a missing `type`, `isActive: false`, `status: 'error'` with and without a chat id, admin pause, mute, and a group chat.
+- **The eligibility matrix.** Each predicate and its query form, over the same rows, including a missing `type`, `isActive: false`, `status: 'error'` with and without a chat id, admin pause, mute, a group chat, and a lookup that throws (outbound sends nothing; inbound releases the claim and fails the request).
+- **After the write.** Make delivery or the socket emit throw after an inbound write. The message stays, the request is acknowledged as the adapter declares, and a redelivery adds no second message.
+- **The relay-map backfill**, run twice over entries with only `tgMessageId`, only `externalMessageId`, and both. No id is lost or overwritten, and the second run changes nothing.
 - **A third adapter, registered inside the test at runtime.** It passes the contract suite, then does every round trip with no change outside the test file: an agent's post goes out through the dispatcher; a platform message comes in; a card is sent, answered by quote-reply, and closed by the reconciler.
 
 **Acceptance.** A new chat connector consists of:
@@ -392,6 +396,7 @@ Two lists in `routes/integrations.ts` still name types (:519, :842). They belong
 - **Hosted MCP.**
 - **Identity in a group chat.** Inbound from a group needs a per-sender mapping from platform user to Commonly user, as a comment in the Telegram bridge says (tg :452–453). So does any command a group member runs. Read commands in a group answer as they do today. Whether a group may read a pod's digest is open.
 - **Retries for Slack's lost failures.** Slack acks before the work, so a failure before the pod write is lost (§5, row 4). Whether to retry it from our side is open.
+- **Who hears a line that never left.** An outbound lookup that throws and an `ambiguous` send are logged once and nothing more, so nobody in the pod learns the line missed the platform. Whether the core tells the pod is open.
 - **The external wire format, or an SDK for third-party adapters.** ADR-025 leaves the format open, and ADR-011 pauses driver-layer expansion.
 - **Setup flows and the four off-path files** (§1).
 - **ADR-025's D12 cold-start commands.** `/pods`, `/pod <name>` and the bare-message routing order aren't built. If they are, they join the core's command set and every adapter gets them.
