@@ -45,10 +45,25 @@ data:
       # scoped to it says what it buys; re-check the changelog before trusting
       # the name after DeepSeek's next Flash update. Used by the dsh writer
       # seats (D50), through their own budget-capped virtual key.
+      #
+      # Budget (Sam, D50: the DeepSeek writers are budget-capped). Two caps:
+      #   1. This deployment: $20 per month across EVERY caller of the group.
+      #      Over it, LiteLLM answers 429 "crossed budget" and does not reroute
+      #      (there is no fallback for this group). Spend for this cap is
+      #      tracked in the router's cache; with one replica and no Redis, a
+      #      LiteLLM restart can reset the month-to-date figure, so it is a
+      #      ceiling, not the ledger.
+      #   2. The writers' virtual key: models=[deepseek-flash-1017],
+      #      max_budget 20, budget_duration 30d. Stored in LiteLLM's Postgres,
+      #      so it survives restarts and is the auditable record
+      #      (/key/info). Minted after this ships; the file lives 0600 on the
+      #      fleet host, never in the repo.
       - model_name: deepseek-flash-1017
         litellm_params:
           model: deepseek/deepseek-flash
           api_key: os.environ/DEEPSEEK_API_KEY
+          max_budget: 20
+          budget_duration: 1mo
 
       # --- Cloudflare Workers AI (fallback; own-account, unrevokable) ---
       # Added 2026-08-08 to unblock the guide agent, which had no working model:
