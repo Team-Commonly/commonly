@@ -58,6 +58,14 @@ describe('signup workspace exists in PG before Scout posts', () => {
       await admitted;
       await pool.query('INSERT INTO users (_id) VALUES ($1)', [String(user._id)]);
     });
+    let releasePod;
+    let notifyPod;
+    const podWriteAllowed = new Promise((resolve) => { releasePod = resolve; });
+    const podWriteStarted = new Promise((resolve) => { notifyPod = resolve; });
+    mockQuery.mockImplementation(async (sql, args) => {
+      if (/INSERT INTO pods/.test(sql)) { notifyPod(); await podWriteAllowed; }
+      return pool.query(sql, args);
+    });
     mockScoutUser.mockResolvedValue(scout);
     let finish;
     const posted = new Promise((resolve) => { finish = resolve; });
@@ -73,7 +81,14 @@ describe('signup workspace exists in PG before Scout posts', () => {
     expect(pod).not.toBeNull();
     expect(mockPost).not.toHaveBeenCalled();
     release();
+    await podWriteStarted;
+    await new Promise((resolve) => setImmediate(resolve));
+    // Even after the user sync completes, the delayed pod INSERT must be
+    // awaited. Dropping just that await lets Scout hit the FK too early.
+    const postedBeforePod = mockPost.mock.calls.length;
+    releasePod();
     const first = await posted;
+    expect(postedBeforePod).toBe(0);
     expect(first.pod_id).toBe(String(pod._id));
     const mirrored = await pool.query('SELECT created_by FROM pods WHERE id = $1', [String(pod._id)]);
     expect(mirrored.rows).toEqual([{ created_by: String(owner._id) }]);
