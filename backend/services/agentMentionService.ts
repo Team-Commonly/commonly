@@ -1540,6 +1540,7 @@ const enqueueWakeOnMessage = async ({
         deliveryMode,
         payload: {
           messageId: authorFrame.messageId,
+          ...(threadRootId ? { threadRootId } : {}),
           // Inline cue, not only metadata — the flag below is for the
           // wrapper's claim decision; the model reads the content.
           content: repliesToYou ? `${REPLIES_TO_YOU_FRAME}\n${built}` : built,

@@ -2027,25 +2027,31 @@ export const performRun = ({
       return `${prefix}\n${claimContext}${body}`;
     });
     const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
-    const visibleRawLimit = rollup?.unreadCount > 0 ? 7 : 8;
-    const digestLines = digestEntries.slice(-visibleRawLimit).map((entry) => {
-      const who = String(entry.event.payload?.username || 'member').replace(/\s+/g, ' ').slice(0, 40);
-      const body = String(entry.event.payload?.content || '').replace(/\s+/g, ' ').slice(0, 160);
-      const id = entry.event.payload?.messageId;
-      return `- ${who}${id ? ` (message ${id})` : ''}: ${body}`;
-    });
-    if (rollup?.unreadCount > 0) {
-      const ids = Array.isArray(rollup.lastEventIds) ? rollup.lastEventIds.slice(-8) : [];
-      digestLines.unshift(`- ${rollup.unreadCount} older updates (last event IDs: ${ids.join(', ')})`);
+    const conversationCounts = new Map();
+    if (rollup?.unreadCount > 0) conversationCounts.set('older pod activity', rollup.unreadCount);
+    const seenDigestSources = new Set();
+    for (const entry of digestEntries) {
+      const { threadRootId, taskId, taskKind, messageId, content } = entry.event.payload || {};
+      const sourceId = messageId != null ? `message:${messageId}`
+        : (typeof taskId === 'string' ? `task:${taskId}:${taskKind || ''}:${content || ''}` : null);
+      if (sourceId && seenDigestSources.has(sourceId)) continue;
+      if (sourceId) seenDigestSources.add(sourceId);
+      const label = Number.isInteger(Number(threadRootId)) && Number(threadRootId) > 0
+        ? `thread ${threadRootId}`
+        : (/^TASK-\d+$/.test(String(taskId || '')) ? taskId : 'pod conversation');
+      conversationCounts.set(label, (conversationCounts.get(label) || 0) + 1);
     }
+    const digestLines = [...conversationCounts].slice(0, 8)
+      .map(([label, count]) => `- ${label}: ${count} unread`);
+    const digestCount = [...conversationCounts.values()].reduce((sum, count) => sum + count, 0);
     const omitted = Math.max(0, inboxCount - entries.length);
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
         + 'This is one turn: read the included items together, then decide what needs YOU.]',
       ...bodies,
       ...(digestEntries.length > 0 || rollup?.unreadCount > 0 ? [
-        `[Since you last looked: ${digestEntries.length + (rollup?.unreadCount || 0)} ambient update${digestEntries.length + (rollup?.unreadCount || 0) === 1 ? '' : 's'}; context only, no reply needed.]
-${digestLines.join('\n')}${digestEntries.length > visibleRawLimit ? `\n- ${digestEntries.length - visibleRawLimit} earlier updates omitted` : ''}`,
+        `[Since you last looked: ${digestCount} ambient update${digestCount === 1 ? '' : 's'} in ${conversationCounts.size} conversation${conversationCounts.size === 1 ? '' : 's'}; context only, no reply needed.]
+${digestLines.join('\n')}${conversationCounts.size > 8 ? `\n- ${conversationCounts.size - 8} more conversations omitted` : ''}\nPull relevant messages with commonly_get_messages. On resume, read oldest unread first; at most 8 conversations, 5 messages each, 20 messages total.`,
       ] : []),
       ...(omitted > 0
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
@@ -2391,6 +2397,7 @@ ${digestLines.join('\n')}${digestEntries.length > visibleRawLimit ? `\n- ${diges
   const tick = async () => {
     if (!running) return;
     let nextPollDelayMs = intervalMs;
+    let completedModelTurn = false;
     try {
       // ADR-024 D3: this is an inbox fetch, not a stream of interrupts. The
       // backend returns one pod's oldest pending batch, so every delivered row
@@ -2504,13 +2511,9 @@ ${digestLines.join('\n')}${digestEntries.length > visibleRawLimit ? `\n- ${diges
           ));
           if (batchSpawned) {
             consecutiveSpawnFailures = 0;
-            // A turn is exactly when events pile up: whoever typed while the
-            // adapter was running is already waiting. Sleeping the interval on
-            // top of the turn charges them for it twice (TASK-343). Only a
-            // batch that actually spawned skips the wait; an idle poll and a
-            // batch that spawned nothing keep the interval, so this cannot
-            // become a spin.
-            nextPollDelayMs = 0;
+            // Notices arriving mid-turn get one bounded collection window.
+            // Idle polls and batches with no model turn keep their cadence.
+            completedModelTurn = true;
           }
           for (const entry of batch.entries) {
             const event = entry.event;
@@ -2688,7 +2691,9 @@ ${digestLines.join('\n')}${digestEntries.length > visibleRawLimit ? `\n- ${diges
       }
       onError?.(err);
     }
-    if (running) setTimeoutImpl(tick, nextPollDelayMs);
+    // Notices landing during a turn share one three-second collection window
+    // before the next inbox read, independent of the idle polling cadence.
+    if (running) setTimeoutImpl(tick, completedModelTurn ? 3000 : nextPollDelayMs);
   };
 
   tick();

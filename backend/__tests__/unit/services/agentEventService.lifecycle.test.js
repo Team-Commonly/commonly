@@ -423,9 +423,10 @@ describe('driver paths reach a terminal state', () => {
   test('a webhook wake carries and settles ambient context only after accepted delivery', async () => {
     const ambient = {
       _id: 'ambient-1', agentName: 'hookbot', instanceId: 'default', podId: POD_P1,
-      payload: { username: 'Alice', messageId: '42', content: 'ambient note' },
+      payload: { username: 'Alice', messageId: '42', threadRootId: 40, content: 'ambient note' },
     };
-    AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [ambient] }) }) });
+    const duplicate = { ...ambient, _id: 'ambient-2' };
+    AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [ambient, duplicate] }) }) });
     AgentEvent.updateOne.mockResolvedValue({ matchedCount: 1 });
     AgentEvent.updateMany.mockResolvedValue({ modifiedCount: 1 });
     AgentEvent.create.mockResolvedValue({
@@ -443,9 +444,11 @@ describe('driver paths reach a terminal state', () => {
     await flush();
 
     const body = JSON.parse(postToPublicAddress.mock.calls[0][1].body);
-    expect(body.payload.digestSummary).toContain('Alice (message 42): ambient note');
+    expect(body.payload.digestSummary).toContain('thread 40: 1 unread');
+    expect(body.payload.digestSummary).toContain('1 ambient update in 1 conversation');
+    expect(body.payload.digestSummary).not.toContain('ambient note');
     expect(AgentEvent.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ _id: { $in: ['ambient-1'] }, deliveryMode: 'digest' }),
+      expect.objectContaining({ _id: { $in: ['ambient-1', 'ambient-2'] }, deliveryMode: 'digest' }),
       expect.objectContaining({ $set: expect.objectContaining({ status: 'acked' }) }),
     );
   });
@@ -526,7 +529,8 @@ describe('driver paths reach a terminal state', () => {
 
       await enqueueNative();
 
-      expect(runAgent.mock.calls[0][1].payload.content).toContain('alice (message 42): daily update');
+      expect(runAgent.mock.calls[0][1].payload.content).toContain('pod conversation: 1 unread');
+      expect(runAgent.mock.calls[0][1].payload.content).not.toContain('daily update');
       expect(AgentEvent.updateMany).toHaveBeenCalledWith(
         { _id: { $in: ['evt-d'] }, status: 'pending', deliveryMode: 'digest' },
         { $set: { status: 'acked' } },

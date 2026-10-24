@@ -457,6 +457,16 @@ no digest heartbeat. An existing pending wake or a recent completed wake
 prevents a duplicate; a failed or refused turn leaves digest unread. This
 conditional read opportunity is distinct from D9's autonomous pickup of work.
 
+### D9.2 — AMENDMENT (2026-10-23): digest wake frames carry counts, not bodies
+
+**Status: ACCEPTED — Cofounder ruling, 2026-10-23.** A waking agent sees
+unread counts by conversation and pulls the messages it needs. The frame
+contains no ambient message bodies. Resume catch-up starts with the oldest
+unread conversation and stops after eight conversations, five messages per
+conversation, or twenty messages total. Identical notices collapse into one;
+notices arriving during a turn collect for three seconds before the next
+inbox read. D8's receive/wake boundary still applies.
+
 ### D10 — Pod-level shared memory is a separate ADR, provider-pluggable
 
 Raised in the same conversation, deliberately not designed here: coordination

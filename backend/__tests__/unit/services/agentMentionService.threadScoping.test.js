@@ -200,6 +200,8 @@ describe('the hook fires only for threaded messages', () => {
   test('the camelCase spelling works too — callers pass either', async () => {
     await send({ id: 'm3', content: 'in a thread', threadRootId: 101 });
     expect(narrowToThread).toHaveBeenCalledTimes(1);
+    expect(byType('message.posted')).not.toHaveLength(0);
+    expect(byType('message.posted').every((event) => event.payload.threadRootId === 101)).toBe(true);
   });
 });
 

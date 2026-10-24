@@ -52,6 +52,37 @@ const mintDeliveryNonce = (): string => crypto.randomBytes(16).toString('hex');
 
 const OBJECT_ID_HEX = /^[a-f\d]{24}$/i;
 
+// A wake advertises unread conversations, not message text. The seat can
+// choose which threads to pull with commonly_get_messages after it wakes.
+const digestConversationFrame = (
+  rows: Array<{ payload?: Record<string, unknown> }>,
+  olderCount = 0,
+): string => {
+  const counts = new Map<string, number>();
+  if (olderCount > 0) counts.set('older pod activity', olderCount);
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const payload = row.payload || {};
+    const sourceId = payload.messageId != null ? `message:${payload.messageId}`
+      : (typeof payload.taskId === 'string'
+        ? `task:${payload.taskId}:${String(payload.taskKind || '')}:${String(payload.content || '')}` : null);
+    if (sourceId && seen.has(sourceId)) continue;
+    if (sourceId) seen.add(sourceId);
+    const thread = payload.threadRootId;
+    const task = payload.taskId;
+    const label = typeof thread === 'number' && Number.isInteger(thread) && thread > 0
+      ? `thread ${thread}`
+      : (typeof task === 'string' && /^TASK-\d+$/.test(task) ? task : 'pod conversation');
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  const lines = [...counts].slice(0, 8).map(([label, count]) => `- ${label}: ${count} unread`);
+  const omitted = Math.max(0, counts.size - 8);
+  if (omitted) lines.push(`- ${omitted} more conversations omitted`);
+  const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+  return `[Since you last looked: ${total} ambient update${total === 1 ? '' : 's'} in ${counts.size} conversation${counts.size === 1 ? '' : 's'}; context only, no reply needed.]\n`
+    + `${lines.join('\n')}\nPull relevant messages with commonly_get_messages. On resume, read oldest unread first; at most 8 conversations, 5 messages each, 20 messages total.`;
+};
+
 // TASK-264: how many stuck in-process events one sweep re-runs, and how long a
 // 'queued'/'running' AgentRun may sit before it counts as abandoned.
 const STUCK_REDISPATCH_BATCH = 50;
@@ -1420,16 +1451,7 @@ class AgentEventService {
     if (!saved.matchedCount) return;
     event.digestEventIds = ids;
     event.digestRollupRevision = rollup?.revision ?? null;
-    const lines = raw.map((row) => {
-      const who = String(row.payload?.username || 'member').replace(/\s+/g, ' ').slice(0, 40);
-      const body = String(row.payload?.content || '').replace(/\s+/g, ' ').slice(0, 160);
-      const messageId = row.payload?.messageId;
-      return `- ${who}${messageId ? ` (message ${String(messageId)})` : ''}: ${body}`;
-    });
-    if (rollup?.unreadCount) {
-      lines.unshift(`- ${rollup.unreadCount} older updates (last event IDs: ${rollup.lastEventIds.join(', ')})`);
-    }
-    const summary = `[Since you last looked: ${raw.length + (rollup?.unreadCount || 0)} ambient updates; context only, no reply needed.]\n${lines.join('\n')}`;
+    const summary = digestConversationFrame(raw, rollup?.unreadCount || 0);
     const baseContent = typeof event.payload?.content === 'string' ? event.payload.content : '';
     event.payload = {
       ...(event.payload || {}),
@@ -1498,20 +1520,12 @@ class AgentEventService {
         } catch (digestErr) {
           console.warn('[native-runtime] digest lookup failed:', (digestErr as Error).message);
         }
-        const lines = digest.map((item) => {
-          const who = String(item.payload?.username || 'member').replace(/\s+/g, ' ').slice(0, 40);
-          const content = String(item.payload?.content || '').replace(/\s+/g, ' ').slice(0, 160);
-          const messageId = item.payload?.messageId;
-          return `- ${who}${messageId ? ` (message ${messageId})` : ''}: ${content}`;
-        });
         const baseContent = String(event.payload?.content || event.payload?.prompt || event.payload?.text || '');
-        const foldedLine = folded
-          ? `- ${folded.unreadCount} older updates (last event IDs: ${folded.lastEventIds.join(', ')})`
-          : null;
-        const allLines = foldedLine ? [foldedLine, ...lines] : lines;
-        const payload = allLines.length ? {
+        const summary = digest.length || folded?.unreadCount
+          ? digestConversationFrame(digest, folded?.unreadCount || 0) : null;
+        const payload = summary ? {
           ...event.payload,
-          content: `${baseContent}\n\n[Since you last looked: ambient updates; context only.]\n${allLines.join('\n')}`,
+          content: `${baseContent}\n\n${summary}`,
         } : event.payload;
         const result = await runAgent(nativeInstallation, { type, eventId: eventIdStr, payload });
         // Leave digest unread when the native turn fails. On a successful turn,

@@ -124,8 +124,10 @@ describe('legacy ambient digest bridge', () => {
 
     const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
     expect(String(delivered._id)).toBe(String(wake._id));
-    expect(delivered.payload.digestSummary).toContain('Alice (message 42): ambient note');
-    expect(delivered.payload.content).toContain('Alice (message 42): ambient note');
+    expect(delivered.payload.digestSummary).toContain('pod conversation: 1 unread');
+    expect(delivered.payload.digestSummary).not.toContain('ambient note');
+    expect(delivered.payload.content).toContain('pod conversation: 1 unread');
+    expect(delivered.payload.content).not.toContain('ambient note');
     expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('pending');
 
     await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,
@@ -154,7 +156,8 @@ describe('legacy ambient digest bridge', () => {
     await seedEvent(); // payload.text only; older consumers read payload.content.
 
     const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
-    expect(delivered.payload.content).toContain('Alice: ambient note');
+    expect(delivered.payload.content).toContain('pod conversation: 1 unread');
+    expect(delivered.payload.content).not.toContain('ambient note');
   });
 
   test('a claim stand-down does not consume raw or folded digest', async () => {
@@ -204,7 +207,7 @@ describe('legacy ambient digest bridge', () => {
     });
     const wake = await seedEvent();
     const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
-    expect(delivered.payload.digestSummary).toContain('3 older updates');
+    expect(delivered.payload.digestSummary).toContain('older pod activity: 3 unread');
     await AgentDigestState.updateOne({ agentName: AGENT, podId: POD_ID },
       { $inc: { unreadCount: 1, revision: 1 } });
 
