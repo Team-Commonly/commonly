@@ -364,3 +364,30 @@ it('validates the instance hidden-entry setting', () => {
   expect([...hiddenHostedMcpEntryIds({})]).toEqual([]);
   expect(() => hiddenHostedMcpEntryIds({ HOSTED_MCP_HIDDEN_ENTRIES: 'airtable' })).toThrow();
 });
+
+it('offers a hidden hosted entry only to its configured walk user', async () => {
+  const hiddenBefore = process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+  const allowBefore = process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
+  process.env.HOSTED_MCP_HIDDEN_ENTRIES = '["airtable"]';
+  process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = JSON.stringify({ airtable: [userId] });
+  try {
+    const entry = HOSTED_MCP_ENTRIES.find((row) => row.id === 'airtable');
+    mockInstallables([], [buildHostedMcpToolInstallable(entry)]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    Integration.find.mockReturnValue(lean([]));
+    const offerings = async (id) => (await catalogFor(id)).installables
+      .filter((row) => row.list === 'tools').map((row) => row.installableId);
+    expect(await offerings(userId)).toEqual(['airtable']);
+    expect(await offerings('64b64c48c4f37a6b2f34c999')).toEqual([]);
+    expect(await offerings(undefined)).toEqual([]);
+    for (const bad of [{ airtable: [userId], typo: [userId] }, { airtable: [userId], sentry: null }]) {
+      process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = JSON.stringify(bad);
+      expect(await offerings(userId)).toEqual([]);
+    }
+  } finally {
+    if (hiddenBefore === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+    else process.env.HOSTED_MCP_HIDDEN_ENTRIES = hiddenBefore;
+    if (allowBefore === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
+    else process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = allowBefore;
+  }
+});
