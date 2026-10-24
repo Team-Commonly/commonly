@@ -3457,7 +3457,7 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
 // Stated limits, so the next reader does not over-read this: the parser handles
 // simple selectors, max-/min-width conditions, and the `height` / `grid-row`
 // declarations asserted on. It does not resolve percentages against containing
-// blocks, does not model `!important`, and treats unmodelled media features
+// blocks or model cascade layers/origins, and treats unmodelled media features
 // (hover, prefers-reduced-motion) as applying — the conservative direction for a
 // guard whose job is to catch a rule that WINS. The chain matcher at the end of
 // this block walks the descendant axis for class-only compounds, and treats `>`
@@ -3485,8 +3485,8 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
   );
 
   // (ids, classes/attributes/pseudo-classes, elements). Enough for this sheet:
-  // the rules in dispute are 0,1,0 / 0,2,0 / 0,3,0 and no id or `!important` is
-  // involved.
+  // the rules in dispute are 0,1,0 / 0,2,0 / 0,3,0. Importance is ranked
+  // separately, per declaration, before specificity.
   const specificityOf = (selector: string): number[] => {
     const ids = (selector.match(/#[A-Za-z0-9_-]+/g) ?? []).length;
     const classes = (selector.match(/\.[A-Za-z0-9_-]+/g) ?? []).length
@@ -3545,15 +3545,33 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     return rules;
   };
 
-  const declarations = (body: string): Record<string, string> => {
-    const found: Record<string, string> = {};
+  type Declaration = { value: string; important: boolean };
+  const parsedDeclarations = (body: string): Record<string, Declaration> => {
+    const found: Record<string, Declaration> = {};
     body.split(';').forEach((entry) => {
       const at = entry.indexOf(':');
       if (at < 0) return;
-      found[entry.slice(0, at).trim()] = entry.slice(at + 1).trim();
+      const property = entry.slice(0, at).trim();
+      const raw = entry.slice(at + 1).trim();
+      const important = /!\s*important\s*$/i.test(raw);
+      const value = raw.replace(/!\s*important\s*$/i, '').trim();
+      const put = (key: string, next: string): void => {
+        if (!found[key]?.important || important) found[key] = { value: next, important };
+      };
+      put(property, value);
+      // Expand the one shorthand this guard resolves at declaration time, so
+      // longhand/shorthand importance and source order agree within a block.
+      if (property === 'padding') {
+        const parts = value.split(/\s+/).filter(Boolean);
+        const bottomIndex: Record<number, number> = { 1: 0, 2: 0, 3: 2, 4: 2 };
+        if (bottomIndex[parts.length] !== undefined) put('padding-bottom', parts[bottomIndex[parts.length]]);
+      }
     });
     return found;
   };
+  const declarations = (body: string): Record<string, string> => Object.fromEntries(
+    Object.entries(parsedDeclarations(body)).map(([key, declaration]) => [key, declaration.value]),
+  );
 
   // A rule applies at a width unless an at-rule it sits inside rules that width
   // out. Conditions the guard does not model are treated as applying.
@@ -3565,16 +3583,39 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     return true;
   });
 
-  const outranks = (a: ParsedRule, b: ParsedRule): boolean => {
+  const outranks = (a: ParsedRule, b: ParsedRule, property: string): boolean => {
+    const aImportant = parsedDeclarations(a.body)[property]?.important ?? false;
+    const bImportant = parsedDeclarations(b.body)[property]?.important ?? false;
+    if (aImportant !== bImportant) return aImportant;
     for (let i = 0; i < 3; i += 1) {
       if (a.specificity[i] !== b.specificity[i]) return a.specificity[i] > b.specificity[i];
     }
     return a.order > b.order;
   };
 
-  const winnerOf = (rules: ParsedRule[]): ParsedRule => rules.reduce(
-    (best, rule) => (outranks(rule, best) ? rule : best),
+  const winnerOf = (rules: ParsedRule[], property: string): ParsedRule => rules.reduce(
+    (best, rule) => (outranks(rule, best, property) ? rule : best),
   );
+
+  test('importance is parsed and outranks specificity/order for the property being resolved (TASK-158)', () => {
+    const fixture = parseCascade(`
+      .v2-pane { height: 100vh ! IMPORTANT; grid-row: 1; }
+      .v2-root .v2-shell .v2-pane { height: 100%; grid-row: 2; }
+    `);
+    expect(parsedDeclarations(fixture[0].body).height).toEqual({ value: '100vh', important: true });
+    expect(winnerOf(fixture, 'height').selector).toBe('.v2-pane');
+    expect(winnerOf(fixture, 'grid-row').selector).toBe('.v2-root .v2-shell .v2-pane');
+    const equal = parseCascade(`
+      .v2-shell .v2-pane { height: 90vh !important; }
+      .v2-pane { height: 100vh !important; }
+      .v2-shell .v2-pane { height: 80vh !important; }
+    `);
+    expect(winnerOf(equal.slice(0, 2), 'height').order).toBe(0);
+    expect(winnerOf(equal, 'height').order).toBe(2);
+    expect(parsedDeclarations('height: 100vh !important; height: 100%;').height.value).toBe('100vh');
+    expect(parsedDeclarations('padding-bottom: 56px !important; padding: 0;')['padding-bottom'].value).toBe('56px');
+    expect(parsedDeclarations('padding: 0 !important; padding-bottom: 56px;')['padding-bottom'].value).toBe('0');
+  });
 
   const rules = parseCascade(v2);
 
@@ -3594,7 +3635,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     // Non-vacuity: the assertions below are about a winner, and a winner chosen
     // from an empty set asserts nothing.
     expect(contentRules.length).toBeGreaterThan(0);
-    const winner = winnerOf(contentRules);
+    const winner = winnerOf(contentRules, 'grid-row');
     expect(declarations(winner.body)['grid-row']).toBe('2');
     expect(winner.selector).toContain('v2-authenticated-shell__content');
   });
@@ -3613,7 +3654,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     expect(bounded.length).toBeGreaterThan(0);
 
     viewportHeight.forEach((rule) => {
-      const dominator = bounded.find((candidate) => outranks(candidate, rule));
+      const dominator = bounded.find((candidate) => outranks(candidate, rule, 'height'));
       // Named, not counted: a bare `dominated: false` reports that something is
       // wrong without saying which rule now wins the phone.
       expect({
@@ -3627,7 +3668,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
       });
     });
 
-    const winner = winnerOf(atPhone);
+    const winner = winnerOf(atPhone, 'height');
     expect(declarations(winner.body)['height']).toBe('100%');
     expect(winner.selector).toBe(BOUNDED_PANE_SELECTOR);
   });
@@ -3717,19 +3758,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
   // `padding-bottom`, or the `padding` shorthand it may be written as. A guard
   // that read only the longhand would pass while the shorthand took the space
   // back — and the shorthand is how this rule is written.
-  const bottomPadding = (body: string): string | undefined => {
-    const found = declarations(body);
-    if (found['padding-bottom'] !== undefined) return found['padding-bottom'];
-    if (found.padding === undefined) return undefined;
-    const parts = found.padding.split(/\s+/).filter(Boolean);
-    // 2 values are vertical|horizontal, 3 are top|horizontal|bottom, 4 are
-    // top|right|bottom|left — so the bottom is the LAST value in 3- and 4-value
-    // form, and the first in 1- and 2-value form. Getting this wrong reads a
-    // `padding: 0 0 56px` as no reservation at all, which is how it was caught.
-    const bottomIndex: Record<number, number> = { 1: 0, 2: 0, 3: 2, 4: 2 };
-    const at = bottomIndex[parts.length];
-    return at === undefined ? undefined : parts[at];
-  };
+  const bottomPadding = (body: string): string | undefined => declarations(body)['padding-bottom'];
 
   test('the phone list reserves the tab bar\'s own height inside its box', () => {
     const shellRules = chainRules(LIST_CHAIN, 390)
@@ -3743,9 +3772,9 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     const barRules = chainRules(TAB_BAR, 390)
       .filter((rule) => declarations(rule.body)['height'] !== undefined);
     expect(barRules.length).toBeGreaterThan(0);
-    const barHeight = declarations(winnerOf(barRules).body)['height'];
+    const barHeight = declarations(winnerOf(barRules, 'height').body)['height'];
 
-    const winner = winnerOf(shellRules);
+    const winner = winnerOf(shellRules, 'padding-bottom');
     // Derived, not restated: the reserved space must equal the bar it reserves,
     // so a bar that grows reds this without anyone editing two numbers.
     expect(bottomPadding(winner.body)).toBe(barHeight);
@@ -3754,7 +3783,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     // rule of the same name below it takes the padding back — the shape that has
     // failed twice in this sheet, and why ux-lead's spec asks for the two-class
     // selector. Mutation m4 reds this line and only this line.
-    expect(winner.specificity[1]).toBeGreaterThan(winnerOf(oneClass).specificity[1]);
+    expect(winner.specificity[1]).toBeGreaterThan(winnerOf(oneClass, 'padding-bottom').specificity[1]);
   });
 
   test('the list aside does not stack over the tab bar', () => {
@@ -3769,10 +3798,10 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     const barRules = chainRules(TAB_BAR, 390)
       .filter((rule) => declarations(rule.body)['z-index'] !== undefined);
     expect(barRules.length).toBeGreaterThan(0);
-    const barZ = Number(declarations(winnerOf(barRules).body)['z-index']);
+    const barZ = Number(declarations(winnerOf(barRules, 'z-index').body)['z-index']);
     expect(Number.isNaN(barZ)).toBe(false);
 
-    const aside = winnerOf(asideRules);
+    const aside = winnerOf(asideRules, 'z-index');
     const z = declarations(aside.body)['z-index'];
     // `auto` never forms a stacking context; any number at or above the bar's own
     // z-index paints over it. The bar is fixed, so being under it in paint order
