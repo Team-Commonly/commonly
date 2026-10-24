@@ -254,6 +254,7 @@ export default {
     const binary = ctx._binaryPath || (isPublic
       ? String(spawnSync('which', ['goose'], { encoding: 'utf8', env: sourceEnv }).stdout || '').trim()
       : 'goose');
+    if (isPublic && !isAbsolute(binary)) throw new Error('goose adapter: public seats require an absolute Goose executable');
     const version = ctx._version || versionOf(spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 5000 }).stdout);
     if (!TESTED_GOOSE_VERSIONS.includes(version)) {
       if (isPublic) throw new Error(`goose adapter: public seats refuse untested version ${version || 'unknown'}`);
@@ -319,7 +320,6 @@ export default {
       let executable = binary;
       let spawnArgs = args;
       if (isPublic) {
-        if (!isAbsolute(binary)) throw new Error('goose adapter: public seats require an absolute Goose executable');
         const sandbox = { ...ctx.environment.sandbox, trust: 'public' };
         const mode = resolvePublicSandboxMode(sandbox, ctx._platform || process.platform);
         if (mode === 'bwrap') {
