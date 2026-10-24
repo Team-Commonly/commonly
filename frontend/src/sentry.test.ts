@@ -50,6 +50,7 @@ describe('Sentry frontend instrumentation', () => {
         tracesSampleRate: 0,
         release: 'frontend-sha',
         environment: process.env.NODE_ENV,
+        beforeBreadcrumb: expect.any(Function),
         beforeSend: expect.any(Function),
       }),
     );
@@ -80,6 +81,41 @@ describe('Sentry frontend instrumentation', () => {
     expect(event.request.cookies).toBeDefined();
     expect(scrubbed.request.data).toBeUndefined();
     expect(scrubbed.request.query_string).toBeUndefined();
+  });
+
+  it('scrubs invitation codes from navigation breadcrumbs before telemetry', () => {
+    process.env.REACT_APP_SENTRY_DSN = 'https://public@example.ingest.sentry.io/456';
+    loadSentryModule();
+
+    const options = mockSentryInit.mock.calls[0][0];
+    const breadcrumb = options.beforeBreadcrumb({
+      category: 'navigation',
+      data: {
+        from: '/v2/register#invite=CM-SECRET',
+        to: '/v2/register?next=%2Fv2&invite=CM-SECRET',
+      },
+    });
+    expect(breadcrumb.data).toEqual({ from: '/v2/register', to: '/v2/register?next=%2Fv2' });
+
+    const scrubbed = options.beforeSend({
+      breadcrumbs: [{ data: { to: 'https://commonly.me/v2/register#invite=CM-SECRET' } }],
+    });
+    expect(scrubbed.breadcrumbs[0].data.to).toBe('https://commonly.me/v2/register');
+
+    const fragmentEvent = options.beforeSend({
+      request: { url: 'https://commonly.me/v2/register#invite=CM-SECRET' },
+    });
+    expect(fragmentEvent.request.url).toBe('https://commonly.me/v2/register');
+
+    const legacyQueryEvent = options.beforeSend({
+      request: { url: 'https://commonly.me/v2/register?next=%2Fv2&invite=CM-SECRET' },
+    });
+    expect(legacyQueryEvent.request.url).toBe('https://commonly.me/v2/register?next=%2Fv2');
+
+    const ordinaryFragmentEvent = options.beforeSend({
+      request: { url: 'https://commonly.me/v2/register#section' },
+    });
+    expect(ordinaryFragmentEvent.request.url).toBe('https://commonly.me/v2/register#section');
   });
 
   it('loads the SDK only through the DSN-gated dynamic import', () => {

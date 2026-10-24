@@ -121,6 +121,7 @@ const callback = (query = 'state=st-1&code=code-1', cookie = BROWSER_COOKIE, ent
  */
 const storedRow = (config = {}) => ({
   _id: 'row-1',
+  status: 'pending',
   createdBy: 'user-1',
   config: {
     entryId: 'linear',
@@ -196,6 +197,89 @@ const outcome = (res) => {
 const scopeSet = (scope) => new Set(String(scope).split(/[\s,]+/).filter(Boolean));
 
 describe('hosted-mcp connect: callback', () => {
+  it('redirects and marks a pending flow failed when secret storage rejects', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      connectorSecrets.put.mockReset();
+      connectorSecrets.put.mockRejectedValue(new Error('secret store failed: access-1'));
+
+      const res = await callback();
+
+      expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'connector_unavailable' });
+      expect(res.headers.location).not.toContain('access-1');
+      expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+      const [filter, update] = Integration.findOneAndUpdate.mock.calls[1];
+      expect(filter).toEqual({ _id: 'row-1', status: 'pending', 'config.pendingAuth': { $exists: false } });
+      expect(update).toMatchObject({
+        $set: { status: 'error' },
+        $unset: { 'config.pendingAuth': 1 },
+      });
+      expect(JSON.stringify(log.mock.calls)).toContain('linear');
+      expect(JSON.stringify(log.mock.calls)).not.toContain('access-1');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('retires an existing connected row when a reconnect cannot safely store its token pair', async () => {
+    const connected = { ...storedRow({ credentialRef: 'ref-old-access' }), status: 'connected' };
+    Integration.findOne.mockResolvedValue(connected);
+    Integration.findOneAndUpdate.mockReset()
+      .mockResolvedValueOnce(connected)
+      .mockResolvedValueOnce(connected);
+    connectorSecrets.put.mockReset().mockRejectedValue(new Error('secret store failed'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await callback();
+      expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'connector_unavailable' });
+      expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(3);
+      expect(Integration.findOneAndUpdate.mock.calls[0][1]).toEqual({ $unset: { 'config.pendingAuth': 1 } });
+      expect(Integration.findOneAndUpdate.mock.calls[1]).toEqual([
+        { _id: 'row-1', status: 'connected' },
+        { $set: { status: 'error', errorMessage: 'Connection could not be completed. Try again.', errorMessageUserFacing: true } },
+        { new: true },
+      ]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('retires a connected row when only the refresh-token write fails', async () => {
+    const connected = { ...storedRow({ credentialRef: 'ref-old-access', refreshTokenRef: 'ref-old-refresh' }), status: 'connected' };
+    Integration.findOne.mockResolvedValue(connected);
+    Integration.findOneAndUpdate.mockReset()
+      .mockResolvedValueOnce(connected)
+      .mockResolvedValueOnce(connected);
+    connectorSecrets.put.mockReset()
+      .mockResolvedValueOnce('ref-old-access')
+      .mockRejectedValueOnce(new Error('refresh write failed'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await callback();
+      expect(outcome(res)).toMatchObject({ hostedMcp: 'error', code: 'connector_unavailable' });
+      expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
+      expect(Integration.findOneAndUpdate.mock.calls[1][1].$set.status).toBe('error');
+      expect(JSON.stringify(log.mock.calls)).not.toContain('refresh write failed');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('still redirects if marking the pending flow failed also rejects', async () => {
+    connectorSecrets.put.mockReset().mockRejectedValue(new Error('secret store failed'));
+    Integration.findOneAndUpdate.mockReset()
+      .mockResolvedValueOnce(storedRow())
+      .mockRejectedValueOnce(new Error('write failed'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await callback();
+      expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'connector_unavailable' });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('write failed');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('forgets the old grant’s tools/list assessment around credential replacement', async () => {
     connectorSecrets.put.mockReset();
     connectorSecrets.put.mockImplementationOnce(async () => {
@@ -315,13 +399,14 @@ describe('hosted-mcp connect: callback', () => {
   it('refuses and revokes an overbroad grant without storing either token', async () => {
     FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const sentinel = 'dummy-scope-token-sentinel';
     global.fetch
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           access_token: 'access-overbroad',
           refresh_token: 'refresh-overbroad',
-          scope: 'read,openid,write',
+          scope: `read,openid,${sentinel}`,
         }),
       })
       .mockResolvedValueOnce({ ok: true, status: 200 });
@@ -337,8 +422,9 @@ describe('hosted-mcp connect: callback', () => {
       expect(new URL(res.headers.location).searchParams.getAll('extraScope')).toEqual([]);
       expect(warn).toHaveBeenCalledWith(
         '[hosted-mcp] refused overbroad OAuth scope grant',
-        JSON.stringify({ entryId: 'linear', extraScopes: ['write'] }),
+        JSON.stringify({ entryId: 'linear', extraScopeCount: 1 }),
       );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(sentinel);
       expect(global.fetch).toHaveBeenCalledTimes(2);
       expect(global.fetch.mock.calls[1][0]).toBe(FIXTURE_ENTRY.revoke.endpoint);
       const revokeBody = new URLSearchParams(String(global.fetch.mock.calls[1][1].body));

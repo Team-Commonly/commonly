@@ -13,6 +13,9 @@ jest.mock('../../../services/agentIdentityService', () => ({
 jest.mock('../../../services/agentMessageService', () => ({
   postMessage: jest.fn(),
 }));
+jest.mock('../../../services/mentionNonMemberNoticeService', () => ({
+  findNonMemberMentionNotices: jest.fn(),
+}));
 jest.mock('../../../services/agentThreadService', () => ({}));
 jest.mock('../../../services/podContextService', () => ({}));
 jest.mock('../../../services/globalModelConfigService', () => ({}));
@@ -28,7 +31,10 @@ jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../models/Activity', () => ({}));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
-jest.mock('../../../models/Pod', () => ({ find: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({
+  find: jest.fn(),
+  findById: jest.fn(() => ({ select: () => ({ lean: async () => ({ type: 'chat' }) }) })),
+}));
 jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({ find: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({
@@ -36,6 +42,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
 }));
 
 const AgentMessageService = require('../../../services/agentMessageService');
+const { findNonMemberMentionNotices } = require('../../../services/mentionNonMemberNoticeService');
 const router = require('../../../routes/agentsRuntime');
 
 const getRouteHandler = (path, method) => {
@@ -51,6 +58,7 @@ const getRouteHandler = (path, method) => {
 describe('agentsRuntime post message installation config forwarding', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    findNonMemberMentionNotices.mockResolvedValue([]);
   });
 
   it('passes installation config to AgentMessageService.postMessage', async () => {
@@ -92,7 +100,54 @@ describe('agentsRuntime post message installation config forwarding', () => {
       messageType: 'text',
       installationConfig: { errorRouting: { ownerDm: true } },
     }));
-    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.json).toHaveBeenCalledWith({ success: true, mentionNotices: [] });
+  });
+
+  it('returns structured non-member feedback in the MCP post result', async () => {
+    const handler = getRouteHandler('/pods/:podId/messages', 'post');
+    AgentMessageService.postMessage.mockResolvedValue({
+      success: true, message: { id: 'm1', content: 'Please review @rhea' },
+    });
+    findNonMemberMentionNotices.mockResolvedValue([{ code: 'MENTION_NOT_IN_POD', handle: 'rhea', message: "rhea isn't in this pod. Invite them, or ask in a pod they're in." }]);
+    const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'tarik', config: {} };
+    const req = {
+      params: { podId: 'pod-1' }, body: { content: 'Please review @rhea' },
+      agentInstallation: installation, agentInstallations: [installation],
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await handler(req, res);
+
+    expect(findNonMemberMentionNotices).toHaveBeenCalledWith('pod-1', 'Please review @rhea');
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      mentionNotices: [{ code: 'MENTION_NOT_IN_POD', handle: 'rhea', message: "rhea isn't in this pod. Invite them, or ask in a pod they're in." }],
+      notice: "rhea isn't in this pod. Invite them, or ask in a pod they're in.",
+    }));
+  });
+
+  it('still reports a successful post if the advisory lookup fails', async () => {
+    const handler = getRouteHandler('/pods/:podId/messages', 'post');
+    AgentMessageService.postMessage.mockResolvedValue({
+      success: true, message: { id: 'm1', content: '@rhea please review' },
+    });
+    findNonMemberMentionNotices.mockRejectedValueOnce(new Error('lookup unavailable'));
+    const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'tarik', config: {} };
+    const req = {
+      params: { podId: 'pod-1' }, body: { content: '@rhea please review' },
+      agentInstallation: installation, agentInstallations: [installation],
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      await handler(req, res);
+      expect(res.status).not.toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({
+        success: true, message: { id: 'm1', content: '@rhea please review' }, mentionNotices: [],
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   // answeringMessageId tells the answer rule which message a post answers

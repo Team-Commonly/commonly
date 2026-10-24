@@ -266,6 +266,23 @@ router.patch('/:userId/ban', adminWriteLimiter, auth, adminAuth, async (req: any
   }
 });
 
+// An admin can invalidate human browser sessions without banning the account.
+router.post('/:userId/sessions/revoke', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
+  try {
+    const target = await User.findById(req.params.userId).select('isBot');
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.isBot) return res.status(400).json({ error: 'Agent accounts have no browser sessions' });
+    await User.updateOne({ _id: target._id }, { $inc: { tokenVersion: 1 } });
+    // eslint-disable-next-line global-require
+    const { disconnectUserSessionSockets } = require('../../services/sessionSocketService');
+    disconnectUserSessionSockets(String(target._id));
+    return res.json({ message: 'Sessions revoked' });
+  } catch (error) {
+    console.error('Failed to revoke user sessions:', error);
+    return res.status(500).json({ error: 'Failed to revoke user sessions' });
+  }
+});
+
 router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
   try {
     const { userId } = req.params;
@@ -611,7 +628,9 @@ router.post('/waitlist/:requestId/send-invitation', auth, adminAuth, async (req:
     }
 
     const frontendUrl = getPrimaryFrontendUrl();
-    const registerUrl = `${frontendUrl.replace(/\/$/, '')}/v2/register?invite=${encodeURIComponent(invitation.code)}`;
+    // In the fragment, which browsers never send to a server; the register page
+    // reads it and clears it from the address bar (frontend pendingInvite.ts).
+    const registerUrl = `${frontendUrl.replace(/\/$/, '')}/v2/register#invite=${encodeURIComponent(invitation.code)}`;
     const recipientName = waitlistRequest.name || 'there';
     const subject = 'Your Commonly invitation code';
     const textBody = [

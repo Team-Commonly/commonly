@@ -11,6 +11,7 @@ import { createHash } from 'crypto';
 import AgentCredential from '../models/AgentCredential';
 import { AgentInstallation } from '../models/AgentRegistry';
 import { ownsRuntimeIdentity } from '../services/runtimeIdentityOwnership';
+import { revokeRuntimeTokenEverywhere } from './registry/tokens';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -123,7 +124,22 @@ router.delete('/:id', credentialRateLimit, auth, async (req: AuthReq, res: expre
     if (!agentName && !isOwner && caller?.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied' });
     }
+    // Revoke first, then collect descendant hashes. A daemon can mint a child
+    // after a pre-revoke snapshot; the cascade would revoke that child while
+    // cleanup missed its embedded User copy.
     const revoked = await AgentCredential.revokeCascade(credential._id as Types.ObjectId);
+    const runtimeHashes = new Set<string>();
+    let frontier: Types.ObjectId[] = [credential._id as Types.ObjectId];
+    while (frontier.length) {
+      const rows = await AgentCredential.find({ _id: { $in: frontier } })
+        .select('_id kind tokenHash').lean();
+      for (const row of rows) {
+        if (row.kind === 'runtime' && row.tokenHash) runtimeHashes.add(row.tokenHash);
+      }
+      const children = await AgentCredential.find({ parentId: { $in: frontier } }).select('_id').lean();
+      frontier = children.map((row) => row._id as Types.ObjectId);
+    }
+    await Promise.all([...runtimeHashes].map((tokenHash) => revokeRuntimeTokenEverywhere(tokenHash)));
     return res.json({ revoked });
   } catch (err) {
     console.error('Error revoking credential:', err);

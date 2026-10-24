@@ -1960,6 +1960,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 }}
                 onDraftPointer={updateMentionState}
                 onKeyDown={(event) => {
+                  // Enter that commits an IME candidate is not a send or a pick.
+                  // keyCode 229 covers Safari, which reports composition-ending
+                  // Enter after compositionend with isComposing already false.
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   if (mentionOpen && filteredMentions.length > 0) {
                     if (event.key === 'ArrowDown') {
                       event.preventDefault();

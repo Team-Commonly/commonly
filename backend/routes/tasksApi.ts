@@ -120,6 +120,13 @@ const taskWriteRateLimit = (max: number) => rateLimit({
     error: `rate limit exceeded: ${max} task writes per 60s`,
   }),
 });
+const taskReadIpRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 3000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+});
 
 async function resolveAuthor(req: AuthReq): Promise<string> {
   const agentInstance = req.user?.isBot ? (req.user.botMetadata?.instanceId || req.user.botMetadata?.agentName) : null;
@@ -168,7 +175,7 @@ async function nextTaskId(podId: string): Promise<{ taskId: string; taskNum: num
   return { taskId: `TASK-${String(num).padStart(3, '0')}`, taskNum: num };
 }
 
-router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
+router.get('/:podId', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;

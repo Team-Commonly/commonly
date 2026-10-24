@@ -1,5 +1,7 @@
 // eslint-disable-next-line global-require
 const express = require('express');
+import rateLimit from 'express-rate-limit';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -25,6 +27,13 @@ interface Res {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+const ensembleIpRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 3000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+});
 
 const checkEnsemblePod = async (podId: string) => Pod.findById(podId) as Promise<{ type?: string; members?: unknown[]; createdBy?: { toString: () => string }; agentEnsemble?: unknown; includes?: (id: string) => boolean } | null>;
 
@@ -150,7 +159,7 @@ router.get('/:podId/ensemble/history', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/:podId/ensemble/response', agentRuntimeAuth, async (req: AuthReq, res: Res) => {
+router.post('/:podId/ensemble/response', ensembleIpRateLimit, agentRuntimeAuth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     const { ensembleId, agentType, instanceId, content, messageId } = (req.body || {}) as { ensembleId?: string; agentType?: string; instanceId?: string; content?: string; messageId?: string };

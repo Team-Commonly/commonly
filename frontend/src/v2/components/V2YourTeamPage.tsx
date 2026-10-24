@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import V2Avatar from './V2Avatar';
+import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 
 /**
  * Your Team — direction C, built to `YourTeam.dc.html` (canvas: Workspace in C)
@@ -50,6 +51,8 @@ interface AgentInstallationSummary {
   internal?: boolean;
   userId?: string | null;
   description?: string | null;
+  installedBy?: string | null;
+  connection?: AgentConnection;
 }
 
 interface TaskRow {
@@ -326,7 +329,11 @@ const V2YourTeamPage: React.FC = () => {
     const key = agentKey(a);
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
     const task = claimedTaskFor(a);
-    const statusText = state === 'needsYou'
+    const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
+    const visualState = a.connection && a.connection.state !== 'connected' ? 'idle' : state;
+    const statusText = a.connection && a.connection.state !== 'connected'
+      ? connectionLabel(a.connection!, t)
+      : state === 'needsYou'
       ? `${t('yourTeam.card.needsYou')} · ${ask?.title || ''}`.replace(/ · $/, '')
       : state === 'working'
         ? `${t('yourTeam.card.working')} · ${task?.taskId || shortPodName(task?.podName || a.podName || '')}`.replace(/ · $/, '')
@@ -334,14 +341,14 @@ const V2YourTeamPage: React.FC = () => {
     return (
       <article
         key={key}
-        className={`v2-team-card v2-team-card--${state}`}
+        className={`v2-team-card v2-team-card--${visualState}`}
         data-testid="team-card"
-        data-state={state}
+        data-state={visualState}
       >
         <div className="v2-team-card__head">
           <button
             type="button"
-            className={`v2-team-card__mark v2-team-card__mark--${state}`}
+            className={`v2-team-card__mark v2-team-card__mark--${visualState}`}
             onClick={() => goToProfile(a)}
             aria-label={t('yourTeam.card.viewProfileAria', { name: display })}
           >
@@ -349,9 +356,9 @@ const V2YourTeamPage: React.FC = () => {
           </button>
           <div className="v2-team-card__title">
             <div className="v2-team-card__name">{display}</div>
-            <div className={`v2-team-card__status v2-team-card__status--${state}`}>
-              {state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
-              {state !== 'idle' ? ' ' : ''}
+            <div className={`v2-team-card__status v2-team-card__status--${visualState}`}>
+              {(!a.connection || a.connection.state === 'connected') && state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
+              {(!a.connection || a.connection.state === 'connected') && state !== 'idle' ? ' ' : ''}
               {statusText}
             </div>
           </div>
@@ -365,12 +372,17 @@ const V2YourTeamPage: React.FC = () => {
           </div>
         )}
         <div className="v2-team-card__actions">
-          {state === 'needsYou' && (
+          {needsReconnect && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
+            <button type="button" className="v2-team-card__answer" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
+              {t('agentConnection.reconnect')}
+            </button>
+          ) : null}
+          {!needsReconnect && state === 'needsYou' && (
             <button type="button" className="v2-team-card__answer" onClick={() => handleAnswer(a)}>
               {t('yourTeam.card.answer')}
             </button>
           )}
-          <button
+          {!needsReconnect && <button
             type="button"
             className="v2-team-card__talk"
             onClick={(e) => handleTalk(a, e)}
@@ -378,7 +390,7 @@ const V2YourTeamPage: React.FC = () => {
             aria-label={t('yourTeam.card.talkToAria', { name: display })}
           >
             {opening === key ? t('yourTeam.card.opening') : t('yourTeam.card.talk')}
-          </button>
+          </button>}
         </div>
       </article>
     );

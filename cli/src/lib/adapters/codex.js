@@ -341,20 +341,35 @@ const preparePublicCodexHome = async (ctx) => {
 const PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES = 32 * 1024;
 
 const writePublicCodexInstructions = async (publicHome, ctx) => {
+  // Codex loads this file before AGENTS.md when it exists. Clear any leftover
+  // override on every spawn so it cannot shadow the seat's declared skills.
+  await rm(join(publicHome, 'AGENTS.override.md'), { force: true });
   const declared = Array.isArray(ctx.environment?.skills?.claude) ? ctx.environment.skills.claude : [];
   const baseDir = ctx.cwd || process.cwd();
+  const sources = declared.map((source) => resolveSkillSource(source, baseDir));
+  const included = [];
   const text = await skillsAsText(
-    declared.map((source) => resolveSkillSource(source, baseDir)),
-    { maxBytes: PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES, label: 'codex', trailer: '\n' },
+    sources,
+    {
+      maxBytes: PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES,
+      label: 'codex',
+      trailer: '\n',
+      onIncluded: (source) => included.push(source),
+    },
   );
   const target = join(publicHome, 'AGENTS.md');
   if (!text) {
     await rm(target, { force: true });
+    ctx.onSkillsLinked?.({ mounted: [], conflicted: sources.map((path) => ({ path, reason: 'not-inlined' })) });
     return;
   }
   const staged = `${target}.${process.pid}.tmp`;
   await writeFile(staged, text, { encoding: 'utf8', mode: 0o600 });
   await rename(staged, target);
+  ctx.onSkillsLinked?.({
+    mounted: included,
+    conflicted: sources.filter((source) => !included.includes(source)).map((path) => ({ path, reason: 'not-inlined' })),
+  });
 };
 
 const publicPermissionProfileFlags = (

@@ -744,6 +744,11 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
               : <ReactMarkdown components={messageMarkdownComponents}>{stripped}</ReactMarkdown>}
           </div>
         )}
+        {message.mentionNotices?.map((notice) => (
+          <div className="v2-msg__sender-notice" role="status" key={notice.handle}>
+            {t('podChat.mentionNotInPod', { handle: notice.handle })}
+          </div>
+        ))}
         {galleryImages.length > 0 && (
           <div className="v2-msg__thumbs">
             {galleryImages.map((image, idx) => (

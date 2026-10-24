@@ -24,6 +24,7 @@ const { hash } = require('../../../utils/secret');
 let mongod;
 let AgentCredential;
 let User;
+let Machine;
 let agentRuntimeAuth;
 
 beforeAll(async () => {
@@ -31,6 +32,7 @@ beforeAll(async () => {
   await mongoose.connect(mongod.getUri());
   AgentCredential = require('../../../models/AgentCredential');
   User = require('../../../models/User');
+  Machine = require('../../../models/Machine');
   agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth').default;
   const { AgentInstallation } = require('../../../models/AgentRegistry');
   await AgentInstallation.create({
@@ -149,12 +151,14 @@ describe('per-spawn child credentials (TASK-094)', () => {
   const makeSeat = async () => {
     const raw = `cm_agent_${Math.random().toString(36).slice(2)}${'s'.repeat(24)}`;
     const bot = await makeBot(raw);
+    const machineId = `machine-${new mongoose.Types.ObjectId()}`;
+    await Machine.create({ ownerUserId: bot._id, machineId, name: 'Test seat machine' });
     const seat = await AgentCredential.create({
       tokenHash: hash(raw),
       kind: 'runtime',
       ownerUserId: bot._id,
       agentUserId: bot._id,
-      machineId: 'machine-seat',
+      machineId,
       label: 'Runtime token',
       scopes: [],
     });

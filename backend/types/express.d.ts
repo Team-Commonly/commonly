@@ -11,6 +11,9 @@ declare global {
       userId?: string;
       user?: { id: string; username?: string; email?: string; role?: string };
       authType?: 'jwt' | 'apiToken' | 'deviceToken';
+      deviceTokenHash?: string;
+      sessionStartedAt?: number;
+      sessionTokenVersion?: number;
       apiTokenScopes?: string[];
       apiTokenCreatedAt?: Date | null;
 

@@ -3,8 +3,14 @@ import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2PageHead from '../components/V2PageHead';
+import V2AgentRuntimeGrants, { Runtime } from '../components/V2AgentRuntimeGrants';
+import { AgentControlLoader } from '../components/V2AgentControlSection';
+import { AgentConnection } from '../utils/agentConnection';
 import { useAgentSettings } from './useAgentSettings';
+import V2AgentIdentitySection from './V2AgentIdentitySection';
 import V2AgentWakePods from './V2AgentWakePods';
+import V2AgentPolicy from './V2AgentPolicy';
+import V2AgentSkills from '../components/V2AgentSkills';
 import './v2-agent-settings.css';
 
 interface RuntimeKey {
@@ -31,17 +37,25 @@ const errorLabel = (error: unknown, fallback: string): string => (
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
-  const { access, installation, podId, loading, error: loadError, refresh, updatePod } = useAgentSettings(agentName, instanceId);
+  const { access, installation, podId, loading, error: loadError, refresh, update, updatePod } = useAgentSettings(agentName, instanceId);
   const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
   const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
+  const [keysForbidden, setKeysForbidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'replace' | string | null>(null);
   const [busy, setBusy] = useState(false);
   const [oneTimeKey, setOneTimeKey] = useState<string | null>(null);
+  const [connectionState, setConnectionState] = useState<AgentConnection['state'] | null>(null);
   const identityKey = `${agentName}:${instanceId}:${podId || ''}`;
   const currentIdentity = useRef(identityKey);
   currentIdentity.current = identityKey;
+  const disconnected = connectionState === 'revoked' || connectionState === 'stale';
+
+  const onConnectionState = useCallback((state: AgentConnection['state']) => {
+    setConnectionState(state);
+    if (state === 'revoked' || state === 'stale') setPendingAction(null);
+  }, []);
 
   const keyUrl = useCallback((podId: string) => (
     `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(agentName)}/runtime-tokens`
@@ -58,10 +72,12 @@ const V2AgentSettingsPage: React.FC = () => {
     let active = true;
     setKeys([]);
     setKeysReadyFor(null);
+    setKeysForbidden(false);
     setError(null);
     setOneTimeKey(null);
     setPendingAction(null);
     setBusy(false);
+    setConnectionState(null);
     if (access && podId) {
       void fetchKeys().then((rows) => {
         if (active) {
@@ -69,7 +85,13 @@ const V2AgentSettingsPage: React.FC = () => {
           setKeysReadyFor(identityKey);
         }
       }).catch((requestError) => {
-        if (active) setError(errorLabel(requestError, t('agentSettings.unavailable')));
+        if (!active) return;
+        if ((requestError as { response?: { status?: number } })?.response?.status === 403) {
+          setKeysForbidden(true);
+          setKeysReadyFor(identityKey);
+        } else {
+          setError(errorLabel(requestError, t('agentSettings.unavailable')));
+        }
       });
     }
     return () => { active = false; };
@@ -138,6 +160,21 @@ const V2AgentSettingsPage: React.FC = () => {
     {error || t('agentSettings.loading')}
   </div>;
 
+  const environment = installation?.config?.environment;
+  const controls = environment && typeof environment === 'object' && !Array.isArray(environment)
+    ? environment as Record<string, unknown> : {};
+  const runtime: Runtime = {
+    runtimeType: installation?.runtime?.runtimeType,
+    ...(installation?.runtime?.host === 'cloud' || installation?.runtime?.host === 'byo'
+      ? { host: installation.runtime.host } : {}),
+    adapter: installation?.runtime?.adapter,
+    model: installation?.runtime?.model,
+    effort: installation?.runtime?.effort,
+    ...(typeof controls.adapter === 'string' ? { adapter: controls.adapter } : {}),
+    ...(typeof controls.model === 'string' ? { model: controls.model } : {}),
+    ...(typeof controls.effort === 'string' ? { effort: controls.effort } : {}),
+  };
+
   return (
     <main className="v2-agent-settings">
       <V2PageHead title={access.displayName || agentName} actions={<Link to="/v2/agents">{t('agentSettings.yourTeam')}</Link>} />
@@ -145,19 +182,21 @@ const V2AgentSettingsPage: React.FC = () => {
         <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
         <span aria-current="page">{t('agentSettings.settings')}</span>
       </nav>
+      <AgentControlLoader agentName={agentName} instanceId={instanceId}
+        onConnectionState={onConnectionState} />
       <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
         <div className="v2-agent-settings__section-head">
           <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>
-          {installation?.runtime?.runtimeType === 'wrapper' ? (
+          {keysForbidden ? null : installation?.runtime?.runtimeType === 'wrapper' ? (
             <span>{t('agentSettings.wrapperReconnect')}</span>
-          ) : (
+          ) : !disconnected && (
             <button type="button" onClick={() => setPendingAction('replace')} disabled={busy}>
               {t('agentSettings.regenerate')}
             </button>
           )}
         </div>
         {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}
-        {pendingAction === 'replace' && (
+        {pendingAction === 'replace' && !keysForbidden && (
           <div className="v2-agent-settings__confirm" data-testid="agent-key-replace-confirmation">
             <p>{t('agentByo.rekey.warning', { name: access.displayName || agentName })}</p>
             <div className="v2-agent-settings__actions">
@@ -173,7 +212,8 @@ const V2AgentSettingsPage: React.FC = () => {
             <button type="button" onClick={() => setOneTimeKey(null)}>{t('agentSettings.done')}</button>
           </div>
         )}
-        {keys.length === 0 ? <p className="v2-agent-settings__empty">{t('agentSettings.empty')}</p> : (
+        {keysForbidden ? <p className="v2-agent-settings__empty">{t('agentSettings.keyUnavailable')}</p>
+          : keys.length === 0 ? <p className="v2-agent-settings__empty">{t('agentSettings.empty')}</p> : (
           <ul className="v2-agent-settings__keys">
             {keys.map((key) => (
               <li key={key._id} className="v2-agent-settings__key">
@@ -205,7 +245,22 @@ const V2AgentSettingsPage: React.FC = () => {
           </ul>
         )}
       </section>
+      {installation && <V2AgentIdentitySection key={`${agentName}:${instanceId}`} installation={installation} update={update} />}
       <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
+      <V2AgentRuntimeGrants
+        key={`runtime:${agentName}:${instanceId}`}
+        name={agentName}
+        instanceId={instanceId}
+        runtime={runtime}
+        onSaveRuntime={async (changes) => {
+          await update({ config: { environment: changes } });
+        }}
+      />
+      <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
+        installation={installation} update={update} />
+      <div className="v2-agent-settings__section">
+        <V2AgentSkills podId={podId} podName={access?.pods.find((pod) => pod.id === podId)?.name || podId} agentName={agentName} instanceId={instanceId} />
+      </div>
     </main>
   );
 };

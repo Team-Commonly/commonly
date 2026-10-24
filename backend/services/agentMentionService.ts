@@ -2457,6 +2457,9 @@ const enqueueDmEvent = async ({
 
 export {
   extractMentions,
+  // Sender feedback must recognize the exact same routed handles (including
+  // legacy aliases and profile display names) as the delivery path.
+  buildMentionMap,
   // Exported for the escaping test: the property that matters — a metacharacter
   // in a handle matches literally — is unreachable through `enqueueMentions`
   // while `extractMentions` still excludes metacharacters. A test that can only

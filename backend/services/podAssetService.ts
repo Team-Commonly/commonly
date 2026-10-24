@@ -1,5 +1,7 @@
 // eslint-disable-next-line global-require
 const PodAsset = require('../models/PodAsset');
+// eslint-disable-next-line global-require
+const mongoose = require('mongoose');
 
 const STOP_WORDS = new Set([
   'about', 'after', 'again', 'against', 'almost', 'also', 'among', 'and',
@@ -87,9 +89,12 @@ function toSkillKey(value: string): string {
   const normalized = String(value || '')
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return normalized.slice(0, 64);
+    .replace(/[^a-z0-9]+/g, '-');
+  let start = 0;
+  let end = normalized.length;
+  while (normalized[start] === '-') start += 1;
+  while (end > start && normalized[end - 1] === '-') end -= 1;
+  return normalized.slice(start, Math.min(end, start + 64));
 }
 
 function tokenize(text: string): string[] {
@@ -339,6 +344,8 @@ class PodAssetService {
   static async upsertImportedSkillAsset({
     podId, name, markdown, tags = [], metadata = {}, createdBy,
   }: ImportedSkillAssetInput): Promise<unknown> {
+    if (!mongoose.Types.ObjectId.isValid(String(podId))) throw new Error('Invalid pod id');
+    const podObjectId = new mongoose.Types.ObjectId(String(podId));
     const meta = metadata as Record<string, unknown>;
     const scope = (meta?.scope as string) || 'pod';
     const skillKey = PodAssetService.buildScopedSkillKey({
@@ -362,10 +369,10 @@ class PodAssetService {
     };
 
     const asset = await PodAsset.findOneAndUpdate(
-      { podId, type: 'skill', 'metadata.skillKey': skillKey },
+      { podId: podObjectId, type: 'skill', 'metadata.skillKey': skillKey },
       {
         $set: {
-          podId,
+          podId: podObjectId,
           type: 'skill',
           title,
           content: truncate(markdown || '', 8000),

@@ -1493,7 +1493,7 @@ describe('performRun', () => {
     };
     await runNext(5000); // first failure → second probe
     await runNext(10000); // second failure → recovery probe
-    await runNext(5000); // success → normal poll interval
+    await runNext(0); // success → look again at once (TASK-343), not after the interval
 
     handle.stop();
     expect(spawn).toHaveBeenCalledTimes(4);
@@ -1633,6 +1633,7 @@ describe('performRun', () => {
       // answer that route explicitly so it doesn't consume the event queue.
       if (route.endsWith('/messages')) return { messages: [] };
       if (route.endsWith('/context')) return { podId: 'pod-abc', revision: 0, focus: null };
+      if (route.endsWith('/skills')) return { items: [] };
       const id = eventIds[eventTurn];
       eventTurn += 1;
       return { events: id ? [makeEvent({ _id: id })] : [] };

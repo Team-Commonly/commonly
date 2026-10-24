@@ -1,6 +1,10 @@
 const { attachSentryErrorHandler } = require('./instrument');
 export {};
 const express = require('express');
+// Express 4 does not forward rejected async route promises to error middleware.
+// Load before route modules register their handlers so a missed route-level
+// catch reaches finalErrorHandler instead of becoming an unhandled rejection.
+require('express-async-errors');
 const cors = require('cors');
 const _path = require('path');
 const dotenv = require('dotenv');
@@ -17,7 +21,8 @@ const podInvitesRoutes = require('./routes/podInvites');
 const attributionRoutes = require('./routes/attribution');
 const messageRoutes = require('./routes/messages');
 const uploadsRoutes = require('./routes/uploads');
-const { socketAuthMiddleware } = require('./middleware/socketAuth');
+const { socketAuthMiddleware, installSocketSessionGuard } = require('./middleware/socketAuth');
+const { sessionSocketRoom } = require('./services/sessionSocketService');
 const docsRoutes = require('./routes/docs');
 const summariesRoutes = require('./routes/summaries');
 const integrationRoutes = require('./routes/integrations');
@@ -475,7 +480,7 @@ if (process.env.PG_HOST) {
 // It is a no-op when SENTRY_DSN was absent during process startup.
 attachSentryErrorHandler(app);
 // Last: answers any error passed on above with its status and a generic body,
-// and logs the detail (middleware/finalErrorHandler). After Sentry's, which
+// and logs only the status (middleware/finalErrorHandler). After Sentry's, which
 // passes the error on.
 app.use(require('./middleware/finalErrorHandler').finalErrorHandler);
 
@@ -554,6 +559,8 @@ const authorizeSocketPodAccess = async (socket: any, podId: any, action: any) =>
 
 // Socket.io event handlers
 io.on('connection', (socket: any) => {
+  installSocketSessionGuard(socket);
+  socket.join(sessionSocketRoom(socket.userId));
   console.log(
     `New client connected (id: ${socket.id}, user: ${socket.userId})`,
   );

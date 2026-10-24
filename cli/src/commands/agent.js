@@ -12,7 +12,7 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
-import { join, dirname, resolve as pathResolve } from 'path';
+import { join, dirname, basename, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
@@ -39,7 +39,8 @@ import {
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
-import { detectSkills, importSkills } from '../lib/skills-import.js';
+import { detectSkills, importSkills, parseSkillMeta } from '../lib/skills-import.js';
+import { compileServerSkills } from '../lib/server-skills.js';
 import {
   environmentForServer,
   normalizeSandboxTrust,
@@ -497,6 +498,14 @@ const versionAtLeast = (version, minimum) => {
 const BUNDLED_COMMONLY_SKILL_DIR = pathResolve(
   dirname(fileURLToPath(import.meta.url)), '..', '..', 'skills', 'commonly',
 );
+
+const reportedSkillName = (source) => {
+  try {
+    return parseSkillMeta(readFileSync(join(source, 'SKILL.md'), 'utf8'), basename(source)).name;
+  } catch {
+    return basename(source);
+  }
+};
 
 // Minimum-viable environment for fresh attach: wire @commonlyai/mcp so the
 // agent gets commonly_* kernel tools out of the box, AND mount the commonly
@@ -1581,6 +1590,25 @@ export const performRun = ({
       throw error;
     }
     const promptWithFocus = `${focusFrame}\n\n${prompt}`;
+    let serverSkills;
+    let skillReadUnavailable = false;
+    try {
+      const response = await client.get(`/api/agents/runtime/pods/${eventPodId}/skills`, {}, {
+        signal: AbortSignal.timeout(5000),
+      });
+      serverSkills = compileServerSkills(response?.items || []);
+    } catch (error) {
+      // Skill delivery is optional to the turn. A read failure must not stop
+      // every seat from spawning; report the missing observation explicitly.
+      if (error?.status !== 404) {
+        skillReadUnavailable = true;
+        log(`server skills unavailable (HTTP ${error?.status || 'no response'}); spawning without them`);
+      }
+      serverSkills = compileServerSkills();
+    }
+    const promptWithSkills = serverSkills.text
+      ? `${focusFrame}\n\n${serverSkills.text}\n\n${prompt}`
+      : promptWithFocus;
 
     log(`[${event.type}] spawning ${adapter.name}`);
     // TASK-102 part B. The CHILD gets a scoped credential; the wrapper keeps
@@ -1643,6 +1671,10 @@ export const performRun = ({
       };
     }
     let result;
+    let skillMount = skillReadUnavailable || serverSkills.mounted.length || serverSkills.conflicted.length
+      ? { mounted: serverSkills.mounted, conflicted: serverSkills.conflicted, ...(skillReadUnavailable ? { status: 'unavailable' } : {}) }
+      : null;
+    let spawnCompleted = false;
     let commitAttribution = null;
     try {
       // The local CLI is a wrapper for a Commonly seat, so its Git commits
@@ -1660,13 +1692,20 @@ export const performRun = ({
           effort: seatEnvironment?.effort,
         });
       }
-      result = await adapter.spawn(frameDecisionForkRule(promptWithFocus), {
+      result = await adapter.spawn(frameDecisionForkRule(promptWithSkills), {
         sessionId,
         cwd: agentCwd,
         env: commitAttribution?.env || process.env,
         commitAttributionEnv: commitAttribution?.sandboxEnv || null,
         memoryLongTerm,
         environment: seatEnvironment,
+        onSkillsLinked: ({ mounted, conflicted }) => {
+          skillMount = {
+            mounted: [...new Set([...serverSkills.mounted, ...mounted.map(reportedSkillName)])],
+            conflicted: [...new Set([...serverSkills.conflicted, ...conflicted.map(({ path }) => reportedSkillName(path))])],
+            ...(skillReadUnavailable ? { status: 'unavailable' } : {}),
+          };
+        },
         // Runtime context the Claude/Codex adapters expose only to their
         // per-spawn MCP environment. Claude keeps ${COMMONLY_*} placeholders
         // literal on disk and lets its native MCP parser expand them, so the
@@ -1678,10 +1717,18 @@ export const performRun = ({
         agentName,
         metadata: { event },
       });
+      spawnCompleted = true;
     } finally {
       try {
         commitAttribution?.cleanup();
       } finally {
+        if (spawnCompleted && skillMount) {
+          try {
+            await client.post(`/api/agents/runtime/pods/${eventPodId}/skill-load`, skillMount);
+          } catch (error) {
+            log(`skill load status could not be recorded: ${error.message}`);
+          }
+        }
         // Best-effort by construction: `close` logs and returns on a failed
         // revoke, so a turn that already produced an answer is not failed by
         // cleanup. The boot sweep collects anything left behind.
@@ -2410,7 +2457,16 @@ export const performRun = ({
             entry.result?.outcome === 'posted'
             || (entry.result?.outcome === 'no_action' && !entry.result?.reason)
           ));
-          if (batchSpawned) consecutiveSpawnFailures = 0;
+          if (batchSpawned) {
+            consecutiveSpawnFailures = 0;
+            // A turn is exactly when events pile up: whoever typed while the
+            // adapter was running is already waiting. Sleeping the interval on
+            // top of the turn charges them for it twice (TASK-343). Only a
+            // batch that actually spawned skips the wait; an idle poll and a
+            // batch that spawned nothing keep the interval, so this cannot
+            // become a spin.
+            nextPollDelayMs = 0;
+          }
           for (const entry of batch.entries) {
             const event = entry.event;
             // No result: an item a failure during refusal isolation never

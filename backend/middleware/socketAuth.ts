@@ -32,7 +32,7 @@ export const socketAuthMiddleware = async (socket: any, next: (err?: Error) => v
       return next(sessionError('Invalid token structure'));
     }
 
-    const refusal = sessionRefusal(await loadSessionAccount(userId));
+    const refusal = sessionRefusal(await loadSessionAccount(userId), decoded);
     if (refusal === 'bot') {
       console.error('Socket auth error: agent account cannot open a user session');
       return next(sessionError('Agent accounts authenticate with their runtime token'));
@@ -51,6 +51,21 @@ export const socketAuthMiddleware = async (socket: any, next: (err?: Error) => v
     console.error('Socket auth error:', err.message);
     return next(sessionError('Invalid token'));
   }
+};
+
+// A handshake check alone leaves an established socket usable after the
+// account's version changes. Socket.IO packet middleware runs before each
+// client event, so a revoked session cannot keep joining or sending.
+export const installSocketSessionGuard = (socket: any): void => {
+  socket.use((_packet: unknown, next: (err?: Error) => void) => {
+    void socketAuthMiddleware(socket, (error?: Error) => {
+      if (error) {
+        socket.disconnect(true);
+        return next(error);
+      }
+      return next();
+    });
+  });
 };
 
 export default socketAuthMiddleware;

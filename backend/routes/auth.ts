@@ -226,6 +226,9 @@ const router: ReturnType<typeof express.Router> = express.Router();
 router.post('/register', registerLimiter, register);
 router.get('/oauth/providers', getOAuthProviders);
 router.get('/oauth/:provider/start', oauthLimiter, startOAuth);
+// The same start as a form POST, so an invite code rides in the body, not the URL
+// (the register page uses it whenever it holds a code; TASK-404).
+router.post('/oauth/:provider/start', oauthLimiter, express.urlencoded({ extended: false, limit: '4kb' }), startOAuth);
 router.get('/oauth/:provider/callback', oauthLimiter, oauthCallback);
 router.post('/oauth/exchange', oauthLimiter, exchangeOAuthCode);
 router.get('/registration-policy', registrationPolicyLimit, getRegistrationPolicy);
@@ -314,6 +317,23 @@ router.post('/reset-password', loginLimiter, resetPassword);
 router.post('/refresh', sessionLimiter, auth, (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;
   return refresh(req, res);
+});
+// Revocation is atomic so concurrent requests cannot overwrite a newer
+// version. The caller's current JWT stops working on the next request.
+router.post('/sessions/revoke', sessionLimiter, auth, async (req: AuthReq, res: Res) => {
+  if (!requireBrowserJwt(req, res)) return;
+  try {
+    // eslint-disable-next-line global-require
+    const User = require('../models/User');
+    await User.updateOne({ _id: req.userId }, { $inc: { tokenVersion: 1 } });
+    // eslint-disable-next-line global-require
+    const { disconnectUserSessionSockets } = require('../services/sessionSocketService');
+    disconnectUserSessionSockets(String(req.userId));
+    return res.json({ message: 'Signed out everywhere' });
+  } catch (error) {
+    console.error('Failed to revoke sessions:', error);
+    return res.status(500).json({ error: 'Failed to revoke sessions' });
+  }
 });
 router.get('/user', sessionLimiter, auth, getCurrentUser);
 router.get('/verify-email', verifyEmailLimit, verifyEmail);

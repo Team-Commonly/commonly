@@ -85,6 +85,8 @@ export interface IUser extends Document {
   // Admin moderation (GH: admin user management). banned users cannot log in
   // and existing sessions are refused by the auth middleware on next request.
   banned: boolean;
+  // Incrementing this invalidates every browser session without rotating JWT_SECRET.
+  tokenVersion: number;
   bannedAt?: Date;
   banReason?: string;
   profilePicture: string;
@@ -144,6 +146,8 @@ export interface IUser extends Document {
     // daemon on X sees it in its work list and performs the adopt CAS; it is
     // a directive, never a binding — the CAS remains the only binding writer.
     requestedMachineId?: string | null;
+    // Owner-approved request for the bound daemon to rotate the agent key.
+    reconnectRequestedAt?: Date | null;
     runtime?: string;
     icon?: string;
   };
@@ -250,6 +254,7 @@ const userSchema = new Schema<IUser>({
   },
   verified: { type: Boolean, default: false },
   banned: { type: Boolean, default: false },
+  tokenVersion: { type: Number, default: 0 },
   bannedAt: { type: Date },
   banReason: { type: String },
   profilePicture: { type: String, default: 'default' },
@@ -302,6 +307,7 @@ const userSchema = new Schema<IUser>({
     machineId: { type: String, default: null },
     // ADR-026 Phase 2 — same lesson: declared or stripped.
     requestedMachineId: { type: String, default: null },
+    reconnectRequestedAt: { type: Date, default: null },
   },
   avatarMetadata: {
     style: {
@@ -460,6 +466,7 @@ userSchema.index(
 
 userSchema.pre<IUser>('save', async function (next) {
   if (!this.isModified('password') || !this.password) return next();
+  if (!this.isNew) this.tokenVersion = (this.tokenVersion || 0) + 1;
   this.password = await bcrypt.hash(this.password, 10);
   next();
 });

@@ -200,13 +200,15 @@ const preparePublicClaudeState = async (ctx) => {
   return { statePath, tmpPath, configPath };
 };
 
-const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null) => {
+const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null, publicSeat = false) => {
   const source = input || process.env;
-  const output = state ? {} : { ...source };
-  if (state) {
+  const output = state || publicSeat ? {} : { ...source };
+  if (state || publicSeat) {
     for (const [key, value] of Object.entries(source)) {
       if (PUBLIC_SAFE_ENV.test(key)) output[key] = value;
     }
+  }
+  if (state) {
     output.HOME = state.statePath;
     output.TMPDIR = state.tmpPath;
     // Claude keeps its temp root at /private/tmp/claude-<uid> unless told
@@ -276,8 +278,13 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns) => {
 // total is capped well under it.
 const PUBLIC_SKILL_PROMPT_MAX_BYTES = 96 * 1024;
 const publicSkillPromptArgs = async (skillSources) => {
-  const text = await skillsAsText(skillSources, { maxBytes: PUBLIC_SKILL_PROMPT_MAX_BYTES, label: 'claude' });
-  return text ? ['--append-system-prompt', text] : [];
+  const included = [];
+  const text = await skillsAsText(skillSources, {
+    maxBytes: PUBLIC_SKILL_PROMPT_MAX_BYTES,
+    label: 'claude',
+    onIncluded: (source) => included.push(source),
+  });
+  return { args: text ? ['--append-system-prompt', text] : [], included };
 };
 
 const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
@@ -804,33 +811,48 @@ export default {
     const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId, ...modelArgs];
 
     let mountedSkills = [];
+    let skillMount = { mounted: [], conflicted: [] };
     if (ctx.environment && ctx.cwd) {
       const skills = await mountSkills(ctx.environment, ctx.cwd);
       mountedSkills = skills.mounted;
+      skillMount = skills;
       if (skills.conflicted.length > 0) {
         for (const c of skills.conflicted) {
           // eslint-disable-next-line no-console
           console.warn(`[claude] skill not mounted (${c.reason}): ${c.path}`);
         }
       }
-      if (ctx.onSkillsLinked) ctx.onSkillsLinked(skills);
     }
 
     let mcpConfig = null;
     let publicClaudeState = null;
     let publicSkillArgs = [];
+    const publicTrust = ctx.environment?.sandbox?.trust === 'public';
+    const publicNativeSandbox = publicTrust
+      && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
+    const publicBwrapSandbox = publicTrust
+      && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
     try {
       // Trust is normalized at entry (legacy `internal` reads as public). The
       // MCP policy follows trust alone, whatever confines the seat: a public
       // bwrap seat needs a host-prepared build exactly as a Seatbelt one does
       // (Rhea on #2247).
-      const publicTrust = ctx.environment?.sandbox?.trust === 'public';
-      const publicNativeSandbox = publicTrust
-        && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
       if (publicNativeSandbox) {
         publicClaudeState = await preparePublicClaudeState(ctx);
       }
-      if (publicTrust) publicSkillArgs = await publicSkillPromptArgs(mountedSkills);
+      if (publicTrust) {
+        const prompt = await publicSkillPromptArgs(mountedSkills);
+        publicSkillArgs = prompt.args;
+        skillMount = {
+          mounted: prompt.included,
+          conflicted: [
+            ...skillMount.conflicted,
+            ...mountedSkills.filter((source) => !prompt.included.includes(source))
+              .map((path) => ({ path, reason: 'not-inlined' })),
+          ],
+        };
+      }
+      if (ctx.environment && ctx.cwd) ctx.onSkillsLinked?.(skillMount);
       if (Array.isArray(ctx.environment?.mcp) && ctx.environment.mcp.length > 0) {
         mcpConfig = await createMcpConfig(ctx.environment.mcp, {
           runtimeToken: ctx.runtimeToken,
@@ -845,8 +867,9 @@ export default {
         publicClaudeState,
         mcpConfig?.expansionEnv,
         mcpConfig?.credential?.path || null,
+        publicTrust,
       );
-      if (publicNativeSandbox && ctx.commitAttributionEnv) {
+      if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
         Object.assign(claudeEnv, ctx.commitAttributionEnv);
       }
       const spawnCtx = {
@@ -902,8 +925,12 @@ export default {
             publicClaudeState,
             mcpConfig?.expansionEnv,
             mcpConfig?.credential?.path || null,
+            publicTrust,
           ),
         };
+        if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
+          Object.assign(retryCtx.claudeEnv, ctx.commitAttributionEnv);
+        }
         const retry = await prepareArgv(retryBase, retryCtx);
         const stdout = await runClaude({
           cmd: retry.cmd,

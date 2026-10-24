@@ -204,6 +204,22 @@ describe('Slack installable OAuth routes', () => {
     expect(JSON.stringify(commit)).not.toContain('xoxb-never-store-on-integration');
   });
 
+  test('redirects when claim cleanup fails after a callback error', async () => {
+    Integration.findOneAndUpdate.mockResolvedValueOnce({ ...integration });
+    slackOAuth.exchangeCode.mockRejectedValue(new Error('exchange failed'));
+    Integration.updateOne.mockRejectedValue(new Error('cleanup failed'));
+
+    const response = await request(app)
+      .get(`/api/webhooks/slack/oauth/callback?state=${integration.config.connectCode}&code=slack-code`)
+      .set('Cookie', 'commonly_slack_oauth_nonce=nonce-value');
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe(
+      `${TEST_PUBLIC_APP_URL}/v2/connectors?slack=error&code=callback_failed`,
+    );
+    expect(Integration.updateOne).toHaveBeenCalledTimes(1);
+  });
+
   test('refuses a replayed browser nonce when its row already has a pending bind', async () => {
     Integration.findOne
       .mockResolvedValueOnce({ ...integration, config: { ...integration.config } })

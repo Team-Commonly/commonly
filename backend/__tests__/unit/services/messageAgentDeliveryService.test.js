@@ -7,8 +7,12 @@ jest.mock('../../../services/agentMentionService', () => ({
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { countDocuments: jest.fn() },
 }));
+jest.mock('../../../services/mentionNonMemberNoticeService', () => ({
+  findNonMemberMentionNotices: jest.fn().mockResolvedValue([]),
+}));
 
 const AgentMentionService = require('../../../services/agentMentionService');
+const { findNonMemberMentionNotices } = require('../../../services/mentionNonMemberNoticeService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const {
   authorUsername,
@@ -64,6 +68,33 @@ describe('messageAgentDeliveryService', () => {
         woken: 1,
       },
     });
+  });
+
+  it('puts a known non-member notice only in the sender response', async () => {
+    const notice = { code: 'MENTION_NOT_IN_POD', handle: 'rhea', message: "rhea isn't in this pod." };
+    findNonMemberMentionNotices.mockResolvedValueOnce([notice]);
+    const message = { id: 'm2', content: '@rhea please review', userId: { username: 'sam' } };
+
+    const response = await deliverMessageToAgents({
+      podId: 'p1', podType: 'chat', message, userId: 'u1',
+    });
+
+    expect(response.mentionNotices).toEqual([notice]);
+    expect(message).not.toHaveProperty('mentionNotices');
+  });
+
+  it('keeps delivery successful when the advisory lookup fails', async () => {
+    findNonMemberMentionNotices.mockRejectedValueOnce(new Error('lookup unavailable'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const response = await deliverMessageToAgents({
+        podId: 'p1', podType: 'chat', message: { id: 'm2', content: '@rhea' }, userId: 'u1',
+      });
+      expect(response).not.toHaveProperty('mentionNotices');
+      expect(AgentMentionService.enqueueMentions).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('omits a reply edge for a route that cannot receive one', async () => {

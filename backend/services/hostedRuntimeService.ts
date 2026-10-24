@@ -79,6 +79,14 @@ export const ownerIsPro = async (userId: unknown): Promise<boolean> => {
 /** The hosted caps for whoever owns (installed) a hosted agent. */
 export const hostedCapsForOwner = async (userId: unknown) => hostedCaps({ pro: await ownerIsPro(userId) });
 
+/** The native per-user daily run ceiling; null means the guard is disabled. */
+export const userRunCeilingForOwner = async (userId: unknown): Promise<number | null> => {
+  const free = Number(process.env.AGENT_USER_DAILY_RUN_CEILING ?? 120);
+  if (!Number.isFinite(free) || free <= 0) return null;
+  const pro = Number(process.env.AGENT_USER_DAILY_RUN_CEILING_PRO ?? 300);
+  return (await ownerIsPro(userId)) && Number.isFinite(pro) && pro > 0 ? pro : free;
+};
+
 export const hostedRuntimeConfig = () => ({
   url: String(process.env.HOSTED_RUNTIME_URL || '').trim().replace(/\/+$/, ''),
   adminToken: String(process.env.HOSTED_RUNTIME_ADMIN_TOKEN || '').trim(),
@@ -282,6 +290,7 @@ module.exports = {
   hostedCaps,
   ownerIsPro,
   hostedCapsForOwner,
+  userRunCeilingForOwner,
   hostedRuntimeConfig,
   isConfigured,
   readRuntimeConfig,

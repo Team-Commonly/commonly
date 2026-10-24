@@ -54,8 +54,9 @@ jest.mock('../../../services/hostedMcpIntakeService', () => {
   return { ...actual, discoverAuthorizationServer: jest.fn() };
 });
 
+let mockAuthedUserId = 'user-1';
 jest.mock('../../../middleware/auth', () => (req, _res, next) => {
-  req.user = { id: 'user-1' };
+  req.user = { id: mockAuthedUserId };
   next();
 });
 
@@ -98,10 +99,12 @@ afterAll(async () => {
 
 /** A pending row for `state`, as the start route would have left it. */
 const seedPending = async ({ state, subject, credentialRef = 'ref-old' }) => {
+  const createdBy = new mongoose.Types.ObjectId();
+  mockAuthedUserId = String(createdBy);
   const row = await Integration.create({
     type: 'hosted-mcp',
     podId: new mongoose.Types.ObjectId(),
-    createdBy: new mongoose.Types.ObjectId(),
+    createdBy,
     status: 'pending',
     config: {
       entryId: 'linear',
@@ -147,7 +150,12 @@ const outcome = (res) => {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  intake.discoverAuthorizationServer.mockResolvedValue({ token_endpoint: TOKEN_ENDPOINT });
+  mockAuthedUserId = 'user-1';
+  intake.discoverAuthorizationServer.mockResolvedValue({
+    issuer: 'https://mcp.linear.app',
+    authorization_endpoint: 'https://mcp.linear.app/authorize',
+    token_endpoint: TOKEN_ENDPOINT,
+  });
   connectorSecrets.put.mockResolvedValue('ref-new');
 });
 
@@ -172,6 +180,96 @@ test('a browser that did not start the flow is refused, and the flow survives it
   // the refusal never touched. (Its subject is cleared by the exchange itself:
   // no ID token was issued, which is the neighbouring test's claim.)
   expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
+});
+
+test('a secret-store failure after exchange ends the real pending row and redirects', async () => {
+  const id = await seedPending({ state: 'st-secret-fail' });
+  exchange();
+  connectorSecrets.put.mockRejectedValueOnce(new Error('secret store failed: access-1'));
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const res = await callback('st-secret-fail');
+    expect(res.status).toBe(302);
+    expect(outcome(res)).toEqual({ hostedMcp: 'error', code: 'connector_unavailable' });
+    const row = await Integration.findById(id).lean();
+    expect(row.status).toBe('error');
+    expect(row.config.pendingAuth).toBeUndefined();
+    expect(JSON.stringify(log.mock.calls)).not.toContain('access-1');
+  } finally {
+    log.mockRestore();
+  }
+});
+
+test('a failed older callback leaves a newer start flow available', async () => {
+  const id = await seedPending({ state: 'st-older' });
+  exchange();
+  let rejectStore;
+  connectorSecrets.put.mockImplementationOnce(() => new Promise((_resolve, reject) => {
+    rejectStore = reject;
+  }));
+  const olderCallback = callback('st-older').then((result) => result);
+  for (let attempt = 0; attempt < 30 && !rejectStore; attempt += 1) {
+    // Wait for the actual callback route to finish its exchange and reach put.
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  expect(rejectStore).toBeDefined();
+
+  const newerStart = await request(app).post('/connect/hosted-mcp/linear/start');
+  expect(newerStart.status).toBe(200);
+  const newerState = new URL(newerStart.body.authorizeUrl).searchParams.get('state');
+  expect(newerState).toBeTruthy();
+  expect((await stored(id)).pendingAuth.state).toBe(newerState);
+
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    rejectStore(new Error('store failed'));
+    const olderResult = await olderCallback;
+    expect(outcome(olderResult)).toEqual({ hostedMcp: 'error', code: 'connector_unavailable' });
+    const row = await Integration.findById(id).lean();
+    expect(row.status).toBe('pending');
+    expect(row.config.pendingAuth.state).toBe(newerState);
+  } finally {
+    log.mockRestore();
+  }
+});
+
+test('a failed refresh write retires a connected row with a partially replaced secret pair', async () => {
+  const originalKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const originalActiveKey = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+  process.env.CONNECTOR_SECRET_KEYS = `test:${Buffer.alloc(32, 7).toString('base64')}`;
+  process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'test';
+  const actualSecrets = jest.requireActual('../../../services/connectorSecrets');
+  const { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } = require('../../../services/connectorSecretKinds');
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const id = await seedPending({ state: 'st-pair', subject: 'acct-same' });
+    const accessRef = await actualSecrets.put(id, HOSTED_MCP_ACCESS_TOKEN, 'old-access');
+    const refreshRef = await actualSecrets.put(id, HOSTED_MCP_REFRESH_TOKEN, 'old-refresh');
+    await Integration.updateOne({ _id: id }, {
+      $set: { status: 'connected', 'config.credentialRef': accessRef, 'config.refreshTokenRef': refreshRef },
+    });
+    exchange({ idToken: idToken('acct-same') });
+    connectorSecrets.put.mockImplementation(async (integrationId, kind, material) => {
+      if (kind.kind === 'hosted-mcp-refresh-token') return Promise.reject(new Error('refresh store failed'));
+      expect((await Integration.findById(id).lean()).status).toBe('error');
+      return actualSecrets.put(integrationId, kind, material);
+    });
+
+    const res = await callback('st-pair');
+    expect(outcome(res)).toEqual({ hostedMcp: 'error', code: 'connector_unavailable' });
+    const row = await Integration.findById(id).lean();
+    expect(await actualSecrets.get(accessRef)).toBe('access-1');
+    expect(await actualSecrets.get(refreshRef)).toBe('old-refresh');
+    expect(row.status).toBe('error');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('refresh store failed');
+  } finally {
+    log.mockRestore();
+    if (originalKeys === undefined) delete process.env.CONNECTOR_SECRET_KEYS;
+    else process.env.CONNECTOR_SECRET_KEYS = originalKeys;
+    if (originalActiveKey === undefined) delete process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+    else process.env.CONNECTOR_SECRET_ACTIVE_KEY = originalActiveKey;
+  }
 });
 
 test('a vendor that issues no ID token CLEARS the stored subject rather than keeping a stale one', async () => {

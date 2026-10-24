@@ -3,6 +3,9 @@ const express = require('express');
 // eslint-disable-next-line no-unused-vars
 const mongoose = require('mongoose');
 const User = require('../../models/User');
+const jwt = require('jsonwebtoken');
+const { issueEmailVerificationToken } = require('../../services/emailVerificationTokenService');
+const { issueSessionToken } = require('../../services/sessionTokenService');
 const Pod = require('../../models/Pod');
 const DeviceAuthorization = require('../../models/DeviceAuthorization');
 const { hashDeviceCredential } = require('../../services/deviceAuthorizationService');
@@ -378,7 +381,7 @@ describe('Auth Routes Integration Tests', () => {
       await user.save();
 
       // Generate a valid token
-      const token = generateTestToken(user._id);
+      const token = issueEmailVerificationToken(user._id);
 
       const response = await request(app)
         .get(`/api/auth/verify-email?token=${token}`)
@@ -397,6 +400,34 @@ describe('Auth Routes Integration Tests', () => {
         .expect(400);
 
       expect(response.body.error).toContain('Invalid or expired token');
+    });
+
+    it('refuses a revoked session JWT without changing email verification', async () => {
+      const user = await User.create({
+        username: 'revoked-session', email: 'revoked@example.com',
+        password: 'Password123!', verified: false,
+      });
+      const sessionToken = issueSessionToken(user);
+      await User.updateOne({ _id: user._id }, { $inc: { tokenVersion: 1 } });
+
+      await request(app)
+        .get('/api/auth/verify-email')
+        .query({ token: sessionToken })
+        .expect(400);
+      expect((await User.findById(user._id)).verified).toBe(false);
+    });
+
+    it('requires a new link for ambiguous legacy id-only verification tokens', async () => {
+      const user = await User.create({
+        username: 'legacy-email', email: 'legacy@example.com',
+        password: 'Password123!', verified: false,
+      });
+      const legacyToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+      await request(app)
+        .get('/api/auth/verify-email')
+        .query({ token: legacyToken })
+        .expect(400);
+      expect((await User.findById(user._id)).verified).toBe(false);
     });
   });
 
