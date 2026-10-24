@@ -8,6 +8,7 @@ import { useV2Api } from '../hooks/useV2Api';
 import { V2AttentionItem } from '../hooks/useV2PodAttention';
 import V2Lightbox from './V2Lightbox';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
+import { buildAgentUsername, rawAgentName } from '../utils/threadAgentIdentity';
 
 interface V2InspectorProps {
   detail: UseV2PodDetailResult;
@@ -48,7 +49,9 @@ const isWorkingTask = (task: TaskItem): boolean => (
 
 
 const labelForAgent = (agent: V2Agent): string => (
-  agent.profile?.displayName || agent.displayName || agent.agentName
+  // The roster's displayName is resolved from the agent User identity. A
+  // profile name may be an older generated ID, so it is only a fallback.
+  agent.displayName || agent.profile?.displayName || agent.agentName
 );
 
 // Pods often carry a longer descriptive title, while the compact inspector
@@ -58,10 +61,19 @@ const shortRoomName = (name: string): string => (
 );
 
 const matchesAgent = (agent: V2Agent, value?: string): boolean => {
-  const candidate = (value || '').toLowerCase();
+  const candidate = (value || '').trim().toLowerCase();
+  if (!candidate) return false;
   return candidate === (agent.agentName || '').toLowerCase()
     || candidate === labelForAgent(agent).toLowerCase()
+    || candidate === (agent.profile?.displayName || '').toLowerCase()
     || candidate === (agent.instanceId || '').toLowerCase();
+};
+
+const labelForAttentionActor = (agents: V2Agent[], actorName: string): string => {
+  const legacyAgent = agents.find((agent) => (
+    agent.profile?.displayName?.toLowerCase() === actorName.toLowerCase()
+  ));
+  return legacyAgent ? labelForAgent(legacyAgent) : actorName;
 };
 
 const agentState = (
@@ -185,7 +197,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
             {attention.map((item) => (
               <button key={`${item.kind}:${item.id}`} type="button" className="v2-workspace-inspector__attention" onClick={() => openAttention(item)}>
                 <span>{item.title}</span>
-                {item.actorName && <span className="v2-workspace-inspector__actor">{item.actorName}</span>}
+                {item.actorName && <span className="v2-workspace-inspector__actor">{labelForAttentionActor(agents, item.actorName)}</span>}
               </button>
             ))}
           </div>
@@ -199,6 +211,8 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
             {agents.length === 0 && <p className="v2-workspace-inspector__empty">{t('inspector.workspace.noAgents')}</p>}
             {agents.map((agent) => {
               const name = labelForAgent(agent);
+              const username = buildAgentUsername(rawAgentName(agent), agent.instanceId);
+              const member = detail.members.find((row) => row.username?.toLowerCase() === username);
               const state = agentState(agent, attention, tasks);
               const status = agentStatus(state);
               return (
@@ -212,10 +226,10 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
                   <V2Avatar
                     className="v2-workspace-inspector__avatar"
                     name={name}
-                    src={agent.profile?.avatarUrl || agent.profile?.iconUrl || agent.iconUrl || undefined}
+                    src={member ? (member.profilePicture || undefined) : (agent.profilePicture || undefined)}
                     size="sm"
                     kind="agent"
-                    seed={agent.userId || `${agent.agentName}:${agent.instanceId || 'default'}`}
+                    seed={member?._id || agent.userId || `${agent.agentName}:${agent.instanceId || 'default'}`}
                   />
                   <span className="v2-workspace-inspector__agent-copy">
                     <span className="v2-workspace-inspector__agent-name">{name}</span>

@@ -9,6 +9,7 @@ export interface Runtime {
   adapter?: string;
   model?: string;
   effort?: string;
+  managed?: boolean;
 }
 
 interface AgentGrant {
@@ -59,7 +60,7 @@ const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login 
 export const describeRuntime = (runtime: Runtime): { mode: 'native' | 'hosted' | 'daemon' | 'cli' | 'unknown'; adapter: string | null } => {
   const type = String(runtime.runtimeType || '').toLowerCase();
   const adapterKey = String(runtime.adapter || type).toLowerCase();
-  const mode = type === 'wrapper' ? 'daemon'
+  const mode = type === 'wrapper' ? (runtime.managed === false ? 'cli' : 'daemon')
     : type === 'native' ? 'native'
       : type === 'hosted' || type === 'internal' || runtime.host === 'cloud' ? 'hosted'
       : runtime.host === 'byo' && WALKED_ADAPTERS[adapterKey] ? 'cli' : 'unknown';

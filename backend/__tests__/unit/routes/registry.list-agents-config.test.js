@@ -210,20 +210,22 @@ describe('registry list pod agents config payload', () => {
     AgentTemplate.find.mockReturnValue({
       select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
     });
-    User.find.mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue([
-          {
-            username: 'cl-strategist-strategist-fable',
-            botMetadata: { displayName: 'Strategist (Fable)' },
-          },
-        ]),
-      }),
+    const selectUserFields = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        {
+          username: 'cl-strategist-strategist-fable',
+          profilePicture: '/api/uploads/strategist-account.png',
+          botMetadata: { displayName: 'Strategist (Fable)' },
+        },
+      ]),
     });
+    User.find.mockReturnValue({ select: selectUserFields });
 
     const res = await request(app).get('/api/registry/pods/pod-1/agents');
 
     expect(res.status).toBe(200);
     expect(res.body.agents[0].displayName).toBe('Strategist (Fable)');
+    expect(selectUserFields).toHaveBeenCalledWith(expect.stringContaining('profilePicture'));
+    expect(res.body.agents[0].profilePicture).toBe('/api/uploads/strategist-account.png');
   });
 });

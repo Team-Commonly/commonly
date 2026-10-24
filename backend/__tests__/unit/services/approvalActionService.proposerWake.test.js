@@ -139,7 +139,7 @@ describe('approving a proposal wakes the agent that proposed it', () => {
     expect(mockEnqueue.mock.calls[0][0].payload.content).toContain('The pod "Design Studio" now exists (pod-new).');
   });
 
-  test('create_pod: once Scout asked the project question, the cue points there in one line', async () => {
+  test('create_pod: English cue gives Scout the exact one-line reply', async () => {
     mockPodCreate.mockResolvedValue({ _id: 'pod-new', name: 'Design Studio' });
     mockInstallFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ displayName: 'Scout', config: {} }) });
     mockInstallUpsert.mockResolvedValue({});
@@ -147,9 +147,22 @@ describe('approving a proposal wakes the agent that proposed it', () => {
     await decide('approved', { actionType: 'create_pod', params: { name: 'Design Studio', type: 'chat' }, summary: 'Create a pod for design work' });
     expect(jest.requireMock('../../../services/agentMessageService').postMessage).toHaveBeenCalledTimes(1);
     const cue = mockEnqueue.mock.calls[0][0].payload.content;
-    expect(cue).toContain('asked for a repo link or weekly workflow');
-    expect(cue).toContain('will propose one first task');
-    expect(cue).toMatch(/one short line/);
+    expect(cue).toContain('Reply with exactly this one line: Design Studio is ready. Open it and answer one question to get your first task.');
+    expect(cue).not.toContain('weekly workflow');
+    expect(cue).not.toContain('in a sentence or two');
+  });
+
+  test('create_pod: Chinese cue gives Scout the exact one-line reply', async () => {
+    mockPodCreate.mockResolvedValue({ _id: 'pod-new', name: '设计工作室' });
+    mockInstallFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ displayName: 'Scout', config: {} }) });
+    mockInstallUpsert.mockResolvedValue({});
+    jest.requireMock('../../../services/agentIdentityService').getOrCreateAgentUser.mockResolvedValueOnce({ _id: 'scout-bot' });
+    await decide('approved', { actionType: 'create_pod', params: { name: '设计工作室', type: 'chat', locale: 'zh-CN' }, summary: '创建一个设计工作室' });
+    expect(jest.requireMock('../../../services/agentMessageService').postMessage).toHaveBeenCalledTimes(1);
+    const cue = mockEnqueue.mock.calls[0][0].payload.content;
+    expect(cue).toContain('Reply with exactly this one line: 设计工作室 已建好。打开它，回答一个问题，就能拿到第一个任务。');
+    expect(cue).not.toContain('weekly workflow');
+    expect(cue).not.toContain('in a sentence or two');
   });
 
   test('create_pod: an agent that could not join posted nothing, and the cue claims no prompt', async () => {

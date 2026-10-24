@@ -398,6 +398,22 @@ describe('V2AgentBYO — Run it here', () => {
     expect(axios.post.mock.calls.some(([url]) => url === '/api/hosted/provision')).toBe(false);
   });
 
+  test('a refusal that holds the slot names the agent that holds it and the next step', async () => {
+    mockGet({ configured: true });
+    axios.post.mockImplementation((url) => {
+      if (url === '/api/registry/install') {
+        return Promise.reject({ response: { data: { code: 'hosted_cap_reached', used: 1, cap: 1, holders: [{ agentName: 'maya-agent', instanceId: 'default', podId: 'pod-1' }] } } });
+      }
+      return Promise.resolve({ data: { ok: true } });
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    fireEvent.click(screen.getByRole('button', { name: /^run it here$/i }));
+    await screen.findByText(/maya-agent already holds your hosted agent slot \(beta allows 1\)/i);
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/hosted/provision')).toBe(false);
+  });
+
   test('a persona hired as a webhook seat carries the sentence too (#1649)', async () => {
     mockGet({ configured: false });
     axios.post.mockResolvedValue({ data: { token: 'cm_agent_x', agentName: 'planner-1' } });

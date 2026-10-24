@@ -213,6 +213,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-byo__hint')).toContain('margin: 0');
   });
 
+  test('BYO field hints take no space until focused or in error', () => {
+    expect(ruleBody(v2, '.v2-byo__field > .v2-byo__hint')).toContain('display: none');
+    expect(selectorRuleBody(v2, '.v2-byo__field:focus-within > .v2-byo__hint,\n.v2-byo__field--error > .v2-byo__hint'))
+      .toContain('display: block');
+  });
+
   // #2287 (QA BYO walk 1): "Other ways to connect" folds the alternatives so the
   // page shows one command, and the needs line is read before the Copy button.
   // jsdom cannot see either; sprint-review deleted all three rules and every

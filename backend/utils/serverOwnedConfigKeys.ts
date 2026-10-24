@@ -93,7 +93,7 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   // from whoever wrote it. `intake` and `credentialHint` are here for the same
   // reason at lower stakes: no browser decides how a credential is obtained.
   'entryId', 'intake', 'clientId', 'clientSecret', 'providerSubject', 'grantedScope', 'expiresAt',
-  'credentialRef', 'refreshTokenRef', 'refreshGeneration', 'credentialHint', 'pendingAuth',
+  'credentialRef', 'refreshTokenRef', 'refreshGeneration', 'authGeneration', 'credentialHint', 'pendingAuth',
   // The mark step 3b of the removal sequence records (`connectionRemovalService`)
   // after the provider revoke TAKES. A body that could write it would make a
   // retry skip the vendor call and delete live material while recording a

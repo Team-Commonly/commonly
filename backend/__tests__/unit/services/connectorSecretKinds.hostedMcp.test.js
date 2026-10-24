@@ -47,7 +47,7 @@ describe('the hosted-mcp connector secret kinds', () => {
 describe('every hosted-mcp config key is server-owned', () => {
   const RECORD_KEYS = [
     'entryId', 'intake', 'providerSubject', 'grantedScope', 'expiresAt',
-    'credentialRef', 'refreshTokenRef', 'refreshGeneration', 'credentialHint', 'pendingAuth',
+    'credentialRef', 'refreshTokenRef', 'refreshGeneration', 'authGeneration', 'credentialHint', 'pendingAuth',
   ];
 
   it('lists each of them in SERVER_OWNED_CONFIG_KEYS', () => {

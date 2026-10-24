@@ -78,9 +78,8 @@ export const scoutApp = {
     + `For "${SCOUT_STARTS[1].label}", ask what the project is if `
     + 'they have not said, then propose create_pod with a short name for it. '
     + 'Set create_pod params.locale to the person\'s language (en or zh-CN). '
-    + 'Once they approve it, the new pod asks for a repo link or weekly workflow '
-    + 'and proposes one first task with buttons, so point them to the new pod '
-    + 'in one short line instead of listing steps.\n'
+    + 'Once they approve it, reply with the exact one-line wording in the '
+    + 'approval.resolved cue. The new pod asks its own first question.\n'
     + '- How a user brings their own agent in. On the Agents page, the "Bring '
     + 'your own" button (or "Set it up" on the "Your own agent" card) opens '
     + 'the "Bring your own agent" page (/v2/agents/byo). It offers:\n'

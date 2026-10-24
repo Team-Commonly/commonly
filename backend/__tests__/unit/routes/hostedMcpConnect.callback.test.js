@@ -175,6 +175,7 @@ const setStoredRow = (overrides = {}) => {
   Integration.findOneAndUpdate.mockReset();
   Integration.findOneAndUpdate
     .mockResolvedValueOnce(row)
+    .mockResolvedValueOnce({ _id: 'row-1' })
     .mockResolvedValueOnce({ _id: 'row-1' });
 };
 
@@ -207,9 +208,12 @@ describe('hosted-mcp connect: callback', () => {
 
       expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'connector_unavailable' });
       expect(res.headers.location).not.toContain('access-1');
-      expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
-      const [filter, update] = Integration.findOneAndUpdate.mock.calls[1];
-      expect(filter).toEqual({ _id: 'row-1', status: 'pending', 'config.pendingAuth': { $exists: false } });
+      expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(3);
+      const [filter, update] = Integration.findOneAndUpdate.mock.calls[2];
+      expect(filter).toEqual({
+        _id: 'row-1', status: 'pending', 'config.pendingAuth': { $exists: false },
+        'config.authGeneration': { $exists: false },
+      });
       expect(update).toMatchObject({
         $set: { status: 'error' },
         $unset: { 'config.pendingAuth': 1 },
@@ -235,7 +239,11 @@ describe('hosted-mcp connect: callback', () => {
       expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(3);
       expect(Integration.findOneAndUpdate.mock.calls[0][1]).toEqual({ $unset: { 'config.pendingAuth': 1 } });
       expect(Integration.findOneAndUpdate.mock.calls[1]).toEqual([
-        { _id: 'row-1', status: 'connected' },
+        {
+          _id: 'row-1',
+          'config.authGeneration': { $exists: false },
+          'config.pendingAuth': { $exists: false },
+        },
         { $set: { status: 'error', errorMessage: 'Connection could not be completed. Try again.', errorMessageUserFacing: true } },
         { new: true },
       ]);
@@ -288,7 +296,7 @@ describe('hosted-mcp connect: callback', () => {
     }).mockResolvedValueOnce('ref-refresh');
     const res = await callback();
     expect(outcome(res).hostedMcp).toBe('connected');
-    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(3);
     expect(forgetHostedMcpDrift).toHaveBeenCalledTimes(2);
     expect(forgetHostedMcpDrift).toHaveBeenNthCalledWith(1, 'row-1');
     expect(forgetHostedMcpDrift).toHaveBeenNthCalledWith(2, 'row-1');
@@ -307,7 +315,7 @@ describe('hosted-mcp connect: callback', () => {
     expect(dcr.dcrClientForRow).toHaveBeenCalledWith(FIXTURE_ENTRY, 'retired-public-client');
     expect(new URLSearchParams(global.fetch.mock.calls[0][1].body).get('client_id'))
       .toBe('retired-public-client');
-    expect(Integration.findOneAndUpdate.mock.calls[1][1].$set['config.clientId'])
+    expect(Integration.findOneAndUpdate.mock.calls[2][1].$set['config.clientId'])
       .toBe('retired-public-client');
   });
 
@@ -366,9 +374,9 @@ describe('hosted-mcp connect: callback', () => {
     expect(body.get('resource')).toBe(FIXTURE_ENTRY.resource);
     expect(body.get('redirect_uri')).toBe(intake.hostedMcpCallbackUrl('linear'));
 
-    expect(connectorSecrets.put).toHaveBeenCalledWith('row-1', expect.objectContaining({ kind: 'hosted-mcp-access-token' }), 'access-1');
-    expect(connectorSecrets.put).toHaveBeenCalledWith('row-1', expect.objectContaining({ kind: 'hosted-mcp-refresh-token' }), 'refresh-1');
-    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    expect(connectorSecrets.put).toHaveBeenCalledWith('row-1', expect.objectContaining({ kind: 'hosted-mcp-access-token' }), 'access-1', 0);
+    expect(connectorSecrets.put).toHaveBeenCalledWith('row-1', expect.objectContaining({ kind: 'hosted-mcp-refresh-token' }), 'refresh-1', 0);
+    const [, update] = Integration.findOneAndUpdate.mock.calls[2];
     expect(update.$set).toMatchObject({
       status: 'connected',
       'config.clientId': intake.hostedMcpClientMetadataUrl('linear'),
@@ -451,7 +459,7 @@ describe('hosted-mcp connect: callback', () => {
     const res = await callback();
 
     expect(outcome(res).hostedMcp).toBe('connected');
-    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    const [, update] = Integration.findOneAndUpdate.mock.calls[2];
     expect(update.$set['config.grantedScope']).toBe('openid read');
   });
 
@@ -487,7 +495,7 @@ describe('hosted-mcp connect: callback', () => {
       const res = await callback('state=st-1&code=code-1', BROWSER_COOKIE, 'atlassian');
 
       expect(outcome(res).hostedMcp).toBe('connected');
-      const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+      const [, update] = Integration.findOneAndUpdate.mock.calls[2];
       expect(scopeSet(update.$set['config.grantedScope']))
         .toEqual(scopeSet(ATLASSIAN_SCOPE_CAPTURE.tokenShape.grantedScope));
       expect([...scopeSet(ATLASSIAN_SCOPE_CAPTURE.tokenShape.grantedScope)])
@@ -549,7 +557,7 @@ describe('hosted-mcp connect: callback', () => {
     const res = await callback();
 
     expect(outcome(res).hostedMcp).toBe('connected');
-    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    const [, update] = Integration.findOneAndUpdate.mock.calls[2];
     expect(update.$set['config.grantedScope']).toBe('read openid');
   });
 
@@ -562,7 +570,7 @@ describe('hosted-mcp connect: callback', () => {
     const res = await callback();
 
     expect(outcome(res).hostedMcp).toBe('connected');
-    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    const [, update] = Integration.findOneAndUpdate.mock.calls[2];
     expect(update.$set['config.grantedScope']).toBe('read');
   });
 
@@ -602,7 +610,7 @@ describe('hosted-mcp connect: callback', () => {
       expect(body.get('client_id')).toBeNull();
       expect(body.get('client_secret')).toBeNull();
 
-      const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+      const [, update] = Integration.findOneAndUpdate.mock.calls[2];
       expect(update.$set['config.clientId']).toBe('registered-client');
       expect(JSON.stringify(update.$set)).not.toContain('registered-secret');
     } finally {
@@ -765,7 +773,7 @@ describe('hosted-mcp connect: callback', () => {
     expect(connectorSecrets.get.mock.invocationCallOrder[0])
       .toBeLessThan(connectorSecrets.put.mock.invocationCallOrder[0]);
     expect(secretValues.get('ref-old-refresh')).toBe('refresh-1');
-    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(3);
   });
 
   it.each([
@@ -799,7 +807,7 @@ describe('hosted-mcp connect: callback', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(connectorSecrets.get).not.toHaveBeenCalled();
     expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
-    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(3);
   });
 
   it('a refused provider withdrawal still finishes the reconnect and names the revoke page', async () => {
@@ -827,7 +835,7 @@ describe('hosted-mcp connect: callback', () => {
     });
     expect(global.fetch).toHaveBeenCalledTimes(2);
     expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
-    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(3);
   });
 
   it('an unreachable provider withdrawal still finishes the reconnect and names the revoke page', async () => {
@@ -855,7 +863,7 @@ describe('hosted-mcp connect: callback', () => {
     });
     expect(global.fetch).toHaveBeenCalledTimes(2);
     expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
-    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(2);
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(3);
   });
 
   it('an unreadable old token does not stop reconnect and names the revoke page', async () => {
@@ -994,8 +1002,8 @@ describe('hosted-mcp connect: callback', () => {
     connectorSecrets.put.mockResolvedValue('ref-access');
     const res = await callback();
     expect(outcome(res).hostedMcp).toBe('connected');
-    expect(connectorSecrets.revoke).toHaveBeenCalledWith('ref-old-refresh');
-    const [, update] = Integration.findOneAndUpdate.mock.calls[1];
+    expect(connectorSecrets.revoke).not.toHaveBeenCalled();
+    const [, update] = Integration.findOneAndUpdate.mock.calls[2];
     expect(update.$set['config.refreshTokenRef']).toBe(null);
   });
 

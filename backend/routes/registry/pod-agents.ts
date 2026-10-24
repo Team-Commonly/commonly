@@ -261,7 +261,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
     const userRows = usernameSet.size > 0
       ? await User.find({ username: { $in: Array.from(usernameSet) } })
-        .select('username botMetadata agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt agentRuntimeTokens.expiresAt')
+        .select('username profilePicture botMetadata agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt agentRuntimeTokens.expiresAt')
         .lean()
       : [];
     const userByUsername = new Map<string, any>(

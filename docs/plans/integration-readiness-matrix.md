@@ -58,6 +58,29 @@ The matrix below is the definition of "ready". A row is ready when every cell is
 | Google Calendar (hosted MCP) | yes | **Built, live, not offered.** #2066 (`e370fe9b`) pins the 5 read tools from Google's unauthenticated `tools/list`, with a pre-registered client and `openid` for the account subject. "Not offered" is a **config fact, not a code fact**. The client values arrived on 2026-10-09 (#2111), and the tile was offered until 2026-10-14. OAuth worked, but every tool call failed Google's Developer Preview gate, which is **per Cloud project** (Google named the project in its error on the 2026-10-09 gate test). Since 2026-10-14 `hostedMcp.googleCalendar.enabled` is `false` in values-dev (Wren's ruling), so the instance holds no client values, the catalogue reports `available: false`, and the page shows "not enabled on this instance" with no Connect. Flip the flag once the project is enrolled and an enrolled `list_calendars` call succeeds. Waiting on Sam: a Workspace seat on the domain and Developer Preview enrollment for the connectors project. The OAuth client already exists in a project of its own (Wren: a revoke withdraws every scope a person granted the project) |
 | next app | no | Sam's decision; see below |
 
+## Staging connector walk — 2026-10-23 on `876870378`
+
+Walked `staging.commonly.me` with a non-admin walk user in an invite-only pod whose only agent was Scout. Staging has no agent runtime or LiteLLM, so no agent can call a tool. The Sentry connection was walked there; the Atlassian walk was blocked by the vendor's allowlist. Both remain hidden in production until the corresponding production spot walk passes.
+
+| connector | cell | result |
+|---|---|---|
+| Sentry | C0 | **PASS** — listed |
+| Sentry | C1 | **PASS** — connect, consent with only the Inspect and Triage groups, callback back to staging, and connection row written |
+| Sentry | C2 | **PASS** — read granted to the walk pod with 11 tools, then revoked |
+| Sentry | C3, C6, C9 | **NOT WALKED** — staging has no agent runtime or LiteLLM, so no agent can call a tool |
+| Atlassian | C1 | **BLOCKED** — the site's MCP-server-domain allowlist does not include the staging origin; a site admin is needed. Not walked and hidden in production |
+
+### Findings from the staging walk
+
+| finding | status |
+|---|---|
+| Staging has no agent runtime, so tool-call columns cannot be walked there | observed limitation |
+| The grant panel labels the agent by its `instanceId`, not its display name | observed UI finding |
+| A callback error page is unhelpful | TASK-405, P1 |
+| Staging `BACKEND_URL` had been set to production, so staging CIMD advertised production's callback | fixed by #2529 |
+| Staging had no connector key ring | fixed by #2533 |
+| Sentry's Authorized Apps page lists the hosted-MCP client as `mcp.sentry.dev`, not "Commonly (Sentry)"; vendor-side revocation there is per client and cuts every Sentry-MCP session on the account | Commonly disconnect is the supported per-token revoke path: it calls the vendor's RFC 7009 `revocation_endpoint` before deleting the row; staging removal returned 200 |
+
 ## Walk of 2026-09-25
 
 Stranger account `eng-smoke-09255bfe` (role user), builds `9a32fca5`, `0e142135` and `f536fa11`. Evidence: `docs/design/evidence/slack-authorize-409/` and the rows filed in the Connectors lane.

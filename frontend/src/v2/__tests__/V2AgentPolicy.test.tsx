@@ -53,6 +53,28 @@ it('writes approval and context policy through the shared settings hook', async 
   }));
 });
 
+it('saves an edit immediately on the first click and confirms it', async () => {
+  renderPolicy();
+  fireEvent.change(screen.getByLabelText('Allowed tools'), { target: { value: 'commonly, Read' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save policy' }));
+
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(update).toHaveBeenCalledWith(expect.objectContaining({
+    toolPolicy: { allowed: ['commonly', 'Read'], blocked: [], requireApproval: ['Bash'] },
+  }));
+  expect(await screen.findByRole('status')).toHaveTextContent('Saved');
+});
+
+it('explains why an installation without a profile cannot save policy', async () => {
+  renderPolicy({ ...installation, profile: null });
+  expect(screen.getByRole('alert')).toHaveTextContent("This agent's policy can't be changed in this pod yet.");
+  fireEvent.change(screen.getByLabelText('Allowed tools'), { target: { value: 'Read' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save policy' }));
+
+  expect(update).not.toHaveBeenCalled();
+  expect(await screen.findByRole('alert')).toHaveTextContent('nothing was saved');
+});
+
 it('writes only the chosen trust mode and edits memory with its revision', async () => {
   renderPolicy();
   await screen.findByDisplayValue('Original');
