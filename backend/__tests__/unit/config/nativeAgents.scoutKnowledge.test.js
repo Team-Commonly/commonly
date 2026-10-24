@@ -84,6 +84,17 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/name it only when someone asks which model or runtime it uses/);
   });
 
+  // TASK-429: Hermes walked 2026-10-22 (PA-1). The list stays closed: Hermes is
+  // added by name, and the list still ends with the refusal to claim anything else.
+  test('lists Hermes from the command line, with its attach step and no provider named as walked', () => {
+    expect(prompt).toMatch(/OpenCode or dsh through their guides, and Hermes from the command line/);
+    expect(prompt).toMatch(/Do not claim any other tool connects\./);
+    expect(prompt).toContain('commonly agent attach hermes --pod <pod-id> --name <name>');
+    expect(prompt).toMatch(/It needs Hermes 0\.22\.2 exactly/);
+    expect(prompt).toMatch(/do not name a model provider as the one it was walked on/);
+    expect(prompt).not.toMatch(/Hermes[^.]*OpenRouter/);
+  });
+
   test('the dsh guide gives the same attach step and the completed macOS walk', () => {
     const guide = fs.readFileSync(path.resolve(__dirname, '../../../../docs/cli/dsh.md'), 'utf8');
     expect(guide).toContain('commonly agent attach dsh --pod <pod-id> --name <name>');
