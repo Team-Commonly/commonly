@@ -92,10 +92,12 @@ export async function migrateTaskSourceRefIdentity(
   // The ordering guard. Dropping the legacy index before the code that replaces
   // it is live takes the deployed code's 11000 backstop away (see the header),
   // so the drop needs evidence that code has booted against THIS database. The
-  // pair index is that evidence: models/Task.ts declares it and nothing in
-  // backend turns mongoose's autoIndex off (config/db.ts passes only
-  // useNewUrlParser / useUnifiedTopology), so a boot creates it — the same
-  // reason the test for this script has to DROP it to reproduce an old database.
+  // pair index is that evidence: models/Task.ts declares it and the normal
+  // backend boot leaves autoIndex enabled. This script disables it process-wide
+  // above, so it must stay outside backend boot imports. TASK-176's
+  // taskSourceRefImportBoundary.test.js guards static non-test imports of this
+  // migration; standalone scripts are not evidence of normal startup settings.
+  // The migration test DROPS the pair index to reproduce an old database.
   //
   // Two properties make fail-closed safe here. It cannot deadlock: pair-aware
   // code boots fine while the legacy index is present — the named 503 IS its
