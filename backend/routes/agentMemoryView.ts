@@ -185,7 +185,8 @@ router.patch('/:agentName/:instanceId/editable/:section', auth, async (req: Auth
     const before = prior?.sections?.[section] || (section === 'long_term' && prior?.content
       ? { content: prior.content, visibility: 'private' } : null);
     // Copies never widen private memory or replace an existing local note.
-    if (copyFrom !== undefined && ((before?.visibility && before.visibility !== 'private') || before?.content)) {
+    if (copyFrom !== undefined && ((before?.visibility && before.visibility !== 'private')
+      || before?.content || prior?.content)) {
       res.status(409).json({ error: 'Memory copy requires an empty private target' }); return;
     }
     const priorRevision = before?.updatedAt ? new Date(before.updatedAt).toISOString() : null;

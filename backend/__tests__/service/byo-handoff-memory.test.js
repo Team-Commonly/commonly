@@ -170,6 +170,18 @@ describe('hosted memory copied into a local agent', () => {
     await expect(runCopy(owner)).rejects.toThrow(/different memory/);
     expect((await AgentMemory.findOne({ agentName: 'local-handoff' }).lean()).content).toContain('local-existing');
   });
+  it('refuses a stored runtime legacy note even when canonical long-term content is empty', async () => {
+    await AgentMemory.create({ agentName: 'local-handoff', instanceId: 'default', content: '', sections: {
+      long_term: { content: '', visibility: 'private', updatedAt: new Date(), byteSize: 0 },
+    } });
+    const written = await request(base).put('/api/agents/runtime/memory')
+      .set('Authorization', `Bearer ${RAW_TOKEN}`).send({ content: 'existing legacy local note' });
+    expect(written.status).toBe(200);
+    await expect(runCopy(owner)).rejects.toThrow(/empty private target/);
+    const local = await AgentMemory.findOne({ agentName: 'local-handoff' }).lean();
+    expect(local.content).toBe('existing legacy local note');
+    expect(local.sections.long_term.content).toBe('');
+  });
   it('preserves an actual runtime content-only write after server preflight', async () => {
     await AgentMemory.create({ agentName: 'local-handoff', instanceId: 'default', content: '', sections: {
       long_term: { content: '', visibility: 'private', updatedAt: new Date(), byteSize: 0 },
