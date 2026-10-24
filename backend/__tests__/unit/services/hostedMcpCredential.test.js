@@ -487,8 +487,10 @@ describe('the winner of the fence', () => {
     const got = await credentialFor(stale(), h.deps);
 
     expect(got.token).toBe('new-access');
-    expect(h.put).toHaveBeenCalledTimes(1);
-    expect(h.put.mock.calls[0][1].kind).toBe(ACCESS_KIND);
+    // Both secrets advance to this refresh's generation, even though the held
+    // refresh token is the one re-written.
+    expect(h.put.mock.calls.map(([, kind, material]) => [kind.kind, material]))
+      .toEqual([[ACCESS_KIND, 'new-access'], [REFRESH_KIND, 'old-refresh']]);
     expect(h.commit.mock.calls[0][2]['config.refreshTokenRef']).toBe(REFRESH_REF);
     expect(h.revoke).not.toHaveBeenCalled();
     expect(h.secrets.get(REFRESH_REF)).toBe('old-refresh');

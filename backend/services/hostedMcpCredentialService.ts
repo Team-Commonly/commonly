@@ -485,14 +485,16 @@ export const credentialFor = async (
   const credentialRef = await deps.secrets.put(
     String(id), HOSTED_MCP_ACCESS_TOKEN, refreshed.accessToken, writeGeneration,
   );
-  let nextRefreshRef = refreshTokenRef;
-  if (refreshed.refreshToken) {
-    // A vendor that rotates hands back a new refresh token; a vendor that does
-    // not (or omits it in this response) keeps the one that still works.
-    nextRefreshRef = await deps.secrets.put(
-      String(id), HOSTED_MCP_REFRESH_TOKEN, refreshed.refreshToken, writeGeneration,
-    );
-  }
+  // The refresh secret advances to this refresh's write generation on EVERY
+  // refresh, not only a rotating one. A vendor that does not rotate hands back no
+  // refresh token; the one already held is re-written at this generation. Without
+  // that, a superseded refresh could still write its own refresh token after this
+  // one committed, the access secret and the refresh secret left at different
+  // authorities (TASK-405, sable's non-rotating interleaving).
+  const refreshMaterial = refreshed.refreshToken ?? await deps.secrets.get(refreshTokenRef);
+  const nextRefreshRef = await deps.secrets.put(
+    String(id), HOSTED_MCP_REFRESH_TOKEN, refreshMaterial, writeGeneration,
+  );
 
   const expiresAt = refreshed.expiresIn ? new Date(now.getTime() + refreshed.expiresIn * 1000) : null;
   // One write, and it has to stay one: a loser serves the first re-read that

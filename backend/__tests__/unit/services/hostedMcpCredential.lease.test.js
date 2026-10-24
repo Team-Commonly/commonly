@@ -475,3 +475,93 @@ test('a superseded refresh cannot overwrite a newer refresh inside the same auth
     process.env.CONNECTOR_SECRET_ACTIVE_KEY = savedActive;
   }
 });
+
+// TASK-405 (sable, #2534 c850750c): a NON-rotating refresh B advanced only the
+// access secret, so a superseded refresh A could still write its refresh token
+// after B committed. Both secrets now advance on every refresh.
+test('a superseded refresh cannot write its refresh token after a non-rotating newer refresh', async () => {
+  const savedKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const savedActive = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+  process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 1).toString('base64')}`;
+  process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
+  await ConnectorSecret.init();
+  try {
+    const row = await Integration.create({
+      type: 'hosted-mcp',
+      podId: new mongoose.Types.ObjectId(),
+      createdBy: new mongoose.Types.ObjectId(),
+      status: 'connected',
+      config: {
+        entryId: 'linear',
+        authGeneration: 1,
+        refreshGeneration: 3,
+        expiresAt: new Date(T0 - 3600 * 1000),
+      },
+    });
+    const id = String(row._id);
+    const access0 = await connectorSecrets.put(id, HOSTED_MCP_ACCESS_TOKEN, 'access-0', secretWriteGeneration(1, 0));
+    const refresh0 = await connectorSecrets.put(id, HOSTED_MCP_REFRESH_TOKEN, 'refresh-0', secretWriteGeneration(1, 0));
+    await Integration.updateOne(
+      { _id: row._id },
+      { $set: { 'config.credentialRef': access0, 'config.refreshTokenRef': refresh0 } },
+    );
+
+    const atPause = gate();
+    const releaseA = gate();
+    const realSecrets = {
+      get: connectorSecrets.get,
+      put: connectorSecrets.put,
+      revoke: connectorSecrets.revoke,
+    };
+    // A pauses before its SECOND write, the refresh secret, after its access write landed.
+    const pausedA = {
+      ...realSecrets,
+      put: async (integrationId, spec, material, writeGeneration) => {
+        if (spec.kind === HOSTED_MCP_REFRESH_TOKEN.kind) {
+          atPause.open();
+          await releaseA.promise;
+        }
+        return connectorSecrets.put(integrationId, spec, material, writeGeneration);
+      },
+    };
+    const store = {
+      deps: {
+        now: () => new Date(clock),
+        sleep: async (ms) => { clock += ms; },
+        entryFor: () => ENTRY,
+        clientIdFor: () => 'client-id',
+        secrets: realSecrets,
+      },
+    };
+
+    const { deps: depsA, bumped } = fenceSignal(store, {
+      secrets: pausedA,
+      refreshAtVendor: async () => ({ accessToken: 'access-A', refreshToken: 'refresh-A', expiresIn: 3600 }),
+    });
+    const callA = credentialFor(await preImage(id), depsA);
+    callA.catch(() => {});
+    await bumped.promise;
+    await atPause.promise;
+
+    // Past A's lease. B does NOT rotate: the vendor returns no refresh token.
+    clock = T0 + 31 * 1000;
+    const b = await credentialFor(await preImage(id), depsWith(store, {
+      refreshAtVendor: async () => ({ accessToken: 'access-B', expiresIn: 7200 }),
+    }));
+    expect(b.token).toBe('access-B');
+    expect((await live(id)).config.refreshGeneration).toBe(5);
+
+    releaseA.open();
+    await expect(callA).rejects.toThrow(/newer connector authorization/);
+
+    const after = await live(id);
+    expect(after.status).toBe('connected');
+    expect(after.config.refreshGeneration).toBe(5);
+    expect(await connectorSecrets.get(after.config.credentialRef)).toBe('access-B');
+    expect(await connectorSecrets.get(after.config.refreshTokenRef)).toBe('refresh-0');
+  } finally {
+    process.env.CONNECTOR_SECRET_KEYS = savedKeys;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = savedActive;
+  }
+});
+
