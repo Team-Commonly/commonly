@@ -26,8 +26,12 @@ const {
   WINNER_WAIT_MS,
 } = require('../../../services/hostedMcpCredentialService');
 const {
+  HOSTED_MCP_ACCESS_TOKEN,
   HOSTED_MCP_REFRESH_TOKEN,
 } = require('../../../services/connectorSecretKinds');
+const connectorSecrets = require('../../../services/connectorSecrets');
+const ConnectorSecret = require('../../../models/ConnectorSecret');
+const { secretWriteGeneration } = require('../../../services/hostedMcpSecretGeneration');
 
 const ENTRY = { id: 'linear', issuer: 'https://mcp.linear.app', clientId: 'client-id' };
 const ACCESS_REF = 'ref-access';
@@ -378,4 +382,96 @@ test('a retryable failure keeps the lease, and the expiry is what releases it', 
   expect(after.status).toBe('connected');
   expect(after.config.refreshGeneration).toBe(5);
   expect(after.config.refreshingUntil).toBeNull();
+});
+
+// TASK-405 (rhea, #2534): two refreshes inside ONE authorization share the same
+// authGeneration. The store's fence used to order writes by authGeneration alone,
+// so a superseded refresh could replace a newer refresh's pair behind the same
+// stable refs. The write generation now orders refreshes too, and the real
+// connector secret store refuses the stale writer.
+test('a superseded refresh cannot overwrite a newer refresh inside the same authorization', async () => {
+  const savedKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const savedActive = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+  process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 1).toString('base64')}`;
+  process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
+  await ConnectorSecret.init();
+  try {
+    const row = await Integration.create({
+      type: 'hosted-mcp',
+      podId: new mongoose.Types.ObjectId(),
+      createdBy: new mongoose.Types.ObjectId(),
+      status: 'connected',
+      config: {
+        entryId: 'linear',
+        authGeneration: 1,
+        refreshGeneration: 3,
+        expiresAt: new Date(T0 - 3600 * 1000),
+      },
+    });
+    const id = String(row._id);
+    // The authorization's own pair, written at its callback's write generation.
+    const access0 = await connectorSecrets.put(id, HOSTED_MCP_ACCESS_TOKEN, 'access-0', secretWriteGeneration(1, 0));
+    const refresh0 = await connectorSecrets.put(id, HOSTED_MCP_REFRESH_TOKEN, 'refresh-0', secretWriteGeneration(1, 0));
+    await Integration.updateOne(
+      { _id: row._id },
+      { $set: { 'config.credentialRef': access0, 'config.refreshTokenRef': refresh0 } },
+    );
+
+    const atPause = gate();
+    const releaseA = gate();
+    const realSecrets = {
+      get: connectorSecrets.get,
+      put: connectorSecrets.put,
+      revoke: connectorSecrets.revoke,
+    };
+    // A pauses immediately before its FIRST secret write, the access token.
+    const pausedA = {
+      ...realSecrets,
+      put: async (integrationId, spec, material, writeGeneration) => {
+        atPause.open();
+        await releaseA.promise;
+        return connectorSecrets.put(integrationId, spec, material, writeGeneration);
+      },
+    };
+    const store = {
+      deps: {
+        now: () => new Date(clock),
+        sleep: async (ms) => { clock += ms; },
+        entryFor: () => ENTRY,
+        clientIdFor: () => 'client-id',
+        secrets: realSecrets,
+      },
+    };
+
+    const { deps: depsA, bumped } = fenceSignal(store, {
+      secrets: pausedA,
+      refreshAtVendor: async () => ({ accessToken: 'access-A', refreshToken: 'refresh-A', expiresIn: 3600 }),
+    });
+    const callA = credentialFor(await preImage(id), depsA);
+    callA.catch(() => {}); // awaited below, after the release
+    await bumped.promise;
+    await atPause.promise;
+
+    // Past A's 30s lease: B is a legitimate second refresh of the same authorization.
+    clock = T0 + 31 * 1000;
+    const b = await credentialFor(await preImage(id), depsWith(store, {
+      refreshAtVendor: async () => ({ accessToken: 'access-B', refreshToken: 'refresh-B', expiresIn: 7200 }),
+    }));
+    expect(b.token).toBe('access-B');
+    expect((await live(id)).config.refreshGeneration).toBe(5);
+
+    // Release A. Its writes are generation 4 of this authorization; the store
+    // already holds generation 5, so the refresh must be refused, not published.
+    releaseA.open();
+    await expect(callA).rejects.toThrow(/newer connector authorization/);
+
+    const after = await live(id);
+    expect(after.status).toBe('connected');
+    expect(after.config.refreshGeneration).toBe(5);
+    expect(await connectorSecrets.get(after.config.credentialRef)).toBe('access-B');
+    expect(await connectorSecrets.get(after.config.refreshTokenRef)).toBe('refresh-B');
+  } finally {
+    process.env.CONNECTOR_SECRET_KEYS = savedKeys;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = savedActive;
+  }
 });

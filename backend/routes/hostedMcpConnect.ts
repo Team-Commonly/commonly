@@ -29,6 +29,7 @@ import { forgetHostedMcpDrift } from '../services/hostedMcpToolDefinitions';
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
 const connectorSecrets = require('../services/connectorSecrets');
+const { secretWriteGeneration } = require('../services/hostedMcpSecretGeneration');
 // eslint-disable-next-line global-require
 const { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } = require('../services/connectorSecretKinds');
 // eslint-disable-next-line global-require
@@ -602,13 +603,16 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
   // Clear the old-grant assessment before replacement begins.
   forgetHostedMcpDrift(String(consumed._id));
   flow.credentialWriteStarted = true;
+  // A callback is refresh 0 of its own authorization: every refresh that the
+  // previous authorization still has in flight ranks below it.
+  const writeGeneration = secretWriteGeneration(authGeneration, 0);
   const credentialRef = await connectorSecrets.put(
-    String(consumed._id), HOSTED_MCP_ACCESS_TOKEN, tokens.access_token, authGeneration,
+    String(consumed._id), HOSTED_MCP_ACCESS_TOKEN, tokens.access_token, writeGeneration,
   );
   let refreshTokenRef = consumed.config?.refreshTokenRef || undefined;
   if (tokens.refresh_token) {
     refreshTokenRef = await connectorSecrets.put(
-      String(consumed._id), HOSTED_MCP_REFRESH_TOKEN, tokens.refresh_token, authGeneration,
+      String(consumed._id), HOSTED_MCP_REFRESH_TOKEN, tokens.refresh_token, writeGeneration,
     );
   } else if (refreshTokenRef) {
     // This authorization returned no refresh token, so the row cannot confirm

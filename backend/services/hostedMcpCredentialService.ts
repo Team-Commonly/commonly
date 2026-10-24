@@ -58,6 +58,7 @@ import {
 } from './hostedMcpIntakeService';
 import * as connectorSecrets from './connectorSecrets';
 import { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } from './connectorSecretKinds';
+import { secretWriteGeneration } from './hostedMcpSecretGeneration';
 import { upstreamFetch } from './upstreamFetch';
 import { hostedVendorFetch } from './hostedVendorFetch';
 import { dcrClientForRow, refuseDcrClient } from './hostedMcpDcrRegistry';
@@ -475,19 +476,21 @@ export const credentialFor = async (
     throw failure;
   }
 
-  // Refresh shares the callback's stable secret refs. Carry the authorization
-  // generation read before the vendor call so a newer completed callback wins
-  // even if this refresh resumes after its own row fence was reset.
-  const authGeneration = row.config?.authGeneration ?? 0;
+  // Refresh shares the callback's stable secret refs. The write generation orders
+  // this refresh against a newer callback AND against a newer refresh inside the
+  // same authorization; the authorization alone cannot, which is how a superseded
+  // refresh overwrote a newer pair (TASK-405). A stale writer is refused by the
+  // store, so its vendor tokens are never published behind the newer ones.
+  const writeGeneration = secretWriteGeneration(row.config?.authGeneration ?? 0, nextGeneration);
   const credentialRef = await deps.secrets.put(
-    String(id), HOSTED_MCP_ACCESS_TOKEN, refreshed.accessToken, authGeneration,
+    String(id), HOSTED_MCP_ACCESS_TOKEN, refreshed.accessToken, writeGeneration,
   );
   let nextRefreshRef = refreshTokenRef;
   if (refreshed.refreshToken) {
     // A vendor that rotates hands back a new refresh token; a vendor that does
     // not (or omits it in this response) keeps the one that still works.
     nextRefreshRef = await deps.secrets.put(
-      String(id), HOSTED_MCP_REFRESH_TOKEN, refreshed.refreshToken, authGeneration,
+      String(id), HOSTED_MCP_REFRESH_TOKEN, refreshed.refreshToken, writeGeneration,
     );
   }
 
