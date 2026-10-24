@@ -135,7 +135,11 @@ describe('commonly_offer_local_agent', () => {
     const result = await runAgent(install, ask);
 
     expect(result.status).toBe('succeeded');
-    expect(mockDispatchHostedBrokerTool).toHaveBeenCalledTimes(1);
+    // The runtime offers every model tool call to the broker; only the granted
+    // tool is a broker dispatch, so count that one.
+    const brokerDispatches = mockDispatchHostedBrokerTool.mock.calls
+      .filter(([call]) => call.name === 'github_list_issues');
+    expect(brokerDispatches).toHaveLength(1);
     expect(mockPodIsBridged).toHaveBeenCalledWith(POD);
     expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
   });
