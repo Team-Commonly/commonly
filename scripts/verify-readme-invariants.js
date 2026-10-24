@@ -9,7 +9,7 @@
  * README stops carrying what a visitor needs.
  *
  * The rules are below. To change them, edit RULES here and record the reason in
- * docs/design/readme-benchmark.md (TASK-422), which is where the README's
+ * the README benchmark brief (TASK-422), which is where the README's
  * structure is argued. Do not add a rule without a reason there.
  *
  * Usage: node scripts/verify-readme-invariants.js [path]
@@ -67,7 +67,7 @@ function selfTest() {
   }
 
   // The invite past line 40 is a footer, not a top link: it must fail too.
-  const padded = `${'filler\n'.repeat(TOP_LINES)}${DISCORD_INVITE}\n## Quick Start\n[D](docs/x.md)\n[L](LICENSE)`;
+  const padded = `${'filler\n'.repeat(TOP_LINES)}${DISCORD_INVITE}\n## Quick Start\n[D](https://docs.commonly.me/quickstart)\n[L](LICENSE)`;
   if (!checkReadme(padded).some((p) => p.includes(`within the first ${TOP_LINES} lines`))) {
     throw new Error('self-test: an invite below the top lines was accepted');
   }
