@@ -3758,9 +3758,8 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
   // wins `padding-bottom` on the list shell, and what wins `z-index` on the list
   // aside. Neither is visible to a presence check.
 
-  // Class-only compounds. Anything carrying a pseudo or an attribute is skipped
-  // rather than mis-ranked, which is the honest direction: the alternative is a
-  // matcher that guesses.
+  // Chain matching checks the known rendered family only. It must never
+  // decide cascade membership: an unlisted ancestor can still match the app.
   const MODELABLE_COMPOUND = /^[A-Za-z0-9_.-]+$/;
 
   // Outermost first; each entry is the class set of one rendered element.
@@ -3800,9 +3799,50 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     return true;
   };
 
-  const chainRules = (chain: string[][], width: number): ParsedRule[] => rules.filter(
-    (rule) => appliesAt(rule, width) && matchesChain(rule.selector, chain),
+  const LIST_SHELL = ['v2-shell', 'v2-shell--list'];
+  const LIST_ASIDE = ['v2-pane', 'v2-pods-aside', 'v2-pods-aside--page'];
+  // Conservative, like MAIN_PANE above: rank every rule whose target compound
+  // can bind to this element, regardless of ancestors we cannot place. This
+  // can over-include rules from another subtree; it cannot silently drop a
+  // real competitor just because LIST_CHAIN omits its ancestor (TASK-160).
+  const targetRules = (source: ParsedRule[], target: string[], width: number): ParsedRule[] => source.filter(
+    (rule) => appliesAt(rule, width) && rule.classes.length > 0
+      && rule.classes.every((token) => target.includes(token)),
   );
+
+  test('list candidates retain competitors with ancestors outside the known chain (TASK-160)', () => {
+    const fixture = parseCascade(`
+      .v2-shell.v2-shell--list { padding-bottom: 56px; }
+      .v2-root .v2-shell--list { padding: 0; }
+      .v2-shell--list .v2-pods-aside--page { z-index: auto; }
+      .v2-root .v2-shell--list .v2-pods-aside--page { z-index: 60; }
+      .elsewhere { padding: 999px; z-index: 999; }
+      @media (min-width: 761px) { .v2-shell--list { padding: 999px; } }
+    `);
+    expect(matchesChain(fixture[1].selector, LIST_CHAIN)).toBe(false);
+    expect(matchesChain(fixture[3].selector, LIST_CHAIN)).toBe(false);
+    const shell = targetRules(fixture, LIST_SHELL, 390);
+    const aside = targetRules(fixture, LIST_ASIDE, 390);
+    expect(shell.map((rule) => rule.order)).toEqual([0, 1]);
+    expect(aside.map((rule) => rule.order)).toEqual([2, 3]);
+    expect(winnerOf(shell, 'padding-bottom').selector).toBe('.v2-root .v2-shell--list');
+    expect(declarations(winnerOf(shell, 'padding-bottom').body)['padding-bottom']).toBe('0');
+    expect(declarations(winnerOf(aside, 'z-index').body)['z-index']).toBe('60');
+  });
+
+  test.each([
+    { marker: 'v2-shell--list', target: LIST_SHELL, property: 'padding-bottom' },
+    { marker: 'v2-pods-aside--page', target: LIST_ASIDE, property: 'z-index' },
+  ])('every parsed phone $marker $property competitor reaches the candidate set', ({ marker, target, property }) => {
+    const candidates = targetRules(rules, target, 390);
+    const competitors = rules.filter((rule) => appliesAt(rule, 390)
+      && classTokens(lastCompound(rule.selector)).includes(marker)
+      && declarations(rule.body)[property] !== undefined);
+    expect(competitors.length).toBeGreaterThan(0);
+    // Named omissions make a newly introduced target class actionable rather
+    // than silently narrowing the model. Coverage is of parsed rules only.
+    expect(competitors.filter((rule) => !candidates.includes(rule)).map((rule) => rule.selector)).toEqual([]);
+  });
 
   // `padding-bottom`, or the `padding` shorthand it may be written as. A guard
   // that read only the longhand would pass while the shorthand took the space
@@ -3810,7 +3850,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
   const bottomPadding = (body: string): string | undefined => declarations(body)['padding-bottom'];
 
   test('the phone list reserves the tab bar\'s own height inside its box', () => {
-    const shellRules = chainRules(LIST_CHAIN, 390)
+    const shellRules = targetRules(rules, LIST_SHELL, 390)
       .filter((rule) => bottomPadding(rule.body) !== undefined);
     // Non-vacuity, both parts: a winner of an empty set asserts nothing, and the
     // specificity claim below needs a one-class competitor to be about.
@@ -3818,7 +3858,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     const oneClass = shellRules.filter((rule) => rule.specificity[1] <= 1);
     expect(oneClass.length).toBeGreaterThan(0);
 
-    const barRules = chainRules(TAB_BAR, 390)
+    const barRules = targetRules(rules, TAB_BAR[0], 390)
       .filter((rule) => declarations(rule.body)['height'] !== undefined);
     expect(barRules.length).toBeGreaterThan(0);
     const barHeight = declarations(winnerOf(barRules, 'height').body)['height'];
@@ -3836,7 +3876,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
   });
 
   test('the list aside does not stack over the tab bar', () => {
-    const asideRules = chainRules(LIST_CHAIN, 390)
+    const asideRules = targetRules(rules, LIST_ASIDE, 390)
       .filter((rule) => declarations(rule.body)['z-index'] !== undefined);
     // Non-vacuity: the reset needs something to beat. The drawer rule that
     // stacks the aside at 60 must be in the set, or this ranks a winner among
@@ -3844,7 +3884,7 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
     expect(asideRules.length).toBeGreaterThan(1);
     expect(asideRules.map((rule) => declarations(rule.body)['z-index'])).toContain('60');
 
-    const barRules = chainRules(TAB_BAR, 390)
+    const barRules = targetRules(rules, TAB_BAR[0], 390)
       .filter((rule) => declarations(rule.body)['z-index'] !== undefined);
     expect(barRules.length).toBeGreaterThan(0);
     const barZ = Number(declarations(winnerOf(barRules, 'z-index').body)['z-index']);
@@ -3866,6 +3906,8 @@ describe('the authenticated shell keeps its panes inside the banner row (TASK-15
   test('the list chain this guard ranks is the chain the components render', () => {
     const layout = read('../components/V2Layout.tsx');
     expect(layout).toContain('v2-shell v2-shell--list');
+    expect(matchesChain('.v2-shell.v2-shell--list', LIST_CHAIN)).toBe(true);
+    expect(matchesChain('.v2-shell--list .v2-pods-aside--page', LIST_CHAIN)).toBe(true);
     expect(layout).toContain('<V2MobileTabs');
     expect(read('../components/V2PodsSidebar.tsx')).toContain("' v2-pods-aside--page'");
   });
