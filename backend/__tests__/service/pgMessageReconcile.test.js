@@ -293,6 +293,21 @@ d('TASK-313 part 2: reconcile Mongo fallback messages into PostgreSQL', () => {
     expect(await pgRowsFor(doc._id)).toHaveLength(0);
   });
 
+  test.each(['mongo', 'pg'])('delete by %s ID removes the unstamped availability copy before another pass', async (idKind) => {
+    const doc = await insertFallback('crashed-stamp-delete');
+    await copyOne(doc);
+    const pgId = await PGMessage.resolveId(String(doc._id));
+    await MongoMessage.updateOne({ _id: doc._id }, { $unset: { reconciledAt: 1, reconciledPgId: 1 } });
+    const controller = require('../../controllers/messageController');
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await controller.deleteMessage({ params: { id: idKind === 'mongo' ? String(doc._id) : pgId }, userId: USER }, res);
+    expect(res.json).toHaveBeenCalledWith({ msg: 'Message deleted' });
+    expect(await MongoMessage.findById(doc._id).lean()).toBeNull();
+    expect(await pgRowsFor(doc._id)).toHaveLength(0);
+    expect((await reconcile()).moved).toBe(0);
+    expect(await pgRowsFor(doc._id)).toHaveLength(0);
+  });
+
   test('a moved message resolves its Mongo id for reactions', async () => {
     const doc = await insertFallback('g');
     await reconcile();

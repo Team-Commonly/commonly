@@ -615,7 +615,9 @@ describe('messageController', () => {
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await messageController.deleteMessage({ params: { id: '123456789012345678901234' }, userId: 'u1' }, res);
       expect(PGMessage.delete).toHaveBeenCalledWith('41');
-      expect(MongoMessage.deleteOne).toHaveBeenCalledWith({ reconciledPgId: 41 });
+      expect(MongoMessage.deleteOne).toHaveBeenCalledWith({ $or: [
+        { reconciledPgId: 41 }, { _id: '123456789012345678901234' },
+      ] });
       expect(MongoMessage.findByIdAndDelete).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith({ msg: 'Message deleted' });
     });

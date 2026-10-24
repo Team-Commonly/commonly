@@ -24,6 +24,7 @@ interface AuthRequest extends Request {
 }
 
 interface NormalizedMessage {
+  legacy_mongo_id?: string;
   id: string;
   pod_id: string;
   user_id: string;
@@ -496,7 +497,14 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       // Keep the availability copy from resurrecting a deleted message during
       // the next PG outage. Cleanup cannot turn a committed delete into a 500.
       try {
-        await MongoMessage.deleteOne({ reconciledPgId: Number(pgId) });
+        const copyKeys: Array<Record<string, unknown>> = [{ reconciledPgId: Number(pgId) }];
+        // PG can commit before its Mongo stamp. The stable legacy ID still
+        // identifies that unstamped copy, even when deletion used the PG ID.
+        const legacyId = message.legacy_mongo_id || messageId;
+        if (typeof legacyId === 'string' && /^[0-9a-f]{24}$/i.test(legacyId)) {
+          copyKeys.push({ _id: legacyId });
+        }
+        await MongoMessage.deleteOne({ $or: copyKeys });
       } catch (cleanupError) {
         console.warn('[messageController] fallback delete cleanup failed:', (cleanupError as Error).message);
       }
