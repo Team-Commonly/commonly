@@ -365,6 +365,30 @@ describe('own-row board wake routing', () => {
     expect(AgentEventService.enqueue.mock.calls[0][0].payload.content).toContain('Peer commented');
   });
 
+  it.each(['native', 'durable-object'])('sends a hosted %s owner a type its engine runs', async (engine) => {
+    setInstalls([
+      { ...install('maya-agent'), config: { runtime: { runtimeType: 'hosted' }, hosted: { engine } } },
+      install('scout'),
+    ]);
+    const changed = await createTask({ taskId: 'TASK-HOSTED', updatedAt: NOW, assignee: 'maya-agent' });
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
+
+    expect(wakeNames()).toEqual(['maya-agent']);
+    expect(AgentEventService.enqueue.mock.calls[0][0].type).toBe('chat.mention');
+  });
+
+  it('promotes a pending hosted sweep wake when an own-row change folds into it', async () => {
+    setInstalls([{ ...install('maya-agent'), config: { runtime: { runtimeType: 'hosted' } } }]);
+    const changed = await createTask({ taskId: 'TASK-HOSTED-FOLD', updatedAt: NOW, assignee: 'maya-agent' });
+    AgentEvent.findOneAndUpdate.mockResolvedValueOnce({ _id: 'pending-sweep', payload: { boardChanges: 1 } });
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
+
+    expect(AgentEvent.findOneAndUpdate.mock.calls[0][1].$set.type).toBe('chat.mention');
+    expect(AgentEvent.updateOne).toHaveBeenCalledTimes(1);
+  });
+
   it('wakes the waiting row owner only when its exact dependency clears', async () => {
     const prerequisite = await createTask({ taskId: 'TASK-PREREQUISITE', updatedAt: NOW, status: 'done' });
     const waiting = await createTask({ taskId: 'TASK-WAITING', updatedAt: NOW, assignee: 'scout' });

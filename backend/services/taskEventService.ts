@@ -207,6 +207,7 @@ export async function notifyPodAgents(
     const { AgentInstallation } = require('../models/AgentRegistry');
     const AgentEventService = require('./agentEventService');
     const Task = require('../models/Task');
+    const { isHostedInstallation } = require('./hostedRuntimeService');
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
 
     const normalizedPodId = String(podId);
@@ -296,6 +297,9 @@ export async function notifyPodAgents(
       if (actorKey && installKey === actorKey) return null;
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
+      // Both hosted engines answer chat.mention; they acknowledge a generic
+      // message.posted without a turn. Other drivers use message.posted.
+      const eventType = isHostedInstallation(install) ? 'chat.mention' : 'message.posted';
       const ownRow = seatMatchesAssignee(install, task.assignee)
         || seatMatchesAssignee(install, previousTask?.assignee)
         || seatHoldsClaim(install, currentHolder)
@@ -321,9 +325,9 @@ export async function notifyPodAgents(
           console.warn(`[task-event] assigned rows lookup failed for ${agentName}:`, (err as Error).message);
         }
         // Fold into this seat's undrained board wake if it has one. Matches on
-        // `payload.boardWake` rather than the event type, because the type is
-        // deliberately `message.posted` (shared with ordinary chat) and folding
-        // a board change into someone's unread MESSAGE would destroy it.
+        // Match `payload.boardWake`, never the event type: non-hosted wakes
+        // share message.posted with chat, and hosted wakes use chat.mention.
+        // Folding into an unread chat message would destroy it.
         const folded = await AgentEvent.findOneAndUpdate(
           {
             agentName,
@@ -337,7 +341,11 @@ export async function notifyPodAgents(
             // A human edit arriving on top of agent churn must re-price the
             // whole batch as human — otherwise one agent write early in a sweep
             // permanently marks a wake the human later contributed to.
-            ...(dmKind === 'user-agent' ? { $set: { 'payload.dmKind': 'user-agent' } } : {}),
+            ...(eventType === 'chat.mention' || dmKind === 'user-agent'
+              ? { $set: {
+                ...(eventType === 'chat.mention' ? { type: 'chat.mention' } : {}),
+                ...(dmKind === 'user-agent' ? { 'payload.dmKind': 'user-agent' } : {}),
+              } } : {}),
           },
           { new: true },
         );
@@ -358,7 +366,7 @@ export async function notifyPodAgents(
           agentName,
           instanceId,
           podId: normalizedPodId,
-          type: 'message.posted',
+          type: eventType,
           payload: {
             content: buildContent(0, assignedRows),
             // No messageId; ownership itself is the address.
