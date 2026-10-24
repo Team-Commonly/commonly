@@ -22,10 +22,14 @@ jest.mock('../../services/taskEventService', () => {
   const actual = jest.requireActual('../../services/taskEventService');
   return { ...actual, notifyPodAgents: jest.fn().mockResolvedValue(undefined) };
 });
+jest.mock('../../services/systemActionLineService', () => ({
+  emitSystemActionLine: jest.fn().mockResolvedValue(undefined),
+}));
 
 const express = require('express');
 const request = require('supertest');
 const { notifyPodAgents } = require('../../services/taskEventService');
+const { emitSystemActionLine } = require('../../services/systemActionLineService');
 const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
 const User = require('../../models/User');
@@ -62,6 +66,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
 
   beforeEach(async () => {
     await clearMongoDb();
+    emitSystemActionLine.mockClear();
     owner = await User.create({
       username: `lease-owner-${Date.now()}`,
       email: `lease-owner-${Date.now()}@test.com`,
@@ -81,7 +86,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       verified: true,
       isBot: true,
       botType: 'agent',
-      botMetadata: { agentName: 'claim-audit-agent', instanceId: 'default' },
+      botMetadata: { agentName: 'claim-audit-agent', instanceId: 'default', displayName: 'Audit Agent' },
       agentRuntimeTokens: [{
         tokenHash: hash(AGENT_TOKEN),
         label: 'task-claim-audit',
@@ -134,6 +139,11 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
         authorId: agent._id.toString(),
       }),
     ]));
+    expect(emitSystemActionLine).toHaveBeenCalledWith(expect.objectContaining({
+      actorName: 'Audit Agent',
+      actorUsername: 'claim-audit-agent',
+      actorIsBot: true,
+    }));
   });
 
   test('a fresh claim stamps a lease ~30 minutes out', async () => {
@@ -145,6 +155,16 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     const expires = new Date(res.body.task.claimExpiresAt).getTime();
     expect(expires).toBeGreaterThanOrEqual(before + LEASE_MS - 5000);
     expect(expires).toBeLessThanOrEqual(Date.now() + LEASE_MS + 5000);
+    expect(emitSystemActionLine).toHaveBeenCalledWith({
+      podId: pod._id.toString(),
+      actorUserId: owner._id.toString(),
+      actorName: owner.username,
+      actorUsername: owner.username,
+      actorAvatarUrl: null,
+      actorIsBot: false,
+      action: 'task-claimed',
+      taskId: 'T-1',
+    });
   });
 
   test('a live lease refuses a rival, naming the holder and when the lease frees', async () => {
@@ -164,6 +184,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     const renewed = await claim(ownerToken);
     expect(renewed.status).toBe(200);
     expect(new Date(renewed.body.task.claimExpiresAt).getTime()).toBeGreaterThan(firstExpiry);
+    expect(emitSystemActionLine).toHaveBeenCalledTimes(1);
   });
 
   test('a lapsed lease is claimable by a peer — dead claimants never hold work forever', async () => {
@@ -176,6 +197,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     const res = await claim(rivalToken);
     expect(res.status).toBe(200);
     expect(res.body.task.claimedBy).toBe(rival._id.toString());
+    expect(emitSystemActionLine).toHaveBeenCalledTimes(1);
   });
 
   test('a RECENT legacy claim (no lease field) is still protected', async () => {

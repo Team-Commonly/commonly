@@ -979,6 +979,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-msg.v2-msg--system')).toContain('display: block');
   });
 
+  test('system actions align with message text and keep the avatar and time in their own slots', () => {
+    const rule = ruleBody(v2, '.v2-system-action-line');
+    expect(rule).toContain('display: grid');
+    expect(rule).toContain('grid-template-columns: 16px minmax(0, max-content) auto minmax(0, 1fr) auto');
+    expect(rule).toContain('margin-left: 36px');
+    expect(rule).toContain('width: calc(100% - 36px)');
+    expect(ruleBody(v2, '.v2-thread .v2-system-action-line .v2-avatar')).toContain('width: 16px');
+    expect(ruleBody(v2, '.v2-system-action-line__action')).toContain('grid-column: 3;');
+    expect(ruleBody(v2, '.v2-system-action-line time')).toContain('grid-column: 5');
+    expect(ruleBody(v2, '.v2-system-action-line__name')).toContain('color: var(--v2-text-primary)');
+    expect(ruleBody(v2, '.v2-system-action-line__verb')).toContain('color: var(--v2-text-tertiary)');
+    expect(ruleBody(v2, '.v2-system-action-line__object')).toContain('var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-system-action-line time')).toContain('var(--v2-font-mono)');
+  });
+
   test('the feedback popover overrides the legacy dark MUI paper theme', () => {
     // body.modern-ui .MuiPaper-root has enough specificity to beat a two-class
     // selector and turn portaled v2 popovers dark. Keep the compound Paper

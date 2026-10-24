@@ -21,6 +21,10 @@ const AgentSendFreshness = require('../services/agentSendFreshness');
 // eslint-disable-next-line global-require
 const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
 // eslint-disable-next-line global-require
+const { emitSystemActionLine } = require('../services/systemActionLineService');
+// eslint-disable-next-line global-require
+const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
+// eslint-disable-next-line global-require
 const { recordTaskAttention, resolveTaskAttention } = require('../services/attentionItemService');
 // eslint-disable-next-line global-require
 const { parseAssignee, toSingleLineTitle } = require('../utils/taskFieldNormalization');
@@ -77,11 +81,11 @@ interface AuthReq {
   // `username` is here because the sweep can write it into `lapsedFrom`
   // (provenance falls back through holder.label = assignee || username ||
   // claimedBy), so the restore path must be able to match on it.
-  user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; botMetadata?: { instanceId?: string; agentName?: string } };
+  user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; profilePicture?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } };
   // Same reason as `user.username` above: `agentRuntimeAuth` puts the bot's
   // User row here, and its username is what the sweep writes into
   // `lapsedFrom` for an agent holder.
-  agentUser?: { _id?: unknown; username?: string };
+  agentUser?: { _id?: unknown; username?: string; profilePicture?: string; isBot?: boolean; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } };
   params?: Record<string, string>;
   query?: Record<string, string>;
   body?: Record<string, unknown>;
@@ -684,6 +688,22 @@ router.post('/:podId/:taskId/claim', rateLimit({
       && (preClaim.claimedBy === claimedBy || preClaim.lapsedFrom === claimedBy);
     if (!isSameHolderContinuation) {
       notifyAgents(req, podId, task, 'updated', preClaim);
+      const actorUser = req.agentUser || req.user;
+      const actorName = actorUser?.isBot
+        ? resolveAgentDisplayLabel(actorUser, author)
+        : actorUser?.username || author;
+      // The claim CAS has committed. This quiet timeline projection is
+      // best-effort and never changes the claim's HTTP result.
+      void emitSystemActionLine({
+        podId: String(podId),
+        actorUserId: String(userId),
+        actorName,
+        actorUsername: actorUser?.username || author,
+        actorAvatarUrl: actorUser?.profilePicture || null,
+        actorIsBot: !!actorUser?.isBot,
+        action: 'task-claimed',
+        taskId: String(task.taskId || taskId),
+      }).catch((error: Error) => console.warn('[tasks] system action line failed:', error.message));
     }
     return res.json({ task });
   } catch (err) {

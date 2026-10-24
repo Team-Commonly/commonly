@@ -368,7 +368,10 @@ class ActivityService {
       // recap still commonly-bot-only because the working pods still never
       // made the fetch window).
       const { rows } = await pool.query(
-        'SELECT pod_id, MAX(created_at) AS latest FROM messages WHERE pod_id = ANY($1::text[]) GROUP BY pod_id ORDER BY latest DESC',
+        `SELECT pod_id, MAX(created_at) AS latest FROM messages
+         WHERE pod_id = ANY($1::text[])
+           AND NOT (message_type = 'system' AND COALESCE(payload->>'kind', '') = 'system-action')
+         GROUP BY pod_id ORDER BY latest DESC`,
         [ids],
       );
       const ranked = rows.map((r) => String(r.pod_id));
