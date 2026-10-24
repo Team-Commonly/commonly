@@ -19,8 +19,10 @@ const allowedHiddenEntryUsers = (env: NodeJS.ProcessEnv): Record<string, string[
     const value: unknown = JSON.parse(raw);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     const entries = Object.entries(value);
+    const hiddenEntryIds = hiddenHostedMcpEntryIds(env);
     if (!entries.every(([entry, users]) => (
-      /^[a-z0-9][a-z0-9-]*$/.test(entry)
+      hiddenEntryIds.has(entry)
+      && /^[a-z0-9][a-z0-9-]*$/.test(entry)
       && Array.isArray(users)
       && users.every((id: unknown) => typeof id === 'string' && /^[a-f0-9]{24}$/.test(id))
     ))) return {};

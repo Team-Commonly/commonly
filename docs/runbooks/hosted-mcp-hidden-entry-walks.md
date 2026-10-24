@@ -20,7 +20,9 @@ The map is entry ID to an array of exact, lowercase, 24-character Mongo User IDs
 Names, email addresses, roles, query parameters and request body fields do not
 grant an exception. Catalogue reads and authenticated connect starts use the
 server-authenticated user's ID. A missing user or malformed map grants no
-exceptions; one invalid map member invalidates all exceptions. Other users
+exceptions; one invalid map member invalidates all exceptions. An exception key must also
+name an entry in the configured hidden list; a stale or mistyped key invalidates
+the entire exception map. Other users
 continue to see no offering and receive `404 unknown_entry` on start.
 
 An exception does not configure a connector client, grant access to another
