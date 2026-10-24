@@ -1493,6 +1493,7 @@
       "fileTooLarge": "That file is over the 256KB import ceiling — trim it or paste the relevant part.",
       "importFailed": "Import failed.",
       "hostedCap": "You already have a hosted agent (beta allows {{cap}}). Connect your own runtime for more.",
+      "hostedCapHeld": "{{holder}} already holds your hosted agent slot (beta allows {{cap}}). Find it under your agents, or run on your computer instead.",
       "hostedUnavailable": "Hosting isn't available on this instance yet. Connect your own runtime instead.",
       "machineRequired": "Pick a computer first."
     },
