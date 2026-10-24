@@ -149,7 +149,7 @@ describe('BYO on-my-computer mode', () => {
     ));
     expect(axios.post).toHaveBeenCalledWith(
       expect.stringMatching(/\/runtime-tokens$/),
-      { label: 'BYO MCP — replacement', force: true },
+      { label: 'BYO MCP — replacement', force: true, instanceId: 'default' },
       expect.anything(),
     );
   });
