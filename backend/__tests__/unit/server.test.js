@@ -48,6 +48,18 @@ jest.mock('../../config/init-pg-db', () => {
   const initPGDB = mockInitPGDB;
   return initPGDB;
 });
+let mockInitPgRetention = jest.fn();
+jest.mock('../../services/pgRetentionService', () => {
+  const initPgRetention = mockInitPgRetention;
+  return { initPgRetention };
+});
+let mockInitInstallationCleanup = jest.fn();
+jest.mock('../../services/agentInstallationCleanupService', () => {
+  const initInstallationCleanup = mockInitInstallationCleanup;
+  return { initInstallationCleanup };
+});
+jest.mock('../../services/schedulerService', () => ({ start: jest.fn() }));
+jest.mock('../../services/discordGatewayService', () => ({ start: jest.fn() }));
 
 // Replace pg routes with simple routers
 jest.mock('../../routes/pg-status', () => {
@@ -89,6 +101,8 @@ describe('server pg boot routes', () => {
   beforeEach(() => {
     mockConnectPG = jest.fn().mockResolvedValue(null);
     mockInitPGDB = jest.fn();
+    mockInitPgRetention = jest.fn();
+    mockInitInstallationCleanup = jest.fn();
   });
 
   afterEach(() => {
@@ -96,6 +110,7 @@ describe('server pg boot routes', () => {
     jest.clearAllMocks();
     delete process.env.PG_HOST;
     delete process.env.PG_BOOT_RETRY_BASE_DELAY_MS;
+    delete process.env.RUN_WORKER;
   });
 
   it('mounts the real status router even when PG is not configured', async () => {
@@ -159,6 +174,32 @@ describe('server pg boot routes', () => {
     await new Promise((resolve) => { setTimeout(resolve, 30); });
 
     await request(app).get('/api/pg/messages').expect(404);
+  });
+
+  it.each([
+    ['web', '0', false],
+    ['worker', '1', true],
+    ['legacy unset', undefined, true],
+  ])('%s boot mounts PG routes and applies the worker cron gate', async (_label, runWorker, shouldStart) => {
+    const priorNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    process.env.PG_HOST = 'x';
+    if (runWorker !== undefined) process.env.RUN_WORKER = runWorker;
+    mockConnectPG.mockResolvedValue({});
+    mockInitPGDB.mockResolvedValue(true);
+    try {
+      // This imports the actual server boot composition, including its
+      // createPgBoot onMounted callback. Only the cron starters are mocked.
+      // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+      const { app } = require('../../server');
+      await new Promise((resolve) => { setTimeout(resolve, 30); });
+      await request(app).get('/api/pg/messages').expect(200);
+      expect(mockInitPgRetention).toHaveBeenCalledTimes(shouldStart ? 1 : 0);
+      expect(mockInitInstallationCleanup).toHaveBeenCalledTimes(shouldStart ? 1 : 0);
+    } finally {
+      if (priorNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = priorNodeEnv;
+    }
   });
 
   it('wires the readiness probe to the route table, not to the boot flag (TASK-168)', () => {
