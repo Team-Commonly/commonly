@@ -756,7 +756,7 @@ export async function dispatchTool(
           agentName: ctx.agentName,
           instanceId: ctx.instanceId,
         }).lean();
-        return { content: { content: (doc?.content as string) || '' } };
+        return { content: { content: doc?.sections?.long_term?.content ?? doc?.content ?? '' } };
       }
 
       case 'commonly_write_memory': {
@@ -769,6 +769,7 @@ export async function dispatchTool(
           instanceId: ctx.instanceId,
           content,
         });
+
         return { content: { ok: true, written: true } };
       }
 
