@@ -1,14 +1,17 @@
 /**
  * Linear — TASK-238. Pins transcribed from connector-ops's consenting
  * 2026-10-19T07:00:52.954Z tools/list at read write openid (68 tools).
- * 36 reads and 30 writes. Every writer maps to write-with-confirm, with the
- * exact arguments approved by the credential owner before a vendor call.
+ * 36 reads and 26 writes, per Wren's 2026-10-24 pin ruling. Every writer maps
+ * to write-with-confirm, with the exact arguments approved by the credential owner before a vendor call.
  * Existing read-scoped connections must reconnect after deployment.
  *
  * get_attachment and extract_images remain excluded: they can fetch external
- * caller-chosen targets into agent context. Attachment writers create/link
- * Linear assets, not fetch file contents into context. Named diff review/merge
- * writes are included and require approval like every other write.
+ * caller-chosen targets into agent context. Upload preparation exposes upload
+ * credentials, its asset-link partner depends on that flow, base64 attachment
+ * creation hides bytes from approval, and create_issue_label is deprecated.
+ * Those four writers are excluded. Named diff review/merge remains included.
+ * Nineteen writers are marked irreversible. The other seven have pinned
+ * reversals. The flag records the ruling even though all hosted writes park.
  * Schemas and both security annotations are pinned unchanged from the capture.
  * Descriptions are local copy. No outputSchema was captured.
  *
@@ -35,155 +38,9 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
   },
   tools: [
     {
-      name: "prepare_attachment_upload",
-      upstreamName: "prepare_attachment_upload",
-      description: "Prepare a direct Linear file upload for an existing issue.",
-      class: "write",
-      inputSchema: {
-        type: "object",
-        properties: {
-          issue: {
-            type: "string",
-            description: "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues",
-          },
-          filename: {
-            type: "string",
-            description: "Filename for the upload, e.g. screenshot.png",
-          },
-          contentType: {
-            type: "string",
-            description: "MIME type, e.g. image/png or application/pdf",
-          },
-          size: {
-            type: "integer",
-            exclusiveMinimum: 0,
-            maximum: 9007199254740991,
-            description: "Exact file size in bytes. Must be smaller than 2 GB.",
-          },
-          title: {
-            description: "Suggested attachment title for the finalize step",
-            type: "string",
-          },
-          subtitle: {
-            description: "Suggested attachment subtitle for the finalize step",
-            type: "string",
-          },
-        },
-        required: [
-          "issue",
-          "filename",
-          "contentType",
-          "size",
-        ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
-        additionalProperties: false,
-      },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-      },
-    },
-    {
-      name: "create_attachment_from_upload",
-      upstreamName: "create_attachment_from_upload",
-      description: "Link an already-uploaded Linear assetUrl to an existing issue as an attachment.",
-      class: "write",
-      inputSchema: {
-        type: "object",
-        properties: {
-          issue: {
-            type: "string",
-            description: "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues",
-          },
-          assetUrl: {
-            type: "string",
-            format: "uri",
-            description: "Linear upload assetUrl returned by prepare_attachment_upload",
-          },
-          title: {
-            description: "Attachment title. Defaults to filename or asset URL",
-            type: "string",
-          },
-          subtitle: {
-            description: "Optional attachment subtitle",
-            type: "string",
-          },
-        },
-        required: [
-          "issue",
-          "assetUrl",
-        ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
-        additionalProperties: false,
-      },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-      },
-    },
-    {
-      name: "create_attachment",
-      upstreamName: "create_attachment",
-      description: "Deprecated fallback for tiny files only. Accepts base64 file content, verifies SHA-256 checksum, and uploads it through the MCP worker.",
-      class: "write",
-      inputSchema: {
-        type: "object",
-        properties: {
-          issue: {
-            type: "string",
-            description: "Issue ID or identifier (e.g., LIN-123). P-prefixed identifiers (e.g., P-ENG-123) are projects, not issues",
-          },
-          base64Content: {
-            type: "string",
-            description: "Deprecated base64-encoded file content to upload",
-          },
-          filename: {
-            type: "string",
-            description: "Filename for the upload (e.g., 'screenshot.png')",
-          },
-          contentType: {
-            type: "string",
-            description: "MIME type for the upload (e.g., 'image/png', 'application/pdf')",
-          },
-          size: {
-            description: "Optional expected decoded file size in bytes. Rejects the upload if it does not match.",
-            type: "integer",
-            exclusiveMinimum: 0,
-            maximum: 9007199254740991,
-          },
-          sha256: {
-            type: "string",
-            pattern: "^[a-fA-F0-9]{64}$",
-            description: "Expected SHA-256 hex digest of the decoded file bytes.",
-          },
-          title: {
-            description: "Optional title for the attachment",
-            type: "string",
-          },
-          subtitle: {
-            description: "Optional subtitle for the attachment",
-            type: "string",
-          },
-        },
-        required: [
-          "issue",
-          "base64Content",
-          "filename",
-          "contentType",
-          "sha256",
-        ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
-        additionalProperties: false,
-      },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-      },
-    },
-    {
       name: "delete_attachment",
       upstreamName: "delete_attachment",
-      description: "Remove an attachment link from an issue's Resources. This does not delete the stored file. Use the attachment ID from get_issue's attachments array, not a UUID from the upload URL.",
+      description: "Remove an attachment link from a Linear issue's Resources; the stored file remains.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -203,6 +60,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "list_agent_skills",
@@ -335,7 +193,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "save_comment",
       upstreamName: "save_comment",
-      description: "Create or update a comment on a Linear issue, project, initiative, document, project milestone, or project/initiative status update. If `id` is provided, updates the existing comment; otherwise creates a new one. To start a new thread, pass `body` and exactly one of `issueId`, `projectId`, `initiativeId`, `documentId`, `milestoneId`, or `statusUpdateId` — comments on issues/projects/initiatives become top-level discussion threads; comments on documents/milestones become description comments. A status update holds a single thread, so a comment on an update that already has one is added to it as a reply. To reply to an existing thread, pass `parentId` and `body`; the reply inherits the parent's thread type, so no entity reference is needed. Parent reference fields are ignored when `id` or `parentId` is provided (`statusUpdateType` is rejected instead).",
+      description: "Create or edit a comment on a Linear issue, project, initiative, document, milestone or status update.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -395,11 +253,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "delete_comment",
       upstreamName: "delete_comment",
-      description: "Delete a Linear comment. Inline description comments (those with non-null `quotedText`) anchor a mark in the editor, so their root cannot be deleted — delete the replies individually or resolve the thread instead.",
+      description: "Delete a Linear comment identified by its ID.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -419,6 +278,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "list_cycles",
@@ -628,7 +488,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "save_document",
       upstreamName: "save_document",
-      description: "Create or update a Linear document. If `id` is provided, edits the existing document; otherwise creates a new one. When creating, `title` is required and exactly one parent (`project`, `issue`, `initiative`, `cycle`, or `team`) must be specified. On update, passing a parent reparents the document. To change parts of the content without resending all of it, pass `patch` instead of `content`.",
+      description: "Create or edit a Linear document and its links to workspace records.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -831,6 +691,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "get_issue",
@@ -1090,7 +951,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "save_issue",
       upstreamName: "save_issue",
-      description: "Create or update a Linear issue. If `id` is provided, updates the existing issue; otherwise creates a new one. When creating, `team` is required, and `title` is required unless `template` is set. Note: use `assignee` (not `assigneeId`) to set the assignee — it accepts a user ID, name, email, or \"me\".",
+      description: "Create or edit a Linear issue. Assignee \"me\" means the connection owner; delegate assigns work to an agent installed in that Linear workspace.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -1474,6 +1335,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "list_issue_statuses",
@@ -1590,7 +1452,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "save_issue_label",
       upstreamName: "save_issue_label",
-      description: "Create or update a Linear issue label. If `id` is provided, updates the existing label; otherwise creates a new one. When creating, `name` is required.",
+      description: "Create or edit an issue label in Linear, including its grouping and team.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -1645,56 +1507,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
-    },
-    {
-      name: "create_issue_label",
-      upstreamName: "create_issue_label",
-      description: "Create a new Linear issue label. Deprecated: use `save_issue_label`, which can also update labels.",
-      class: "write",
-      inputSchema: {
-        type: "object",
-        properties: {
-          name: {
-            type: "string",
-            description: "Label name",
-          },
-          description: {
-            description: "Label description",
-            type: "string",
-          },
-          color: {
-            description: "Hex color code",
-            type: "string",
-          },
-          teamId: {
-            description: "Team UUID (omit for workspace label)",
-            type: "string",
-          },
-          parent: {
-            description: "Parent label group name or ID",
-            type: "string",
-          },
-          isGroup: {
-            default: false,
-            description: "Whether the label is a group",
-            type: "boolean",
-          },
-        },
-        required: [
-          "name",
-        ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
-        additionalProperties: false,
-      },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-      },
+      irreversible: true,
     },
     {
       name: "retire_issue_label",
       upstreamName: "retire_issue_label",
-      description: "Retire a Linear issue label so it cannot be applied to new issues. The label stays visible on issues that already have it. Retiring a label group also retires its child labels. Undo with `restore_issue_label`.",
+      description: "Retire a Linear issue label from active use.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -1714,11 +1532,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: false,
     },
     {
       name: "restore_issue_label",
       upstreamName: "restore_issue_label",
-      description: "Restore a retired Linear issue label, making it available for use on issues again. Restoring a label group also restores every child label, including any that were retired separately.",
+      description: "Restore a retired Linear issue label to active use.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -1738,6 +1557,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: false,
     },
     {
       name: "list_projects",
@@ -1925,7 +1745,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "save_project",
       upstreamName: "save_project",
-      description: "Create or update a Linear project. If `id` is provided, updates the existing project; otherwise creates a new one. When creating, `name` and at least one team (via `addTeams` or `setTeams`) are required. Pass `template` to create the project from a project template. To change parts of the description without resending all of it, pass `patch` instead of `description`. `state` resolves against the project statuses of the lead team, so pass `leadTeam` when creating a multi-team project whose teams use different statuses.",
+      description: "Create or edit a Linear project, including its teams, dates, labels and links.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -2255,6 +2075,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "list_project_labels",
@@ -2313,7 +2134,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "retire_project_label",
       upstreamName: "retire_project_label",
-      description: "Retire a Linear project label so it cannot be applied to new projects. The label stays visible on projects that already have it. Retiring a label group also retires its child labels. Undo with `restore_project_label`.",
+      description: "Retire a Linear project label from active use.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -2333,11 +2154,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: false,
     },
     {
       name: "restore_project_label",
       upstreamName: "restore_project_label",
-      description: "Restore a retired Linear project label, making it available for use on projects again. Restoring a label group also restores every child label, including any that were retired separately.",
+      description: "Restore a retired Linear project label to active use.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -2357,11 +2179,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: false,
     },
     {
       name: "save_project_label",
       upstreamName: "save_project_label",
-      description: "Create or update a Linear project label. If `id` is provided, updates the existing label; otherwise creates a new one. When creating, `name` is required.",
+      description: "Create or edit a Linear project label, including its grouping and team.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -2408,6 +2231,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "list_release_pipelines",
@@ -2604,7 +2428,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "save_release",
       upstreamName: "save_release",
-      description: "Create or update a release. If `id` is provided, updates the existing release; otherwise creates a new one. When creating, `name` and `pipeline` are required. Release status is modeled as the release pipeline stage.",
+      description: "Create or edit a release in a Linear release pipeline.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -2677,6 +2501,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "list_release_notes",
@@ -2781,7 +2606,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "save_release_note",
       upstreamName: "save_release_note",
-      description: "Create or update release notes. If `id` is provided, updates the existing release notes; otherwise creates a new one. When creating, `pipeline` and either `releases` or a release range are required. To change parts of the content without resending all of it, pass `patch` instead of `content`.",
+      description: "Create or edit published release-note text and its associated releases in Linear.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -2975,11 +2800,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "share_issue",
       upstreamName: "share_issue",
-      description: "Share an issue with a workspace user who cannot otherwise access it. Use this tool only when the user explicitly asks to share the issue.",
+      description: "Give the specified user access to a Linear issue.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -3004,11 +2830,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "unshare_issue",
       upstreamName: "unshare_issue",
-      description: "Remove a workspace user's shared access to an issue. Use this tool only when the user explicitly asks to stop sharing the issue.",
+      description: "Remove the specified user from the sharing list of a Linear issue.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -3033,6 +2860,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: false,
     },
     {
       name: "list_milestones",
@@ -3090,7 +2918,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "save_milestone",
       upstreamName: "save_milestone",
-      description: "Create or update a milestone in a Linear project. If `id` is provided, updates the existing milestone; otherwise creates a new one. When creating, `name` is required.",
+      description: "Create or edit a milestone in a Linear project.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -3129,6 +2957,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "get_notifications",
@@ -3165,7 +2994,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "mark_notification",
       upstreamName: "mark_notification",
-      description: "Mark a Linear inbox notification as read or unread, or snooze or unsnooze it.",
+      description: "Change a Linear notification to read or unread, or change when it is snoozed until.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -3202,6 +3031,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: false,
       },
+      irreversible: false,
     },
     {
       name: "list_teams",
@@ -3629,7 +3459,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "save_diff_comment",
       upstreamName: "save_diff_comment",
-      description: "Create, reply to, or edit a comment or persisted draft on a Linear diff. Set draft to true to save without submitting. Provide draftId to edit or submit a persisted draft, and commentId only to edit a submitted comment. Submitting an inline draft reuses its saved anchor; submitting a reply draft requires parentId again.",
+      description: "Create or edit a comment or draft on a Linear diff, including inline anchors and replies.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -3684,11 +3514,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "resolve_diff_thread",
       upstreamName: "resolve_diff_thread",
-      description: "Resolve or reopen a top-level comment thread on a Linear diff",
+      description: "Resolve or reopen a discussion thread on a Linear diff.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -3714,11 +3545,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: false,
     },
     {
       name: "delete_diff_comment",
       upstreamName: "delete_diff_comment",
-      description: "Delete a comment or persisted draft from a Linear diff",
+      description: "Delete a comment or draft from a Linear diff.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -3741,11 +3573,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "submit_diff_review",
       upstreamName: "submit_diff_review",
-      description: "Approve a Linear diff, request changes, or submit a review comment",
+      description: "Publish a review of a Linear diff, with approval, requested changes or a comment.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -3781,11 +3614,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "update_diff",
       upstreamName: "update_diff",
-      description: "Update a Linear diff's title, description, reviewer requests, issue links, or status. Provide at least one update. Combined updates can partially succeed; inspect the result before retrying. Use merge_diff to merge and submit_diff_review to approve or request changes.",
+      description: "Edit a Linear diff and its review requests, issue links or status.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -3974,11 +3808,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "merge_diff",
       upstreamName: "merge_diff",
-      description: "Merge a Linear diff or add it to the repository's merge queue",
+      description: "Merge a Linear diff or place it in its repository's merge queue.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -4008,6 +3843,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "get_status_updates",
@@ -4088,7 +3924,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "save_status_update",
       upstreamName: "save_status_update",
-      description: "Create or update a project/initiative status update and return the saved update. To create, omit id and provide body plus project or initiative matching type. To update, provide id; project and initiative are ignored.",
+      description: "Create or edit a project or initiative status update in Linear.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -4141,11 +3977,12 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
     {
       name: "delete_status_update",
       upstreamName: "delete_status_update",
-      description: "Delete (archive) a project or initiative status update.",
+      description: "Delete a project or initiative status update in Linear.",
       class: "write",
       inputSchema: {
         type: "object",
@@ -4174,6 +4011,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
         readOnlyHint: false,
         destructiveHint: true,
       },
+      irreversible: true,
     },
   ],
 };
