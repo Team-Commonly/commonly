@@ -28,6 +28,19 @@ describe('agent listing description + principal id', () => {
     expect(buildAgentInstallationPayload(install).userId).toBeNull();
   });
 
+  test('listing carries the chat User avatar, not installation artwork', () => {
+    const listing = buildAgentInstallationPayload(install, {
+      user: { _id: 'u1', username: 'wren', profilePicture: '/api/uploads/wren-account.png' },
+      profile: { avatarUrl: '/api/uploads/wren-install.png' },
+      iconUrl: '/api/uploads/wren-registry.png',
+    });
+    expect(listing.profilePicture).toBe('/api/uploads/wren-account.png');
+    expect(buildAgentInstallationPayload(install, {
+      user: { _id: 'u1', username: 'wren' },
+      profile: { avatarUrl: '/api/uploads/wren-install.png' },
+    }).profilePicture).toBeNull();
+  });
+
   test('listing and chat use the same User label even when scoped labels differ', () => {
     const user = {
       _id: 'u1',

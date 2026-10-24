@@ -452,6 +452,9 @@ const buildAgentInstallationPayload = (installation: any, {
     // (AttentionItem.actorUserId) on it instead of matching names — three
     // writers store three different name shapes (ux-lead, Sharpen 66164).
     userId: user?._id ? String(user._id) : null,
+    // Chat reads this image from the same User principal. Installation and
+    // registry artwork must not stand in for an agent's account avatar.
+    profilePicture: user?.profilePicture || null,
     // Direction C Your Team card, line 3: one sentence from the curated
     // `botMetadata.description`. Null when unset — the card renders no line,
     // never a quote (ux-lead 66163).
