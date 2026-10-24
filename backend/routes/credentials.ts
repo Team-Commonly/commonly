@@ -9,6 +9,7 @@ import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import AgentCredential from '../models/AgentCredential';
+import Machine from '../models/Machine';
 import { AgentInstallation } from '../models/AgentRegistry';
 import { ownsRuntimeIdentity } from '../services/runtimeIdentityOwnership';
 import { revokeRuntimeTokenEverywhere } from './registry/tokens';
@@ -83,13 +84,24 @@ router.get('/', credentialRateLimit, auth, async (req: AuthReq, res: express.Res
           } },
           { upsert: true },
         )));
-      filter = { agentUserId: agent._id, kind: 'runtime' };
+      // Spawn children are short-lived implementation credentials. Filtering
+      // in Mongo keeps a busy seat's thousands of children out of Settings.
+      filter = { agentUserId: agent._id, kind: 'runtime', scopes: { $ne: 'spawn' } };
     }
     const rows = await AgentCredential.find(filter)
       .select('-tokenHash')
       .sort({ createdAt: -1 })
       .lean();
-    return res.json(rows);
+    const machineIds = [...new Set(rows.map((row) => row.machineId).filter(Boolean))];
+    const machines = machineIds.length
+      ? await Machine.find({ machineId: { $in: machineIds } }).select('machineId name').lean()
+      : [];
+    const machineNames = new Map(machines.map((machine) => [machine.machineId, machine.name]));
+    return res.json(rows.map((row) => ({
+      ...row,
+      ...(row.machineId && machineNames.has(row.machineId)
+        ? { machineName: machineNames.get(row.machineId) } : {}),
+    })));
   } catch (err) {
     console.error('Error listing credentials:', err);
     return res.status(500).json({ message: 'Server error' });

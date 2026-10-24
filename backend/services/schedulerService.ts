@@ -527,6 +527,21 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    const spawnCredentialReapJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { reapSpawnCredentials } = require('./spawnCredentialReaper');
+          const removed = await reapSpawnCredentials();
+          if (removed) console.log(`[spawn-credentials] reaped=${removed}`);
+        } catch (error) {
+          console.error('[spawn-credentials] reap failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     // TASK-260: remove the stranger journey's throwaway accounts (they cannot
     // delete themselves). Half an hour after each 02:17/14:17 journey run;
     // only accounts older than two hours, so a run in flight is never touched.
@@ -587,6 +602,7 @@ class SchedulerService {
       installableReconcileJob,
       decisionCardReconcileJob,
       approvalToolCallSweepJob,
+      spawnCredentialReapJob,
       spendAlarmJob,
       ...(process.env.SYNTHETIC_ACCOUNT_PURGE === 'true' ? [syntheticAccountPurgeJob] : []),
     ];

@@ -218,7 +218,7 @@ test('nondefault wrapper instances never link to a default-instance reconnect', 
 test('regeneration waits for the explicit running-key replacement confirmation', async () => {
   axios.post.mockResolvedValue({ data: { token: 'cm_agent_once' } });
   renderPage();
-  await screen.findByText('Laptop');
+  await screen.findByText('Runtime key · Laptop');
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
   expect(axios.post).not.toHaveBeenCalled();
   expect(screen.getByTestId('agent-key-replace-confirmation')).toHaveTextContent('Replacing it will disconnect');
@@ -260,7 +260,7 @@ test('an in-flight replacement never reveals its key on another agent page', asy
       </MemoryRouter>
     </AuthContext.Provider>,
   );
-  await screen.findByText('Laptop');
+  await screen.findByText('Runtime key · Laptop');
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
   fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
@@ -302,13 +302,42 @@ test('a partial installation owner cannot see identity-wide key controls', async
 test('revocation uses the credential id only after confirmation', async () => {
   axios.delete.mockResolvedValue({ data: { revoked: 1 } });
   renderPage();
-  await screen.findByText('Laptop');
+  await screen.findByText('Runtime key · Laptop');
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
   expect(axios.delete).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Revoke key' }));
   await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/credentials/tok-1', {
     params: { agentName: 'maya-claude', instanceId: 'default' },
   }));
+});
+
+test('shows active keys first and keeps revoked history collapsed', async () => {
+  const defaultGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => (
+    url === '/api/credentials' ? Promise.resolve({ data: [
+      { _id: 'old', label: 'Old token', status: 'revoked', revokedAt: '2026-10-02T00:00:00Z' },
+      { _id: 'daemon', label: 'Runtime token', machineId: 'opaque-id', machineName: "Sam's MacBook", status: 'active' },
+    ] }) : defaultGet(url, options)
+  ));
+  renderPage();
+  expect(await screen.findByText("Daemon key · Sam's MacBook")).toBeInTheDocument();
+  const disclosure = screen.getByText('1 revoked');
+  expect(disclosure.closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(disclosure);
+  expect(disclosure.closest('details')).toHaveAttribute('open');
+  expect(screen.getByText('Runtime key · Old token')).toBeInTheDocument();
+});
+
+test('a revoked-only key list has a useful empty state and accessible history', async () => {
+  const defaultGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => (
+    url === '/api/credentials' ? Promise.resolve({ data: [
+      { _id: 'old', label: 'Previous key', status: 'revoked' },
+    ] }) : defaultGet(url, options)
+  ));
+  renderPage();
+  expect(await screen.findByText('No active keys.')).toBeInTheDocument();
+  expect(screen.getByText('1 revoked').closest('details')).not.toHaveAttribute('open');
 });
 
 test('selects an installation the owner can manage without exposing a foreign pod', async () => {
