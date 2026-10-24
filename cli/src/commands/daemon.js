@@ -117,9 +117,15 @@ export const heartbeatDaemonMachine = async ({ client, record }) => (
   client.post(`/api/machines/${record.machineDbId}/heartbeat`)
 );
 
-export const getDaemonMachineStatus = async ({ client }) => {
+export const getDaemonMachineStatus = async ({ client, record }) => {
   const response = await client.get('/api/machines/me');
-  return response?.machine || null;
+  const machine = response?.machine;
+  if (!machine || typeof machine !== 'object' || Array.isArray(machine)
+      || !machine.id || !machine.machineId
+      || (record && (machine.id !== record.machineDbId || machine.machineId !== record.machineId))) {
+    throw new Error('Unexpected daemon status response; local credential kept.');
+  }
+  return machine;
 };
 
 const isRevokedDaemonKey = (error) => error?.status === 401 && [
@@ -127,11 +133,13 @@ const isRevokedDaemonKey = (error) => error?.status === 401 && [
   'Machine access revoked',
 ].includes(error?.body?.message);
 
-const isMissingDaemonMachine = (error) => error?.status === 404;
+const isMissingDaemonMachine = (error) => error?.status === 404
+  && error?.body?.message === 'Machine not found';
 
-const storedDaemonState = async (client) => {
+const storedDaemonState = async (client, record) => {
   try {
-    return await getDaemonMachineStatus({ client }) ? 'active' : 'missing';
+    await getDaemonMachineStatus({ client, record });
+    return 'active';
   } catch (error) {
     if (isRevokedDaemonKey(error)) return 'revoked';
     if (isMissingDaemonMachine(error)) return 'missing';
@@ -141,13 +149,15 @@ const storedDaemonState = async (client) => {
 
 export const daemonStatusErrorMessage = (error) => (isRevokedDaemonKey(error)
   ? "This computer's old key was revoked. Run: commonly daemon register"
+  : isMissingDaemonMachine(error)
+    ? 'This computer is no longer registered. Run: commonly daemon register'
   : `Daemon status failed: ${error.message}`);
 
 // Keep the old record until a new registration is securely persisted. A
 // network failure or a still-live daemon key must never silently mint another.
 export const allowRevokedDaemonReplacement = async ({ existing, client }) => {
   if (!existing) return null;
-  const state = await storedDaemonState(client);
+  const state = await storedDaemonState(client, existing);
   if (state === 'active') {
     throw new Error(`A local daemon is already registered for ${existing.machineName}. Run: commonly daemon status`);
   }
@@ -166,7 +176,7 @@ export const unregisterDaemonMachine = async ({
     if (isMissingDaemonMachine(error)) {
       removedRemotely = false;
     } else if ([401, 403].includes(error?.status) && daemonClient) {
-      if (await storedDaemonState(daemonClient) === 'active') throw error;
+      if (await storedDaemonState(daemonClient, record) === 'active') throw error;
       removedRemotely = false;
     } else {
       throw error;
@@ -480,12 +490,8 @@ Examples:
         const record = requireDaemonRecord();
         const machine = await getDaemonMachineStatus({
           client: createClient({ instance: record.instanceUrl, token: record.daemonToken }),
+          record,
         });
-        if (!machine) {
-          console.log(`${record.machineName}: no longer registered on the server.`);
-          console.log('Run: commonly daemon register');
-          return;
-        }
         const lastSeen = machine.lastSeenAt ? new Date(machine.lastSeenAt).toLocaleString() : 'never';
         console.log(`${machine.name}: ${machine.status} (last heartbeat: ${lastSeen})`);
         if (opts.verbose) {
