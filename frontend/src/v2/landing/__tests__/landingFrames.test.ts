@@ -96,7 +96,7 @@ describe('landing feature frames reserve their box (TASK-205)', () => {
     const imports = importedFrames();
     const rows = featureRows();
 
-    expect(rows).toHaveLength(FRAMES.length);
+    expect(rows).toHaveLength(LANDING_IMAGES.length);
     for (const row of rows) {
       const file = imports.get(row.img);
       expect(file).toBeDefined();
