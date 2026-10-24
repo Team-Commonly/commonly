@@ -4766,3 +4766,15 @@ describe('task priority and lease signals (TASK-443)', () => {
     expect(expired).toContain('background: none');
   });
 });
+
+
+test('TASK-443 phone ownership sheet keeps its inset and scroll containment', () => {
+  const css = read('../v2.css');
+  const sheet = ruleBody(css, '.v2-board .v2-board__detail');
+  expect(sheet).toContain('inset: 44px 0 0');
+  const modal = ruleBody(css, '.v2-modal');
+  expect(modal).toContain('overflow: auto');
+  expect(modal).toContain('display: flex');
+  expect(modal).toContain('flex-direction: column');
+  expect(read('../components/V2PodBoard.tsx')).toContain('className="v2-modal v2-board__detail"');
+});

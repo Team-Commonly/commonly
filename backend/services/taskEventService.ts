@@ -232,6 +232,7 @@ export async function notifyPodAgents(
     instanceId?: string;
   },
   previousTask?: BoardTask | null,
+  watchersOnly = false,
 ): Promise<void> {
   // A deletion leaves nothing to pick up, and a tombstone wake spends a model
   // turn to discover there is no work.
@@ -246,7 +247,20 @@ export async function notifyPodAgents(
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
 
     const normalizedPodId = String(podId);
-    const active = await AgentInstallation.find({
+    const pendingRevision = watchersOnly ? task.watcherDeliveryPendingAt : task.updatedAt || new Date();
+    const hasWatchers = Array.isArray(task.watchers) && task.watchers.length > 0;
+    if (hasWatchers && !watchersOnly) {
+      await Task.updateOne({ _id: task._id }, { $max: { watcherDeliveryPendingAt: pendingRevision } }, { timestamps: false });
+    }
+    const clearWatcherRetry = async () => {
+      if (!hasWatchers && !task.watcherDeliveryPendingAt) return;
+      if (pendingRevision) await Task.updateOne(
+        { _id: task._id, watcherDeliveryPendingAt: pendingRevision },
+        { $unset: { watcherDeliveryPendingAt: 1 } }, { timestamps: false },
+      );
+    };
+    let watcherLookupFailed = false;
+    const active = watchersOnly ? [] : await AgentInstallation.find({
       podId: normalizedPodId,
       status: 'active',
     }).lean();
@@ -277,10 +291,14 @@ export async function notifyPodAgents(
           seats.add(key);
         }
       } catch (error) {
-        console.warn('[task-event] watcher lookup failed:', (error as Error).message);
+        watcherLookupFailed = true;
+        console.warn('[task-event] watcher lookup failed; retry retained:', (error as Error).message);
       }
     }
-    if (!installs.length) return;
+    if (!installs.length) {
+      if (!watcherLookupFailed) await clearWatcherRetry();
+      return;
+    }
 
     const taskId = String(task.taskId || task.id || task._id || 'unknown');
     const title = String(task.title || '(untitled)').replace(/\s+/g, ' ');
@@ -460,6 +478,9 @@ export async function notifyPodAgents(
       }
     }));
     const failed = outcomes.some((outcome) => outcome === undefined);
+    if (!failed && !watcherLookupFailed) await clearWatcherRetry();
+    // Retry receipts never repeat ownership wakes or stamp discovery revisions.
+    if (watchersOnly) return;
     const offered = outcomes.some((outcome) => outcome === true);
     // A wake to the prior owner after unassignment cannot retire a pending
     // unassigned row from the kernel's found-work scan.
@@ -472,6 +493,19 @@ export async function notifyPodAgents(
   } catch (err) {
     // A board change must never fail because the agent fan-out did.
     console.warn('[task-event] agent notify failed:', (err as Error).message);
+  }
+}
+
+/** Coalesced durable watcher retries, driven by the existing kernel sweep.
+ * At-least-once on a crash after enqueue; each retry rechecks current membership.
+ */
+export async function retryTaskWatcherDigests(): Promise<void> {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const Task = require('../models/Task');
+  const rows = await Task.find({ watcherDeliveryPendingAt: { $type: 'date' } })
+    .sort({ watcherDeliveryPendingAt: 1 }).limit(100).lean();
+  for (const task of rows) {
+    await notifyPodAgents(task.podId, task, 'updated', undefined, undefined, true);
   }
 }
 

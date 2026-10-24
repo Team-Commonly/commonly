@@ -41,6 +41,7 @@ test('create, edit and list use validated P0–P3 and priority order', async () 
   await request(app).patch(`${api()}/${normal.body.task.taskId}`).set('Authorization', `Bearer ${token}`).send({ priority: 'critical' }).expect(400);
   const list = await request(app).get(api()).set('Authorization', `Bearer ${token}`).expect(200);
   expect(list.body.tasks.map((row) => row.priority)).toEqual(['P0', 'P1']);
+  expect(list.body.permissions.canWrite).toBe(true);
 });
 
 test('migration copies prefixes silently, preserves explicit priority/revisions and is rerunnable', async () => {
@@ -101,6 +102,8 @@ test('viewer members can follow, while a DM observer still cannot subscribe', as
   await Task.create({ podId: pod._id, taskId: 'TASK-1', taskNum: 1, title: 'Read-only work' });
   // Exercise the role-bearing membership shape supported by the route helper.
   await Pod.collection.updateOne({ _id: pod._id }, { $set: { members: [{ userId: pod.createdBy, role: 'viewer' }] } });
+  const view = await request(app).get(api()).set('Authorization', `Bearer ${token}`).expect(200);
+  expect(view.body.permissions.canWrite).toBe(false);
   await request(app).post(`${api()}/TASK-1/watch`).set('Authorization', `Bearer ${token}`).send({ following: true }).expect(200);
   await request(app).patch(`${api()}/TASK-1`).set('Authorization', `Bearer ${token}`).send({ priority: 'P0' }).expect(403);
   const DMService = require('../../services/dmService');

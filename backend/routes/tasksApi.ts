@@ -195,7 +195,7 @@ function resolveAgentInstanceId(req: AuthReq): string | null {
   return req.user.botMetadata?.instanceId || req.user.botMetadata?.agentName || null;
 }
 
-async function requirePodMember(podId: string, userId: unknown, { write = false, memberOnly = false } = {}): Promise<{ error?: string; status?: number; pod?: unknown }> {
+async function requirePodMember(podId: string, userId: unknown, { write = false, memberOnly = false } = {}): Promise<{ error?: string; status?: number; pod?: unknown; canWrite?: boolean }> {
   const pod = await Pod.findById(podId).lean() as { type?: string; members?: Array<{ userId?: { toString: () => string }; toString: () => string; role?: string }> } | null;
   if (!pod) return { error: 'Pod not found', status: 404 };
   const membership = pod.members?.find((m) => {
@@ -213,10 +213,10 @@ async function requirePodMember(podId: string, userId: unknown, { write = false,
     const DMService = require('../services/dmService');
     const canView = await DMService.canViewPod(userId, pod);
     if (!canView) return { error: 'Access denied', status: 403 };
-    return { pod };
+    return { pod, canWrite: false };
   }
   if (write && (membership as { role?: string }).role === 'viewer') return { error: 'Write access denied', status: 403 };
-  return { pod };
+  return { pod, canWrite: (membership as { role?: string }).role !== 'viewer' };
 }
 
 async function nextTaskId(podId: string): Promise<{ taskId: string; taskNum: number }> {
@@ -258,6 +258,7 @@ router.get('/:podId', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) 
     // tick boundary could otherwise report lease states that never coexisted.
     const now = new Date();
     return res.json({
+      permissions: { canWrite: access.canWrite === true },
       tasks: tasks.sort(compareTaskPriority).map((task: Record<string, unknown>) => ({ ...task, leaseState: deriveLeaseState(task, now) })),
     });
   } catch (err) {

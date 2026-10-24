@@ -18,6 +18,7 @@ export interface ITask extends Document {
   title: string;
   priority: TaskPriority;
   watchers: Types.ObjectId[];
+  watcherDeliveryPendingAt?: Date;
   assignee?: string | null;
   dep?: string | null;
   depMockOk: boolean;
@@ -58,6 +59,8 @@ const TaskSchema = new Schema<ITask>(
     title: { type: String, required: true },
     priority: { type: String, enum: ['P0', 'P1', 'P2', 'P3'], default: 'P2' },
     watchers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    // Internal retry revision; never advances the public task revision.
+    watcherDeliveryPendingAt: { type: Date },
     assignee: { type: String, default: null },
     dep: { type: String, default: null },
     depMockOk: { type: Boolean, default: false },
@@ -93,6 +96,7 @@ const TaskSchema = new Schema<ITask>(
 
 TaskSchema.index({ podId: 1, status: 1 });
 TaskSchema.index({ watchers: 1, podId: 1, updatedAt: -1 });
+TaskSchema.index({ watcherDeliveryPendingAt: 1 }, { partialFilterExpression: { watcherDeliveryPendingAt: { $type: 'date' } } });
 TaskSchema.index({ podId: 1, assignee: 1, status: 1 });
 TaskSchema.index(
   { podId: 1, prUrl: 1, status: 1 },
