@@ -620,3 +620,25 @@ test('a detail save replaces an invalidated socket read, preserving another row 
   await act(async () => { resolvePending({ data: { tasks: [first, second], permissions: { canWrite: true } } }); });
   expect(screen.getByText('Second changed')).toBeInTheDocument();
 });
+
+
+test('Follow keeps focus during a pending request and refuses a second click', async () => {
+  const task = { taskId: 'TASK-1', title: 'Follow focus', status: 'pending', watchers: [] };
+  wireAxios([task]);
+  let finishFollow;
+  axios.post.mockImplementationOnce(() => new Promise((resolve) => { finishFollow = resolve; }));
+  renderBoard();
+  fireEvent.click(await screen.findByTitle('TASK-1'));
+  const follow = screen.getByRole('button', { name: 'Follow task' });
+  follow.focus();
+  fireEvent.click(follow);
+  expect(follow).toHaveAttribute('aria-disabled', 'true');
+  expect(follow).not.toBeDisabled();
+  expect(follow).toHaveFocus();
+  fireEvent.click(follow);
+  expect(axios.post).toHaveBeenCalledTimes(1);
+  await act(async () => { finishFollow({ data: { task: { ...task, watchers: ['u1'] } } }); });
+  expect(follow).toHaveAttribute('aria-disabled', 'false');
+  expect(follow).toHaveAttribute('aria-pressed', 'true');
+  expect(follow).toHaveFocus();
+});

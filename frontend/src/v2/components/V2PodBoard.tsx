@@ -818,7 +818,7 @@ const V2PodBoard: React.FC = () => {
               </dl>
               <section className="v2-board__watchers" aria-label={t('board.detail.watchers')}>
                 <div className="v2-board__watchers-head"><h3>{t('board.detail.watchers')}</h3><span className="v2-board__watchers-count">{watchers.length}</span>
-                  <button type="button" className="v2-board__follow" aria-pressed={following} disabled={detailSaving || !currentUser?._id} onClick={() => updateDetail(selected, { following: !following })}>{following && <span aria-hidden="true">✓ </span>}{t(following ? 'board.detail.following' : 'board.detail.follow')}</button>
+                  <button type="button" className="v2-board__follow" aria-pressed={following} aria-disabled={detailSaving || !currentUser?._id} onClick={() => { if (!detailSaving && currentUser?._id) updateDetail(selected, { following: !following }); }}>{following && <span aria-hidden="true">✓ </span>}{t(following ? 'board.detail.following' : 'board.detail.follow')}</button>
                 </div>
                 <div className="v2-board__watcher-list">{watchers.map((id) => {
                   const member = podMembers.find((item) => memberId(item) === id) || (id === currentUser?._id ? currentUser : {});
