@@ -426,6 +426,12 @@ Implementation: `backend/services/wakeDefaultService.ts` (the rule), the registr
 
 Prior ownership must be the pre-image of the successful board write. A separate read before a concurrent write can name a stale assignee and miss the seat just unassigned. The wake's `updatedAt` must equal the stored revision and advance under concurrent writes, so `offeredAt` can mark that exact revision once. Every later task write must advance the same revision, including claims, completions, comments, non-ownership edits, and source-ref reopens; a wall-clock timestamp can otherwise move it behind `offeredAt` and hide an unassigned pending row from the sweep.
 
+### D8.3 — AMENDMENT (2026-10-24): discovery wakes require an idle implementer
+
+The D8.2 discovery exception woke reviewers who had no implementation capacity: one review seat received 351 unclaimed-work wakes in about 11.5 hours and answered every one with `NO_REPLY` (TASK-464). This was the kernel finding work correctly and choosing the wrong audience.
+
+Discovery now requires an explicit `config.workDiscovery: { enabled: true, role: 'implementer' }` on the installation. It skips a seat with assigned pending work or an active claim in that pod, whether the claim stores a seat key or its bot User id, and caps delivery at one nudge per seat and pod per hour. Missing role configuration fails closed. An unoffered revision remains eligible beyond the sweep's ten-minute tick so the next hourly batch can carry it. A capped nudge does not mark an unassigned row as offered. Browser board updates and addressed owner wakes are unaffected.
+
 ### D9 — Heartbeat shrinks; it does not die
 
 Wake-on-message replaces heartbeat's *"did anything happen?"* role in pods

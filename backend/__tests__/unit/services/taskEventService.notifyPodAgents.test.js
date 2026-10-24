@@ -11,7 +11,7 @@
 const mongoose = require('mongoose');
 
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { find: jest.fn(), findOne: jest.fn() },
+  AgentInstallation: { find: jest.fn(), findOne: jest.fn(), findOneAndUpdate: jest.fn(), updateOne: jest.fn() },
 }));
 
 jest.mock('../../../services/agentEventService', () => ({
@@ -25,12 +25,14 @@ jest.mock('../../../models/AgentEvent', () => ({
 
 jest.mock('../../../models/User', () => ({
   findById: jest.fn(),
+  find: jest.fn(),
 }));
 
 const mockTaskUpdateOne = jest.fn();
 jest.mock('../../../models/Task', () => ({
   updateOne: (...args) => mockTaskUpdateOne(...args),
   find: jest.fn(),
+  exists: jest.fn(),
 }));
 
 const { AgentInstallation } = require('../../../models/AgentRegistry');
@@ -54,7 +56,10 @@ const install = (agentName, installedBy) => ({
   podId: POD_ID,
   status: 'active',
   installedBy,
-  config: { runtime: { runtimeType: 'wrapper' }, wakeOnMessage: { enabled: true } },
+  config: {
+    runtime: { runtimeType: 'wrapper' }, wakeOnMessage: { enabled: true },
+    workDiscovery: { enabled: true, role: 'implementer' },
+  },
 });
 
 const task = (overrides = {}) => ({
@@ -77,12 +82,16 @@ beforeEach(() => {
   // unless it explicitly seeds a pending wake.
   AgentEvent.findOneAndUpdate.mockResolvedValue(null);
   AgentInstallation.findOne.mockReturnValue({ sort: () => ({ lean: async () => null }) });
+  AgentInstallation.findOneAndUpdate.mockResolvedValue({});
+  AgentInstallation.updateOne.mockResolvedValue({ matchedCount: 1 });
   User.findById.mockReturnValue({ select: () => ({ lean: async () => null }) });
+  User.find.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   AgentEvent.updateOne.mockResolvedValue({});
   mockTaskUpdateOne.mockResolvedValue({ matchedCount: 1 });
   Task.find.mockReturnValue({
     sort: () => ({ limit: () => ({ lean: async () => [] }) }),
   });
+  Task.exists.mockResolvedValue(null);
 });
 
 describe('notifyPodAgents', () => {
@@ -147,6 +156,18 @@ describe('notifyPodAgents', () => {
       { userId: HUMAN_ID, isAgent: false },
     );
 
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('keeps a pending unassigned revision due even with a stale claim id', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task({
+      _id: 'task-1', status: 'pending', assignee: null, claimedBy: 'default',
+      updatedAt: new Date('2026-08-20T20:00:00.000Z'),
+    }), 'updated', { userId: HUMAN_ID, isAgent: false });
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     expect(mockTaskUpdateOne).not.toHaveBeenCalled();
   });
 
@@ -442,6 +463,98 @@ describe('notifyFoundWork', () => {
     title: `Task ${index + 1}`,
     updatedAt: new Date(`2026-08-20T20:00:${String(index).padStart(2, '0')}.000Z`),
   }));
+
+  it('caps unclaimed-work nudges per seat and pod for one hour without losing due work', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    const now = new Date('2026-08-20T20:00:00.000Z');
+    AgentInstallation.findOneAndUpdate.mockResolvedValue(null);
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1, now);
+
+    expect(AgentInstallation.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        agentName: 'scout', instanceId: 'default', podId: POD_ID, status: 'active',
+        $or: [
+          { lastFoundWorkAt: { $lte: new Date(now.getTime() - 60 * 60 * 1000) } },
+          { lastFoundWorkAt: null },
+        ],
+      },
+      { $set: { lastFoundWorkAt: now } },
+      { new: true, timestamps: false },
+    );
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('never nudges a reviewer or a seat without explicit implementer opt-in', async () => {
+    mockInstalls([
+      { ...install('sprint-review', HUMAN_ID), config: {
+        wakeOnMessage: { enabled: true }, workDiscovery: { enabled: true, role: 'reviewer' },
+      } },
+      { ...install('legacy', HUMAN_ID), config: { wakeOnMessage: { enabled: true } } },
+      install('sprint-impl', HUMAN_ID),
+    ]);
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1);
+
+    expect(AgentEventService.enqueue.mock.calls.map(([arg]) => arg.agentName)).toEqual(['sprint-impl']);
+    expect(Task.exists).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips an implementer with assigned or claimed open work', async () => {
+    mockInstalls([install('sprint-impl', HUMAN_ID)]);
+    Task.exists.mockResolvedValue({ _id: 'busy-task' });
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1);
+
+    expect(Task.exists).toHaveBeenCalledWith({
+      podId: POD_ID,
+      status: { $in: ['pending', 'claimed'] },
+      $or: [
+        { assignee: /^sprint-impl$/i },
+        { status: 'claimed', claimedBy: /^sprint-impl$/i },
+      ],
+    });
+    expect(AgentInstallation.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('skips a seat whose claim is stored as its bot User id', async () => {
+    mockInstalls([install('sprint-impl', HUMAN_ID)]);
+    const principalId = new mongoose.Types.ObjectId();
+    User.find.mockReturnValue({ select: () => ({ lean: async () => [{ _id: principalId }] }) });
+    Task.exists.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'busy-task' });
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1);
+
+    expect(User.find).toHaveBeenCalledWith({
+      isBot: true,
+      'botMetadata.agentName': /^sprint-impl$/i,
+      'botMetadata.instanceId': { $in: [/^default$/i, /^sprint-impl$/i, null] },
+    });
+    expect(Task.exists).toHaveBeenLastCalledWith({
+      podId: POD_ID,
+      status: 'claimed',
+      claimedBy: { $in: [String(principalId)] },
+    });
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('releases a reserved slot when the nudge enqueue fails', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    const now = new Date('2026-08-20T20:00:00.000Z');
+    AgentEventService.enqueue.mockRejectedValueOnce(new Error('store down'));
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1, now);
+
+    expect(AgentInstallation.updateOne).toHaveBeenCalledWith(
+      { agentName: 'scout', instanceId: 'default', podId: POD_ID, lastFoundWorkAt: now },
+      { $unset: { lastFoundWorkAt: 1 } },
+      { timestamps: false },
+    );
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
 
   it('names five rows but stamps every aggregate row, including rows 6+', async () => {
     mockInstalls([install('scout', HUMAN_ID)]);

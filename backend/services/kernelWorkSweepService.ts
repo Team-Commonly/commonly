@@ -69,14 +69,8 @@ const LIVE_STATES = new Set(['listening']);
 
 // "at most three deferrals" — verbatim. Per LEASE, not per task: the claim
 // route resets the counter, so this bounds one holder's silence at
-// 3 x SWEEP_INTERVAL_MS (~30 min) past a lapsed lease, never a task's lifetime.
+// Three ten-minute sweeps (~30 min) past a lapsed lease, never a task's lifetime.
 const MAX_RESCUE_DEFERRALS = 3;
-
-// MUST match the cron cadence in schedulerService ('4,14,24,... * * * *' =
-// every 10 minutes). This is only a scan bound now; offeredAt vs updatedAt
-// records whether a revision was delivered. One cadence window catches rows
-// changed between passes without scanning older standing stock.
-const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 
 interface SweepResult {
   scannedPods: number;
@@ -300,15 +294,14 @@ class KernelWorkSweepService {
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     const { notifyFoundWork } = require('./taskEventService');
 
-    // updatedAt bounds the scan to the current sweep window; offeredAt records
-    // whether this exact revision was sent. A missing offeredAt sorts below a
-    // Date and is due. Rescue writes advance updatedAt as well.
-    const since = new Date(now.getTime() - SWEEP_INTERVAL_MS);
+    // offeredAt records whether this exact revision was sent. Do not bound
+    // updatedAt to this sweep window: a seat's hourly nudge cap can defer an
+    // unassigned revision beyond ten minutes. It must remain due for the next
+    // eligible hourly batch. A missing offeredAt sorts below a Date and is due.
     const actionable = await Task.aggregate([
       {
         $match: {
           status: 'pending',
-          updatedAt: { $gte: since },
           $expr: { $lt: ['$offeredAt', '$updatedAt'] },
           $or: [{ assignee: null }, { assignee: '' }, { assignee: { $exists: false } }],
         },
