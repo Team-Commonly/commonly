@@ -22,11 +22,15 @@ const mockCompleteStarterTask = jest.fn();
 const mockMarkByoConnectionAttempt = jest.fn();
 const mockNarrowedPods = jest.fn();
 const mockEnsembleFindById = jest.fn();
+const mockMessageFindById = jest.fn();
 const mockCredentialFindOne = jest.fn();
 const mockCredentialFindById = jest.fn();
 
 jest.mock('../../../models/AgentEnsembleState', () => ({
   findById: (...args) => mockEnsembleFindById(...args),
+}));
+jest.mock('../../../models/pg/Message', () => ({
+  findById: (...args) => mockMessageFindById(...args),
 }));
 
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
@@ -86,6 +90,7 @@ const buildRes = () => {
 beforeEach(() => {
   mockNarrowedPods.mockReset().mockResolvedValue(new Set());
   mockEnsembleFindById.mockReset();
+  mockMessageFindById.mockReset();
   mockCredentialFindOne.mockReset().mockResolvedValue(null);
   mockCredentialFindById.mockReset();
   mockSecret.hash.mockReset();
@@ -319,6 +324,48 @@ describe('TASK-213 runtime token narrowing', () => {
     await agentRuntimeAuth(req, res, next);
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  test('two grant pods refuse private memory metadata visible to other agents', async () => {
+    setupLegacy();
+    mockInstallationFind.mockResolvedValue([
+      { podId: { toString: () => 'pod-a' } },
+      { podId: { toString: () => 'pod-b' } },
+    ]);
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a', 'pod-b']));
+    for (const [method, routePath, mode] of [
+      ['PUT', '/memory', undefined],
+      ['POST', '/memory/sync', 'patch'],
+    ]) {
+      const req = buildReq('cm_agent_test');
+      Object.assign(req, { method, baseUrl: '/api/agents/runtime',
+        route: { path: routePath }, params: {},
+        body: { sections: { long_term: { visibility: 'private', content: 'x' } },
+          sourceRuntime: 'caller-controlled', ...(mode ? { mode } : {}) } });
+      const res = buildRes();
+      const next = jest.fn();
+      await agentRuntimeAuth(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
+    }
+  });
+
+  test('claim release uses the stored message pod despite a forged body pod', async () => {
+    setupLegacy();
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'DELETE', baseUrl: '/api/agents/runtime',
+      route: { path: '/messages/:messageId/claim' },
+      params: { messageId: 'message-b' }, body: { podId: 'pod-a' } });
+    const res = buildRes();
+    const next = jest.fn();
+    mockMessageFindById.mockResolvedValue({ pod_id: 'pod-b' });
+    await agentRuntimeAuth(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+    mockMessageFindById.mockResolvedValueOnce({ pod_id: 'pod-a' });
+    await agentRuntimeAuth(req, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
   });
 
   test('spawn maintenance and event acknowledgement remain available across two grant pods', async () => {

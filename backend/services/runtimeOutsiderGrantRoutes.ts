@@ -28,10 +28,12 @@ const ensemblePod: PodResolver = async (req) => {
   return state?.podId ? String(state.podId) : null;
 };
 const privateMemory = (req: Request): boolean => {
-  const { content, sections, mode } = req.body || {};
+  const { content, sections, mode, sourceRuntime } = req.body || {};
   // Legacy content mirrors into long_term, and a full sync can retain or
-  // restore shared sections. Neither can be proven private from this body.
-  if (content !== undefined || mode === 'full' || !sections || typeof sections !== 'object'
+  // restore shared sections. sourceRuntime is visible to other agents through
+  // the shared-memory read even when every supplied section is private.
+  if (content !== undefined || sourceRuntime !== undefined || mode === 'full'
+      || !sections || typeof sections !== 'object'
       || Array.isArray(sections)) return false;
   return Object.values(sections).every((section) => {
     if (Array.isArray(section)) return section.every((entry) => entry?.visibility === 'private');
@@ -58,8 +60,9 @@ add(runtime, 'pod_write', [
   'POST /pods/:podId/summaries', 'POST /pods/:podId/ask', 'POST /pods/:podId/uploads',
   'POST /pods/:podId/hooks',
 ], podParam);
-add(runtime, 'pod_write', ['POST /messages/:messageId/claim', 'DELETE /messages/:messageId/claim',
-  'POST /posts', 'POST /decisions'], bodyPod);
+add(runtime, 'pod_write', ['POST /messages/:messageId/claim', 'POST /posts', 'POST /decisions'], bodyPod);
+// Release looks up the message by ID; its handler ignores a caller-supplied podId.
+add(runtime, 'pod_write', ['DELETE /messages/:messageId/claim'], messagePod);
 add(runtime, 'pod_write', ['POST /threads/:threadId/comments'], postPod);
 add(runtime, 'pod_write', ['POST /asks/:requestId/respond'], askPod);
 add(runtime, 'outward', [

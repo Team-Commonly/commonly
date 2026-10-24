@@ -76,6 +76,41 @@ test('private memory passes, shared memory is outward', async () => {
   expect((await classifyRuntimeOutsiderGrantRoute(req)).routeClass).toBe('outward');
 });
 
+test('private memory with sourceRuntime is outward for PUT and patch sync', async () => {
+  for (const [method, routePath, mode] of [
+    ['PUT', '/memory', undefined],
+    ['POST', '/memory/sync', 'patch'],
+  ]) {
+    const req = {
+      baseUrl: '/api/agents/runtime', method, route: { path: routePath },
+      body: {
+        sections: { long_term: { visibility: 'private', content: 'x' } },
+        sourceRuntime: 'caller-controlled',
+        ...(mode ? { mode } : {}),
+      },
+    };
+    expect((await classifyRuntimeOutsiderGrantRoute(req)).routeClass).toBe('outward');
+    delete req.body.sourceRuntime;
+    expect((await classifyRuntimeOutsiderGrantRoute(req)).routeClass).toBe('read');
+  }
+});
+
+test('claim release uses the stored message pod, not a forged body pod', async () => {
+  const Message = require('../../../models/pg/Message');
+  Message.findById.mockResolvedValue({ pod_id: 'pod-b' });
+  const req = {
+    baseUrl: '/api/agents/runtime', method: 'DELETE',
+    route: { path: '/messages/:messageId/claim' },
+    params: { messageId: 'message-b' }, body: { podId: 'pod-a' },
+  };
+  expect(await classifyRuntimeOutsiderGrantRoute(req))
+    .toEqual({ routeClass: 'pod_write', podId: 'pod-b' });
+  expect(Message.findById).toHaveBeenCalledWith('message-b');
+  Message.findById.mockResolvedValueOnce({ pod_id: 'pod-a' });
+  expect(await classifyRuntimeOutsiderGrantRoute(req))
+    .toEqual({ routeClass: 'pod_write', podId: 'pod-a' });
+});
+
 test('unscoped posts resolve no pod and broker calls retain their own gate', async () => {
   const classify = (baseUrl, method, routePath, body = {}) =>
     classifyRuntimeOutsiderGrantRoute({ baseUrl, method, route: { path: routePath }, body, params: {} });
