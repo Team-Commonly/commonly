@@ -131,10 +131,12 @@ test('name lookup failure never provisions or changes the issued command', async
   fireEvent.click(offer()); expect(await screen.findByRole('alert')).toHaveTextContent(/name/i);
   expect(screen.getByText(/your connect command for/i)).toBeInTheDocument(); expect(offer()).toBeEnabled(); expect(axios.post.mock.calls.some(([url]) => url === '/api/hosted/provision')).toBe(false);
 });
-test('offer is a status row directly below the command and stays absent after remount in the same session', async () => {
+test('offer follows every command block and stays absent after remount in the same session', async () => {
   const view = await issue(); await tick(30000);
   const row = screen.getByRole('status', { name: 'Run it here instead' });
-  expect(screen.getByTestId('byo-listen').querySelector('.v2-byo__command').nextElementSibling).toBe(row);
+  document.querySelectorAll('.v2-byo__command').forEach((command) => {
+    expect(command.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
   view.unmount(); await issue(); await tick(30000); fireEvent.mouseLeave(document.documentElement, { clientY: 0 }); expect(offer()).not.toBeInTheDocument();
 });
 test('copy before the offer also suppresses it across a remount', async () => {

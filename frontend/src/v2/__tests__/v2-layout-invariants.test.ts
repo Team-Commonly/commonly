@@ -4945,3 +4945,12 @@ test('TASK-482 hosted alternative uses the existing panel border and surface tok
   expect(offer).toContain('background: var(--v2-surface)');
   expect(offer).toContain('height: 32px');
 });
+
+test('TASK-482 offer is after the final command so its insertion cannot push copy targets down', () => {
+  const source = read('../components/V2AgentBYO.tsx');
+  const finalCommand = source.lastIndexOf('className="v2-byo__command"');
+  const offer = source.indexOf('role="status" className="v2-byo__hosted-offer"');
+  expect(finalCommand).toBeGreaterThan(-1);
+  expect(offer).toBeGreaterThan(finalCommand);
+  // Actual before/after top coordinates are asserted by e2e/byo-offer-layout.spec.ts.
+});
