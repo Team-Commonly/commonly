@@ -669,8 +669,8 @@ export const updateAgentConfiguration = async ({
   parseEnv = parseEnvironmentFile,
   adapterRegistry = { getAdapter, listAdapterNames },
 }) => {
-  if (!record?.podId || !record?.agentName) {
-    throw new Error('token record is missing podId/agentName — re-attach the agent');
+  if (!record?.agentName) {
+    throw new Error('token record is missing agentName — re-attach the agent');
   }
   const instanceId = record.instanceId || 'default';
   const runtime = {};
@@ -730,13 +730,23 @@ export const updateAgentConfiguration = async ({
     throw new Error('provide at least one of --adapter, --model, --effort, or --env');
   }
 
+  // The token's pod may be an attention room rather than an installation.
+  // Reuse Settings' owner-filtered projection instead of guessing from it.
+  const settings = await client.get(
+    `/api/registry/agents/${encodeURIComponent(record.agentName)}/manage-settings?instanceId=${encodeURIComponent(instanceId)}`,
+  );
+  const podId = settings?.runtimeManaged
+    ? settings.runtimeSourcePodId : settings?.writablePodId;
+  if (typeof podId !== 'string' || !podId.trim()) {
+    throw new Error('No writable runtime installation found for this agent; check its Settings and computer binding.');
+  }
   await client.patch(
-    `/api/registry/pods/${record.podId}/agents/${record.agentName}`,
+    `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(record.agentName)}`,
     { instanceId, config },
   );
   return {
     agentName: record.agentName,
-    podId: record.podId,
+    podId,
     instanceId,
     changed: Object.keys(config),
     ...(runtime.adapter ? { adapter: runtime.adapter } : {}),

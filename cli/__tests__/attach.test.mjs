@@ -146,7 +146,7 @@ describe('updateAgentConfiguration', () => {
   };
 
   test('reuses the registry PATCH route for runtime controls and full env specs', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const environment = {
       version: 1,
       workspace: { path: './workspace' },
@@ -179,7 +179,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('keeps the complete provider block local while PATCHing environment fields', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const environment = {
       model: 'gpt-5.4',
       provider: {
@@ -199,7 +199,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('refuses provider configuration when the local token record is not OpenCode-bound', async () => {
-    const client = { patch: jest.fn() };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn() };
     await expect(updateAgentConfiguration({
       client,
       record,
@@ -215,7 +215,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('agent config writes the adapter binding explicitly', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const adapterRegistry = {
       listAdapterNames: () => ['opencode'],
       getAdapter: () => ({ detect: async () => ({ path: '/bin/opencode', version: '1.18.35' }) }),
@@ -228,17 +228,17 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('rejects an empty edit and an incomplete token record before making a request', async () => {
-    const client = { patch: jest.fn() };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn() };
     await expect(updateAgentConfiguration({ client, record })).rejects.toThrow(/at least one/);
     await expect(updateAgentConfiguration({ client, record, effort: 'turbo' }))
       .rejects.toThrow(/effort must be one of/);
-    await expect(updateAgentConfiguration({ client, record: { agentName: 'juno' }, model: 'opus' }))
-      .rejects.toThrow(/podId/);
+    await expect(updateAgentConfiguration({ client, record: { podId: 'pod-9' }, model: 'opus' }))
+      .rejects.toThrow(/agentName/);
     expect(client.patch).not.toHaveBeenCalled();
   });
 
   test('updates an existing declared environment when only model/effort flags change', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const localRecord = {
       ...record,
       environment: {
@@ -255,7 +255,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('materializes runtime edits into the declared environment when none exists', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const result = await updateAgentConfiguration({ client, record, model: 'new-model', effort: 'high' });
     expect(result.environment).toEqual({ model: 'new-model', effort: 'high' });
     expect(client.patch.mock.calls[0][1].config).toEqual({
@@ -265,7 +265,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('validates and persists a detected adapter without leaking it into ADR-008 environment', async () => {
-    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn(async () => ({ success: true })) };
     const adapter = { detect: jest.fn(async () => ({ path: '/usr/local/bin/claude' })) };
     const result = await updateAgentConfiguration({
       client,
@@ -288,7 +288,7 @@ describe('updateAgentConfiguration', () => {
   });
 
   test('rejects an unknown or unavailable adapter before PATCH', async () => {
-    const client = { patch: jest.fn() };
+    const client = { get: jest.fn(async () => ({ writablePodId: 'pod-9' })), patch: jest.fn() };
     const adapter = { detect: jest.fn(async () => null) };
     const adapterRegistry = {
       getAdapter: jest.fn((name) => (name === 'claude' ? adapter : null)),
@@ -300,6 +300,43 @@ describe('updateAgentConfiguration', () => {
       .rejects.toThrow(/not found on PATH/);
     expect(client.patch).not.toHaveBeenCalled();
   });
+  test('resolves a managed seat from the server source instead of its attention pod', async () => {
+    const client = {
+      get: jest.fn(async () => ({ runtimeManaged: true, runtimeSourcePodId: 'source-pod', writablePodId: 'other-pod' })),
+      patch: jest.fn(async () => ({})),
+    };
+    const result = await updateAgentConfiguration({ client, record, model: 'new-model' });
+    expect(client.get).toHaveBeenCalledWith('/api/registry/agents/juno/manage-settings?instanceId=writer');
+    expect(client.patch.mock.calls[0][0]).toBe('/api/registry/pods/source-pod/agents/juno');
+    expect(result.podId).toBe('source-pod');
+  });
+
+  test('a stale or absent local pod is not used when the server has a writable installation', async () => {
+    const client = {
+      get: jest.fn(async () => ({ writablePodId: 'real-pod' })),
+      patch: jest.fn(async () => ({})),
+    };
+    await updateAgentConfiguration({ client, record: { ...record, podId: undefined }, model: 'new-model' });
+    expect(client.patch.mock.calls[0][0]).toBe('/api/registry/pods/real-pod/agents/juno');
+  });
+
+  test.each([
+    {},
+    { writablePodId: null },
+    { runtimeManaged: true, runtimeSourcePodId: null, writablePodId: 'other-pod' },
+  ])('refuses a missing server target without PATCHing the token pod: %j', async (settings) => {
+    const client = { get: jest.fn(async () => settings), patch: jest.fn() };
+    await expect(updateAgentConfiguration({ client, record, model: 'new-model' }))
+      .rejects.toThrow(/No writable runtime installation/);
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+
+  test('a failed installation lookup never falls back to the token pod', async () => {
+    const client = { get: jest.fn(async () => { throw new Error('Forbidden'); }), patch: jest.fn() };
+    await expect(updateAgentConfiguration({ client, record, model: 'new-model' })).rejects.toThrow('Forbidden');
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+
 });
 
 const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {
