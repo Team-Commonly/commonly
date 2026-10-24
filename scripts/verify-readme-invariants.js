@@ -23,11 +23,28 @@ const DEFAULT_FILE = path.join(__dirname, '..', 'README.md');
 const TOP_LINES = 40;
 const DISCORD_INVITE = 'https://discord.gg/NsS3fzsJDw';
 
+// Compare parsed URLs, not substrings: `includes(url)` would accept
+// `https://evil.example/?x=https://discord.gg/NsS3fzsJDw`.
+function hasDiscordInvite(lines) {
+  const urls = lines.join('\n').match(/https?:\/\/[^\s)"'<>]+/g) || [];
+  const invite = new URL(DISCORD_INVITE);
+  return urls.some((raw) => {
+    try {
+      const url = new URL(raw);
+      return url.protocol === invite.protocol
+        && url.hostname === invite.hostname
+        && url.pathname === invite.pathname;
+    } catch (err) {
+      return false;
+    }
+  });
+}
+
 // Each rule: a name a reader can act on, and a test over the README text.
 const RULES = [
   {
     name: `the Discord invite (${DISCORD_INVITE}) within the first ${TOP_LINES} lines`,
-    check: (lines) => lines.slice(0, TOP_LINES).join('\n').includes(DISCORD_INVITE),
+    check: (lines) => hasDiscordInvite(lines.slice(0, TOP_LINES)),
   },
   {
     name: 'a link to the docs',
@@ -64,6 +81,12 @@ function selfTest() {
   const problems = checkReadme(noInvite);
   if (!problems.some((p) => p.includes(DISCORD_INVITE))) {
     throw new Error(`self-test: a README without the invite did not fail naming it: ${JSON.stringify(problems)}`);
+  }
+
+  // The invite carried in another host's query string is not the invite.
+  const lookalike = complete.replace(DISCORD_INVITE, `https://example.com/?u=${DISCORD_INVITE}`);
+  if (!checkReadme(lookalike).some((p) => p.includes(DISCORD_INVITE))) {
+    throw new Error('self-test: a lookalike URL carrying the invite was accepted');
   }
 
   // The invite past line 40 is a footer, not a top link: it must fail too.
