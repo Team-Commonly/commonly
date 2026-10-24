@@ -383,15 +383,11 @@ mongoose.connection.once('open', () => {
 // Start the summarizer scheduler
 const schedulerService = require('./services/schedulerService');
 const discordGatewayService = require('./services/discordGatewayService');
-
-if (process.env.NODE_ENV !== 'test') {
-  console.log('Starting summarizer scheduler...');
-  schedulerService.start();
-
-  if (process.env.DISCORD_BOT_TOKEN) {
-    discordGatewayService.start();
-  }
-}
+const { startBackgroundServices, shouldRunBackgroundServices } = require('./services/backgroundWorkerStart');
+startBackgroundServices(process.env, {
+  scheduler: schedulerService,
+  discordGateway: discordGatewayService,
+});
 
 // PostgreSQL status is mounted unconditionally, and NOT as a placeholder:
 // checkStatus reads the pool and the schema itself, so it answers
@@ -441,7 +437,7 @@ if (process.env.PG_HOST) {
       // Kick off the daily 30-day message retention cron. Kept out
       // of schedulerService.ts on purpose so other tracks can edit
       // that file without stomping on this cron.
-      if (process.env.NODE_ENV !== 'test') {
+      if (shouldRunBackgroundServices(process.env)) {
         try {
           const { initPgRetention } = require('./services/pgRetentionService');
           initPgRetention();
