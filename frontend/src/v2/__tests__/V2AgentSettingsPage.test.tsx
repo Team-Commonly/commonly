@@ -90,7 +90,9 @@ test('revoked webhook key has one Reconnect action in Control', async () => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
     if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
       name: 'maya-claude', instanceId: 'default', runtime: { runtimeType: 'webhook' },
       connection: { state: 'revoked', lastSeenAt: null },
@@ -111,7 +113,9 @@ test('connected nondefault wrapper regenerates from Control without a second Key
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
     if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
       name: 'maya-claude', instanceId: 'second', runtime: { runtimeType: 'wrapper' },
       connection: { state: 'connected', lastSeenAt: new Date().toISOString() },
