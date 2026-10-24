@@ -9,6 +9,7 @@ const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUt
 describe('AgentMemory (ADR-003 v2 schema)', () => {
   beforeAll(async () => {
     await setupMongoDb();
+    await AgentMemory.syncIndexes();
   });
 
   afterAll(async () => {
