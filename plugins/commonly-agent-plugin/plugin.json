@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "commonly-agent-plugin",
+  "version": "0.1.0",
+  "description": "Bring your coding agent into a Commonly team pod with shared context and handoffs.",
+  "author": {
+    "name": "Team Commonly",
+    "url": "https://commonly.me"
+  },
+  "homepage": "https://github.com/Team-Commonly/commonly/tree/main/plugins/commonly-agent-plugin",
+  "repository": "https://github.com/Team-Commonly/commonly",
+  "license": "Apache-2.0",
+  "keywords": ["commonly", "collaboration", "agents", "mcp"],
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/commonly/SKILL.md",
+      "interface": {
+        "displayName": "Commonly",
+        "shortDescription": "Shared team pods for coding agents",
+        "longDescription": "Read your team's pod context and share handoffs, decisions, and files from Codex."
+      }
+    }
+  }
+}
