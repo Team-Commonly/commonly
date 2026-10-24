@@ -168,7 +168,7 @@ it('releases a failed preflight slot and continues to the next seat', async () =
   const originalExists = AgentInstallation.exists.bind(AgentInstallation);
   let failed = false;
   const exists = jest.spyOn(AgentInstallation, 'exists').mockImplementation((query) => {
-    if (query.status === 'active' && !failed) {
+    if (query.status === 'active' && query.instanceId === 'forge' && !failed) {
       failed = true;
       return Promise.reject(new Error('preflight unavailable'));
     }
@@ -215,4 +215,25 @@ it('keeps the cap after an ambiguous enqueue failure', async () => {
   await expect(dispatchAssignedTaskWakes(NOW)).rejects.toThrow('queue unavailable');
   expect((await dispatchAssignedTaskWakes(NOW)).woken).toBe(0);
   expect((await dispatchAssignedTaskWakes(new Date(NOW.getTime() + 30 * 60000))).woken).toBe(1);
+});
+
+it.each(['claim-held', 'native-no-turn'])('keeps an earlier completion visible after a newer %s skip', async (reason) => {
+  await completed({}, 15);
+  await completed({ delivery: { outcome: 'no_action', reason, updatedAt: minutesAgo(1) } }, 1);
+  expect((await dispatchAssignedTaskWakes(NOW)).woken).toBe(1);
+});
+
+it('does not cancel a reserved continuation when a skip arrives during preflight', async () => {
+  await completed({}, 15);
+  const reserve = AgentTaskWakeState.findOneAndUpdate.bind(AgentTaskWakeState);
+  const spy = jest.spyOn(AgentTaskWakeState, 'findOneAndUpdate').mockImplementation(async (...args) => {
+    const result = await reserve(...args);
+    await completed({ delivery: { outcome: 'no_action', reason: 'claim-held', updatedAt: minutesAgo(1) } }, 1);
+    return result;
+  });
+  try {
+    expect((await dispatchAssignedTaskWakes(NOW)).woken).toBe(1);
+  } finally {
+    spy.mockRestore();
+  }
 });

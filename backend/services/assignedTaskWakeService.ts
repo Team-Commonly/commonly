@@ -87,32 +87,34 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       && owns(row, install, principalId));
     if (!owned.length) continue;
     visited.add(key);
-    // Completion metadata is already persisted by CLI, native and webhook
-    // deliveries. A poll/claim/skip is not evidence that a model turn ended.
+    // Old webhook writers dropped skip reasons. Only newly marked silent
+    // webhook completions are trustworthy; explicit completions remain valid.
     // eslint-disable-next-line no-await-in-loop
-    const last = await AgentEvent.findOne({
+    const webhook = await AgentInstallation.exists({
       agentName: install.agentName, instanceId: install.instanceId,
-      deliveryMode: { $ne: 'digest' }, status: { $in: ['acked', 'failed'] },
-    }).sort({ updatedAt: -1 }).lean();
-    const outcome = last?.delivery?.outcome;
-    if (last?.status !== 'acked' || !last.delivery?.updatedAt
-      || !(['posted', 'acknowledged'].includes(outcome || '')
-        || (outcome === 'no_action' && !last.delivery.reason))) continue;
-    // Older webhook writers dropped skip reasons. Their reasonless silent
-    // results remain ambiguous until a newly recorded completion arrives.
-    const reasonRecorded = (last.delivery.details as { webhookReasonRecorded?: boolean } | undefined)
-      ?.webhookReasonRecorded === true;
-    if (outcome === 'no_action' && !reasonRecorded) {
-      // eslint-disable-next-line no-await-in-loop
-      const webhook = await AgentInstallation.exists({
-        agentName: install.agentName, instanceId: install.instanceId,
-        $or: [
-          { 'config.runtime.webhookUrl': { $type: 'string', $ne: '' } },
-          { 'config.runtime.runtimeType': 'webhook' },
-        ],
-      });
-      if (webhook) continue;
-    }
+      $or: [
+        { 'config.runtime.webhookUrl': { $type: 'string', $ne: '' } },
+        { 'config.runtime.runtimeType': 'webhook' },
+      ],
+    });
+    // Skips are not turns and must not hide an earlier completed turn. Use
+    // exactly this predicate again after reserving the wake slot.
+    const completionFilter = {
+      agentName: install.agentName, instanceId: install.instanceId,
+      deliveryMode: { $ne: 'digest' }, status: 'acked',
+      'delivery.updatedAt': { $type: 'date' },
+      $or: [
+        { 'delivery.outcome': { $in: ['posted', 'acknowledged'] } },
+        {
+          'delivery.outcome': 'no_action',
+          'delivery.reason': { $in: [null, ''] },
+          ...(webhook ? { 'delivery.details.webhookReasonRecorded': true } : {}),
+        },
+      ],
+    };
+    // eslint-disable-next-line no-await-in-loop
+    const last = await AgentEvent.findOne(completionFilter).sort({ 'delivery.updatedAt': -1 }).lean();
+    if (!last?.delivery?.updatedAt) continue;
     const dueAt = new Date(new Date(last.delivery.updatedAt).getTime() + DELAY_MS);
     if (dueAt > now) continue;
     // eslint-disable-next-line no-await-in-loop
@@ -136,10 +138,7 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
         Task.find({ _id: { $in: owned.map((row) => row._id) }, status: { $in: ['pending', 'claimed'] } }).lean(),
         AgentInstallation.exists({ ...install, status: 'active' }),
         hasOtherWork(install.agentName, install.instanceId),
-        AgentEvent.findOne({
-          agentName: install.agentName, instanceId: install.instanceId,
-          deliveryMode: { $ne: 'digest' }, status: { $in: ['acked', 'failed'] },
-        }).sort({ updatedAt: -1 }).select('_id').lean(),
+        AgentEvent.findOne(completionFilter).sort({ 'delivery.updatedAt': -1 }).select('_id').lean(),
       ]);
       // eslint-disable-next-line no-await-in-loop
       const current = await actionableRows((currentRows as Row[]).filter((row) => owns(row, install, principalId)));
