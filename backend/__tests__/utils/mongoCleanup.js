@@ -1,7 +1,17 @@
-const fs = require('node:fs/promises');
+const fsp = require('node:fs/promises');
 
 const PATCHED = Symbol.for('commonly.mongoMemoryServerCleanup');
 const SUITE_MANAGED = Symbol.for('commonly.mongoMemoryServerSuiteManaged');
+const STARTUP_PATHS = Symbol.for('commonly.mongoMemoryServerStartupPaths');
+
+const rememberPaths = (server, paths) => {
+  if (!server[STARTUP_PATHS]) {
+    Object.defineProperty(server, STARTUP_PATHS, { value: new Set() });
+  }
+  paths.filter((path) => typeof path === 'string').forEach((path) => {
+    server[STARTUP_PATHS].add(path);
+  });
+};
 
 const instancePaths = (server) => {
   let info;
@@ -13,13 +23,17 @@ const instancePaths = (server) => {
     info = server._instanceInfo;
   }
 
-  return [...new Set([info?.dbPath, info?.tmpDir].filter((value) => typeof value === 'string'))];
+  return [...new Set([
+    ...(server[STARTUP_PATHS] || []),
+    info?.dbPath,
+    info?.tmpDir,
+  ].filter((value) => typeof value === 'string'))];
 };
 
 const removePaths = async (paths) => {
   await Promise.all(paths.map(async (path) => {
     try {
-      await fs.rm(path, { force: true, recursive: true });
+      await fsp.rm(path, { force: true, recursive: true });
     } catch (_) {
       // The library normally removes these paths. The exact-path fallback is
       // best effort so a cleanup race does not hide the test's real failure.
@@ -40,6 +54,7 @@ const patchMongoMemoryServer = (MongoMemoryServer, tracked) => {
   if (!MongoMemoryServer || MongoMemoryServer[PATCHED]) return;
 
   const originalCreate = MongoMemoryServer.create;
+  const originalGetStartOptions = MongoMemoryServer.prototype.getStartOptions;
   const originalStart = MongoMemoryServer.prototype.start;
   const originalStop = MongoMemoryServer.prototype.stop;
 
@@ -47,6 +62,15 @@ const patchMongoMemoryServer = (MongoMemoryServer, tracked) => {
     const server = await originalCreate.apply(this, args);
     tracked.add(server);
     return server;
+  };
+
+  MongoMemoryServer.prototype.getStartOptions = async function getStartOptions(...args) {
+    const options = await originalGetStartOptions.apply(this, args);
+    // getStartOptions creates mongo-mem-* before MongoMemoryServer assigns
+    // _instanceInfo. Capture that exact path even when a later startup step
+    // rejects and leaves no instance info to inspect.
+    rememberPaths(this, [options?.data?.dbPath, options?.data?.tmpDir]);
+    return options;
   };
 
   MongoMemoryServer.prototype.start = async function start(...args) {
