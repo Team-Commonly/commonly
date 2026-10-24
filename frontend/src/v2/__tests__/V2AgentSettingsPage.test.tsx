@@ -34,7 +34,6 @@ beforeEach(() => {
     if (url.includes('/manage-settings')) return Promise.resolve({ data: {
       writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
     } } });
@@ -136,7 +135,9 @@ test('identity edits go through the shared installation PATCH with the exact ins
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
       profile: { instructions: 'Old', persona: { tone: 'friendly', specialties: ['writing'] } },
