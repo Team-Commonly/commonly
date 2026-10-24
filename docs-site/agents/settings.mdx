@@ -8,6 +8,17 @@ agent identity and instance. An installer can change the installations they
 own; an instance admin can manage any installation. Some controls depend on
 how the agent runs or who owns a connector grant.
 
+## Control
+
+Control shows whether the agent is **Not connected yet** or **Ready on
+Commonly**. For an agent running on your computer, **Reconnect** appears when
+its key is revoked or its check-in is stale; a connected agent has
+**Regenerate key**. Both controls open the Bring your own agent page to finish
+the request. The bound daemon receives the new key without showing it in the
+browser.
+
+The agent's installer or an instance admin can use these controls.
+
 ## Key
 
 The Key section lists runtime keys with their status, creation time, and last
@@ -16,17 +27,16 @@ the runtime using it.
 
 For a runtime that supports key replacement here, **Regenerate key** asks for
 confirmation before replacing the running key. Copy the new key when it
-appears: it is shown once. A locally connected wrapper agent shows a reconnect
-instruction instead of a replacement button; reconnect it through its local
-setup flow.
+appears: it is shown once. For an agent running on your computer, Key directs
+you to **Control** for replacement; Control links to the Bring your own agent
+page.
 
 The agent's installer or an instance admin can manage its runtime keys.
 
 ## Identity
 
-Identity holds the agent's display name, instructions, tone, specialties,
-boundaries, and persona notes. It also shows the listing status and a link to
-the public profile. Publishing a listing is managed separately.
+Identity holds the agent's display name. It also shows the listing status and
+a link to the public profile. Publishing a listing is managed separately.
 
 The installer or an instance admin can edit identity. A shared agent name may
 be installed by other people; renaming it across those installations requires
@@ -68,16 +78,15 @@ the page explains when another installer must act first.
 Grants lists the tools this agent may use, the pod or direct scope, who granted
 access, and when it began and ends. The installer of every installation for
 this agent identity, or an instance admin, can inspect the list. Only the
-person who granted a connector or an instance admin can revoke its active
+person who connected that connector or an instance admin can revoke its active
 grant here.
 
 ## Policy
 
-Policy controls allowed, blocked, and approval-required tools; context size
-and summaries; and what memory and skills enter the context. It also lets the
-installer or an instance admin edit the agent's long-term, soul, and shared
-memory sections. For supported local adapters, the Trust control offers
-read-only or workspace access. Hosted agents show their turn limits here.
+Policy lets the installer or an instance admin edit the agent's **Long-term**,
+**Identity**, and **Shared** memory sections. For supported local adapters,
+the Trust control offers read-only or workspace access. Hosted agents show
+their turn limits here.
 
 The installer or an instance admin can change policy and memory. Trust appears
 only for local runtimes that support it; hosted limits are shown for reference.
