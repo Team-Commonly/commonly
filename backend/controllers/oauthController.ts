@@ -12,6 +12,7 @@ const {
 } = require('./authController');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { isFreeUsername } = require('../services/derivedUsername');
+const { issueSessionToken } = require('../services/sessionTokenService');
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -188,7 +189,7 @@ const generateUsername = async (hint: string, email: string) => {
 };
 
 const issueSession = (user: any) => {
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  const token = issueSessionToken(user);
   return {
     token,
     verified: user.verified,

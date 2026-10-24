@@ -54,6 +54,11 @@
     "removeError": "Couldn’t remove this skill."
   },
   "settings": {
+    "sessions": {
+      "signOutEverywhere": "Sign out everywhere",
+      "confirm": "Sign out of every browser session, including this one?",
+      "failed": "Could not sign out everywhere. Try again."
+    },
     "username": {
       "save": "Save username",
       "saving": "Saving…",

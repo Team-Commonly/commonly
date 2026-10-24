@@ -10,6 +10,12 @@ const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
 const { cleanSignupRef } = require('../utils/signupRef');
 const { deriveUsernameFromEmail, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
+const { issueSessionToken } = require('../services/sessionTokenService');
+const {
+  issueEmailVerificationToken,
+  verifyEmailVerificationToken,
+} = require('../services/emailVerificationTokenService');
+const { disconnectUserSessionSockets } = require('../services/sessionSocketService');
 
 // The first-touch ref a signup arrived with (?ref=x), stored once on the new
 // account. Anything that is not a short plain code is dropped, not refused.
@@ -86,9 +92,7 @@ const hasEmailDeliveryConfig = () => Boolean(process.env.SMTP2GO_API_KEY)
 // Registration and resend must produce the same link. Keeping the delivery
 // details here avoids a resend drifting to a different URL, TTL, or sender.
 const sendVerificationEmail = async (user: any) => {
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-    expiresIn: '1d',
-  });
+  const token = issueEmailVerificationToken(user._id);
   const verifyUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
 
   return sendEmail({
@@ -769,11 +773,18 @@ exports.resetPassword = async (req: any, res: any) => {
       return res.status(400).json({ error: 'Invalid or expired reset link.' });
     }
 
-    user.password = password; // pre-save hook hashes
-    // Resetting via email proves address ownership — unblock login for
-    // accounts that never finished the signup verification email.
-    user.verified = true;
-    await user.save();
+    // A conditional single write consumes the reset link and advances the
+    // session version atomically. A stale save could overwrite a concurrent
+    // admin/self revocation with an older version.
+    const passwordHash = await bcrypt.hash(password, 10);
+    const changed = await User.updateOne(
+      { _id: user._id, password: user.password },
+      { $set: { password: passwordHash, verified: true }, $inc: { tokenVersion: 1 } },
+    );
+    if (changed.modifiedCount !== 1) {
+      return res.status(400).json({ error: 'Invalid or expired reset link.' });
+    }
+    disconnectUserSessionSockets(String(user._id));
     joinCommunityPodBestEffort(user._id);
 
     return res.json({ message: 'Password updated. You can sign in now.' });
@@ -787,10 +798,12 @@ exports.resetPassword = async (req: any, res: any) => {
 exports.verifyEmail = async (req: any, res: any) => {
   try {
     const { token } = req.query;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Old email links used the same id-only JWT shape as legacy sessions.
+    // They cannot be distinguished safely, so the user must request a new link.
+    const userId = verifyEmailVerificationToken(String(token || ''));
 
     const user = await User.findByIdAndUpdate(
-      decoded.id,
+      userId,
       { verified: true },
       { new: true },
     );
@@ -799,7 +812,7 @@ exports.verifyEmail = async (req: any, res: any) => {
     joinCommunityPodBestEffort(user._id);
 
     res.json({ message: 'Email verified successfully' });
-  } catch (err) {
+  } catch {
     res.status(400).json({ error: 'Invalid or expired token' });
   }
 };
@@ -844,9 +857,7 @@ exports.login = async (req: any, res: any) => {
     // A correct password always starts a session; the shell receives the
     // verified bit and keeps the user informed until their email is confirmed.
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '7d',
-    });
+    const token = issueSessionToken(user);
 
     return res.json({
       token,
@@ -866,15 +877,22 @@ exports.login = async (req: any, res: any) => {
   }
 };
 
-// 🔄 Refresh Token — issue a new 7d token from a still-valid token
+// Refresh a live browser session without extending its original deadline.
 exports.refresh = async (req: any, res: any) => {
   try {
     const user = await User.findById(req.userId).select('-password -deviceTokens -agentRuntimeTokens');
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '7d',
-    });
+    const authenticatedVersion = req.sessionTokenVersion;
+    if (!Number.isSafeInteger(authenticatedVersion)
+      || authenticatedVersion !== (user.tokenVersion ?? 0)) {
+      return res.status(401).json({ error: 'Session has been revoked' });
+    }
+
+    // A token without an original issue time has no absolute deadline, so it
+    // cannot be renewed. Normal pre-change tokens carry JWT iat.
+    const token = issueSessionToken(user, req.sessionStartedAt ?? NaN, authenticatedVersion);
+    if (!token) return res.status(401).json({ error: 'Session lifetime has ended. Sign in again.' });
 
     return res.json({ token });
   } catch (err: any) {

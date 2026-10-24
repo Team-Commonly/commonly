@@ -85,6 +85,8 @@ export interface IUser extends Document {
   // Admin moderation (GH: admin user management). banned users cannot log in
   // and existing sessions are refused by the auth middleware on next request.
   banned: boolean;
+  // Incrementing this invalidates every browser session without rotating JWT_SECRET.
+  tokenVersion: number;
   bannedAt?: Date;
   banReason?: string;
   profilePicture: string;
@@ -252,6 +254,7 @@ const userSchema = new Schema<IUser>({
   },
   verified: { type: Boolean, default: false },
   banned: { type: Boolean, default: false },
+  tokenVersion: { type: Number, default: 0 },
   bannedAt: { type: Date },
   banReason: { type: String },
   profilePicture: { type: String, default: 'default' },
@@ -463,6 +466,7 @@ userSchema.index(
 
 userSchema.pre<IUser>('save', async function (next) {
   if (!this.isModified('password') || !this.password) return next();
+  if (!this.isNew) this.tokenVersion = (this.tokenVersion || 0) + 1;
   this.password = await bcrypt.hash(this.password, 10);
   next();
 });

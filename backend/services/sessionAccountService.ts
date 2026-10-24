@@ -3,8 +3,8 @@ import User from '../models/User';
 /**
  * The one live-row read behind every user-session verifier.
  *
- * A user session is a 7-day JWT carrying `{ id }` and nothing else about the
- * account, so every verifier has to answer "is this still an account?" from the
+ * A user session is a 7-day JWT carrying identity and a revocable version,
+ * so every verifier has to answer "is this still an account?" from the
  * database. Three verifiers do that today — the Express middleware
  * (`middleware/auth.ts`), the Socket.io handshake (`middleware/socketAuth.ts`)
  * and the attachment bearer (`routes/uploads.ts`) — and before this service
@@ -19,12 +19,13 @@ import User from '../models/User';
  * all three, is the only way that stays true — a fourth verifier that recomputes
  * the predicate will drift.
  *
- * `banned` and `isBot` are read together and never defaulted: a verifier that
+ * `banned`, `isBot`, and `tokenVersion` are read together: a verifier that
  * forgets one of the two fields in its projection reads `undefined` and refuses
  * nothing, which is why the fields are selected here rather than at each call
  * site.
  */
 export type SessionAccountRefusal = 'missing' | 'banned' | 'bot';
+export type SessionTokenRefusal = SessionAccountRefusal | 'revoked';
 
 export interface SessionAccount {
   _id?: unknown;
@@ -33,12 +34,13 @@ export interface SessionAccount {
   username?: string;
   email?: string;
   role?: string;
+  tokenVersion?: number;
 }
 
 export const loadSessionAccount = async (userId: string): Promise<SessionAccount | null> => {
   // Express auth also needs identity fields for the same req.user shape as
   // API-token auth. Keep one live-row read for all session verifiers.
-  const account = await User.findById(userId).select('banned isBot username email role').lean();
+  const account = await User.findById(userId).select('banned isBot username email role tokenVersion').lean();
   return (account as SessionAccount | null) || null;
 };
 
@@ -47,9 +49,19 @@ export const loadSessionAccount = async (userId: string): Promise<SessionAccount
  * refusal the caller must express in its own protocol (HTTP status, handshake
  * error), because the vocabulary is shared and the rendering is not.
  */
-export const sessionRefusal = (account: SessionAccount | null): SessionAccountRefusal | null => {
+export function sessionRefusal(account: SessionAccount | null): SessionAccountRefusal | null;
+export function sessionRefusal(account: SessionAccount | null, claims: Record<string, unknown>): SessionTokenRefusal | null;
+export function sessionRefusal(
+  account: SessionAccount | null,
+  claims?: Record<string, unknown>,
+): SessionTokenRefusal | null {
   if (!account) return 'missing';
   if (account.banned) return 'banned';
   if (account.isBot) return 'bot';
+  // Pre-deploy JWTs have no claim. They represent version zero and remain
+  // usable only until the first revoke. A malformed explicit claim fails shut.
+  if (claims && (claims.tokenVersion === undefined ? 0 : claims.tokenVersion) !== (account.tokenVersion ?? 0)) {
+    return 'revoked';
+  }
   return null;
-};
+}

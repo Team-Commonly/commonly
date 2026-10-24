@@ -46,7 +46,7 @@ jest.mock('bcryptjs', () => ({
 // Mock JWT
 jest.mock('jsonwebtoken', () => ({
   sign: jest.fn().mockReturnValue('test-jwt-token'),
-  verify: jest.fn().mockReturnValue({ id: 'mockUserId' }),
+  verify: jest.fn().mockReturnValue({ id: 'mockUserId', purpose: 'email-verification' }),
 }));
 
 describe('Auth Controller Tests', () => {
@@ -778,7 +778,7 @@ describe('Auth Controller Tests', () => {
       };
 
       // Mock jwt.verify to return our user ID
-      jwt.verify.mockReturnValueOnce({ id: userId });
+      jwt.verify.mockReturnValueOnce({ id: userId, purpose: 'email-verification' });
 
       // Mock findByIdAndUpdate to return the updated user
       User.findByIdAndUpdate = jest.fn().mockResolvedValueOnce(updatedUser);
@@ -806,7 +806,7 @@ describe('Auth Controller Tests', () => {
 
     it('still verifies successfully when the background community join rejects', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-      jwt.verify.mockReturnValueOnce({ id: userId });
+      jwt.verify.mockReturnValueOnce({ id: userId, purpose: 'email-verification' });
       User.findByIdAndUpdate = jest.fn().mockResolvedValueOnce({ _id: userId, verified: true });
       ensureUserInCommunityPod.mockRejectedValueOnce(new Error('community unavailable'));
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});

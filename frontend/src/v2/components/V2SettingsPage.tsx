@@ -72,7 +72,7 @@ const V2SettingsLinkRow: React.FC<{ to: string; label: string; detail: string }>
 );
 
 const V2AccountSection: React.FC = () => {
-  const { currentUser, updateProfile, updateUsername } = useAuth();
+  const { currentUser, updateProfile, updateUsername, logout } = useAuth();
   const { t } = useTranslation();
   const accountName = String(currentUser?.displayName || currentUser?.username || 'Your account');
   const accountUsername = String(currentUser?.username || '');
@@ -85,6 +85,7 @@ const V2AccountSection: React.FC = () => {
   const [savedUsername, setSavedUsername] = useState(accountUsername);
   const [email, setEmail] = useState(accountEmail);
   const [busy, setBusy] = useState(false);
+  const [revokingSessions, setRevokingSessions] = useState(false);
   const [usernameBusy, setUsernameBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -153,6 +154,19 @@ const V2AccountSection: React.FC = () => {
       setError(message?.error || message?.msg || 'Couldn’t save your username. Try again.');
     } finally {
       setUsernameBusy(false);
+    }
+  };
+
+  const signOutEverywhere = async () => {
+    if (!window.confirm(t('settings.sessions.confirm'))) return;
+    setRevokingSessions(true);
+    setError(null);
+    try {
+      await axios.post('/api/auth/sessions/revoke');
+      logout();
+    } catch {
+      setError(t('settings.sessions.failed'));
+      setRevokingSessions(false);
     }
   };
 
@@ -317,6 +331,10 @@ const V2AccountSection: React.FC = () => {
       {notice && <p className="v2-settings__message" role="status">{notice}</p>}
       <div className="v2-settings__actions">
         <button className="v2-settings__primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+        <button className="v2-settings__secondary" type="button" disabled={revokingSessions}
+          onClick={() => { void signOutEverywhere(); }}>
+          {t('settings.sessions.signOutEverywhere')}
+        </button>
       </div>
       {avatarFile && (
         <V2AvatarCropDialog
