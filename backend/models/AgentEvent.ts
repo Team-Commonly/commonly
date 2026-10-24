@@ -81,6 +81,7 @@ export interface IApprovalResolvedEventPayload {
 export interface IAgentEventDelivery {
   outcome?: DeliveryOutcome;
   reason?: string;
+  reasonRecorded?: boolean;
   messageId?: string;
   details?: unknown;
   updatedAt?: Date;
@@ -142,6 +143,7 @@ const AgentEventSchema = new Schema<IAgentEvent>(
         enum: ['acknowledged', 'posted', 'no_action', 'skipped', 'error'],
       },
       reason: String,
+      reasonRecorded: Boolean,
       messageId: String,
       details: Schema.Types.Mixed,
       updatedAt: Date,

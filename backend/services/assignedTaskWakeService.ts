@@ -87,16 +87,8 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       && owns(row, install, principalId));
     if (!owned.length) continue;
     visited.add(key);
-    // Old webhook writers dropped skip reasons. Only newly marked silent
-    // webhook completions are trustworthy; explicit completions remain valid.
-    // eslint-disable-next-line no-await-in-loop
-    const webhook = await AgentInstallation.exists({
-      agentName: install.agentName, instanceId: install.instanceId,
-      $or: [
-        { 'config.runtime.webhookUrl': { $type: 'string', $ne: '' } },
-        { 'config.runtime.runtimeType': 'webhook' },
-      ],
-    });
+    // Historical webhook rows lost their reasons. Silent completions require
+    // durable writer provenance, independent of mutable runtime configuration.
     // Skips are not turns and must not hide an earlier completed turn. Use
     // exactly this predicate again after reserving the wake slot.
     const completionFilter = {
@@ -108,7 +100,7 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
         {
           'delivery.outcome': 'no_action',
           'delivery.reason': { $in: [null, ''] },
-          ...(webhook ? { 'delivery.details.webhookReasonRecorded': true } : {}),
+          'delivery.reasonRecorded': true,
         },
       ],
     };

@@ -21,7 +21,7 @@ async function completed(extra = {}, minutes = 6) {
   return AgentEvent.collection.insertOne({
     agentName: 'codex', instanceId: 'forge', podId,
     type: 'chat.mention', status: 'acked', deliveryMode: 'wake',
-    delivery: { outcome: 'no_action', updatedAt: at },
+    delivery: { outcome: 'no_action', reasonRecorded: true, updatedAt: at },
     createdAt: at, updatedAt: at, ...extra,
   });
 }

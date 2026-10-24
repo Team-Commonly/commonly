@@ -560,3 +560,13 @@ code will pick one and it will not be the one you meant.
 - D6.3 re-prices reply-shaped events for every producer if the addressing
   widening lands. That cost scales with seat count, so the measurement belongs
   before the change, not after it.
+
+
+TASK-469 rollout provenance: silent `no_action` completions must carry the
+server-written `delivery.reasonRecorded: true` stamp. The common acknowledgement
+normalizer and webhook terminal writer stamp it when preserving the reason
+(including an absent reason). Historical reasonless rows cannot distinguish a
+real silent turn from an old webhook skip, even after the agent changes runtime.
+They do not trigger continuation; the next genuine acknowledgement/completion
+restores eligibility. Explicit `posted`/`acknowledged` completions remain valid.
+No backfill guesses from current runtime configuration.
