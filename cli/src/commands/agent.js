@@ -1206,6 +1206,9 @@ export const performRun = ({
   setTimeoutImpl = setTimeout,
   setIntervalImpl = setInterval,
   clearIntervalImpl = clearInterval,
+  setDeadlineTimeoutImpl = setTimeout,
+  clearDeadlineTimeoutImpl = clearTimeout,
+  turnTimeoutMs,
   retryJitterRatio,
   claimLeaseSeconds = 90,
   // Undefined means "not overridden" — resolveCascadeSettings falls back to
@@ -1235,6 +1238,9 @@ export const performRun = ({
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
     throw new Error('environment.provider requires a provider-capable adapter');
   }
+  const requestedTurnTimeout = Number(turnTimeoutMs ?? process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS);
+  const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
+    ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
   const client = createClient({ instance: instanceUrl, token });
   const handoffAgent = sanitizeHandoffAgent(refusalHandoff);
   if (refusalHandoff && !handoffAgent) {
@@ -1742,6 +1748,7 @@ export const performRun = ({
         });
       }
       result = await adapter.spawn(frameDecisionForkRule(promptForSpawn), {
+        timeoutMs: effectiveTurnTimeoutMs,
         sessionId,
         cwd: agentCwd,
         env: commitAttribution?.env || process.env,
@@ -2442,8 +2449,9 @@ export const performRun = ({
     const deliveries = events.filter((event) => typeof event.payload?.deliveryId === 'string' && event.payload.deliveryId)
       .map((event) => ({ eventId: String(event._id), deliveryId: event.payload.deliveryId }));
     let renewing = false;
+    let renewalStopped = false;
     const renew = async () => {
-      if (renewing || deliveries.length === 0) return;
+      if (renewalStopped || renewing || deliveries.length === 0) return;
       renewing = true;
       try {
         await client.post('/api/agents/runtime/events/renew', { events: deliveries });
@@ -2454,8 +2462,21 @@ export const performRun = ({
       } finally { renewing = false; }
     };
     const timer = deliveries.length ? setIntervalImpl(renew, 60_000) : null;
+    const stopRenewal = () => {
+      renewalStopped = true;
+      if (timer !== null) clearIntervalImpl(timer);
+    };
+    // Independent of adapter settlement: SIGTERM can be ignored, so awaiting
+    // spawn in finally is not a bound on the event's delivery lease.
+    const deadlineTimer = deliveries.length ? setDeadlineTimeoutImpl(() => {
+      stopRenewal();
+      log('[inbox.batch] turn deadline reached; delivery renewal stopped for GC recovery');
+    }, effectiveTurnTimeoutMs) : null;
     try { return await handleEventBatch(events, inboxCount); }
-    finally { if (timer !== null) clearIntervalImpl(timer); }
+    finally {
+      stopRenewal();
+      if (deadlineTimer !== null) clearDeadlineTimeoutImpl(deadlineTimer);
+    }
   };
 
   const tick = async () => {

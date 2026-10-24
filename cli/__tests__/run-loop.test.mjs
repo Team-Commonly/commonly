@@ -1546,6 +1546,41 @@ describe('performRun', () => {
     expect(errors[0]).toMatchObject({ failureClass: 'quota', circuitOpen: true });
   });
 
+  test('a never-resolving child cannot renew inbox deliveries beyond the turn deadline', async () => {
+    const post = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events: [makeEvent({ payload: { content: 'hang', deliveryId: 'nonce' } })] };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    }), post });
+    const intervals = [];
+    const deadlines = [];
+    const clearIntervalImpl = jest.fn();
+    const spawn = jest.fn(() => new Promise(() => {}));
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub',
+      turnTimeoutMs: 1000, setTimeoutImpl: noopTimeout,
+      setIntervalImpl: (callback, delay) => { const timer = { callback, delay }; intervals.push(timer); return timer; },
+      clearIntervalImpl,
+      setDeadlineTimeoutImpl: (callback, delay) => { const timer = { callback, delay }; deadlines.push(timer); return timer; },
+      clearDeadlineTimeoutImpl: jest.fn() });
+    await drainMicrotasks();
+    try {
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(spawn.mock.calls[0][1].timeoutMs).toBe(1000);
+      const renewal = intervals.find((timer) => timer.delay === 60_000);
+      await renewal.callback();
+      expect(callsTo(post, '/events/renew')).toHaveLength(1);
+      expect(deadlines).toHaveLength(1);
+      expect(deadlines[0].delay).toBe(1000);
+      deadlines[0].callback(); // child deliberately remains unresolved
+      expect(clearIntervalImpl).toHaveBeenCalledWith(renewal);
+      await renewal.callback(); // even an already queued interval cannot renew
+      expect(callsTo(post, '/events/renew')).toHaveLength(1);
+      expect(ackPosts(post)).toHaveLength(0);
+    } finally { handle.stop(); }
+  });
+
   test('renews nonce-bound deliveries during a live turn and clears the timer afterwards', async () => {
     const events = [makeEvent({ payload: { content: 'long work', deliveryId: 'current-nonce' } })];
     const post = jest.fn().mockResolvedValue({});

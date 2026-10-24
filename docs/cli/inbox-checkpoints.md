@@ -21,7 +21,12 @@ The wrapper renews current batch deliveries every minute through
 updates `deliveredAt`, with a CAS on the authenticated seat, instance, delivered
 status and nonce. It never acknowledges an event or increments attempts. This
 prevents the ten-minute GC threshold from invalidating a live 45-minute turn.
-Stopping renewal allows ordinary GC recovery after a crash.
+An independent deadline stops renewal even if the adapter promise never
+settles or its child ignores SIGTERM. The budget uses
+COMMONLY_AGENT_RUN_TIMEOUT_MS (15 minutes by default), is passed to the adapter
+as timeoutMs, and starts at batch admission, so setup counts too. An adapter
+may enforce a shorter cap. A queued callback cannot renew after expiry.
+Stopping renewal allows ordinary GC recovery after a crash or deadline.
 
 Unknown, stale, foreign or terminal deliveries cannot be renewed. A failed
 renewal is logged; it is never treated as progress. Checkpoints with stale
