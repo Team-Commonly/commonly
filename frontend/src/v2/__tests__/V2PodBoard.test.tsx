@@ -142,7 +142,7 @@ describe('V2PodBoard', () => {
     expect(taskReads).toBe(2);
   });
 
-  test('shows the claim holder and local expiry, then hides the lease without a reload', async () => {
+  test('shows the live claim countdown and then the expired owner without a reload', async () => {
     const NativeDateTimeFormat = Intl.DateTimeFormat;
     const dateTimeFormatSpy = jest.spyOn(Intl, 'DateTimeFormat').mockImplementation((locale, options) => new NativeDateTimeFormat(locale, {
       timeZone: 'America/Los_Angeles',
@@ -173,13 +173,15 @@ describe('V2PodBoard', () => {
       renderBoard();
       await act(async () => { await Promise.resolve(); });
       expect(new Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('America/Los_Angeles');
-      expect(screen.getByText('Forge holds this until 15:01')).toBeInTheDocument();
-      expect(screen.getByText('Kai holds this until 15:01')).toBeInTheDocument();
+      expect(screen.getByTitle('TASK-269')).toHaveTextContent('Forge · 1m left');
+      expect(screen.getByTitle('TASK-270')).toHaveTextContent('Kai · 1m left');
 
       act(() => { jest.advanceTimersByTime(59_999); });
-      expect(screen.getByText('Forge holds this until 15:01')).toBeInTheDocument();
+      expect(screen.getByTitle('TASK-269')).toHaveTextContent('Forge · 1m left');
       act(() => { jest.advanceTimersByTime(1); });
-      expect(screen.queryByText(/holds this until/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/1m left/)).not.toBeInTheDocument();
+      expect(screen.getByText('lease expired · Forge')).toBeInTheDocument();
+      expect(screen.getByText('lease expired · Kai')).toBeInTheDocument();
       expect(axios.get.mock.calls.filter(([url]) => url.startsWith('/api/v1/tasks/'))).toHaveLength(1);
     } finally {
       jest.useRealTimers();
@@ -208,14 +210,14 @@ describe('V2PodBoard', () => {
     expect(within(done).getByText('Connect your first agent')).toBeInTheDocument();
   });
 
-  test('card shows the title alone, with the task id on hover and in the detail view', async () => {
+  test('card shows the task id and priority badge alongside its title', async () => {
     renderBoard();
 
     const pending = await screen.findByRole('region', { name: 'Pending' });
     const card = within(pending).getByText('Give your agent its first task').closest('button');
     expect(card).toHaveAttribute('title', 'TASK-002');
-    expect(card.querySelector('.v2-board__card-id')).toBeNull();
-    expect(card).not.toHaveTextContent('TASK-002');
+    expect(card.querySelector('.v2-board__card-id')).toHaveTextContent('TASK-002');
+    expect(card.querySelector('.v2-board__priority')).toHaveTextContent('P2');
 
     fireEvent.click(card);
     const dialog = await screen.findByRole('dialog', { name: 'Give your agent its first task' });
@@ -254,7 +256,7 @@ describe('V2PodBoard', () => {
     await waitFor(() => {
       expect(axios.post).toHaveBeenCalledWith(
         '/api/v1/tasks/pod-1',
-        { title: 'Ship it' },
+        { title: 'Ship it', priority: 'P2' },
         expect.any(Object),
       );
     });
@@ -532,4 +534,41 @@ describe('V2PodBoard', () => {
     });
     expect(screen.getByText('B focus')).toBeInTheDocument();
   });
+});
+
+test('priority orders cards, separates assignment from claim, and edits the stored priority', async () => {
+  const task = { taskId: 'TASK-9', taskNum: 9, title: 'Urgent work', priority: 'P0', status: 'claimed', assignee: 'rivet', claimedBy: 'u2', claimExpiresAt: new Date(Date.now() + 18 * 60000).toISOString(), watchers: [], updates: [] };
+  const low = { ...task, taskId: 'TASK-1', taskNum: 1, title: 'Later work', priority: 'P3', status: 'claimed' };
+  wireAxios([low, task]);
+  axios.patch.mockResolvedValue({ data: { task: { ...task, priority: 'P1' } } });
+  renderBoard();
+  await screen.findByText('Urgent work');
+  const cards = within(screen.getByRole('region', { name: 'In Progress' })).getAllByRole('article');
+  expect(cards[0]).toHaveTextContent('TASK-9');
+  fireEvent.click(screen.getByTitle('TASK-9'));
+  const dialog = screen.getByRole('dialog', { name: /Urgent work/ });
+  expect(within(dialog).getByText('Assigned to').nextElementSibling).toHaveTextContent('rivet');
+  expect(within(dialog).getByText('Claimed by').nextElementSibling).toHaveTextContent('u2');
+  fireEvent.change(within(dialog).getByLabelText('Priority'), { target: { value: 'P1' } });
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith('/api/v1/tasks/pod-1/TASK-9', { priority: 'P1' }, expect.any(Object)));
+  expect(await within(dialog).findByDisplayValue('P1')).toBeInTheDocument();
+});
+
+test('follow is self-service and shows a failed request without changing subscription state', async () => {
+  const task = { taskId: 'TASK-1', title: 'Follow this', status: 'pending', watchers: [], updates: [] };
+  wireAxios([task]);
+  axios.post.mockRejectedValueOnce(new Error('offline'));
+  renderBoard();
+  fireEvent.click(await screen.findByTitle('TASK-1'));
+  const follow = screen.getByRole('button', { name: 'Follow task' });
+  fireEvent.click(follow);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not save');
+  expect(follow).toHaveAttribute('aria-pressed', 'false');
+  axios.post.mockResolvedValueOnce({ data: { task: { ...task, watchers: ['u1'] } } });
+  fireEvent.click(follow);
+  expect(await screen.findByRole('button', { name: /Following/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(axios.post).toHaveBeenLastCalledWith('/api/v1/tasks/pod-1/TASK-1/watch', { following: true }, expect.any(Object));
+  expect(screen.getByText('alice')).toBeInTheDocument();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });

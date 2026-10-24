@@ -195,7 +195,7 @@ function resolveAgentInstanceId(req: AuthReq): string | null {
   return req.user.botMetadata?.instanceId || req.user.botMetadata?.agentName || null;
 }
 
-async function requirePodMember(podId: string, userId: unknown, { write = false } = {}): Promise<{ error?: string; status?: number; pod?: unknown }> {
+async function requirePodMember(podId: string, userId: unknown, { write = false, memberOnly = false } = {}): Promise<{ error?: string; status?: number; pod?: unknown }> {
   const pod = await Pod.findById(podId).lean() as { type?: string; members?: Array<{ userId?: { toString: () => string }; toString: () => string; role?: string }> } | null;
   if (!pod) return { error: 'Pod not found', status: 404 };
   const membership = pod.members?.find((m) => {
@@ -208,7 +208,7 @@ async function requirePodMember(podId: string, userId: unknown, { write = false 
   // but not post tasks into someone else's bot-bot DM. The viewer-role
   // gate below applies to writes regardless.
   if (!membership) {
-    if (write) return { error: 'Write access denied', status: 403 };
+    if (write || memberOnly) return { error: 'Write access denied', status: 403 };
     // eslint-disable-next-line global-require
     const DMService = require('../services/dmService');
     const canView = await DMService.canViewPod(userId, pod);
@@ -774,7 +774,7 @@ router.post('/:podId/:taskId/watch', taskWriteRateLimit(60), auth, async (req: A
     const userId = req.userId || req.user?._id || req.agentUser?._id;
     const { following } = req.body || {};
     if (typeof following !== 'boolean') return res.status(400).json({ error: 'following must be a boolean' });
-    const access = await requirePodMember(podId || '', userId, { write: true });
+    const access = await requirePodMember(podId || '', userId, { memberOnly: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const task = await Task.findOneAndUpdate(
       { podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId },

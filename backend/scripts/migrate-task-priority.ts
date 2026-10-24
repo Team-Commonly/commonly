@@ -19,7 +19,7 @@ export async function migrateTaskPriority(dryRun = true): Promise<{ matched: num
       // collection updates preserve updatedAt/offeredAt and invoke no hooks.
       // eslint-disable-next-line no-await-in-loop
       const result = await Task.collection.updateOne(
-        { _id: row._id, title: row.title, priority: row.priority === undefined ? { $exists: false } : row.priority },
+        { _id: row._id, title: row.title, status: row.status, updatedAt: row.updatedAt, priority: row.priority === undefined ? { $exists: false } : row.priority },
         { $set: { priority, title } },
       );
       modified += result.modifiedCount;

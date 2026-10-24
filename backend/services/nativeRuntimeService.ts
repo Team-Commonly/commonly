@@ -25,7 +25,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, global-require,
    @typescript-eslint/no-require-imports */
 
-import { isTaskPriority } from '../utils/taskPriority';
+import { Types } from 'mongoose';
+import { isTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 import axios, { AxiosError } from 'axios';
 import {
   dispatchHostedBrokerTool,
@@ -1094,12 +1095,14 @@ export async function dispatchTool(
       case 'commonly_list_tasks': {
         const Task = require('../models/Task');
         const which = ['done', 'all'].includes(String(args.status)) ? String(args.status) : 'open';
-        const filter: Record<string, unknown> = { podId: ctx.podId };
+        const filter: Record<string, unknown> = { podId: new Types.ObjectId(ctx.podId) };
         if (which === 'open') filter.status = { $in: OPEN_TASK_STATUSES };
         if (which === 'done') filter.status = 'done';
         const [rows, total] = await Promise.all([
-          Task.find(filter).sort({ priority: 1, taskNum: 1, _id: 1 }).limit(LIST_TASKS_LIMIT)
-            .select('taskId title priority status assignee').lean(),
+          Task.aggregate([
+            { $match: filter }, ...TASK_PRIORITY_ORDER, { $limit: LIST_TASKS_LIMIT },
+            { $project: { taskId: 1, title: 1, priority: 1, status: 1, assignee: 1 } },
+          ]),
           Task.countDocuments(filter),
         ]);
         const tasks = (rows as Array<Record<string, unknown>>).map((row) => ({

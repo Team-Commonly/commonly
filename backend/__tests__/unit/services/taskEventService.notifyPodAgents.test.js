@@ -31,6 +31,7 @@ jest.mock('../../../models/User', () => ({
 const mockTaskUpdateOne = jest.fn();
 jest.mock('../../../models/Task', () => ({
   updateOne: (...args) => mockTaskUpdateOne(...args),
+  aggregate: jest.fn().mockResolvedValue([]),
   find: jest.fn(),
   exists: jest.fn(),
 }));
