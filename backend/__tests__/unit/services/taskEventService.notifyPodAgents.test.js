@@ -511,8 +511,8 @@ describe('notifyFoundWork', () => {
       podId: POD_ID,
       status: { $in: ['pending', 'claimed'] },
       $or: [
-        { assignee: 'sprint-impl' },
-        { status: 'claimed', claimedBy: 'sprint-impl' },
+        { assignee: /^sprint-impl$/i },
+        { status: 'claimed', claimedBy: /^sprint-impl$/i },
       ],
     });
     expect(AgentInstallation.findOneAndUpdate).not.toHaveBeenCalled();

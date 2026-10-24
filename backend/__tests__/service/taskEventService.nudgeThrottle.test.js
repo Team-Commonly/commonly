@@ -57,8 +57,10 @@ it('atomically permits one nudge per seat and pod in a rolling one-hour window',
 
 it.each([
   ['assigned', { assignee: 'scout', status: 'pending' }],
+  ['mixed-case assignment', { assignee: 'Scout', status: 'pending' }],
   ['claimed', { claimedBy: 'scout', status: 'claimed' }],
-])('does not reserve a slot for a reviewer or an implementer with %s work', async (_kind, ownership) => {
+  ['mixed-case claim', { claimedBy: 'Scout', status: 'claimed' }],
+])('does not reserve a slot for a reviewer or an implementer with %s', async (_kind, ownership) => {
   await AgentInstallation.create({
     agentName: 'sprint-review', instanceId: 'default', podId, status: 'active',
     version: '1.0.0', installedBy: new mongoose.Types.ObjectId(),

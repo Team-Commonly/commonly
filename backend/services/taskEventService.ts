@@ -30,6 +30,11 @@ function seatMatchesAssignee(install: Record<string, unknown>, assignee: unknown
   return instance === 'default' ? assigned === name : assigned === instance;
 }
 
+function exactSeatKeyIgnoringCase(key: unknown): RegExp {
+  const escaped = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${escaped}$`, 'i');
+}
+
 async function claimHolderKey(claimedBy: unknown): Promise<string | null> {
   if (!claimedBy) return null;
   const claim = String(claimedBy);
@@ -516,7 +521,7 @@ export async function notifyFoundWork(
         // Assigned pending work and active claims already occupy this seat in
         // this pod. The unclaimed nudge is only for spare capacity; do not
         // spend a turn offering more work to a seat with an open row.
-        const seatKey = instanceId === 'default' ? agentName : instanceId;
+        const seatKey = exactSeatKeyIgnoringCase(instanceId === 'default' ? agentName : instanceId);
         let hasOpenWork = await Task.exists({
           podId: normalizedPodId,
           status: { $in: ['pending', 'claimed'] },
