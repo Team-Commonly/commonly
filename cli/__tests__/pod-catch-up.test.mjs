@@ -35,16 +35,16 @@ test('failed catch-up and malformed receipts prevent generation', async () => {
 });
 
 
-test.each([1, 25, 50])('reads %s unread messages normally without requesting a skip', async (unseenCount) => {
+test.each([1, 25, 50])('leaves %s unread messages to the seat without extra reads or prompt context', async (unseenCount) => {
   const client = { get: jest.fn(async (route) => {
     if (route.endsWith('/send-freshness')) throw Object.assign(hold(), { body: { code: 'unseen_messages', unseenCount } });
     return { messages: [{ content: 'ordinary tail' }] };
   }), post: jest.fn() };
   const frame = await catchUpBeforeTurn(client, 'p');
-  expect(client.get).toHaveBeenLastCalledWith('/api/agents/runtime/pods/p/messages', { limit: 50 });
+  expect(client.get).toHaveBeenCalledTimes(1);
+  expect(client.get).toHaveBeenCalledWith('/api/agents/runtime/pods/p/send-freshness');
   expect(client.post).not.toHaveBeenCalled();
-  expect(frame).toContain('ordinary tail');
-  expect(frame).not.toContain('Skipped');
+  expect(frame).toBe('');
 });
 
 test('51 unread messages exceed the ordinary cap and request explicit catch-up', async () => {
