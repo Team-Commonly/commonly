@@ -30,6 +30,13 @@ jest.mock('../../../models/AgentProfile', () => ({
 jest.mock('../../../models/AgentTemplate', () => ({
   find: jest.fn(),
 }));
+jest.mock('../../../models/AgentCredential', () => ({
+  find: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) }),
+}));
+jest.mock('../../../models/Machine', () => ({
+  find: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) }),
+}));
+
 jest.mock('../../../models/AgentEvent', () => ({
   aggregate: jest.fn().mockResolvedValue([]),
 }));
@@ -217,6 +224,33 @@ describe('registry list pod agents config payload', () => {
       expect(res.body.agents[0].runtime).toEqual(expect.objectContaining({ runtimeType: 'webhook' }));
       expect(res.body.agents[0].runtime).not.toHaveProperty('webhookUrl');
       expect(JSON.stringify(res.body)).not.toContain('s3cr3t');
+    });
+
+    it.each(['map', 'object'])('keeps push connection semantics independent of URL visibility (%s config)', async (shape) => {
+      User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+        _id: 'bot-1', username: 'webhook-bot-default', botMetadata: {}, agentRuntimeTokens: [],
+      }]) }) });
+      viewerRole('user');
+      const read = async (installer, url) => {
+        seedWebhookAgent(installer);
+        const [installation] = await AgentInstallation.getInstalledAgents();
+        const config = { runtime: { runtimeType: 'webhook', ...(url && { webhookUrl: url }) } };
+        installation.config = shape === 'map' ? new Map(Object.entries(config)) : config;
+        const res = await request(app).get('/api/registry/pods/pod-1/agents');
+        expect(res.status).toBe(200);
+        return res.body.agents[0];
+      };
+      const installer = await read('user-1', SECRET_URL);
+      const peer = await read('user-2', SECRET_URL);
+      expect(installer.runtime.webhookUrl).toBe(SECRET_URL);
+      expect(peer.runtime).not.toHaveProperty('webhookUrl');
+      expect(installer).not.toHaveProperty('connection');
+      expect(peer).not.toHaveProperty('connection');
+      // A poll-based webhook still derives connection health: prove the
+      // credential lookup was available, rather than taking its catch path.
+      const polling = await read('user-2', null);
+      expect(polling).toHaveProperty('connection.state');
+      User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }) });
     });
 
     it('a caller that does not opt in gets no URL (the builder fails closed)', () => {

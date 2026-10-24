@@ -374,7 +374,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           || runtimeType === 'wrapper'
           || (runtimeType === 'webhook' && !payload?.runtime?.host);
         if (!connectionAvailable || !user || !hasRuntimeConnection
-          || payload?.runtime?.webhookUrl) return payload;
+          || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return payload;
         const machineId = user.botMetadata?.machineId;
         return {
           ...payload,
