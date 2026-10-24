@@ -56,6 +56,7 @@ const V2Register: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [verifyPending, setVerifyPending] = useState(false);
+  const [teamVerificationPending, setTeamVerificationPending] = useState(false);
   const [policy, setPolicy] = useState<RegistrationPolicy>({ loaded: false, inviteOnly: false });
 
   useEffect(() => {
@@ -83,6 +84,7 @@ const V2Register: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setTeamVerificationPending(false);
     setSubmitting(true);
     try {
       // No username: the server derives the handle from the email (TASK-290 A).
@@ -107,7 +109,9 @@ const V2Register: React.FC = () => {
         await login(email.trim(), password);
         navigate(nextPath || '/v2', { replace: true });
         return;
-      } catch {
+      } catch (loginError) {
+        const error = loginError as { response?: { data?: { code?: string } } };
+        setTeamVerificationPending(error.response?.data?.code === 'INSTANCE_ACCESS_RESTRICTED');
         // Keep the success state as a safe fallback when the follow-up login
         // is unavailable (for example while an older backend is rolling out).
       }
@@ -145,7 +149,9 @@ const V2Register: React.FC = () => {
           {verifyPending ? (
             <p className="v2-login__hint">
               <Trans
-                i18nKey="auth.register.success.verifyThenSignIn"
+                i18nKey={teamVerificationPending
+                  ? 'auth.register.success.verifyBeforeSignIn'
+                  : 'auth.register.success.verifyThenSignIn'}
                 components={{ signIn: <Link to={loginHref} className="v2-login__link" /> }}
               />
             </p>

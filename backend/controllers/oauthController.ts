@@ -13,7 +13,7 @@ const {
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { isFreeUsername } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
-const { isInstanceEmailAllowed } = require('../services/instanceAccessPolicy');
+const { isInstanceAccessRestricted, isInstanceEmailAllowed } = require('../services/instanceAccessPolicy');
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -85,8 +85,13 @@ const PROVIDERS: Record<string, {
         axios.get('https://api.github.com/user/emails', { headers: ghHeaders, timeout: 15000 }),
       ]);
       const emails = Array.isArray(emailsRes.data) ? emailsRes.data : [];
-      const best = emails.find((e: any) => e.primary && e.verified)
-        || emails.find((e: any) => e.verified);
+      // A verified team address can be secondary to a personal primary address.
+      // On a gated instance use the verified address that grants admission;
+      // public instances keep the established primary-first selection.
+      const verified = emails.filter((e: any) => e.verified);
+      const allowed = isInstanceAccessRestricted()
+        ? verified.find((e: any) => isInstanceEmailAllowed(e.email)) : undefined;
+      const best = allowed || verified.find((e: any) => e.primary) || verified[0];
       return {
         providerId: String(userRes.data?.id || ''),
         email: String(best?.email || '').toLowerCase(),

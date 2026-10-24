@@ -227,6 +227,23 @@ describe('OAuth Controller', () => {
       expect(await User.findOne({ email: 'octo@example.com' })).toBeTruthy();
     });
 
+    it('uses a verified team email when a personal email is primary on GitHub', async () => {
+      process.env.AUTH_ALLOWED_DOMAINS = 'team.example';
+      await seedState();
+      axios.post.mockResolvedValueOnce({ data: { access_token: 'gh-access-token' } });
+      axios.get.mockImplementation((url) => Promise.resolve(url.includes('/user/emails')
+        ? { data: [
+          { email: 'octo@personal.example', primary: true, verified: true },
+          { email: 'octo@team.example', primary: false, verified: true },
+        ] }
+        : { data: { id: 4242, login: 'octo-dev' } }));
+      const res = mockRes();
+      await oauthController.oauthCallback(callbackReq(), res);
+      expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('/v2/oauth/complete?'));
+      expect(await User.findOne({ email: 'octo@team.example' })).toBeTruthy();
+      expect(await User.findOne({ email: 'octo@personal.example' })).toBeNull();
+    });
+
     it('refuses an unlisted verified email before creating a user or exchange code', async () => {
       process.env.AUTH_ALLOWED_DOMAINS = 'team.example';
       await seedState();

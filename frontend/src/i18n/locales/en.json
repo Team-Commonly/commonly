@@ -297,6 +297,7 @@
         "createdTitle": "Account created",
         "checkEmailMessage": "Verify your email to join the Community pod — link sent to {{email}}.",
         "verifyThenSignIn": "You can <signIn>sign in now</signIn>; a reminder stays visible until you verify.",
+        "verifyBeforeSignIn": "Verify your email first, then <signIn>sign in</signIn>.",
         "continue": "Continue to sign in"
       }
     },

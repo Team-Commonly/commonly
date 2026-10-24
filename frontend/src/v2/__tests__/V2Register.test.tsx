@@ -160,6 +160,22 @@ describe('V2Register', () => {
     expect(login).toHaveBeenCalledWith('new@example.com', 'Password123!');
   });
 
+  it('tells a new team user to verify before signing in', async () => {
+    const login = jest.fn().mockRejectedValue({
+      response: { data: { code: 'INSTANCE_ACCESS_RESTRICTED' } },
+    });
+    renderRegister(login);
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
+    fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+
+    expect(await screen.findByText(/Verify your email first, then/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'sign in' })).toHaveAttribute('href', '/v2/login');
+    expect(screen.queryByRole('link', { name: 'sign in now' })).not.toBeInTheDocument();
+  });
+
   it('still shows the reminder for the pre-2026-09-23 wording a rolling backend sends', async () => {
     // The one arm with no other guard: an old backend answering a new frontend,
     // which is the window this ships through. Dropping `check your email` from
