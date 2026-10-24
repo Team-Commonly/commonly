@@ -9718,7 +9718,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-activity__compose:focus-within {
-  box-shadow: 0 0 0 4px rgba(47, 111, 235, 0.10);
+  box-shadow: 0 0 0 4px rgba(29, 63, 209, 0.10);
 }
 
 .v2-activity__compose-top,

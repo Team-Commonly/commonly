@@ -162,7 +162,7 @@ body.modern-ui:not(.v2-canvas) input:focus {
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
 }
 
-body.modern-ui:not(.v2-canvas) button {
+body.modern-ui:not(.v2-canvas):not(.guide-canvas) button {
   background-color: #2563eb;
   color: #f8fafc;
   padding: 12px 20px;
@@ -174,12 +174,12 @@ body.modern-ui:not(.v2-canvas) button {
   transition: background-color 0.2s, transform 0.1s;
 }
 
-body.modern-ui:not(.v2-canvas) button:hover {
+body.modern-ui:not(.v2-canvas):not(.guide-canvas) button:hover {
   background-color: #1d4ed8;
   transform: translateY(-1px);
 }
 
-body.modern-ui:not(.v2-canvas) button:active {
+body.modern-ui:not(.v2-canvas):not(.guide-canvas) button:active {
   transform: translateY(1px);
 }
 
