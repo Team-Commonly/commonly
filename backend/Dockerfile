@@ -30,7 +30,7 @@ WORKDIR /app
 # than a claim of sameness, and `officecli --version` in each container is the
 # check that keeps it honest.
 ARG OPENCLAW_OFFICECLI_VERSION=1.0.70
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git && \
     ARCH="$(uname -m)" && \
     case "$ARCH" in \
       x86_64)  ASSET="officecli-linux-x64" ;; \
@@ -47,6 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     rm -f /tmp/officecli-SHA256SUMS && \
     chmod +x /usr/local/bin/officecli && \
     officecli --version && \
+    git --version && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
