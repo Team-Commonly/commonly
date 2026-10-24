@@ -317,6 +317,9 @@ test('selects an installation the owner can manage without exposing a foreign po
       writablePodId: 'owned', installations: [{ podId: 'owned', podName: 'My pod', status: 'active' }],
     } });
     if (url.includes('/pods/foreign/')) return Promise.reject({ response: { status: 403 } });
+    if (url.startsWith('/api/skills/pods/owned/')) return Promise.resolve({ data: {
+      items: [], canEdit: true, skillLoad: null,
+    } });
     if (url.includes('/pods/owned/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
     } } });
@@ -325,6 +328,21 @@ test('selects an installation the owner can manage without exposing a foreign po
   axios.post.mockResolvedValue({ data: { token: 'cm_agent_once' } });
   renderPage();
   await screen.findByRole('button', { name: 'Regenerate key' });
+  await waitFor(() => expect(axios.get).toHaveBeenCalledWith(
+    '/api/skills/pods/owned/imported',
+    { params: { scope: 'agent', agentName: 'maya-claude', instanceId: 'default' } },
+  ));
+  expect(axios.get).not.toHaveBeenCalledWith(
+    '/api/skills/pods/foreign/imported', expect.anything(),
+  );
+  expect(screen.getByText('Pod · My pod')).toBeInTheDocument();
+  expect(screen.queryByText('Pod · Other pod')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Key' }).compareDocumentPosition(
+    screen.getByRole('heading', { name: 'Skills' }),
+  ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Wake' }).compareDocumentPosition(
+    screen.getByRole('heading', { name: 'Skills' }),
+  ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
   fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
@@ -350,10 +368,18 @@ test('runtime editor writes environment controls through the shared settings hoo
   });
   renderPage();
   const model = await screen.findByLabelText('Model');
+  await screen.findByRole('heading', { name: 'Wake' });
+  await screen.findByRole('heading', { name: 'Policy' });
+  await screen.findByRole('heading', { name: 'Skills' });
   const sections = Array.from(document.querySelectorAll('.v2-agent-settings h2')).map((node) => node.textContent);
+  expect(sections).toEqual(expect.arrayContaining(['Identity', 'Policy', 'Skills']));
+  expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('Identity'));
+  expect(sections.indexOf('Identity')).toBeLessThan(sections.indexOf('Wake'));
   expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('Runtime'));
   expect(sections.indexOf('Wake')).toBeLessThan(sections.indexOf('Runtime'));
   expect(sections.indexOf('Runtime')).toBeLessThan(sections.indexOf('Connector grants'));
+  expect(sections.indexOf('Connector grants')).toBeLessThan(sections.indexOf('Policy'));
+  expect(sections.indexOf('Policy')).toBeLessThan(sections.indexOf('Skills'));
   fireEvent.change(model, { target: { value: 'new-model' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(

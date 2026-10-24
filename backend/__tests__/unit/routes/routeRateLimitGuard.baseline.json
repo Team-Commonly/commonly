@@ -163,7 +163,6 @@
   "routes/skills.ts GET /:skillId/ratings/summary [unlimited]",
   "routes/skills.ts GET /catalog [unlimited]",
   "routes/skills.ts GET /gateway-credentials [unlimited]",
-  "routes/skills.ts GET /pods/:podId/imported [unlimited]",
   "routes/skills.ts GET /ratings/summary [unlimited]",
   "routes/skills.ts GET /requirements [unlimited]",
   "routes/skills.ts PATCH /gateway-credentials [unlimited]",

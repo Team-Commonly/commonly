@@ -294,6 +294,7 @@ describe('claude adapter — ctx.environment', () => {
 
   test('mounts skills.claude entries into <cwd>/.claude/skills/ as read-only copies', async () => {
     const { impl } = makeSpawnImpl();
+    const onSkillsLinked = jest.fn();
     const skillSrc = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-skill-'));
     fs.writeFileSync(path.join(skillSrc, 'SKILL.md'), 'x', 'utf8');
 
@@ -301,6 +302,7 @@ describe('claude adapter — ctx.environment', () => {
       sessionId: null,
       cwd,
       environment: { skills: { claude: [skillSrc] } },
+      onSkillsLinked,
       _spawnImpl: impl,
     });
 
@@ -310,6 +312,7 @@ describe('claude adapter — ctx.environment', () => {
     // guardrail was lost from cli 0.1.4 exactly this way).
     expect(fs.lstatSync(slot).isSymbolicLink()).toBe(false);
     expect(fs.readFileSync(path.join(slot, 'SKILL.md'), 'utf8')).toBe('x');
+    expect(onSkillsLinked).toHaveBeenCalledWith({ mounted: [skillSrc], conflicted: [] });
 
     fs.rmSync(skillSrc, { recursive: true, force: true });
   });
@@ -1114,17 +1117,23 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     fs.mkdirSync(big);
     fs.writeFileSync(path.join(big, 'SKILL.md'), `---\nname: big-skill\n---\n\n${'x'.repeat(100 * 1024)}\n`, 'utf8');
     const { impl, calls } = makeSpawnImpl();
+    const onSkillsLinked = jest.fn();
     await publicSpawn(impl, {
       environment: {
         sandbox: { mode: 'workspace', trust: 'public' },
         skills: { claude: [big, skillSrc] },
       },
+      onSkillsLinked,
     });
 
     const text = appended(calls[0].args);
     expect(text).not.toContain('## Skill: big-skill');
     expect(text).toContain('## Skill: house-rules');
     expect(Buffer.byteLength(text, 'utf8')).toBeLessThan(128 * 1024);
+    expect(onSkillsLinked).toHaveBeenCalledWith({
+      mounted: [skillSrc],
+      conflicted: [{ path: big, reason: 'not-inlined' }],
+    });
   });
 
   test('the fresh-session retry carries the same skill text', async () => {

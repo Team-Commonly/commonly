@@ -28,6 +28,31 @@
       "text": "Checking your access…"
     }
   },
+  "agentSkills": {
+    "title": "Skills",
+    "pod": "Pod",
+    "addSkill": "Add skill",
+    "closeCatalog": "Close catalog",
+    "loading": "Loading skills…",
+    "empty": "No skills installed for this agent.",
+    "noReport": "No spawn report yet",
+    "loaded": "Loaded at last spawn",
+    "conflicted": "Could not load at last spawn",
+    "notLoaded": "Not loaded at last spawn",
+    "unavailable": "Skill status unavailable at last spawn",
+    "reported": "Last spawn report · {{date}}",
+    "find": "Find a skill",
+    "search": "Search catalog",
+    "add": "Add",
+    "addNamed": "Add {{name}}",
+    "remove": "Remove",
+    "removeNamed": "Remove {{name}}",
+    "noMatches": "No matching skills.",
+    "loadError": "Couldn’t load skills.",
+    "catalogError": "Couldn’t load the skill catalog.",
+    "addError": "Couldn’t add this skill.",
+    "removeError": "Couldn’t remove this skill."
+  },
   "settings": {
     "username": {
       "save": "Save username",

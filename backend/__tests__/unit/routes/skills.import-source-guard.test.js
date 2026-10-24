@@ -38,7 +38,8 @@ const GITHUB_SOURCE = 'https://github.com/acme/skills/blob/main/skills/notes/SKI
 const RAW_SOURCE = 'https://raw.githubusercontent.com/acme/skills/main/skills/notes/SKILL.md';
 const LISTING_URL = 'https://api.github.com/repos/acme/skills/contents/skills/notes?ref=main';
 
-const importBody = (overrides) => ({ podId: 'pod-1', name: 'notes', ...overrides });
+const POD_ID = '507f1f77bcf86cd799439011';
+const importBody = (overrides) => ({ podId: POD_ID, name: 'notes', ...overrides });
 
 describe('skill source fetches are confined to GitHub', () => {
   let fetchSpy;
@@ -46,7 +47,7 @@ describe('skill source fetches are confined to GitHub', () => {
   let routes;
 
   beforeEach(() => {
-    const pod = { _id: 'pod-1', createdBy: 'user-1', members: [] };
+    const pod = { _id: POD_ID, createdBy: 'user-1', members: [] };
     Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue(pod) });
     AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
     PodAssetService.upsertImportedSkillAsset.mockResolvedValue({ _id: 'asset-1' });
