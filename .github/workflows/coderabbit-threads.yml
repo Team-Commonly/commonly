@@ -28,9 +28,13 @@ permissions:
   pull-requests: read
   statuses: write
 
-concurrency:
-  group: coderabbit-threads-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
+# No `concurrency:` on purpose (TASK-472). Runs started by a push, review or
+# review comment attach their `count` check to the PR head, and a run that a
+# concurrency group cancels, or a pending one it replaces, stays on the head as
+# a CANCELLED check that reads as red after the threads are answered. Each run
+# reads the threads fresh and finishes in seconds, so order is settled at post
+# time instead: a run skips posting when the head's status already came from a
+# newer run (a higher run id started later and read newer thread state).
 
 jobs:
   count:
@@ -82,5 +86,11 @@ jobs:
           echo "### $desc" >> "$GITHUB_STEP_SUMMARY"
           sed 's/^/- /' unanswered.txt incomplete.txt >> "$GITHUB_STEP_SUMMARY"
           cat unanswered.txt incomplete.txt
+          # Newest run wins: the status's target_url carries the run id that posted it.
+          posted=$(gh api "repos/$REPO/commits/$head/status" \
+            -q '[.statuses[] | select(.context == "coderabbit-threads" and .target_url != null) | .target_url | capture("/runs/(?<id>[0-9]+)").id | tonumber] | max // 0')
+          if [ "$posted" -gt "$GITHUB_RUN_ID" ]; then
+            echo "Run $posted already posted a newer result on $head; not overwriting it."; exit 0
+          fi
           gh api -X POST "repos/$REPO/statuses/$head" -f state="$state" -f context=coderabbit-threads \
             -f description="${desc:0:140}" -f target_url="$GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID" > /dev/null
