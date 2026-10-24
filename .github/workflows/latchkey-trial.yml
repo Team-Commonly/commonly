@@ -67,3 +67,129 @@ jobs:
       - name: Verify CLI test temp cleanup
         run: cd cli && npm run test:temp-cleanup
       - run: cd workers/agent-runtime && npm run typecheck && npm test
+
+  # Heavy-job trial (step 2 of D37): the jobs that would move behind
+  # HEAVY_RUNNER, copied verbatim apart from runs-on. service-test is the one
+  # that can break on a non-GitHub runner: it needs Docker for its Mongo and
+  # Postgres service containers.
+  backend-tests-trial:
+    name: Backend tests (${{ matrix.shard }}/3) on latchkey-medium
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    runs-on: latchkey-medium
+    env:
+      JWT_SECRET: test-jwt-secret
+      SENDGRID_API_KEY: fake-api-key
+      SENDGRID_FROM_EMAIL: test@example.com
+      FRONTEND_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: cd backend && npm ci --include=dev
+      - name: Run backend tests (coverage on the nightly schedule only)
+        run: |
+          cd backend
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npx jest --coverage --forceExit --shard=${{ matrix.shard }}/3
+          else
+            npx jest --forceExit --shard=${{ matrix.shard }}/3
+          fi
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'schedule'
+        with:
+          name: backend-coverage-${{ matrix.shard }}
+          path: backend/coverage/
+
+  frontend-tests-trial:
+    name: Frontend tests on latchkey-medium
+    runs-on: latchkey-medium
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      # Frontend typecheck follows shared imports into backend TypeScript.
+      - run: cd backend && npm ci --include=dev
+      - run: cd frontend && npm install --legacy-peer-deps
+      - run: cd frontend && npm run typecheck
+      - name: Run frontend tests (coverage on the nightly schedule only)
+        run: |
+          cd frontend
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npx jest --coverage --watchAll=false --forceExit
+          else
+            npx jest --watchAll=false --forceExit
+          fi
+      - run: cd frontend && node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs
+
+  service-test-trial:
+    name: Service Tests on latchkey-medium (service containers)
+    runs-on: latchkey-medium
+
+    services:
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand(\"ping\").ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres:
+        image: postgres:16
+        ports: ["5432:5432"]
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: commonly-test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      JWT_SECRET: test-jwt-secret
+      SENDGRID_API_KEY: fake-api-key
+      SENDGRID_FROM_EMAIL: test@example.com
+      FRONTEND_URL: http://localhost:3000
+      INTEGRATION_TEST: "true"
+      MONGO_URI: mongodb://localhost:27017/commonly-test
+      PG_HOST: localhost
+      PG_PORT: "5432"
+      PG_DATABASE: commonly-test
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+      PG_SSL_ENABLED: "false"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Install backend dependencies
+        run: cd backend && npm ci --include=dev
+
+      - name: Run service tests (Tier 1)
+        run: |
+          cd backend
+          npx jest --testPathPattern="__tests__/service" --forceExit --runInBand
