@@ -449,7 +449,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   };
   // A background catalogue read can fail or stop offering this connection.
   // Keep the open draft (and any server refusal) visible in either case. The
-  // mint endpoint still validates the connection and current grant policy.
+  // mint still checks ownership, connection state, tools, audience and pod policy.
   const draftEntry = draft
     ? catalog.find((entry) => entry.installableId === draft.entry.installableId) || draft.entry
     : null;
