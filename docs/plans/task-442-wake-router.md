@@ -1,7 +1,8 @@
 # TASK-442: one routing decision per non-rule message
 
-Status: design and benchmark preparation, 2026-10-24. Production integration
-waits for measured LiteLLM latency and a selected model. No model is selected.
+Status: two-candidate study recorded, 2026-10-24. DeepSeek failed the tested
+configuration; Nano was unavailable. Recommend rules-only routing. No model is
+selected and no production integration is included.
 
 ## Contract
 
@@ -160,7 +161,7 @@ raising the cap nor moving the caller has been shown to meet the contract.
 Known usage from three responses implies about $0.005; timeout billing remains
 unknown. SRE reports the run stayed within its $0.50 scoped budget.
 
-### Next proposed candidate: GPT-5.4 nano (approval pending)
+### Second candidate: GPT-5.4 nano (unavailable)
 
 [Official model documentation](https://developers.openai.com/api/docs/models/gpt-5.4-nano),
 checked 2026-10-24: standard uncached input $0.20/M, output $1.25/M.
@@ -176,10 +177,30 @@ A 256 cap raises that estimate to $0.48416; 512 raises it to $0.54816,
 above the existing $0.50 authorization. Retain the hard key budget; budget refusals remain errors and must not be
 retried to finish a sample.
 
-Next step is CTO approval of the Nano route, explicit reasoning=none and token
-budget, then SRE's scoped run. No second candidate has been run by this writer.
-Production integration and activation remain blocked on a selected model and
-the labeled historical-context evaluation.
+Lily approved one single-model $0.50 Nano study on 2026-10-24, with the key
+revoked afterwards. SRE's 14:09Z TASK-442 update reports no healthy deployment
+for either the direct or Codex-routed Nano alias. The key was minted and
+revoked with approximately zero spend. There are no Nano latency, usage or
+validity measurements: unavailability is not a measured deadline failure.
+The healthy DeepSeek routes do not provide a passing measured configuration;
+the remaining tiny-model route has unverified structured-output support.
+
+### Study disposition: retain rules-only routing
+
+Stop after these two candidates, per Lily's 14:09Z direction. No third model
+benchmark, credential repair or provider expansion is authorized by this study.
+Recommend keeping existing deterministic rules and ambient digests active,
+with model routing disabled. This preserves addressed wakes without adding a
+known failing or unavailable inference dependency. It does not solve semantic
+ownership in messages that match no rule; that remains an explicit limitation.
+
+A later model experiment needs a healthy, approved deployment and a fresh
+study decision. The proposed production contract and pilot bars below remain
+requirements for that future work, not approval to implement or activate it.
+This PR is only a design, offline script and tests (Tier 1, one seat gate).
+The final gate should verify the reported measurements, unknowns, cost math,
+privacy controls and the rules-only recommendation. Production integration
+would still require the two Tier 2 gates specified below.
 
 ## Pilot and proof before activation
 
