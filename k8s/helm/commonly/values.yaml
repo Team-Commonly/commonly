@@ -75,6 +75,10 @@ hostedMcp:
   hiddenEntries: []
   googleCalendar:
     enabled: false
+  # Enable only after both pre-registered GitHub App client secrets exist with
+  # enabled versions in Secret Manager. A missing remoteRef stalls api-keys.
+  githubMcp:
+    enabled: false
 
 # Agent provisioning (RBAC + PVCs)
 agentProvisioning:

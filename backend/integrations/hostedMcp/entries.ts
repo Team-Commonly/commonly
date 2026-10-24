@@ -15,11 +15,12 @@ import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 import { AIRTABLE_ENTRY } from './airtable';
 import { ATLASSIAN_ENTRY } from './atlassian';
 import { GOOGLE_CALENDAR_ENTRY } from './googleCalendar';
+import { GITHUB_MCP_ENTRY } from './githubMcp';
 import { LINEAR_ENTRY } from './linear';
 import { SENTRY_ENTRY } from './sentry';
 
 export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [
-  LINEAR_ENTRY, GOOGLE_CALENDAR_ENTRY, ATLASSIAN_ENTRY, AIRTABLE_ENTRY, SENTRY_ENTRY,
+  LINEAR_ENTRY, GOOGLE_CALENDAR_ENTRY, ATLASSIAN_ENTRY, AIRTABLE_ENTRY, SENTRY_ENTRY, GITHUB_MCP_ENTRY,
 ];
 
 /**

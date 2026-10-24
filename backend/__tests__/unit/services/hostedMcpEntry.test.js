@@ -24,6 +24,8 @@ const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
+const GITHUB_MCP_SOURCE = require('../../fixtures/hostedMcp/github-mcp-tools-source-2026-10-15.json');
+const GITHUB_MCP_PIN = require('../../../integrations/hostedMcp/githubMcpSchemas.json');
 
 const ENTRY_TEXT = 'ENTRY TEXT the pin agreed to.';
 const VENDOR_TEXT = 'VENDOR TEXT nobody reviewed.';
@@ -579,7 +581,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // The catalogue is the one place that says what an instance offers before
     // any member has connected anything. Its ordering follows the build plan.
     expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual([
-      'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry',
+      'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry', 'github-mcp',
     ]);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
@@ -810,6 +812,55 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
       expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read');
     }
+  });
+
+  test('GitHub pins six read tools from one fixed upstream commit and exposes no writer', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'github-mcp');
+    expect(GITHUB_MCP_SOURCE.sourceCommit).toBe('796afb74711ddc856fe587debc49373e21c8d0f7');
+    expect(GITHUB_MCP_PIN.sourceCommit).toBe(GITHUB_MCP_SOURCE.sourceCommit);
+    expect(entry).toMatchObject({
+      resource: 'https://api.githubcopilot.com/mcp/',
+      issuer: 'https://github.com/login/oauth',
+      client: 'pre-registered',
+      scopes: ['offline_access'],
+      tokenEndpointAuthMethod: 'client_secret_post',
+      revoke: { page: 'https://github.com/settings/applications' },
+    });
+    const expected = [
+      'get_me', 'list_issues', 'issue_read', 'list_pull_requests',
+      'pull_request_read', 'get_file_contents',
+    ];
+    expect(entry.tools.map((tool) => tool.name)).toEqual(expected);
+    expect(GITHUB_MCP_SOURCE.tools.map((tool) => tool.name)).toEqual(expected);
+    const source = new Map(GITHUB_MCP_SOURCE.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const upstream = source.get(tool.name);
+      expect(tool.upstreamName).toBe(tool.name);
+      expect(tool.class).toBe('read');
+      expect(tool.annotations.readOnlyHint).toBe(true);
+      expect(upstream.annotations.readOnlyHint).toBe(true);
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(upstream.inputSchema));
+      expect(tool.description).not.toBe(upstream.description);
+      const propertyNames = [];
+      const visit = (value) => {
+        if (!value || typeof value !== 'object') return;
+        if (value.properties && typeof value.properties === 'object') {
+          propertyNames.push(...Object.keys(value.properties));
+        }
+        Object.values(value).forEach(visit);
+      };
+      visit(tool.inputSchema);
+      for (const targetKey of ['url', 'uri', 'fetch_target', 'target_url', 'source_url']) {
+        expect(propertyNames).not.toContain(targetKey);
+      }
+    }
+    const offered = entryToolProjections(entry);
+    expect(offered.map((tool) => tool.name)).toEqual(expected.map((name) => `github-mcp.${name}`));
+    expect(offered.every((tool) => tool.requiredWriteMode === 'read')).toBe(true);
+    for (const name of ['create_issue', 'add_issue_comment', 'create_pull_request', 'merge_pull_request']) {
+      expect(offered.some((tool) => tool.name === `github-mcp.${name}`)).toBe(false);
+    }
+    expect(assessEntryTools(entry, GITHUB_MCP_SOURCE.tools).every((row) => row.verdict === 'ok')).toBe(true);
   });
 
   test('the Linear pin is the measured list minus caller-chosen fetch paths', () => {

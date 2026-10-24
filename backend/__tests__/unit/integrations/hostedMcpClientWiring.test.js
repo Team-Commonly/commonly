@@ -3,11 +3,10 @@
  * names derived from its id (`hostedMcpClientConfigKeys`). Those names reach
  * the backend only if the helm chart maps them from `api-keys`, and `api-keys`
  * carries them only if the ExternalSecret references their Secret Manager keys.
- * Nothing else holds the three layers together: an entry added without its
- * wiring reads `not_configured` in production while every other test stays
- * green (review-checklist rule 7, a phantom cross-layer contract). This pins
- * the chain for every pre-registered entry, so the next one cannot ship
- * half-wired.
+ * Nothing else holds the three layers together (review-checklist rule 7).
+ * GitHub's ExternalSecret entries are off by default for self-hosted instances.
+ * Dev enables them only after both App client values exist with versions, and
+ * both backend refs remain optional.
  */
 const fs = require('fs');
 const path = require('path');
@@ -17,6 +16,8 @@ const { hostedMcpClientConfigKeys } = require('../../../services/hostedMcpIntake
 const chart = path.join(__dirname, '../../../../k8s/helm/commonly');
 const deployment = fs.readFileSync(path.join(chart, 'templates/core/backend-deployment.yaml'), 'utf8');
 const apiKeys = fs.readFileSync(path.join(chart, 'templates/secrets/api-keys.yaml'), 'utf8');
+const values = fs.readFileSync(path.join(chart, 'values.yaml'), 'utf8');
+const devValues = fs.readFileSync(path.join(chart, 'values-dev.yaml'), 'utf8');
 
 // `- name: ENV` mapped from api-keys, optional so an instance with the entry's
 // flag off still starts. Returns the api-keys key, or null when unmapped.
@@ -50,6 +51,13 @@ test('api-keys defaults the SM key prefix to commonly-dev-', () => {
 const wiringTable = preRegistered.length
   ? preRegistered.map((entry) => [entry.id])
   : [['no-pre-registered-entry']];
+
+test('GitHub client mapping is off by default and enabled only in configured dev', () => {
+  expect(preRegistered.map((entry) => entry.id)).toContain('github-mcp');
+  expect(values).toMatch(/hostedMcp:\n(?:.|\n)*?githubMcp:\n\s+enabled: false/);
+  expect(devValues).toMatch(/hostedMcp:\n(?:.|\n)*?githubMcp:\n\s+enabled: true/);
+  expect(apiKeys).toMatch(/{{- if \.Values\.hostedMcp\.githubMcp\.enabled }}[\s\S]*?secretKey: github-mcp-client-id[\s\S]*?secretKey: github-mcp-client-secret[\s\S]*?{{- end }}/);
+});
 
 describe.each(wiringTable)('%s client wiring', (entryId) => {
   const { clientId, clientSecret } = hostedMcpClientConfigKeys(entryId);

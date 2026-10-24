@@ -87,6 +87,7 @@ const GoogleCalendar = () => (
 
 export const PLATFORM_GLYPHS: Record<string, React.FC> = {
   github: GitHub,
+  'github-mcp': GitHub,
   linear: Linear,
   'google-calendar': GoogleCalendar,
   atlassian: Atlassian,
