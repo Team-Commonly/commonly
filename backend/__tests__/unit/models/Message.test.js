@@ -71,6 +71,24 @@ describe('Message Model Tests', () => {
     expect(savedMessage.updatedAt).toBeDefined();
   });
 
+  it.each(['+078915-01-01T00:00:00.000Z', '0000-12-31T23:59:59.999Z'])(
+    'rejects nonportable createdAt %s before persistence', async (createdAt) => {
+      await expect(Message.create({ podId: testPod._id, userId: testUser._id,
+        content: 'Must not poison pagination', createdAt })).rejects.toMatchObject({
+        name: 'ValidationError', errors: { createdAt: expect.anything() },
+      });
+      expect(await Message.countDocuments({ podId: testPod._id })).toBe(0);
+    },
+  );
+
+  it('accepts four-digit-year timestamp boundaries without changing them', async () => {
+    for (const createdAt of ['0001-01-01T00:00:00.000Z', '9999-12-31T23:59:59.999Z']) {
+      const message = new Message({ podId: testPod._id, userId: testUser._id, content: 'Boundary', createdAt });
+      await expect(message.validate()).resolves.toBeUndefined();
+      expect(message.createdAt.toISOString()).toBe(createdAt);
+    }
+  });
+
   it('should not save a message without required fields', async () => {
     // Test missing podId
     const messageWithoutPodId = new Message({

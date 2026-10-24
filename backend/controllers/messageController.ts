@@ -86,6 +86,17 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
   try {
     const { podId } = req.params;
     const { before } = req.query as { before?: string };
+    // Legacy Mongo rows can still supply an extended-year cursor. Refuse it
+    // before PG errors and the whole request falls back to Mongo.
+    if (before !== undefined) {
+      const cursor = typeof before === 'string' && before.trim() ? new Date(before) : null;
+      if (!cursor || !Number.isFinite(cursor.getTime())
+        || cursor.getUTCFullYear() < 1 || cursor.getUTCFullYear() > 9999) {
+        res.status(400).json({ msg: 'before must be a valid timestamp with a year from 0001 to 9999' });
+        return;
+      }
+    }
+
     // Clamp the page size [1, 200]. Unbounded `limit` let a caller ask for
     // millions of rows → OOM (both the PG and Mongo read paths below). Mirrors
     // the postController.getPosts clamp pattern.

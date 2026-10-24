@@ -70,6 +70,18 @@ describe('messageController', () => {
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
+    it.each(['+078915-01-01T00:00:00.000Z', '0000-01-01T00:00:00Z', 'garbage', ['2026-01-01', '2026-01-02']])(
+      'rejects invalid pagination timestamp %j without querying either message store', async (before) => {
+        PGMessage.findByPodId.mockClear();
+        MongoMessage.find.mockClear();
+        const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+        await messageController.getMessages({ params: { podId: 'p1' }, query: { before }, user: { id: 'u1' } }, res);
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(PGMessage.findByPodId).not.toHaveBeenCalled();
+        expect(MongoMessage.find).not.toHaveBeenCalled();
+      },
+    );
+
     it('returns 404 if pod not found', async () => {
       Pod.findById.mockResolvedValue(null);
       const req = { params: { podId: 'p1' }, query: {}, user: { id: 'u1' } };
