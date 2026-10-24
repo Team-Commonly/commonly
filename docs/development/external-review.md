@@ -26,13 +26,15 @@ can't tell us whether it's wrong or whether we are.
   - `fixed in <sha>` (only when the fix doesn't already make the thread outdated)
 - **Where the answer goes.** Reply inside the thread when you can. `gh` has
   no thread-reply command, so `seat-gh-guard` allows exactly one `gh api`
-  write, with six arguments and nothing else:
+  write, a reply to a review comment:
 
   ```sh
   gh api -X POST repos/Team-Commonly/commonly/pulls/<n>/comments/<id>/replies -F body=@<file>
   ```
 
-  Any extra flag (`--jq`, `--repo`, `-f`) makes the guard refuse it. The
+  The guard also accepts the usual spellings of the same call (`--method
+  POST`, `-f`, a leading `/`, `--jq`, `--silent`). It refuses anything that
+  adds a header, a second field, an inline body or another path. The
   fallback, and the form for answering several threads at once, is **one PR
   comment** (`gh pr comment <n> --body-file <file>`) with one line per
   thread: the thread's link (`…/pull/<n>#discussion_r<id>`) followed by its
