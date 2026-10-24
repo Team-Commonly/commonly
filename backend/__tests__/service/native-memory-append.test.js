@@ -2,6 +2,12 @@ const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
 const AgentMemory = require('../../models/AgentMemory');
 const { appendLongTermMemory } = require('../../services/agentMemoryService');
+jest.mock('../../services/agentComputerBroker', () => ({
+  agentComputerBroker: {},
+  agentComputerEnabled: false,
+}));
+const { dispatchTool } = require('../../services/nativeRuntimeService');
+const { GivenAddresses } = require('../../services/webAddressProvenance');
 
 jest.setTimeout(60000);
 
@@ -71,5 +77,27 @@ describe('native long-term memory appends', () => {
     expect(saved.content).toBe('legacy note\n\n[2026-10-24T09:40:00.000Z] new native note');
     expect(saved.sections.long_term.content).toBe(saved.content);
     expect(saved.sections.long_term.history[0].content).toBe('legacy note');
+  });
+
+  it('writes through commonly_write_memory dispatch and persists both memory shapes', async () => {
+    const result = await dispatchTool('commonly_write_memory', { content: 'dispatcher note' }, {
+      installation: {},
+      podId: 'dispatcher-pod',
+      agentName: 'dispatcher-native',
+      instanceId: 'default',
+      displayName: 'Dispatcher Native',
+      installationConfig: {},
+      givenAddresses: new GivenAddresses(),
+      ownUserId: null,
+    });
+
+    expect(result).toEqual({ content: { ok: true, written: true } });
+
+    const saved = await AgentMemory.findOne({
+      agentName: 'dispatcher-native',
+      instanceId: 'default',
+    }).lean();
+    expect(saved.content).toContain('dispatcher note');
+    expect(saved.sections.long_term.content).toBe(saved.content);
   });
 });

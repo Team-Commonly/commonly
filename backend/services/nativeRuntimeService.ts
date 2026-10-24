@@ -711,7 +711,7 @@ interface DispatchResult {
   imagePngBase64?: string;
 }
 
-async function dispatchTool(
+export async function dispatchTool(
   name: string,
   rawArgs: unknown,
   ctx: DispatchContext,
