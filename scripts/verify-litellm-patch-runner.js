@@ -46,9 +46,11 @@ function fixture(fn) {
 }
 
 function run(src, f) {
+  const env = { ...process.env, PYTHONPATH: f.site, PYTHONDONTWRITEBYTECODE: '1' };
+  delete env.PYTHONSAFEPATH; // The negative control needs Python to import from CWD.
   const r = spawnSync('python3', ['-c', src], {
     cwd: f.app,
-    env: { ...process.env, PYTHONPATH: f.site, PYTHONDONTWRITEBYTECODE: '1' },
+    env,
     encoding: 'utf8',
   });
   assert(!r.error && typeof r.stdout === 'string', `python3 unavailable: ${r.error?.message || 'no stdout'}`);

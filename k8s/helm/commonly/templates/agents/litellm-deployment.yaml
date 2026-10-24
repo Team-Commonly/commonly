@@ -264,10 +264,9 @@ spec:
         # (tokens, spend, model, timestamps) is still retained — only the raw
         # prompt/response payloads are dropped. SpendLogs had ballooned to ~2.6GB
         # because every request's full prompt+completion was persisted inline; the
-        # text is non-essential for billing/usage accounting and the table is never
-        # pruned. Set to "false" to keep the table bounded.
-        # (The dead SpendLogToolIndex table was already truncated live and its
-        # population patched off in the startup script above — that patch stays.)
+        # text is non-essential for billing/usage accounting. Retention prunes
+        # SpendLogs and SpendLogToolIndex after 7 days (litellm-config.yaml).
+        # Set to "false" to reduce each row's size during that window.
         - name: STORE_PROMPTS_IN_SPEND_LOGS
           value: "false"
         volumeMounts:
