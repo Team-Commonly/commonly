@@ -783,3 +783,35 @@ test('a hosted connect start error uses fixed copy instead of response text', as
     open.mockRestore();
   }
 });
+
+test.each([400, 403])('a hosted grant HTTP %s stays open with the server refusal', async (status) => {
+  mockTwoEntries({ catalog: [linearEntry], grants: { p1: [], p2: [] } });
+  axios.post.mockRejectedValue({ response: { status, data: {
+    error: 'invalid_target', message: 'The selected target is unavailable.',
+  } } });
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'Add', exact: true }));
+  const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+  fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+  expect(await within(form).findByRole('alert')).toHaveTextContent('The selected target is unavailable.');
+  expect(screen.getByRole('complementary', { name: 'Add Linear' })).toBeInTheDocument();
+  expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({
+    connectionId: 'conn-2', target: { kind: 'pod', id: 'p1' }, audience: ['a1'],
+  }), expect.any(Object));
+});
+
+test.each([undefined, {}, { error: 'invalid_target' }, '<html>fallback</html>', { grantId: '' }])(
+  'an unconfirmed mint response keeps the form and old grant: %p', async (body) => {
+    mockApi([githubEntry]);
+    axios.post.mockResolvedValue({ data: body });
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'View GitHub in Launch pod' }));
+    fireEvent.click(within(await screen.findByRole('complementary', { name: 'Grant details' }))
+      .getByRole('button', { name: 'Change access' }));
+    const form = await screen.findByRole('complementary', { name: 'Change access' });
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('Could not grant it.');
+    expect(screen.getByRole('complementary', { name: 'Change access' })).toBeInTheDocument();
+    expect(axios.post.mock.calls.map(([url]) => url)).toEqual(['/api/grants']);
+  },
+);

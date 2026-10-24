@@ -469,6 +469,12 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         audience: draft.audience,
         expiresAt,
       });
+      // A resolved request alone is not a mint receipt (for example, an HTML
+      // fallback or empty response). Keep the form and the old grant intact.
+      if (typeof minted?.grantId !== 'string' || !minted.grantId.trim()) {
+        setError(t('tools.grantError', { defaultValue: 'Could not grant it.' }));
+        return;
+      }
       // Change access: a change is a new grant and a revoke of the old one, because `tools` is never
       // widened in place. The mint is kept whatever happens next; a failed revoke is retried alone
       // (Vera on 0368992e), never by minting a third grant.
