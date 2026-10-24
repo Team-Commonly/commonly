@@ -320,7 +320,7 @@ test('shows active keys first and keeps revoked history collapsed', async () => 
     ] }) : defaultGet(url, options)
   ));
   renderPage();
-  expect(await screen.findByText("Daemon key · Sam's MacBook")).toBeInTheDocument();
+  expect(await screen.findByText("Runtime key · Sam's MacBook")).toBeInTheDocument();
   const disclosure = screen.getByText('1 revoked');
   expect(disclosure.closest('details')).not.toHaveAttribute('open');
   fireEvent.click(disclosure);

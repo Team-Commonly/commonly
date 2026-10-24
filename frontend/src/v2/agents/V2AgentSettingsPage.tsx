@@ -190,8 +190,7 @@ const V2AgentSettingsPage: React.FC = () => {
   const revokedKeys = keys.filter((key) => key.status === 'revoked');
   const keyLabel = (key: RuntimeKey): string => {
     const defaultLabel = !key.label || key.label === 'Runtime token' || key.label === 'Agent Settings replacement';
-    const kind = key.machineId ? t('agentSettings.daemonKey')
-      : runtime.runtimeType === 'wrapper' ? t('agentSettings.cliKey') : t('agentSettings.runtimeKey');
+    const kind = runtime.runtimeType === 'wrapper' ? t('agentSettings.cliKey') : t('agentSettings.runtimeKey');
     const detail = key.machineId ? key.machineName : (defaultLabel ? null : key.label);
     return detail ? `${kind} · ${detail}` : kind;
   };
