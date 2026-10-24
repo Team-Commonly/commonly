@@ -187,6 +187,7 @@ interface GatewayDoc {
 }
 
 interface DeliveryMeta {
+  reasonRecorded?: boolean;
   outcome?: string;
   reason?: string;
   messageId?: string;
@@ -373,8 +374,7 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     await AgentEvent.findByIdAndUpdate(event._id, {
       status: 'acked',
       deliveredAt: new Date(),
-      'delivery.outcome': outcome,
-      'delivery.updatedAt': new Date(),
+      delivery: AgentEventService.normalizeDeliveryMeta({ outcome, reason }),
     });
     if (outcome === 'posted' || outcome === 'acknowledged' || (outcome === 'no_action' && !reason)) {
       await AgentEventService.settleLegacyDigest(event).catch((err: Error) => {
@@ -735,6 +735,8 @@ class AgentEventService {
     return {
       outcome,
       reason: reason || undefined,
+      // Server-authored provenance: even an absent reason was preserved.
+      reasonRecorded: true,
       messageId: messageId || undefined,
       details,
       updatedAt: new Date(),
