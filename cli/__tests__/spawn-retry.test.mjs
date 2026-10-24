@@ -192,6 +192,9 @@ describe('classifies the possessive-exhaustion phrase (2026-08-25, third miss)',
   test.each([
     ['weekly, the wording behind 283 of 365 fleet failures', WEEKLY],
     ['per-model, whose variable part is a model name', PER_MODEL],
+    // The HTTP status is a prefix here, not a throttle wording. otto's HOLD on
+    // #2553 (review 5638173449): this shape classed RUNTIME_LIMIT's 60s probe.
+    ['per-model behind an HTTP 429 prefix', "429: You've reached your Fable 5 limit"],
   ])('%s is QUOTA, not RUNTIME', (_label, message) => {
     expect(classifySpawnFailure(new Error(message))).toBe(SPAWN_FAILURE_CLASS.QUOTA);
   });

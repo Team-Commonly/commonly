@@ -95,6 +95,9 @@ const CONTENT_REFUSED_RE = /(?:flagged for possible cybersecurity risk|this cont
 // rather than the stronger property it does not have.
 const QUOTA_RE = /(?:quota|usage limit|session limit|weekly limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
 const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)(?:[^.\n]|\.(?=\d)){0,40}?limit/i;
+// The status code is not a throttle wording: "429: You've reached your Fable 5
+// limit" is an exhausted allowance that a provider reports as HTTP 429.
+const THROTTLE_WORDING_RE = /(?:rate[ -]?limit|too many requests|overloaded|capacity)/i;
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
 const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
 
@@ -125,7 +128,7 @@ export const classifySpawnFailure = (error) => {
   // A throttle wording anywhere in the text therefore wins over the shape.
   // QUOTA_RE is still tested first, so an explicit quota word keeps QUOTA even
   // when the same message also mentions rate limits.
-  if (QUOTA_POSSESSIVE_RE.test(text) && !RATE_LIMIT_RE.test(text)) {
+  if (QUOTA_POSSESSIVE_RE.test(text) && !THROTTLE_WORDING_RE.test(text)) {
     return SPAWN_FAILURE_CLASS.QUOTA;
   }
   if (error?.status === 429 || RATE_LIMIT_RE.test(text)) {
