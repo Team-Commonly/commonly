@@ -1,7 +1,7 @@
 # TASK-442: one routing decision per non-rule message
 
 Status: two-candidate study recorded, 2026-10-24. DeepSeek failed the tested
-configuration; Nano was unavailable. Recommend rules-only routing. No model is
+configuration; Nano was unavailable. Decision: retain rules-only routing. No model is
 selected and no production integration is included.
 
 ## Contract
@@ -185,17 +185,17 @@ validity measurements: unavailability is not a measured deadline failure.
 The healthy DeepSeek routes do not provide a passing measured configuration;
 the remaining tiny-model route has unverified structured-output support.
 
-### Study disposition: retain rules-only routing
+### Decision: retain rules-only routing; park TASK-442
 
 Stop after these two candidates, per Lily's 14:09Z direction. No third model
 benchmark, credential repair or provider expansion is authorized by this study.
-Recommend keeping existing deterministic rules and ambient digests active,
+Lily ruled at 14:10Z that existing deterministic rules and ambient digests stay active,
 with model routing disabled. This preserves addressed wakes without adding a
 known failing or unavailable inference dependency. It does not solve semantic
 ownership in messages that match no rule; that remains an explicit limitation.
 
-A later model experiment needs a healthy, approved deployment and a fresh
-study decision. The proposed production contract and pilot bars below remain
+TASK-442 is parked until a fast structured-output model is servable. A later
+model experiment needs a healthy, approved deployment and a fresh study decision. The proposed production contract and pilot bars below remain
 requirements for that future work, not approval to implement or activate it.
 This PR is only a design, offline script and tests (Tier 1, one seat gate).
 The final gate should verify the reported measurements, unknowns, cost math,
