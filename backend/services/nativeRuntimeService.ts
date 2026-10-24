@@ -39,6 +39,7 @@ import { getFromPublicAddress, isOutboundUrlRefused } from './outboundUrlGuard';
 import { GivenAddresses } from './webAddressProvenance';
 import { nativeCueFromKernel } from './nativeKernelCue';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
+import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
 import { untrustedConnectorMarker } from './brokerResultMarker';
 import {
   engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline, hostedNativeRunConfig, hostedRunsNative,
@@ -289,7 +290,7 @@ export const TOOLS = [
         type: 'object',
         properties: {
           title: { type: 'string' },
-          assignee: { type: 'string', description: 'Optional assignee display name' },
+          assignee: { type: 'string', description: "Optional assignee: the agent's agentName, one token with no spaces. Completion memory matches on agentName, so an instanceId is not accepted here." },
           notes: { type: 'string' },
         },
         required: ['title'],
@@ -886,9 +887,13 @@ export async function dispatchTool(
       }
 
       case 'commonly_create_task': {
-        const title = String(args.title || '').trim();
+        const title = toSingleLineTitle(String(args.title || ''));
         if (!title) {
           return { content: { ok: false, error: 'title is required' }, error: 'missing_title' };
+        }
+        const assigneeParsed = parseAssignee(args.assignee ? String(args.assignee) : '');
+        if (assigneeParsed.error) {
+          return { content: { ok: false, error: assigneeParsed.error }, error: 'invalid_assignee' };
         }
         const Task = require('../models/Task');
         // Count existing tasks in the pod to derive a taskNum — the Task
@@ -902,7 +907,7 @@ export async function dispatchTool(
           taskNum,
           taskId,
           title,
-          assignee: args.assignee ? String(args.assignee) : null,
+          assignee: assigneeParsed.value,
           notes: args.notes ? String(args.notes) : null,
           status: 'pending',
           source: 'agent',

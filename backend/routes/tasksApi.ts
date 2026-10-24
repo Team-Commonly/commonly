@@ -22,6 +22,8 @@ const AgentSendFreshness = require('../services/agentSendFreshness');
 const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
 // eslint-disable-next-line global-require
 const { recordTaskAttention, resolveTaskAttention } = require('../services/attentionItemService');
+// eslint-disable-next-line global-require
+const { parseAssignee, toSingleLineTitle } = require('../utils/taskFieldNormalization');
 
 /**
  * Who made this board change, for the agent fan-out.
@@ -301,8 +303,10 @@ router.post('/:podId', rateLimit({
     }
     // Materialize primitives after runtime validation so Mongo never receives
     // user-supplied query objects (for example, operator-shaped values).
-    const title = titleInput === undefined ? undefined : String(titleInput);
-    const assignee = assigneeInput === undefined ? undefined : String(assigneeInput);
+    const title = titleInput === undefined ? undefined : toSingleLineTitle(String(titleInput));
+    const assigneeParsed = assigneeInput === undefined ? undefined : parseAssignee(String(assigneeInput));
+    if (assigneeParsed?.error) return res.status(400).json({ error: assigneeParsed.error });
+    const assignee = assigneeParsed?.value ?? undefined;
     const dep = depInput === undefined ? undefined : String(depInput);
     const parentTask = parentTaskInput === undefined ? undefined : String(parentTaskInput);
     const source = sourceInput === undefined ? undefined : String(sourceInput);
@@ -316,7 +320,16 @@ router.post('/:podId', rateLimit({
       // the ask came from, the title says which ask it is. Keying on the ref
       // alone made a second ask from one source adopt the first ask's row and
       // discard the caller's title (TASK-063). Same pair = idempotent retry.
-      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef, title }) as { _id: unknown; title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updatedAt: Date; toObject: () => unknown } | null;
+      // Rows written before titles were collapsed hold the raw text (`Fix\nboard`);
+      // a replay of that input must still find them, or the pair index admits a twin.
+      // The exact raw title is tried first so a `Fix board` row cannot shadow it.
+      const titleCandidates = [titleInput === undefined ? undefined : String(titleInput), title].filter((t, i, all) => t !== undefined && all.indexOf(t) === i);
+      let existing = null as { _id: unknown; title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updatedAt: Date; toObject: () => unknown } | null;
+      for (const candidate of titleCandidates) {
+        // eslint-disable-next-line no-await-in-loop
+        existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef, title: candidate }) as typeof existing;
+        if (existing) break;
+      }
       if (existing) {
         if (existing.status === 'done') {
           // `sourceRef` + `title` are an idempotency key (a unique partial
@@ -958,6 +971,16 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     // happens to accept.
     if (typeof fieldUpdates.assignee === 'string' && fieldUpdates.assignee.trim() === '') {
       fieldUpdates.assignee = null;
+    }
+    if (fieldUpdates.title !== undefined) {
+      if (typeof fieldUpdates.title !== 'string') return res.status(400).json({ error: 'title must be a string' });
+      fieldUpdates.title = toSingleLineTitle(fieldUpdates.title);
+      if (!fieldUpdates.title) return res.status(400).json({ error: 'title is required' });
+    }
+    if (typeof fieldUpdates.assignee === 'string') {
+      const parsed = parseAssignee(fieldUpdates.assignee);
+      if (parsed.error) return res.status(400).json({ error: parsed.error });
+      fieldUpdates.assignee = parsed.value;
     }
     if (Object.keys(fieldUpdates).length === 0) return res.status(400).json({ error: 'No updatable fields provided' });
     if (fieldUpdates.status !== undefined) {
