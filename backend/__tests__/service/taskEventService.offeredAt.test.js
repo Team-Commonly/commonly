@@ -301,7 +301,8 @@ describe('board wake assigned work', () => {
     expect(scout.payload.content).toContain('[Your assigned rows (pending/claimed; newest first):]');
     expect(scout.payload.content).toContain('TASK-ASSIGN — TASK-ASSIGN [pending] — Lily updated: reassigned to scout');
     expect(scout.payload.content).not.toContain('TASK-FOREIGN');
-    expect(peer).toBeUndefined();
+    expect(peer.deliveryMode).toBe('digest');
+    expect(peer.payload.content).toBe('TASK-ASSIGN updated: TASK-ASSIGN');
   });
 
   it('keeps the assigned list to five rows, newest first, after a folded change', async () => {
@@ -352,12 +353,14 @@ describe('board wake assigned work', () => {
     expect(anvil.payload.content).toContain('TASK-INSTANCE — Instance Do it now [pending]');
     expect(anvil.payload.content).not.toContain('Instance\nDo it now');
     expect(anvil.payload.content).not.toContain('TASK-SCOUT');
-    expect(scout).toBeUndefined();
+    expect(scout.deliveryMode).toBe('digest');
+    expect(scout.payload.content).toBe('TASK-INSTANCE updated: Instance Do it now');
   });
 });
 
 describe('own-row board wake routing', () => {
-  const wakeNames = () => AgentEventService.enqueue.mock.calls.map(([event]) => event.agentName);
+  const wakeNames = () => AgentEventService.enqueue.mock.calls
+    .filter(([event]) => event.deliveryMode !== 'digest').map(([event]) => event.agentName);
 
   beforeEach(() => setInstalls([install('scout'), install('sprint-impl')]));
 
@@ -395,7 +398,8 @@ describe('own-row board wake routing', () => {
     await notifyPodAgents(POD_ID, commented, 'updated', { isAgent: false });
 
     expect(wakeNames()).toEqual(['scout']);
-    expect(AgentEventService.enqueue.mock.calls[0][0].payload.content).toContain('Peer commented');
+    expect(AgentEventService.enqueue.mock.calls
+      .find(([event]) => event.deliveryMode !== 'digest')[0].payload.content).toContain('Peer commented');
   });
 
   it.each(['native', 'durable-object'])('sends a hosted %s owner a type its engine runs', async (engine) => {
@@ -408,7 +412,8 @@ describe('own-row board wake routing', () => {
     await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
 
     expect(wakeNames()).toEqual(['maya-agent']);
-    expect(AgentEventService.enqueue.mock.calls[0][0].type).toBe('chat.mention');
+    expect(AgentEventService.enqueue.mock.calls
+      .find(([event]) => event.deliveryMode !== 'digest')[0].type).toBe('chat.mention');
   });
 
   it('inherits hosted runtime for a mention-created pod projection', async () => {

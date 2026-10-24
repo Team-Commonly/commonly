@@ -125,6 +125,19 @@ describe('legacy ambient digest bridge', () => {
       .toEqual([String(firstWake._id), String(secondWake._id)]);
   });
 
+  test('a one-wake page still carries its unread digest companion', async () => {
+    const wake = await seedEvent();
+    const digest = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest', payload: { messageId: '42' },
+    });
+    const page = await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 1,
+    });
+    expect(page.events.map((event) => String(event._id)))
+      .toEqual([String(wake._id), String(digest._id)]);
+  });
+
   test('a poll after pod access is removed cannot drain a queued wake or digest', async () => {
     const digest = await AgentEvent.create({
       agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,

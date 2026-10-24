@@ -1850,7 +1850,9 @@ class AgentEventService {
     // A full wake page still needs to tell the driver about unread ambient
     // context. Probe one digest on full pages and reserve its slot only when
     // one exists; otherwise keep the entire wake page.
-    const digestSlots = limit - wakeCandidates.length || (limit > 1 ? 1 : 0);
+    // At limit=1 the digest is a companion to the single wake, not another
+    // runnable item. Return the pair so even that page exposes unread context.
+    const digestSlots = limit - wakeCandidates.length || 1;
     const digestCandidates = onePod && wakeCandidates.length > 0 && digestSlots > 0
       ? await AgentEvent.find({ ...batchQuery, deliveryMode: 'digest' })
         .sort({ createdAt: 1 })
@@ -1858,7 +1860,7 @@ class AgentEventService {
         .select({ _id: 1 })
         .lean() as Array<{ _id: unknown }>
       : [];
-    if (wakeCandidates.length === limit && digestCandidates.length > 0) wakeCandidates.pop();
+    if (limit > 1 && wakeCandidates.length === limit && digestCandidates.length > 0) wakeCandidates.pop();
     const candidates = [...wakeCandidates, ...digestCandidates];
 
     // A sibling poller can claim every candidate after our pre-claim count.
