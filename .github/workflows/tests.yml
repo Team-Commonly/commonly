@@ -57,8 +57,11 @@ jobs:
     # Heavy jobs run where the repo variable HEAVY_RUNNER points (D37: Latchkey
     # runners, which don't count against the org's 20-concurrent-job cap).
     # Unset means GitHub-hosted, so rolling back is deleting one variable. The
-    # job names, and so the required check, don't change either way. A fork PR
-    # always stays on GitHub: untrusted code doesn't get a third-party runner.
+    # job names, and so the required check, don't change either way. A fork
+    # PR's own pull_request run stays on GitHub. A merge_group run uses
+    # HEAVY_RUNNER even when the group holds a reviewed fork change: queue
+    # admission (a maintainer queues a gated PR) is the trust decision, not
+    # this expression. See docs/runbooks/ci-heavy-runner.md.
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.HEAVY_RUNNER || 'ubuntu-latest' }}
     env:
       JWT_SECRET: test-jwt-secret
@@ -107,8 +110,11 @@ jobs:
     # Heavy jobs run where the repo variable HEAVY_RUNNER points (D37: Latchkey
     # runners, which don't count against the org's 20-concurrent-job cap).
     # Unset means GitHub-hosted, so rolling back is deleting one variable. The
-    # job names, and so the required check, don't change either way. A fork PR
-    # always stays on GitHub: untrusted code doesn't get a third-party runner.
+    # job names, and so the required check, don't change either way. A fork
+    # PR's own pull_request run stays on GitHub. A merge_group run uses
+    # HEAVY_RUNNER even when the group holds a reviewed fork change: queue
+    # admission (a maintainer queues a gated PR) is the trust decision, not
+    # this expression. See docs/runbooks/ci-heavy-runner.md.
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.HEAVY_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
@@ -205,8 +211,11 @@ jobs:
     # Heavy jobs run where the repo variable HEAVY_RUNNER points (D37: Latchkey
     # runners, which don't count against the org's 20-concurrent-job cap).
     # Unset means GitHub-hosted, so rolling back is deleting one variable. The
-    # job names, and so the required check, don't change either way. A fork PR
-    # always stays on GitHub: untrusted code doesn't get a third-party runner.
+    # job names, and so the required check, don't change either way. A fork
+    # PR's own pull_request run stays on GitHub. A merge_group run uses
+    # HEAVY_RUNNER even when the group holds a reviewed fork change: queue
+    # admission (a maintainer queues a gated PR) is the trust decision, not
+    # this expression. See docs/runbooks/ci-heavy-runner.md.
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.HEAVY_RUNNER || 'ubuntu-latest' }}
 
     services:
@@ -214,8 +223,8 @@ jobs:
         image: mongo:7
         ports: ["27017:27017"]
         # Latchkey's docker default nofile is low enough that mongod hits
-        # EMFILE during index builds and WT_PANICs (trial 2, 10-24); a no-op
-        # on GitHub-hosted runners.
+        # EMFILE during index builds and WT_PANICs (trial 2, 10-24). It applies
+        # on GitHub-hosted runners too, where the service tests pass with it.
         options: >-
           --ulimit nofile=64000:64000
           --health-cmd "mongosh --eval 'db.runCommand(\"ping\").ok'"
