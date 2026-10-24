@@ -1487,8 +1487,8 @@ const V2AgentBYO: React.FC = () => {
               <div className="v2-byo__snippet-head">
                 <span>{t('agentByo.snippets.cursor')}</span>
               </div>
-              <p>{t('agentByo.snippets.cursorInstallHint')}</p>
               <a className="v2-byo__cursor-link" href={cursorInstallHref}>{t('agentByo.snippets.cursorInstall')}</a>
+              <p className="v2-byo__hint">{t('agentByo.snippets.cursorInstallHint')}</p>
               <div className="v2-byo__command">
                 <pre className="v2-byo__pre">{cursorSnippet}</pre>
                 <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">

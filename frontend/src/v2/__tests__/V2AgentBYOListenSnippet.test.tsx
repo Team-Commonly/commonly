@@ -107,6 +107,15 @@ describe('BYO listener snippet', () => {
     }
   });
 
+  test('the Cursor link leads its guidance, while the JSON still names its destination', async () => {
+    await issueToken();
+    const link = screen.getByRole('link', { name: 'Add to Cursor', hidden: true });
+    const hint = link.nextElementSibling;
+    expect(hint).toHaveClass('v2-byo__hint');
+    expect(hint).toHaveTextContent('The link adds Commonly with a placeholder key.');
+    expect(link.closest('.v2-byo__snippet')).toHaveTextContent('~/.cursor/mcp.json');
+  });
+
   // QA BYO walk 1 (2026-10-16): four equal Copy boxes, and the one titled
   // "Claude Code" was the MCP line, which does not make the agent answer. The
   // command that does is THE box: first, and the only one not marked optional

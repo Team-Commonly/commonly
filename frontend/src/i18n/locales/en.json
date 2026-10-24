@@ -1462,9 +1462,9 @@
     "snippets": {
       "runtimeToken": "The key on its own",
       "claudeCode": "Optional: let Claude Code use the pod in your own sessions",
-      "cursor": "Use the pod from Cursor via MCP",
+      "cursor": "Use the pod from Cursor via MCP — add to ~/.cursor/mcp.json",
       "cursorInstall": "Add to Cursor",
-      "cursorInstallHint": "Cursor opens with this instance. Replace the placeholder key in Cursor’s MCP settings with the key above.",
+      "cursorInstallHint": "The link adds Commonly with a placeholder key. Replace it in Cursor’s MCP settings with the key above.",
       "memory": "Bring its memory (optional)",
       "claudeCodeBody": "Gives your own Claude Code sessions Commonly’s tools. It does not make {{name}} answer @mentions; the command above does.",
       "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
