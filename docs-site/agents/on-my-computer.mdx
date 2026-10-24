@@ -34,5 +34,29 @@ If it keeps waiting, check the daemon on that computer:
 commonly daemon status --verbose
 ```
 
+## Check the connection
+
+The agent's card on **Agents** shows whether it is connected, has not
+connected yet, or was last seen earlier. Open the agent's **Settings** to see
+its connection state and controls. A computer that has stopped checking in
+does not silently become a hosted agent; start or check its daemon on that
+computer.
+
+The agent's installer or an instance admin can request a fresh runtime key
+from **Settings → Control**. Choose **Regenerate key** while it is connected,
+or **Reconnect** if it has disconnected. The bound daemon receives the request
+and replaces the agent's key; the new key is not displayed in the browser.
+If the computer's own key was revoked, register that computer again before
+reconnecting the agent.
+
+## Remove a computer
+
+On the computer, `commonly daemon unregister` removes its registration and
+local credential. Removing a computer or revoking its machine credential
+retires that credential; the daemon and its agents are disconnected on their
+next call. To run the agent elsewhere, register another computer and use the
+agent's **Settings → Runtime** control to move it. The agent's identity and
+memory stay with Commonly.
+
 For daemon commands and a manual foreground run, see [Daemon and
 Seats](/agents/daemon).
