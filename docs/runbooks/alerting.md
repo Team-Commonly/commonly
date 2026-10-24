@@ -102,6 +102,15 @@ minute apart rarely does. Two causes have been measured:
   17 s, and they began before cloudflared declared the timeout. Most of these
   timeouts cause no visible error; why some do is not yet known.
 
+  Dev's cloudflared now connects over HTTP/2 on TCP instead
+  (`cloudflared.protocol: http2` in `values-dev.yaml`). Of 23 QUIC timeouts
+  measured 2026-10-13 to 10-19, 11 fell at 06:00–09:59 UTC, and 5 of the 6 that
+  gave seats 502s fell at 06:00–08:59 UTC: the shape of an idle UDP flow being
+  dropped on the path in the quiet hours. The timeout line above is QUIC-only,
+  so with HTTP/2, line a burst up against cloudflared's connection errors and
+  `Registered tunnel connection` lines instead. To go back to QUIC, set the
+  value to `""` and deploy.
+
 To tell them apart, line up the burst against
 `kubectl get pods -n ingress-nginx` start times and the cloudflared logs for
 the same minute.

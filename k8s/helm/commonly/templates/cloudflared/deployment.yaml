@@ -23,6 +23,10 @@ spec:
             - tunnel
             - --config
             - /etc/cloudflared/config.yml
+            {{- with .Values.cloudflared.protocol }}
+            - --protocol
+            - {{ . }}
+            {{- end }}
             - --metrics
             - 0.0.0.0:{{ .Values.cloudflared.metricsPort | default 2000 }}
             - run

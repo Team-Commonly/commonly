@@ -384,6 +384,9 @@ jobs:
           # Stranger journey (2026-10-15): renders, and never retries (a retry would sign
           # up a second account and could hide a flaky step behind a later pass).
           test "$(yq -N 'select(.kind == "CronJob" and .metadata.name == "stranger-journey") | .spec.jobTemplate.spec.backoffLimit' /tmp/dev-rendered.yaml)" = "0"
+          # cloudflared reaches the edge over HTTP/2 (TCP), not QUIC, whose idle flows were dropped at night
+          # and gave seats 502s (2026-10-19). --protocol is a `tunnel` flag, so it must come before `run`.
+          test "$(yq -N 'select(.kind == "Deployment" and .metadata.name == "cloudflared-commonly-k8s") | .spec.template.spec.containers[] | select(.name == "cloudflared") | .args | join(" ")' /tmp/dev-rendered.yaml)" = "tunnel --config /etc/cloudflared/config.yml --protocol http2 --metrics 0.0.0.0:2000 run"
 
       - name: Render Slack OAuth secret wiring
         run: |

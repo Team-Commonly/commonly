@@ -333,6 +333,10 @@ cloudflared:
       operator: "Equal"
       value: "dev"
       effect: "NoSchedule"
+  # HTTP/2 over TCP, not QUIC: of 23 QUIC idle timeouts measured 10-13 to 10-19, 11 fell at 06:00-09:59 UTC,
+  # and 5 of the 6 that gave seats 502s fell at 06:00-08:59 UTC. That fits an idle UDP flow being dropped
+  # on the path in the quiet hours. See docs/runbooks/alerting.md, "A short burst of Cloudflare 502s".
+  protocol: http2
   ingressService: ingress-nginx-controller.ingress-nginx.svc.cluster.local
 
 litellm:

@@ -522,6 +522,9 @@ cloudflared:
     repository: cloudflare/cloudflared
     tag: "2026.1.2"
   replicas: 2
+  # How the connectors reach Cloudflare's edge: "" keeps cloudflared's default (auto, which picks QUIC),
+  # or set http2 (TCP) or quic. Passed as `cloudflared tunnel --protocol`.
+  protocol: ""
   ingressService: nginx-ingress-ingress-nginx-controller.ingress-nginx.svc.cluster.local
   ingressPort: 80
   metricsPort: 2000
