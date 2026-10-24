@@ -34,9 +34,30 @@ describe('agent freshness: delayed Mongo-only write', () => {
       content: 'late commit',
       createdAt: new Date(Date.now() - 1000),
     });
-    const start = await Freshness.readStart(podId);
-    await Freshness.recordRead(agentId, podId, start);
-    await peerMessage.save();
+    const insert = Message.collection.insertOne.bind(Message.collection);
+    let resumeInsert;
+    let notifyInsert;
+    const paused = new Promise((resolve) => { notifyInsert = resolve; });
+    const gate = new Promise((resolve) => { resumeInsert = resolve; });
+    const spy = jest.spyOn(Message.collection, 'insertOne').mockImplementation(async (...args) => {
+      notifyInsert();
+      await gate;
+      return insert(...args);
+    });
+
+    let start;
+    try {
+      const saving = peerMessage.save();
+      await paused;
+      start = await Freshness.readStart(podId);
+      expect(await Message.find({ podId }).lean()).toHaveLength(0);
+      await Freshness.recordRead(agentId, podId, start);
+      resumeInsert();
+      await saving;
+    } finally {
+      resumeInsert();
+      spy.mockRestore();
+    }
 
     const stored = await Message.findById(peerMessage._id).lean();
     expect(stored.freshnessPending).toBe(false);
