@@ -625,9 +625,9 @@ const V2PodBoard: React.FC = () => {
                     <button
                       type="button"
                       className="v2-board__card-main"
+                      title={task.taskId}
                       onClick={() => setSelected(task)}
                     >
-                      <span className="v2-board__card-id">{task.taskId}</span>
                       <span className="v2-board__card-title">{task.title}</span>
                       {task.assignee && (
                         <span className="v2-board__card-assignee">@{task.assignee}</span>

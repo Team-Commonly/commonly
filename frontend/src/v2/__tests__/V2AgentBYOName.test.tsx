@@ -45,8 +45,11 @@ const authValue = {
 const pods = [{ _id: 'p1', name: 'Workspace', type: 'chat' }];
 
 // Hosting on, so the page asks where the agent runs.
-const mockGet = () => {
+const mockGet = (roster = []) => {
   axios.get.mockImplementation((url) => {
+    if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: {
+      agents: roster.map((row) => ({ instanceId: 'default', ...row })),
+    } });
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 30 } } });
@@ -76,6 +79,92 @@ afterEach(() => {
 });
 
 describe('BYO default agent name follows where it runs', () => {
+  test('reconnect deep link keeps the name and rotates a revoked key with one action', async () => {
+    mockGet([{ name: 'local', installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+      connection: { state: 'revoked', lastSeenAt: null } }]);
+    axios.post.mockResolvedValue({ data: { token: 'cm_agent_new' } });
+    renderAt('/v2/agents/byo?pod=p1&name=local&reconnect=1');
+    await waitFor(() => expect(screen.getByTestId('byo-connection-state'))
+      .toHaveTextContent('Disconnected: key revoked'), { timeout: 5000 });
+    expect(nameInput()).toHaveValue('local');
+    expect(axios.get.mock.calls.some(([url]) => url.startsWith('/api/registry/agents/next-free-name?'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/registry/pods/p1/agents/local/runtime-tokens',
+      { label: 'BYO MCP — replacement', force: true, instanceId: 'default' }, expect.anything(),
+    ));
+  });
+
+  test('a nondefault webhook reconnect selects and rotates only that instance', async () => {
+    mockGet([
+      { name: 'local', instanceId: 'default', installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+        connection: { state: 'connected', lastSeenAt: new Date().toISOString() } },
+      { name: 'local', instanceId: 'alpha', installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+        connection: { state: 'revoked', lastSeenAt: null } },
+    ]);
+    axios.post.mockResolvedValue({ data: { token: 'cm_agent_alpha' } });
+    renderAt('/v2/agents/byo?pod=p1&name=local&instanceId=alpha&reconnect=1');
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/registry/pods/p1/agents/local/runtime-tokens',
+      { label: 'BYO MCP — replacement', force: true, instanceId: 'alpha' }, expect.anything(),
+    ));
+  });
+
+  test('ordinary BYO does not offer a nondefault instance as a default reconnect', async () => {
+    mockGet([{ name: 'local', instanceId: 'alpha', installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+      connection: { state: 'revoked', lastSeenAt: null } }]);
+    renderAt('/v2/agents/byo?pod=p1&name=local&from=card');
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/registry/pods/p1/agents', expect.anything()));
+    expect(screen.queryByTestId('byo-connection-state')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
+  });
+
+  test('compact BYO never offers a non-owner a forced key rotation', async () => {
+    mockGet([{ name: 'local', installedBy: 'someone-else', runtime: { runtimeType: 'webhook' },
+      connection: { state: 'revoked', lastSeenAt: null } }]);
+    renderAt('/v2/agents/byo?pod=p1&name=local&from=card');
+    await waitFor(() => expect(screen.getByTestId('byo-connection-state'))
+      .toHaveTextContent('Disconnected: key revoked'), { timeout: 5000 });
+    expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connect agent' })).toBeNull();
+  });
+
+  test('wrapper Reconnect requests a daemon rekey instead of repeating placement', async () => {
+    mockGet([{ name: 'local', installedBy: 'u1', runtime: { runtimeType: 'wrapper' },
+      connection: { state: 'revoked', lastSeenAt: null } }]);
+    axios.post.mockResolvedValue({ data: { requestedAt: '2026-10-23T16:30:00Z' } });
+    renderAt('/v2/agents/byo?pod=p1&name=local&mode=machine&reconnect=1');
+    const action = await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 });
+    fireEvent.click(action);
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/agent-binding/reconnect',
+      { agentName: 'local', instanceId: 'default' }, expect.anything(),
+    ));
+    expect(axios.post.mock.calls.some(([url]) => url === '/api/agent-binding/request')).toBe(false);
+    expect(await screen.findByTestId('byo-reconnect-result')).toHaveTextContent('Waiting for your computer');
+  });
+
+  test('a Settings key link can proactively rekey a connected wrapper', async () => {
+    mockGet([{ name: 'local', instanceId: 'alpha', installedBy: 'u1', runtime: { runtimeType: 'wrapper' },
+      connection: { state: 'connected', lastSeenAt: new Date().toISOString() } }]);
+    axios.post.mockResolvedValue({ data: { requestedAt: new Date().toISOString() } });
+    renderAt('/v2/agents/byo?pod=p1&name=local&instanceId=alpha&mode=machine&reconnect=1');
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/agent-binding/reconnect',
+      { agentName: 'local', instanceId: 'alpha' }, expect.anything(),
+    ));
+  });
+
+  test('a revoked computer key explains the registration step', async () => {
+    mockGet([{ name: 'local', installedBy: 'u1', runtime: { runtimeType: 'wrapper' },
+      connection: { state: 'revoked', lastSeenAt: null } }]);
+    axios.post.mockRejectedValue({ response: { data: { code: 'machine_key_revoked' } } });
+    renderAt('/v2/agents/byo?pod=p1&name=local&mode=machine&reconnect=1');
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }, { timeout: 5000 }));
+    expect(await screen.findByText(/Register the computer again/)).toBeInTheDocument();
+  });
   test('trims a long username before asking for a name suggestion', async () => {
     authValue.currentUser.username = 'a'.repeat(60);
     mockGet();

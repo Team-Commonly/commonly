@@ -129,6 +129,20 @@ describe('hosted-mcp connect: the client metadata document', () => {
 });
 
 describe('hosted-mcp connect: start', () => {
+  it('answers an internal write failure without leaving an unhandled rejection', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      Integration.findOneAndUpdate.mockRejectedValue(new Error('database write failed'));
+      const res = await start();
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({ error: 'connector_unavailable' });
+      expect(JSON.stringify(log.mock.calls)).toContain('linear');
+      expect(JSON.stringify(log.mock.calls)).not.toContain('database write failed');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('does not start a new connection for an instance-hidden entry', async () => {
     const prior = process.env.HOSTED_MCP_HIDDEN_ENTRIES;
     process.env.HOSTED_MCP_HIDDEN_ENTRIES = '["linear"]';

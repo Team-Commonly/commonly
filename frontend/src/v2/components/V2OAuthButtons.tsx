@@ -3,6 +3,7 @@ import axios from '../../utils/axiosConfig';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useTranslation } from 'react-i18next';
 import { readFirstTouchRef } from '../utils/firstTouch';
+import { rememberInviteOAuthStart } from '../utils/pendingInvite';
 
 // Social sign-in buttons shared by V2Login and V2Register. Renders nothing
 // until /api/auth/oauth/providers confirms a provider is configured, so
@@ -52,6 +53,23 @@ const readProviderCache = (): OAuthProvider[] => {
   } catch { return []; }
 };
 
+const submitInviteOAuth = (action: string, params: URLSearchParams): void => {
+  rememberInviteOAuthStart();
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = action;
+  form.style.display = 'none';
+  for (const [name, value] of Array.from(params)) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
+  form.submit();
+};
+
 const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
   const { t } = useTranslation();
   // Seed from cache so repeat visitors see the buttons instantly; the fetch
@@ -84,16 +102,24 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
 
   if (!providers.length) return null;
 
-  const startUrl = (id: string) => {
+  const startPath = (id: string) => `${getApiBaseUrl()}/api/auth/oauth/${id}/start`;
+  const startParams = () => {
     const params = new URLSearchParams();
     if (next) params.set('next', next);
-    if (invite) params.set('invite', invite);
     // A new account made through the provider keeps the first-touch ref too;
     // signing in to an existing account ignores it (oauthController).
     const ref = readFirstTouchRef();
     if (ref) params.set('ref', ref);
-    const qs = params.toString();
-    return `${getApiBaseUrl()}/api/auth/oauth/${id}/start${qs ? `?${qs}` : ''}`;
+    return params;
+  };
+  const startUrl = (id: string) => {
+    const qs = startParams().toString();
+    return `${startPath(id)}${qs ? `?${qs}` : ''}`;
+  };
+  const inviteParams = () => {
+    const params = startParams();
+    params.set('invite', invite || '');
+    return params;
   };
 
   return (
@@ -101,10 +127,26 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
       <div className="v2-login__or"><span>{t('auth.oauth.or')}</span></div>
       <div className="v2-login__oauth">
         {providers.map((p) => (
-          <a key={p.id} className="v2-login__oauth-btn" href={startUrl(p.id)}>
-            {PROVIDER_ICONS[p.id]}
-            {t('auth.oauth.continueWith', { provider: p.label })}
-          </a>
+          invite ? (
+            <button
+              key={p.id}
+              type="button"
+              className="v2-login__oauth-btn"
+              onClick={() => submitInviteOAuth(startPath(p.id), inviteParams())}
+            >
+              {PROVIDER_ICONS[p.id]}
+              {t('auth.oauth.continueWith', { provider: p.label })}
+            </button>
+          ) : (
+            <a
+              key={p.id}
+              className="v2-login__oauth-btn"
+              href={startUrl(p.id)}
+            >
+              {PROVIDER_ICONS[p.id]}
+              {t('auth.oauth.continueWith', { provider: p.label })}
+            </a>
+          )
         ))}
       </div>
     </>

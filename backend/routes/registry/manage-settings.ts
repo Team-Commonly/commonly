@@ -1,7 +1,7 @@
 // Owner/admin controls for one agent installation at a time.
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
-import { hostedCapsForOwner } from '../../services/hostedRuntimeService';
+import { hostedCapsForOwner, userRunCeilingForOwner } from '../../services/hostedRuntimeService';
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
@@ -58,8 +58,11 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
     const visible = manageable.filter((entry: any) => names.has(String(entry.podId)));
     const writable = visible.find((entry: any) => entry.status === 'active') || visible[0];
-    const { turnsPerDay } = await hostedCapsForOwner(userId);
-    return res.json({ turnCap: turnsPerDay, podCount: installations.length,
+    const quotaOwner = writable?.installedBy || userId;
+    const [{ turnsPerDay }, userRunCeiling] = await Promise.all([
+      hostedCapsForOwner(quotaOwner), userRunCeilingForOwner(quotaOwner),
+    ]);
+    return res.json({ turnCap: turnsPerDay, userRunCeiling, podCount: installations.length,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
       writablePodId: writable ? String(writable.podId) : null,
       installations: visible

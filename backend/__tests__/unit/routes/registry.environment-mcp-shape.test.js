@@ -40,11 +40,17 @@ jest.mock('../../../models/AgentProfile', () => ({
 jest.mock('../../../models/User', () => ({
   findById: jest.fn(),
 }));
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
+  ownsRuntimeIdentity: jest.fn().mockResolvedValue({ owned: true }),
+}));
 
 const Pod = require('../../../models/Pod');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentProfile = require('../../../models/AgentProfile');
 const User = require('../../../models/User');
+const AgentIdentityService = require('../../../services/agentIdentityService');
+const { ownsRuntimeIdentity } = require('../../../services/runtimeIdentityOwnership');
 const registryRoutes = require('../../../routes/registry');
 
 const app = express();
@@ -95,6 +101,10 @@ describe('agent config PATCH — write-time mcp entry shape (TASK-071)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    ownsRuntimeIdentity.mockResolvedValue({ owned: true });
+    jest.spyOn(AgentIdentityService, 'renameAgentDisplayName').mockImplementation(async (_name, _instanceId, label) => ({
+      displayName: label, mirrorSynced: true,
+    }));
     User.findById.mockReturnValue({
       select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ _id: ME, role: 'user' }) }),
     });
@@ -103,6 +113,7 @@ describe('agent config PATCH — write-time mcp entry shape (TASK-071)', () => {
     AgentInstallation.findOne.mockResolvedValue(primary);
     AgentInstallation.find.mockResolvedValue([primary]);
   });
+  afterEach(() => jest.restoreAllMocks());
 
   it("Vera's gate: refuses transport 'http' carrying both a url and a command, and writes nothing", async () => {
     const res = await patch({

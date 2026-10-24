@@ -16,7 +16,7 @@ jest.mock('../../../middleware/auth', () => jest.fn((req, res, next) => {
 }));
 jest.mock('../../../models/Pod', () => ({}));
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentRegistry: { search: jest.fn() },
+  AgentRegistry: { search: jest.fn(), getByName: jest.fn() },
   AgentInstallation: { find: jest.fn(), getInstalledAgents: jest.fn() },
 }));
 jest.mock('../../../models/User', () => ({
@@ -67,6 +67,7 @@ const roleLookup = (role) => {
 };
 
 const listAgents = getHandler('get', '/agents');
+const agentDetails = getHandler('get', '/agents/:name');
 
 describe('hire catalog verified gate', () => {
   beforeEach(() => {
@@ -114,5 +115,19 @@ describe('hire catalog verified gate', () => {
     await listAgents({ query: {}, userId: 'caller-1' }, res);
     const payload = res.json.mock.calls[0][0];
     expect(payload.agents.map((a) => a.name)).toEqual(['claude-code']);
+  });
+
+  it('returns listing visibility fields to the owner settings page', async () => {
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'maya-claude', displayName: 'Maya', latestVersion: '1.0.0',
+      status: 'active', registry: 'commonly-community', ephemeral: false, verified: false,
+      versions: [], manifest: {},
+    });
+    const res = response();
+    await agentDetails({ params: { name: 'maya-claude' } }, res);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'maya-claude', status: 'active', registry: 'commonly-community',
+      ephemeral: false, verified: false,
+    }));
   });
 });

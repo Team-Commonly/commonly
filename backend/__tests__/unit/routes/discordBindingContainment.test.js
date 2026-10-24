@@ -294,6 +294,27 @@ describe('Discord binding containment (TASK-123 a)', () => {
       expect(res.headers.location).toContain('/discord/success');
       expect(axios.post.mock.calls[0][0]).toBe('https://discord.com/api/oauth2/token');
     });
+
+    it('redirects a post-exchange guild failure without logging provider data', async () => {
+      const sentinel = 'dummy-bot-token-sentinel';
+      axios.get.mockRejectedValueOnce({ response: { data: { detail: sentinel } } });
+      const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const errorLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const res = await request(app)
+          .get(`/api/discord/callback?code=abc&state=pod_pod-1&guild_id=${GUILD}`);
+        expect(axios.post).toHaveBeenCalledWith(
+          'https://discord.com/api/oauth2/token', expect.anything(), expect.anything(),
+        );
+        expect(res.status).toBe(302);
+        expect(res.headers.location).toContain('/discord/error');
+        expect(JSON.stringify([...log.mock.calls, ...errorLog.mock.calls])).not.toContain(sentinel);
+        expect(res.headers.location).not.toContain(sentinel);
+      } finally {
+        log.mockRestore();
+        errorLog.mockRestore();
+      }
+    });
   });
 
   describe('POST /api/integrations', () => {

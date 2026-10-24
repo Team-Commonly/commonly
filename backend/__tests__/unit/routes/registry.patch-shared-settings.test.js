@@ -174,10 +174,11 @@ describe('registry shared agent settings', () => {
         agentId: 'openclaw:x-curator',
         podId: { $in: ['pod-1', 'pod-2'] },
       },
-      expect.objectContaining({
+      { $set: expect.objectContaining({
         modelPreferences: { preferred: 'gemini-2.5-flash' },
         instructions: 'Keep reports concise.',
-      }),
+      }) },
+      { runValidators: true },
     );
   });
 });

@@ -284,7 +284,7 @@ router.post('/slack/authorize-url', writeIntegrationsRateLimit, auth, async (req
       const oauthError = error as { code: string; message: string };
       return slackError(res, 503, oauthError.code, oauthError.message);
     }
-    console.error('[slack-oauth] could not create authorize URL:', (error as Error).message);
+    console.error('[slack-oauth] could not create authorize URL');
     return slackError(res, 500, 'slack_authorization_failed', 'Could not begin Slack authorization.');
   }
 });
@@ -391,16 +391,20 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
     return slackCallbackRedirect(res, 'pending');
   } catch (error) {
     if (integration?._id) {
-      await Integration.updateOne(
-        { _id: integration._id, 'config.oauthStateClaimId': claimId },
-        { $unset: { 'config.oauthStateClaimId': 1 } },
-      );
+      try {
+        await Integration.updateOne(
+          { _id: integration._id, 'config.oauthStateClaimId': claimId },
+          { $unset: { 'config.oauthStateClaimId': 1 } },
+        );
+      } catch {
+        // A failed claim cleanup must still return the browser to Connect.
+      }
     }
     if (error instanceof SlackOAuthConfigurationError || error instanceof SlackOAuthExchangeError) {
       const oauthError = error as { code: string; message: string };
       return slackCallbackRedirect(res, 'error', oauthError.code);
     }
-    console.error('[slack-oauth] callback failed:', (error as Error).message);
+    console.error('[slack-oauth] callback failed');
     return slackCallbackRedirect(res, 'error', 'callback_failed');
   }
 };

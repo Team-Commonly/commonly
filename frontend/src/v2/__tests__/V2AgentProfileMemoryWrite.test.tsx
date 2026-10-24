@@ -86,6 +86,63 @@ describe('V2AgentProfile memory-write visibility', () => {
     expect(screen.queryByText(/Runtime metadata|Deduplication state|Long-term memory/)).toBeNull();
   });
 
+  it('shows an owner the revoked connection and a single Reconnect action', async () => {
+    window.localStorage.setItem('token', 'owner-token');
+    profileClient.get.mockImplementation((url: string) => {
+      if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+        viewerRole: 'owner', totalEntries: 0, sections: [], pods: [{ id: 'pod-1', name: 'Workspace' }],
+      } });
+      if (url.startsWith('/api/registry/agents/claude-code/manage-settings')) return Promise.resolve({ data: {
+        writablePodId: 'pod-1',
+      } });
+      if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
+        name: 'claude-code', instanceId: 'observer', runtime: { runtimeType: 'webhook' },
+        connection: { state: 'revoked', lastSeenAt: null },
+      }] } });
+      return Promise.resolve(profilePayload(null));
+    });
+    renderProfile();
+    expect(await screen.findByTestId('agent-profile-connection'))
+      .toHaveTextContent('Disconnected: key revoked');
+    expect(screen.getByRole('link', { name: 'Reconnect' }))
+      .toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=claude-code&instanceId=observer&reconnect=1');
+    expect(screen.queryByRole('button', { name: 'Talk to Observer' })).toBeNull();
+  });
+
+  it('uses the installer-owned pod when another pod appears first in the memory index', async () => {
+    window.localStorage.setItem('token', 'owner-token');
+    profileClient.get.mockImplementation((url: string) => {
+      if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+        viewerRole: 'owner', totalEntries: 0, sections: [],
+        pods: [{ id: 'other-pod', name: 'Other team' }, { id: 'own-pod', name: 'Workspace' }],
+      } });
+      if (url.startsWith('/api/registry/agents/claude-code/manage-settings')) return Promise.resolve({ data: {
+        installations: [{ podId: 'other-pod', podName: 'Other team' }], writablePodId: 'own-pod',
+      } });
+      if (url === '/api/registry/pods/own-pod/agents') return Promise.resolve({ data: { agents: [{
+        name: 'claude-code', instanceId: 'observer', runtime: { runtimeType: 'wrapper' },
+        connection: { state: 'stale', lastSeenAt: new Date(Date.now() - 7 * 60000).toISOString() },
+      }] } });
+      return Promise.resolve(profilePayload(null));
+    });
+    renderProfile();
+    expect(await screen.findByRole('link', { name: 'Reconnect' }))
+      .toHaveAttribute('href', '/v2/agents/byo?pod=own-pod&name=claude-code&instanceId=observer&reconnect=1&mode=machine');
+    expect(profileClient.get.mock.calls.some(([url]) => url === '/api/registry/pods/other-pod/agents')).toBe(false);
+  });
+
+  it('does not offer Reconnect to a signed-in pod member without management access', async () => {
+    window.localStorage.setItem('token', 'member-token');
+    renderProfile();
+    expect(await screen.findByRole('heading', { name: 'Observer' })).toBeInTheDocument();
+    await waitFor(() => expect(profileClient.get).toHaveBeenCalledWith(
+      '/api/agent-memory/claude-code/observer',
+      { headers: { Authorization: 'Bearer member-token' } },
+    ));
+    expect(profileClient.get.mock.calls.some(([url]) => url.startsWith('/api/registry/pods/'))).toBe(false);
+    expect(screen.queryByRole('link', { name: 'Reconnect' })).toBeNull();
+  });
+
   it('opens the same 1:1 room endpoint for a signed-in visitor', async () => {
     window.localStorage.setItem('token', 'viewer-token');
     renderProfile();

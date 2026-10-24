@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import V2OAuthButtons from './V2OAuthButtons';
 import V2AuthBrand from './V2AuthBrand';
 import { pathOfLocation, safeNextPath } from '../utils/safeNextPath';
+import { forgetInviteOAuthStart } from '../utils/pendingInvite';
 
 interface LocationState {
   from?: { pathname?: string; search?: string; hash?: string };
@@ -61,6 +62,13 @@ const V2Login: React.FC = () => {
   const oauthError = oauthErrorCode
     ? t(OAUTH_ERROR_KEYS[oauthErrorCode] || OAUTH_ERROR_KEYS.provider_error)
     : null;
+
+  useEffect(() => {
+    // Provider-side failures redirect here without reaching V2OAuthComplete.
+    // Keep the invite for a retry, but make sure a later ordinary login cannot
+    // be mistaken for the failed invite-bearing signup.
+    if (oauthErrorCode) forgetInviteOAuthStart();
+  }, [oauthErrorCode]);
 
   const errorMessage = localError || authError || oauthError;
 

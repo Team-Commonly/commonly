@@ -238,7 +238,7 @@ router.get('/:entryId/client-metadata', clientMetadataRateLimit, (req: Request, 
  * pair through the §10.3 fence. An insert here would collide with the partial
  * unique index instead.
  */
-router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: AuthedRequest, res: Response) => {
+const startConnect = async (req: AuthedRequest, res: Response) => {
   const userId = req.user?.id;
   if (!userId) {
     return res.status(401).json({ error: 'authentication_required' });
@@ -326,6 +326,15 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
     expiresAt,
     integrationId: row?._id,
   });
+};
+
+router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: AuthedRequest, res: Response) => {
+  try {
+    await startConnect(req, res);
+  } catch {
+    console.error('[hosted-mcp] start failed', JSON.stringify({ entryId: req.params.entryId }));
+    if (!res.headersSent) res.status(503).json({ error: 'connector_unavailable' });
+  }
 });
 
 /**
@@ -346,7 +355,11 @@ router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: Aut
  * is atomic on the same terms and hands back the verifier in the pre-image,
  * which is the only place it is kept.
  */
-router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Response) => {
+const finishCallback = async (req: Request, res: Response, flow: {
+  pendingRowId?: string;
+  connectedRowId?: string;
+  credentialWriteStarted?: boolean;
+}) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
   if (!entry) {
     return callbackRedirect(res, 'error', 'unknown_entry');
@@ -397,6 +410,7 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
   if (!browserNonceMatches(issued.config?.pendingAuth?.browserNonce, browserNonce)) {
     return callbackRedirect(res, 'error', 'browser_mismatch');
   }
+  if (issued.status === 'pending') flow.pendingRowId = String(issued._id);
 
   const codeVerifier = issued.config?.pendingAuth?.codeVerifier;
   const consumed = await Integration.findOneAndUpdate(
@@ -412,6 +426,7 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
     // A second delivery of the same state, or two tabs finishing at once.
     return callbackRedirect(res, 'error', 'state_consumed');
   }
+  if (consumed.status === 'connected') flow.connectedRowId = String(consumed._id);
 
   let authorizationServer: HostedMcpAuthorizationServer;
   try {
@@ -477,11 +492,11 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
   const requestedScopes: Set<string> = new Set<string>(entry.scopes);
   const extraScopes: string[] = [...grantedScopes].filter((scope) => !requestedScopes.has(scope));
   if (extraScopes.length) {
-    // Keep vendor-controlled scope strings out of the browser URL and official
-    // UI copy. JSON encoding keeps control characters inert in server logs.
+    // Scope strings come from the provider and can contain credential material.
+    // Log only the entry and count, never the values.
     console.warn('[hosted-mcp] refused overbroad OAuth scope grant', JSON.stringify({
       entryId: entry.id,
-      extraScopes,
+      extraScopeCount: extraScopes.length,
     }));
     await revokeRefusedGrant(entry, client, tokens);
     return callbackRedirect(res, 'error', 'unrequested_scope');
@@ -560,8 +575,28 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
   }
 
   // Secret storage may replace the token behind the same ref before the row
-  // update. Clear the old-grant assessment before that replacement begins.
+  // update. Retire an existing connection before that replacement begins: if
+  // the second secret write or the final row write fails, the stored pair may
+  // be mixed, but no caller can use a row whose status is error. The outer
+  // catch also retries this retirement in case another callback made the row
+  // connected while this one was writing.
+  if (flow.connectedRowId) {
+    const retired = await Integration.findOneAndUpdate(
+      { _id: flow.connectedRowId, status: 'connected' },
+      {
+        $set: {
+          status: 'error',
+          errorMessage: 'Connection could not be completed. Try again.',
+          errorMessageUserFacing: true,
+        },
+      },
+      { new: true },
+    );
+    if (!retired) return callbackRedirect(res, 'error', 'state_consumed');
+  }
+  // Clear the old-grant assessment before replacement begins.
   forgetHostedMcpDrift(String(consumed._id));
+  flow.credentialWriteStarted = true;
   const credentialRef = await connectorSecrets.put(String(consumed._id), HOSTED_MCP_ACCESS_TOKEN, tokens.access_token);
   let refreshTokenRef = consumed.config?.refreshTokenRef || undefined;
   if (tokens.refresh_token) {
@@ -623,6 +658,58 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
       revokeAt: manualRevokeAt,
     },
   } : undefined);
+};
+
+router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Response) => {
+  const flow: { pendingRowId?: string; connectedRowId?: string; credentialWriteStarted?: boolean } = {};
+  try {
+    await finishCallback(req, res, flow);
+  } catch {
+    // A new pending row can be marked failed only if no newer start has put a
+    // different pending authorization on the same row.
+    if (flow.pendingRowId) {
+      try {
+        await Integration.findOneAndUpdate(
+          // A newer /start may have written a fresh pendingAuth while this
+          // callback was waiting for the secret store. Leave that flow intact.
+          { _id: flow.pendingRowId, status: 'pending', 'config.pendingAuth': { $exists: false } },
+          {
+            $set: {
+              status: 'error',
+              errorMessage: 'Connection could not be completed. Try again.',
+              errorMessageUserFacing: true,
+            },
+            $unset: { 'config.pendingAuth': 1 },
+          },
+          { new: true },
+        );
+      } catch {
+        // A failed recovery write still must not strand the browser or reject
+        // the Express handler.
+      }
+    }
+    if (flow.connectedRowId && flow.credentialWriteStarted) {
+      try {
+        // put replaces material behind a stable ref. If a later write fails,
+        // the old access/refresh pair may be mixed; retire the connection so
+        // no caller can use either token until a fresh authorization succeeds.
+        await Integration.findOneAndUpdate(
+          { _id: flow.connectedRowId, status: 'connected' },
+          {
+            $set: {
+              status: 'error',
+              errorMessage: 'Connection could not be completed. Try again.',
+              errorMessageUserFacing: true,
+            },
+          },
+        );
+      } catch {
+        // Keep the HTTP callback contained even if recovery storage fails.
+      }
+    }
+    console.error('[hosted-mcp] callback failed', JSON.stringify({ entryId: req.params.entryId }));
+    if (!res.headersSent) callbackRedirect(res, 'error', 'connector_unavailable');
+  }
 });
 
 module.exports = router;

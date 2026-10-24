@@ -95,13 +95,14 @@ describe('registry tool policy update', () => {
         agentId: 'openclaw:default',
         podId: { $in: ['pod-1'] },
       },
-      expect.objectContaining({
+      { $set: expect.objectContaining({
         toolPolicy: {
           allowed: ['commonly', 'commonly_search'],
           blocked: ['commonly_write'],
           requireApproval: ['commonly_write'],
         },
-      }),
+      }) },
+      { runValidators: true },
     );
   });
 });

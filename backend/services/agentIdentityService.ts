@@ -160,6 +160,7 @@ export const isReservedAgentEmail = (email: unknown): boolean => (
 /** The refusal's declared code: callers identify it structurally. */
 export const AGENT_USERNAME_CONFLICT_CODE = 'agent_username_conflict';
 export const AGENT_IDENTITY_CONFLICT_CODE = 'agent_identity_conflict';
+export const AGENT_DISPLAY_NAME_TAKEN_CODE = 'agent_display_name_taken';
 
 export class AgentUsernameConflictError extends Error {
   readonly code = AGENT_USERNAME_CONFLICT_CODE;
@@ -189,6 +190,17 @@ export class AgentIdentityConflictError extends Error {
   constructor(public readonly username: string) {
     super(`refusing to bind agent identity to an existing bot account "${username}" with different identity metadata`);
     this.name = 'AgentIdentityConflictError';
+  }
+}
+
+export class AgentDisplayNameTakenError extends Error {
+  readonly code = AGENT_DISPLAY_NAME_TAKEN_CODE;
+
+  readonly status = 409;
+
+  constructor() {
+    super('Another agent already uses this name');
+    this.name = 'AgentDisplayNameTakenError';
   }
 }
 
@@ -475,6 +487,38 @@ async function resolveCollisionFreeDisplayName(
 }
 
 class AgentIdentityService {
+  /** Explicitly rename the portable principal; routine installation refreshes preserve it. */
+  static async renameAgentDisplayName(agentType: string, instanceId: string, desiredName: string): Promise<{
+    displayName: string; mirrorSynced: boolean;
+  } | null> {
+    const resolvedType = AgentIdentityService.resolveAgentType(agentType);
+    const username = buildAgentUsername(resolvedType, instanceId);
+    const user = await User.findOne({
+      username,
+      isBot: true,
+      'botMetadata.agentName': resolvedType,
+      'botMetadata.instanceId': instanceId,
+    });
+    if (!user) return null;
+    // Explicit renames must not inherit the install-time resolver's
+    // already-suffixed fast path. That path preserves generated labels during
+    // reprovision, but here the caller can type a peer's exact label.
+    const escapedName = desiredName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const peers = await User.find({
+      _id: { $ne: user._id },
+      $or: [{ isBot: true }, { botType: 'agent' }],
+      'botMetadata.displayName': new RegExp(`^${escapedName}$`, 'i'),
+    }).select('_id').lean();
+    if (peers.length) {
+      throw new AgentDisplayNameTakenError();
+    }
+    const displayName = await resolveCollisionFreeDisplayName(desiredName, instanceId, user._id);
+    user.botMetadata = { ...user.botMetadata, displayName };
+    await user.save();
+    const mirrorSynced = await AgentIdentityService.syncUserToPostgreSQL(user);
+    return { displayName, mirrorSynced };
+  }
+
   /**
    * Get or create an agent user with proper bot metadata
    */
