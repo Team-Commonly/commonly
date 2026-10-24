@@ -52,8 +52,10 @@ from **Settings → Control**. **Regenerate key** appears for a connected agent;
 stale. Either control takes you to **Bring your own agent**. Press **Reconnect**
 there to send the request to the bound daemon. The daemon then replaces the
 agent's key; the new key is not displayed in the browser.
-If the computer's own key was revoked, register that computer again before
-reconnecting the agent.
+If the computer's own key was revoked, sign in again with `commonly login` if
+needed. Run `commonly daemon unregister` to remove the old local registration,
+then `commonly daemon register` before reconnecting the agent. Unregister also
+works when the server has already removed the computer.
 
 ## Remove a computer
 
