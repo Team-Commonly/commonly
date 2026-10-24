@@ -3,6 +3,8 @@
 // message. No model, email or external runtime is involved.
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(() => 'token'), verify: jest.fn(), decode: jest.fn() }));
 jest.mock('@sendgrid/mail', () => ({ setApiKey: jest.fn(), send: jest.fn() }));
+jest.mock('../../../models/Task', () => ({ create: jest.fn().mockResolvedValue([]) }));
+jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { findOneAndUpdate: jest.fn().mockResolvedValue({}) } }));
 jest.mock('../../../services/communityPodService', () => ({ ensureUserInCommunityPod: jest.fn() }));
 const mockQuery = jest.fn();
 jest.mock('../../../config/db-pg', () => ({ pool: { query: (...args) => mockQuery(...args) } }));
@@ -33,7 +35,7 @@ describe('signup workspace exists in PG before Scout posts', () => {
     pool = new (newDb().adapters.createPg().Pool)();
     await pool.query(`
       CREATE TABLE users (_id text PRIMARY KEY);
-      CREATE TABLE pods (id text PRIMARY KEY, name text, description text, type text, created_by text REFERENCES users(_id));
+      CREATE TABLE pods (id text PRIMARY KEY, name text, description text, type text, created_by text REFERENCES users(_id), updated_at timestamptz DEFAULT CURRENT_TIMESTAMP);
       CREATE TABLE pod_members (pod_id text REFERENCES pods(id), user_id text REFERENCES users(_id), PRIMARY KEY(pod_id,user_id));
       CREATE TABLE messages (pod_id text REFERENCES pods(id), content text);
     `);
@@ -67,6 +69,7 @@ describe('signup workspace exists in PG before Scout posts', () => {
       return pool.query(sql, args);
     });
     mockScoutUser.mockResolvedValue(scout);
+    jest.spyOn(Pod, 'updateOne').mockResolvedValue({ modifiedCount: 1 });
     let finish;
     const posted = new Promise((resolve) => { finish = resolve; });
     mockPost.mockImplementation(async ({ podId, content }) => {
