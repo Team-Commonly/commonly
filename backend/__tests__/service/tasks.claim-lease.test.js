@@ -383,6 +383,46 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     }
   });
 
+  test('claim wakes the assignee at its successful write after a racing PATCH', async () => {
+    await seedTask({ assignee: 'alpha' });
+    notifyPodAgents.mockClear();
+    const originalUpdate = Task.findOneAndUpdate.bind(Task);
+    let releaseClaim;
+    let claimEntered;
+    const claimPaused = new Promise((resolve) => { releaseClaim = resolve; });
+    const entered = new Promise((resolve) => { claimEntered = resolve; });
+    let pausedClaim = false;
+    const updateSpy = jest.spyOn(Task, 'findOneAndUpdate').mockImplementation((filter, update, options) => {
+      if (update?.$set?.claimedBy === owner._id.toString() && !pausedClaim) {
+        pausedClaim = true;
+        claimEntered();
+        return claimPaused.then(() => originalUpdate(filter, update, options));
+      }
+      return originalUpdate(filter, update, options);
+    });
+
+    try {
+      const claimRequest = claim(ownerToken).then((response) => response);
+      await entered;
+      const patchResponse = await request(app)
+        .patch(`/api/v1/tasks/${pod._id}/T-1`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ assignee: 'beta' });
+      expect(patchResponse.status).toBe(200);
+      notifyPodAgents.mockClear();
+      releaseClaim();
+      const claimResponse = await claimRequest;
+      expect(claimResponse.status).toBe(200);
+
+      const claimWake = notifyPodAgents.mock.calls.find((call) => call[1].claimedBy === owner._id.toString());
+      expect(claimWake?.[4]).toEqual(expect.objectContaining({ assignee: 'beta' }));
+      expect(claimWake?.[1]).toEqual(expect.objectContaining({ assignee: 'beta' }));
+    } finally {
+      releaseClaim();
+      updateSpy.mockRestore();
+    }
+  });
+
   test('PATCH unassignment offers the exact stored revision before the work sweep', async () => {
     await seedTask({ assignee: 'claim-audit-agent' });
     // Force the same monotonic retry the PATCH takes when a competing writer

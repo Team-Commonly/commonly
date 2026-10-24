@@ -100,14 +100,14 @@ const router: ReturnType<typeof express.Router> = express.Router();
 // offeredAt. Mongoose's wall-clock timestamp can run behind a revision bumped
 // by a concurrent PATCH, so task writes in this route reserve the next value
 // against the stored revision instead of letting a later write move it back.
-const updateTaskWithRevision = async (
+const updateTaskWithRevisionSnapshot = async (
   filter: Record<string, unknown>,
   update: Record<string, unknown>,
 ) => {
   const key = { podId: filter.podId, taskId: filter.taskId };
   for (let attempt = 0; attempt < 4; attempt += 1) {
     // eslint-disable-next-line no-await-in-loop
-    const current = await Task.findOne(key).select('updatedAt').lean();
+    const current = await Task.findOne(key).select('updatedAt claimedBy lapsedFrom assignee status').lean();
     if (!current) return null;
     const writeTime = new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1));
     // eslint-disable-next-line no-await-in-loop
@@ -116,7 +116,8 @@ const updateTaskWithRevision = async (
       { ...update, $set: { ...(update.$set as Record<string, unknown> || {}), updatedAt: writeTime } },
       { new: true, timestamps: false },
     );
-    if (task) return task;
+    // The revision CAS binds this ownership snapshot to the successful write.
+    if (task) return { task, previous: current };
     // Distinguish a lost revision race from a failed status/lease predicate.
     // eslint-disable-next-line no-await-in-loop
     const latest = await Task.findOne(key).select('updatedAt').lean();
@@ -124,6 +125,11 @@ const updateTaskWithRevision = async (
   }
   return null;
 };
+
+const updateTaskWithRevision = async (
+  filter: Record<string, unknown>,
+  update: Record<string, unknown>,
+) => (await updateTaskWithRevisionSnapshot(filter, update))?.task || null;
 
 const taskWriteRateLimitKey = (req: Request): string => {
   const authHeader = req.get('Authorization') || req.get('x-auth-token');
@@ -598,17 +604,13 @@ router.post('/:podId/:taskId/claim', rateLimit({
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const now = new Date();
-    // Pre-read the current holder to classify this claim AFTER the CAS wins:
+    // Classify the current holder only after this claim's CAS wins:
     // a same-holder continuation (renewal, or re-take after the holder's own
     // lapse) is no news to the room and must not fan out (the redundant wakes
     // burned a model turn per seat per renewal and filled Sharpen with seats
     // narrating why they won't act — measured 2026-08-25, 4 wakes in one
-    // session for one task). The read races the CAS by design: worst case is
-    // one wake mis-classified once, which beats a transaction on the hot path.
-    const preClaim = await Task.findOne({
-      podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
-      taskId,
-    }).select('claimedBy lapsedFrom assignee status').lean() as { claimedBy?: string | null; lapsedFrom?: string | null; assignee?: string | null; status?: string } | null;
+    // session for one task). The revision CAS binds the ownership snapshot to
+    // this successful write, even if an assignee PATCH raced the claim.
     // `rescueDeferrals` and `lapsedFrom` reset on every claim (#1080 part 2/3).
     // The deferral budget is per-lease, not per-task: a seat that renews
     // normally must never inherit a predecessor's spent budget, or the third
@@ -620,7 +622,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     // this named task is blocked. Legacy claims get their effective expiry
     // derived from claimedAt, so no migration and no instant steal of work
     // someone claimed minutes ago.
-    const task = await updateTaskWithRevision({
+    const result = await updateTaskWithRevisionSnapshot({
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
       // A blocked row is deliberately resumable only when a seat names its
@@ -629,7 +631,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
       // peer may pick up speculatively.
       $or: [...claimableConditions(now, claimedBy), { status: 'blocked' }],
     }, update);
-    if (!task) {
+    if (!result) {
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { claimedBy?: string; status?: string; claimExpiresAt?: Date | null } | null;
       if (!existing) return res.status(404).json({ error: 'Task not found' });
       // Name the live holder AND when the lease frees — a loser standing
@@ -642,6 +644,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
         claimExpiresAt: existing.claimExpiresAt || null,
       });
     }
+    const { task, previous: preClaim } = result;
     emitTaskUpdated(podId, task, 'updated');
     // Same-holder continuation: the seat that already held (or just lapsed
     // from) this task re-claimed it. The board UI still updates (socket emit
