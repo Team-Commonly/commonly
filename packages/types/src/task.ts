@@ -15,7 +15,10 @@ export interface ITask {
   description?: string;
   assignee?: string;
   status: TaskStatus;
-  priority?: 'low' | 'medium' | 'high';
+  priority?: 'P0' | 'P1' | 'P2' | 'P3';
+  watchers?: string[];
+  claimedBy?: string | null;
+  claimExpiresAt?: string | Date | null;
   sourceRef?: string;
   prUrl?: string;
   dep?: string;

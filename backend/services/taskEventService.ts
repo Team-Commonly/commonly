@@ -1,3 +1,6 @@
+import { resolveTokenAgentIdentity } from '../utils/agentTokenIdentity';
+import { Types } from 'mongoose';
+import { compareTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 /**
  * taskEventService
  *
@@ -42,9 +45,10 @@ async function claimHolderKey(claimedBy: unknown): Promise<string | null> {
   // Claims store the bot User id; installedBy can instead name the human.
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const User = require('../models/User');
-  const holder = await User.findById(claim).select('isBot botMetadata').lean();
-  if (!holder?.isBot || !holder.botMetadata?.agentName) return null;
-  return `${String(holder.botMetadata.agentName).toLowerCase()}::${String(holder.botMetadata.instanceId || 'default').toLowerCase()}`;
+  const holder = await User.findById(claim).select('isBot botMetadata username').lean();
+  if (!holder?.isBot) return null;
+  const identity = resolveTokenAgentIdentity(holder);
+  return identity.agentName ? `${identity.agentName}::${identity.instanceId}` : null;
 }
 
 function seatHoldsClaim(install: Record<string, unknown>, holderKey: string | null): boolean {
@@ -228,6 +232,7 @@ export async function notifyPodAgents(
     instanceId?: string;
   },
   previousTask?: BoardTask | null,
+  watchersOnly = false,
 ): Promise<void> {
   // A deletion leaves nothing to pick up, and a tombstone wake spends a model
   // turn to discover there is no work.
@@ -242,15 +247,58 @@ export async function notifyPodAgents(
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
 
     const normalizedPodId = String(podId);
-    const active = await AgentInstallation.find({
+    const pendingRevision = watchersOnly ? task.watcherDeliveryPendingAt : task.updatedAt || new Date();
+    const hasWatchers = Array.isArray(task.watchers) && task.watchers.length > 0;
+    if (hasWatchers && !watchersOnly) {
+      await Task.updateOne({ _id: task._id }, { $max: { watcherDeliveryPendingAt: pendingRevision } }, { timestamps: false });
+    }
+    const clearWatcherRetry = async () => {
+      if (!hasWatchers && !task.watcherDeliveryPendingAt) return;
+      if (pendingRevision) await Task.updateOne(
+        { _id: task._id, watcherDeliveryPendingAt: pendingRevision },
+        { $unset: { watcherDeliveryPendingAt: 1 } }, { timestamps: false },
+      );
+    };
+    let watcherLookupFailed = false;
+    const active = watchersOnly ? [] : await AgentInstallation.find({
       podId: normalizedPodId,
       status: 'active',
     }).lean();
 
     // Ownership addresses a seat directly, independent of ambient wake opt-in.
     // Other seats still receive durable board context without a model turn.
-    const installs = active || [];
-    if (!installs.length) return;
+    const installs: Array<Record<string, unknown>> = [...(active || [])];
+    // A bot can be a pod member without an active runtime projection. Its
+    // explicit task subscription still needs durable receipt, never a wake.
+    if (Array.isArray(task.watchers) && task.watchers.length) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const User = require('../models/User');
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const Pod = require('../models/Pod');
+        const [watchers, pod] = await Promise.all([
+          User.find({ _id: { $in: task.watchers }, isBot: true }).select('username botMetadata').lean(),
+          Pod.findById(normalizedPodId).select('members').lean(),
+        ]);
+        const memberIds = new Set((pod?.members || []).map((member: any) => String(member?.userId || member?._id || member)));
+        const seats = new Set(installs.map((install) => `${String(install.agentName).toLowerCase()}::${String(install.instanceId || 'default').toLowerCase()}`));
+        for (const watcher of watchers) {
+          if (!memberIds.has(String(watcher._id))) continue;
+          const identity = resolveTokenAgentIdentity(watcher);
+          const key = `${identity.agentName}::${identity.instanceId}`;
+          if (!identity.agentName || seats.has(key)) continue;
+          installs.push({ ...identity, digestOnlyWatcher: true });
+          seats.add(key);
+        }
+      } catch (error) {
+        watcherLookupFailed = true;
+        console.warn('[task-event] watcher lookup failed; retry retained:', (error as Error).message);
+      }
+    }
+    if (!installs.length) {
+      if (!watcherLookupFailed) await clearWatcherRetry();
+      return;
+    }
 
     const taskId = String(task.taskId || task.id || task._id || 'unknown');
     const title = String(task.title || '(untitled)').replace(/\s+/g, ' ');
@@ -261,12 +309,12 @@ export async function notifyPodAgents(
         : `[The board moved in this pod — ${taskId} was ${kind}: ${title}.]`,
       ...(assignedRows.length ? [
         '',
-        '[Your assigned rows (pending/claimed; newest first):]',
+        '[Your assigned rows (pending/claimed; highest priority first):]',
         ...assignedRows.map((row) => {
           const updates = row.updates as Array<{ text?: string }> | undefined;
           const latest = updates?.[updates.length - 1]?.text;
           const change = latest || (String(row.taskId) === taskId ? kind : 'current assignment');
-          return `- ${String(row.taskId)} — ${String(row.title || '(untitled)').replace(/\s+/g, ' ').slice(0, 80)} [${String(row.status)}] — ${String(change).replace(/\s+/g, ' ').slice(0, 120)}`;
+          return `- ${String(row.taskId)} — [${String(row.priority || 'P2')}] ${String(row.title || '(untitled)').replace(/\s+/g, ' ').slice(0, 80)} [${String(row.status)}] — ${String(change).replace(/\s+/g, ' ').slice(0, 120)}`;
         }),
       ] : []),
       '',
@@ -329,12 +377,12 @@ export async function notifyPodAgents(
       if (actorKey && installKey === actorKey) return null;
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
-      const ownRow = seatMatchesAssignee(install, task.assignee)
+      const ownRow = !install.digestOnlyWatcher && (seatMatchesAssignee(install, task.assignee)
         || seatMatchesAssignee(install, previousTask?.assignee)
         || seatHoldsClaim(install, currentHolder)
         || seatHoldsClaim(install, previousHolder)
         || dependentRows.some((row) => seatMatchesAssignee(install, row.assignee))
-        || dependentHolders.some((holder) => seatHoldsClaim(install, holder));
+        || dependentHolders.some((holder) => seatHoldsClaim(install, holder)));
       try {
         if (!ownRow) {
           await AgentEventService.enqueue({
@@ -359,10 +407,12 @@ export async function notifyPodAgents(
         try {
           const assignees = instanceId === 'default' || instanceId === agentName
             ? [agentName] : [instanceId];
-          assignedRows = await Task.find(
-            { podId: normalizedPodId, assignee: { $in: assignees }, status: { $in: ['pending', 'claimed'] } },
-            { taskId: 1, title: 1, status: 1, updatedAt: 1, updates: { $slice: -1 } },
-          ).sort({ updatedAt: -1, _id: -1 }).limit(MAX_ASSIGNED_ROWS).lean();
+          assignedRows = await Task.aggregate([
+            { $match: { podId: new Types.ObjectId(normalizedPodId), assignee: { $in: assignees }, status: { $in: ['pending', 'claimed'] } } },
+            ...TASK_PRIORITY_ORDER,
+            { $limit: MAX_ASSIGNED_ROWS },
+            { $project: { taskId: 1, title: 1, priority: 1, taskNum: 1, status: 1, updatedAt: 1, updates: { $slice: ['$updates', -1] } } },
+          ]);
         } catch (err) {
           // A listing failure must not turn the entire board wake into silence.
           console.warn(`[task-event] assigned rows lookup failed for ${agentName}:`, (err as Error).message);
@@ -428,6 +478,9 @@ export async function notifyPodAgents(
       }
     }));
     const failed = outcomes.some((outcome) => outcome === undefined);
+    if (!failed && !watcherLookupFailed) await clearWatcherRetry();
+    // Retry receipts never repeat ownership wakes or stamp discovery revisions.
+    if (watchersOnly) return;
     const offered = outcomes.some((outcome) => outcome === true);
     // A wake to the prior owner after unassignment cannot retire a pending
     // unassigned row from the kernel's found-work scan.
@@ -440,6 +493,31 @@ export async function notifyPodAgents(
   } catch (err) {
     // A board change must never fail because the agent fan-out did.
     console.warn('[task-event] agent notify failed:', (err as Error).message);
+  }
+}
+
+/** Coalesced durable watcher retries, driven by the existing kernel sweep.
+ * At-least-once on a crash after enqueue; each retry rechecks current membership.
+ */
+let watcherRetryAfter: { revision: Date; id: unknown } | null = null;
+export async function retryTaskWatcherDigests(): Promise<void> {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const Task = require('../models/Task');
+  const pending = { watcherDeliveryPendingAt: { $type: 'date' } };
+  const after = watcherRetryAfter;
+  let rows = await Task.find({ ...pending, ...(after ? { $or: [
+    { watcherDeliveryPendingAt: { $gt: after.revision } },
+    { watcherDeliveryPendingAt: after.revision, _id: { $gt: after.id } },
+  ] } : {}) }).sort({ watcherDeliveryPendingAt: 1, _id: 1 }).limit(100).lean();
+  if (!rows.length && after) {
+    watcherRetryAfter = null;
+    rows = await Task.find(pending).sort({ watcherDeliveryPendingAt: 1, _id: 1 }).limit(100).lean();
+  }
+  // Advance even when every enqueue fails; the next batch must get a turn.
+  const last = rows[rows.length - 1];
+  if (last) watcherRetryAfter = { revision: last.watcherDeliveryPendingAt, id: last._id };
+  for (const task of rows) {
+    await notifyPodAgents(task.podId, task, 'updated', undefined, undefined, true);
   }
 }
 
@@ -469,7 +547,7 @@ export async function notifyPodAgents(
  */
 export async function notifyFoundWork(
   podId: unknown,
-  items: Array<OfferRevision & { title?: string; lapsedFrom?: string | null }>,
+  items: Array<OfferRevision & { title?: string; priority?: string; taskNum?: number; lapsedFrom?: string | null }>,
   totalCount: number,
   now: Date = new Date(),
 ): Promise<{ woken: number }> {
@@ -502,10 +580,10 @@ export async function notifyFoundWork(
     // thing standing between that and a duplicate implementation is whether a
     // peer happens to be reading the pod. Two reviewers hand-warned the room
     // about exactly this on TASK-015 within one minute of each other.
-    const namedItems = items.slice(0, MAX_NAMED_ITEMS);
+    const namedItems = [...items].sort(compareTaskPriority).slice(0, MAX_NAMED_ITEMS);
     const listed = namedItems
       .map((t) => {
-        const line = `- ${t.taskId || '?'} — ${String(t.title || '(untitled)').slice(0, 80)}`;
+        const line = `- ${t.taskId || '?'} — [${t.priority || 'P2'}] ${String(t.title || '(untitled)').slice(0, 80)}`;
         return t.lapsedFrom ? `${line}  [lapsed from ${t.lapsedFrom} — check their work before starting]` : line;
       })
       .join('\n');

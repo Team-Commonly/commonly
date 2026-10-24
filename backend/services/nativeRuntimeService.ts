@@ -25,6 +25,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, global-require,
    @typescript-eslint/no-require-imports */
 
+import { Types } from 'mongoose';
+import { isTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 import axios, { AxiosError } from 'axios';
 import {
   dispatchHostedBrokerTool,
@@ -291,6 +293,7 @@ export const TOOLS = [
         properties: {
           title: { type: 'string' },
           assignee: { type: 'string', description: "Optional assignee: the agent's agentName, one token with no spaces. Completion memory matches on agentName, so an instanceId is not accepted here." },
+          priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] },
           notes: { type: 'string' },
         },
         required: ['title'],
@@ -303,7 +306,7 @@ export const TOOLS = [
       name: 'commonly_list_tasks',
       description:
         'List the tasks on this pod\'s board, each with its id, title, status and assignee, '
-        + 'most recently updated first. Read it before saying anything about what is or is '
+        + 'highest priority first (P0 to P3), then task number. Read it before saying anything about what is or is '
         + 'not on the board.',
       parameters: {
         type: 'object',
@@ -895,6 +898,9 @@ export async function dispatchTool(
         if (assigneeParsed.error) {
           return { content: { ok: false, error: assigneeParsed.error }, error: 'invalid_assignee' };
         }
+        if (args.priority !== undefined && !isTaskPriority(args.priority)) {
+          return { content: { ok: false, error: 'priority must be P0, P1, P2 or P3' }, error: 'invalid_priority' };
+        }
         const Task = require('../models/Task');
         // Count existing tasks in the pod to derive a taskNum — the Task
         // schema requires a unique (podId, taskId) tuple, so we mint a
@@ -907,6 +913,7 @@ export async function dispatchTool(
           taskNum,
           taskId,
           title,
+          priority: args.priority || 'P2',
           assignee: assigneeParsed.value,
           notes: args.notes ? String(args.notes) : null,
           status: 'pending',
@@ -1088,16 +1095,18 @@ export async function dispatchTool(
       case 'commonly_list_tasks': {
         const Task = require('../models/Task');
         const which = ['done', 'all'].includes(String(args.status)) ? String(args.status) : 'open';
-        const filter: Record<string, unknown> = { podId: ctx.podId };
+        const filter: Record<string, unknown> = { podId: new Types.ObjectId(ctx.podId) };
         if (which === 'open') filter.status = { $in: OPEN_TASK_STATUSES };
         if (which === 'done') filter.status = 'done';
         const [rows, total] = await Promise.all([
-          Task.find(filter).sort({ updatedAt: -1 }).limit(LIST_TASKS_LIMIT)
-            .select('taskId title status assignee').lean(),
+          Task.aggregate([
+            { $match: filter }, ...TASK_PRIORITY_ORDER, { $limit: LIST_TASKS_LIMIT },
+            { $project: { taskId: 1, title: 1, priority: 1, status: 1, assignee: 1 } },
+          ]),
           Task.countDocuments(filter),
         ]);
         const tasks = (rows as Array<Record<string, unknown>>).map((row) => ({
-          taskId: row.taskId, title: row.title, status: row.status, assignee: row.assignee || null,
+          taskId: row.taskId, title: row.title, priority: row.priority || 'P2', status: row.status, assignee: row.assignee || null,
         }));
         return { content: { status: which, total, tasks } };
       }

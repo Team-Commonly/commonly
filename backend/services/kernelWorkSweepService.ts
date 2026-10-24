@@ -1,3 +1,4 @@
+import { TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 /**
  * Kernel work sweep (#1044, ruled by fable-lead).
  *
@@ -306,6 +307,7 @@ class KernelWorkSweepService {
           $or: [{ assignee: null }, { assignee: '' }, { assignee: { $exists: false } }],
         },
       },
+      ...TASK_PRIORITY_ORDER,
       // `lapsedFrom` rides along so the wake can name who it lapsed from
       // (#1080 part 3). The wake is the surface where the near-duplicate of
       // #1078 nearly happened: a row advertised as unassigned, with its
@@ -318,6 +320,8 @@ class KernelWorkSweepService {
               _id: '$_id',
               taskId: '$taskId',
               title: '$title',
+              priority: { $ifNull: ['$priority', 'P2'] },
+              taskNum: '$taskNum',
               lapsedFrom: '$lapsedFrom',
               updatedAt: '$updatedAt',
             },
@@ -348,6 +352,14 @@ class KernelWorkSweepService {
   }
 
   static async sweep(now: Date = new Date()): Promise<SweepResult> {
+    // Receipt retries remain independent of work-discovery wake policy.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { retryTaskWatcherDigests } = require('./taskEventService');
+    try {
+      await retryTaskWatcherDigests();
+    } catch (error) {
+      console.warn('[kernel-sweep] watcher receipts remain due:', (error as Error).message);
+    }
     if (String(process.env.AGENT_WORK_SWEEP_DISABLED || '').toLowerCase() === 'true') {
       return {
         scannedPods: 0, rescued: 0, deferred: 0, woken: 0, skippedNoWork: 0,

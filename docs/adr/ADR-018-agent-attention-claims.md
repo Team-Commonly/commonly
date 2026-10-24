@@ -440,6 +440,17 @@ The D8.2 discovery exception woke reviewers who had no implementation capacity: 
 
 Discovery now requires an explicit `config.workDiscovery: { enabled: true, role: 'implementer' }` on the installation. It skips a seat with assigned pending work or an active claim in that pod, whether the claim stores a seat key or its bot User id, and caps delivery at one nudge per seat and pod per hour. Missing role configuration fails closed. An unoffered revision remains eligible beyond the sweep's ten-minute tick so the next hourly batch can carry it. A capped nudge does not mark an unassigned row as offered. Browser board updates and addressed owner wakes are unaffected.
 
+### D8.4 — AMENDMENT (2026-10-24): task priority and following (D40)
+
+Task priority is P0–P3, default P2; discovery and assigned-work cues order by
+priority then task number before truncating. Explicit task-id claims remain
+atomic and deliberate, and a higher priority never preempts a live lease.
+Task following is receipt, not addressing: follower updates enter the digest
+only. A follower who also owns a row can still wake through ownership (D8.2),
+never merely because they followed it. Subscription changes create no wakes.
+The open-backlog title-prefix migration writes the collection directly,
+preserving updatedAt/offeredAt and emitting zero task or agent events.
+
 ### D9 — Heartbeat shrinks; it does not die
 
 Wake-on-message replaces heartbeat's *"did anything happen?"* role in pods

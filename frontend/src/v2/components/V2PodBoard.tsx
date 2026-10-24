@@ -14,17 +14,25 @@
 // behaviorally interchangeable while v1 winds down.
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useV2Api } from '../hooks/useV2Api';
 import { useSocket } from '../../context/SocketContext';
+import V2Avatar from './V2Avatar';
+import { useAuth } from '../../context/AuthContext';
+
+type TaskPriority = 'P0' | 'P1' | 'P2' | 'P3';
+const PRIORITIES: TaskPriority[] = ['P0', 'P1', 'P2', 'P3'];
 
 type CanonicalStatus = 'pending' | 'claimed' | 'blocked' | 'done';
 
 interface BoardTask {
   taskId: string;
   title: string;
+  priority?: TaskPriority;
+  taskNum?: number;
+  watchers?: string[];
   status: string;
   assignee?: string | null;
   claimedBy?: string | null;
@@ -40,6 +48,7 @@ interface PodMember {
   username?: string;
   displayName?: string;
   isBot?: boolean;
+  profilePicture?: string;
 }
 
 interface FocusTask {
@@ -130,12 +139,16 @@ const V2PodBoard: React.FC = () => {
   const { podId } = useParams<{ podId: string }>();
   const { t } = useTranslation();
   const api = useV2Api();
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { socket, connected, joinPod, leavePod } = useSocket();
   const connectionRef = useRef({ podId: null as string | null, wasConnected: false, hasConnected: false });
 
   const [tasks, setTasks] = useState<BoardTask[]>([]);
+  const [taskWriteAllowed, setTaskWriteAllowed] = useState(false);
+  const reloadTasksRef = useRef<() => void>(() => undefined);
+  const taskLoadPendingRef = useRef(false);
   const [claimClock, setClaimClock] = useState(() => Date.now());
   const [podName, setPodName] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -144,6 +157,13 @@ const V2PodBoard: React.FC = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newAssignee, setNewAssignee] = useState('');
+  const [newPriority, setNewPriority] = useState<TaskPriority>('P2');
+  const [detailSaving, setDetailSaving] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const taskRequestRef = useRef(0);
+  const taskMutationRef = useRef(0);
+  const detailDialogRef = useRef<HTMLDivElement>(null);
+  const detailReturnRef = useRef<HTMLElement | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [podMembers, setPodMembers] = useState<PodMember[]>([]);
@@ -152,14 +172,73 @@ const V2PodBoard: React.FC = () => {
   // A lapsed claim must stop looking held while the board stays open.
   useEffect(() => {
     const nextExpiry = tasks.reduce((soonest, task) => {
-      if (task.status !== 'claimed' || !task.claimedBy || !task.claimExpiresAt) return soonest;
+      if (!['claimed', 'in_progress', 'in-progress'].includes(task.status) || !task.claimedBy || !task.claimExpiresAt) return soonest;
       const expiry = Date.parse(task.claimExpiresAt);
       return Number.isFinite(expiry) && expiry > claimClock ? Math.min(soonest, expiry) : soonest;
     }, Infinity);
     if (!Number.isFinite(nextExpiry)) return undefined;
-    const timer = window.setTimeout(() => setClaimClock(Date.now()), Math.min(Math.max(0, nextExpiry - Date.now()), 2_147_483_647));
+    const timer = window.setTimeout(() => setClaimClock(Date.now()), Math.min(Math.max(0, nextExpiry - Date.now()), 60_000));
     return () => window.clearTimeout(timer);
   }, [tasks, claimClock]);
+
+  const openTask = useCallback((task: BoardTask | null) => {
+    if (task && document.activeElement instanceof HTMLElement) detailReturnRef.current = document.activeElement;
+    taskMutationRef.current += 1;
+    setDetailSaving(false);
+    setDetailError(null);
+    setSelected(task);
+  }, []);
+
+  useEffect(() => {
+    const dialog = detailDialogRef.current;
+    if (!selected || !dialog) return undefined;
+    const controls = () => Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), a[href], input:not(:disabled)'));
+    controls()[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); openTask(null); }
+      if (event.key !== 'Tab') return;
+      const items = controls();
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!dialog.contains(document.activeElement)) { event.preventDefault(); first?.focus(); }
+      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => { document.removeEventListener('keydown', onKeyDown); detailReturnRef.current?.focus(); };
+  }, [selected?.taskId, openTask]);
+
+  const updateDetail = useCallback(async (task: BoardTask, change: { priority: TaskPriority } | { following: boolean }) => {
+    if (!podId || detailSaving) return;
+    const requestId = ++taskMutationRef.current;
+    setDetailSaving(true);
+    setDetailError(null);
+    try {
+      const path = `/api/v1/tasks/${podId}/${encodeURIComponent(task.taskId)}`;
+      const result = 'following' in change
+        ? await api.post<{ task: BoardTask }>(`${path}/watch`, change)
+        : await api.patch<{ task: BoardTask }>(path, change);
+      if (requestId !== taskMutationRef.current) return;
+      if ('following' in change) {
+        // The response is a snapshot from before another follower's write.
+        // A new read owns the complete set; never replace it with that snapshot.
+        reloadTasksRef.current();
+        return;
+      }
+      taskRequestRef.current += 1;
+      if (taskLoadPendingRef.current) reloadTasksRef.current();
+      const merge = (existing: BoardTask): BoardTask => {
+        if (existing.taskId !== task.taskId) return existing;
+        return Date.parse(existing.updatedAt || '') > Date.parse(result.task.updatedAt || '') ? existing : result.task;
+      };
+      setTasks((rows) => rows.map(merge));
+      setSelected((previous) => previous ? merge(previous) : null);
+    } catch {
+      if (requestId === taskMutationRef.current) setDetailError(t('board.detail.saveError'));
+    } finally {
+      if (requestId === taskMutationRef.current) setDetailSaving(false);
+    }
+  }, [api, podId, detailSaving, t]);
 
   const claimHolderName = useCallback((task: BoardTask): string => {
     const member = podMembers.find((item) => memberId(item) === task.claimedBy);
@@ -167,8 +246,37 @@ const V2PodBoard: React.FC = () => {
     // The claim route records the claimant's User id and resolved author on
     // the update. Match identity rather than the wording of the update text.
     const holderUpdate = task.updates?.slice().reverse().find((update) => update.authorId === task.claimedBy);
-    return holderUpdate?.author || task.claimedBy || '';
-  }, [podMembers]);
+    return holderUpdate?.author || (/^[0-9a-f]{24}$/i.test(task.claimedBy || '') ? t('board.detail.memberUnavailable') : task.claimedBy) || '';
+  }, [podMembers, t]);
+  const leaseFor = (task: BoardTask) => {
+    const claimed = ['claimed', 'in_progress', 'in-progress'].includes(task.status) && Boolean(task.claimedBy);
+    const expiry = Date.parse(task.claimExpiresAt || '');
+    const knownExpiry = Number.isFinite(expiry);
+    return { claimed, expiry, knownExpiry, expired: claimed && knownExpiry && expiry <= claimClock,
+      minutes: knownExpiry ? Math.max(0, Math.ceil((expiry - claimClock) / 60_000)) : null };
+  };
+  const timeLabel = (expiry: number) => new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(new Date(expiry));
+  const ownerLine = (task: BoardTask) => {
+    if (['done', 'completed', 'complete'].includes(task.status)) return null;
+    const lease = leaseFor(task);
+    if (!lease.claimed && !task.assignee) return null;
+    const state = lease.expired ? 'expired' : lease.claimed ? 'live' : 'not-claimed';
+    const text = lease.expired ? t('board.owner.expired', { holder: claimHolderName(task) })
+      : lease.claimed ? (lease.knownExpiry
+        ? <Trans i18nKey="board.owner.left" values={{ holder: claimHolderName(task), minutes: lease.minutes }} components={{ minutes: <span className="v2-board__owner-time" /> }} />
+        : t('board.owner.claimed', { holder: claimHolderName(task) }))
+        : t('board.owner.assigned', { assignee: task.assignee });
+    return <span className="v2-board__owner-line"><span aria-hidden="true" className={`v2-board__owner-dot v2-board__owner-dot--${state}`} />{text}</span>;
+  };
+  const memberAvatar = (member: PodMember, name: string) => (
+    <V2Avatar name={name} src={member.profilePicture} kind={member.isBot === undefined ? undefined : member.isBot ? 'agent' : 'human'} seed={memberId(member)} size="sm" className="v2-board__member-avatar" />
+  );
+  const watchers = selected ? [...(selected.watchers || [])].sort((a, b) => (
+    Number(b === currentUser?._id) - Number(a === currentUser?._id)
+  )) : [];
+  const following = Boolean(currentUser?._id && watchers.includes(currentUser._id));
   const [focusRead, setFocusRead] = useState<FocusRead | null>(null);
   const [focusLoading, setFocusLoading] = useState(true);
   const [focusError, setFocusError] = useState(false);
@@ -209,16 +317,24 @@ const V2PodBoard: React.FC = () => {
 
   const load = useCallback(async () => {
     if (!podId) return;
+    const requestId = ++taskRequestRef.current;
+    taskLoadPendingRef.current = true;
     try {
-      const data = await api.get<{ tasks: BoardTask[] }>(`/api/v1/tasks/${podId}`);
+      const data = await api.get<{ tasks: BoardTask[]; permissions?: { canWrite: boolean } }>(`/api/v1/tasks/${podId}`);
+      if (requestId !== taskRequestRef.current) return;
       setTasks(data.tasks || []);
+      setTaskWriteAllowed(data.permissions?.canWrite === true);
+      setSelected((previous) => previous ? (data.tasks || []).find((task) => task.taskId === previous.taskId) || null : null);
+      setClaimClock(Date.now());
       setLoadError(false);
     } catch {
-      setLoadError(true);
+      if (requestId === taskRequestRef.current) setLoadError(true);
     } finally {
-      setLoading(false);
+      if (requestId === taskRequestRef.current) { taskLoadPendingRef.current = false; setLoading(false); }
     }
   }, [api, podId]);
+
+  useLayoutEffect(() => { reloadTasksRef.current = load; }, [load]);
 
   const loadFocus = useCallback(async () => {
     if (!podId) return;
@@ -241,7 +357,11 @@ const V2PodBoard: React.FC = () => {
 
   useEffect(() => {
     setLoading(true);
+    setSelected(null);
+    setDetailError(null);
+    setDetailSaving(false);
     load();
+    return () => { taskRequestRef.current += 1; taskMutationRef.current += 1; };
   }, [load]);
 
   useEffect(() => {
@@ -491,10 +611,12 @@ const V2PodBoard: React.FC = () => {
     try {
       await api.post(`/api/v1/tasks/${podId}`, {
         title,
+        priority: newPriority,
         ...(newAssignee.trim() ? { assignee: newAssignee.trim() } : {}),
       });
       setNewTitle('');
       setNewAssignee('');
+      setNewPriority('P2');
       setCreateOpen(false);
       load();
     } catch {
@@ -502,12 +624,13 @@ const V2PodBoard: React.FC = () => {
     } finally {
       setCreating(false);
     }
-  }, [api, podId, newTitle, newAssignee, creating, load, t]);
+  }, [api, podId, newTitle, newAssignee, newPriority, creating, load, t]);
 
   const columnTasks = useMemo(() => {
     const byColumn = new Map<CanonicalStatus, BoardTask[]>();
     COLUMNS.forEach((col) => {
-      byColumn.set(col.key, tasks.filter((task) => col.statuses.includes(task.status)));
+      byColumn.set(col.key, tasks.filter((task) => col.statuses.includes(task.status)).sort((a, b) => (a.priority || 'P2').localeCompare(b.priority || 'P2')
+        || (a.taskNum || 0) - (b.taskNum || 0) || a.taskId.localeCompare(b.taskId)));
     });
     return byColumn;
   }, [tasks]);
@@ -584,7 +707,7 @@ const V2PodBoard: React.FC = () => {
                     {task.available && tasks.some((item) => item.taskId === task.taskId) ? (
                       <button type="button" className="v2-board__focus-task-title v2-board__focus-task-link" onClick={() => {
                         const boardTask = tasks.find((item) => item.taskId === task.taskId);
-                        if (boardTask) setSelected(boardTask);
+                        if (boardTask) openTask(boardTask);
                       }}>{task.title}</button>
                     ) : <span className="v2-board__focus-task-title">{t('board.focus.taskUnavailable')}</span>}
                     {(task.status || task.assignee) && <span className="v2-board__focus-task-meta">
@@ -621,26 +744,19 @@ const V2PodBoard: React.FC = () => {
                   <div className="v2-board__col-empty">{t(col.emptyKey)}</div>
                 )}
                 {items.map((task) => (
-                  <article key={task.taskId} className="v2-board__card">
+                  <article key={task.taskId} className={`v2-board__card${col.key === 'done' ? ' v2-board__card--done' : ''}`}>
                     <button
                       type="button"
                       className="v2-board__card-main"
                       title={task.taskId}
-                      onClick={() => setSelected(task)}
+                      onClick={() => openTask(task)}
                     >
+                      <span className="v2-board__card-kicker">
+                        <span className="v2-board__card-id">{task.taskId}</span>
+                        <span className={`v2-board__priority${task.priority === 'P0' ? ' v2-board__priority--p0' : ''}`}>{task.priority || 'P2'}</span>
+                      </span>
                       <span className="v2-board__card-title">{task.title}</span>
-                      {task.assignee && (
-                        <span className="v2-board__card-assignee">@{task.assignee}</span>
-                      )}
-                      {task.status === 'claimed' && task.claimedBy && task.claimExpiresAt
-                        && Date.parse(task.claimExpiresAt) > claimClock && (
-                          <span className="v2-board__card-claim-lease">
-                            {t('board.claimUntil', {
-                              holder: claimHolderName(task),
-                              time: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(task.claimExpiresAt)),
-                            })}
-                          </span>
-                        )}
+                      {ownerLine(task)}
                     </button>
                     <div className="v2-board__card-actions">
                       {col.moves.map((move) => (
@@ -663,29 +779,58 @@ const V2PodBoard: React.FC = () => {
       )}
 
       {selected && (
-        <div className="v2-modal__overlay" role="presentation" onClick={() => setSelected(null)}>
+        <div className="v2-modal__overlay v2-board__overlay" role="presentation" onClick={() => openTask(null)}>
           <div
             className="v2-modal v2-board__detail"
+            ref={detailDialogRef}
             role="dialog"
             aria-label={selected.title}
+            aria-modal="true"
             onClick={(event) => event.stopPropagation()}
           >
+            <div className="v2-board__grab" aria-hidden="true" />
             <div className="v2-modal__head">
               <div className="v2-modal__title">
                 <span className="v2-board__card-id">{selected.taskId}</span> {selected.title}
               </div>
-              <button type="button" className="v2-modal__close" onClick={() => setSelected(null)}>×</button>
+              <button type="button" className="v2-modal__close" aria-label={t('common.close')} onClick={() => openTask(null)}>×</button>
             </div>
             <div className="v2-modal__body">
               <div className="v2-board__detail-meta">
                 {(() => { const pill = pillFor(selected.status); return <span className={pill.className}>{pill.label}</span>; })()}
-                {selected.assignee && <span className="v2-board__card-assignee">@{selected.assignee}</span>}
                 {selected.prUrl && (
                   <a className="v2-board__detail-pr" href={selected.prUrl} target="_blank" rel="noreferrer">
                     {t('board.detail.pr')}
                   </a>
                 )}
               </div>
+              <dl className="v2-board__ownership">
+                <dt><label htmlFor="task-priority">{t('board.detail.priority')}</label></dt>
+                <dd><select id="task-priority" value={selected.priority || 'P2'} disabled={detailSaving || !taskWriteAllowed} onChange={(event) => updateDetail(selected, { priority: event.target.value as TaskPriority })}>
+                  {PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
+                </select></dd>
+                <dt>{t('board.detail.assignedTo')}</dt>
+                <dd>{selected.assignee ? <>{memberAvatar(podMembers.find((member) => member.username === selected.assignee) || {}, selected.assignee)}{selected.assignee}</> : <span className="v2-board__empty-owner">{t('board.detail.unassigned')}</span>}</dd>
+                <dt>{t('board.detail.claimedBy')}</dt>
+                <dd>{leaseFor(selected).claimed ? <><span aria-hidden="true" className={`v2-board__owner-dot v2-board__owner-dot--${leaseFor(selected).expired ? 'expired' : 'live'}`} />{claimHolderName(selected)}</> : <span className="v2-board__empty-owner">{t('board.detail.notClaimed')}</span>}</dd>
+                <dt>{t('board.detail.leaseLeft')}</dt>
+                <dd className="v2-board__lease-value">{leaseFor(selected).claimed && leaseFor(selected).knownExpiry
+                  ? leaseFor(selected).expired ? t('board.detail.expiredAt', { time: timeLabel(leaseFor(selected).expiry) })
+                    : t('board.detail.remaining', { minutes: leaseFor(selected).minutes, time: timeLabel(leaseFor(selected).expiry) })
+                  : t(leaseFor(selected).claimed ? 'board.detail.timeUnavailable' : 'board.detail.notClaimed')}</dd>
+              </dl>
+              <section className="v2-board__watchers" aria-label={t('board.detail.watchers')}>
+                <div className="v2-board__watchers-head"><h3>{t('board.detail.watchers')}</h3><span className="v2-board__watchers-count">{watchers.length}</span>
+                  <button type="button" className="v2-board__follow" aria-pressed={following} aria-disabled={detailSaving || !currentUser?._id} onClick={() => { if (!detailSaving && currentUser?._id) updateDetail(selected, { following: !following }); }}>{following && <span aria-hidden="true">✓ </span>}{t(following ? 'board.detail.following' : 'board.detail.follow')}</button>
+                </div>
+                <div className="v2-board__watcher-list">{watchers.map((id) => {
+                  const member = podMembers.find((item) => memberId(item) === id) || (id === currentUser?._id ? currentUser : {});
+                  const name = memberLabel(member) || t('board.detail.memberUnavailable');
+                  return <span className="v2-board__watcher" key={id}>{memberAvatar(member, name)}{name}</span>;
+                })}</div>
+                <p className="v2-board__watcher-hint">{t('board.detail.digestHint')}</p>
+              </section>
+              {detailError && <p className="v2-modal__error" role="alert">{detailError}</p>}
               {selected.notes && <p className="v2-board__detail-notes">{selected.notes}</p>}
               <div className="v2-board__detail-moves">
                 {(COLUMNS.find((c) => c.statuses.includes(selected.status))?.moves || []).map((move) => (
@@ -839,6 +984,7 @@ const V2PodBoard: React.FC = () => {
                   autoFocus
                 />
               </label>
+              <div className="v2-board__create-row">
               <label className="v2-board__field">
                 <span>{t('board.form.assignee')}</span>
                 <input
@@ -849,6 +995,14 @@ const V2PodBoard: React.FC = () => {
                   placeholder={t('board.form.assigneePlaceholder')}
                 />
               </label>
+              <label className="v2-board__field">
+                <span>{t('board.detail.priority')}</span>
+                <select value={newPriority} onChange={(event) => setNewPriority(event.target.value as TaskPriority)}>
+                  {PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}{priority === 'P2' ? ` · ${t('board.form.defaultPriority')}` : ''}</option>)}
+                </select>
+                <small>{t('board.form.priorityHint')}</small>
+              </label>
+              </div>
               {createError && <div className="v2-modal__error">{createError}</div>}
               <button
                 type="button"

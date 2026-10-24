@@ -1181,9 +1181,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('a board claim lease reads as secondary status rather than a blue mention', () => {
-    expect(podBoard).toContain('className="v2-board__card-claim-lease"');
-    const lease = ruleBody(v2, '.v2-board__card-claim-lease');
-    expect(lease).toContain('font-size: 12px');
+    expect(podBoard).toContain('className="v2-board__owner-line"');
+    const lease = ruleBody(v2, '.v2-board__owner-line');
+    expect(lease).toContain('var(--v2-font-mono)');
     expect(lease).toContain('color: var(--v2-text-secondary)');
   });
 
@@ -4744,4 +4744,43 @@ describe('agent Identity editor', () => {
     expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a')).toContain('color: var(--v2-accent)');
     expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
   });
+});
+
+describe('task priority and lease signals (TASK-443)', () => {
+  const css = read('../v2.css');
+  test('priority remains a monochrome text badge', () => {
+    const badge = ruleBody(css, '.v2-board__priority');
+    expect(badge).toContain('var(--v2-font-mono)');
+    expect(badge).toContain('border-radius: 4px');
+    expect(badge).toContain('background: none');
+    const urgent = ruleBody(css, '.v2-board__priority--p0');
+    expect(urgent).toContain('border-color: var(--v2-text-primary)');
+    expect(urgent).toContain('color: var(--v2-text-primary)');
+    expect(urgent).not.toMatch(/background/);
+  });
+  test('live, unclaimed and expired ownership retain distinct dots', () => {
+    expect(ruleBody(css, '.v2-board__owner-dot--live')).toContain('background: var(--v2-accent)');
+    expect(ruleBody(css, '.v2-board__owner-dot--not-claimed')).toContain('border: 1px dashed var(--v2-border-strong)');
+    const expired = ruleBody(css, '.v2-board__owner-dot--expired');
+    expect(expired).toContain('border: 1px solid var(--v2-border-strong)');
+    expect(expired).toContain('background: none');
+  });
+});
+
+
+test('TASK-443 phone ownership sheet keeps its inset and scroll containment', () => {
+  const css = read('../v2.css');
+  const sheet = ruleBody(css, '.v2-board .v2-board__detail');
+  expect(sheet).toContain('inset: 44px 0 0');
+  const modal = ruleBody(css, '.v2-modal');
+  expect(modal).toContain('overflow: auto');
+  expect(modal).toContain('display: flex');
+  expect(modal).toContain('flex-direction: column');
+  expect(read('../components/V2PodBoard.tsx')).toContain('className="v2-modal v2-board__detail"');
+});
+
+
+test('TASK-443 lease typography outranks the ownership cell font size', () => {
+  expect(ruleBody(read('../v2.css'), '.v2-board__ownership .v2-board__lease-value'))
+    .toContain('font: 500 12px/16px var(--v2-font-mono)');
 });

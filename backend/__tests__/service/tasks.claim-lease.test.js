@@ -548,4 +548,14 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     expect(new Date(completed.body.task.updatedAt).getTime())
       .toBeGreaterThan(new Date(claimed.body.task.updatedAt).getTime());
   });
+  test('priority edits through note append respect another seat live lease', async () => {
+    await seedTask({ status: 'claimed', claimedBy: String(rival._id), claimedAt: new Date(), claimExpiresAt: new Date(Date.now() + LEASE_MS), priority: 'P1' });
+    const response = await request(app)
+      .post(`/api/v1/tasks/${pod._id}/T-1/updates`)
+      .set('Authorization', `Bearer ${AGENT_TOKEN}`)
+      .send({ text: 'Change priority', priority: 'P3', continueAnyway: true });
+    expect(response.status).toBe(409);
+    expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).priority).toBe('P1');
+  });
+
 });

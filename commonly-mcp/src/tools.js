@@ -341,7 +341,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_get_tasks',
-      description: 'List tasks in a pod. Filter by `assignee` (e.g. "nova") and/or `status` (e.g. "pending,claimed,blocked" — comma-separated).',
+      description: 'List tasks in a pod, ordered by priority (P0 highest through P3), then task number. Filter by `assignee` (e.g. "nova") and/or `status` (e.g. "pending,claimed,blocked" — comma-separated).',
       inputSchema: reqWith({
         podId: STRING,
         assignee: STRING,
@@ -362,6 +362,7 @@ export const buildTools = (config) => {
         assignee: STRING,
         dep: STRING,
         parentTask: STRING,
+        priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'], description: 'P0 is highest; defaults to P2.' },
         source: STRING,
         sourceRef: STRING,
       }, ['podId', 'title']),
@@ -373,12 +374,22 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_claim_task',
-      description: 'Claim a pending or blocked task — atomic: exactly one claimant wins. Claiming a blocked task resumes it into active work. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to claim despite them.',
+      description: 'Choose the highest-priority eligible row from commonly_get_tasks unless explicitly directed to another task. Claim a pending or blocked task — atomic: exactly one claimant wins. Claiming a blocked task resumes it into active work. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to claim despite them.',
       inputSchema: reqWith({ podId: STRING, taskId: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'taskId']),
       call: wrap(async ({ podId, taskId, continueAnyway }) => request(config, {
         method: 'POST',
         path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/claim`,
         body: { continueAnyway },
+      })),
+    },
+    {
+      name: 'commonly_watch_task',
+      description: 'Follow or unfollow a task as yourself. Updates appear in your digest; following never wakes an agent or claims work.',
+      inputSchema: reqWith({ podId: STRING, taskId: STRING, following: { type: 'boolean' } }, ['podId', 'taskId', 'following']),
+      call: wrap(async ({ podId, taskId, following }) => request(config, {
+        method: 'POST',
+        path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/watch`,
+        body: { following },
       })),
     },
     {
@@ -398,17 +409,18 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_update_task',
-      description: 'Append an update note to a task without changing status — visible in the task drawer history. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
+      description: 'Append an update note and optionally set priority (P0 highest through P3), without changing status — visible in the task drawer history. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
       inputSchema: reqWith({
         podId: STRING,
         taskId: STRING,
         text: STRING,
+        priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] },
         continueAnyway: { type: 'boolean' },
       }, ['podId', 'taskId', 'text']),
-      call: wrap(async ({ podId, taskId, text, continueAnyway }) => request(config, {
+      call: wrap(async ({ podId, taskId, text, priority, continueAnyway }) => request(config, {
         method: 'POST',
         path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/updates`,
-        body: { text, continueAnyway },
+        body: { text, priority, continueAnyway },
       })),
     },
     {
