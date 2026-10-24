@@ -362,18 +362,15 @@ const readOpenClawHeartbeatFile = async (accountId: any, { gateway } : any = {})
 };
 
 const readOpenClawIdentityFile = async (accountId: any, { gateway } : any = {}) => {
-  try {
-    const podName = await resolveGatewayPodNameWithRetry(gateway);
-    const identityPath = `/workspace/${accountId}/IDENTITY.md`;
-    const result = await execInPod({
-      podName,
-      containerName: 'clawdbot-gateway',
-      command: ['sh', '-lc', `[ -f "${identityPath}" ] && cat "${identityPath}" || echo ""`],
-    });
-    return result.stdout || '';
-  } catch {
-    return '';
-  }
+  const podName = await resolveGatewayPodNameWithRetry(gateway);
+  const identityPath = `/workspace/${accountId}/IDENTITY.md`;
+  const result = await execInPod({
+    podName,
+    containerName: 'clawdbot-gateway',
+    // A failed cat must keep its exit status instead of becoming empty content.
+    command: ['sh', '-lc', `if [ -e "${identityPath}" ]; then cat "${identityPath}"; fi`],
+  });
+  return result.stdout || '';
 };
 
 // Cross-cutting behavioral invariants appended to every SOUL.md the

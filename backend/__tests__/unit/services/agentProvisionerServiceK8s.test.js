@@ -36,6 +36,7 @@ const mock = {
     execCommands: [],
     // What the next exec writes to its stdout sink; empty = no output.
     execStdout: '',
+    execStatus: { status: 'Success' },
   };
 
   class KubeConfig {
@@ -77,7 +78,7 @@ const mock = {
         return Promise.resolve();
       }
       if (typeof statusCallback === 'function') {
-        statusCallback({ status: 'Success' });
+        statusCallback(mock.execStatus);
       }
       return Promise.resolve();
     }
@@ -94,6 +95,7 @@ const mock = {
 const k8s = require('@kubernetes/client-node');
 const {
   restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey,
+  readOpenClawIdentityFile,
 } = require('../../../services/agentProvisionerServiceK8s');
 const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
 
@@ -101,6 +103,35 @@ describe('agentProvisionerServiceK8s', () => {
   beforeEach(() => {
     k8s.__mock.readNamespacedDeployment.mockClear();
     k8s.__mock.replaceNamespacedDeployment.mockClear();
+  });
+
+  it('propagates an identity cat failure instead of returning empty content', async () => {
+    k8s.__mock.execStatus = { status: 'Failure', message: 'Permission denied' };
+    try {
+      await expect(readOpenClawIdentityFile('curator')).rejects.toThrow('Permission denied');
+      const script = k8s.__mock.execCommands.at(-1).replace(/^sh -lc /, '');
+      const fs = require('fs');
+      const os = require('os');
+      const path = require('path');
+      const { spawnSync } = require('child_process');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'identity-reader-'));
+      const identity = path.join(dir, 'IDENTITY.md');
+      const localScript = script.replaceAll('/workspace/curator/IDENTITY.md', identity);
+      try {
+        expect(spawnSync('sh', ['-c', localScript]).status).toBe(0);
+        fs.writeFileSync(identity, 'Name: Curator');
+        const read = spawnSync('sh', ['-c', localScript], { encoding: 'utf8' });
+        expect(read.status).toBe(0);
+        expect(read.stdout).toBe('Name: Curator');
+        fs.unlinkSync(identity);
+        fs.mkdirSync(identity);
+        expect(spawnSync('sh', ['-c', localScript]).status).not.toBe(0);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    } finally {
+      k8s.__mock.execStatus = { status: 'Success' };
+    }
   });
 
   it('restarts the shared gateway deployment for OpenClaw runtimes', async () => {

@@ -348,6 +348,39 @@ describe('agent config PATCH — installer gate', () => {
     expect(writeWorkspaceIdentityFile).toHaveBeenCalledTimes(2);
   });
 
+  it('propagates a real identity reader permission failure into a retryable rename response', async () => {
+    const fs = require('fs');
+    const actualReader = jest.requireActual('../../../services/agentProvisionerService').readOpenClawIdentityFile;
+    const previousMode = process.env.AGENT_PROVISIONER_K8S;
+    process.env.AGENT_PROVISIONER_K8S = '0';
+    const primary = installation({ installedBy: MEMBER, displayName: 'Old name' });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+    const originalRead = fs.readFileSync;
+    let reachedReader = false;
+    const readSpy = jest.spyOn(fs, 'readFileSync').mockImplementation((file, ...args) => {
+      if (String(file).endsWith('/curator/IDENTITY.md')) {
+        reachedReader = true;
+        throw Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+      }
+      return originalRead(file, ...args);
+    });
+    readOpenClawIdentityFile.mockImplementation(actualReader);
+    try {
+      const res = await request(app).patch('/api/registry/pods/pod-1/agents/openclaw')
+        .send({ instanceId: 'curator', displayName: 'New name' });
+      expect(reachedReader).toBe(true);
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('identity_projection_retryable');
+      expect(writeWorkspaceIdentityFile).not.toHaveBeenCalled();
+    } finally {
+      readSpy.mockRestore();
+      if (previousMode === undefined) delete process.env.AGENT_PROVISIONER_K8S;
+      else process.env.AGENT_PROVISIONER_K8S = previousMode;
+    }
+  });
+
   it('refuses an identity rename by an installer who shares that identity', async () => {
     const primary = installation({ installedBy: MEMBER });
     const peer = installation({ podId: 'pod-2', installedBy: 'other-installer' });
