@@ -90,7 +90,9 @@ const PROVIDERS: Record<string, {
       // public instances keep the established primary-first selection.
       const verified = emails.filter((e: any) => e.verified);
       const allowed = isInstanceAccessRestricted()
-        ? verified.find((e: any) => isInstanceEmailAllowed(e.email)) : undefined;
+        ? verified.find((e: any) => e.primary && isInstanceEmailAllowed(e.email))
+          || verified.find((e: any) => isInstanceEmailAllowed(e.email))
+        : undefined;
       const best = allowed || verified.find((e: any) => e.primary) || verified[0];
       return {
         providerId: String(userRes.data?.id || ''),
