@@ -862,6 +862,8 @@ export async function dispatchTool(
           os: args.os,
           podId: ctx.podId,
           agentName,
+          memoryFrom: ctx.agentName,
+          memoryInstance: ctx.instanceId || 'default',
         });
         if ('error' in payload) {
           return { content: { ok: false, error: payload.error }, error: 'handoff_invalid' };

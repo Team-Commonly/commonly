@@ -374,6 +374,23 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     });
 
     if (existingInPod) {
+      if (req.body.resumeExisting === true) {
+        const storedRuntime = normalizeConfigMap(existingInPod.config)?.runtime;
+        const requestedRuntime = normalizeConfigMap(config)?.runtime;
+        // Retry a partially completed local handoff, without changing an
+        // installation's owner, runtime binding, configuration or scopes.
+        if (String(existingInPod.installedBy) !== String(userId)
+          || storedRuntime?.host !== 'byo' || requestedRuntime?.host !== 'byo'
+          || !storedRuntime?.adapter || storedRuntime.adapter !== requestedRuntime?.adapter
+          || storedRuntime.runtimeType !== requestedRuntime?.runtimeType) {
+          return res.status(409).json({ error: 'Existing installation does not match this local handoff' });
+        }
+        return res.json({ resumed: true, installation: {
+          _id: existingInPod._id, agentName: existingInPod.agentName,
+          instanceId: existingInPod.instanceId, podId: existingInPod.podId,
+          displayName: existingInPod.displayName,
+        } });
+      }
       return res.status(400).json({ error: 'Agent already installed in this pod' });
     }
 

@@ -65,6 +65,20 @@ describe('byoHandoffService', () => {
     expect(command).toContain(`@deepseek-ai/dsh@${match?.[1]}`);
   });
 
+  it('carries the server-owned source identity into every OS command', () => {
+    const payload = buildByoHandoffPayload({ adapter: 'codex', os: 'linux', podId: 'pod-1',
+      agentName: 'new-local', memoryFrom: 'scout', memoryInstance: 'hosted-123' });
+    if ('error' in payload) throw new Error(payload.error);
+    for (const command of Object.values(payload.commands)) {
+      expect(command).toContain('--memory-from scout --memory-instance hosted-123');
+    }
+    expect(buildByoHandoffPayload({ adapter: 'codex', os: 'mac', podId: 'pod-1',
+      agentName: 'new-local', memoryFrom: 'scout; echo secret' })).toEqual({ error: 'invalid source memory identity' });
+    expect(buildByoHandoffPayload({ adapter: 'codex', os: 'mac', podId: 'pod-1',
+      agentName: 'new-local', memoryFrom: 'scout', memoryInstance: 'default; echo secret' }))
+      .toEqual({ error: 'invalid source memory identity' });
+  });
+
   it('creates a safe default name from the account handle', () => {
     expect(defaultByoHandoffName('Sam Xu', 'claude')).toBe('sam-xu-claude');
     expect(defaultByoHandoffName(undefined, 'codex')).toBe('my-codex');

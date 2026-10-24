@@ -56,13 +56,18 @@ export const buildByoHandoffCommand = ({
   os,
   podId,
   agentName,
+  memoryFrom,
+  memoryInstance = 'default',
 }: {
   adapter: ByoHandoffAdapter;
   os: ByoHandoffOs;
   podId: string;
   agentName: string;
+  memoryFrom?: string;
+  memoryInstance?: string;
 }): string => {
-  const attach = `commonly agent attach ${adapter} --pod ${podId} --name ${agentName}`;
+  const memoryFlags = memoryFrom ? ` --memory-from ${memoryFrom} --memory-instance ${memoryInstance}` : '';
+  const attach = `commonly agent attach ${adapter} --pod ${podId} --name ${agentName}${memoryFlags}`;
   const withEnvironment = adapter === 'opencode' || adapter === 'dsh'
     ? `${attach} --env ${environmentPath(os)}`
     : attach;
@@ -84,14 +89,22 @@ export const buildByoHandoffPayload = ({
   os,
   podId,
   agentName,
+  memoryFrom,
+  memoryInstance = 'default',
 }: {
   adapter: unknown;
   os: unknown;
   podId: unknown;
   agentName: unknown;
+  memoryFrom?: string;
+  memoryInstance?: string;
 }): ByoHandoffPayload | { error: string } => {
   if (!isAdapter(adapter)) return { error: 'adapter must be claude, codex, opencode, or dsh' };
   if (!isOs(os)) return { error: 'os must be mac, linux, or windows' };
+  if (memoryFrom !== undefined && (!/^(@[a-z0-9-]+\/)?[a-z0-9-]+$/.test(memoryFrom)
+    || !/^[a-z0-9][a-z0-9_-]*$/.test(memoryInstance))) {
+    return { error: 'invalid source memory identity' };
+  }
   const normalizedPodId = safePodId(podId);
   const normalizedName = safeName(agentName);
   if (!normalizedPodId) return { error: 'pod id is required' };
@@ -107,6 +120,7 @@ export const buildByoHandoffPayload = ({
   for (const supported of supportedOs) {
     commands[supported] = buildByoHandoffCommand({
       adapter, os: supported, podId: normalizedPodId, agentName: normalizedName,
+      memoryFrom, memoryInstance,
     });
   }
   return {
