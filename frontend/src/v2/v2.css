@@ -5977,15 +5977,27 @@ body.modern-ui.v2-canvas {
 /* Sprint B3 — Bring-your-own MCP agent onboarding page. Lives at
  * /v2/agents/byo. Single-column form + result. Aligned with v2's
  * border-not-shadow aesthetic; accent-blue for interactive controls. */
-/* Keep the stalled-setup alternative beside the command it replaces. */
-.v2-byo__hosted-offer {
-  padding: 16px;
-  margin: 16px 0;
+/* Secondary alternative stays directly beneath the command. */
+.v2-byo__hosted-offer { margin-top: 12px; }
+.v2-byo__hosted-offer > p:first-child {
+  margin: 0 0 8px;
+  color: var(--v2-text-muted);
+  font: 400 13px/20px var(--v2-font);
+}
+.v2-root button.v2-byo__hosted-offer-action {
+  height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--v2-border);
   border-radius: 4px;
   background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 13px/20px var(--v2-font);
+  cursor: pointer;
 }
-.v2-byo__hosted-offer > p:first-child { margin: 0 0 12px; }
+.v2-root button.v2-byo__hosted-offer-action:disabled { opacity: 0.5; cursor: wait; }
+@media (max-width: 760px) {
+  .v2-root button.v2-byo__hosted-offer-action { height: 44px; width: 100%; }
+}
 .v2-byo__form, .v2-byo__result {
   display: flex;
   flex-direction: column;

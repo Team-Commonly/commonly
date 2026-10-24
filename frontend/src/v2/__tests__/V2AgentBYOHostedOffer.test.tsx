@@ -63,14 +63,17 @@ const renderPage = () => render(
 );
 
 beforeEach(() => {
+  sessionStorage.clear();
+  window.matchMedia = jest.fn().mockReturnValue({ matches: true });
   jest.useFakeTimers(); mockGet({ configured: true });
   axios.post.mockImplementation((url) => Promise.resolve({ data: url.includes('runtime-tokens') ? { token: 'fixture-only-key' } : { ready: true } }));
 });
 afterEach(() => { jest.useRealTimers(); jest.resetAllMocks(); });
 const issue = async () => {
-  renderPage(); await screen.findByTestId('byo-mode-byo'); fireEvent.click(screen.getByTestId('byo-mode-byo'));
+  const view = renderPage(); await screen.findByTestId('byo-mode-byo'); fireEvent.click(screen.getByTestId('byo-mode-byo'));
   await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: /get my connect command/i })); await screen.findByText(/your connect command for/i);
+  return view;
 };
 const offer = () => screen.queryByRole('button', { name: 'Run it here instead' });
 const tick = async (ms) => act(async () => { jest.advanceTimersByTime(ms); });
@@ -127,4 +130,18 @@ test('name lookup failure never provisions or changes the issued command', async
   axios.get.mockImplementation((url) => url.startsWith('/api/registry/agents/next-free-name?') ? Promise.reject(new Error('Offline')) : get(url));
   fireEvent.click(offer()); expect(await screen.findByRole('alert')).toHaveTextContent(/name/i);
   expect(screen.getByText(/your connect command for/i)).toBeInTheDocument(); expect(offer()).toBeEnabled(); expect(axios.post.mock.calls.some(([url]) => url === '/api/hosted/provision')).toBe(false);
+});
+test('offer is a status row directly below the command and stays absent after remount in the same session', async () => {
+  const view = await issue(); await tick(30000);
+  const row = screen.getByRole('status', { name: 'Run it here instead' });
+  expect(screen.getByTestId('byo-listen').querySelector('.v2-byo__command').nextElementSibling).toBe(row);
+  view.unmount(); await issue(); await tick(30000); fireEvent.mouseLeave(document.documentElement, { clientY: 0 }); expect(offer()).not.toBeInTheDocument();
+});
+test('copy before the offer also suppresses it across a remount', async () => {
+  const view = await issue(); fireEvent.copy(screen.getByTestId('byo-listen'));
+  view.unmount(); await issue(); await tick(30000); expect(offer()).not.toBeInTheDocument();
+});
+test('phone exit does not trigger the offer; its timer still does', async () => {
+  window.matchMedia = jest.fn().mockReturnValue({ matches: false });
+  await issue(); fireEvent.mouseLeave(document.documentElement, { clientY: 0 }); expect(offer()).not.toBeInTheDocument(); await tick(30000); expect(offer()).toBeInTheDocument();
 });

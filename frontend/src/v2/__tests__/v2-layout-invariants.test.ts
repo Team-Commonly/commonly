@@ -4940,7 +4940,8 @@ test('TASK-443 lease typography outranks the ownership cell font size', () => {
 });
 
 test('TASK-482 hosted alternative uses the existing panel border and surface tokens', () => {
-  const offer = ruleBody(read('../v2.css'), '.v2-byo__hosted-offer');
+  const offer = ruleBody(read('../v2.css'), '.v2-root button.v2-byo__hosted-offer-action');
   expect(offer).toContain('border: 1px solid var(--v2-border)');
   expect(offer).toContain('background: var(--v2-surface)');
+  expect(offer).toContain('height: 32px');
 });

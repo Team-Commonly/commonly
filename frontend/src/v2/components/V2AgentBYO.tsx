@@ -183,6 +183,10 @@ const V2AgentBYO: React.FC = () => {
   const [issued, setIssued] = useState<{ token: string; agentName: string; podId: string; issuedAt: number } | null>(null);
   const [hasCopied, setHasCopied] = useState(false);
   const [showHostedOffer, setShowHostedOffer] = useState(false);
+  const offeredPanels = useRef(new Set<string>());
+  const offerSessionKey = issued
+    ? `commonly:byo-hosted-offer:${currentUser?._id || ''}:${issued.podId}:${issued.agentName}`
+    : null;
   const viewed = useRef(false);
   const commandViewed = useRef<object | null>(null);
   const fallbackStarting = useRef(false);
@@ -890,20 +894,34 @@ const V2AgentBYO: React.FC = () => {
     recordByoStep(api, 'seat-created');
   }, [api, issued]);
 
+  const rememberHostedOffer = () => {
+    if (!offerSessionKey) return;
+    offeredPanels.current.add(offerSessionKey);
+    try { sessionStorage.setItem(offerSessionKey, 'seen'); } catch { /* Storage can be disabled. */ }
+  };
+
   useEffect(() => {
-    if (!issued || hasCopied || !hosting?.configured || listenState === 'listening') return undefined;
-    const timer = window.setTimeout(() => setShowHostedOffer(true), 30_000);
+    if (!issued || !offerSessionKey || hasCopied || !hosting?.configured || listenState === 'listening') return undefined;
+    const offer = () => {
+      if (offeredPanels.current.has(offerSessionKey)) return;
+      try { if (sessionStorage.getItem(offerSessionKey)) return; } catch { /* Use the panel guard. */ }
+      offeredPanels.current.add(offerSessionKey);
+      try { sessionStorage.setItem(offerSessionKey, 'seen'); } catch { /* Use the panel guard. */ }
+      setShowHostedOffer(true);
+    };
+    const timer = window.setTimeout(offer, 30_000);
     const leaving = (event: MouseEvent) => {
-      if (event.clientY <= 0) setShowHostedOffer(true);
+      if (event.clientY <= 0 && window.matchMedia('(min-width: 761px)').matches) offer();
     };
     document.documentElement.addEventListener('mouseleave', leaving);
     return () => {
       window.clearTimeout(timer);
       document.documentElement.removeEventListener('mouseleave', leaving);
     };
-  }, [issued, hasCopied, hosting?.configured, listenState]);
+  }, [issued, offerSessionKey, hasCopied, hosting?.configured, listenState]);
 
   const copiedIssuedContent = () => {
+    rememberHostedOffer();
     setHasCopied(true);
     setShowHostedOffer(false);
   };
@@ -1432,15 +1450,7 @@ const V2AgentBYO: React.FC = () => {
       {issued && (
         <div className="v2-byo__result" onCopy={copiedIssuedContent}>
           <h2>{t('agentByo.result.heading')} <code>{issued.agentName}</code></h2>
-          {showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
-            <section className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
-              <p>{t('agentByo.hosted.offerBody')}</p>
-              <button type="button" className="v2-byo__submit" disabled={submitting} onClick={startHostedInstead}>
-                {submitting ? t('agentByo.hosted.starting', { name: t('agentByo.preview.title') }) : t('agentByo.hosted.offerAction')}
-              </button>
-              {error && <p className="v2-byo__error" role="alert">{error}</p>}
-            </section>
-          )}
+
 
           {/*
             Above the copy sits only what the paste needs: where, what it needs,
@@ -1505,6 +1515,15 @@ const V2AgentBYO: React.FC = () => {
                   {copied === 'listen' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
                 </button>
               </div>
+            )}
+            {showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
+              <section role="status" className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
+                <p>{t('agentByo.hosted.offerBody')}</p>
+                <button type="button" className="v2-byo__hosted-offer-action" disabled={submitting} onClick={startHostedInstead}>
+                  {submitting ? t('agentByo.hosted.starting', { name: t('agentByo.preview.title') }) : t('agentByo.hosted.offerAction')}
+                </button>
+                {error && <p className="v2-byo__error" role="alert">{error}</p>}
+              </section>
             )}
             {!listenerAvailable ? null : listenState === 'listening' ? (
               <p className="v2-byo__live" data-testid="byo-listen-ok">
