@@ -1,4 +1,6 @@
-import { compareTaskPriority } from '../utils/taskPriority';
+import { resolveTokenAgentIdentity } from '../utils/agentTokenIdentity';
+import { Types } from 'mongoose';
+import { compareTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 /**
  * taskEventService
  *
@@ -43,9 +45,10 @@ async function claimHolderKey(claimedBy: unknown): Promise<string | null> {
   // Claims store the bot User id; installedBy can instead name the human.
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const User = require('../models/User');
-  const holder = await User.findById(claim).select('isBot botMetadata').lean();
-  if (!holder?.isBot || !holder.botMetadata?.agentName) return null;
-  return `${String(holder.botMetadata.agentName).toLowerCase()}::${String(holder.botMetadata.instanceId || 'default').toLowerCase()}`;
+  const holder = await User.findById(claim).select('isBot botMetadata username').lean();
+  if (!holder?.isBot) return null;
+  const identity = resolveTokenAgentIdentity(holder);
+  return identity.agentName ? `${identity.agentName}::${identity.instanceId}` : null;
 }
 
 function seatHoldsClaim(install: Record<string, unknown>, holderKey: string | null): boolean {
@@ -250,7 +253,33 @@ export async function notifyPodAgents(
 
     // Ownership addresses a seat directly, independent of ambient wake opt-in.
     // Other seats still receive durable board context without a model turn.
-    const installs = active || [];
+    const installs: Array<Record<string, unknown>> = [...(active || [])];
+    // A bot can be a pod member without an active runtime projection. Its
+    // explicit task subscription still needs durable receipt, never a wake.
+    if (Array.isArray(task.watchers) && task.watchers.length) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const User = require('../models/User');
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const Pod = require('../models/Pod');
+        const [watchers, pod] = await Promise.all([
+          User.find({ _id: { $in: task.watchers }, isBot: true }).select('username botMetadata').lean(),
+          Pod.findById(normalizedPodId).select('members').lean(),
+        ]);
+        const memberIds = new Set((pod?.members || []).map((member: any) => String(member?.userId || member?._id || member)));
+        const seats = new Set(installs.map((install) => `${String(install.agentName).toLowerCase()}::${String(install.instanceId || 'default').toLowerCase()}`));
+        for (const watcher of watchers) {
+          if (!memberIds.has(String(watcher._id))) continue;
+          const identity = resolveTokenAgentIdentity(watcher);
+          const key = `${identity.agentName}::${identity.instanceId}`;
+          if (!identity.agentName || seats.has(key)) continue;
+          installs.push({ ...identity, digestOnlyWatcher: true });
+          seats.add(key);
+        }
+      } catch (error) {
+        console.warn('[task-event] watcher lookup failed:', (error as Error).message);
+      }
+    }
     if (!installs.length) return;
 
     const taskId = String(task.taskId || task.id || task._id || 'unknown');
@@ -330,12 +359,12 @@ export async function notifyPodAgents(
       if (actorKey && installKey === actorKey) return null;
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
-      const ownRow = seatMatchesAssignee(install, task.assignee)
+      const ownRow = !install.digestOnlyWatcher && (seatMatchesAssignee(install, task.assignee)
         || seatMatchesAssignee(install, previousTask?.assignee)
         || seatHoldsClaim(install, currentHolder)
         || seatHoldsClaim(install, previousHolder)
         || dependentRows.some((row) => seatMatchesAssignee(install, row.assignee))
-        || dependentHolders.some((holder) => seatHoldsClaim(install, holder));
+        || dependentHolders.some((holder) => seatHoldsClaim(install, holder)));
       try {
         if (!ownRow) {
           await AgentEventService.enqueue({
@@ -360,10 +389,12 @@ export async function notifyPodAgents(
         try {
           const assignees = instanceId === 'default' || instanceId === agentName
             ? [agentName] : [instanceId];
-          assignedRows = await Task.find(
-            { podId: normalizedPodId, assignee: { $in: assignees }, status: { $in: ['pending', 'claimed'] } },
-            { taskId: 1, title: 1, priority: 1, taskNum: 1, status: 1, updatedAt: 1, updates: { $slice: -1 } },
-          ).sort({ priority: 1, taskNum: 1, _id: 1 }).limit(MAX_ASSIGNED_ROWS).lean();
+          assignedRows = await Task.aggregate([
+            { $match: { podId: new Types.ObjectId(normalizedPodId), assignee: { $in: assignees }, status: { $in: ['pending', 'claimed'] } } },
+            ...TASK_PRIORITY_ORDER,
+            { $limit: MAX_ASSIGNED_ROWS },
+            { $project: { taskId: 1, title: 1, priority: 1, taskNum: 1, status: 1, updatedAt: 1, updates: { $slice: ['$updates', -1] } } },
+          ]);
         } catch (err) {
           // A listing failure must not turn the entire board wake into silence.
           console.warn(`[task-event] assigned rows lookup failed for ${agentName}:`, (err as Error).message);

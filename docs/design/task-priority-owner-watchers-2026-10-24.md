@@ -1,6 +1,6 @@
 # Task priority, live owner and watchers
 
-TASK-443 · D40 · Design proposal, 2026-10-24 · Owner: Tern
+TASK-443 · D40 · Implementation design, 2026-10-24 · Owner: Tern
 
 ## Behavior
 
@@ -10,7 +10,7 @@ Cards show a compact P0–P3 badge next to the task ID. The create form and task
 
 Task.watchers is a set of User IDs, including human and bot Users. Pod members can follow/unfollow themselves from the drawer; clients cannot subscribe somebody else. The drawer shows the watcher count and names, with “Follow task” / “Following” and explanatory copy: “Updates appear in your digest.” Validate pod access on each write; following does not grant access after membership removal. Repeated follow/unfollow calls are idempotent. Subscription changes do not wake anybody.
 
-Task updates feed agent watchers through deliveryMode=digest, never a watcher-created wake. Existing assignee/claim-holder addressing still works: if a watcher also owns the task, ownership may wake them independently; do not duplicate their digest item. Human watchers get a task-update section in their existing daily digest, filtered by current membership and the digest window. Human watcher updates must not become pending decision/mention attention items or trigger needs-you email. Coalesce repeated edits to one task within a digest window.
+Task updates feed agent watchers through deliveryMode=digest, never a watcher-created wake. A bot member receives that durable event even when its installation is paused or absent; identity resolution matches runtime token authentication. Viewer members may follow, but a nonmember DM observer may not. Existing assignee/claim-holder addressing still works: if a watcher also owns the task, ownership may wake them independently; do not duplicate their digest item. Human watchers get a task-update section in their existing daily digest, filtered by current membership and the digest window. The daily scheduler includes stale human followers when task-only activity occurs, even without chat summaries. Human watcher updates must not become pending decision/mention attention items or trigger needs-you email. Coalesce repeated edits to one task within a digest window.
 
 ## Silent migration
 
@@ -25,3 +25,9 @@ Use a rerunnable direct collection writes for open rows. Copy a leading [P0]–[
 - Migration: backend/scripts/migrate-task-priority.ts plus service tests. Cover prefixed/unprefixed/explicit priority rows, idempotency and zero events.
 
 Service tests cover concurrent claims retaining one winner; priority ordering before the five-row wake limit; no preemption; watcher authorization/idempotency; digest-only bot events; human digest membership filtering; and no watcher wake or needs-you attention. Gates: CodeRabbit first, Sable code, Rhea wake/security, UX Lead render. Design page plus UX card artboard precede component implementation.
+
+## Render reference
+
+UX Lead approved implementation from the TASK-443 artboard on 2026-10-24 (pod attachment `1792841471910-115004115.pdf`; text spec `1792841630481-905392280.md`). P0 alone uses ink emphasis; the three owner dots distinguish a live lease, unclaimed assignment and expired lease. Assigned to and Claimed by remain separate drawer rows.
+
+An isolated local Chrome fixture walk covers the production board component and CSS in English and Chinese at 1440 and 390: board, ownership drawer, follow action, Escape and create form. All four runs have no page errors and drawer scrollWidth equals clientWidth. This fixture proof does not replace UX Lead's independent render gate or a production walk. Removing the priority badge rule makes the targeted layout invariant fail; restoring it returns it to green.

@@ -1,3 +1,4 @@
+import { TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 /**
  * Kernel work sweep (#1044, ruled by fable-lead).
  *
@@ -306,6 +307,7 @@ class KernelWorkSweepService {
           $or: [{ assignee: null }, { assignee: '' }, { assignee: { $exists: false } }],
         },
       },
+      ...TASK_PRIORITY_ORDER,
       // `lapsedFrom` rides along so the wake can name who it lapsed from
       // (#1080 part 3). The wake is the surface where the near-duplicate of
       // #1078 nearly happened: a row advertised as unassigned, with its

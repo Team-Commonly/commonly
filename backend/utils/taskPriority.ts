@@ -15,3 +15,9 @@ export function compareTaskPriority(
   return priority || Number(left.taskNum || 0) - Number(right.taskNum || 0)
     || String(left.taskId || '').localeCompare(String(right.taskId || ''));
 }
+
+// Normalize missing legacy fields before Mongo sorts or limits the result.
+export const TASK_PRIORITY_ORDER = [
+  { $set: { priority: { $ifNull: ['$priority', 'P2'] } } },
+  { $sort: { priority: 1, taskNum: 1, _id: 1 } },
+] as const;

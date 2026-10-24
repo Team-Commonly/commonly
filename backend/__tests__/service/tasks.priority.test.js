@@ -96,3 +96,18 @@ test('note updates can change priority and reject invalid values', async () => {
   expect((await Task.findById(row._id)).priority).toBe('P0');
   await request(app).post(`${api()}/TASK-1/updates`).set('Authorization', `Bearer ${token}`).send({ text: 'Invalid', priority: 0 }).expect(400);
 });
+
+test('viewer members can follow, while a DM observer still cannot subscribe', async () => {
+  await Task.create({ podId: pod._id, taskId: 'TASK-1', taskNum: 1, title: 'Read-only work' });
+  // Exercise the role-bearing membership shape supported by the route helper.
+  await Pod.collection.updateOne({ _id: pod._id }, { $set: { members: [{ userId: pod.createdBy, role: 'viewer' }] } });
+  await request(app).post(`${api()}/TASK-1/watch`).set('Authorization', `Bearer ${token}`).send({ following: true }).expect(200);
+  await request(app).patch(`${api()}/TASK-1`).set('Authorization', `Bearer ${token}`).send({ priority: 'P0' }).expect(403);
+  const DMService = require('../../services/dmService');
+  const observerAccess = jest.spyOn(DMService, 'canViewPod').mockResolvedValue(true);
+  const observer = await User.create({ username: 'observer', email: 'observer@test.com', password: 'Password123!', verified: true });
+  try {
+    await request(app).post(`${api()}/TASK-1/watch`).set('Authorization', `Bearer ${generateTestToken(observer._id)}`).send({ following: true }).expect(403);
+    expect(observerAccess).not.toHaveBeenCalled();
+  } finally { observerAccess.mockRestore(); }
+});

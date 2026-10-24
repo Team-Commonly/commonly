@@ -447,3 +447,29 @@ test('followed task updates reach only a current member digest and create no att
   const removed = await new DailyDigestService().generateUserDailyDigest(member._id);
   expect(removed.content).not.toContain(row.title);
 });
+
+test('followed legacy done rows cannot crowd a P0 out of the digest limit', async () => {
+  const Task = require('../../../models/Task');
+  const member = await person(new Date(Date.now() - 25 * 60 * 60 * 1000));
+  const pod = await podWithSummary(member, 'Priority digest');
+  for (let i = 0; i < 6; i += 1) {
+    const task = await Task.create({ podId: pod._id, taskId: `TASK-${i}`, taskNum: i, title: `Priority marker ${i}`, status: 'done', priority: i === 5 ? 'P0' : 'P2', watchers: [member._id] });
+    if (i < 5) await Task.collection.updateOne({ _id: task._id }, { $unset: { priority: '' } });
+  }
+  const digest = await new DailyDigestService().generateUserDailyDigest(member._id);
+  expect(digest.content).toContain('Following TASK-5: Priority marker 5');
+  const followedLines = digest.content.split('\n').filter((line) => line.startsWith('- Following'));
+  expect(followedLines).toHaveLength(5);
+  expect(followedLines[0]).toContain('TASK-5');
+});
+
+test('an old human watcher gets a scheduled digest for task-only activity', async () => {
+  const Task = require('../../../models/Task');
+  const member = await person(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+  const pod = await Pod.create({ name: 'Silent pod', members: [member._id], createdBy: member._id });
+  await Task.create({ podId: pod._id, taskId: 'TASK-ONLY', taskNum: 1, title: 'Task-only marker', watchers: [member._id] });
+  const results = await new DailyDigestService().generateAllDailyDigests({ at: digestHourUtc() });
+  expect(results.some((result) => String(result.userId) === String(member._id) && result.success)).toBe(true);
+  const digest = await Summary.findOne({ 'metadata.userId': String(member._id), type: 'daily-digest' });
+  expect(digest.content).toContain('Task-only marker');
+});

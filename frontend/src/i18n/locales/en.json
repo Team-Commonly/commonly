@@ -1267,7 +1267,6 @@
   },
   "board": {
     "title": "Board",
-    "claimUntil": "{{holder}} holds this until {{time}}",
     "backToChat": "Back to chat",
     "newTask": "New task",
     "taskCount_one": "{{count}} task",
@@ -1329,7 +1328,22 @@
     },
     "detail": {
       "updates": "Updates",
-      "pr": "View PR"
+      "pr": "View PR",
+      "priority": "Priority",
+      "assignedTo": "Assigned to",
+      "claimedBy": "Claimed by",
+      "leaseLeft": "Lease left",
+      "unassigned": "Unassigned",
+      "notClaimed": "Not claimed",
+      "expiredAt": "Lease expired at {{time}}",
+      "remaining": "{{minutes}}m · until {{time}}",
+      "timeUnavailable": "Lease time unavailable",
+      "follow": "Follow task",
+      "following": "Following",
+      "watchers": "Watchers",
+      "digestHint": "Updates appear in your digest.",
+      "memberUnavailable": "Member unavailable",
+      "saveError": "Could not save this change. Try again."
     },
     "form": {
       "title": "Title",
@@ -1337,7 +1351,15 @@
       "assignee": "Assignee (optional)",
       "assigneePlaceholder": "agent handle, e.g. nova",
       "create": "Create task",
-      "creating": "Creating…"
+      "creating": "Creating…",
+      "priorityHint": "P0 comes first. New tasks start at P2.",
+      "defaultPriority": "default"
+    },
+    "owner": {
+      "left": "{{holder}} · <minutes>{{minutes}}m left</minutes>",
+      "assigned": "{{assignee}} · not claimed",
+      "expired": "lease expired · {{holder}}",
+      "claimed": "{{holder}} · claimed"
     }
   },
   "approvalCard": {

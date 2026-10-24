@@ -1,3 +1,5 @@
+import { Types } from 'mongoose';
+import { TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 // eslint-disable-next-line global-require
 const Summary = require('../models/Summary');
 // eslint-disable-next-line global-require
@@ -189,14 +191,18 @@ export class DailyDigestService {
         ? await Pod.find({ members: userId, publicRead: true }).select('_id').lean() as Array<{ _id: unknown }>
         : [];
       const memberPods = recap
-        ? await Pod.find({ members: userId }).select('_id name').lean() as Array<{ _id: unknown; name?: string }>
+        ? await Pod.find({ $or: [{ members: userId }, { 'members.userId': userId }] }).select('_id name').lean() as Array<{ _id: unknown; name?: string }>
         : [];
-      const followed = recap ? await Task.find({
-        podId: { $in: memberPods.map((pod) => pod._id) },
-        watchers: userId,
-        updatedAt: { $gte: startTime, $lte: endTime },
-      }).sort({ priority: 1, taskNum: 1 }).limit(MAX_BOARD)
-        .select('taskId title status podId').lean() as Array<Record<string, unknown>> : [];
+      const followed = recap ? await Task.aggregate([
+        { $match: {
+          podId: { $in: memberPods.map((pod) => pod._id) },
+          watchers: new Types.ObjectId(String(userId)),
+          updatedAt: { $gte: startTime, $lte: endTime },
+        } },
+        ...TASK_PRIORITY_ORDER,
+        { $limit: MAX_BOARD },
+        { $project: { taskId: 1, title: 1, status: 1, podId: 1 } },
+      ]) as Array<Record<string, unknown>> : [];
       const lines = DailyDigestService.recapLines(recap && {
         ...recap,
         board: (recap.board || []).filter((row) => !followed.some((task) => (
@@ -301,11 +307,14 @@ This might be a great time to start a new conversation or share something intere
       console.log('Starting daily digest generation for all users...');
 
       const startTime = new Date(at.getTime() - 24 * 60 * 60 * 1000);
-      const recentPodIds = await Summary.distinct('podId', {
-        type: { $in: ['posts', 'chats'] },
-        podId: { $exists: true },
-        createdAt: { $gte: startTime },
-      });
+      const [recentPodIds, recentWatcherIds] = await Promise.all([
+        Summary.distinct('podId', {
+          type: { $in: ['posts', 'chats'] },
+          podId: { $exists: true },
+          createdAt: { $gte: startTime },
+        }),
+        Task.distinct('watchers', { updatedAt: { $gte: startTime } }),
+      ]);
       // Public-read pods include every signup; their activity is not a reason
       // to wake every stale account.
       const recentMemberIds = await Pod.distinct('members', {
@@ -317,7 +326,7 @@ This might be a great time to start a new conversation or share something intere
         isBot: { $ne: true },
         $or: [
           { lastActive: { $gte: new Date(at.getTime() - 7 * 24 * 60 * 60 * 1000) } },
-          { _id: { $in: recentMemberIds } },
+          { _id: { $in: [...recentMemberIds.map((member: any) => member?.userId || member?._id || member), ...recentWatcherIds] } },
         ],
       }).lean() as Array<{ _id: unknown; username?: string; timezone?: string }>;
       const alreadyHave = new Set((await Summary.distinct('metadata.userId', {

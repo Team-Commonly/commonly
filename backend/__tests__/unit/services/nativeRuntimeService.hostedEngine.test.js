@@ -96,6 +96,7 @@ jest.mock('../../../services/outboundUrlGuard', () => ({
 const mockTaskRows = jest.fn();
 const mockTaskCount = jest.fn();
 jest.mock('../../../models/Task', () => ({
+  aggregate: jest.fn(() => mockTaskRows()),
   find: jest.fn(() => ({
     sort: () => ({ limit: () => ({ select: () => ({ lean: () => mockTaskRows() }) }) }),
   })),
@@ -369,7 +370,10 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       await runAgent(hostedInstall(), mention);
 
       const Task = require('../../../models/Task');
-      expect(Task.find).toHaveBeenCalledWith({ podId: POD, status: { $in: ['pending', 'claimed', 'blocked'] } });
+      expect(Task.aggregate).toHaveBeenCalledWith(expect.arrayContaining([
+        { $match: { podId: expect.objectContaining({}), status: { $in: ['pending', 'claimed', 'blocked'] } } },
+      ]));
+      expect(String(Task.aggregate.mock.calls[0][0][0].$match.podId)).toBe(POD);
       const listed = JSON.parse(toolMessages(1)[0].content);
       expect(listed).toEqual({
         status: 'open', total: 3, tasks: [{ taskId: 'TASK-1', title: 'Say hello to the pod', priority: 'P2', status: 'pending', assignee: null }],
