@@ -27,7 +27,7 @@
     "husky": "^9.0.11",
     "js-yaml": "4.3.2",
     "lint-staged": "^16.0.0",
-    "wait-on": "^9.0.4"
+    "wait-on": "^9.5.1"
   },
   "lint-staged": {
     "backend/**/*.ts": [
