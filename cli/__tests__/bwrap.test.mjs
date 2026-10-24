@@ -120,6 +120,23 @@ describe('wrapArgvWithBwrap', () => {
     expect(argv).not.toContain('--share-net');
   });
 
+  itLinux('allows loopback setup only inside an isolated network namespace', () => {
+    const argv = wrapArgvWithBwrap(
+      ['node', 'bridge.mjs'],
+      { sandbox: { network: { policy: 'restricted' } } },
+      { workspacePath: '/tmp/ws', enableLoopback: true },
+    );
+    expect(argv).toContain('--unshare-net');
+    expect(argv).not.toContain('--share-net');
+    expect(argv.slice(argv.indexOf('--uid'), argv.indexOf('--uid') + 4))
+      .toEqual(['--uid', '0', '--gid', '0']);
+    expect(argv.slice(argv.indexOf('--cap-add'), argv.indexOf('--cap-add') + 4))
+      .toEqual(['--cap-add', 'CAP_NET_ADMIN', '--cap-add', 'CAP_SETPCAP']);
+    expect(() => wrapArgvWithBwrap(
+      ['node', 'bridge.mjs'], {}, { workspacePath: '/tmp/ws', enableLoopback: true },
+    )).toThrow(/requires an isolated network namespace/);
+  });
+
   itLinux('appends user read-outside paths as --ro-bind-try', () => {
     const argv = wrapArgvWithBwrap(
       ['claude'],
