@@ -446,7 +446,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         // eslint-disable-next-line no-await-in-loop
         await targetInstallation.save();
       }
-    if (downgradesPrivateListener) await revokePrivateListenerTokens();
+      if (downgradesPrivateListener) await revokePrivateListenerTokens();
 
       if (
         status

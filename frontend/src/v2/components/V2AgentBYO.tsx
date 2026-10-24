@@ -967,7 +967,7 @@ const V2AgentBYO: React.FC = () => {
           <span className="v2-byo__label">{t('agentByo.form.repoPath')}</span>
           <input type="text" value={repoPath} onChange={(event) => setRepoPath(event.target.value)}
             className="v2-byo__input" data-testid="byo-repo-path"
-            placeholder="~/projects/my-repo" />
+            placeholder={t('agentByo.form.repoPathPlaceholder')} />
           <span className="v2-byo__hint">{t('agentByo.form.privateWarning')}</span>
         </label>
       )}

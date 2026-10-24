@@ -19,6 +19,7 @@ const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const Integration = require('../../models/Integration');
 const AgentCredential = require('../../models/AgentCredential');
+const Machine = require('../../models/Machine');
 const { AgentInstallation, AgentRegistry } = require('../../models/AgentRegistry');
 const agentRuntimeAuth = require('../../middleware/agentRuntimeAuth');
 const { hash } = require('../../utils/secret');
@@ -73,6 +74,10 @@ beforeEach(async () => {
   await AgentCredential.create({
     tokenHash: hash(DAEMON), kind: 'daemon', ownerUserId: mockOwner.id,
     machineId: 'private-machine', scopes: ['agents:adopt'],
+  });
+  await Machine.create({
+    machineId: 'private-machine', ownerUserId: mockOwner.id,
+    name: 'Private listener test', registeredByDeviceTokenHash: null,
   });
 });
 
