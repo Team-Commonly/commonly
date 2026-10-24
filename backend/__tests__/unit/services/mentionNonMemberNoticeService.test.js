@@ -1,4 +1,4 @@
-jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({ findById: jest.fn(), find: jest.fn() }));
 jest.mock('../../../models/User', () => ({ find: jest.fn() }));
 jest.mock('../../../models/AgentProfile', () => ({ find: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({
@@ -17,6 +17,7 @@ describe('non-member mention feedback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     Pod.findById.mockReturnValue(rows({ members: ['member-user'] }));
+    Pod.find.mockReturnValue({ select: () => ({ sort: () => ({ lean: async () => [] }) }) });
     User.find.mockReturnValue(rows([
       { _id: 'member-user', username: 'sam' },
       { _id: 'other-user', username: 'Lily' },
@@ -49,6 +50,39 @@ describe('non-member mention feedback', () => {
   it('skips all lookups when there is no mention', async () => {
     expect(await findNonMemberMentionNotices('pod-1', 'hello')).toEqual([]);
     expect(Pod.findById).not.toHaveBeenCalled();
+  });
+
+  it('suggests only pods shared with the sender and never includes private pod metadata', async () => {
+    AgentInstallation.find.mockReturnValue(rows([
+      { podId: 'shared-pod', agentName: 'rhea', instanceId: 'rhea' },
+      { podId: 'private-pod', agentName: 'rhea', instanceId: 'rhea' },
+    ]));
+    Pod.find.mockReturnValue({ select: () => ({ sort: () => ({ lean: async () => [
+      { _id: 'shared-pod', name: 'Reviews' },
+    ] }) }) });
+    const notices = await findNonMemberMentionNotices('pod-1', '@rhea please review', 'member-user');
+    expect(Pod.find).toHaveBeenCalledWith({
+      _id: { $in: ['shared-pod', 'private-pod'] }, members: 'member-user',
+    });
+    expect(notices).toEqual([{
+      code: 'MENTION_NOT_IN_POD', handle: 'rhea',
+      message: "rhea isn't in this pod. Ask in: Reviews.",
+      pods: [{ id: 'shared-pod', name: 'Reviews' }],
+    }]);
+    expect(JSON.stringify(notices)).not.toContain('private-pod');
+  });
+
+  it('does not reveal pod locations without an authenticated sender', async () => {
+    const notices = await findNonMemberMentionNotices('pod-1', '@rhea');
+    expect(notices[0]).not.toHaveProperty('pods');
+    expect(Pod.find).not.toHaveBeenCalled();
+  });
+
+  it('warns for a bot left in members without an active installation in this pod', async () => {
+    Pod.findById.mockReturnValue(rows({ members: ['rhea-user'] }));
+    User.find.mockReturnValue(rows([{ _id: 'rhea-user', username: 'rhea', isBot: true }]));
+    const notices = await findNonMemberMentionNotices('pod-1', '@rhea');
+    expect(notices[0]).toMatchObject({ code: 'MENTION_NOT_IN_POD', handle: 'rhea' });
   });
 
   it('recognizes an in-pod legacy alias and profile display slug as delivered', async () => {

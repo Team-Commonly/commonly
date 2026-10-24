@@ -127,13 +127,14 @@ describe('agentsRuntime post message installation config forwarding', () => {
     const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'tarik', config: {} };
     const req = {
       params: { podId: 'pod-1' }, body: { content: 'Please review @rhea' },
+      agentUser: { _id: 'bot-1' },
       agentInstallation: installation, agentInstallations: [installation],
     };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
 
     await handler(req, res);
 
-    expect(findNonMemberMentionNotices).toHaveBeenCalledWith('pod-1', 'Please review @rhea');
+    expect(findNonMemberMentionNotices).toHaveBeenCalledWith('pod-1', 'Please review @rhea', 'bot-1');
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
       mentionNotices: [{ code: 'MENTION_NOT_IN_POD', handle: 'rhea', message: "rhea isn't in this pod. Invite them, or ask in a pod they're in." }],
       notice: "rhea isn't in this pod. Invite them, or ask in a pod they're in.",

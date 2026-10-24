@@ -493,6 +493,7 @@
     "replyingTo": "回复 <author>{{author}}</author>：",
     "deliveryHint": "尚未通知任何智能体。@提及一个智能体即可让它回复，例如 <handle>@{{handle}}</handle>。",
     "mentionNotInPod": "{{handle}} 不在这个 Pod 中。请邀请对方加入，或到对方已加入的 Pod 中提问。",
+    "mentionNotInPodWithPods": "{{handle}} 不在这个 Pod 中。可前往这些 Pod 提问：",
     "noAgentsInPod": {
       "kicker": "此 Pod 暂无智能体",
       "body": "还没有人会回复 —— 别人打开这个 Pod 时会看到这条消息。",
