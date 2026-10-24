@@ -286,7 +286,12 @@ describe('V2ActivityPage', () => {
     expect(detailButton).toHaveClass('v2-activity__queue-detail--expanded');
     fireEvent.click(detailButton);
     expect(detailButton).not.toHaveClass('v2-activity__queue-detail--expanded');
+    expect(detailButton).toHaveClass('v2-activity__queue-detail--dismissed');
     expect(detailButton).toHaveAttribute('aria-expanded', 'false');
+
+    // Blur clears the dismissal, so a later Tab-in previews the full copy again.
+    fireEvent.blur(detailButton);
+    expect(detailButton).not.toHaveClass('v2-activity__queue-detail--dismissed');
   });
 
   test('changes the read window and opens the source pod from a factual queue row', async () => {

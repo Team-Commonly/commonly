@@ -230,6 +230,9 @@ const V2ActivityPage: React.FC = () => {
   const pendingRefreshFocusRef = useRef<string | null>(null);
   const [replyOpenIds, setReplyOpenIds] = useState<Set<string>>(new Set());
   const [expandedDetailIds, setExpandedDetailIds] = useState<Set<string>>(new Set());
+  // A reader who collapsed a detail keeps focus on it; this stops the focus
+  // preview from re-opening it until the button is blurred and focused again.
+  const [dismissedDetailIds, setDismissedDetailIds] = useState<Set<string>>(new Set());
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [composePodId, setComposePodId] = useState('');
   const [composeDraft, setComposeDraft] = useState('');
@@ -1275,12 +1278,27 @@ const V2ActivityPage: React.FC = () => {
                       {item.detail && (
                         <button
                           type="button"
-                          className={`v2-activity__queue-detail${expandedDetailIds.has(item.id) ? ' v2-activity__queue-detail--expanded' : ''}`}
+                          className={`v2-activity__queue-detail${expandedDetailIds.has(item.id) ? ' v2-activity__queue-detail--expanded' : ''}${dismissedDetailIds.has(item.id) ? ' v2-activity__queue-detail--dismissed' : ''}`}
                           aria-expanded={expandedDetailIds.has(item.id)}
-                          onClick={() => setExpandedDetailIds((current) => {
+                          onClick={() => {
+                            const collapsing = expandedDetailIds.has(item.id);
+                            setExpandedDetailIds((current) => {
+                              const next = new Set(current);
+                              if (next.has(item.id)) next.delete(item.id);
+                              else next.add(item.id);
+                              return next;
+                            });
+                            setDismissedDetailIds((current) => {
+                              const next = new Set(current);
+                              if (collapsing) next.add(item.id);
+                              else next.delete(item.id);
+                              return next;
+                            });
+                          }}
+                          onBlur={() => setDismissedDetailIds((current) => {
+                            if (!current.has(item.id)) return current;
                             const next = new Set(current);
-                            if (next.has(item.id)) next.delete(item.id);
-                            else next.add(item.id);
+                            next.delete(item.id);
                             return next;
                           })}
                         >
