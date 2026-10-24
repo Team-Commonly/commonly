@@ -912,10 +912,37 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
     const event = await seedEvent();
     await age(event._id, 2 * 60 * 1000);
 
-    const result = await sweep();
-
-    expect(result.rescuedPendingInProcess).toBe(1);
-    expect(runAgent).toHaveBeenCalledTimes(1);
+    // The sweep claims and schedules the event; digest loading and the run
+    // happen asynchronously. Hold that boundary so this remains deterministic
+    // even when Mongo is slow under the full CI shard's load.
+    let releaseDigest;
+    const digestGate = new Promise((resolve) => { releaseDigest = resolve; });
+    let observedRun;
+    const runStarted = new Promise((resolve) => { observedRun = resolve; });
+    const attach = AgentEventService.attachFoldedDigest.bind(AgentEventService);
+    const digest = jest.spyOn(AgentEventService, 'attachFoldedDigest').mockImplementation(async (...args) => {
+      await digestGate;
+      return attach(...args);
+    });
+    runAgent.mockImplementation((...args) => {
+      observedRun(args);
+      // Keep the turn in flight so no terminal write leaks into the next test.
+      return new Promise(() => {});
+    });
+    try {
+      const result = await sweep();
+      expect(result.rescuedPendingInProcess).toBe(1);
+      expect(runAgent).not.toHaveBeenCalled();
+      releaseDigest();
+      const [installation, trigger] = await runStarted;
+      expect(runAgent).toHaveBeenCalledTimes(1);
+      expect(String(installation.podId)).toBe(String(POD_ID));
+      expect(installation.config.hosted.migration.state).toBe('done');
+      expect(trigger.eventId).toBe(String(event._id));
+    } finally {
+      releaseDigest();
+      digest.mockRestore();
+    }
   });
 
   test('two sweeps racing (two replicas) run it once', async () => {
