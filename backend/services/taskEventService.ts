@@ -19,6 +19,7 @@ let ioRef: SocketIOLike | null = null;
 export type TaskEventKind = 'created' | 'updated' | 'deleted';
 const MAX_NAMED_ITEMS = 5;
 const MAX_ASSIGNED_ROWS = 5;
+const FOUND_WORK_COOLDOWN_MS = 30 * 60 * 1000;
 type BoardTask = Record<string, unknown>;
 
 function seatMatchesAssignee(install: Record<string, unknown>, assignee: unknown): boolean {
@@ -412,7 +413,12 @@ export async function notifyPodAgents(
     }));
     const failed = outcomes.some((outcome) => outcome === undefined);
     const offered = outcomes.some((outcome) => outcome === true);
-    if (offered && !failed) {
+    // A wake to the prior owner after unassignment cannot retire a pending
+    // unassigned row from the kernel's found-work scan.
+    // Match wakeForFoundWork's status/assignee predicate exactly; legacy rows
+    // can retain a stale claimedBy even while pending and unassigned.
+    const unclaimedWork = String(task.status) === 'pending' && !task.assignee;
+    if (offered && !failed && !unclaimedWork) {
       await stampOfferedRevisions([task]);
     }
   } catch (err) {
@@ -495,7 +501,24 @@ export async function notifyFoundWork(
     const outcomes = await Promise.all(installs.map(async (install: Record<string, unknown>) => {
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
+      let reservedSlot = false;
       try {
+        // Reserve the 30-minute slot on the installation itself. A read of
+        // prior events followed by enqueue races another sweep during rollout;
+        // this CAS makes at most one worker win for a seat and pod.
+        const reserved = await AgentInstallation.findOneAndUpdate(
+          {
+            agentName, instanceId, podId: normalizedPodId, status: 'active',
+            $or: [
+              { lastFoundWorkAt: { $lt: new Date(now.getTime() - FOUND_WORK_COOLDOWN_MS) } },
+              { lastFoundWorkAt: null },
+            ],
+          },
+          { $set: { lastFoundWorkAt: now } },
+          { new: true, timestamps: false },
+        );
+        if (!reserved) return false;
+        reservedSlot = true;
         const folded = await AgentEvent.findOneAndUpdate(
           {
             agentName, instanceId, podId: normalizedPodId, status: 'pending', 'payload.boardWake': true,
@@ -523,6 +546,17 @@ export async function notifyFoundWork(
         return true;
       } catch (err) {
         console.warn(`[task-event] found-work enqueue failed for ${agentName}:`, (err as Error).message);
+        // A failed enqueue did not send a nudge. Restore eligibility only if
+        // this reservation is still ours; work remains due for the next sweep.
+        if (reservedSlot) {
+          await AgentInstallation.updateOne(
+            { agentName, instanceId, podId: normalizedPodId, lastFoundWorkAt: now },
+            { $unset: { lastFoundWorkAt: 1 } },
+            { timestamps: false },
+          ).catch((rollbackErr: Error) => {
+            console.warn(`[task-event] found-work reservation rollback failed for ${agentName}:`, rollbackErr.message);
+          });
+        }
       }
     }));
     if (woken > 0 && outcomes.every((outcome) => outcome === true)) {

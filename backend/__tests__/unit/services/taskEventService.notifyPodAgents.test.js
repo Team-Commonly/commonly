@@ -11,7 +11,7 @@
 const mongoose = require('mongoose');
 
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { find: jest.fn(), findOne: jest.fn() },
+  AgentInstallation: { find: jest.fn(), findOne: jest.fn(), findOneAndUpdate: jest.fn(), updateOne: jest.fn() },
 }));
 
 jest.mock('../../../services/agentEventService', () => ({
@@ -77,6 +77,8 @@ beforeEach(() => {
   // unless it explicitly seeds a pending wake.
   AgentEvent.findOneAndUpdate.mockResolvedValue(null);
   AgentInstallation.findOne.mockReturnValue({ sort: () => ({ lean: async () => null }) });
+  AgentInstallation.findOneAndUpdate.mockResolvedValue({});
+  AgentInstallation.updateOne.mockResolvedValue({ matchedCount: 1 });
   User.findById.mockReturnValue({ select: () => ({ lean: async () => null }) });
   AgentEvent.updateOne.mockResolvedValue({});
   mockTaskUpdateOne.mockResolvedValue({ matchedCount: 1 });
@@ -147,6 +149,18 @@ describe('notifyPodAgents', () => {
       { userId: HUMAN_ID, isAgent: false },
     );
 
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('keeps a pending unassigned revision due even with a stale claim id', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task({
+      _id: 'task-1', status: 'pending', assignee: null, claimedBy: 'default',
+      updatedAt: new Date('2026-08-20T20:00:00.000Z'),
+    }), 'updated', { userId: HUMAN_ID, isAgent: false });
+
+    expect(AgentEventService.enqueue.mock.calls[0][0].deliveryMode).toBe('digest');
     expect(mockTaskUpdateOne).not.toHaveBeenCalled();
   });
 
@@ -442,6 +456,43 @@ describe('notifyFoundWork', () => {
     title: `Task ${index + 1}`,
     updatedAt: new Date(`2026-08-20T20:00:${String(index).padStart(2, '0')}.000Z`),
   }));
+
+  it('caps unclaimed-work nudges per seat and pod for 30 minutes without losing due work', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    const now = new Date('2026-08-20T20:00:00.000Z');
+    AgentInstallation.findOneAndUpdate.mockResolvedValue(null);
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1, now);
+
+    expect(AgentInstallation.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        agentName: 'scout', instanceId: 'default', podId: POD_ID, status: 'active',
+        $or: [
+          { lastFoundWorkAt: { $lt: new Date(now.getTime() - 30 * 60 * 1000) } },
+          { lastFoundWorkAt: null },
+        ],
+      },
+      { $set: { lastFoundWorkAt: now } },
+      { new: true, timestamps: false },
+    );
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('releases a reserved slot when the nudge enqueue fails', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+    const now = new Date('2026-08-20T20:00:00.000Z');
+    AgentEventService.enqueue.mockRejectedValueOnce(new Error('store down'));
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1, now);
+
+    expect(AgentInstallation.updateOne).toHaveBeenCalledWith(
+      { agentName: 'scout', instanceId: 'default', podId: POD_ID, lastFoundWorkAt: now },
+      { $unset: { lastFoundWorkAt: 1 } },
+      { timestamps: false },
+    );
+    expect(mockTaskUpdateOne).not.toHaveBeenCalled();
+  });
 
   it('names five rows but stamps every aggregate row, including rows 6+', async () => {
     mockInstalls([install('scout', HUMAN_ID)]);

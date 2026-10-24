@@ -15,6 +15,8 @@ jest.mock('../../models/AgentRegistry', () => ({
   AgentInstallation: {
     find: jest.fn(),
     findOne: jest.fn(),
+    findOneAndUpdate: jest.fn(),
+    updateOne: jest.fn(),
   },
 }));
 
@@ -97,6 +99,8 @@ beforeEach(async () => {
   taskNum = 0;
   setInstalls([install()]);
   AgentEvent.findOneAndUpdate.mockResolvedValue(null);
+  AgentInstallation.findOneAndUpdate.mockResolvedValue({});
+  AgentInstallation.updateOne.mockResolvedValue({ matchedCount: 1 });
   AgentEvent.updateOne.mockResolvedValue({});
   AgentEventService.enqueue.mockResolvedValue({});
   mockBoardWakeEnabled.mockReturnValue(true);

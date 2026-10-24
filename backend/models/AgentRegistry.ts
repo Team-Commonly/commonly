@@ -210,6 +210,7 @@ export interface IAgentInstallationRegistry extends Document {
   status: AgentInstallationStatus;
   errorMessage?: string;
   staleSince?: Date;
+  lastFoundWorkAt?: Date | null;
   installedBy: Types.ObjectId;
   skillLoad?: { at: Date; mounted: string[]; conflicted: string[]; status?: 'available' | 'unavailable' };
   usage: {
@@ -248,6 +249,8 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
     status: { type: String, enum: ['active', 'paused', 'uninstalled', 'error', 'stale'], default: 'active' },
     errorMessage: String,
     staleSince: { type: Date },
+    // CAS throttle for the kernel's unclaimed-work nudge, per seat and pod.
+    lastFoundWorkAt: { type: Date, default: null },
     installedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     skillLoad: {
       type: new Schema({ at: Date, mounted: [String], conflicted: [String], status: { type: String, enum: ['available', 'unavailable'] } }, { _id: false }),
