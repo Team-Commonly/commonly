@@ -48,7 +48,7 @@ const install = (agentName = 'scout') => ({
   instanceId: 'default',
   podId: POD_ID.toString(),
   status: 'active',
-  config: { boardWake: { enabled: true } },
+  config: { runtime: { runtimeType: 'wrapper' }, boardWake: { enabled: true } },
 });
 
 const setInstalls = (installs) => {
@@ -375,6 +375,34 @@ describe('own-row board wake routing', () => {
     await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
 
     expect(wakeNames()).toEqual(['maya-agent']);
+    expect(AgentEventService.enqueue.mock.calls[0][0].type).toBe('chat.mention');
+  });
+
+  it('inherits hosted runtime for a mention-created pod projection', async () => {
+    setInstalls([{ ...install('maya-agent'), config: { heartbeat: { enabled: true }, autoJoinSource: 'mention-resolution' } }]);
+    AgentInstallation.findOne.mockReturnValueOnce({ sort: () => ({ lean: async () => ({
+      ...install('maya-agent'), config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native' } },
+    }) }) });
+    const changed = await createTask({ taskId: 'TASK-HOSTED-PROJECTION', updatedAt: NOW, assignee: 'maya-agent' });
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
+
+    expect(AgentInstallation.findOne.mock.calls[0][0]).toMatchObject({
+      agentName: 'maya-agent', instanceId: 'default', status: 'active',
+      'config.runtime.runtimeType': { $exists: true },
+    });
+    expect(AgentEventService.enqueue.mock.calls[0][0].type).toBe('chat.mention');
+  });
+
+  it('keeps an owned wake runnable if a projection runtime lookup fails', async () => {
+    setInstalls([{ ...install('maya-agent'), config: { autoJoinSource: 'mention-resolution' } }]);
+    AgentInstallation.findOne.mockImplementationOnce(() => { throw new Error('runtime lookup unavailable'); });
+    const changed = await createTask({ taskId: 'TASK-LOOKUP-FAIL', updatedAt: NOW, assignee: 'maya-agent' });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
+    warn.mockRestore();
+
     expect(AgentEventService.enqueue.mock.calls[0][0].type).toBe('chat.mention');
   });
 

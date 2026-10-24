@@ -11,7 +11,7 @@
 const mongoose = require('mongoose');
 
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { find: jest.fn() },
+  AgentInstallation: { find: jest.fn(), findOne: jest.fn() },
 }));
 
 jest.mock('../../../services/agentEventService', () => ({
@@ -54,7 +54,7 @@ const install = (agentName, installedBy) => ({
   podId: POD_ID,
   status: 'active',
   installedBy,
-  config: { wakeOnMessage: { enabled: true } },
+  config: { runtime: { runtimeType: 'wrapper' }, wakeOnMessage: { enabled: true } },
 });
 
 const task = (overrides = {}) => ({
@@ -76,6 +76,7 @@ beforeEach(() => {
   // Default: nothing undrained, so each test exercises the fresh-enqueue path
   // unless it explicitly seeds a pending wake.
   AgentEvent.findOneAndUpdate.mockResolvedValue(null);
+  AgentInstallation.findOne.mockReturnValue({ sort: () => ({ lean: async () => null }) });
   User.findById.mockReturnValue({ select: () => ({ lean: async () => null }) });
   AgentEvent.updateOne.mockResolvedValue({});
   mockTaskUpdateOne.mockResolvedValue({ matchedCount: 1 });

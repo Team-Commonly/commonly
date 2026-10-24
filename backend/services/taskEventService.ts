@@ -50,6 +50,32 @@ function seatHoldsClaim(install: Record<string, unknown>, holderKey: string | nu
     || (instance === 'default' && holderKey === `::${name}`);
 }
 
+async function usesHostedBoardWake(
+  install: Record<string, unknown>,
+  AgentInstallation: any,
+): Promise<boolean> {
+  // Match agentEventService.resolveInProcessInstallation: a mention-created
+  // pod projection can omit runtime and inherit it from the identity's latest
+  // configured installation. Both hosted engines answer chat.mention.
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { isHostedInstallation, readRuntimeConfig } = require('./hostedRuntimeService');
+  if (readRuntimeConfig(install).runtimeType) return isHostedInstallation(install);
+  try {
+    const sibling = await AgentInstallation.findOne({
+      agentName: String(install.agentName || '').toLowerCase(),
+      instanceId: String(install.instanceId || 'default'),
+      status: 'active',
+      'config.runtime.runtimeType': { $exists: true },
+    }).sort({ createdAt: -1 }).lean();
+    return isHostedInstallation(sibling);
+  } catch (err) {
+    // chat.mention is answered by hosted and external drivers. Failing toward
+    // that route keeps an addressed owner awake when classification is down.
+    console.warn('[task-event] runtime lookup failed:', (err as Error).message);
+    return true;
+  }
+}
+
 export interface TaskEventPayload {
   podId: string;
   task: unknown;
@@ -207,7 +233,6 @@ export async function notifyPodAgents(
     const { AgentInstallation } = require('../models/AgentRegistry');
     const AgentEventService = require('./agentEventService');
     const Task = require('../models/Task');
-    const { isHostedInstallation } = require('./hostedRuntimeService');
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
 
     const normalizedPodId = String(podId);
@@ -297,9 +322,6 @@ export async function notifyPodAgents(
       if (actorKey && installKey === actorKey) return null;
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
-      // Both hosted engines answer chat.mention; they acknowledge a generic
-      // message.posted without a turn. Other drivers use message.posted.
-      const eventType = isHostedInstallation(install) ? 'chat.mention' : 'message.posted';
       const ownRow = seatMatchesAssignee(install, task.assignee)
         || seatMatchesAssignee(install, previousTask?.assignee)
         || seatHoldsClaim(install, currentHolder)
@@ -308,6 +330,10 @@ export async function notifyPodAgents(
         || dependentHolders.some((holder) => seatHoldsClaim(install, holder));
       if (!ownRow) return null;
       try {
+        // Both hosted engines answer chat.mention; they acknowledge a generic
+        // message.posted without a turn. Other drivers use message.posted.
+        const eventType = await usesHostedBoardWake(install, AgentInstallation)
+          ? 'chat.mention' : 'message.posted';
         // Assignee is the board's agent-name string. Query the current board
         // for this seat rather than replaying only the latest pod-wide edit:
         // an assignment must be visible even when another edit folds into it.
