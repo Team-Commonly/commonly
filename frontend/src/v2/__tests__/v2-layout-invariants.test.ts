@@ -217,6 +217,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('BYO hints do not add paragraph margins to flex gaps', () => {
+    expect(ruleBody(v2, '.v2-byo__warning')).toContain('display: block');
+    expect(ruleBody(v2, '.v2-byo__trust')).toContain('border: 0');
+    expect(ruleBody(v2, '.v2-byo__trust')).toContain('min-inline-size: 0');
     expect(ruleBody(v2, '.v2-byo__hint')).toContain('margin: 0');
   });
 

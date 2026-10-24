@@ -6018,6 +6018,23 @@ body.modern-ui.v2-canvas {
   flex-direction: column;
   gap: 6px;
 }
+/* Trust is a radio group, not a browser-default bordered fieldset. */
+.v2-byo__trust {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+.v2-byo__trust > legend { padding: 0; margin-bottom: 6px; }
+.v2-byo__trust > label { font-size: 14px; line-height: 20px; color: var(--v2-text-primary); }
+.v2-byo__trust input[type="radio"] { accent-color: var(--v2-accent); }
+/* Safety copy stays visible when the repo field loses focus. */
+.v2-byo__warning {
+  display: block;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--v2-text-secondary);
+}
 .v2-byo__label {
   font-size: 13px;
   font-weight: 600;

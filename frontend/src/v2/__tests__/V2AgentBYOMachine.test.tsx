@@ -156,7 +156,7 @@ describe('BYO on-my-computer mode', () => {
 
   test('full tools are offered only in the owner-only invite pod and carry the repo path', async () => {
     mockGet({ pods: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'invite-only',
-      createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }, { _id: 'b1', isBot: true }] }] });
+      createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }, { _id: 'b1', username: 'sam-local', isBot: true }] }] });
     axios.post.mockResolvedValue({ data: {} });
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
@@ -168,6 +168,34 @@ describe('BYO on-my-computer mode', () => {
       expect.objectContaining({ config: expect.objectContaining({ environment: {
         workspace: { path: '~/projects/example' }, sandbox: { trust: 'private' },
       } }) }), expect.anything()));
+  });
+
+  test('the listener itself remains eligible but changing identity removes private mode', async () => {
+    mockGet({ pods: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'invite-only',
+      createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }, { _id: 'b1', username: 'sam-local', isBot: true }] }] });
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    fireEvent.click(screen.getByLabelText('Work in my repo on this machine'));
+    fireEvent.change(screen.getByTestId('byo-repo-path'), { target: { value: '~/projects/example' } });
+    fireEvent.change(screen.getByDisplayValue('sam-local'), { target: { value: 'another-listener' } });
+    expect(screen.queryByLabelText('Work in my repo on this machine')).toBeNull();
+    expect(screen.getByLabelText('Read-only (recommended)')).toBeChecked();
+  });
+
+  test.each([
+    { _id: 'b2', username: 'peer-bot', isBot: true },
+    { _id: 'b2', username: 'sam-claude-other', isBot: true },
+    'unresolved-member',
+  ])('peer or unresolved member refuses private mode: %j', async (extraMember) => {
+    mockGet({ pods: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'invite-only',
+      createdBy: { _id: 'u1' }, members: [{ _id: 'u1', isBot: false }, extraMember] }] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    expect(screen.queryByLabelText('Work in my repo on this machine')).toBeNull();
+    expect(screen.getByLabelText('Read-only (recommended)')).toBeChecked();
   });
 
   test('shared invite pod and open pod expose read-only only', async () => {

@@ -32,6 +32,7 @@ import { hostedCapNotice } from './hostedCapNotice';
 import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
+import { buildAgentUsername } from '../utils/threadAgentIdentity';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
 // The token routes refuse a name that belongs to an agent Commonly runs (the
@@ -157,18 +158,6 @@ const V2AgentBYO: React.FC = () => {
   // shared literal default ("my-mcp-agent") 409s for every user after the
   // first one to accept it. Seed from the username so defaults never collide.
   const { currentUser } = useAuth();
-  const selectedPod = pods.find((pod) => pod._id === podId);
-  const privateListenerEligible = Boolean(selectedPod
-    && selectedPod.joinPolicy === 'invite-only'
-    && selectedPod.publicRead !== true
-    && selectedPod.communityListed !== true
-    && String(selectedPod.createdBy?._id) === String(currentUser?._id)
-    && selectedPod.members?.filter((member) => typeof member !== 'string' && !member.isBot).length === 1
-    && selectedPod.members?.some((member) => typeof member !== 'string'
-      && !member.isBot && String(member._id) === String(currentUser?._id)));
-  useEffect(() => {
-    if (!privateListenerEligible) setListenerTrust('read-only');
-  }, [privateListenerEligible]);
   const userSlug = (currentUser?.username || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
   // The default name follows where the agent runs (C14 rehearsal, 2026-10-20):
   // "Run it here" takes `<user>-agent`, so an own agent defaulting to the same
@@ -182,6 +171,21 @@ const V2AgentBYO: React.FC = () => {
     return `${userSlug}-agent`;
   };
   const [name, setName] = useState<string>(prefill.name || defaultNameFor(null, ''));
+  const selectedPod = pods.find((pod) => pod._id === podId);
+  const listenerUsername = buildAgentUsername(sanitizeAgentName(name), prefill.instanceId);
+  const privateListenerEligible = Boolean(selectedPod
+    && selectedPod.joinPolicy === 'invite-only'
+    && selectedPod.publicRead !== true
+    && selectedPod.communityListed !== true
+    && String(selectedPod.createdBy?._id) === String(currentUser?._id)
+    && selectedPod.members?.every((member) => typeof member !== 'string'
+      && ((!member.isBot && String(member._id) === String(currentUser?._id))
+        || (member.isBot === true && member.username === listenerUsername)))
+    && selectedPod.members?.some((member) => typeof member !== 'string'
+      && !member.isBot && String(member._id) === String(currentUser?._id)));
+  useEffect(() => {
+    if (!privateListenerEligible) setListenerTrust('read-only');
+  }, [privateListenerEligible]);
   const [nameTouched, setNameTouched] = useState<boolean>(Boolean(prefill.name));
   const [namesReady, setNamesReady] = useState(false);
   const [nameLookupError, setNameLookupError] = useState(false);
@@ -946,7 +950,7 @@ const V2AgentBYO: React.FC = () => {
   const cursorInstallHref = cursorMcpInstallLink(apiUrl);
 
   const trustChoice = (
-    <fieldset className="v2-byo__field" data-testid="byo-listener-trust">
+    <fieldset className="v2-byo__field v2-byo__trust" data-testid="byo-listener-trust">
       <legend className="v2-byo__label">{t('agentByo.form.trustLabel')}</legend>
       <label>
         <input type="radio" name="listener-trust" value="read-only"
@@ -968,7 +972,7 @@ const V2AgentBYO: React.FC = () => {
           <input type="text" value={repoPath} onChange={(event) => setRepoPath(event.target.value)}
             className="v2-byo__input" data-testid="byo-repo-path"
             placeholder={t('agentByo.form.repoPathPlaceholder')} />
-          <span className="v2-byo__hint">{t('agentByo.form.privateWarning')}</span>
+          <span className="v2-byo__warning">{t('agentByo.form.privateWarning')}</span>
         </label>
       )}
     </fieldset>
