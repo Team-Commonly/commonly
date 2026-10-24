@@ -260,7 +260,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
     const userRows = usernameSet.size > 0
       ? await User.find({ username: { $in: Array.from(usernameSet) } })
-        .select('username botMetadata agentRuntimeTokens.lastUsedAt')
+        .select('username botMetadata agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt agentRuntimeTokens.expiresAt')
         .lean()
       : [];
     const userByUsername = new Map<string, any>(
@@ -282,7 +282,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           AgentCredential.find({ $or: [
             { kind: 'runtime', agentUserId: { $in: agentIds } },
             { kind: 'daemon', machineId: { $in: machineIds } },
-          ] }).select('kind agentUserId machineId status lastUsedAt expiresAt').lean(),
+          ] }).select('kind agentUserId machineId tokenHash status lastUsedAt expiresAt').lean(),
           Machine.find({ machineId: { $in: machineIds } }).select('machineId lastSeenAt').lean(),
         ]);
         for (const credential of credentials as any[]) {

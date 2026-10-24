@@ -45,4 +45,11 @@ describe('agent connection verdict', () => {
       { lastUsedAt: seen(2) },
     ], now }).state).toBe('connected');
   });
+
+  it('does not trust an embedded copy after its ledger row is revoked', () => {
+    expect(deriveAgentConnection({ runtimeType: 'webhook', credentials: [
+      { tokenHash: 'revoked-hash', status: 'revoked' },
+    ], embeddedTokens: [{ tokenHash: 'revoked-hash', lastUsedAt: seen(0) }], now }))
+      .toEqual({ state: 'revoked', lastSeenAt: null });
+  });
 });

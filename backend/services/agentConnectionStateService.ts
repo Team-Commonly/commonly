@@ -3,7 +3,7 @@
 export const BYO_STALE_MS = 5 * 60 * 1000;
 export const MACHINE_STALE_MS = 90 * 1000;
 
-type Credential = { status?: string; lastUsedAt?: Date | string | null; expiresAt?: Date | string | null };
+type Credential = { tokenHash?: string; kind?: string; status?: string; lastUsedAt?: Date | string | null; expiresAt?: Date | string | null };
 
 export const deriveAgentConnection = ({
   runtimeType, credentials, embeddedTokens = [], machineLastSeenAt = null, now = Date.now(),
@@ -21,8 +21,17 @@ export const deriveAgentConnection = ({
     && (!credential.expiresAt || new Date(credential.expiresAt).getTime() > now));
   const activeMachine = machineCredentials.filter((credential) => credential.status === 'active'
     && (!credential.expiresAt || new Date(credential.expiresAt).getTime() > now));
-  // Embedded tokens predate the ledger. They remain valid on the auth path.
-  const hasEmbedded = embeddedTokens.length > 0;
+  // An embedded copy is usable only when no ledger row exists or its ledger
+  // row is active. Runtime auth applies the same ledger-first rule.
+  const ledgerByHash = new Map(credentials.filter((credential) => credential.tokenHash)
+    .map((credential) => [credential.tokenHash, credential]));
+  const usableEmbedded = embeddedTokens.filter((token) => {
+    const ledger = token.tokenHash ? ledgerByHash.get(token.tokenHash) : undefined;
+    return (!ledger || (ledger.kind !== 'daemon' && ledger.status === 'active'
+      && (!ledger.expiresAt || new Date(ledger.expiresAt).getTime() > now)))
+      && (!token.expiresAt || new Date(token.expiresAt).getTime() > now);
+  });
+  const hasEmbedded = usableEmbedded.length > 0;
   if (!active.length && !hasEmbedded && credentials.some((credential) => credential.status === 'revoked')) {
     return { state: 'revoked', lastSeenAt: null };
   }
@@ -37,7 +46,7 @@ export const deriveAgentConnection = ({
   }
   const dates = isMachine
     ? [machineLastSeenAt]
-    : [...active, ...embeddedTokens].map((credential) => credential.lastUsedAt);
+    : [...active, ...usableEmbedded].map((credential) => credential.lastUsedAt);
   const lastSeen = dates.reduce<number>((latest, value) => {
     const time = value ? new Date(value).getTime() : 0;
     return Number.isFinite(time) ? Math.max(latest, time) : latest;

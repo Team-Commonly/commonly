@@ -161,7 +161,7 @@ describe('revoking a runtime token kills it in every store', () => {
   });
 
   test('the Settings credential revoke stops the agent token and keeps its history', async () => {
-    const { workspace } = await seed();
+    const { workspace, workspaceInstall } = await seed();
     const issued = await request(app)
       .post(`/api/registry/pods/${workspace._id}/agents/${AGENT}/runtime-tokens`)
       .send({ label: 'Settings key' });
@@ -169,9 +169,23 @@ describe('revoking a runtime token kills it in every store', () => {
     const listed = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
     expect(listed.status).toBe(200);
     expect(listed.body).toEqual([expect.objectContaining({ label: 'Settings key', status: 'active' })]);
+    const tokenHash = (await User.findOne({ 'agentRuntimeTokens.0': { $exists: true } }).lean())
+      .agentRuntimeTokens[0].tokenHash;
+    expect(await storesHolding(tokenHash)).toEqual({ users: 1, installations: 1 });
+    workspaceInstall.config = new Map([['runtime', { runtimeType: 'webhook' }]]);
+    await workspaceInstall.save();
+    await AgentCredential.updateOne({ tokenHash }, { $set: { lastUsedAt: new Date() } });
+    const beforeCard = await request(app).get(`/api/registry/pods/${workspace._id}/agents`);
+    expect(beforeCard.status).toBe(200);
+    expect(beforeCard.body.agents[0].connection.state).toBe('connected');
     const revoked = await request(app).delete(`/api/credentials/${listed.body[0]._id}?agentName=${AGENT}&instanceId=default`);
     expect(revoked.status).toBe(200);
     expect((await probe(issued.body.token)).status).toBe(401);
+    expect(await storesHolding(tokenHash)).toEqual({ users: 0, installations: 0 });
+    expect((await AgentInstallation.findById(workspaceInstall._id).lean()).runtimeTokens).toHaveLength(0);
+    const afterCard = await request(app).get(`/api/registry/pods/${workspace._id}/agents`);
+    expect(afterCard.status).toBe(200);
+    expect(afterCard.body.agents[0].connection).toEqual({ state: 'revoked', lastSeenAt: null });
     const after = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
     expect(after.body).toEqual([expect.objectContaining({ label: 'Settings key', status: 'revoked' })]);
   });
@@ -189,8 +203,8 @@ describe('revoking a runtime token kills it in every store', () => {
     expect((await probe(issued.token)).status).toBe(401);
     expect((await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`)).body)
       .toEqual([expect.objectContaining({ label: 'Old CLI key', status: 'revoked' })]);
-    expect((await User.findById(agentUser._id).lean()).agentRuntimeTokens).toHaveLength(1);
-    expect((await AgentInstallation.findById(workspaceInstall._id).lean()).runtimeTokens).toHaveLength(1);
+    expect((await User.findById(agentUser._id).lean()).agentRuntimeTokens).toHaveLength(0);
+    expect((await AgentInstallation.findById(workspaceInstall._id).lean()).runtimeTokens).toHaveLength(0);
   });
 
   test('an installation-only legacy key remains visible for owner revocation', async () => {

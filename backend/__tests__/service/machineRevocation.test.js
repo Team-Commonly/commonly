@@ -168,6 +168,7 @@ describe('machine credential revocation', () => {
       .set('Authorization', `Bearer ${generateTestToken(user._id)}`).expect(200);
 
     expect(await AgentCredential.findById(child.child._id)).toMatchObject({ status: 'revoked' });
+    expect((await User.findById(child.child.agentUserId)).agentRuntimeTokens).toHaveLength(0);
     await daemonCall(first.daemonToken, first.machine.id).expect(401);
     expect(await agentCall(child.token)).toBe(401);
   });
