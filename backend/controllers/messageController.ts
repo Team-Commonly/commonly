@@ -260,18 +260,30 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // message and change nothing. There is nothing to reconcile until there
     // are two claims to reconcile.
     let resolvedThreadRootId: number | null = null;
+    // A message the reconciler moved answers to its Mongo id, so a reply or a
+    // thread post names it that way. Map it to the PG row before validation.
+    // An id that resolves to nothing is passed through as sent, and the
+    // resolver rejects it as it always has.
+    const pgReplyToMessageId = replyToMessageId
+      ? (await PGMessage.resolveId(String(replyToMessageId))) ?? replyToMessageId
+      : replyToMessageId;
+    const pgThreadRootId = threadRootId
+      ? (await PGMessage.resolveId(String(threadRootId))) ?? threadRootId
+      : threadRootId;
     try {
-      if (threadRootId != null && threadRootId !== '') {
+      if (pgThreadRootId != null && pgThreadRootId !== '') {
         // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
         const { resolveThreadRoot } = require('../services/threadRootResolver');
-        resolvedThreadRootId = await resolveThreadRoot({ podId, replyToMessageId, threadRootId });
-      } else if (replyToMessageId) {
+        resolvedThreadRootId = await resolveThreadRoot({
+          podId, replyToMessageId: pgReplyToMessageId, threadRootId: pgThreadRootId,
+        });
+      } else if (pgReplyToMessageId) {
         // A reply's target must be in this pod (TASK-278). A store failure here
         // is left to the write below, which answers it and re-checks in SQL.
         // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
         const { assertReplyTargetInPod } = require('../services/threadRootResolver');
         try {
-          await assertReplyTargetInPod({ podId, replyToMessageId });
+          await assertReplyTargetInPod({ podId, replyToMessageId: pgReplyToMessageId });
         } catch (checkErr) {
           if ((checkErr as { name?: string })?.name === 'ThreadRootError') throw checkErr;
         }
@@ -296,7 +308,7 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
         userId,
         messageContent || '',
         'text',
-        replyToMessageId || null,
+        pgReplyToMessageId || null,
         null,
         resolvedThreadRootId,
       );

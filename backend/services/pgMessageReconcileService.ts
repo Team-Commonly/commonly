@@ -24,6 +24,14 @@ const { pool } = require('../config/db-pg') as {
   };
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { syncPodFromMongo } = require('./pgPodSyncService') as {
+  syncPodFromMongo: (podId: string, requestingUserId: string) => Promise<unknown>;
+};
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const MongoPod = require('../models/Pod') as {
+  exists: (q: Record<string, unknown>) => Promise<unknown>;
+};
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const MongoMessage = require('../models/Message') as {
   find: (q: Record<string, unknown>) => {
     sort: (s: Record<string, number>) => {
@@ -42,6 +50,10 @@ interface MongoFallbackDoc {
   userId: { toString(): string };
   content: string;
   messageType?: string;
+  // Both must survive the move: a card loses its face without payload, and a
+  // kernel seat post loses its marker without authorKind.
+  authorKind?: string | null;
+  payload?: unknown;
   createdAt: Date;
 }
 
@@ -59,9 +71,8 @@ export interface ReconcilePassResult {
 export const LEGACY_ID_INDEX = 'messages_legacy_mongo_id_key';
 export const DEFAULT_MAX_PER_PASS = 200;
 
-// Postgres SQLSTATE 23503: foreign_key_violation. The row can never be
-// accepted as written, so retrying it is pointless.
-const PERMANENT_PG_CODES = new Set(['23503']);
+// Postgres SQLSTATE 23503: foreign_key_violation (messages.pod_id has no pod row).
+const FK_VIOLATION = '23503';
 
 /**
  * Builds the unique index ON CONFLICT needs, without blocking writes.
@@ -87,11 +98,17 @@ export async function ensureLegacyIdIndex(): Promise<void> {
   );
 }
 
+async function podExistsInMongo(podId: string): Promise<boolean> {
+  return Boolean(await MongoPod.exists({ _id: podId }));
+}
+
 async function copyOne(doc: MongoFallbackDoc): Promise<'moved' | 'present'> {
   const id = doc._id.toString();
   const inserted = await pool.query(
-    `INSERT INTO messages (pod_id, user_id, content, message_type, created_at, legacy_mongo_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO messages (
+       pod_id, user_id, content, message_type, author_kind, payload, created_at, legacy_mongo_id
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (legacy_mongo_id) DO NOTHING
      RETURNING id`,
     [
@@ -99,6 +116,8 @@ async function copyOne(doc: MongoFallbackDoc): Promise<'moved' | 'present'> {
       doc.userId.toString(),
       doc.content || '',
       doc.messageType || 'text',
+      doc.authorKind === 'kernel' ? 'kernel' : null,
+      doc.payload == null ? null : JSON.stringify(doc.payload),
       doc.createdAt,
       id,
     ],
@@ -145,13 +164,28 @@ export async function reconcileMongoFallbackMessages(
 
   for (const doc of batch) {
     try {
-      const outcome = await copyOne(doc);
+      const outcome = await copyOne(doc).catch(async (err: { code?: string }) => {
+        // The pod is missing from PG. The Mongo-only pod path leaves it that
+        // way until the next send backfills it (createMessage does the same
+        // before its insert), so backfill and retry once.
+        if (err.code !== FK_VIOLATION) throw err;
+        try {
+          await syncPodFromMongo(doc.podId.toString(), doc.userId.toString());
+        } catch {
+          // No Mongo pod to sync from. The retry below fails the same way and
+          // the outer handler decides whether that is permanent.
+        }
+        return copyOne(doc);
+      });
       if (outcome === 'moved') result.moved += 1;
       else result.alreadyPresent += 1;
     } catch (err) {
       const e = err as { code?: string; message?: string };
       result.skipped += 1;
-      if (e.code && PERMANENT_PG_CODES.has(e.code)) {
+      // Stamp a refusal only when the pod is absent from Mongo too: then no
+      // sync can ever place the message. Anything else stays in the scan and
+      // is retried on the next pass.
+      if (e.code === FK_VIOLATION && !(await podExistsInMongo(doc.podId.toString()))) {
         await MongoMessage.updateOne(
           { _id: doc._id, reconcileFailedAt: { $exists: false } },
           { $set: { reconcileFailedAt: new Date(), reconcileError: e.message || e.code } },

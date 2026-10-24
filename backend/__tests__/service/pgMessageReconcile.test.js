@@ -151,6 +151,39 @@ d('TASK-313 part 2: reconcile Mongo fallback messages into PostgreSQL', () => {
     expect(next.moved).toBe(1);
   });
 
+  test('a card keeps its payload and a kernel post keeps its author marker', async () => {
+    const payload = { kind: 'approval', status: 'open' };
+    const doc = await insertFallback('h', { messageType: 'card', payload, authorKind: 'kernel' });
+
+    await reconcile();
+
+    const row = (await pool.query(
+      'SELECT payload, author_kind FROM messages WHERE legacy_mongo_id = $1',
+      [String(doc._id)],
+    )).rows[0];
+    expect(row.payload).toEqual(payload);
+    expect(row.author_kind).toBe('kernel');
+  });
+
+  test('a pod that exists only in Mongo is backfilled and its message then moves', async () => {
+    const orphanPod = new mongoose.Types.ObjectId().toHexString();
+    await mongoose.connection.db.collection('pods').insertOne({
+      _id: new mongoose.Types.ObjectId(orphanPod),
+      name: 'reconcile-313-backfill',
+      type: 'chat',
+      createdBy: new mongoose.Types.ObjectId(USER),
+      members: [new mongoose.Types.ObjectId(USER)],
+    });
+    const doc = await insertFallback('i', { podId: orphanPod });
+
+    const pass = await reconcile();
+
+    expect(pass.moved).toBe(1);
+    expect(await pgRowsFor(doc._id)).toHaveLength(1);
+    expect((await MongoMessage.findById(doc._id).lean()).reconcileFailedAt).toBeUndefined();
+    await pool.query('DELETE FROM pods WHERE id = $1', [orphanPod]);
+  });
+
   test('a moved message resolves its Mongo id for delete', async () => {
     const doc = await insertFallback('f');
     await reconcile();
