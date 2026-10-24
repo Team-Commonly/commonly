@@ -64,8 +64,9 @@ reviews:
         test. A reply that is exactly the sentinel is suppressed. A reply that
         opens with a bare sentinel is suppressed whole. A bare sentinel
         anywhere else is stripped and the rest posts. A sentinel in backticks
-        or a code fence survives everywhere. Human-authored content is never
-        sanitized.
+        or a code fence is a mention and survives, except that a message whose
+        whole content is a fence holding only the sentinel is unwrapped and
+        suppressed. Human-authored content is never sanitized.
     - path: "frontend/src/v2/**"
       instructions: >-
         Colors, radii and type come from var(--v2-*) tokens. Flag any hard-coded
