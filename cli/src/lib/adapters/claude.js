@@ -79,7 +79,7 @@ import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
-import { claudeContextTokens } from '../session-recycle.js';
+import { claudeConfigDirFor, claudeContextTokens } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
@@ -723,13 +723,6 @@ const prepareArgv = async (innerArgv, ctx) => {
 
 export default {
   name: 'claude',
-  // TASK-440: context tokens of a session, read from claude's transcript, so
-  // the run loop can recycle a cold, large session at wake. Null means unknown.
-  sessionContextTokens: ({ cwd, sessionId, env }) => claudeContextTokens({
-    cwd,
-    sessionId,
-    configDir: env?.CLAUDE_CONFIG_DIR || undefined,
-  }),
   // Identity-bearing runtime tag written into AgentInstallation.config.runtime
   // by `commonly agent attach`. The CLI command stays `commonly agent attach
   // claude` (ergonomic) but the persisted runtimeType matches AGENT_TYPES so
@@ -903,7 +896,12 @@ export default {
         credentials: spawnCredentials(spawnCtx),
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
       });
-      return { text: stdout.trim(), newSessionId: sessionId };
+      // TASK-440: the context this turn left, read from the transcript the
+      // child wrote under its own env (an isolated HOME for public seats).
+      const contextTokens = claudeContextTokens({
+        cwd: ctx.cwd, sessionId, configDir: claudeConfigDirFor(env),
+      });
+      return { text: stdout.trim(), newSessionId: sessionId, contextTokens };
     } catch (err) {
       // A public seat's refusal is not a session-store failure, whatever its
       // message happens to contain: it must reach the run loop, never the
@@ -949,7 +947,10 @@ export default {
           credentials: spawnCredentials(retryCtx),
           spawnImpl: ctx._spawnImpl,
         });
-        return { text: stdout.trim(), newSessionId: freshId };
+        const contextTokens = claudeContextTokens({
+          cwd: ctx.cwd, sessionId: freshId, configDir: claudeConfigDirFor(retry.env),
+        });
+        return { text: stdout.trim(), newSessionId: freshId, contextTokens };
       }
       throw err;
     } finally {

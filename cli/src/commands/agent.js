@@ -1771,16 +1771,11 @@ export const performRun = ({
 
     if (result.newSessionId) {
       // TASK-440: record the context size this turn left behind, so the next
-      // wake can decide whether to recycle. Adapters without a transcript
-      // report nothing and keep resuming.
-      const contextTokens = adapter.sessionContextTokens?.({
-        cwd: agentCwd,
-        sessionId: result.newSessionId,
-        env: process.env,
-      }) ?? null;
+      // wake can decide whether to recycle. Adapters that report nothing keep
+      // resuming.
       setSession(agentName, eventPodId, result.newSessionId, {
         binding: sessionBinding,
-        contextTokens,
+        contextTokens: result.contextTokens ?? null,
       });
     }
     // Decide whether to post the CLI's final text. The agent owns its posting:

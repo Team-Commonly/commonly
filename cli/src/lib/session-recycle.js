@@ -10,9 +10,9 @@
  * Thresholds are per-install: COMMONLY_SESSION_RECYCLE_IDLE_MINUTES and
  * COMMONLY_SESSION_RECYCLE_CONTEXT_TOKENS override the defaults below.
  *
- * Context size is read from the adapter's own transcript. Only the claude
- * adapter exposes one today; any adapter without `sessionContextTokens` keeps
- * resuming, which is the behaviour before this module existed.
+ * Context size is read from the transcript the child CLI wrote, under the env
+ * the child ran with. Only the claude adapter reports one today; an adapter
+ * that reports nothing keeps resuming, as before this module existed.
  */
 
 import { closeSync, existsSync, fstatSync, openSync, readSync } from 'fs';
@@ -69,11 +69,16 @@ export const buildRecycleBriefing = ({ agentName, idleMinutes, contextTokens }) 
   `Role: ${agentName}. Your saved memory and the pod focus follow below.`,
 ].join('\n');
 
-const defaultClaudeConfigDir = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+// The config dir the CHILD claude process uses. A public seat runs claude
+// under an isolated HOME, so reading the operator's ~/.claude would find no
+// transcript and the recycle would never fire.
+export const claudeConfigDirFor = (env = process.env) => (
+  env?.CLAUDE_CONFIG_DIR || join(env?.HOME || homedir(), '.claude')
+);
 
 // Claude Code stores a session at
 // <config>/projects/<cwd with every non-alphanumeric character as '-'>/<id>.jsonl
-export const claudeTranscriptPath = ({ cwd, sessionId, configDir = defaultClaudeConfigDir() }) => {
+export const claudeTranscriptPath = ({ cwd, sessionId, configDir = claudeConfigDirFor() }) => {
   if (!cwd || !sessionId) return null;
   const encoded = cwd.replace(/[^a-zA-Z0-9]/g, '-');
   return join(configDir, 'projects', encoded, `${sessionId}.jsonl`);
@@ -115,7 +120,7 @@ export const contextTokensFromTranscript = (text) => {
   return null;
 };
 
-export const claudeContextTokens = ({ cwd, sessionId, configDir }) => {
+export const claudeContextTokens = ({ cwd, sessionId, configDir = claudeConfigDirFor() }) => {
   const file = claudeTranscriptPath({ cwd, sessionId, configDir });
   if (!file || !existsSync(file)) return null;
   try {

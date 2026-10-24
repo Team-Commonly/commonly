@@ -6,6 +6,7 @@ import { join } from 'path';
 import {
   RECYCLE_DEFAULTS,
   buildRecycleBriefing,
+  claudeConfigDirFor,
   claudeContextTokens,
   claudeTranscriptPath,
   contextTokensFromTranscript,
@@ -198,5 +199,15 @@ describe('session store contextTokens', () => {
   test('setSession without contextTokens stores none', () => {
     setSession(agent, pod, 'sid-10');
     expect(getSessionEntry(agent, pod)).not.toHaveProperty('contextTokens');
+  });
+});
+
+describe('claudeConfigDirFor', () => {
+  test('an explicit CLAUDE_CONFIG_DIR wins', () => {
+    expect(claudeConfigDirFor({ CLAUDE_CONFIG_DIR: '/cfg', HOME: '/home/x' })).toBe('/cfg');
+  });
+
+  test('otherwise the child HOME, so a public seat looks in its own state', () => {
+    expect(claudeConfigDirFor({ HOME: '/state/public-1' })).toBe('/state/public-1/.claude');
   });
 });
