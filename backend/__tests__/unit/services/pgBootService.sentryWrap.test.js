@@ -51,12 +51,16 @@ const path = require('path');
 const PROBE = path.join(__dirname, '..', '..', 'utils', 'sentryLayerWrapProbe.js');
 const BACKEND_ROOT = path.join(__dirname, '..', '..', '..');
 
-const runProbe = (withSentry) => {
+const runProbe = (withSentry, hideWrapperStack = false) => {
   const proc = spawnSync(process.execPath, [PROBE], {
     cwd: BACKEND_ROOT,
     encoding: 'utf8',
     timeout: 120000,
-    env: { ...process.env, PROBE_SENTRY: withSentry ? '1' : '0' },
+    env: {
+      ...process.env,
+      PROBE_SENTRY: withSentry ? '1' : '0',
+      PROBE_HIDE_WRAPPER_STACK: hideWrapperStack ? '1' : '0',
+    },
   });
 
   const lines = (proc.stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
@@ -99,6 +103,8 @@ describe('routerIsMounted under real @sentry/node instrumentation (TASK-172)', (
   it('control: with no instrumentation the layer handle IS the router, and the answer is true', () => {
     const result = describeProbe('control', plain);
     expect(result.sentry).toBe(false);
+    expect(result.layerFound).toBe(true);
+    expect(result.handleHasStack).toBe(true);
     // The control is what gives the instrumented run meaning: if this were true
     // there too, the probe would be blind to the patch rather than measuring it.
     expect(result.wrapped).toBe(false);
@@ -115,6 +121,17 @@ describe('routerIsMounted under real @sentry/node instrumentation (TASK-172)', (
     // cannot match and readiness refuses a pod that has the routes mounted —
     // the production shape this file exists to catch before a rollout.
     expect(result.handleHasStack).toBe(true);
+  });
+
+  it('names a missing wrapper stack independently of finding the layer (TASK-175)', () => {
+    const result = describeProbe('hidden wrapper stack', runProbe(true, true));
+    expect(result.layerFound).toBe(true);
+    expect(result.wrapped).toBe(true);
+    expect(result.routerStackIntact).toBe(true);
+    expect(result.handleHasStack).toBe(false);
+    expect(result.self).toBe(false);
+    expect(result.unmounted).toBe(false);
+    expect(result.foreign).toBe(false);
   });
 
   it('answers true for a mounted router while instrumentation has wrapped its layer', () => {

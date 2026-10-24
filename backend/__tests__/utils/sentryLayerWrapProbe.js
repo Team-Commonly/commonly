@@ -63,6 +63,7 @@ try {
   // the only thing that has to understand the extension.
   const { routerIsMounted } = require('../../services/pgBootService.ts');
 
+  const stackOf = (a) => (a._router && a._router.stack) || (a.router && a.router.stack) || [];
   const app = express();
   const router = express.Router();
   const other = express.Router();
@@ -70,6 +71,11 @@ try {
   router.get('/', (req, res) => res.json({ ok: true }));
   other.get('/', (req, res) => res.json({ ok: true }));
   app.use('/api/pg/messages', router);
+  // This fixture mounts one router per use(). Capture its last layer NOW,
+  // before the next mount, independently of the wrapper's .stack. Selecting
+  // by handle.stack === router.stack used the property under test: a Sentry
+  // regression then looked like a missing layer instead of a missing stack.
+  const layer = stackOf(app).slice(-1)[0];
   app.use('/api/other', other);
 
   // A second app that mounts only the other router: asking it about `router`
@@ -77,19 +83,30 @@ try {
   const foreignApp = express();
   foreignApp.use('/api/other', other);
 
-  const stackOf = (a) => (a._router && a._router.stack) || (a.router && a.router.stack) || [];
-  const layerFor = (a, target) => stackOf(a).find(
-    (l) => l.handle === target || (l.handle && l.handle.stack === target.stack),
-  );
+  const foreignLayer = stackOf(foreignApp).slice(-1)[0];
 
-  const layer = layerFor(app, router);
-  const foreignLayer = layerFor(foreignApp, other);
+  // Probe-only negative control: leave the router intact and simulate an
+  // instrumented wrapper no longer exposing its stack. Layer selection must
+  // survive this mutation so the diagnostic identifies the actual break.
+  if (process.env.PROBE_HIDE_WRAPPER_STACK === '1') {
+    if (!withSentry || !layer || layer.handle === router) {
+      throw new Error('wrapper-stack mutation requires a real instrumented wrapper');
+    }
+    // Sentry defines .stack non-configurably, so simulate the missing public
+    // property with a forwarding handle instead of mutating the real router.
+    // The unmutated run remains the real-library premise witness.
+    const instrumentedHandle = layer.handle;
+    layer.handle = function stacklessWrapper(...args) {
+      return instrumentedHandle.apply(this, args);
+    };
+    out.routerStackIntact = Array.isArray(router.stack) && router.stack.length > 0;
+  }
 
   out.layerFound = Boolean(layer);
   out.wrapped = Boolean(layer) && layer.handle !== router;
   out.handleType = layer ? typeof layer.handle : null;
   out.handleName = (layer && layer.handle && layer.handle.name) || null;
-  out.handleHasStack = Boolean(layer && layer.handle && layer.handle.stack);
+  out.handleHasStack = Boolean(layer && layer.handle && layer.handle.stack === router.stack);
   out.foreignWrapped = Boolean(foreignLayer) && foreignLayer.handle !== other;
   out.self = routerIsMounted(app, router);
   out.unmounted = routerIsMounted(app, neverMounted);
