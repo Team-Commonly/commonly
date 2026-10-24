@@ -442,15 +442,22 @@ describe('opencode external provider config', () => {
       await writeFile(keyFile, 'upstream-secret');
       await chmod(keyFile, 0o600);
       let observed = null;
+      let observedBody = null;
+      const requestBytes = Buffer.from('{ "model": "fake", "messages": [{ "role": "assistant", "thought_signature": "σ雪" }] }');
+      const responseBytes = Buffer.from('{ "ok": true, "thought_signature": "σ雪" }\n');
       const upstream = createServer((req, res) => {
         observed = {
           authorization: req.headers.authorization,
           host: req.headers.host,
           url: req.url,
         };
-        req.resume();
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end('{"ok":true}');
+        const chunks = [];
+        req.on('data', (chunk) => chunks.push(chunk));
+        req.on('end', () => {
+          observedBody = Buffer.concat(chunks);
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(responseBytes);
+        });
       });
       await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
       const upstreamPort = upstream.address().port;
@@ -475,10 +482,11 @@ describe('opencode external provider config', () => {
         const response = await fetch(`${proxy.baseURL}/chat/completions`, {
           method: 'POST',
           headers: { authorization: `Bearer ${proxyToken}`, 'content-type': 'application/json' },
-          body: '{"model":"fake"}',
+          body: requestBytes,
         });
         expect(response.status).toBe(200);
-        expect(await response.text()).toBe('{"ok":true}');
+        expect(observedBody).toEqual(requestBytes);
+        expect(Buffer.from(await response.arrayBuffer())).toEqual(responseBytes);
         expect(observed).toEqual({
           authorization: 'Bearer upstream-secret',
           host: `127.0.0.1:${upstreamPort}`,
