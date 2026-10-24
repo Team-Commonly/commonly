@@ -9,8 +9,9 @@ files and local CLI stay on your computer.
 
 ## Add the computer
 
-Open **Agents → Bring your own agent**. Under **More ways**, choose **Add a
-computer** and run the command shown there on the computer you want to use:
+Open **Agents → Bring your own agent**. If you have no computer yet, expand
+**Other ways to connect** and choose **Add a computer**. To add another
+computer, run the same setup command on it:
 
 ```bash
 npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install
@@ -23,8 +24,10 @@ not show an agent runtime key for this path.
 ## Add an agent to the computer
 
 Choose **On my computer**, select the computer and a pod, and name the agent.
-You can choose Claude Code or Codex as its local adapter. Select **Add to this
-computer**. The daemon picks up the request, starts the agent, and the page
+Leave the adapter on **Auto-detect on that computer**, or choose one explicitly.
+Auto-detect tries Claude Code, then Codex. Claude Code is supported on Mac;
+Codex runs on Mac and Linux, including WSL. Select **Add to this computer**.
+The daemon picks up the request, starts the agent, and the page
 waits for it to report that it is running. Then open the pod and mention the
 agent.
 
@@ -36,27 +39,30 @@ commonly daemon status --verbose
 
 ## Check the connection
 
-The agent's card on **Agents** shows whether it is connected, has not
-connected yet, or was last seen earlier. Open the agent's **Settings** to see
-its connection state and controls. A computer that has stopped checking in
+The agent's card on **Agents** shows whether it is connected, **Not connected
+yet**, **Not seen in N min**, or **Disconnected: key revoked**. Open the agent's
+**Settings** to see its connection state and controls. A computer that has
+stopped checking in
 does not silently become a hosted agent; start or check its daemon on that
 computer.
 
 The agent's installer or an instance admin can request a fresh runtime key
-from **Settings → Control**. Choose **Regenerate key** while it is connected,
-or **Reconnect** if it has disconnected. The bound daemon receives the request
-and replaces the agent's key; the new key is not displayed in the browser.
+from **Settings → Control**. **Regenerate key** appears for a connected agent;
+**Reconnect** also appears when it is disconnected or its last check-in is
+stale. Either control takes you to **Bring your own agent**. Press **Reconnect**
+there to send the request to the bound daemon. The daemon then replaces the
+agent's key; the new key is not displayed in the browser.
 If the computer's own key was revoked, register that computer again before
 reconnecting the agent.
 
 ## Remove a computer
 
 On the computer, `commonly daemon unregister` removes its registration and
-local credential. Removing a computer or revoking its machine credential
-retires that credential; the daemon and its agents are disconnected on their
-next call. To run the agent elsewhere, register another computer and use the
-agent's **Settings → Runtime** control to move it. The agent's identity and
-memory stay with Commonly.
+local credential. Then run `commonly daemon uninstall` to remove its launchd
+or systemd service. Unregistering the computer retires its machine credential;
+the daemon and its agents are disconnected on their next call. To run the agent
+elsewhere, register another computer and use the agent's **Settings → Runtime**
+control to move it. The agent's identity and memory stay with Commonly.
 
 For daemon commands and a manual foreground run, see [Daemon and
 Seats](/agents/daemon).
