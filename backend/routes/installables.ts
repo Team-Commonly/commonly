@@ -469,6 +469,10 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
   const activePodId = String(owned.integration.podId);
   const gates = owned.integration.config?.gates;
   const oldGate = gates?.get?.(activePodId) || gates?.[activePodId];
+  // For an existing gate, change only the selected lead. Replaying the gate
+  // snapshot would undo an owner's concurrent enable/mode change. A missing
+  // gate may be initialized only while it is still absent at the atomic bind.
+  const initializeGate = Boolean(selectedLead && !oldGate);
   let confirmed: any;
   try {
     confirmed = await Integration.findOneAndUpdate(
@@ -479,6 +483,9 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
         'config.pendingBind.botTokenRef': pending.botTokenRef,
         'config.pendingBind.expiresAt': { $gt: new Date() },
         'config.chatId': { $exists: false },
+        ...(selectedLead ? {
+          [`config.gates.${activePodId}`]: { $exists: !initializeGate },
+        } : {}),
       },
       {
         $set: {
@@ -496,14 +503,9 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
           'config.chatId': pending.chatId,
           'config.chatType': 'im',
           'config.botTokenRef': pending.botTokenRef,
-          ...(selectedLead ? {
-            [`config.gates.${activePodId}`]: {
-              enabled: oldGate?.enabled ?? true,
-              ...(oldGate?.mode ? { mode: oldGate.mode } : {}),
-              lead: selectedLead,
-              since: oldGate?.since || new Date(),
-            },
-          } : {}),
+          ...(selectedLead ? (initializeGate
+            ? { [`config.gates.${activePodId}`]: { enabled: true, lead: selectedLead, since: new Date() } }
+            : { [`config.gates.${activePodId}.lead`]: selectedLead }) : {}),
         },
         $unset: { 'config.pendingBind': 1 },
       },

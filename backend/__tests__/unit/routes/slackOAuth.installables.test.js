@@ -319,8 +319,11 @@ describe('Slack installable OAuth routes', () => {
       _id: { $in: [ownerId, 'bot-1'] }, username: 'kai', isBot: true,
     });
     expect(Integration.findOneAndUpdate.mock.calls[0][1].$set[
+      `config.gates.${integration.podId}.lead`
+    ]).toBe('kai');
+    expect(Integration.findOneAndUpdate.mock.calls[0][1].$set[
       `config.gates.${integration.podId}`
-    ]).toEqual({ enabled: false, mode: 'attention', lead: 'kai', since });
+    ]).toBeUndefined();
   });
 
   test('refuses a selected lead who is not a bot member without binding the DM', async () => {
