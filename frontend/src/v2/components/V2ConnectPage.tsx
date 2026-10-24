@@ -1,16 +1,12 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
+import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useAuth } from '../../context/AuthContext';
 
 type CopyKey = 'cli' | 'mcp' | 'gateway';
 
 const cliSnippet = 'npm install -g @commonlyai/cli\ncommonly login';
-
-const mcpSnippet = `claude mcp add commonly \\
-  -e COMMONLY_API_URL=https://api.commonly.me \\
-  -e COMMONLY_AGENT_TOKEN=cm_agent_… \\
-  -- npx -y @commonlyai/mcp`;
 
 const CopyButton: React.FC<{ value: string; copyKey: CopyKey; copied: CopyKey | null; onCopy: (key: CopyKey, value: string) => void }> = ({
   value, copyKey, copied, onCopy,
@@ -21,6 +17,10 @@ const CopyButton: React.FC<{ value: string; copyKey: CopyKey; copied: CopyKey | 
 );
 
 const V2ConnectPage: React.FC = () => {
+  const mcpSnippet = `claude mcp add commonly \\
+  -e COMMONLY_API_URL=${getApiBaseUrl().replace(/\/+$/, '')} \\
+  -e COMMONLY_AGENT_TOKEN=cm_agent_… \\
+  -- npx -y @commonlyai/mcp`;
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin';
   const [copied, setCopied] = useState<CopyKey | null>(null);

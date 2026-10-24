@@ -40,6 +40,20 @@ const CurrentPath = () => <div data-testid="current-path">{useLocation().pathnam
 afterEach(() => jest.clearAllMocks());
 
 describe('V2ConnectPage', () => {
+  test('the MCP command targets this instance API', () => {
+    const previousApiUrl = process.env.REACT_APP_API_URL;
+    process.env.REACT_APP_API_URL = 'https://api.example.test/';
+    try {
+      renderConnect();
+      const snippet = screen.getByText(/COMMONLY_AGENT_TOKEN=cm_agent_…/).textContent || '';
+      expect(snippet).toContain('COMMONLY_API_URL=https://api.example.test');
+      expect(snippet).not.toContain('api.commonly.me');
+    } finally {
+      if (previousApiUrl === undefined) delete process.env.REACT_APP_API_URL;
+      else process.env.REACT_APP_API_URL = previousApiUrl;
+    }
+  });
+
   test('gives every member a copyable CLI/MCP start and does not tease instance keys', async () => {
     const clipboard = { writeText: jest.fn().mockResolvedValue(undefined) };
     Object.assign(navigator, { clipboard });
