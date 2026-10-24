@@ -14,6 +14,7 @@ app.use(express.json());
 app.use('/api/auth', require('../../routes/auth'));
 app.use('/api/machines', require('../../routes/machines'));
 app.use('/api/credentials', require('../../routes/credentials'));
+app.use('/api/agent-binding', require('../../routes/agentBinding'));
 const agentRuntimeAuth = require('../../middleware/agentRuntimeAuth').default;
 
 const agentCall = async (token) => {
@@ -168,8 +169,41 @@ describe('machine credential revocation', () => {
       .set('Authorization', `Bearer ${generateTestToken(user._id)}`).expect(200);
 
     expect(await AgentCredential.findById(child.child._id)).toMatchObject({ status: 'revoked' });
+    expect((await User.findById(child.child.agentUserId)).agentRuntimeTokens).toHaveLength(0);
     await daemonCall(first.daemonToken, first.machine.id).expect(401);
     expect(await agentCall(child.token)).toBe(401);
+  });
+
+  it('cleans a child minted between the old descendant snapshot and cascade', async () => {
+    const user = await owner();
+    const device = await addDevice(user, 'z');
+    const first = (await register(device.token, 'concurrent-revoke')).body;
+    const prior = await addRuntimeChild(user, first.machine, first.daemonToken, 'concurrent');
+    const daemon = await AgentCredential.findOne({ tokenHash: hash(first.daemonToken) });
+    const originalCascade = AgentCredential.revokeCascade.bind(AgentCredential);
+    let mintedToken;
+    const cascadeSpy = jest.spyOn(AgentCredential, 'revokeCascade').mockImplementationOnce(async (...args) => {
+      const minted = await request(app).post('/api/agent-binding/runtime-token')
+        .set('Authorization', `Bearer ${first.daemonToken}`)
+        .send({ agentName: 'bot-concurrent', instanceId: 'default', rotate: true });
+      expect(minted.status).toBe(201);
+      mintedToken = minted.body.token;
+      expect(await agentCall(mintedToken)).toBe(204);
+      return originalCascade(...args);
+    });
+    try {
+      await request(app).delete(`/api/credentials/${daemon._id}`)
+        .set('Authorization', `Bearer ${generateTestToken(user._id)}`).expect(200);
+    } finally {
+      cascadeSpy.mockRestore();
+    }
+
+    expect(mintedToken).toBeTruthy();
+    expect((await AgentCredential.findOne({ tokenHash: hash(mintedToken) })).status).toBe('revoked');
+    expect(await User.countDocuments({ 'agentRuntimeTokens.tokenHash': hash(mintedToken) })).toBe(0);
+    expect(await AgentInstallation.countDocuments({ 'runtimeTokens.tokenHash': hash(mintedToken) })).toBe(0);
+    expect(await agentCall(mintedToken)).toBe(401);
+    expect(await agentCall(prior.token)).toBe(401);
   });
 
   it('retires pre-binding machines conservatively when their owner revokes a device', async () => {

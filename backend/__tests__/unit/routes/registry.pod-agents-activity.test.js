@@ -153,6 +153,23 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
     expect(res.body.agents[0].connection).toEqual({ state: 'revoked', lastSeenAt: null });
   });
 
+  it('projects a revoked credential despite stale embedded copies on User and installation', async () => {
+    AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
+      agentName: 'local', config: new Map([['runtime', { runtimeType: 'webhook' }]]),
+      runtimeTokens: [{ tokenHash: 'dead-hash', lastUsedAt: new Date() }],
+    })]);
+    User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      _id: 'bot-1', username: 'local-default', botMetadata: {},
+      agentRuntimeTokens: [{ tokenHash: 'dead-hash', lastUsedAt: new Date() }],
+    }]) }) });
+    AgentCredential.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      kind: 'runtime', agentUserId: 'bot-1', tokenHash: 'dead-hash', status: 'revoked',
+    }]) }) });
+    const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].connection).toEqual({ state: 'revoked', lastSeenAt: null });
+  });
+
   it('keeps a revoked wrapper key disconnected despite a live machine', async () => {
     AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
       agentName: 'local', config: new Map([['runtime', { runtimeType: 'wrapper' }]]),
