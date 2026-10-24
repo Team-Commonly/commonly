@@ -1206,6 +1206,9 @@ export const performRun = ({
   setTimeoutImpl = setTimeout,
   setIntervalImpl = setInterval,
   clearIntervalImpl = clearInterval,
+  setDeadlineTimeoutImpl = setTimeout,
+  clearDeadlineTimeoutImpl = clearTimeout,
+  turnTimeoutMs,
   retryJitterRatio,
   claimLeaseSeconds = 90,
   // Undefined means "not overridden" — resolveCascadeSettings falls back to
@@ -1235,6 +1238,9 @@ export const performRun = ({
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
     throw new Error('environment.provider requires a provider-capable adapter');
   }
+  const requestedTurnTimeout = Number(turnTimeoutMs ?? process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS);
+  const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
+    ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
   const client = createClient({ instance: instanceUrl, token });
   const handoffAgent = sanitizeHandoffAgent(refusalHandoff);
   if (refusalHandoff && !handoffAgent) {
@@ -1742,6 +1748,7 @@ export const performRun = ({
         });
       }
       result = await adapter.spawn(frameDecisionForkRule(promptForSpawn), {
+        timeoutMs: effectiveTurnTimeoutMs,
         sessionId,
         cwd: agentCwd,
         env: commitAttribution?.env || process.env,
@@ -2076,7 +2083,13 @@ export const performRun = ({
           + '[This item is read-only context: a peer won its binding claim. Do not act on it.]\n'
         : (entry.peerFrame ? `${entry.peerFrame}\n` : '');
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
-      return `${prefix}\n${claimContext}${body}`;
+      const deliveryId = entry.event.payload?.deliveryId;
+      const checkpoint = typeof deliveryId === 'string' && deliveryId
+        ? `\n[After completed tool-side work or intentional NO_REPLY for only this item, call commonly_checkpoint_event(${JSON.stringify({
+          eventId: String(entry.event._id), deliveryId,
+        })}). Checkpoint metadata is private runtime data; never post it in chat.]`
+        : '';
+      return `${prefix}\n${claimContext}${body}${checkpoint}`;
     });
     const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
     const digestFrame = formatDigestFrame(digestEntries.map((entry) => entry.event), rollup);
@@ -2084,6 +2097,11 @@ export const performRun = ({
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
         + 'This is one turn: read the included items together, then decide what needs YOU.]',
+      'After tool-side work is committed (including any reply posted through a tool), or an intentional NO_REPLY, checkpoint that item with its supplied IDs. '
+        + 'Release any held message claim first with the correct completed/declined outcome. '
+        + 'Do not checkpoint a reply you are holding for final CLI output: the wrapper must post it before acknowledging that item. '
+        + 'Never checkpoint unfinished work. Only a successful checkpoint prevents replay after timeout. '
+        + 'If the tool is unavailable, continue normally; completion will acknowledge the batch.',
       ...bodies,
       ...(digestFrame ? [digestFrame] : []),
       ...(omitted > 0
@@ -2170,7 +2188,7 @@ export const performRun = ({
   let heldGreeting = [];
   let greetingHoldSpent = false;
 
-  const processEventBatch = async (events, inboxCount = events.length) => {
+  const handleEventBatch = async (events, inboxCount = events.length) => {
     const eventPodId = events[0]?.podId || podId;
     if (!eventPodId || events.some((event) => (event.podId || podId) !== eventPodId)) {
       throw new Error('Inbox batch crossed pod boundaries; refusing to mix private pod context');
@@ -2424,6 +2442,44 @@ export const performRun = ({
             reason: release.reason, status: release.status,
           });
         }));
+    }
+  };
+
+  const processEventBatch = async (events, inboxCount = events.length) => {
+    const deliveries = events.filter((event) => typeof event.payload?.deliveryId === 'string' && event.payload.deliveryId)
+      .map((event) => ({ eventId: String(event._id), deliveryId: event.payload.deliveryId }));
+    let renewing = false;
+    let renewalStopped = false;
+    const renew = async () => {
+      if (renewalStopped || renewing || deliveries.length === 0) return;
+      renewing = true;
+      try {
+        for (let offset = 0; offset < deliveries.length && !renewalStopped; offset += 50) {
+          await client.post('/api/agents/runtime/events/renew', {
+            events: deliveries.slice(offset, offset + 50),
+          });
+        }
+      } catch (error) {
+        // An older server may lack this route. Never reinterpret a failed
+        // renewal as an ack: stale checkpoint nonces still fail closed.
+        log(`[inbox.batch] delivery renewal failed: ${error.message}`);
+      } finally { renewing = false; }
+    };
+    const timer = deliveries.length ? setIntervalImpl(renew, 60_000) : null;
+    const stopRenewal = () => {
+      renewalStopped = true;
+      if (timer !== null) clearIntervalImpl(timer);
+    };
+    // Independent of adapter settlement: SIGTERM can be ignored, so awaiting
+    // spawn in finally is not a bound on the event's delivery lease.
+    const deadlineTimer = deliveries.length ? setDeadlineTimeoutImpl(() => {
+      stopRenewal();
+      log('[inbox.batch] turn deadline reached; delivery renewal stopped for GC recovery');
+    }, effectiveTurnTimeoutMs) : null;
+    try { return await handleEventBatch(events, inboxCount); }
+    finally {
+      stopRenewal();
+      if (deadlineTimer !== null) clearDeadlineTimeoutImpl(deadlineTimer);
     }
   };
 
