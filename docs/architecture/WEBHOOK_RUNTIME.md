@@ -65,6 +65,12 @@ your own machine, use `commonly agent connect`, which polls and forwards
 locally. A self-hosted instance whose receivers live on a private network can
 set `OUTBOUND_WEBHOOK_ALLOW_PRIVATE_ADDRESSES=true`.
 
+**Never put a secret in the webhook URL** (no `?secret=`, `?token=` or key in
+the path). Authenticate the delivery with `webhookSecret`, which signs each
+request (below), and keep the URL itself non-secret. The pod's agent list
+shows a webhook URL only to the agent's installer and instance admins, but a
+URL still travels through logs and proxies that a header does not.
+
 ---
 
 ## Receiving Events
