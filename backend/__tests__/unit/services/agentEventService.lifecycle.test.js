@@ -422,6 +422,57 @@ describe('driver paths reach a terminal state', () => {
     expect(update.delivery.updatedAt).toBeInstanceOf(Date);
   });
 
+  test.each(['http', 'timeout', 'error', 'non-error'])('webhook %s logs exclude secrets', async (failure) => {
+    const webhookUrl = 'https://fake-user:fake-password@example.test/private-fake-path'
+      + '?token=fake-query-secret#fake-fragment';
+    const event = {
+      _id: 'evt-private-hook',
+      agentName: 'hookbot',
+      instanceId: 'default',
+      podId: POD_P1,
+      type: 'chat.mention',
+      payload: {},
+      status: 'pending',
+      attempts: 0,
+    };
+    AgentEvent.create.mockResolvedValue(event);
+    AgentInstallation.findOne.mockReturnValue({ lean: async () => null });
+    AgentEvent.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [] }) }) });
+    AgentInstallation.find.mockReturnValue({
+      lean: async () => [{ config: { runtime: { webhookUrl } } }],
+    });
+    if (failure === 'http') {
+      postToPublicAddress.mockResolvedValueOnce({ ok: false, status: 503, text: webhookUrl });
+    } else {
+      const error = new Error(`Request to ${webhookUrl} failed: fake-query-secret`);
+      if (failure === 'timeout') error.name = 'AbortError';
+      postToPublicAddress.mockRejectedValueOnce(failure === 'non-error' ? null : error);
+    }
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await AgentEventService.enqueue({
+        agentName: 'hookbot', instanceId: 'default', podId: POD_P1, type: 'chat.mention', payload: {},
+      });
+      await flush();
+
+      expect(postToPublicAddress).toHaveBeenCalledWith(webhookUrl, expect.any(Object));
+      expect(AgentEvent.findByIdAndUpdate).not.toHaveBeenCalled();
+      const logs = JSON.stringify(warning.mock.calls);
+      const sensitiveParts = [
+        'fake-user', 'fake-password', 'fake-query-secret', 'private-fake-path', 'fake-fragment', 'example.test',
+      ];
+      sensitiveParts.forEach((secret) => {
+        expect(logs).not.toContain(secret);
+      });
+      const diagnostic = {
+        http: 'HTTP 503', timeout: 'timed out after 10s', error: 'delivery failed', 'non-error': 'delivery failed',
+      }[failure];
+      expect(warning).toHaveBeenCalledWith(`[webhook] hookbot ${diagnostic}`);
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
   test.each([{ text: 'original text' }, { prompt: 'original prompt' }])('a webhook wake preserves fallback text and settles context after accepted delivery: %j', async (wakePayload) => {
     const ambient = {
       _id: 'ambient-1', agentName: 'hookbot', instanceId: 'default', podId: POD_P1,
@@ -483,7 +534,7 @@ describe('driver paths reach a terminal state', () => {
     expect(httpSpy).not.toHaveBeenCalled();
     expect(httpsSpy).not.toHaveBeenCalled();
     expect(AgentEvent.findByIdAndUpdate.mock.calls.some(([, u]) => u && u.status === 'acked')).toBe(false);
-    expect(warn.mock.calls.some((args) => String(args[1] || '').includes('outbound URL refused'))).toBe(true);
+    expect(warn).toHaveBeenCalledWith('[webhook] hookbot delivery failed');
   });
 
   describe('native runtime', () => {
