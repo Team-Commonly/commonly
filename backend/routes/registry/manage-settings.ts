@@ -86,6 +86,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       'botMetadata.instanceId': normalizeInstanceId(req.query.instanceId),
     }).select('botMetadata.machineId').lean();
     const runtimeManaged = Boolean(binding?.botMetadata?.machineId);
+    if (runtimeManaged && !runtimeControls.runtimeType) runtimeControls.runtimeType = 'wrapper';
     // A standalone `agent run` reads its local token record. Hosted/native
     // turns read their own run config (installation.config.model or the service
     // default), not the daemon projection. Neither path can be attested by an

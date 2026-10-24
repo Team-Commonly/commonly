@@ -98,6 +98,7 @@ describe('per-installation agent settings', () => {
     expect(seat.sourcePodId).toBe(String(podA._id));
     const after = await request(app).get(url).set('Authorization', `Bearer ${token(owner)}`);
     expect(after.body.runtimeManaged).toBe(true);
+    expect(after.body.runtimeControls.runtimeType).toBe('wrapper');
     expect(after.body.runtimeControls.effort).toBe('xhigh');
   });
 
