@@ -28,7 +28,7 @@ jest.mock('../../../services/agentMessageService', () => ({
   getRecentMessages: jest.fn(),
 }));
 jest.mock('../../../services/agentSendFreshness', () => ({
-  readStart: jest.fn(() => new Date()),
+  readStart: jest.fn(async () => ({ at: new Date() })),
   recordRead: jest.fn().mockResolvedValue(undefined),
   unseenMessages: jest.fn().mockResolvedValue(null),
 }));
@@ -98,7 +98,7 @@ describe('GET /pods/:podId/messages pagination contract (#795)', () => {
     expect(res.status).toBe(200);
     expect(res.body.hasMore).toBe(false);
     expect(res.body.messages.map((message) => message.id)).toEqual(['oldest', 'newest']);
-    expect(AgentSendFreshness.recordRead).toHaveBeenCalledWith('bot-1', 'pod-1', expect.any(Date));
+    expect(AgentSendFreshness.recordRead).toHaveBeenCalledWith('bot-1', 'pod-1', expect.objectContaining({ at: expect.any(Date) }));
   });
 
   test('does not acknowledge a Mongo fallback while PostgreSQL is configured', async () => {

@@ -18,7 +18,7 @@ jest.mock('../../../services/agentMessageService', () => ({
   sanitizeAgentContent: jest.fn((content) => content),
 }));
 jest.mock('../../../services/agentSendFreshness', () => ({
-  readStart: jest.fn(() => new Date('2026-10-24T00:00:00Z')),
+  readStart: jest.fn(async () => ({ at: new Date('2026-10-24T00:00:00Z') })),
   recordRead: jest.fn(),
   unseenMessages: jest.fn().mockResolvedValue(null),
 }));
@@ -237,7 +237,7 @@ describe('bot-token send-time freshness', () => {
     const getRes = response();
     await get(req, getRes);
     expect(getRes.json).toHaveBeenCalledWith({ messages });
-    expect(AgentSendFreshness.recordRead).toHaveBeenCalledWith('bot-1', 'pod-1', expect.any(Date));
+    expect(AgentSendFreshness.recordRead).toHaveBeenCalledWith('bot-1', 'pod-1', expect.objectContaining({ at: expect.any(Date) }));
 
     AgentSendFreshness.unseenMessages.mockResolvedValueOnce({ code: 'unseen_messages', unseenCount: 1 });
     const post = getRouteHandler('/bot/pods/:podId/messages', 'post');

@@ -5,6 +5,7 @@ const AgentPodReadCursorSchema = new Schema({
   agentUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
   readAt: { type: Date, required: true },
+  readRevision: { type: Number },
 });
 
 const AgentPodReadCursor = mongoose.model('AgentPodReadCursor', AgentPodReadCursorSchema);

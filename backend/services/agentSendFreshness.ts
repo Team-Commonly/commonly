@@ -9,25 +9,44 @@ const { pool } = require('../config/db-pg');
 type Preview = { id: string; author: string; content: string; createdAt: unknown };
 type Hold = { code: 'unseen_messages'; unseenCount: number; messages: Preview[]; message: string } | null;
 
-const readStart = (): Date => new Date(Date.now() - 1);
+type ReadStart = { at: Date; revision?: number };
+
+async function readStart(podId: unknown): Promise<ReadStart> {
+  const at = new Date(Date.now() - 1);
+  if (pool && process.env.PG_HOST) {
+    // Read the committed revision BEFORE fetching the tail. An insert still
+    // in flight cannot advance this value until its message is visible too.
+    const result = await pool.query(
+      'SELECT revision FROM pod_message_revisions WHERE pod_id = $1',
+      [String(podId)],
+    );
+    return { at, revision: Number(result.rows[0]?.revision || 0) };
+  }
+  return { at };
+}
 const cursorId = (agentUserId: unknown, podId: unknown): string => `${String(agentUserId)}:${String(podId)}`;
 
-async function recordRead(agentUserId: unknown, podId: unknown, at: Date): Promise<void> {
+async function recordRead(agentUserId: unknown, podId: unknown, start: ReadStart): Promise<void> {
   // A slow earlier read must not roll a newer read's watermark backwards.
   const filter = { _id: cursorId(agentUserId, podId) };
+  const maximum = {
+    readAt: start.at,
+    ...(start.revision === undefined ? {} : { readRevision: start.revision }),
+  };
   try {
-    await Cursor.updateOne(filter, { $max: { readAt: at }, $setOnInsert: { agentUserId, podId } }, { upsert: true });
+    await Cursor.updateOne(filter, { $max: maximum, $setOnInsert: { agentUserId, podId } }, { upsert: true });
   } catch (error) {
     if ((error as { code?: number }).code !== 11000) throw error;
     // Two first reads can race on the deterministic _id; the loser still
     // advances the winner's cursor without ever replacing a later timestamp.
-    await Cursor.updateOne(filter, { $max: { readAt: at } });
+    await Cursor.updateOne(filter, { $max: maximum });
   }
 }
 
 async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hold> {
-  const cursor = await Cursor.findOne({ _id: cursorId(agentUserId, podId) }).select('readAt').lean();
+  const cursor = await Cursor.findOne({ _id: cursorId(agentUserId, podId) }).select('readAt readRevision').lean();
   const after = cursor?.readAt || new Date(0);
+  const afterRevision = cursor?.readRevision ?? -1;
   const ownId = String(agentUserId);
   let unseenCount: number;
   let messages: Preview[];
@@ -37,10 +56,10 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
         SELECT m.id, m.content, m.created_at, COALESCE(u.username, 'Unknown') AS author,
           COUNT(*) OVER ()::integer AS unseen_count
         FROM messages m LEFT JOIN users u ON u._id = m.user_id
-        WHERE m.pod_id = $1 AND m.created_at > $2
+        WHERE m.pod_id = $1 AND m.freshness_revision > $2
           AND (m.user_id IS DISTINCT FROM $3 OR m.author_kind = 'kernel')
-        ORDER BY m.created_at DESC, m.id DESC LIMIT 3
-      `, [String(podId), after, ownId]);
+        ORDER BY m.freshness_revision DESC, m.id DESC LIMIT 3
+      `, [String(podId), afterRevision, ownId]);
     unseenCount = Number(result.rows[0]?.unseen_count || 0);
     messages = result.rows.map((row: Record<string, unknown>) => ({
       id: String(row.id),

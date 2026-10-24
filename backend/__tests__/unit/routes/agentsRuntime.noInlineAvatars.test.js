@@ -33,7 +33,7 @@ jest.mock('../../../services/agentMessageService', () => ({
   getRecentMessages: jest.fn(),
 }));
 jest.mock('../../../services/agentSendFreshness', () => ({
-  readStart: jest.fn(() => new Date()),
+  readStart: jest.fn(async () => ({ at: new Date() })),
   recordRead: jest.fn().mockResolvedValue(undefined),
   unseenMessages: jest.fn().mockResolvedValue(null),
 }));

@@ -50,7 +50,7 @@ describe('agent send-time freshness', () => {
 
   it('uses a monotonic watermark for a successful read', async () => {
     const at = new Date('2026-10-24T01:00:00Z');
-    await Freshness.recordRead('agent-id', 'pod-id', at);
+    await Freshness.recordRead('agent-id', 'pod-id', { at });
     expect(Cursor.updateOne).toHaveBeenCalledWith(
       { _id: 'agent-id:pod-id' },
       { $max: { readAt: at }, $setOnInsert: { agentUserId: 'agent-id', podId: 'pod-id' } },
@@ -74,6 +74,17 @@ describe('agent send-time freshness', () => {
     expect(hold.unseenCount).toBe(8);
     expect(hold.messages).toEqual([expect.objectContaining({ id: '23', content: 'new plan' })]);
     expect(pool.query.mock.calls[0][0]).toContain('LIMIT 3');
+    expect(pool.query.mock.calls[0][0]).toContain('freshness_revision >');
     expect(Message.countDocuments).not.toHaveBeenCalled();
+  });
+
+  it('captures the PostgreSQL revision before the read and advances it with the cursor', async () => {
+    process.env.PG_HOST = 'configured';
+    pool.query.mockResolvedValue({ rows: [{ revision: '7' }] });
+    const start = await Freshness.readStart('pod-id');
+    expect(start).toEqual({ at: expect.any(Date), revision: 7 });
+    expect(pool.query.mock.calls[0][0]).toContain('pod_message_revisions');
+    await Freshness.recordRead('agent-id', 'pod-id', start);
+    expect(Cursor.updateOne.mock.calls[0][1].$max).toEqual({ readAt: start.at, readRevision: 7 });
   });
 });

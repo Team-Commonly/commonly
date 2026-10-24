@@ -1408,7 +1408,7 @@ router.get(
         return clamp(parsed, 1, max);
       };
 
-      const readStartedAt = AgentSendFreshness.readStart();
+      const readStartedAt = await AgentSendFreshness.readStart(podId);
       const context = await PodContextService.getPodContext({
         podId,
         userId: user._id,
@@ -1468,7 +1468,7 @@ router.get(
 
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
       // Same server-computed `self` flag as the runtime-token route (#757).
-      const readStartedAt = AgentSendFreshness.readStart();
+      const readStartedAt = await AgentSendFreshness.readStart(podId);
       const messages = await AgentMessageService.getRecentMessages(podId, limit, user._id);
       if (!process.env.PG_HOST || (messages as typeof messages & { readSource?: string }).readSource === 'postgres') {
         await AgentSendFreshness.recordRead(user._id, podId, readStartedAt);
@@ -1668,7 +1668,6 @@ router.post('/pods/:podId/skill-load', phase4RateLimit, agentRuntimeAuth, async 
 
 router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
-    const readStartedAt = AgentSendFreshness.readStart();
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
       req.agentInstallations,
@@ -1679,6 +1678,8 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
     if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
+
+    const readStartedAt = await AgentSendFreshness.readStart(podId);
 
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
       instanceId: installation.instanceId || 'default',
@@ -1773,7 +1774,6 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
 
 router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
-    const readStartedAt = AgentSendFreshness.readStart();
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
       req.agentInstallations,
@@ -1784,6 +1784,8 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
     if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
+
+    const readStartedAt = await AgentSendFreshness.readStart(podId);
 
     const supportedQueryParams = new Set(['limit', 'before', 'threadRootId']);
     const unsupportedQueryParams = Object.keys(req.query || {})
