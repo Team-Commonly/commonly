@@ -309,7 +309,7 @@ describe('performRun', () => {
           conversations: [{ label: 'thread 40', count: 3 }] },
       } }),
       makeEvent({ _id: 'evt-digest', type: 'message.posted', deliveryMode: 'digest',
-        payload: { content: 'daily update', username: 'alice', messageId: '42', threadRootId: 40 } }),
+        payload: { content: 'daily update', username: 'alice', messageId: '42', threadRootId: '40' } }),
     ];
     const get = jest.fn(async (route) => {
       if (route.endsWith('/messages')) return { messages: [] };

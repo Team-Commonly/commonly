@@ -27,6 +27,7 @@ import {
 } from '../lib/spawn-credential.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
+import { formatDigestFrame } from '../lib/digest-frame.js';
 import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import {
@@ -2027,42 +2028,13 @@ export const performRun = ({
       return `${prefix}\n${claimContext}${body}`;
     });
     const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
-    const conversationCounts = new Map();
-    let knownOlder = 0;
-    for (const conversation of Array.isArray(rollup?.conversations) ? rollup.conversations : []) {
-      if (typeof conversation.label !== 'string' || !Number.isInteger(conversation.count)
-        || conversation.count < 1) continue;
-      conversationCounts.set(conversation.label,
-        (conversationCounts.get(conversation.label) || 0) + conversation.count);
-      knownOlder += conversation.count;
-    }
-    if (rollup?.unreadCount > knownOlder) {
-      conversationCounts.set('older pod activity', rollup.unreadCount - knownOlder);
-    }
-    const seenDigestSources = new Set();
-    for (const entry of digestEntries) {
-      const { threadRootId, taskId, taskKind, messageId, content } = entry.event.payload || {};
-      const sourceId = messageId != null ? `message:${messageId}`
-        : (typeof taskId === 'string' ? `task:${taskId}:${taskKind || ''}:${content || ''}` : null);
-      if (sourceId && seenDigestSources.has(sourceId)) continue;
-      if (sourceId) seenDigestSources.add(sourceId);
-      const label = Number.isInteger(Number(threadRootId)) && Number(threadRootId) > 0
-        ? `thread ${threadRootId}`
-        : (/^TASK-\d+$/.test(String(taskId || '')) ? taskId : 'pod conversation');
-      conversationCounts.set(label, (conversationCounts.get(label) || 0) + 1);
-    }
-    const digestLines = [...conversationCounts].slice(0, 8)
-      .map(([label, count]) => `- ${label}: ${count} unread`);
-    const digestCount = [...conversationCounts.values()].reduce((sum, count) => sum + count, 0);
+    const digestFrame = formatDigestFrame(digestEntries.map((entry) => entry.event), rollup);
     const omitted = Math.max(0, inboxCount - entries.length);
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
         + 'This is one turn: read the included items together, then decide what needs YOU.]',
       ...bodies,
-      ...(digestEntries.length > 0 || rollup?.unreadCount > 0 ? [
-        `[Since you last looked: ${digestCount} ambient update${digestCount === 1 ? '' : 's'} in ${conversationCounts.size} conversation${conversationCounts.size === 1 ? '' : 's'}; context only, no reply needed.]
-${digestLines.join('\n')}${conversationCounts.size > 8 ? `\n- ${conversationCounts.size - 8} more conversations omitted` : ''}\nPull relevant messages with commonly_get_messages. On resume, read oldest unread first; at most 8 conversations, 5 messages each, 20 messages total.`,
-      ] : []),
+      ...(digestFrame ? [digestFrame] : []),
       ...(omitted > 0
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
         : []),
