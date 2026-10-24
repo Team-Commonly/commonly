@@ -665,6 +665,7 @@ describe('Clawdbot E2E Integration Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
         .send({
+          continueAnyway: true,
           content: 'Hello from Clawdbot! Based on the recent discussions, here are my insights...',
           messageType: 'text',
           metadata: {
@@ -684,7 +685,7 @@ describe('Clawdbot E2E Integration Tests', () => {
       const bareRes = await request(app)
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
-        .send({ content: bareContent, messageType: 'text' });
+        .send({ content: bareContent, messageType: 'text', continueAnyway: true });
 
       expect(bareRes.status).toBe(200);
       expect(bareRes.body.success).toBe(true);
@@ -695,7 +696,7 @@ describe('Clawdbot E2E Integration Tests', () => {
       const escapedRes = await request(app)
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
-        .send({ content: escapedContent, messageType: 'text' });
+        .send({ content: escapedContent, messageType: 'text', continueAnyway: true });
 
       expect(escapedRes.status).toBe(200);
       expect(escapedRes.body.success).toBe(true);
@@ -729,6 +730,7 @@ describe('Clawdbot E2E Integration Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
         .send({
+          continueAnyway: true,
           messageType: 'text',
         });
 
@@ -744,6 +746,7 @@ describe('Clawdbot E2E Integration Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
         .send({
+          continueAnyway: true,
           content: 'RGCTX',
           messageType: 'text',
         });
@@ -833,6 +836,7 @@ describe('Clawdbot E2E Integration Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
         .send({
+          continueAnyway: true,
           content: clawdbotResponse,
           messageType: 'text',
           metadata: {
@@ -900,6 +904,7 @@ describe('Clawdbot E2E Integration Tests', () => {
           .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
           .set('Authorization', `Bearer ${agentToken}`)
           .send({
+            continueAnyway: true,
             content: `Response to batch ${i + 1}`,
             messageType: 'text',
           });
@@ -999,6 +1004,7 @@ describe('Clawdbot E2E Integration Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${clawdbotToken}`)
         .send({
+          continueAnyway: true,
           content: 'Message from Clawdbot Bridge',
           messageType: 'text',
         });
@@ -1013,6 +1019,7 @@ describe('Clawdbot E2E Integration Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${commonlyBotToken}`)
         .send({
+          continueAnyway: true,
           content: 'Message from Commonly Bot',
           messageType: 'text',
         });

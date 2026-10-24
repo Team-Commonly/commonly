@@ -588,6 +588,7 @@ describe('Two-Way Integration E2E Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${runtimeToken}`)
         .send({
+          continueAnyway: true,
           content: summaryContent,
           messageType: 'text', // Valid enum values are: text, image
           metadata: {
@@ -784,6 +785,7 @@ describe('Two-Way Integration E2E Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${runtimeToken}`)
         .send({
+          continueAnyway: true,
           content: summaryContent,
           messageType: 'text',
         });
@@ -898,6 +900,7 @@ describe('Two-Way Integration E2E Tests', () => {
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${runtimeToken}`)
         .send({
+          continueAnyway: true,
           content: `📊 **Discord Update**\n\nPR review discussion between Dev1 and Dev2.`,
           messageType: 'text',
         });
@@ -1181,6 +1184,7 @@ Based on the GroupMe activity, the team is discussing a PR review for the auth f
           .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
           .set('Authorization', `Bearer ${clawdbotToken}`)
           .send({
+            continueAnyway: true,
             content: aiResponse,
             messageType: 'text',
             metadata: {
@@ -1329,6 +1333,7 @@ Based on the GroupMe activity, the team is discussing a PR review for the auth f
           .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
           .set('Authorization', `Bearer ${commonlyToken}`)
           .send({
+            continueAnyway: true,
             content: '📊 **Discord Summary**: Deployment pipeline issue reported.',
             messageType: 'text',
           });
@@ -1338,6 +1343,7 @@ Based on the GroupMe activity, the team is discussing a PR review for the auth f
           .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
           .set('Authorization', `Bearer ${clawdbotToken}`)
           .send({
+            continueAnyway: true,
             content: `🤖 **Clawdbot Analysis**
 
 I noticed the deployment pipeline is failing. Based on similar issues I've seen:
@@ -1427,6 +1433,7 @@ Would you like me to help debug this further?`,
           .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
           .set('Authorization', `Bearer ${tokenRes.body.token}`)
           .send({
+            continueAnyway: true,
             content: `🔍 **Code Review**
 
 \`\`\`javascript
