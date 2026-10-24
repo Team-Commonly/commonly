@@ -9,8 +9,8 @@
  * stay in the host adapter and reach the configured provider through a
  * per-spawn loopback proxy; OpenCode receives only that proxy's bearer.
  * This protects the key, not provider spend: the model can use its seat's key
- * budget, and bwrap's existing shared networking is not a per-port egress
- * fence.
+ * budget. On Linux the process has its own network namespace, with loopback
+ * bridges to the fixed provider and Commonly instance origins.
  * Config is generated per spawn. OpenCode merges config sources, therefore the
  * global config directory is isolated and project config is explicitly off;
  * the environment spec is the sole source of MCP servers for this run.
@@ -34,6 +34,7 @@ import {
   writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
+import { fileURLToPath } from 'url';
 import {
   dirname, join, resolve as pathResolve,
 } from 'path';
@@ -53,8 +54,12 @@ import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError } from '../public-tool-error.js';
+import { startInstanceProxy } from '../instance-proxy.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
+const ISOLATED_PROXY_PORT = 8765;
+const ISOLATED_INSTANCE_PORT = 8766;
+const LOOPBACK_BRIDGE = fileURLToPath(new URL('../sandbox/opencode-loopback.mjs', import.meta.url));
 const TERMINATION_GRACE_MS = 5000;
 // Bump only with a passing real sandbox-exec smoke against the new version.
 const TESTED_OPENCODE_VERSIONS = Object.freeze(['1.18.35', '1.19.0']);
@@ -658,10 +663,6 @@ export default {
     if (isPublic && !provider) {
       throw new Error('public OpenCode seats require environment.provider; the implicit public tier and operator auth.json are unsupported for public trust');
     }
-    if (isPublic && sandboxMode === 'bwrap' && provider
-      && sandbox?.network?.policy === 'restricted') {
-      throw new Error('public OpenCode provider proxy requires shared bwrap networking; sandbox.network.policy=restricted cannot reach the loopback proxy');
-    }
     const providerKeyFile = await validateProviderEnvironment(ctx.environment, ctx.cwd);
 
     const sourceEnv = ctx.env || process.env;
@@ -727,6 +728,7 @@ export default {
     });
     let openCodeHome = null;
     let providerProxy = null;
+    let instanceProxy = null;
     try {
       openCodeHome = await prepareOpenCodeDataHome(ctx, { publicSeat: isPublic });
       if (isPublic && provider) {
@@ -736,6 +738,16 @@ export default {
           provider,
           keyFile: providerKeyFile,
           tokenFile: join(tempDir, 'provider-proxy-token'),
+          ...(sandboxMode === 'bwrap' ? {
+            socketPath: join(tempDir, 'provider-proxy.sock'),
+            isolatedPort: ISOLATED_PROXY_PORT,
+          } : {}),
+        });
+      }
+      if (isPublic && sandboxMode === 'bwrap' && ctx.instanceUrl) {
+        instanceProxy = await startInstanceProxy({
+          instanceUrl: ctx.instanceUrl,
+          socketPath: join(tempDir, 'instance-proxy.sock'),
         });
       }
       const stateHome = isPublic ? join(openCodeHome.root, 'state') : null;
@@ -750,7 +762,8 @@ export default {
       const mcpReadDirectories = [];
       const mcp = buildMcpConfig(ctx.environment?.mcp, {
         runtimeToken: ctx.runtimeToken,
-        instanceUrl: ctx.instanceUrl,
+        instanceUrl: instanceProxy
+          ? `http://127.0.0.1:${ISOLATED_INSTANCE_PORT}` : ctx.instanceUrl,
         credentialFile: credential?.path || null,
         publicSeat: isPublic,
         unavailableMcp,
@@ -805,10 +818,15 @@ export default {
         }
         const bwrap = (ctx._detectBwrap || detectBwrap)();
         if (!bwrap.available) throw new Error(`public OpenCode agents require bwrap: ${bwrap.error}`);
-        const wrapped = (ctx._wrapArgvWithBwrap || wrapArgvWithBwrap)([binary, ...args], {
+        const wrapped = (ctx._wrapArgvWithBwrap || wrapArgvWithBwrap)([
+          process.execPath, LOOPBACK_BRIDGE,
+          providerProxy.socketPath, String(ISOLATED_PROXY_PORT),
+          instanceProxy?.socketPath || '-', String(ISOLATED_INSTANCE_PORT), binary, ...args,
+        ], {
           ...ctx.environment,
           sandbox: {
             ...sandbox,
+            network: { ...sandbox?.network, policy: 'restricted' },
             filesystem: {
               ...(sandbox?.filesystem || {}),
               'write-outside': [
@@ -824,8 +842,11 @@ export default {
             tempDir,
             binary,
             process.execPath,
+            LOOPBACK_BRIDGE,
             ...mcpReadDirectories,
           ],
+          optionalReadOnlyPaths: ['/usr/sbin', '/sbin'],
+          enableLoopback: true,
         });
         [cmd, ...spawnArgs] = wrapped;
       } else if (isPublic) {
@@ -864,6 +885,7 @@ export default {
         ...(result.usage ? { usage: result.usage } : {}),
       };
     } finally {
+      try { await instanceProxy?.close(); } catch { /* ignore */ }
       try { await providerProxy?.close(); } catch { /* ignore */ }
       try { await rm(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
     }

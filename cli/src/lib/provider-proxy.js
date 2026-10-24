@@ -3,7 +3,7 @@ import { randomBytes, timingSafeEqual } from 'crypto';
 import { constants as fsConstants, realpathSync } from 'fs';
 import { createServer, request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
-import { chmod, lstat, open, writeFile } from 'fs/promises';
+import { chmod, lstat, open, unlink, writeFile } from 'fs/promises';
 import { isAbsolute, relative, sep } from 'path';
 
 const isPathWithin = (parent, candidate) => {
@@ -68,9 +68,13 @@ const readProviderKey = async (keyFile, adapterLabel) => {
 };
 
 export const startProviderProxy = async ({
-  provider, keyFile, tokenFile, adapterLabel = 'OpenCode',
+  provider, keyFile, tokenFile, socketPath, isolatedPort, adapterLabel = 'OpenCode',
 }) => {
   const upstream = new URL(provider.baseURL);
+  if (socketPath && (!isAbsolute(socketPath)
+    || !Number.isInteger(isolatedPort) || isolatedPort < 1 || isolatedPort > 65535)) {
+    throw new Error(`${adapterLabel} isolated proxy requires an absolute socket path and valid port`);
+  }
   if (!['http:', 'https:'].includes(upstream.protocol)
     || upstream.username || upstream.password || upstream.search || upstream.hash) {
     throw new Error(`${adapterLabel} provider.baseURL must be an http(s) URL without embedded credentials or query data`);
@@ -204,19 +208,33 @@ export const startProviderProxy = async ({
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
+    const started = () => {
       server.removeListener('error', reject);
       resolve();
-    });
+    };
+    if (socketPath) server.listen(socketPath, started);
+    else server.listen(0, '127.0.0.1', started);
   });
-  const { port } = server.address();
+  if (socketPath) {
+    try {
+      await chmod(socketPath, 0o600);
+    } catch (err) {
+      await new Promise((resolve) => server.close(resolve));
+      throw err;
+    }
+  }
+  const port = socketPath ? isolatedPort : server.address().port;
   const proxyBaseURL = new URL(upstream.pathname, `http://127.0.0.1:${port}`).toString();
   return {
     baseURL: proxyBaseURL,
     tokenFile,
+    socketPath,
     port,
     close: () => new Promise((resolve) => {
-      server.close(() => resolve());
+      server.close(async () => {
+        if (socketPath) await unlink(socketPath).catch(() => {});
+        resolve();
+      });
       server.closeAllConnections?.();
     }),
   };
