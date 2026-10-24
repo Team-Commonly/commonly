@@ -422,6 +422,31 @@ describe('notifyPodAgents', () => {
     expect(AgentEventService.enqueue.mock.calls.map(([event]) => event.agentName)).toEqual(['sprint-impl']);
   });
 
+  it('wakes a claimed dependent row through the bot principal', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+    Task.find.mockReturnValueOnce({ lean: async () => [{ assignee: null, claimedBy: AGENT_ID }] });
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({
+      isBot: true, botMetadata: { agentName: 'sprint-impl', instanceId: 'default' },
+    }) }) });
+
+    await notifyPodAgents(POD_ID, task({ assignee: null, status: 'done' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false }, { status: 'claimed' });
+
+    const bySeat = Object.fromEntries(AgentEventService.enqueue.mock.calls.map(([arg]) => [arg.agentName, arg]));
+    expect(bySeat['sprint-impl'].deliveryMode).toBeUndefined();
+    expect(bySeat.scout.deliveryMode).toBe('digest');
+  });
+
+  it('does not repeat dependency wakes for a later note on an already done row', async () => {
+    mockInstalls([install('sprint-impl', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task({ assignee: null, status: 'done' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false });
+
+    expect(Task.find).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue.mock.calls[0][0].deliveryMode).toBe('digest');
+  });
+
   it('stays quiet on delete, where the wake would spend a turn finding nothing', async () => {
     mockInstalls([install('scout', HUMAN_ID)]);
 
