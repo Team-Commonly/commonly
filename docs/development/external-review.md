@@ -19,7 +19,7 @@ a verdict. During the trial below it is the first pass on every PR.
   re-report what CodeRabbit already flagged.
 - **How much gating a PR needs** (a one-week trial from 2026-10-24, measured
   on merges per day, open-to-merge time and revert rate):
-  - *Docs-only or test-only*: no unresolved CodeRabbit findings plus green CI
+  - *Tier 0, docs-only or test-only*: no unresolved CodeRabbit findings plus green CI
     is enough. No seat gate is needed, and an operator presses it by hand.
   - *Tier 1* (UI, copy, anything behind a flag that is off in production):
     one seat gate. A UI change's second check is a walk of the deployed
