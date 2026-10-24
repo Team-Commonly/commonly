@@ -372,7 +372,7 @@ That totals 7.5 implementor-days for steps 1–6.
 - **Escaping.** Hostile values in every field (pod name, author, text, card options), driven through every path that sends.
 - **The eligibility matrix.** Each predicate and its query form, over the same rows, including a missing `type`, `isActive: false`, `status: 'error'` with and without a chat id, admin pause, mute, a group chat, and a lookup that throws (outbound sends nothing; inbound releases the claim and fails the request).
 - **After the write.** Make delivery or the socket emit throw after an inbound write. The message stays, the request is acknowledged as the adapter declares, and a redelivery adds no second message.
-- **The relay-map backfill**, run twice over entries with only `tgMessageId`, only `externalMessageId`, and both. No id is lost or overwritten, and the second run changes nothing.
+- **The relay-map backfill**, through the `Integration` model. Store `config.relayMap` and `config.cards` entries with only `tgMessageId`, only `externalMessageId`, and both, run the backfill twice, and read each row back. `config` is a strict subdocument, so a write to an undeclared path is dropped in silence (`models/Integration.ts:250–251`), and only the read-back shows it. No id is lost or overwritten, and the second run changes nothing.
 - **A third adapter, registered inside the test at runtime.** It passes the contract suite, then does every round trip with no change outside the test file: an agent's post goes out through the dispatcher; a platform message comes in; a card is sent, answered by quote-reply, and closed by the reconciler.
 
 **Acceptance.** A new chat connector consists of:
