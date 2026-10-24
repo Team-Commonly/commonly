@@ -715,19 +715,13 @@ describe('messageExists', () => {
     expect(Post.exists).toHaveBeenCalledWith({ podId: 'pod-b', 'comments._id': commentId });
   });
 
-  test('a store that cannot answer passes the id through — refusing would unguard every woken seat', async () => {
-    // The direction is the design: enforcement.js:414 turns the route's non-2xx
-    // into {failOpen: true}, so a refusal for a real comment wake stops the
-    // race deduping and every woken seat proceeds. An unconfirmed id must
-    // therefore degrade to the pre-TASK-122 behaviour (dedupe holds, a phantom
-    // is possible), not to a refusal.
+  test('a store failure stops an unconfirmed comment claim before SQL mutation', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     Post.exists.mockRejectedValue(new Error('MongoServerSelectionError'));
-    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1'))
+      .rejects.toThrow('MongoServerSelectionError');
     expect(Post.exists).toHaveBeenCalledTimes(1);
-    // ...and it SAYS so, on one line, rather than reverting the hardening in
-    // silence. A stored check that quietly stops checking is the failure mode
-    // this whole row is about.
+    expect(pool.query).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toMatch(/comment existence check failed.*MongoServerSelectionError/);
     warn.mockRestore();
