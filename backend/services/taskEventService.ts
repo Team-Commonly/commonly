@@ -26,7 +26,7 @@ function seatMatchesAssignee(install: Record<string, unknown>, assignee: unknown
   const name = String(install.agentName || '').toLowerCase();
   const instance = String(install.instanceId || 'default').toLowerCase();
   const assigned = String(assignee).toLowerCase();
-  return assigned === instance || (instance === 'default' && assigned === name);
+  return instance === 'default' ? assigned === name : assigned === instance;
 }
 
 async function claimHolderKey(claimedBy: unknown): Promise<string | null> {

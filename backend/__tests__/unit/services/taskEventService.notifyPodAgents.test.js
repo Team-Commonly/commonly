@@ -380,6 +380,15 @@ describe('notifyPodAgents', () => {
     expect(AgentEventService.enqueue).not.toHaveBeenCalled();
   });
 
+  it('does not treat an ambiguous default assignee as every default seat', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task({ assignee: 'default' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false });
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+  });
+
   it('wakes a claimed dependent row when its exact dependency clears', async () => {
     mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
     Task.find.mockReturnValueOnce({ lean: async () => [{ assignee: 'sprint-impl' }] });
