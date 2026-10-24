@@ -47,7 +47,7 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 }));
 
 const { createClient } = await import('../src/lib/api.js');
-const { performRun } = await import('../src/commands/agent.js');
+const { performRun } = await import('../src/runtime.js');
 const {
   getSession,
   setSession,
