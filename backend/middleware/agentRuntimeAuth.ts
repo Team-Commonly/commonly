@@ -1,3 +1,4 @@
+import { resolveTokenAgentIdentity } from '../utils/agentTokenIdentity';
 import { Request, Response, NextFunction } from 'express';
 import { AgentInstallation } from '../models/AgentRegistry';
 import User, { IUser } from '../models/User';
@@ -13,37 +14,6 @@ import { machineHasLiveAuthorization } from '../services/machineService';
 
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
-
-const normalizeTokenIdentityValue = (value: unknown): string =>
-  String(value || '').trim().toLowerCase();
-
-const deriveInstanceIdFromUsername = (agentName: string, username: string): string | null => {
-  const normalizedAgent = normalizeTokenIdentityValue(agentName);
-  const normalizedUsername = normalizeTokenIdentityValue(username);
-  if (!normalizedAgent || !normalizedUsername) return null;
-  if (normalizedUsername === normalizedAgent) return 'default';
-  const prefix = `${normalizedAgent}-`;
-  if (normalizedUsername.startsWith(prefix)) {
-    const suffix = normalizedUsername.slice(prefix.length).trim();
-    return suffix || null;
-  }
-  return null;
-};
-
-const resolveTokenAgentIdentity = (agentUser: IUser): { agentName: string; instanceId: string } => {
-  const meta = agentUser?.botMetadata || {};
-  const username = normalizeTokenIdentityValue(agentUser?.username);
-  const agentName = normalizeTokenIdentityValue(meta.agentName || meta.instanceId || username);
-
-  const metadataInstanceId = normalizeTokenIdentityValue(meta.instanceId);
-  const usernameInstanceId = deriveInstanceIdFromUsername(agentName, username);
-  let instanceId = metadataInstanceId || usernameInstanceId || 'default';
-  if (usernameInstanceId && (!metadataInstanceId || metadataInstanceId === 'default')) {
-    instanceId = usernameInstanceId;
-  }
-
-  return { agentName, instanceId };
-};
 
 /**
  * ADR-026 / TASK-094: resolve the agent identity behind a per-spawn child

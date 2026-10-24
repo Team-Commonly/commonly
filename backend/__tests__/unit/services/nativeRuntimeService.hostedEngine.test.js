@@ -96,6 +96,7 @@ jest.mock('../../../services/outboundUrlGuard', () => ({
 const mockTaskRows = jest.fn();
 const mockTaskCount = jest.fn();
 jest.mock('../../../models/Task', () => ({
+  aggregate: jest.fn(() => mockTaskRows()),
   find: jest.fn(() => ({
     sort: () => ({ limit: () => ({ select: () => ({ lean: () => mockTaskRows() }) }) }),
   })),
@@ -369,10 +370,19 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       await runAgent(hostedInstall(), mention);
 
       const Task = require('../../../models/Task');
-      expect(Task.find).toHaveBeenCalledWith({ podId: POD, status: { $in: ['pending', 'claimed', 'blocked'] } });
+      expect(Task.aggregate).toHaveBeenCalledWith(expect.arrayContaining([
+        { $match: { podId: expect.objectContaining({}), status: { $in: ['pending', 'claimed', 'blocked'] } } },
+      ]));
+      const pipeline = Task.aggregate.mock.calls[0][0];
+      expect(String(pipeline[0].$match.podId)).toBe(POD);
+      expect(pipeline).toContainEqual({ $set: { priority: { $ifNull: ['$priority', 'P2'] } } });
+      const sortIndex = pipeline.findIndex((stage) => stage.$sort?.priority === 1);
+      const limitIndex = pipeline.findIndex((stage) => stage.$limit);
+      expect(sortIndex).toBeGreaterThan(-1);
+      expect(limitIndex).toBeGreaterThan(sortIndex);
       const listed = JSON.parse(toolMessages(1)[0].content);
       expect(listed).toEqual({
-        status: 'open', total: 3, tasks: [{ taskId: 'TASK-1', title: 'Say hello to the pod', status: 'pending', assignee: null }],
+        status: 'open', total: 3, tasks: [{ taskId: 'TASK-1', title: 'Say hello to the pod', priority: 'P2', status: 'pending', assignee: null }],
       });
       expect(systemPromptIn(0)).toMatch(/check the board with commonly_list_tasks before saying what is or is not on it/);
       // Walk 5: it offered to "mark TASK-002 done" with no tool that can.

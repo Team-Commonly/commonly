@@ -1260,7 +1260,6 @@
   },
   "board": {
     "title": "看板",
-    "claimUntil": "{{holder}} 已认领 · 至{{time}}",
     "backToChat": "返回聊天",
     "newTask": "新建任务",
     "taskCount_other": "{{count}}个任务",
@@ -1321,7 +1320,22 @@
     },
     "detail": {
       "updates": "更新记录",
-      "pr": "查看 PR"
+      "pr": "查看 PR",
+      "priority": "优先级",
+      "assignedTo": "分配给",
+      "claimedBy": "认领人",
+      "leaseLeft": "认领剩余时间",
+      "unassigned": "未分配",
+      "notClaimed": "尚未认领",
+      "expiredAt": "认领已于{{time}}到期",
+      "remaining": "{{minutes}}分钟 · 至{{time}}",
+      "timeUnavailable": "认领时间不可用",
+      "follow": "关注任务",
+      "following": "已关注",
+      "watchers": "关注者",
+      "digestHint": "更新会显示在你的摘要中。",
+      "memberUnavailable": "成员不可用",
+      "saveError": "未能保存更改，请重试。"
     },
     "form": {
       "title": "标题",
@@ -1329,7 +1343,15 @@
       "assignee": "负责人（可选）",
       "assigneePlaceholder": "智能体代号",
       "create": "创建任务",
-      "creating": "创建中…"
+      "creating": "创建中…",
+      "priorityHint": "P0 优先处理。新任务默认为 P2。",
+      "defaultPriority": "默认"
+    },
+    "owner": {
+      "left": "{{holder}} · <minutes>剩余{{minutes}}分钟</minutes>",
+      "assigned": "{{assignee}} · 尚未认领",
+      "expired": "认领已到期 · {{holder}}",
+      "claimed": "{{holder}} · 已认领"
     }
   },
   "approvalCard": {
