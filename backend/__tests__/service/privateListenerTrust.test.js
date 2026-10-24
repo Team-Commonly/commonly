@@ -83,7 +83,7 @@ beforeEach(async () => {
 
 test('a query-shaped pod id cannot broaden private-listener eligibility', async () => {
   expect(await privateListenerPodAllowed({ $ne: null }, mockOwner.id)).toBe(false);
-  expect(await privateListenerPodAllowed(String(pod._id), mockOwner.id)).toBe(true);
+  expect(await privateListenerPodAllowed(String(pod._id), mockOwner.id, AGENT)).toBe(true);
   await Integration.create({
     podId: pod._id, scope: 'pod', type: 'slack', status: 'connected', isActive: true,
     createdBy: mockOwner.id, config: {},
@@ -132,6 +132,42 @@ test('a live group bridge pauses a private listener and refuses new issuance', a
   expect(refused.body.code).toBe('private_listener_not_allowed');
 });
 
+test('an extra bot pauses current and legacy tokens, assignment, and private config writes', async () => {
+  const minted = await issue();
+  expect(minted.status).toBe(200);
+  const legacy = `cm_agent_${'d'.repeat(32)}`;
+  await AgentInstallation.updateOne({ agentName: AGENT }, {
+    $push: { runtimeTokens: { tokenHash: hash(legacy), createdAt: new Date() } },
+  });
+  const otherBot = await User.create({
+    username: 'other-bot', email: 'other-bot@agents.commonly.local', password: 'password123',
+    isBot: true, botMetadata: { agentName: 'other-bot', instanceId: 'default' },
+  });
+  await Pod.updateOne({ _id: pod._id }, { $addToSet: { members: otherBot._id } });
+  for (const token of [minted.body.token, legacy]) {
+    const denied = await request(app).get('/probe').set('Authorization', `Bearer ${token}`);
+    expect(denied.status).toBe(403);
+    expect(denied.body.code).toBe('private_listener_paused');
+  }
+  expect((await assigned()).body.agents).toEqual([]);
+  expect((await issue()).status).toBe(403);
+  const changed = await request(app).patch(`/api/registry/pods/${pod._id}/agents/${AGENT}`).send({
+    config: { environment: { workspace: { path: '~/other' }, sandbox: { trust: 'private' } } },
+  });
+  expect(changed.status).toBe(403);
+  const row = await AgentInstallation.findOne({ agentName: AGENT });
+  expect(row.config.get('environment').workspace.path).toBe('~/projects/example');
+  expect(await User.countDocuments({ 'agentRuntimeTokens.tokenHash': hash(minted.body.token) })).toBe(1);
+});
+
+test('a different listener identity in the pod refuses a new private install before any write', async () => {
+  const denied = await install('other-private-listener');
+  expect(denied.status).toBe(403);
+  expect(denied.body.code).toBe('private_listener_not_allowed');
+  expect(await AgentRegistry.findOne({ agentName: 'other-private-listener' })).toBeNull();
+  expect(await AgentInstallation.countDocuments({ agentName: 'other-private-listener' })).toBe(0);
+});
+
 test('second human also pauses an older installation-bound runtime token', async () => {
   const legacy = `cm_agent_${'b'.repeat(32)}`;
   await AgentInstallation.updateOne({ agentName: AGENT }, {
@@ -164,6 +200,7 @@ test('install refuses private trust in a shared pod before creating a registry i
 });
 
 test('sole owner can install the private listener with the selected repo path', async () => {
+  await Pod.updateOne({ _id: pod._id }, { $pull: { members: bot._id } });
   const created = await install('private-install-allowed');
   expect(created.status).toBe(200);
   const row = await AgentInstallation.findOne({ agentName: 'private-install-allowed' });
@@ -194,6 +231,7 @@ test('a newer private install cannot be shadowed by an older read-only installat
 });
 
 test('a read-only choice cannot inherit private trust from an older installation', async () => {
+  await Pod.updateOne({ _id: pod._id }, { $pull: { members: bot._id } });
   expect((await install('private-then-public')).status).toBe(200);
   const peerPod = await Pod.create({ name: 'Read-only peer pod', type: 'chat', joinPolicy: 'invite-only',
     createdBy: mockOwner.id, members: [mockOwner.id] });

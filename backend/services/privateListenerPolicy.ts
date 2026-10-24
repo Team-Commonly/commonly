@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import Pod from '../models/Pod';
 import User from '../models/User';
+import AgentIdentityService from './agentIdentityService';
 import { AgentInstallation } from '../models/AgentRegistry';
 import { podIsBridged } from './outsiderGrantPodEligibility';
 
@@ -18,7 +19,9 @@ const configOf = (installation: any): Record<string, any> => (
 );
 
 /** A private listener may take instructions only from its owner. */
-export const privateListenerPodAllowed = async (podId: unknown, ownerUserId: unknown): Promise<boolean> => {
+export const privateListenerPodAllowed = async (
+  podId: unknown, ownerUserId: unknown, agentName?: string, instanceId = 'default',
+): Promise<boolean> => {
   const podIdString = id(podId);
   if (!/^[0-9a-fA-F]{24}$/.test(podIdString)) return false;
   const pod = await Pod.findById(new Types.ObjectId(podIdString))
@@ -32,8 +35,16 @@ export const privateListenerPodAllowed = async (podId: unknown, ownerUserId: unk
   const members = await User.find({ _id: { $in: pod.members } }).select('_id isBot botType').lean();
   // A missing member row has unknown authority. Refuse rather than assume bot.
   if (members.length !== new Set((pod.members || []).map(id)).size) return false;
-  const humans = members.filter((member: any) => !member.isBot && !member.botType);
-  return humans.length === 1 && id(humans[0]._id) === id(ownerUserId);
+  const listener = agentName ? await User.findOne({
+    username: AgentIdentityService.buildAgentUsername(
+      AgentIdentityService.resolveAgentType(agentName), instanceId,
+    ),
+    isBot: true,
+  }).select('_id').lean() : null;
+  // Other bots can address and wake the full-tool listener just like people.
+  // Permit only the owner and the exact portable User row being connected.
+  return members.every((member: any) => id(member._id) === id(ownerUserId)
+    || (listener && id(member._id) === id(listener._id)));
 };
 
 /** Re-evaluate the full identity, since its runtime and token span every installation. */
@@ -54,7 +65,7 @@ export const privateListenerIdentityAllowed = async (
   }
   for (const installation of installations) {
     // eslint-disable-next-line no-await-in-loop
-    if (!await privateListenerPodAllowed(installation.podId, ownerUserId)) return false;
+    if (!await privateListenerPodAllowed(installation.podId, ownerUserId, agentName, instanceId)) return false;
   }
   return true;
 };

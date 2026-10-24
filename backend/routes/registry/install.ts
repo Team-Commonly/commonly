@@ -255,12 +255,12 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     const requestedEnvironment = normalizeConfigMap(config)?.environment;
     if (isPrivateListenerEnvironment(requestedEnvironment)) {
       const allowed = privateListenerConfigurationValid(requestedEnvironment)
-        && await privateListenerPodAllowed(podId, userId)
+        && await privateListenerPodAllowed(podId, userId, agentName, normalizedInstanceId)
         && ['wrapper', 'webhook'].includes(config?.runtime?.runtimeType);
       if (!allowed) {
         return res.status(403).json({
           code: 'private_listener_not_allowed',
-          error: 'Full computer access requires your sole-human invite-only pod and an absolute repo path',
+          error: 'Full computer access requires an invite-only pod with only you and this listener, and an absolute repo path',
         });
       }
     }

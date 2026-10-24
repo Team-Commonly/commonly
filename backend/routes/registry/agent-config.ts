@@ -182,12 +182,12 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         const existingConfig = normalizeConfigMap(installation.config) || {};
         const runtimeType = config.runtime?.runtimeType || existingConfig.runtime?.runtimeType;
         const eligible = privateListenerConfigurationValid(config.environment)
-          && await privateListenerPodAllowed(podId, userId)
+          && await privateListenerPodAllowed(podId, userId, name.toLowerCase(), normalizedInstanceId)
           && await privateListenerIdentityAllowed(name.toLowerCase(), normalizedInstanceId, userId, true);
         if (!eligible || !['wrapper', 'webhook'].includes(runtimeType)) {
           return res.status(403).json({
             code: 'private_listener_not_allowed',
-            error: 'Full computer access requires your sole-human invite-only pod and an absolute repo path',
+            error: 'Full computer access requires an invite-only pod with only you and this listener, and an absolute repo path',
           });
         }
       }

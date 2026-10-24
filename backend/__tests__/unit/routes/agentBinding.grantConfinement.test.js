@@ -53,7 +53,7 @@ const seed = async (sandbox, runtime = { runtimeType: 'wrapper', model: 'claude-
   const owner = await User.create({ username: `o${tag % 1e6}`, email: `o${tag}@x.com`, password: 'x'.repeat(12) });
   global.__CALLER_ID = String(owner._id);
   const bot = await User.create({
-    username: `b${tag % 1e6}`, email: `b${tag}@agents.commonly.local`, password: 'x'.repeat(12),
+    username: AGENT_NAME, email: `${AGENT_NAME}@agents.commonly.local`, password: 'x'.repeat(12),
     isBot: true,
     botMetadata: { agentName: AGENT_NAME, instanceId: 'default', machineId: 'machine-a' },
   });
