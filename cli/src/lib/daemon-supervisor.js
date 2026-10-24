@@ -33,6 +33,14 @@ export const DEFAULT_POLL_MS = 30_000;
 export const DEFAULT_HEARTBEAT_MS = 30_000;
 export const BACKOFF_BASE_MS = 5_000;
 export const BACKOFF_MAX_MS = 60_000;
+export const MAX_CONCURRENT_AGENT_STARTS = 3;
+export const AGENT_START_WINDOW_MS = 5_000;
+export const RECONNECT_MAX_MS = 60_000;
+
+export const reconnectDelayMs = (failures, random = Math.random) => {
+  const ceiling = Math.min(RECONNECT_MAX_MS, 1_000 * 2 ** Math.min(failures, 6));
+  return Math.floor(1_000 + random() * (ceiling - 1_000));
+};
 
 const workspacePathFor = (environment) => {
   const declared = environment?.workspace?.path;
@@ -59,12 +67,35 @@ export const createDaemonSupervisor = ({
   resolveAdapter, // async (runtime) => adapter name for THIS machine
   persistState = () => {}, // (agentStates) => void; must not persist secrets
   log = () => {},
+  isTerminalAuthError = () => false,
+  onTerminalAuthError = () => {},
+  now = Date.now,
+  random = Math.random,
   setTimeoutFn = setTimeout,
   clearTimeoutFn = clearTimeout,
 }) => {
   // key → { agentName, instanceId, child, state, restarts, backoffTimer, desired }
   const seats = new Map();
   let stopped = false;
+  let reconnectFailures = 0;
+  let reconnectAfter = 0;
+  const recentStarts = [];
+
+  const connectionFailure = (error, label) => {
+    if (isTerminalAuthError(error)) {
+      stopped = true;
+      onTerminalAuthError(error);
+      return;
+    }
+    reconnectFailures += 1;
+    reconnectAfter = now() + reconnectDelayMs(reconnectFailures, random);
+    log(`${label}: ${error.message}; reconnect after ${Math.round((reconnectAfter - now()) / 1000)}s`);
+  };
+
+  const connectionRestored = () => {
+    reconnectFailures = 0;
+    reconnectAfter = 0;
+  };
 
   const persist = () => {
     try {
@@ -90,7 +121,19 @@ export const createDaemonSupervisor = ({
   }));
 
   const startChild = (seat) => {
-    if (stopped || !seat.desired || seat.child) return;
+    if (stopped || !seat.desired || seat.child || seat.startDelayTimer) return;
+    const at = now();
+    while (recentStarts.length && recentStarts[0] + AGENT_START_WINDOW_MS <= at) {
+      recentStarts.shift();
+    }
+    if (recentStarts.length >= MAX_CONCURRENT_AGENT_STARTS) {
+      seat.startDelayTimer = setTimeoutFn(() => {
+        seat.startDelayTimer = null;
+        startChild(seat);
+      }, Math.max(1, recentStarts[0] + AGENT_START_WINDOW_MS - at));
+      return;
+    }
+    recentStarts.push(at);
     seat.child = spawnChild(seat.agentName);
     seat.state = 'running';
     seat.pid = Number.isInteger(seat.child?.pid) ? seat.child.pid : null;
@@ -121,6 +164,10 @@ export const createDaemonSupervisor = ({
 
   const stopSeat = (seat) => {
     seat.desired = false;
+    if (seat.startDelayTimer) {
+      clearTimeoutFn(seat.startDelayTimer);
+      seat.startDelayTimer = null;
+    }
     if (seat.backoffTimer) {
       clearTimeoutFn(seat.backoffTimer);
       seat.backoffTimer = null;
@@ -411,14 +458,15 @@ export const createDaemonSupervisor = ({
   };
 
   const tick = async () => {
-    if (stopped) return;
+    if (stopped || now() < reconnectAfter) return;
     let assigned;
     try {
       assigned = await client.get('/api/agent-binding/assigned');
     } catch (error) {
-      log(`work-list fetch failed: ${error.message}`);
+      connectionFailure(error, 'work-list fetch failed');
       return;
     }
+    connectionRestored();
     const rows = Array.isArray(assigned?.agents) ? assigned.agents : [];
 
     const bound = [];
@@ -453,6 +501,7 @@ export const createDaemonSupervisor = ({
           state: 'stopped',
           restarts: 0,
           backoffTimer: null,
+          startDelayTimer: null,
           desired: true,
           adapter: null,
           model: null,
@@ -501,11 +550,12 @@ export const createDaemonSupervisor = ({
   };
 
   const heartbeat = async () => {
-    if (stopped) return;
+    if (stopped || now() < reconnectAfter) return;
     try {
       await client.post(`/api/machines/${record.machineDbId}/heartbeat`, { agents: agentStates() });
+      connectionRestored();
     } catch (error) {
-      log(`heartbeat failed: ${error.message}`);
+      connectionFailure(error, 'heartbeat failed');
     }
   };
 

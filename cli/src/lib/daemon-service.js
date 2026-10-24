@@ -1,8 +1,7 @@
 /**
  * ADR-026 D1: install-once service registration for the resident daemon.
  *
- * macOS gets a launchd LaunchAgent (KeepAlive — launchd itself restarts a
- * dead daemon), Linux a systemd user unit (Restart=always). Both run the
+ * macOS gets a launchd LaunchAgent, Linux a systemd user unit. Both run the
  * exact interpreter + CLI entry that executed `daemon install`, resolved at
  * install time — a PATH lookup at boot would race version managers and
  * silently run a different install than the one the user tested.
@@ -165,7 +164,10 @@ ${plistEnvPairs(providerEnv)}\t</dict>
 \t<key>RunAtLoad</key>
 \t<true/>
 \t<key>KeepAlive</key>
-\t<true/>
+\t<dict>
+\t\t<key>SuccessfulExit</key>
+\t\t<false/>
+\t</dict>
 \t<key>StandardOutPath</key>
 \t<string>${xmlEscape(daemonLogPath(home))}</string>
 \t<key>StandardErrorPath</key>
@@ -185,6 +187,7 @@ After=network-online.target
 [Service]
 ExecStart=${nodePath} ${cliPath} daemon run --foreground
 Restart=always
+RestartPreventExitStatus=77 78
 RestartSec=5
 Environment=PATH=${childPath(nodePath)}${providerLines}
 
