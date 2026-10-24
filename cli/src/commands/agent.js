@@ -45,6 +45,7 @@ import {
   recycleThresholds,
   shouldStartFreshSession,
 } from '../lib/session-recycle.js';
+import { catchUpBeforeTurn } from '../lib/pod-catch-up.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
@@ -1635,7 +1636,8 @@ export const performRun = ({
       });
       throw error;
     }
-    const promptWithFocus = `${focusFrame}\n\n${prompt}`;
+    const catchUpFrame = await catchUpBeforeTurn(client, eventPodId);
+    const promptWithFocus = `${focusFrame}\n\n${catchUpFrame}\n\n${prompt}`;
     let serverSkills;
     let skillReadUnavailable = false;
     try {

@@ -20,6 +20,7 @@ jest.mock('../../../services/agentMessageService', () => ({
 jest.mock('../../../services/agentSendFreshness', () => ({
   readStart: jest.fn(async () => ({ at: new Date('2026-10-24T00:00:00Z') })),
   recordRead: jest.fn(),
+  recordCatchUp: jest.fn(),
   unseenMessages: jest.fn().mockResolvedValue(null),
 }));
 jest.mock('../../../services/mentionNonMemberNoticeService', () => ({
@@ -305,4 +306,67 @@ describe('attachment freshness', () => {
     expect(File.deleteOne).not.toHaveBeenCalled();
     expect(getObjectStore).not.toHaveBeenCalled();
   });
+});
+
+
+describe('explicit catch-up', () => {
+  const handler = getRouteHandler('/pods/:podId/catch-up', 'post');
+  const installation = { podId: 'pod-1', agentName: 'openclaw' };
+  const req = { params: { podId: 'pod-1' }, body: { confirmSkipHistory: true },
+    agentUser: { _id: 'bot-1' }, agentInstallation: installation };
+  const response = () => ({ status: jest.fn().mockReturnThis(), set: jest.fn(), json: jest.fn() });
+  beforeEach(() => {
+    jest.clearAllMocks();
+    AgentMessageService.getRecentMessages.mockResolvedValue([{ id: '1', content: 'tail' }]);
+    AgentSendFreshness.recordCatchUp.mockResolvedValue({ skippedCount: 14000 });
+  });
+  it('requires explicit confirmation and pod authorization before any reads or cursor writes', async () => {
+    const noConfirm = response();
+    await handler({ ...req, body: {} }, noConfirm);
+    expect(noConfirm.status).toHaveBeenCalledWith(400);
+    const wrongPod = response();
+    await handler({ ...req, params: { podId: 'other' } }, wrongPod);
+    expect(wrongPod.status).toHaveBeenCalledWith(403);
+    expect(AgentSendFreshness.readStart).not.toHaveBeenCalled();
+    expect(AgentSendFreshness.recordCatchUp).not.toHaveBeenCalled();
+  });
+  it('captures the fence before fetching a bounded tail and reports skipped history', async () => {
+    const res = response();
+    const original = process.env.PG_HOST;
+    delete process.env.PG_HOST;
+    try { await handler(req, res); } finally {
+      if (original === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = original;
+    }
+    expect(AgentSendFreshness.readStart.mock.invocationCallOrder[0])
+      .toBeLessThan(AgentMessageService.getRecentMessages.mock.invocationCallOrder[0]);
+    expect(AgentMessageService.getRecentMessages).toHaveBeenCalledWith('pod-1', 20, 'bot-1');
+    expect(AgentSendFreshness.recordCatchUp).toHaveBeenCalledWith('bot-1', 'pod-1', expect.any(Object), ['1']);
+    expect(res.json).toHaveBeenCalledWith({ messages: [{ id: '1', content: 'tail' }],
+      catchUp: { skippedCount: 14000, through: expect.any(Object) } });
+  });
+  it('does not acknowledge a Mongo fallback while PostgreSQL is configured', async () => {
+    const original = process.env.PG_HOST;
+    process.env.PG_HOST = 'configured';
+    const res = response();
+    try { await handler(req, res); } finally {
+      if (original === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = original;
+    }
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(AgentSendFreshness.recordCatchUp).not.toHaveBeenCalled();
+  });
+  it('returns a retryable failure instead of a receipt when the cursor write fails', async () => {
+    const original = process.env.PG_HOST;
+    delete process.env.PG_HOST;
+    AgentSendFreshness.recordCatchUp.mockRejectedValueOnce(new Error('cursor unavailable'));
+    const res = response();
+    try { await handler(req, res); } finally {
+      if (original === undefined) delete process.env.PG_HOST;
+      else process.env.PG_HOST = original;
+    }
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ catchUp: expect.anything() }));
+  });
+
 });

@@ -57,4 +57,32 @@ d('agent freshness: in-flight PostgreSQL insert', () => {
       writer.release();
     }
   });
+  it.each([false, true])('catches up a large PostgreSQL backlog without losing the commit fence (cursor: %s)', async (existing) => {
+    await pool.query('DELETE FROM messages WHERE pod_id = $1', [String(podId)]);
+    await Cursor.deleteOne({ _id: `${agentId}:${podId}` });
+    if (existing) await Cursor.create({ _id: `${agentId}:${podId}`, agentUserId: agentId,
+      podId, readAt: new Date(0), readRevision: 0 });
+    await pool.query(`INSERT INTO messages (pod_id, user_id, content)
+      SELECT $1, $2, 'history ' || n FROM generate_series(1, 2400) AS n`, [String(podId), String(peerId)]);
+    const start = await Freshness.readStart(podId);
+    const tail = await pool.query('SELECT id FROM messages WHERE pod_id = $1 ORDER BY id DESC LIMIT 20', [String(podId)]);
+    const ids = tail.rows.map((row) => String(row.id));
+    await Freshness.recordRead(agentId, podId, start, ids);
+    expect((await Freshness.unseenMessages(agentId, podId)).unseenCount).toBe(2400);
+    const writer = await pool.connect();
+    try {
+      await writer.query('BEGIN');
+      await writer.query('INSERT INTO messages (pod_id, user_id, content) VALUES ($1, $2, $3)',
+        [String(podId), String(peerId), 'later committed peer']);
+      expect(await Freshness.recordCatchUp(agentId, podId, start, ids)).toEqual({ skippedCount: 2380 });
+      await writer.query('COMMIT');
+      const hold = await Freshness.unseenMessages(agentId, podId);
+      expect(hold).toMatchObject({ unseenCount: 1 });
+      expect(hold.messages[0].content).toBe('later committed peer');
+    } finally {
+      await writer.query('ROLLBACK').catch(() => undefined);
+      writer.release();
+    }
+  });
+
 });
