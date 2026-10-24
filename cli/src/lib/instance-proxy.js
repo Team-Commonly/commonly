@@ -31,6 +31,7 @@ export const startInstanceProxy = async ({ instanceUrl, socketPath }) => {
     }, (response) => {
       outgoing.writeHead(response.statusCode || 502, response.headers);
       response.pipe(outgoing);
+      response.on('error', () => outgoing.destroy());
       response.on('close', () => {
         if (!response.complete) outgoing.destroy();
       });
