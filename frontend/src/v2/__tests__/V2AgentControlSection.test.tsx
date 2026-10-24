@@ -87,6 +87,36 @@ it('refreshes the header after a key change and drops the old connected state', 
   expect(screen.queryByText('Connected')).toBeNull();
 });
 
+it('keeps Control steady while a key-change refresh is pending', async () => {
+  let resolveRefresh: ((value: unknown) => void) | undefined;
+  let rosterReads = 0;
+  api.get.mockImplementation((url: string) => {
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'owned-pod' } });
+    if (url === '/api/registry/pods/owned-pod/agents') {
+      rosterReads += 1;
+      if (rosterReads === 2) return new Promise((resolve) => { resolveRefresh = resolve; });
+      return Promise.resolve({ data: { agents: [{
+        name: 'local', instanceId: 'default', runtime: { runtimeType: 'wrapper' },
+        connection: { state: 'connected', lastSeenAt: new Date().toISOString() },
+      }] } });
+    }
+    return Promise.reject(new Error('Unexpected request'));
+  });
+  const renderLoader = (refreshNonce: number) => <MemoryRouter><AgentControlLoader
+    agentName="local" instanceId="default" refreshNonce={refreshNonce} /></MemoryRouter>;
+  const view = render(renderLoader(0));
+  expect(await screen.findByRole('link', { name: 'Regenerate key' })).toBeInTheDocument();
+  view.rerender(renderLoader(1));
+  await waitFor(() => expect(rosterReads).toBe(2));
+  expect(screen.getByRole('link', { name: 'Regenerate key' })).toBeInTheDocument();
+  expect(screen.queryByText('Checking connection…')).toBeNull();
+  resolveRefresh?.({ data: { agents: [{
+    name: 'local', instanceId: 'default', runtime: { runtimeType: 'wrapper' },
+    connection: { state: 'revoked', lastSeenAt: null },
+  }] } });
+  expect(await screen.findByRole('link', { name: 'Reconnect' })).toBeInTheDocument();
+});
+
 it('uses unavailable only when the roster has no connection signal', async () => {
   api.get.mockImplementation((url: string) => {
     if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'owned-pod' } });

@@ -50,10 +50,13 @@ export const AgentControlLoader: React.FC<{
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
-    let active = true;
-    let requestId = 0;
     setStatus(null);
     setUnavailable(false);
+  }, [agentName, instanceId]);
+
+  useEffect(() => {
+    let active = true;
+    let requestId = 0;
     const load = async () => {
       const currentRequest = ++requestId;
       try {
