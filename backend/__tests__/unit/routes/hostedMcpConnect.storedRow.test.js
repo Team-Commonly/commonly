@@ -88,6 +88,11 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
   Integration = require('../../../models/Integration').default;
+  // The stale-write fence relies on this unique index rejecting a second
+  // (integrationId, kind) row. Model loading starts index creation asynchronously;
+  // await it before racing real secret upserts, or CI can observe duplicate rows
+  // and reach the later state/lease fence instead of ConnectorSecretStaleWrite.
+  await require('../../../models/ConnectorSecret').init();
   app = express();
   app.use('/connect/hosted-mcp', require('../../../routes/hostedMcpConnect'));
 });
