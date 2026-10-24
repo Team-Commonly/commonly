@@ -318,6 +318,8 @@ class KernelWorkSweepService {
               _id: '$_id',
               taskId: '$taskId',
               title: '$title',
+              priority: { $ifNull: ['$priority', 'P2'] },
+              taskNum: '$taskNum',
               lapsedFrom: '$lapsedFrom',
               updatedAt: '$updatedAt',
             },

@@ -1,6 +1,8 @@
 // eslint-disable-next-line global-require
 const Summary = require('../models/Summary');
 // eslint-disable-next-line global-require
+const Task = require('../models/Task');
+// eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -186,10 +188,29 @@ export class DailyDigestService {
       const publicPods = recap
         ? await Pod.find({ members: userId, publicRead: true }).select('_id').lean() as Array<{ _id: unknown }>
         : [];
-      const lines = DailyDigestService.recapLines(recap, {
+      const memberPods = recap
+        ? await Pod.find({ members: userId }).select('_id name').lean() as Array<{ _id: unknown; name?: string }>
+        : [];
+      const followed = recap ? await Task.find({
+        podId: { $in: memberPods.map((pod) => pod._id) },
+        watchers: userId,
+        updatedAt: { $gte: startTime, $lte: endTime },
+      }).sort({ priority: 1, taskNum: 1 }).limit(MAX_BOARD)
+        .select('taskId title status podId').lean() as Array<Record<string, unknown>> : [];
+      const lines = DailyDigestService.recapLines(recap && {
+        ...recap,
+        board: (recap.board || []).filter((row) => !followed.some((task) => (
+          task.taskId === row.taskId && String(task.podId) === String(row.podId)
+        ))),
+      }, {
         publicPodIds: new Set(publicPods.map((pod) => String(pod._id))),
         agentIdentities: await DailyDigestService.agentIdentities(recap),
       });
+      for (const task of followed) {
+        const podName = memberPods.find((pod) => String(pod._id) === String(task.podId))?.name;
+        // One current row per followed task coalesces edits in this window.
+        lines.push(`Following ${oneLine(task.taskId)}: ${oneLine(task.title)} (${oneLine(task.status)}) in ${oneLine(podName)}`);
+      }
       const podCount = recap?.pods?.length || 0;
 
       if (lines.length === 0) {

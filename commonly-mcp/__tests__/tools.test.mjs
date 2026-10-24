@@ -31,7 +31,8 @@ describe('tool registry shape', () => {
     //   from outside has a model of the place before it acts.
     // + 2 attention-claim tools (ADR-018: claim-or-renew, release).
     // + 1 agent-originated decision request (TASK-095 rev 2).
-    expect(tools).toHaveLength(29);
+    // + 1 self-follow task digest subscription (TASK-443).
+    expect(tools).toHaveLength(30);
   });
 
   it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {
@@ -303,6 +304,17 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
       title: 'do the thing', assignee: 'nova', dep: 'TASK-000',
       parentTask: undefined, source: undefined, sourceRef: undefined,
     });
+  });
+
+  it('passes priority and self-follow fields to the task API', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    await byName.commonly_create_task.call({ podId: 'POD', title: 'Urgent', priority: 'P0' });
+    await byName.commonly_update_task.call({ podId: 'POD', taskId: 'TASK-1', text: 'Reprioritize', priority: 'P1' });
+    await byName.commonly_watch_task.call({ podId: 'POD', taskId: 'TASK-1', following: true });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).priority).toBe('P0');
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body).priority).toBe('P1');
+    expect(fetchSpy.mock.calls[2][0]).toBe('https://x.example/api/v1/tasks/POD/TASK-1/watch');
+    expect(JSON.parse(fetchSpy.mock.calls[2][1].body)).toEqual({ following: true });
   });
 
   it('claim_task hits /:podId/:taskId/claim', async () => {
