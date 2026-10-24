@@ -114,6 +114,15 @@ describe('task title and assignee normalization on write (TASK-354)', () => {
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
+    test('a replay looks up a row stored under the raw multiline title too', async () => {
+      const Task = require('../../../models/Task');
+      await request(app)
+        .post(`/api/v1/tasks/${POD}`)
+        .send({ title: 'Fix\nboard', sourceRef: 'msg:1' });
+      const filter = Task.findOne.mock.calls[0][0];
+      expect(filter.title).toEqual({ $in: ['Fix board', 'Fix\nboard'] });
+    });
+
     test('a blank assignee stores as unassigned', async () => {
       const res = await request(app)
         .post(`/api/v1/tasks/${POD}`)
@@ -130,6 +139,14 @@ describe('task title and assignee normalization on write (TASK-354)', () => {
         .send({ title: 'Renamed\nin two lines' });
       expect(res.status).toBe(200);
       expect(mockFindOneAndUpdate.mock.calls[0][1].$set.title).toBe('Renamed in two lines');
+    });
+
+    test('a non-string title is refused before the write, so null never reaches Mongo', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/tasks/${POD}/${TASK}`)
+        .send({ title: null });
+      expect(res.status).toBe(400);
+      expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
     });
 
     test('an assignee with an inner space is refused before the write', async () => {

@@ -320,7 +320,10 @@ router.post('/:podId', rateLimit({
       // the ask came from, the title says which ask it is. Keying on the ref
       // alone made a second ask from one source adopt the first ask's row and
       // discard the caller's title (TASK-063). Same pair = idempotent retry.
-      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef, title }) as { _id: unknown; title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updatedAt: Date; toObject: () => unknown } | null;
+      // Rows written before titles were collapsed hold the raw text (`Fix\nboard`);
+      // a replay of that input must still find them, or the pair index admits a twin.
+      const titleKeys = [...new Set([title, titleInput === undefined ? undefined : String(titleInput)])].filter((t) => t !== undefined);
+      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef, title: titleKeys.length > 1 ? { $in: titleKeys } : title }) as { _id: unknown; title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updatedAt: Date; toObject: () => unknown } | null;
       if (existing) {
         if (existing.status === 'done') {
           // `sourceRef` + `title` are an idempotency key (a unique partial
@@ -963,7 +966,8 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     if (typeof fieldUpdates.assignee === 'string' && fieldUpdates.assignee.trim() === '') {
       fieldUpdates.assignee = null;
     }
-    if (typeof fieldUpdates.title === 'string') {
+    if (fieldUpdates.title !== undefined) {
+      if (typeof fieldUpdates.title !== 'string') return res.status(400).json({ error: 'title must be a string' });
       fieldUpdates.title = toSingleLineTitle(fieldUpdates.title);
       if (!fieldUpdates.title) return res.status(400).json({ error: 'title is required' });
     }
