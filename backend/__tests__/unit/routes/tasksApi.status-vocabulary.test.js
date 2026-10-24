@@ -136,6 +136,7 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
     // `done` — every one completed through this route, which never told the
     // attention store. Only the PATCH gate did.
     const task = { _id: 'task-1', taskId: 'TASK-001', status: 'done', podId: POD_ID, updates: [] };
+    Task.findOne.mockReturnValue({ select: () => ({ lean: async () => ({ updatedAt: new Date(Date.now() - 1) }) }) });
     mockFindOneAndUpdate.mockResolvedValueOnce(task);
     const res = await request(app)
       .post(`/api/v1/tasks/${POD_ID}/TASK-001/complete`)
@@ -159,12 +160,14 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
   });
 
   test('non-status patches are unaffected by the gate', async () => {
+    Task.findOne.mockReturnValue({ select: () => ({ lean: async () => ({ updatedAt: new Date(Date.now() - 1) }) }) });
     const res = await request(app)
       .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
       .send({ title: 'renamed' });
 
     expect(res.status).toBe(200);
     expect(mockFindOneAndUpdate.mock.calls[0][1].$set.title).toBe('renamed');
+    expect(mockFindOneAndUpdate.mock.calls[0][2]).toEqual({ new: true, timestamps: false });
   });
 
   test('passes the prior assignee to board wake routing when unassigning', async () => {

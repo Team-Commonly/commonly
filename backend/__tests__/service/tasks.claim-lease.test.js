@@ -385,6 +385,13 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
 
   test('PATCH unassignment offers the exact stored revision before the work sweep', async () => {
     await seedTask({ assignee: 'claim-audit-agent' });
+    // Force the same monotonic retry the PATCH takes when a competing writer
+    // has committed after this request chose its timestamp.
+    await Task.updateOne(
+      { podId: pod._id, taskId: 'T-1' },
+      { $set: { updatedAt: new Date(Date.now() + 1000) } },
+      { timestamps: false },
+    );
     notifyPodAgents.mockClear();
     const res = await request(app)
       .patch(`/api/v1/tasks/${pod._id}/T-1`)
@@ -403,5 +410,35 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
 
     const sweep = await require('../../services/kernelWorkSweepService').wakeForFoundWork(new Date());
     expect(sweep.scannedPods).toBe(0);
+
+    const note = await request(app)
+      .post(`/api/v1/tasks/${pod._id}/T-1/updates`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ text: 'Still available for pickup' });
+    expect(note.status).toBe(200);
+    const afterNote = await Task.findById(stored._id);
+    expect(afterNote.updatedAt.getTime()).toBeGreaterThan(offered.offeredAt.getTime());
+    const dueSweep = await require('../../services/kernelWorkSweepService').wakeForFoundWork(new Date());
+    expect(dueSweep.scannedPods).toBe(1);
+
+    const title = await request(app)
+      .patch(`/api/v1/tasks/${pod._id}/T-1`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: 'Still open' });
+    expect(title.status).toBe(200);
+    const afterTitle = await Task.findById(stored._id);
+    expect(afterTitle.updatedAt.getTime()).toBeGreaterThan(afterNote.updatedAt.getTime());
+
+    const claimed = await claim(ownerToken);
+    expect(claimed.status).toBe(200);
+    expect(new Date(claimed.body.task.updatedAt).getTime()).toBeGreaterThan(afterTitle.updatedAt.getTime());
+
+    const completed = await request(app)
+      .post(`/api/v1/tasks/${pod._id}/T-1/complete`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({});
+    expect(completed.status).toBe(200);
+    expect(new Date(completed.body.task.updatedAt).getTime())
+      .toBeGreaterThan(new Date(claimed.body.task.updatedAt).getTime());
   });
 });

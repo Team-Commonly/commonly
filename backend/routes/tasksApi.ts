@@ -96,6 +96,35 @@ function auth(req: AuthReq, res: Res, next: () => void) {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
+// A pending unassigned row is offered again only when updatedAt advances past
+// offeredAt. Mongoose's wall-clock timestamp can run behind a revision bumped
+// by a concurrent PATCH, so task writes in this route reserve the next value
+// against the stored revision instead of letting a later write move it back.
+const updateTaskWithRevision = async (
+  filter: Record<string, unknown>,
+  update: Record<string, unknown>,
+) => {
+  const key = { podId: filter.podId, taskId: filter.taskId };
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const current = await Task.findOne(key).select('updatedAt').lean();
+    if (!current) return null;
+    const writeTime = new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1));
+    // eslint-disable-next-line no-await-in-loop
+    const task = await Task.findOneAndUpdate(
+      { ...filter, updatedAt: current.updatedAt },
+      { ...update, $set: { ...(update.$set as Record<string, unknown> || {}), updatedAt: writeTime } },
+      { new: true, timestamps: false },
+    );
+    if (task) return task;
+    // Distinguish a lost revision race from a failed status/lease predicate.
+    // eslint-disable-next-line no-await-in-loop
+    const latest = await Task.findOne(key).select('updatedAt').lean();
+    if (!latest || latest.updatedAt.getTime() === current.updatedAt.getTime()) return null;
+  }
+  return null;
+};
+
 const taskWriteRateLimitKey = (req: Request): string => {
   const authHeader = req.get('Authorization') || req.get('x-auth-token');
   if (authHeader) {
@@ -268,7 +297,7 @@ router.post('/:podId', rateLimit({
       // the ask came from, the title says which ask it is. Keying on the ref
       // alone made a second ask from one source adopt the first ask's row and
       // discard the caller's title (TASK-063). Same pair = idempotent retry.
-      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef, title }) as { title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updates: Array<{ text: string; author: string; authorId: string | null; createdAt: Date }>; save: () => Promise<void>; toObject: () => unknown } | null;
+      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef, title }) as { _id: unknown; title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updatedAt: Date; toObject: () => unknown } | null;
       if (existing) {
         if (existing.status === 'done') {
           // `sourceRef` + `title` are an idempotency key (a unique partial
@@ -286,27 +315,29 @@ router.post('/:podId', rateLimit({
           // and report the mismatch, which put a completed row back to pending
           // under a title its caller never chose (TASK-063).
           const previousNotes = (existing.notes || '').trim();
-          if (previousNotes) {
-            existing.updates.push({
-              text: `Previous notes preserved from the completed run:\n${previousNotes}`,
-              author: 'system',
-              authorId: null,
-              createdAt: new Date(),
-            });
-          }
-          existing.status = 'pending';
-          existing.assignee = assignee || undefined;
-          existing.claimedAt = null;
-          existing.claimExpiresAt = null;
-          existing.notes = 'Reopened — the same source is active again.';
-          existing.updates.push({
+          const history = previousNotes ? [{
+            text: `Previous notes preserved from the completed run:\n${previousNotes}`,
+            author: 'system', authorId: null, createdAt: new Date(),
+          }] : [];
+          history.push({
             text: 'Reopened: task was done but its source is active again — picking up again.',
-            author: 'system',
-            authorId: null,
-            createdAt: new Date(),
+            author: 'system', authorId: null, createdAt: new Date(),
           });
-          await existing.save();
-          const reopenedObj = existing.toObject();
+          const writeTime = new Date(Math.max(Date.now(), existing.updatedAt.getTime() + 1));
+          const reopened = await Task.findOneAndUpdate(
+            { _id: existing._id, status: 'done', updatedAt: existing.updatedAt },
+            {
+              $set: {
+                status: 'pending', assignee: assignee || null, claimedAt: null,
+                claimExpiresAt: null, notes: 'Reopened — the same source is active again.',
+                updatedAt: writeTime,
+              },
+              $push: { updates: { $each: history } },
+            },
+            { new: true, timestamps: false },
+          );
+          if (!reopened) return res.status(409).json({ error: 'Task changed concurrently; retry' });
+          const reopenedObj = reopened.toObject();
           emitTaskUpdated(podId, reopenedObj, 'updated');
           notifyAgents(req, podId, reopenedObj, 'updated');
           // `alreadyExists: true`, because it does: this request did not create
@@ -589,7 +620,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     // this named task is blocked. Legacy claims get their effective expiry
     // derived from claimedAt, so no migration and no instant steal of work
     // someone claimed minutes ago.
-    const task = await Task.findOneAndUpdate({
+    const task = await updateTaskWithRevision({
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
       // A blocked row is deliberately resumable only when a seat names its
@@ -597,7 +628,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
       // drives the discovery query, where a parked dependency is not work a
       // peer may pick up speculatively.
       $or: [...claimableConditions(now, claimedBy), { status: 'blocked' }],
-    }, update, { new: true });
+    }, update);
     if (!task) {
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { claimedBy?: string; status?: string; claimExpiresAt?: Date | null } | null;
       if (!existing) return res.status(404).json({ error: 'Task not found' });
@@ -644,12 +675,12 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     const updateText = prUrl ? `Completed by ${author} · PR: ${prUrl}` : `Completed by ${author}`;
     const now = new Date();
     const update = { $set: { status: 'done', completedAt: now, ...(prUrl && { prUrl }), ...(notes && { notes }) }, $push: { updates: { text: updateText, author, authorId: userId?.toString() || null, createdAt: now } } };
-    const task = await Task.findOneAndUpdate({
+    const task = await updateTaskWithRevision({
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
       status: { $in: ['claimed', 'pending'] },
       ...writableLeaseCondition(req, userId, now),
-    }, update, { new: true }) as { taskId?: string; updates?: unknown[] } | null;
+    }, update) as { taskId?: string; updates?: unknown[] } | null;
     if (!task) {
       const racedRefusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
       if (racedRefusal) return res.status(409).json(racedRefusal);
@@ -724,7 +755,7 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     // fallback. The note lands either way; only the lease extension is gated.
     const claimKey = resolveAgentInstanceId(req) || userId?.toString() || '';
     let task = claimKey
-      ? await Task.findOneAndUpdate(
+      ? await updateTaskWithRevision(
         { podId: podFilter, taskId, status: 'claimed', claimedBy: claimKey },
         // `rescueDeferrals: 0` alongside the lease. Found by @sprint-review
         // (pod 56544) after #1082 shipped: the note-renewal wrote only
@@ -742,7 +773,6 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
         // 04:35:54 moved claimExpiresAt to 05:05:54 with rescueDeferrals stuck
         // at 1.
         { $set: { claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS), rescueDeferrals: 0 }, $push: note },
-        { new: true },
       )
       : null;
     let leaseRenewed = Boolean(task);
@@ -828,7 +858,7 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     ].filter((v): v is string => typeof v === 'string' && v.length > 0);
 
     if (!task && identities.length) {
-      task = await Task.findOneAndUpdate(
+      task = await updateTaskWithRevision(
         { podId: podFilter, taskId, status: 'pending', lapsedFrom: { $in: identities } },
         {
           $set: {
@@ -841,15 +871,19 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
           },
           $push: note,
         },
-        { new: true },
       );
       leaseRenewed = Boolean(task);
     }
 
     if (!task) {
-      task = await Task.findOneAndUpdate({ podId: podFilter, taskId }, { $push: note }, { new: true });
+      task = await updateTaskWithRevision({ podId: podFilter, taskId }, { $push: note });
     }
-    if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (!task) {
+      const existing = await Task.findOne({ podId: podFilter, taskId }).select('_id').lean();
+      return existing
+        ? res.status(409).json({ error: 'Task changed concurrently; retry' })
+        : res.status(404).json({ error: 'Task not found' });
+    }
     await recordTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
     notifyAgents(req, podId, task, 'updated');
@@ -948,11 +982,15 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     // increasing if a second writer commits while this request waits for Mongo.
     for (let attempt = 0; attempt < 4; attempt += 1) {
       // eslint-disable-next-line no-await-in-loop
-      task = await Task.findOneAndUpdate(
-        { ...taskFilter, ...(writeTime ? { updatedAt: { $lt: writeTime } } : {}) },
-        update,
-        { new: !needsPriorOwner, ...(needsPriorOwner ? { timestamps: false } : {}) },
-      );
+      task = needsPriorOwner
+        // eslint-disable-next-line no-await-in-loop
+        ? await Task.findOneAndUpdate(
+          { ...taskFilter, updatedAt: { $lt: writeTime } },
+          update,
+          { new: false, timestamps: false },
+        )
+        // eslint-disable-next-line no-await-in-loop
+        : await updateTaskWithRevision(taskFilter, update);
       if (task || !needsPriorOwner) break;
       // eslint-disable-next-line no-await-in-loop
       const current = await Task.findOne({ podId: taskFilter.podId, taskId }).select('updatedAt').lean();
@@ -965,6 +1003,10 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
       const racedRefusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
       if (racedRefusal) return res.status(409).json(racedRefusal);
       if (racedRevision) return res.status(409).json({ error: 'Task changed concurrently; retry' });
+      if (!needsPriorOwner) {
+        const existing = await Task.findOne({ podId: taskFilter.podId, taskId }).select('_id').lean();
+        if (existing) return res.status(409).json({ error: 'Task changed concurrently; retry' });
+      }
       return res.status(404).json({ error: 'Task not found' });
     }
     // For ownership/status writes, the atomic update returns its pre-image.
