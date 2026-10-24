@@ -74,6 +74,21 @@ export const validateSeatBundle = async (options: {
     new SeatPushError('non_fast_forward', 409));
   if (oldOid !== ZERO_OID) await git(['merge-base', '--is-ancestor', oldOid, newOid], repo,
     new SeatPushError('non_fast_forward', 409));
+  // Inspect names without rename detection and with NUL separators: a rename,
+  // deletion or newline in a filename must not hide an automation-policy edit.
+  const baseline = oldOid === ZERO_OID ? baseOid : oldOid;
+  const changed = await git(['diff', '--name-only', '-z', '--no-renames', baseline, newOid], repo);
+  // Also refuse an edit reverted later in the same bundle, including merge
+  // resolutions. Every newly introduced commit is part of the pushed history.
+  const history = await git(['log', '--format=', '--name-only', '-z', '--no-renames',
+    '--diff-merges=first-parent', `${baseline}..${newOid}`], repo);
+  if (`${changed}\0${history}`.split('\0').some((name) => {
+    const file = name.replace(/^\n+/, '');
+    return /^\.github(?:\/(?:workflows|actions)(?:\/|$)|$)/i.test(file)
+      || /(?:^|\/)CODEOWNERS$/i.test(file);
+  })) {
+    throw new SeatPushError('push_protected_path', 403);
+  }
 };
 
 /** Provider CAS is independent of client push flags or advertised remote state. */

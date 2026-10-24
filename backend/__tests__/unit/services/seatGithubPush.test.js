@@ -1,7 +1,7 @@
 const { execFile } = require('child_process');
-const { mkdtemp, rm, writeFile } = require('fs/promises');
+const { mkdtemp, mkdir, rename, rm, writeFile } = require('fs/promises');
 const { tmpdir } = require('os');
-const { join } = require('path');
+const { dirname, join } = require('path');
 const { promisify } = require('util');
 const { parseSeatPushArgs, fetchProviderObjects, pushWithLease, validateSeatBundle } = require('../../../services/seatGithubPush');
 
@@ -125,5 +125,56 @@ describe('seat GitHub push proof', () => {
     }
     expect(() => parseSeatPushArgs({ ...args, repository: 'other/repo' }, 'agent123'))
       .toThrow('push_args_invalid');
+  });
+
+  it.each([
+    ['.github/workflows/seat.yml', false],
+    ['.github/actions/seat/action.yml', true],
+    ['CODEOWNERS', false],
+    ['.github/CODEOWNERS', true],
+    ['docs/CODEOWNERS', false],
+  ])('refuses protected path %s before a provider ref update (fresh=%s)', async (file, fresh) => {
+    await mkdir(dirname(join(source, file)), { recursive: true });
+    await writeFile(join(source, file), 'unapproved policy\n');
+    await git(['add', '.'], source);
+    await git(['commit', '-m', 'policy change'], source);
+    const tip = await git(['rev-parse', 'HEAD'], source);
+    await git(['bundle', 'create', bundlePath, 'HEAD', `^${baseOid}`], source);
+    const ref = 'refs/heads/seat/agent123/work';
+    if (!fresh) await git(['update-ref', ref, oldOid], receiver);
+    const providerGit = jest.fn((args, cwd, failure) => git(args, cwd, failure));
+    await expect((async () => {
+      await validateSeatBundle({ git, repo: receiver, bundlePath, baseOid,
+        oldOid: fresh ? '0'.repeat(40) : oldOid, newOid: tip });
+      await pushWithLease({ git: providerGit, repo: receiver, url: receiver, ref,
+        oldOid: fresh ? '0'.repeat(40) : oldOid, newOid: tip });
+    })()).rejects.toMatchObject({ code: 'push_protected_path', statusCode: 403 });
+    expect(providerGit).not.toHaveBeenCalled();
+    expect(await git(['for-each-ref', '--format=%(objectname)', ref], receiver))
+      .toBe(fresh ? '' : oldOid);
+  });
+
+  it.each(['rename', 'delete', 'revert'])('refuses a protected path %s even when the final name is harmless', async (operation) => {
+    const file = join(source, '.github/workflows/seat.yml');
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, 'workflow\n');
+    await git(['add', '.'], source);
+    await git(['commit', '-m', 'workflow baseline'], source);
+    const policyBase = await git(['rev-parse', 'HEAD'], source);
+    await git(['fetch', source, policyBase], receiver);
+    if (operation === 'rename') await rename(file, join(source, 'ordinary.yml'));
+    else if (operation === 'delete') await rm(file);
+    else await writeFile(file, 'changed workflow\n');
+    await git(['add', '-A'], source);
+    await git(['commit', '-m', operation], source);
+    if (operation === 'revert') {
+      await writeFile(file, 'workflow\n');
+      await git(['commit', '-am', 'restore workflow'], source);
+    }
+    const tip = await git(['rev-parse', 'HEAD'], source);
+    await git(['bundle', 'create', bundlePath, 'HEAD', `^${policyBase}`], source);
+    await expect(validateSeatBundle({ git, repo: receiver, bundlePath,
+      baseOid: policyBase, oldOid: policyBase, newOid: tip }))
+      .rejects.toMatchObject({ code: 'push_protected_path', statusCode: 403 });
   });
 });
