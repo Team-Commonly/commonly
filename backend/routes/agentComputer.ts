@@ -52,11 +52,21 @@ const run = (action: (userId: string, installationId: string, req: express.Reque
       res.set('Cache-Control', 'no-store');
       return res.json(result ?? { ok: true });
     } catch (error) {
-      const message = (error as Error).message;
-      const code = message.startsWith('Stale computer frame') ? 'stale_frame'
-        : message.startsWith('No human takeover') ? 'takeover_not_active'
-          : message.startsWith('Pending write') ? 'pending_write_unavailable' : 'computer_unavailable';
-      return res.status(409).json({ code, error: message });
+      const message = error instanceof Error ? error.message : '';
+      if (message === 'Stale computer frame. Refresh before acting.') {
+        return res.status(409).json({ code: 'stale_frame', error: 'Stale computer frame. Refresh before acting.' });
+      }
+      if (message === 'No human takeover is active.') {
+        return res.status(409).json({ code: 'takeover_not_active', error: 'No human takeover is active.' });
+      }
+      if (message === 'Pending write is unavailable.') {
+        return res.status(409).json({
+          code: 'pending_write_unavailable', error: 'Pending write is unavailable.',
+        });
+      }
+      return res.status(409).json({
+        code: 'computer_unavailable', error: 'Agent computer is unavailable.',
+      });
     }
   }
 );

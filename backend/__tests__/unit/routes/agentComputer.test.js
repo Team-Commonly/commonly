@@ -91,6 +91,34 @@ describe('owner-only agent computer takeover route', () => {
     expect(response.body.code).toBe('stale_frame');
   });
 
+  test('a computer connection failure never exposes its endpoint or diagnostic log', async () => {
+    const endpoint = 'ws://127.0.0.1:9223/PRIVATE-CDP-ENDPOINT-SENTINEL';
+    mockBroker.takeoverStatus.mockRejectedValueOnce(new Error(
+      `browserType.connectOverCDP: WebSocket error: ${endpoint}\nCall log:\n  - connecting to ${endpoint}`,
+    ));
+    const response = await request(app).get(`/api/agent-computer/${mockInstallation}/status`);
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({ code: 'computer_unavailable', error: 'Agent computer is unavailable.' });
+    expect(response.text).not.toContain(endpoint);
+
+    mockBroker.humanClick.mockRejectedValueOnce(new Error(`Stale computer frame. ${endpoint}`));
+    const prefixed = await request(app).post(`/api/agent-computer/${mockInstallation}/click`)
+      .send({ x: 10, y: 10, frameRevision: 'old' });
+    expect(prefixed.body).toEqual({ code: 'computer_unavailable', error: 'Agent computer is unavailable.' });
+    expect(prefixed.text).not.toContain(endpoint);
+  });
+
+  test('takeover and pending-write conflicts retain stable public codes', async () => {
+    mockBroker.humanScreenshot.mockRejectedValueOnce(new Error('No human takeover is active.'));
+    const takeover = await request(app).get(`/api/agent-computer/${mockInstallation}/frame`);
+    expect(takeover.body).toEqual({ code: 'takeover_not_active', error: 'No human takeover is active.' });
+
+    mockBroker.decideWrite.mockRejectedValueOnce(new Error('Pending write is unavailable.'));
+    const pending = await request(app).post(`/api/agent-computer/${mockInstallation}/decide-write`)
+      .send({ requestId: '11111111-1111-4111-8111-111111111111', approve: true });
+    expect(pending.body).toEqual({ code: 'pending_write_unavailable', error: 'Pending write is unavailable.' });
+  });
+
   test('the owner alone can decide an intercepted write without exposing its body', async () => {
     const requestId = '11111111-1111-4111-8111-111111111111';
     const response = await request(app).post(`/api/agent-computer/${mockInstallation}/decide-write`)
