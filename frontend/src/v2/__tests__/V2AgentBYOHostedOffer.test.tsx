@@ -115,3 +115,16 @@ test('an agent that connects before the deadline needs no hosted offer', async (
   axios.get.mockImplementation((url) => url === '/api/users/me/agent-connection' ? Promise.resolve({ data: { connected: true, connectedAgent: { agentName: 'sam-claude' }, lastUsedAt: new Date(Date.now() + 1).toISOString() } }) : get(url));
   await tick(4000); await screen.findByTestId('byo-listen-ok'); await tick(30000); expect(offer()).not.toBeInTheDocument();
 });
+test('double activation waits for one name lookup and one hosted provision', async () => {
+  await issue(); await tick(30000); const get = axios.get.getMockImplementation(); let resolveName;
+  axios.get.mockImplementation((url) => url.startsWith('/api/registry/agents/next-free-name?') ? new Promise(resolve => { resolveName = resolve; }) : get(url));
+  const button = offer(); fireEvent.click(button); fireEvent.click(button);
+  expect(button).toBeDisabled(); await act(async () => resolveName({ data: { name: 'sam-agent' } }));
+  await waitFor(() => expect(axios.post.mock.calls.filter(([url]) => url === '/api/hosted/provision')).toHaveLength(1));
+});
+test('name lookup failure never provisions or changes the issued command', async () => {
+  await issue(); await tick(30000); const get = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url) => url.startsWith('/api/registry/agents/next-free-name?') ? Promise.reject(new Error('Offline')) : get(url));
+  fireEvent.click(offer()); expect(await screen.findByRole('alert')).toHaveTextContent(/name/i);
+  expect(screen.getByText(/your connect command for/i)).toBeInTheDocument(); expect(offer()).toBeEnabled(); expect(axios.post.mock.calls.some(([url]) => url === '/api/hosted/provision')).toBe(false);
+});
