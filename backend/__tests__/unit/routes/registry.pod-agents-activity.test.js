@@ -153,6 +153,22 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
     expect(res.body.agents[0].connection).toEqual({ state: 'revoked', lastSeenAt: null });
   });
 
+  it('projects a running legacy CLI seat after its runtime label is normalized', async () => {
+    AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
+      agentName: 'local', config: new Map([['runtime', { runtimeType: 'local-cli', wrappedCli: 'codex' }]]),
+    })]);
+    User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      _id: 'bot-1', username: 'local-default', botMetadata: {}, agentRuntimeTokens: [],
+    }]) }) });
+    AgentCredential.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      kind: 'runtime', agentUserId: 'bot-1', status: 'active', lastUsedAt: new Date(),
+    }]) }) });
+    const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].runtime).toEqual(expect.objectContaining({ runtimeType: 'codex', host: 'byo' }));
+    expect(res.body.agents[0].connection.state).toBe('connected');
+  });
+
   it('projects a revoked credential despite stale embedded copies on User and installation', async () => {
     AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
       agentName: 'local', config: new Map([['runtime', { runtimeType: 'webhook' }]]),
@@ -204,6 +220,19 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
     expect(res.body.agents).toHaveLength(1);
     expect(res.body.agents[0].lastHeartbeatAt).toBeNull();
     expect(res.body.agents[0].lastActiveAt).toBe('2026-08-12T19:04:00.000Z');
+    expect(res.body.agents[0].connection).toEqual({ state: 'available', lastSeenAt: null });
+  });
+
+  it('shows a provisioned native-engine hosted seat as available without a runtime token', async () => {
+    AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
+      config: new Map([
+        ['runtime', { runtimeType: 'hosted' }],
+        ['hosted', { engine: 'native', provisionedAt: new Date() }],
+      ]),
+    })]);
+    const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].connection).toEqual({ state: 'available', lastSeenAt: null });
   });
 
   it('takes the max across heartbeat events and runtime-token use', async () => {

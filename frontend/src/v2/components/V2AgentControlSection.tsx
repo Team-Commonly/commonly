@@ -42,17 +42,20 @@ export default V2AgentControlSection;
 export const AgentControlLoader: React.FC<{
   agentName: string;
   instanceId: string;
-  onConnectionState?: (state: AgentConnection['state']) => void;
-}> = ({ agentName, instanceId, onConnectionState }) => {
+  refreshNonce?: number;
+  onConnectionState?: (state: AgentConnection['state'] | null) => void;
+}> = ({ agentName, instanceId, refreshNonce, onConnectionState }) => {
   const { t } = useTranslation();
   const [status, setStatus] = useState<(Props & { podId: string }) | null>(null);
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
     let active = true;
+    let requestId = 0;
     setStatus(null);
     setUnavailable(false);
     const load = async () => {
+      const currentRequest = ++requestId;
       try {
         const manageable = await axios.get<{ writablePodId?: string | null }>(
           `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`,
@@ -66,18 +69,24 @@ export const AgentControlLoader: React.FC<{
         const match = roster.data.agents?.find((row) => row.name === agentName
           && row.instanceId === instanceId && row.connection);
         if (!match?.connection) throw new Error('No connection status');
-        if (active) {
+        if (active && currentRequest === requestId) {
           setStatus({ agentName, instanceId, podId, runtimeType: match.runtime?.runtimeType,
             connection: match.connection });
+          setUnavailable(false);
           onConnectionState?.(match.connection.state);
         }
       } catch {
-        if (active) setUnavailable(true);
+        if (active && currentRequest === requestId) {
+          setStatus(null);
+          setUnavailable(true);
+          onConnectionState?.(null);
+        }
       }
     };
     void load();
-    return () => { active = false; };
-  }, [agentName, instanceId, onConnectionState]);
+    const interval = window.setInterval(() => { void load(); }, 30_000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [agentName, instanceId, refreshNonce, onConnectionState]);
 
   if (status) return <V2AgentControlSection {...status} />;
   return <section className="v2-agent-settings__section" data-testid="agent-control-section">
