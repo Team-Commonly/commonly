@@ -117,6 +117,30 @@ describe('admin global integrations route', () => {
     }
   });
 
+  it('redirects a failed X OAuth callback without exposing exception text', async () => {
+    const handler = getRouteHandler('/x/oauth/callback', 'get');
+    const res = { redirect: jest.fn() };
+    OAuthState.findOneAndUpdate.mockRejectedValue(new Error('access_token=secret-value'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await handler({ query: { state: 'state-1', code: 'code-1' } }, res);
+      expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('xOAuth=error&detail=oauth_callback_failed'));
+      expect(JSON.stringify(res.redirect.mock.calls)).not.toContain('secret-value');
+      expect(JSON.stringify(log.mock.calls)).not.toContain('secret-value');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('does not reflect provider error text into the X OAuth redirect', async () => {
+    const handler = getRouteHandler('/x/oauth/callback', 'get');
+    const res = { redirect: jest.fn() };
+    OAuthState.findOneAndUpdate.mockResolvedValue({ redirectPath: '/admin/integrations/global' });
+    await handler({ query: { state: 'state-1', error: 'access_denied', error_description: 'secret-value' } }, res);
+    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('xOAuth=error&detail=provider_denied'));
+    expect(JSON.stringify(res.redirect.mock.calls)).not.toContain('secret-value');
+  });
+
   it('tests X integration via registry.get(type, integration)', async () => {
     const handler = getRouteHandler('/x/test', 'post');
     const xIntegration = { _id: 'int-x', type: 'x', config: { accessToken: 'token' } };

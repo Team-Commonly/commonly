@@ -410,6 +410,9 @@ const buildAgentInstallationPayload = (installation: any, {
       .filter((key) => typeof environmentSettings[key] === 'string')
       .map((key) => [key, environmentSettings[key]]))
     : {};
+  if (typeof environmentSettings?.sandbox?.mode === 'string') {
+    editableEnvironment.sandbox = { mode: environmentSettings.sandbox.mode };
+  }
   // Chat attributes this seat through the User principal. Use that same
   // resolver for the listing; scoped names are only a fallback for installs
   // that have no User row yet.

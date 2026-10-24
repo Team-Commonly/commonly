@@ -6,7 +6,7 @@
  *
  * Access:
  *   - admin (role === 'admin') → any agent
- *   - owner (installed this agent: AgentInstallation.installedBy === viewer) → their agent
+ *   - owner (every retained installation belongs to the viewer) → their agent
  *   - everyone else → 403
  *
  * Returns snippets, never full raw content — "a fraction of memory". Internal
@@ -34,7 +34,10 @@ const Pod = require('../models/Pod');
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
-const { getLastAgentMemoryWrite, BOOKKEEPING_SECTIONS } = require('../services/agentMemoryService');
+const {
+  getLastAgentMemoryWrite, BOOKKEEPING_SECTIONS,
+  stampSectionsForWrite, decorateSectionsWithProvenance,
+} = require('../services/agentMemoryService');
 
 interface AuthReq {
   user?: { id?: string };
@@ -101,38 +104,112 @@ const memoryRateLimit = rateLimit({
 const router: ReturnType<typeof express.Router> = express.Router();
 router.use(memoryRateLimit);
 
+const EDITABLE_SECTIONS = ['soul', 'long_term', 'shared'] as const;
+const editableSection = (value: string): value is typeof EDITABLE_SECTIONS[number] => (
+  EDITABLE_SECTIONS.includes(value as typeof EDITABLE_SECTIONS[number])
+);
+
+const memoryOwnerAccess = async (req: AuthReq, res: Res) => {
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return null; }
+  const agentName = String(req.params?.agentName || '').trim().toLowerCase();
+  const instanceId = String(req.params?.instanceId || 'default').trim() || 'default';
+  if (!agentName) { res.status(404).json({ error: 'Not found' }); return null; }
+  const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
+  if (!isAdmin) {
+    // Memory is one envelope per identity, not per pod installation. A paused
+    // install must not grant access to another installer's active agent memory.
+    const installs = await AgentInstallation.find({
+      agentName, instanceId, status: { $ne: 'uninstalled' },
+    }).select('installedBy').lean();
+    const anotherOwner = installs.some((install: { installedBy?: unknown }) => String(install.installedBy) !== userId);
+    if (!installs.length || anotherOwner) {
+      res.status(403).json({ error: 'Forbidden' }); return null;
+    }
+  }
+  return { agentName, instanceId, role: isAdmin ? 'admin' : 'owner' } as const;
+};
+
+// Full text is limited to the owner's durable document sections. Runtime and
+// dedup bookkeeping stay out of the human editor even for an admin.
+router.get('/:agentName/:instanceId/editable', auth, async (req: AuthReq, res: Res) => {
+  try {
+    const access = await memoryOwnerAccess(req, res);
+    if (!access) return;
+    const { agentName, instanceId } = access;
+    const record = await AgentMemory.findOne({ agentName, instanceId })
+      .select('content sections.soul sections.long_term sections.shared').lean();
+    const sections = Object.fromEntries(EDITABLE_SECTIONS.map((key) => {
+      const section = record?.sections?.[key];
+      return [key, { content: section?.content || (key === 'long_term' ? record?.content || '' : ''),
+        updatedAt: section?.updatedAt || null,
+        visibility: section?.visibility || 'private' }];
+    }));
+    res.json({ sections });
+  } catch (error) {
+    console.error('[agent-memory] editor read failed:', (error as Error).message);
+    res.status(500).json({ error: 'Failed to load memory' });
+  }
+});
+
+router.patch('/:agentName/:instanceId/editable/:section', auth, async (req: AuthReq & { body?: any }, res: Res) => {
+  try {
+    const access = await memoryOwnerAccess(req, res);
+    if (!access) return;
+    const { agentName, instanceId } = access;
+    const identity = { agentName, instanceId };
+    const section = String((req.params as any).section || '');
+    if (!editableSection(section)) { res.status(404).json({ error: 'Section not found' }); return; }
+    const { content, expectedUpdatedAt } = req.body || {};
+    if (typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > 64 * 1024) {
+      res.status(400).json({ error: 'Memory content must be at most 64 KB' }); return;
+    }
+    if (expectedUpdatedAt !== null && (typeof expectedUpdatedAt !== 'string'
+      || Number.isNaN(new Date(expectedUpdatedAt).getTime()))) {
+      res.status(400).json({ error: 'Expected memory revision required' }); return;
+    }
+    const prior = await AgentMemory.findOne(identity).select('content sections').lean();
+    const before = prior?.sections?.[section] || (section === 'long_term' && prior?.content
+      ? { content: prior.content, visibility: 'private' } : null);
+    const priorRevision = before?.updatedAt ? new Date(before.updatedAt).toISOString() : null;
+    if (priorRevision !== expectedUpdatedAt) {
+      res.status(409).json({ error: 'Memory changed since you opened it' }); return;
+    }
+    const incoming = stampSectionsForWrite({ [section]: {
+      content, visibility: before?.visibility || 'private',
+    } });
+    const priorSections = before && !prior?.sections?.[section]
+      ? { ...(prior?.sections || {}), [section]: before } : prior?.sections;
+    const decorated = decorateSectionsWithProvenance(priorSections, incoming, { via: 'memory-owner' });
+    const revisionPath = `sections.${section}.updatedAt`;
+    const query = { ...identity, [revisionPath]: expectedUpdatedAt === null
+      ? { $exists: false } : new Date(expectedUpdatedAt) };
+    const update: Record<string, unknown> = {
+      [`sections.${section}`]: decorated[section], schemaVersion: 2,
+    };
+    if (section === 'long_term') update.content = content;
+    const saved = await AgentMemory.findOneAndUpdate(query, {
+      $set: update, $unset: { lastSyncKey: 1, lastSyncAt: 1 },
+    }, { new: true, upsert: expectedUpdatedAt === null, runValidators: true });
+    if (!saved) { res.status(409).json({ error: 'Memory changed since you opened it' }); return; }
+    const current = saved.sections?.[section];
+    res.json({ section, content: current?.content || '', updatedAt: current?.updatedAt || null,
+      visibility: current?.visibility || 'private' });
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) {
+      res.status(409).json({ error: 'Memory changed since you opened it' }); return;
+    }
+    console.error('[agent-memory] editor write failed:', (error as Error).message);
+    res.status(500).json({ error: 'Failed to save memory' });
+  }
+});
+
 // GET /api/agent-memory/:agentName/:instanceId? — owner/admin memory index.
 router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
   try {
-    const userId = getUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
-    const agentName = String(req.params?.agentName || '').trim().toLowerCase();
-    const instanceId = String(req.params?.instanceId || 'default').trim() || 'default';
-    if (!agentName) {
-      res.status(404).json({ error: 'Not found' });
-      return;
-    }
-
-    // Access gate: admin OR owner (installed this agent).
-    const viewer = await User.findById(userId).select('role').lean();
-    const isAdmin = viewer?.role === 'admin';
-    let role: 'admin' | 'owner' | null = isAdmin ? 'admin' : null;
-    if (!isAdmin) {
-      const owns = await AgentInstallation.findOne({
-        agentName,
-        instanceId,
-        installedBy: userId,
-        status: 'active',
-      }).select('_id').lean();
-      if (owns) role = 'owner';
-    }
-    if (!role) {
-      res.status(403).json({ error: 'Forbidden' });
-      return;
-    }
+    const access = await memoryOwnerAccess(req, res);
+    if (!access) return;
+    const { agentName, instanceId, role } = access;
 
     const agentUser = await User.findOne({
       isBot: true,
@@ -142,7 +219,7 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
 
     // ── Pods this agent is in — ALL pods (owner/admin view), each with last
     // activity + the agent's own last message there, sorted most-active first. ──
-    const installs = await AgentInstallation.find({ agentName, instanceId, status: 'active' })
+    const installs = await AgentInstallation.find({ agentName, instanceId, status: { $ne: 'uninstalled' } })
       .select('podId').lean();
     const podIds = Array.from(new Set((installs as Array<{ podId?: unknown }>)
       .map((i) => (i?.podId ? String(i.podId) : '')).filter(Boolean)));

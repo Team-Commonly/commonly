@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
+import { forgetInvite, forgetInviteOAuthStart } from '../v2/utils/pendingInvite';
 
 interface User {
   _id: string;
@@ -159,6 +160,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = (): void => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     localStorage.removeItem('token');
+    forgetInvite();
+    forgetInviteOAuthStart();
     setToken(null);
     setCurrentUser(null);
   };

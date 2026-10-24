@@ -340,8 +340,8 @@ router.post('/x/oauth/start', auth, adminAuth, async (req: any, res: any) => {
       state,
       expiresAt,
     });
-  } catch (error) {
-    console.error('Error starting X OAuth:', error);
+  } catch {
+    console.error('Error starting X OAuth');
     return res.status(500).json({ error: 'Failed to start X OAuth flow' });
   }
 });
@@ -367,7 +367,6 @@ router.get('/x/oauth/callback', xOauthCallbackLimit, async (req: any, res: any) 
       state,
       code,
       error: oauthError,
-      error_description: errorDescription,
     } = req.query || {};
 
     if (!state) {
@@ -394,7 +393,7 @@ router.get('/x/oauth/callback', xOauthCallbackLimit, async (req: any, res: any) 
     if (oauthError) {
       return res.redirect(buildFrontendRedirect(
         'error',
-        errorDescription || oauthError,
+        'provider_denied',
         oauthState.redirectPath,
       ));
     }
@@ -460,16 +459,9 @@ router.get('/x/oauth/callback', xOauthCallbackLimit, async (req: any, res: any) 
     });
 
     return res.redirect(buildFrontendRedirect('success', `connected_${me.username}`, oauthState.redirectPath));
-  } catch (error: unknown) {
-    const err = error as any;
-    const detail = err?.response?.data?.error_description
-      || err?.response?.data?.error
-      || err?.response?.data?.detail
-      || err?.response?.data?.title
-      || err?.message
-      || 'oauth_callback_failed';
-    console.error('Error handling X OAuth callback:', err?.response?.data || err);
-    return res.redirect(buildFrontendRedirect('error', detail));
+  } catch {
+    console.error('Error handling X OAuth callback');
+    return res.redirect(buildFrontendRedirect('error', 'oauth_callback_failed'));
   }
 });
 

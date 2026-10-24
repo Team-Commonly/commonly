@@ -210,8 +210,8 @@ router.get('/install-link/:podId', auth, async (req: AuthReq, res: Res) => {
     const baseUrl = 'https://discord.com/api/oauth2/authorize';
     const installUrl = `${baseUrl}?client_id=${clientId}&scope=bot%20applications.commands&permissions=536873984&state=pod_${podId}`;
     res.json({ installUrl, podId, status: 'ready' });
-  } catch (error) {
-    console.error('Error generating installation link:', error);
+  } catch {
+    console.error('Error generating installation link');
     res.status(500).json({ error: 'Failed to generate installation link' });
   }
 });
@@ -317,17 +317,18 @@ const discordCallbackLimit = platformIpRateLimit({
 });
 
 router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => {
+  const frontend = String(process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
   try {
     const { code, state, guild_id: guildId } = req.query || {};
-    if (!code) return res.redirect(`${process.env.FRONTEND_URL}/discord/error?error=No authorization code received`);
+    if (!code) return res.redirect(`${frontend}/discord/error?error=No authorization code received`);
     const podId = state?.replace('pod_', '');
-    if (!podId) return res.redirect(`${process.env.FRONTEND_URL}/discord/error?error=Invalid state parameter`);
+    if (!podId) return res.redirect(`${frontend}/discord/error?error=Invalid state parameter`);
     // Unauthenticated route, so `guild_id` here is request-tainted input on a URL
     // built with the instance bot token. Refused before the code exchange: a
     // malformed id must not reach Discord at all, and the same value is forwarded
     // to the page, which posts it back to the integration write.
     if (isSupplied(guildId) && !isDiscordSnowflake(guildId)) {
-      return res.redirect(`${process.env.FRONTEND_URL}/discord/error?error=Invalid guild id`);
+      return res.redirect(`${frontend}/discord/error?error=Invalid guild id`);
     }
     await axios.post('https://discord.com/api/oauth2/token', { client_id: process.env.DISCORD_CLIENT_ID, client_secret: process.env.DISCORD_CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/discord/callback` }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
     let serverName = 'Unknown Server';
@@ -335,21 +336,21 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
       try {
         const guildResponse = await axios.get(`https://discord.com/api/guilds/${guildId}`, { headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` } });
         serverName = (guildResponse.data as { name?: string }).name || serverName;
-      } catch (error) {
-        console.log('Could not fetch guild info:', (error as { response?: { data?: unknown } }).response?.data);
+      } catch {
+        // Discord may echo request credentials in its error body. A failed
+        // post-exchange lookup is a failed callback, not a completed install.
+        console.error('Discord OAuth guild lookup failed');
+        return res.redirect(`${frontend}/discord/error?error=OAuth%20authorization%20failed`);
       }
     }
-    const successUrl = new URL(`${process.env.FRONTEND_URL}/discord/success`);
+    const successUrl = new URL(`${frontend}/discord/success`);
     successUrl.searchParams.append('pod_id', podId);
     successUrl.searchParams.append('guild_id', guildId || '');
     successUrl.searchParams.append('server_name', serverName);
     res.redirect(successUrl.toString());
-  } catch (error) {
-    const e = error as { response?: { data?: unknown }; message?: string };
-    console.error('Discord OAuth callback error:', e.response?.data || e.message);
-    const errorUrl = new URL(`${process.env.FRONTEND_URL}/discord/error`);
-    errorUrl.searchParams.append('error', 'OAuth authorization failed');
-    res.redirect(errorUrl.toString());
+  } catch {
+    console.error('Discord OAuth callback error');
+    res.redirect(`${frontend}/discord/error?error=OAuth%20authorization%20failed`);
   }
 });
 

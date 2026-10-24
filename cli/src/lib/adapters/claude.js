@@ -278,8 +278,13 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns) => {
 // total is capped well under it.
 const PUBLIC_SKILL_PROMPT_MAX_BYTES = 96 * 1024;
 const publicSkillPromptArgs = async (skillSources) => {
-  const text = await skillsAsText(skillSources, { maxBytes: PUBLIC_SKILL_PROMPT_MAX_BYTES, label: 'claude' });
-  return text ? ['--append-system-prompt', text] : [];
+  const included = [];
+  const text = await skillsAsText(skillSources, {
+    maxBytes: PUBLIC_SKILL_PROMPT_MAX_BYTES,
+    label: 'claude',
+    onIncluded: (source) => included.push(source),
+  });
+  return { args: text ? ['--append-system-prompt', text] : [], included };
 };
 
 const runClaude = ({ cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
@@ -806,16 +811,17 @@ export default {
     const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId, ...modelArgs];
 
     let mountedSkills = [];
+    let skillMount = { mounted: [], conflicted: [] };
     if (ctx.environment && ctx.cwd) {
       const skills = await mountSkills(ctx.environment, ctx.cwd);
       mountedSkills = skills.mounted;
+      skillMount = skills;
       if (skills.conflicted.length > 0) {
         for (const c of skills.conflicted) {
           // eslint-disable-next-line no-console
           console.warn(`[claude] skill not mounted (${c.reason}): ${c.path}`);
         }
       }
-      if (ctx.onSkillsLinked) ctx.onSkillsLinked(skills);
     }
 
     let mcpConfig = null;
@@ -834,7 +840,19 @@ export default {
       if (publicNativeSandbox) {
         publicClaudeState = await preparePublicClaudeState(ctx);
       }
-      if (publicTrust) publicSkillArgs = await publicSkillPromptArgs(mountedSkills);
+      if (publicTrust) {
+        const prompt = await publicSkillPromptArgs(mountedSkills);
+        publicSkillArgs = prompt.args;
+        skillMount = {
+          mounted: prompt.included,
+          conflicted: [
+            ...skillMount.conflicted,
+            ...mountedSkills.filter((source) => !prompt.included.includes(source))
+              .map((path) => ({ path, reason: 'not-inlined' })),
+          ],
+        };
+      }
+      if (ctx.environment && ctx.cwd) ctx.onSkillsLinked?.(skillMount);
       if (Array.isArray(ctx.environment?.mcp) && ctx.environment.mcp.length > 0) {
         mcpConfig = await createMcpConfig(ctx.environment.mcp, {
           runtimeToken: ctx.runtimeToken,

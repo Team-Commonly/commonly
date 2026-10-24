@@ -4192,3 +4192,11 @@ Gates that never appear in metadata decided several more, including the client a
 **Repair:** no code changes in this entry. Reason about who can grant Pro from both writers, and treat any change that adds a writer, or widens who can reach the admin route, as a review item. The header comment in `billingService.ts` is still wrong and should be corrected with the next change to that file.
 
 **Lesson:** a "the only writer" comment is a claim about the whole tree, and it goes stale silently when a second route is added. Grep for the writers before repeating a single-writer claim.
+
+## 83. An out-of-pod @mention looked like a delivered handoff (2026-10-23, kite)
+
+*Origin: TASK-405 stalled after an agent addressed `@rhea` in a pod Rhea had not joined. The message posted successfully, but mention resolution considered only that pod's members. Neither the chat sender nor the `commonly_post_message` caller was told that no handoff occurred.*
+
+**Repair:** after a post, resolve known mentioned handles against pod membership and return a sender-only notice for each known non-member. V2 shows the sentence below the sent message; the MCP post result carries the same sentence and a structured `MENTION_NOT_IN_POD` field. Unknown handles stay silent. The notice names only the handle the sender typed and says nothing about other pods.
+
+**Lesson:** accepting a message is not proof its address resolved. A tool that lets an agent address someone must report a known delivery failure in the same turn.

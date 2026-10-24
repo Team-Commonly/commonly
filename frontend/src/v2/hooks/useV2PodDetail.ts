@@ -61,6 +61,9 @@ export interface V2Message {
     // Wake-on-message targets (#914). Optional: older backends omit it.
     woken?: number;
   };
+  // Sender-only feedback from the POST response. Socket broadcasts and
+  // history omit it, so other pod members never see the notice.
+  mentionNotices?: Array<{ code: 'MENTION_NOT_IN_POD'; handle: string; message: string }>;
   // Sprint B5: per-message reactions, aggregated server-side.
   // Each entry is `{emoji, count, mine, users?}` — `users` is the
   // Google-Chat-style attribution list decorated by
@@ -759,6 +762,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
                 // the POST copy's — or the sender's own in-thread reply
                 // renders top-level until refresh (Sam, 2026-08-24).
                 thread_root_id: m.thread_root_id ?? normalized.thread_root_id ?? null,
+                mentionNotices: normalized.mentionNotices ?? m.mentionNotices,
               }
               : m
           ));

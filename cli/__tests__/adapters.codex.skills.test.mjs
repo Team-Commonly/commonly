@@ -88,7 +88,8 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
 
   test('the skill body is in the public home\'s AGENTS.md before codex starts, without frontmatter', async () => {
     const { impl, calls } = makeSpawnImpl();
-    await spawnSeat(impl, { sandbox: { trust: 'public' }, skills: { claude: [skillSrc] } });
+    const onSkillsLinked = jest.fn();
+    await spawnSeat(impl, { sandbox: { trust: 'public' }, skills: { claude: [skillSrc] } }, { onSkillsLinked });
 
     expect(calls).toHaveLength(1);
     expect(calls[0].opts.env.CODEX_HOME).toBe(publicHome);
@@ -97,6 +98,7 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
     expect(seen).toContain('# Being a good Commonly member\n\nOrient before you post.');
     expect(seen).not.toContain('description: How to behave');
     expect(seen).not.toContain('private instructions');
+    expect(onSkillsLinked).toHaveBeenCalledWith({ mounted: [skillSrc], conflicted: [] });
   });
 
   test('the file is private to the operator', async () => {
@@ -130,11 +132,13 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
     await rm(join(skillSrc, 'SKILL.md'));
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const { impl, calls } = makeSpawnImpl();
-    await spawnSeat(impl, { sandbox: { trust: 'public' }, skills: { claude: [skillSrc] } });
+    const onSkillsLinked = jest.fn();
+    await spawnSeat(impl, { sandbox: { trust: 'public' }, skills: { claude: [skillSrc] } }, { onSkillsLinked });
 
     expect(calls).toHaveLength(1);
     expect(await calls[0].seen).toBeNull();
     expect(warn).toHaveBeenCalledWith(`[codex] public seat: no SKILL.md to inline at ${skillSrc}`);
+    expect(onSkillsLinked).toHaveBeenCalledWith({ mounted: [], conflicted: [{ path: skillSrc, reason: 'not-inlined' }] });
     warn.mockRestore();
   });
 

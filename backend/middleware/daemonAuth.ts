@@ -4,6 +4,7 @@
 // (Vera's scope ruling on #1312/S1). Sets req.machine only.
 import { Request, Response, NextFunction } from 'express';
 import AgentCredential from '../models/AgentCredential';
+import { machineHasLiveAuthorization } from '../services/machineService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
@@ -43,6 +44,10 @@ export default function daemonAuth(requiredScope?: string) {
       if (credential.expiresAt && credential.expiresAt < new Date()) {
         return res.status(401).json({ message: 'Daemon token expired' });
       }
+      const authorized = await machineHasLiveAuthorization(
+        String(credential.machineId || ''), credential.ownerUserId,
+      );
+      if (!authorized) return res.status(401).json({ message: 'Machine access revoked' });
       if (requiredScope && !(credential.scopes || []).includes(requiredScope)) {
         return res.status(403).json({ message: `Daemon token lacks scope ${requiredScope}` });
       }
