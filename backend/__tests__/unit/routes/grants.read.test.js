@@ -23,8 +23,8 @@ jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
   req.agentUser = { _id: id };
   return next();
 });
-jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
-jest.mock('../../../models/Integration', () => ({ findById: jest.fn(), findOne: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({ findById: jest.fn(), find: jest.fn() }));
+jest.mock('../../../models/Integration', () => ({ findById: jest.fn(), findOne: jest.fn(), find: jest.fn() }));
 jest.mock('../../../models/ToolCall', () => ({
   listForGrant: jest.fn(),
   countsForGrant: jest.fn(),
@@ -120,8 +120,77 @@ beforeEach(async () => {
   Integration.findOne.mockImplementation(async ({ installationId }) => (installationId === 'conn-1'
     ? { _id: 'conn-1', type: 'github-app', status: 'connected', createdBy: OWNER }
     : null));
+  Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+    { _id: 'conn-1', installationId: 'conn-1', createdBy: OWNER },
+  ] }) }));
   ToolCall.listForGrant.mockResolvedValue([]);
   ToolCall.countsForGrant.mockResolvedValue({ total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 });
+});
+
+describe('GET /api/grants?connectionOwner=me', () => {
+  test('includes grants backed by both an external installation id and a hosted connection row id', async () => {
+    const hostedId = 'eeeeeeeeeeeeeeeeeeeeee01';
+    const githubGrant = await RoomGrant.create(grant());
+    const hostedGrant = await RoomGrant.create(grant({ connectionId: hostedId }));
+    Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+      { _id: 'ffffffffffffffffffffff01', installationId: 'conn-1', createdBy: OWNER },
+      { _id: hostedId, createdBy: OWNER },
+    ] }) }));
+    Pod.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+      { _id: POD, members: [OWNER, SEAT] },
+    ] }) }));
+
+    const res = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+    expect(res.status).toBe(200);
+    expect(res.body.grants.map((row) => row.grantId).sort()).toEqual([
+      githubGrant.grantId, hostedGrant.grantId,
+    ].sort());
+  });
+
+  test('lists the owner’s grants beyond 20 pods, preserves dead grants, and excludes another owner’s connection', async () => {
+    const podIds = Array.from({ length: 21 }, (_, index) => `aaaaaaaaaaaaaaaaaaaaaa${String(index + 1).padStart(2, '0')}`);
+    const owned = await RoomGrant.create(podIds.map((id) => grant({ target: { kind: 'pod', id } })));
+    const revokedAt = new Date('2026-09-11T00:00:00.000Z');
+    await RoomGrant.updateOne({ grantId: owned[0].grantId }, { $set: { revokedAt, revokedBy: OWNER } });
+    await RoomGrant.create(grant({ connectionId: 'conn-other', target: { kind: 'pod', id: podIds[20] } }));
+    Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+      { _id: 'conn-1', installationId: 'conn-1', createdBy: OWNER },
+      { _id: 'conn-other', createdBy: STRANGER },
+    ] }) }));
+    Pod.find.mockImplementation(({ _id }) => ({ select: () => ({ lean: async () => _id.$in.map((id) => (
+      { _id: id, members: [OWNER, SEAT] }
+    )) }) }));
+
+    const res = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+    expect(res.status).toBe(200);
+    expect(res.body.grants).toHaveLength(21);
+    expect(res.body.grants.map((row) => row.grantId)).toEqual(expect.arrayContaining(owned.map((row) => row.grantId)));
+    expect(res.body.grants.find((row) => row.target.id === podIds[20])).toMatchObject({
+      grantId: owned[20].grantId, effectiveAudience: [SEAT], grantedBy: OWNER,
+    });
+    const revoked = res.body.grants.find((row) => row.grantId === owned[0].grantId);
+    expect(revoked).toMatchObject({ revokedBy: OWNER, revokedAt: revokedAt.toISOString() });
+    expect(res.body.grants.every((row) => row.expiresAt && Object.keys(row).sort().join() === [...FIELDS].sort().join())).toBe(true);
+    expect(JSON.stringify(res.body)).not.toContain('conn-other');
+    expect(Integration.find).toHaveBeenCalledWith({ createdBy: OWNER });
+  });
+
+  test('requires a signed-in owner and never gives a different user or admin the owner’s grants', async () => {
+    await RoomGrant.create(grant());
+    Pod.find.mockImplementation(() => ({ select: () => ({ lean: async () => [] }) }));
+    // Deliberately return a foreign row even for the admin caller. The route
+    // must enforce ownership after the query as well as in its predicate.
+    Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+      { _id: 'conn-1', createdBy: OWNER },
+    ] }) }));
+    expect((await request(app).get('/api/grants?connectionOwner=me')).status).toBe(401);
+    expect((await request(app).get('/api/grants').set('x-test-user', OWNER)).status).toBe(400);
+    const other = await request(app).get('/api/grants?connectionOwner=me')
+      .set('x-test-user', STRANGER).set('x-test-role', 'admin');
+    expect(other.status).toBe(200);
+    expect(other.body.grants).toEqual([]);
+    expect(Integration.find).toHaveBeenCalledWith({ createdBy: STRANGER });
+  });
 });
 
 describe('GET /api/pods/:podId/grants', () => {
