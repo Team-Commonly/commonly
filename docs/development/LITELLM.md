@@ -103,6 +103,20 @@ Three components, all defined in `k8s/helm/commonly/templates/agents/litellm-dep
    The rotator polls that signal file every 10s during its 10-min sleep and, if a
    <120s-old signal is present, rotates immediately without waiting for the next tick.
 
+**DeepSeek tool shim** (`/app/deepseek_tool_shim.py`, source in
+`k8s/helm/commonly/files/litellm/`, mounted from the `litellm-config` ConfigMap). It's
+the second entry in `litellm_settings.callbacks` and applies only to the
+`deepseek-flash-1017` group. codex sends `namespace` tools (its MCP servers and
+sub-agent tools) plus hosted tools such as `web_search`, and DeepSeek rejects any
+tool that isn't `function` with a 422 (`unknown variant 'namespace'`). The
+pre-call hook flattens each namespace into function tools named
+`<namespace>__<tool>` and drops the hosted ones. The success and streaming hooks
+map a call back to `name` + `namespace`, which is how codex resolves it.
+Verified 2026-10-24 on the pinned image, with a real codex turn going through
+a fake upstream. One quirk to expect: the `response.created` echo of the request's
+tools still shows the flat names. To shim another DeepSeek group, add it to
+`SHIM_MODEL_GROUPS`. Tests are in `backend/__tests__/unit/helm/litellmDeepseekToolShim.test.js`.
+
 **Why this works:** LiteLLM's `Authenticator.get_access_token()` calls `_read_auth_file()`
 on every request — there's no in-memory token caching. So a `rename` of `auth.json` is
 picked up within ~1 request, no pod restart needed.
