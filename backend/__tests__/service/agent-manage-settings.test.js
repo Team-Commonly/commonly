@@ -95,7 +95,9 @@ describe('per-installation agent settings', () => {
     const seat = (await projectSeatEnvironments({ installedBy: owner._id }))
       .get(seatEnvironmentKey('settings-agent', 'same'));
     expect(seat.environment.effort).toBe('xhigh');
+    expect(seat.sourcePodId).toBe(String(podA._id));
     const after = await request(app).get(url).set('Authorization', `Bearer ${token(owner)}`);
+    expect(after.body.runtimeManaged).toBe(true);
     expect(after.body.runtimeControls.effort).toBe('xhigh');
   });
 
@@ -109,6 +111,22 @@ describe('per-installation agent settings', () => {
     expect(response.status).toBe(200);
     expect(response.body.runtimeManaged).toBe(false);
     expect(response.body.runtimeEditable).toBe(false);
+    expect(response.body.runtimeControls.effort).toBe('');
+  });
+
+  it('does not present a hosted runtime preference as its running model or effort', async () => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'internal' },
+        'config.environment': { model: 'opus', effort: 'max' } },
+    });
+    const response = await request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.runtimeManaged).toBe(false);
+    expect(response.body.runtimeEditable).toBe(false);
+    expect(response.body.runtimeSourcePodId).toBeNull();
+    expect(response.body.runtimeControls.model).toBe('');
     expect(response.body.runtimeControls.effort).toBe('');
   });
 

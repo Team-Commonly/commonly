@@ -77,17 +77,20 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       if (typeof runtime[key] === 'string') runtimeControls[key] = runtime[key];
     }
     if (runtime.host === 'cloud' || runtime.host === 'byo') runtimeControls.host = runtime.host;
-    const wrapper = runtime.runtimeType === 'wrapper';
-    const binding = wrapper ? await User.findOne({
+    // The identity binding, rather than this pod's runtime declaration, tells
+    // us whether the daemon owns the next spawn. A Settings write can make an
+    // older pod the projection source even when it has no runtimeType field.
+    const binding = await User.findOne({
       isBot: true,
       'botMetadata.agentName': String(req.params.name).toLowerCase(),
       'botMetadata.instanceId': normalizeInstanceId(req.query.instanceId),
-    }).select('botMetadata.machineId').lean() : null;
-    const runtimeManaged = wrapper && Boolean(binding?.botMetadata?.machineId);
-    // A standalone `agent run` reads only its local token record. The server
-    // cannot observe or edit those model/effort flags, so never call a stored
-    // installation preference the running value.
-    if (wrapper && !runtimeManaged) {
+    }).select('botMetadata.machineId').lean();
+    const runtimeManaged = Boolean(binding?.botMetadata?.machineId);
+    // A standalone `agent run` reads its local token record. Hosted/native
+    // turns read their own run config (installation.config.model or the service
+    // default), not the daemon projection. Neither path can be attested by an
+    // installation runtime preference, so display only daemon-managed values.
+    if (!runtimeManaged) {
       runtimeControls.model = '';
       runtimeControls.effort = '';
     }
@@ -97,12 +100,12 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     return res.json({ turnCap: turnsPerDay, userRunCeiling, podCount: installations.length,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
       writablePodId: writable ? String(writable.podId) : null,
-      runtimeSourcePodId: wrapper && !runtimeManaged ? null
+      runtimeSourcePodId: !runtimeManaged ? null
         : source ? String(source.podId)
           : (!seat?.sourcePodId && writable ? String(writable.podId) : null),
       runtimeControls,
       runtimeManaged,
-      runtimeEditable: (!wrapper || runtimeManaged) && (!seat?.sourcePodId || Boolean(source)),
+      runtimeEditable: runtimeManaged && (!seat?.sourcePodId || Boolean(source)),
       installations: visible
       .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod')) });
   } catch (error) {
