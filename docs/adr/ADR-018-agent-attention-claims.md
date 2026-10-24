@@ -1,9 +1,14 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. D8.1 (2026-10-21) is Accepted, ratified by Cofounder on Sam's explicit direction. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold — and they are ordered, the threshold being unrecorded rather than unmeasurable — a proxy exists and is named in place. The amendment says so in place. **D6.4 (adjacency in a one-person room) is Accepted, 2026-10-20, ratified by Cofounder under Sam's delegation.**
+**Status:** Accepted — ratified by Sam 2026-08-17. D8.1 (2026-10-21), the BYO default, was ratified by Cofounder on Sam's explicit direction. Cofounder accepted the receive/wake direction in D8.1 (2026-10-23) and conditional digest heartbeat in D9.1 on 2026-10-23. TASK-414 (#2558) implements digest delivery and D9.1 while retaining installation wake defaults; the 10-23 direction to replace the BYO default remains unimplemented. D8.3 supersedes the original 30-minute discovery cap. D4's 90s lease and BYO claim compliance remain unsettled. D6.3's convergence guard remains unbuilt; its signal source and threshold remain open. D6.4 was accepted 2026-10-20.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
+
+**Citation rule:** An undated **D8.1** always means the original **D8.1
+(2026-10-21)** BYO wake default. References to the receive-versus-wake ruling
+must say **D8.1 (2026-10-23)** explicitly. Superseding a decision does not
+change the meaning of an existing undated citation.
 
 ---
 
@@ -328,8 +333,9 @@ document.
 > in the PR that implements it. In force from the deploy that ships that PR.
 >
 > **Scope boundary.** This is an *addressing* rule, like D6.3's reply edge, not a
-> wake policy. Ambient delivery stays with **D8**: per-install opt-in, off by
-> default, revertible. Room size is not a wake policy either: ADR-020 D6's scope
+> wake policy. Ambient delivery stays with **D8** and **D8.1 (2026-10-21)**:
+> a per-install setting with a BYO default. Room size is not a wake policy either:
+> ADR-020 D6's scope
 > box records how PR #963 gated wake-on-message on member count and demoted
 > every multi-agent workspace to mention-only. Nothing here wakes an agent that
 > was not just speaking, and nothing here applies once a second person is in
@@ -401,7 +407,7 @@ decline (D6). Claims are what make this mode safe: all wake, one acts.
 A pod-level "everyone always acts" mode composes later by setting the flag on
 every install; it is not primitive.
 
-### D8.1 — AMENDMENT (2026-10-21): an agent a person brings into a pod wakes on every human message by default
+### D8.1 (2026-10-21) — AMENDMENT: an agent a person brings into a pod wakes on every human message by default
 
 **Status: ACCEPTED — ratified by Cofounder on Sam's explicit direction, 2026-10-21.** Sam: *"have the byo agent by default wake on message instead of mention (the knob is always there still)"*. The principle behind it: every agent should read new messages, even when it doesn't own the reply.
 
@@ -427,6 +433,33 @@ defaults remain as specified above; this amendment changes neither install
 defaults nor the owner's ability to switch wake-on-message off.
 
 > **Scope boundary.** This changes the *default* of an install's own setting at the moment it is created. It does **not** gate any wake on pod size, member count or workspace shape. That is ADR-020 D6's subject, and reading D6 as wake policy is the #963 regression (every multi-agent workspace demoted to mention-only, fixed in #967). Anything that would wake or silence agents by the shape of the pod belongs in this ADR, decided explicitly, not inferred from D6.
+
+### D8.1 (2026-10-23) — Receive does not mean wake
+
+**Status: ACCEPTED — Cofounder, 2026-10-23.** The paragraphs below record
+that direction. TASK-414 (#2558), now on main, implements receipt as digest
+when broad wake is disabled and the conditional digest heartbeat in D9.1.
+It explicitly preserves the 10-21 installation defaults: the direction below
+to replace the BYO default has **not** been implemented. D8.3's later hourly
+implementer-only discovery rule supersedes the original 30-minute nudge cap.
+"Public seats" means externally facing installations deliberately configured
+to wake on every message, not a backend seat class.
+
+Under this decision, every pod message will be received. An ordinary seat
+will wake only for an addressed event: a mention, its own board row changing,
+a thread it participates in or has claimed, its own TASK or PR being referenced,
+or D6.4 adjacency. Its own
+row changes when it is assigned or unassigned, receives a comment, or a
+dependency it waits on clears. Other rows' movement and other unaddressed
+messages will wait in an unread digest delivered at the seat's next wake. An
+unclaimed-work nudge may wake a seat at most once **per seat per pod** every
+30 minutes. Receiving a message will not spend a turn by itself. Scout and
+deliberately opted-in public seats will keep wake-on-message.
+
+The original direction would supersede the 2026-10-21 Bring your own default
+of waking on every human message; TASK-414 does not implement that default
+change. Pod size and member count do not decide whether a seat wakes;
+see the scope boundary in ADR-020 D6.
 
 ### D8.2 — AMENDMENT (2026-10-23): a board change wakes only the seat whose work changed
 
