@@ -152,8 +152,8 @@ const fenceSignal = (store, over = {}) => {
     ...over,
     row: {
       ...real,
-      bumpGeneration: async (id, from, now) => {
-        const won = await real.bumpGeneration(id, from, now);
+      bumpGeneration: async (id, from, now, authority, publishedAuthority) => {
+        const won = await real.bumpGeneration(id, from, now, authority, publishedAuthority);
         if (won) bumped.open();
         return won;
       },
@@ -736,4 +736,3 @@ test('a refresh that loses its commit serves the newer winner, not its own token
     process.env.CONNECTOR_SECRET_ACTIVE_KEY = savedActive;
   }
 });
-

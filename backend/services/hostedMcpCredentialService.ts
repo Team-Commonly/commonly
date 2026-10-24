@@ -102,6 +102,7 @@ export interface HostedMcpRow {
     refreshTokenRef?: string;
     refreshGeneration?: number;
     authGeneration?: number;
+    credentialAuthGeneration?: number;
     expiresAt?: Date | null;
   };
 }
@@ -141,6 +142,8 @@ interface CredentialDeps {
       id: unknown,
       from: number,
       now: Date,
+      authority: number | undefined,
+      publishedAuthority: number | undefined,
     ) => Promise<HostedMcpRow | null>;
     /**
      * Commit the winner's pair, guarded on the generation it now holds. Resolves
@@ -165,10 +168,19 @@ interface CredentialDeps {
  */
 export const defaultRowDeps = (): CredentialDeps['row'] => ({
   findById: (id) => Integration.findById(id).lean() as unknown as Promise<HostedMcpRow | null>,
-  bumpGeneration: (id, from, now) => Integration.findOneAndUpdate(
+  bumpGeneration: (id, from, now, authority, publishedAuthority) => Integration.findOneAndUpdate(
     {
       _id: id,
+      status: 'connected',
       'config.refreshGeneration': from,
+      // /start advances authGeneration before the new callback has published
+      // credentials. Admit a refresh only for the authorization that published
+      // the pair the caller read; a pending or newer callback cannot lend its
+      // higher secret-write generation to the old refresh token.
+      'config.authGeneration': authority === undefined ? { $exists: false } : authority,
+      'config.credentialAuthGeneration': publishedAuthority === undefined
+        ? { $exists: false } : publishedAuthority,
+      'config.pendingAuth': { $exists: false },
       // The lease in its takeable states: never taken, already released (a
       // clear is a VALUE, so the field is present and null), and expired. The
       // first two are one condition in MongoDB — `$eq: null` matches a missing
@@ -422,8 +434,18 @@ export const credentialFor = async (
     return { token: await deps.secrets.get(liveRef), expiresAt: isoOrEmpty(row.config?.expiresAt) };
   }
 
+  // /start has reserved a newer authorization, but the stored pair still
+  // belongs to the one before it. No refresh of that pair may borrow the new
+  // authorization's write priority while its callback is in flight.
+  if (row.config?.credentialAuthGeneration !== undefined
+    && row.config.credentialAuthGeneration !== row.config.authGeneration) {
+    return loseTheRace({ deps, id });
+  }
+
   const generation = generationOf(row);
-  const won = await deps.row.bumpGeneration(id, generation, now);
+  const won = await deps.row.bumpGeneration(
+    id, generation, now, row.config?.authGeneration, row.config?.credentialAuthGeneration,
+  );
 
   if (!won) {
     return loseTheRace({ deps, id });
@@ -486,7 +508,10 @@ export const credentialFor = async (
   // same authorization; the authorization alone cannot, which is how a superseded
   // refresh overwrote a newer pair (TASK-405). A stale writer is refused by the
   // store, so its vendor tokens are never published behind the newer ones.
-  const writeGeneration = secretWriteGeneration(row.config?.authGeneration ?? 0, nextGeneration);
+  const writeGeneration = secretWriteGeneration(
+    won.config?.credentialAuthGeneration ?? won.config?.authGeneration ?? 0,
+    nextGeneration,
+  );
   const credentialRef = await deps.secrets.put(
     String(id), HOSTED_MCP_ACCESS_TOKEN, refreshed.accessToken, writeGeneration,
   );

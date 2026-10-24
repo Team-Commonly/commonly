@@ -290,6 +290,24 @@ const startConnect = async (req: AuthedRequest, res: Response) => {
   // `intake` is written here as well as at the callback: it is the one field
   // that says which flow owns the pending state, and a row left `pending` with
   // no nonce would otherwise be indistinguishable from one whose nonce expired.
+  // Legacy connected rows predate credentialAuthGeneration. Bind their existing
+  // pair to the generation that published it BEFORE /start advances the pending
+  // authorization. Refresh admission is fenced while pendingAuth is present,
+  // so no caller can slip between this CAS and the new flow's write.
+  const legacyCredential = await Integration.findOne({
+    type: 'hosted-mcp', createdBy: userId, 'config.entryId': entry.id,
+    status: 'connected', 'config.credentialAuthGeneration': { $exists: false },
+    $or: [
+      { 'config.credentialRef': { $exists: true } },
+      { 'config.refreshTokenRef': { $exists: true } },
+    ],
+  }).select('_id config.authGeneration').lean();
+  if (legacyCredential) {
+    await Integration.updateOne(
+      { _id: legacyCredential._id, 'config.credentialAuthGeneration': { $exists: false } },
+      { $set: { 'config.credentialAuthGeneration': legacyCredential.config?.authGeneration ?? 0 } },
+    );
+  }
   const row = await Integration.findOneAndUpdate(
     { type: 'hosted-mcp', createdBy: userId, 'config.entryId': entry.id },
     {
@@ -645,6 +663,7 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
         'config.credentialRef': credentialRef,
         'config.refreshTokenRef': refreshTokenRef || null,
         'config.refreshGeneration': 0,
+        'config.credentialAuthGeneration': authGeneration,
         'config.grantedScope': recordedGrantedScope,
         'config.expiresAt': tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
         // `|| null`, not the bare value: `$set` with `undefined` is a NO-OP on

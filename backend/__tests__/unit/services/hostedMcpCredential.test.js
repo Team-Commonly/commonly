@@ -99,9 +99,12 @@ const harness = (options = {}) => {
     order.push(`revoke:${ref}`);
   });
 
-  const bumpGeneration = jest.fn(async (id, from, now) => {
+  const bumpGeneration = jest.fn(async (id, from, now, authority, publishedAuthority) => {
     if (options.loseRace) return null;
     if ((state.config.refreshGeneration ?? 0) !== from) return null;
+    if (state.status !== 'connected' || state.config.pendingAuth) return null;
+    if (state.config.authGeneration !== authority) return null;
+    if (state.config.credentialAuthGeneration !== publishedAuthority) return null;
     // The lease, modelled because the real filter carries it: absent, released
     // (null) and elapsed are all takeable, and a live one is not. A fake that
     // ignored it would witness a fence production does not have.
@@ -430,7 +433,7 @@ describe('the winner of the fence', () => {
       token: 'new-access',
       expiresAt: new Date(T0 + 3600 * 1000).toISOString(),
     });
-    expect(h.bumpGeneration).toHaveBeenCalledWith(ROW_ID, 3, new Date(T0));
+    expect(h.bumpGeneration).toHaveBeenCalledWith(ROW_ID, 3, new Date(T0), undefined, undefined);
     expect(h.refreshAtVendor).toHaveBeenCalledWith({
       entry: ENTRY,
       clientId: ENTRY.clientId,

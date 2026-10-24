@@ -428,6 +428,128 @@ test('an in-flight refresh cannot overwrite a newer completed authorization', as
   }
 });
 
+test('a post-start refresh cannot borrow the pending authorization after callback state is consumed', async () => {
+  const originalKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const originalActiveKey = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+  process.env.CONNECTOR_SECRET_KEYS = `test:${Buffer.alloc(32, 7).toString('base64')}`;
+  process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'test';
+  const actualSecrets = jest.requireActual('../../../services/connectorSecrets');
+  const { credentialFor } = require('../../../services/hostedMcpCredentialService');
+  const { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } = require('../../../services/connectorSecretKinds');
+  let releaseWait;
+  let releaseCallback;
+  try {
+    const id = await seedPending({ state: 'st-refresh-after-start', subject: 'acct-same', credentialRef: undefined });
+    const accessRef = await actualSecrets.put(id, HOSTED_MCP_ACCESS_TOKEN, 'old-access', 1000000);
+    const refreshRef = await actualSecrets.put(id, HOSTED_MCP_REFRESH_TOKEN, 'old-refresh', 1000000);
+    await Integration.updateOne({ _id: id }, {
+      $set: {
+        status: 'connected', 'config.authGeneration': 1, 'config.refreshGeneration': 3,
+        'config.credentialRef': accessRef, 'config.refreshTokenRef': refreshRef,
+        'config.clientId': 'client-id', 'config.expiresAt': new Date(Date.now() - 3600 * 1000),
+      },
+      $unset: { 'config.pendingAuth': 1 },
+    });
+
+    const started = await request(app).post('/connect/hosted-mcp/linear/start');
+    expect(started.status).toBe(200);
+    const pending = await Integration.findById(id).lean();
+    expect(pending.config.authGeneration).toBe(2);
+    expect(pending.config.credentialAuthGeneration).toBe(1);
+    const state = new URL(started.body.authorizeUrl).searchParams.get('state');
+    const cookie = started.headers['set-cookie'][0].split(';')[0];
+
+    let callbackAtVendor;
+    const callbackReached = new Promise((resolve) => { callbackAtVendor = resolve; });
+    global.fetch = jest.fn(() => new Promise((resolve) => {
+      releaseCallback = () => resolve({
+        ok: true,
+        json: async () => ({
+          access_token: 'access-B', refresh_token: 'refresh-B', expires_in: 3600,
+          scope: 'read', id_token: idToken('acct-same'),
+        }),
+      });
+      callbackAtVendor();
+    }));
+    const pendingCallback = callback(state, cookie).then((result) => result);
+    let callbackTimeout;
+    try {
+      await Promise.race([
+        callbackReached,
+        new Promise((_, reject) => {
+          callbackTimeout = setTimeout(() => reject(new Error('callback did not reach vendor')), 5000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(callbackTimeout);
+    }
+    const consumed = await Integration.findById(id).lean();
+    expect(consumed.status).toBe('connected');
+    expect(consumed.config.pendingAuth).toBeUndefined();
+    expect(consumed.config.authGeneration).toBe(2);
+    expect(consumed.config.credentialAuthGeneration).toBe(1);
+
+    let vendorCalls = 0;
+    let clock = Date.now();
+    let heldFirstPoll = false;
+    let reachedWait;
+    const waitReached = new Promise((resolve) => { reachedWait = resolve; });
+    const refreshing = credentialFor(consumed, {
+      now: () => new Date(clock),
+      sleep: async (ms) => {
+        if (!heldFirstPoll) {
+          heldFirstPoll = true;
+          reachedWait();
+          await new Promise((resolve) => { releaseWait = resolve; });
+        }
+        clock += ms;
+      },
+      entryFor: () => FIXTURE_ENTRY,
+      clientIdFor: () => 'client-id',
+      refreshAtVendor: async () => {
+        vendorCalls += 1;
+        return { accessToken: 'stale-access-A', refreshToken: 'stale-refresh-A', expiresIn: 3600 };
+      },
+      secrets: actualSecrets,
+    });
+    refreshing.catch(() => {});
+    let waitTimeout;
+    try {
+      await Promise.race([
+        waitReached,
+        refreshing.then(() => { throw new Error('old grant refreshed before the callback'); }),
+        new Promise((_, reject) => {
+          waitTimeout = setTimeout(() => reject(new Error('refresh did not reach its fence')), 5000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(waitTimeout);
+    }
+    expect(vendorCalls).toBe(0);
+
+    connectorSecrets.put.mockImplementation((integrationId, kind, material, generation) => (
+      actualSecrets.put(integrationId, kind, material, generation)
+    ));
+    releaseCallback();
+    expect(outcome(await pendingCallback)).toEqual({ hostedMcp: 'connected', code: null });
+    releaseWait();
+    const served = await refreshing;
+    const after = await Integration.findById(id).lean();
+    expect(served.token).toBe('access-B');
+    expect(vendorCalls).toBe(0);
+    expect(after.config.credentialAuthGeneration).toBe(2);
+    expect(await actualSecrets.get(after.config.credentialRef)).toBe('access-B');
+    expect(await actualSecrets.get(after.config.refreshTokenRef)).toBe('refresh-B');
+  } finally {
+    releaseWait?.();
+    releaseCallback?.();
+    if (originalKeys === undefined) delete process.env.CONNECTOR_SECRET_KEYS;
+    else process.env.CONNECTOR_SECRET_KEYS = originalKeys;
+    if (originalActiveKey === undefined) delete process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+    else process.env.CONNECTOR_SECRET_ACTIVE_KEY = originalActiveKey;
+  }
+});
+
 test('a vendor that issues no ID token CLEARS the stored subject rather than keeping a stale one', async () => {
   const id = await seedPending({ state: 'st-clear', subject: 'acct-old' });
   exchange();
