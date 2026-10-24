@@ -1,20 +1,23 @@
 # Latchkey runner trial (D37). A COPY of tests.yml `tool-tests`, run side by
 # side on GitHub-hosted and Latchkey runners at the same commit so the timing
 # compares like with like. Never a required check; tests.yml is untouched.
-# Delete this file to roll back. Trigger: push to branch latchkey-trial, or
-# manual dispatch.
+# Delete this file to roll back. Trigger: manual dispatch only; `only:
+# service` runs just the service-container job.
 name: Latchkey trial
 
 on:
-  push:
-    branches: [latchkey-trial]
   workflow_dispatch:
+    inputs:
+      only:
+        description: "'service' runs only service-test-trial"
+        default: ''
 
 permissions:
   contents: read
 
 jobs:
   tool-tests-trial:
+    if: inputs.only != 'service'
     name: tool-tests on ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -73,6 +76,7 @@ jobs:
   # that can break on a non-GitHub runner: it needs Docker for its Mongo and
   # Postgres service containers.
   backend-tests-trial:
+    if: inputs.only != 'service'
     name: Backend tests (${{ matrix.shard }}/3) on latchkey-small
     strategy:
       fail-fast: false
@@ -107,6 +111,7 @@ jobs:
           path: backend/coverage/
 
   frontend-tests-trial:
+    if: inputs.only != 'service'
     name: Frontend tests on latchkey-small
     runs-on: latchkey-small
     steps:
@@ -140,7 +145,11 @@ jobs:
       mongo:
         image: mongo:7
         ports: ["27017:27017"]
+        # Trial 2: mongod hit EMFILE ("Too many open files") during index
+        # builds and WT_PANIC'd; Latchkey's docker default nofile is lower
+        # than GitHub's. Raise it for the container.
         options: >-
+          --ulimit nofile=64000:64000
           --health-cmd "mongosh --eval 'db.runCommand(\"ping\").ok'"
           --health-interval 10s
           --health-timeout 5s
