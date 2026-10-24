@@ -67,11 +67,12 @@ it('saves an edit immediately on the first click and confirms it', async () => {
 
 it('explains why an installation without a profile cannot save policy', async () => {
   renderPolicy({ ...installation, profile: null });
+  expect(screen.getByRole('alert')).toHaveTextContent("This agent's policy can't be changed in this pod yet.");
   fireEvent.change(screen.getByLabelText('Allowed tools'), { target: { value: 'Read' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save policy' }));
 
   expect(update).not.toHaveBeenCalled();
-  expect(await screen.findByRole('alert')).toHaveTextContent('No changes were saved');
+  expect(await screen.findByRole('alert')).toHaveTextContent('nothing was saved');
 });
 
 it('writes only the chosen trust mode and edits memory with its revision', async () => {

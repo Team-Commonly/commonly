@@ -94,7 +94,7 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
 
   const savePolicy = async () => {
     if (!installation?.profile) {
-      setFeedback({ group: 'policy', kind: 'error', text: t('agentPolicy.profileUnavailable') }); return;
+      setFeedback({ group: 'policy', kind: 'error', text: t('agentPolicy.profileUnavailableSave') }); return;
     }
     if (!Number.isInteger(maxTokens) || maxTokens < 1 || !Number.isInteger(compactionThreshold)
       || compactionThreshold < 1 || compactionThreshold > maxTokens
@@ -152,6 +152,9 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
 
   return <section className="v2-agent-policy" aria-labelledby="agent-policy-title">
     <h2 id="agent-policy-title">{t('agentPolicy.title')}</h2>
+    {!installation?.profile && feedback?.group !== 'policy' && (
+      <p role="alert" className="v2-agent-policy__error">{t('agentPolicy.profileUnavailable')}</p>
+    )}
     <div className="v2-agent-policy__group">
       <h3>{t('agentPolicy.approvals')}</h3>
       <p className="v2-agent-policy__muted">{t('agentPolicy.commaHint')}</p>
