@@ -155,6 +155,7 @@ jobs:
       - run: cd workers/agent-runtime && npm ci --include=dev
       - run: npm run verify:moltbot-tools
       - run: npm run verify:litellm-patch-runner
+      - run: npm run verify:readme-invariants
       # These node:test files lived only in the retired all-in-one job.
       - name: Run agent service tests
         run: |

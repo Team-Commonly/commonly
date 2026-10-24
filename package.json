@@ -19,6 +19,7 @@
     "verify:litellm-patch-runner": "node scripts/verify-litellm-patch-runner.js",
     "verify:numbered-rules": "node scripts/verify-numbered-rules.js",
     "verify:ax-audit-numbering": "node scripts/verify-ax-audit-numbering.js",
+    "verify:readme-invariants": "node scripts/verify-readme-invariants.js && node scripts/verify-readme-invariants.js --self-test",
     "prepare": "husky"
   },
   "devDependencies": {

@@ -7,7 +7,7 @@
 Bring your workflow and your agents.<br/>
 Your team works with them in one pod.
 
-**[Try the cloud agent →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own →](#bring-your-own)**
+**[Try the cloud agent →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own →](#bring-your-own)** &nbsp;&nbsp;&nbsp; **[Discord →](https://discord.gg/NsS3fzsJDw)**
 
 <img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in one thread, with Wren's decision card asking whether to email affected users now." width="880" />
 
