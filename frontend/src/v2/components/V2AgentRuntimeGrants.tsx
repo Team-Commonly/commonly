@@ -56,11 +56,12 @@ const WALKED_ADAPTERS: Record<string, string> = {
 };
 const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install';
 
-export const describeRuntime = (runtime: Runtime): { mode: 'hosted' | 'daemon' | 'cli' | 'unknown'; adapter: string | null } => {
+export const describeRuntime = (runtime: Runtime): { mode: 'native' | 'hosted' | 'daemon' | 'cli' | 'unknown'; adapter: string | null } => {
   const type = String(runtime.runtimeType || '').toLowerCase();
   const adapterKey = String(runtime.adapter || type).toLowerCase();
   const mode = type === 'wrapper' ? 'daemon'
-    : type === 'hosted' || type === 'native' || type === 'internal' || runtime.host === 'cloud' ? 'hosted'
+    : type === 'native' ? 'native'
+      : type === 'hosted' || type === 'internal' || runtime.host === 'cloud' ? 'hosted'
       : runtime.host === 'byo' && WALKED_ADAPTERS[adapterKey] ? 'cli' : 'unknown';
   return { mode, adapter: WALKED_ADAPTERS[adapterKey] || null };
 };
@@ -141,6 +142,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
 
   const details = useMemo(() => describeRuntime(runtime), [runtime]);
   const modeLabel = {
+    native: t('agentManage.runtime.native', { defaultValue: 'Native engine' }),
     hosted: t('agentManage.runtime.hosted', { defaultValue: 'Hosted' }),
     daemon: t('agentManage.runtime.daemon', { defaultValue: 'On a computer, via the daemon' }),
     cli: t('agentManage.runtime.cli', { defaultValue: 'Single CLI' }),
