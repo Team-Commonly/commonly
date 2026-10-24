@@ -270,6 +270,14 @@ describe('POST /api/grants on a hosted-mcp connection', () => {
       expect(await RoomGrant.countDocuments({})).toBe(0);
     });
 
+    test.each([undefined, '', '   '])('a hosted row without an entry ID refuses before mint: %p', async (entryId) => {
+      Integration.findById.mockResolvedValue(hostedRow({ entryId }));
+      const res = await withCatalog([ENTRY], () => hostedMint());
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: 'unknown_entry' });
+      expect(await RoomGrant.countDocuments({})).toBe(0);
+    });
+
     test('the exact authenticated allowlisted owner may mint', async () => {
       process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = JSON.stringify({ linear: [OWNER] });
       const res = await withCatalog([ENTRY], () => hostedMint());

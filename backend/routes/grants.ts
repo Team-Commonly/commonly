@@ -322,7 +322,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       // Existing connections do not bypass instance visibility policy. Use the
       // authenticated owner, matching the catalogue and connection-start route.
       const entryId = String(connection.config?.entryId || '').trim();
-      if (isHostedMcpEntryHidden(entryId, process.env, userId)) {
+      if (!entryId || isHostedMcpEntryHidden(entryId, process.env, userId)) {
         return res.status(404).json({ error: 'unknown_entry' });
       }
       // A pending row holds nothing secret and must never be grantable, and a
