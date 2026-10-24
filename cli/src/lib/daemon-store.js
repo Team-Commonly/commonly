@@ -21,6 +21,35 @@ import { join } from 'path';
 
 const daemonDir = () => join(homedir(), '.commonly', 'daemon');
 export const daemonRecordPath = () => join(daemonDir(), 'machine.json');
+export const daemonStopPath = () => join(daemonDir(), 'stopped.json');
+
+// A terminal machine-key verdict survives launchd's one unavoidable restart.
+// It contains no bearer; registration clears it only after the new key is safe.
+export const loadDaemonStop = (record = { machineDbId: 'unregistered' }) => {
+  const path = daemonStopPath();
+  if (!existsSync(path)) return null;
+  const value = JSON.parse(readFileSync(path, 'utf8'));
+  return value.machineDbId === record.machineDbId ? value : null;
+};
+
+export const saveDaemonStop = (record, exitCode) => {
+  const dir = daemonDir();
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
+  const path = daemonStopPath();
+  const tmp = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, `${JSON.stringify({ machineDbId: record.machineDbId, exitCode })}\n`, { mode: 0o600, flag: 'wx' });
+    renameSync(tmp, path);
+  } catch (error) {
+    if (existsSync(tmp)) unlinkSync(tmp);
+    throw error;
+  }
+};
+
+export const clearDaemonStop = () => {
+  if (existsSync(daemonStopPath())) unlinkSync(daemonStopPath());
+};
 
 const validateRecord = (record) => {
   if (!record

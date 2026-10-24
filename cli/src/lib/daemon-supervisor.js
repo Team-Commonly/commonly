@@ -33,6 +33,13 @@ export const DEFAULT_POLL_MS = 30_000;
 export const DEFAULT_HEARTBEAT_MS = 30_000;
 export const BACKOFF_BASE_MS = 5_000;
 export const BACKOFF_MAX_MS = 60_000;
+export const MAX_AGENT_STARTS_PER_TICK = 3;
+export const RECONNECT_MAX_MS = 60_000;
+
+export const reconnectDelayMs = (failures, random = Math.random) => {
+  const ceiling = Math.min(RECONNECT_MAX_MS, 1_000 * 2 ** Math.min(failures, 6));
+  return Math.floor(1_000 + random() * (ceiling - 1_000));
+};
 
 const workspacePathFor = (environment) => {
   const declared = environment?.workspace?.path;
@@ -59,12 +66,34 @@ export const createDaemonSupervisor = ({
   resolveAdapter, // async (runtime) => adapter name for THIS machine
   persistState = () => {}, // (agentStates) => void; must not persist secrets
   log = () => {},
+  isTerminalAuthError = () => false,
+  onTerminalAuthError = () => {},
+  now = Date.now,
+  random = Math.random,
   setTimeoutFn = setTimeout,
   clearTimeoutFn = clearTimeout,
 }) => {
   // key → { agentName, instanceId, child, state, restarts, backoffTimer, desired }
   const seats = new Map();
   let stopped = false;
+  let reconnectFailures = 0;
+  let reconnectAfter = 0;
+
+  const connectionFailure = (error, label) => {
+    if (isTerminalAuthError(error)) {
+      stopped = true;
+      onTerminalAuthError(error);
+      return;
+    }
+    reconnectFailures += 1;
+    reconnectAfter = now() + reconnectDelayMs(reconnectFailures, random);
+    log(`${label}: ${error.message}; reconnect after ${Math.round((reconnectAfter - now()) / 1000)}s`);
+  };
+
+  const connectionRestored = () => {
+    reconnectFailures = 0;
+    reconnectAfter = 0;
+  };
 
   const persist = () => {
     try {
@@ -411,14 +440,15 @@ export const createDaemonSupervisor = ({
   };
 
   const tick = async () => {
-    if (stopped) return;
+    if (stopped || now() < reconnectAfter) return;
     let assigned;
     try {
       assigned = await client.get('/api/agent-binding/assigned');
     } catch (error) {
-      log(`work-list fetch failed: ${error.message}`);
+      connectionFailure(error, 'work-list fetch failed');
       return;
     }
+    connectionRestored();
     const rows = Array.isArray(assigned?.agents) ? assigned.agents : [];
 
     const bound = [];
@@ -441,6 +471,7 @@ export const createDaemonSupervisor = ({
     }
 
     const desiredKeys = new Set();
+    let startsThisTick = 0;
     for (const row of bound) {
       const key = identityKey(row.agentName, row.instanceId);
       desiredKeys.add(key);
@@ -488,8 +519,10 @@ export const createDaemonSupervisor = ({
         // desired stays true, so the exit handler respawns with the updated
         // record — the restart path IS the D6 path, no second spawner.
         seat.child.kill('SIGTERM');
-      } else if (ready && !seat.child && !seat.backoffTimer) {
+      } else if (ready && !seat.child && !seat.backoffTimer
+        && startsThisTick < MAX_AGENT_STARTS_PER_TICK) {
         startChild(seat);
+        startsThisTick += 1;
       }
       persist();
     }
@@ -501,11 +534,12 @@ export const createDaemonSupervisor = ({
   };
 
   const heartbeat = async () => {
-    if (stopped) return;
+    if (stopped || now() < reconnectAfter) return;
     try {
       await client.post(`/api/machines/${record.machineDbId}/heartbeat`, { agents: agentStates() });
+      connectionRestored();
     } catch (error) {
-      log(`heartbeat failed: ${error.message}`);
+      connectionFailure(error, 'heartbeat failed');
     }
   };
 

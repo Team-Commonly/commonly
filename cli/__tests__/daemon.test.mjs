@@ -16,9 +16,13 @@ await jest.unstable_mockModule('os', () => {
 
 const {
   daemonRecordPath,
+  daemonStopPath,
+  clearDaemonStop,
+  loadDaemonStop,
   loadDaemonRecord,
   removeDaemonRecord,
   saveDaemonRecord,
+  saveDaemonStop,
 } = await import('../src/lib/daemon-store.js');
 const {
   allowRevokedDaemonReplacement,
@@ -49,6 +53,16 @@ afterAll(() => {
 });
 
 describe('daemon credential storage', () => {
+  test('persists a private terminal verdict without the bearer and clears it after registration', () => {
+    saveDaemonRecord(daemonRecord);
+    saveDaemonStop(daemonRecord, 77);
+    expect(loadDaemonStop(daemonRecord)).toEqual({ machineDbId: daemonRecord.machineDbId, exitCode: 77 });
+    expect(fs.statSync(daemonStopPath()).mode & 0o777).toBe(0o600);
+    expect(fs.readFileSync(daemonStopPath(), 'utf8')).not.toContain(daemonRecord.daemonToken);
+    expect(loadDaemonStop({ machineDbId: 'another' })).toBeNull();
+    clearDaemonStop();
+    expect(loadDaemonStop(daemonRecord)).toBeNull();
+  });
   test('writes a private directory and 0600 bearer record', () => {
     saveDaemonRecord(daemonRecord);
 

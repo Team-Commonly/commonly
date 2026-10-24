@@ -37,7 +37,7 @@ describe('unit content', () => {
     const plist = launchdPlist({ nodePath, cliPath, home });
     expect(plist).toContain(`<string>${LAUNCHD_LABEL}</string>`);
     expect(plist).toContain(`<string>${nodePath}</string>\n\t\t<string>${cliPath}</string>\n\t\t<string>daemon</string>\n\t\t<string>run</string>`);
-    expect(plist).toContain('<key>KeepAlive</key>\n\t<true/>');
+    expect(plist).toContain('<key>KeepAlive</key>\n\t<dict>\n\t\t<key>SuccessfulExit</key>\n\t\t<false/>');
     // Children spawn the user's claude/codex by name — homebrew must be on PATH.
     expect(plist).toContain('/opt/node/bin:/opt/homebrew/bin');
     expect(plist).toContain(daemonLogPath(home));
@@ -47,6 +47,7 @@ describe('unit content', () => {
     const unit = systemdUnit({ nodePath, cliPath });
     expect(unit).toContain(`ExecStart=${nodePath} ${cliPath} daemon run`);
     expect(unit).toContain('Restart=always');
+    expect(unit).toContain('RestartPreventExitStatus=77 78');
   });
 
   // TASK-049: launchd and systemd start the daemon with a CLEAN environment, so

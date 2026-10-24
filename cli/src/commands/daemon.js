@@ -13,7 +13,10 @@ import {
 } from 'fs';
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
-import { loadDaemonRecord, removeDaemonRecord, saveDaemonRecord } from '../lib/daemon-store.js';
+import {
+  clearDaemonStop, loadDaemonRecord, loadDaemonStop, removeDaemonRecord,
+  saveDaemonRecord, saveDaemonStop,
+} from '../lib/daemon-store.js';
 import {
   createDaemonSupervisor,
   DEFAULT_HEARTBEAT_MS,
@@ -240,6 +243,7 @@ Examples:
           instanceUrl,
           name: String(opts.name || hostname()).trim(),
         });
+        clearDaemonStop();
         console.log(`Registered ${machine.name}. Daemon credential stored securely.`);
 
         try {
@@ -410,8 +414,23 @@ Examples:
     .option('--heartbeat <ms>', 'Heartbeat interval in ms', String(DEFAULT_HEARTBEAT_MS))
     .option('--foreground', 'Keep the supervisor attached to this terminal (default for direct invocation)')
     .action(async (opts) => {
+      let record;
       try {
-        const record = requireDaemonRecord();
+        const terminal = loadDaemonStop();
+        if (terminal) {
+          console.error('Daemon stopped: no valid local registration. Run: commonly daemon register');
+          process.exitCode = process.platform === 'darwin' ? 0 : terminal.exitCode;
+          return;
+        }
+        record = requireDaemonRecord();
+        const stopped = loadDaemonStop(record);
+        if (stopped) {
+          console.error("Daemon stopped: this computer's key was revoked. Run: commonly daemon register");
+          // launchd restarts the first nonzero terminal exit once; a saved
+          // verdict makes that second invocation successful and ends the loop.
+          process.exitCode = process.platform === 'darwin' ? 0 : stopped.exitCode;
+          return;
+        }
         const client = createClient({ instance: record.instanceUrl, token: record.daemonToken });
         const logsDir = daemonLogsDir();
         if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
@@ -432,9 +451,34 @@ Examples:
           stampLog(`WARNING: ${name} is not set in this environment — a seat whose adapter needs it will fail to start. Export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
         }
 
-        const supervisor = createDaemonSupervisor({
+        let pollTimer;
+        let heartbeatTimer;
+        let supervisor;
+        let terminalEnded = false;
+        const terminalAuth = (error) => isRevokedDaemonKey(error)
+          || isMissingDaemonMachine(error);
+        const onTerminalAuthError = () => {
+          terminalEnded = true;
+          let saved = false;
+          try {
+            saveDaemonStop(record, 77);
+            saved = true;
+          } catch (error) {
+            stampLog(`could not save revoked-machine stop marker: ${error.message}`);
+          }
+          stampLog("machine key revoked; stopping supervised agents. Run: commonly daemon register");
+          clearInterval(pollTimer);
+          clearInterval(heartbeatTimer);
+          supervisor.stop();
+          // Without the marker launchd would restart forever. A successful
+          // exit parks it on macOS; systemd honors 77 directly.
+          process.exitCode = saved || process.platform !== 'darwin' ? 77 : 0;
+        };
+        supervisor = createDaemonSupervisor({
           record,
           client,
+          isTerminalAuthError: terminalAuth,
+          onTerminalAuthError,
           // One child per agent, logging to its own file. The child is the
           // ordinary `commonly agent run <name>` — the daemon is its
           // supervisor, never its replacement (D6).
@@ -463,9 +507,11 @@ Examples:
 
         stampLog(`daemon supervising for ${record.machineName} — poll ${opts.poll}ms, heartbeat ${opts.heartbeat}ms (ctrl+c to stop)`);
         await supervisor.tick();
+        if (terminalEnded) return;
         await supervisor.heartbeat();
-        const pollTimer = setInterval(() => supervisor.tick(), Number(opts.poll) || DEFAULT_POLL_MS);
-        const heartbeatTimer = setInterval(() => supervisor.heartbeat(), Number(opts.heartbeat) || DEFAULT_HEARTBEAT_MS);
+        if (terminalEnded) return;
+        pollTimer = setInterval(() => supervisor.tick(), Number(opts.poll) || DEFAULT_POLL_MS);
+        heartbeatTimer = setInterval(() => supervisor.heartbeat(), Number(opts.heartbeat) || DEFAULT_HEARTBEAT_MS);
         const shutdown = () => {
           stampLog('daemon stopping — terminating supervised agents');
           clearInterval(pollTimer);
@@ -477,7 +523,19 @@ Examples:
         process.on('SIGTERM', shutdown);
       } catch (error) {
         console.error(`Daemon run failed: ${error.message}`);
-        process.exitCode = 1;
+        const badConfig = !record || error.message.startsWith('Daemon credential file');
+        if (badConfig) {
+          try {
+            saveDaemonStop(record || { machineDbId: 'unregistered' }, 78);
+          } catch (markerError) {
+            console.error(`Could not save daemon stop marker: ${markerError.message}`);
+            if (process.platform === 'darwin') {
+              process.exitCode = 0;
+              return;
+            }
+          }
+        }
+        process.exitCode = badConfig ? 78 : 75;
       }
     });
 

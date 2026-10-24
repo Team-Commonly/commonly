@@ -11,6 +11,8 @@ import {
   BACKOFF_BASE_MS,
   BACKOFF_MAX_MS,
   createDaemonSupervisor,
+  reconnectDelayMs,
+  MAX_AGENT_STARTS_PER_TICK,
 } from '../src/lib/daemon-supervisor.js';
 import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
 import claude from '../src/lib/adapters/claude.js';
@@ -80,6 +82,43 @@ describe('backoff', () => {
     expect(backoffMs(1)).toBe(BACKOFF_BASE_MS * 2);
     expect(backoffMs(20)).toBe(BACKOFF_MAX_MS);
   });
+});
+
+test('reconnect delay is jittered and bounded', () => {
+  expect(reconnectDelayMs(1, () => 0)).toBe(1_000);
+  expect(reconnectDelayMs(1, () => 1)).toBe(2_000);
+  expect(reconnectDelayMs(20, () => 1)).toBe(60_000);
+});
+
+test('a revoked machine key ends supervision instead of polling forever', async () => {
+  const denied = Object.assign(new Error('Machine access revoked'), { status: 401 });
+  const onTerminalAuthError = jest.fn();
+  const client = { get: jest.fn().mockRejectedValue(denied), post: jest.fn() };
+  const supervisor = createDaemonSupervisor({
+    record, client, spawnChild: jest.fn(), loadToken: jest.fn(), saveToken: jest.fn(),
+    resolveAdapter: jest.fn(), isTerminalAuthError: (error) => error === denied,
+    onTerminalAuthError,
+  });
+  await supervisor.tick();
+  await supervisor.tick();
+  expect(onTerminalAuthError).toHaveBeenCalledTimes(1);
+  expect(client.get).toHaveBeenCalledTimes(1);
+});
+
+test('a work-list tick starts at most three new seats', async () => {
+  const children = [];
+  const supervisor = createDaemonSupervisor({
+    record,
+    client: { get: jest.fn(async () => ({ agents: Array.from({ length: 5 }, (_, i) => boundRow({ agentName: `seat-${i}` })) })), post: jest.fn() },
+    spawnChild: jest.fn(() => { const child = makeChild(); children.push(child); return child; }),
+    loadToken: jest.fn((name) => ({ agentName: name, adapter: 'claude' })),
+    saveToken: jest.fn(), resolveAdapter: jest.fn(),
+  });
+  await supervisor.tick();
+  expect(children).toHaveLength(MAX_AGENT_STARTS_PER_TICK);
+  await supervisor.tick();
+  expect(children).toHaveLength(5);
+  supervisor.stop();
 });
 
 describe('tick', () => {
