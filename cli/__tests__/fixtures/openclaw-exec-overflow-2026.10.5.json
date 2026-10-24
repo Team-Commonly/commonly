@@ -1,0 +1,19 @@
+{
+  "ok": false,
+  "status": "error",
+  "final": "",
+  "payloads": [
+    {
+      "text": "Context overflow: prompt too large for the model. Try /reset (or /new) to start a fresh session, or use a larger-context model.",
+      "mediaUrl": null,
+      "isError": true
+    }
+  ],
+  "model": "pong",
+  "provider": "probe",
+  "sessionId": "e2023b96-bef0-4845-9008-781e04b03b6f",
+  "error": {
+    "message": "Context window exceeded: estimated input 9281 leaves only 0 output tokens within the 8192-token context.",
+    "kind": "context_overflow"
+  }
+}

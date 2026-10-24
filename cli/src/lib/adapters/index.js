@@ -16,6 +16,7 @@ import qwen from './qwen.js';
 import dsh from './dsh.js';
 import goose from './goose.js';
 import hermes from './hermes.js';
+import openclaw from './openclaw.js';
 
 const ADAPTERS = {
   [stub.name]: stub,
@@ -27,6 +28,7 @@ const ADAPTERS = {
   [dsh.name]: dsh,
   [goose.name]: goose,
   [hermes.name]: hermes,
+  [openclaw.name]: openclaw,
 };
 
 export const listAdapterNames = () => Object.keys(ADAPTERS);
