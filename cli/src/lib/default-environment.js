@@ -34,8 +34,8 @@ export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'open
  * The adapters that can ENFORCE the default sandbox — a strict subset of the
  * ones that consume `mcp[]`.
  *
- * `pi` and `goose` are absent deliberately. Neither can enforce the declared
- * sandbox; their adapters refuse effective public trust and non-none modes.
+ * `pi` is absent deliberately: it cannot enforce the declared sandbox.
+ * Goose uses Seatbelt/bwrap and exposes only its prepared Commonly MCP extension.
  * `pi` has no sandbox path until #1740's transport
  * work gives it one, and since #1727 it REFUSES TO START on a spec that
  * declares one: `assertNoSandboxDeclared` in adapters/pi.js throws on an
@@ -47,7 +47,7 @@ export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'open
  * here and hoped for. A derived pi seat used to be exactly this shape and would
  * have failed every spawn with `public-trust seats are not supported`.
  */
-export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'opencode', 'qwen']);
+export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'opencode', 'qwen', 'goose']);
 
 // The server has not yet admitted OpenCode to its grant-broker confinement
 // allowlist. Keep runtime sandbox support separate from the narrower set of
@@ -75,7 +75,7 @@ export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex']);
  * moves a host fact into the database and breaks the day the seat is re-homed.
  * An explicit mode in a record still wins over the derived one.
  *
- * Confinement holds for claude, codex, opencode, and qwen, and only they are handed
+ * Confinement holds for claude, codex, opencode, qwen and goose; they are handed
  * this block (ADAPTERS_WITH_DEFAULT_SANDBOX). Grant-broker eligibility is
  * narrower until the server admits OpenCode after its confinement proof.
  * A pi seat must never be handed this block: it fails closed on a declared

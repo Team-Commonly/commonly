@@ -1,15 +1,19 @@
-/** Goose 1.54.0 wrapper. Public seats wait for TASK-236's deny-by-default proof. */
+/** Goose 1.54.0 wrapper. Public seats expose only the Commonly MCP extension. */
 import { spawn as childSpawn, spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { effectiveSandboxTrust, validateEnvironmentSpec } from '../environment.js';
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn } from '../mcp-home.js';
-import { resolveProviderKeyFile } from '../provider-proxy.js';
+import { prepareMcpSpawn, selectedMcpVersionDir } from '../mcp-home.js';
+import { describeMcpCommand } from '../mcp-server-version.js';
+import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
+import { resolvePublicSandboxMode } from '../sandbox/mode.js';
+import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
+import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 // A version enters this list only after a real headless turn with that binary.
@@ -21,13 +25,34 @@ const DEFAULT_PROVIDER_HOST = 'https://litellm.commonly.me';
 const DEFAULT_PROVIDER_KEY = 'COMMONLY_LITELLM_KEY';
 const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
 const SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
+// Explicit API-only list: new MCP tools do not silently gain public authority.
+// attach_file reads this process's filesystem, including its credential file.
+export const PUBLIC_GOOSE_TOOLS = Object.freeze([
+  'commonly_get_started', 'commonly_post_message', 'commonly_claim_message',
+  'commonly_release_claim', 'commonly_get_messages', 'commonly_get_context',
+  'commonly_list_files', 'commonly_list_artifacts', 'commonly_read_file',
+  'commonly_get_posts', 'commonly_post_thread_comment', 'commonly_get_tasks',
+  'commonly_create_task', 'commonly_claim_task', 'commonly_watch_task',
+  'commonly_complete_task', 'commonly_update_task', 'commonly_create_pod',
+  'commonly_list_pods', 'commonly_self_install_into_pod', 'commonly_read_agent_memory',
+  'commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle',
+  'commonly_dm_agent', 'commonly_ask_agent', 'commonly_request_decision',
+  'commonly_respond_to_ask', 'commonly_react_to_message',
+]);
 
-export const assertNoSandboxDeclared = (environment = {}) => {
+export const assertSandboxSupported = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
   if (effectiveSandboxTrust(sandbox.trust) === 'public') {
-    throw new Error('goose adapter: public-trust seats are not supported until the deny-by-default attack test passes');
-  }
-  if (sandbox.mode && sandbox.mode !== 'none') {
+    if (!['workspace', 'read-only', 'bwrap'].includes(resolvePublicSandboxMode(sandbox))) {
+      throw new Error('goose adapter: public seats require an enforced sandbox');
+    }
+    if (!environment.provider || !environment.model) {
+      throw new Error('goose adapter: public seats require an explicit provider and model');
+    }
+    if (sandbox.network?.policy === 'restricted') {
+      throw new Error('goose adapter: restricted networking is not supported');
+    }
+  } else if (sandbox.mode && sandbox.mode !== 'none') {
     throw new Error(`goose adapter: sandbox.mode=${sandbox.mode} cannot be enforced by Goose`);
   }
 };
@@ -50,7 +75,14 @@ const substitute = (value, ctx) => String(value).replace(PLACEHOLDER_RE, (whole,
 /** The flag contains paths and URLs only. Literal MCP secrets cannot ride argv. */
 export const extensionArgs = (servers, ctx) => {
   const args = [];
+  if (ctx.publicSeat && (!Array.isArray(servers) || servers.length !== 1)) {
+    throw new Error('goose adapter: public seats require only the Commonly MCP extension');
+  }
   for (const server of servers || []) {
+    if (ctx.publicSeat && (server.name !== 'commonly' || (server.transport || 'stdio') !== 'stdio'
+      || !describeMcpCommand(server.command)?.isCommonly)) {
+      throw new Error('goose adapter: public seats require only the Commonly stdio MCP extension');
+    }
     if (!/^[A-Za-z0-9_-]{2,}$/.test(server?.name || '')) {
       throw new Error('goose adapter: MCP server needs a safe name');
     }
@@ -74,7 +106,13 @@ export const extensionArgs = (servers, ctx) => {
     if (transport !== 'stdio' || !Array.isArray(server.command) || !server.command.length) {
       throw new Error(`goose adapter: MCP server ${server.name} has an unsupported transport or command`);
     }
-    const command = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl });
+    const command = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl, publicSeat: ctx.publicSeat });
+    if (!command) throw new Error('goose adapter: Commonly MCP is not prepared for this public turn');
+    if (ctx.publicSeat) {
+      const tree = selectedMcpVersionDir(command) || dirname(dirname(command[1] || ''));
+      if (!isAbsolute(tree)) throw new Error('goose adapter: public MCP requires an absolute prepared entry');
+      ctx.mcpReadDirectories?.push(tree);
+    }
     const delivery = deliverSeatCredential({ ...server, command }, {
       credentialFile: ctx.credentialFile, label: 'goose',
     });
@@ -93,7 +131,15 @@ export const extensionArgs = (servers, ctx) => {
       return gooseWord(`${name}=${resolved}`);
     });
     const commandWords = command.map((part) => gooseWord(substitute(part, ctx)));
-    args.push('--with-extension', `${server.name}:${[...env, ...commandWords].join(' ')}`);
+    if (ctx.publicSeat) {
+      ctx.publicExtensions.push({ type: 'stdio', name: server.name, cmd: command[0],
+        args: command.slice(1).map((part) => substitute(part, ctx)),
+        envs: Object.fromEntries(Object.entries(delivery.env).map(([name, value]) => [name, substitute(value, ctx)])),
+        available_tools: PUBLIC_GOOSE_TOOLS,
+      });
+    } else {
+      args.push('--with-extension', `${server.name}:${[...env, ...commandWords].join(' ')}`);
+    }
   }
   return args;
 };
@@ -179,7 +225,7 @@ export default {
   supportsProvider: true,
 
   async validateEnvironment(environment, workspacePath) {
-    assertNoSandboxDeclared(environment);
+    assertSandboxSupported(environment);
     const validation = validateEnvironmentSpec(environment || {});
     if (!validation.ok) throw new Error(validation.errors.join('; '));
     return resolveProviderKeyFile(environment?.provider, workspacePath, 'Goose');
@@ -194,61 +240,107 @@ export default {
 
   async spawn(prompt, ctx = {}) {
     const keyFile = await this.validateEnvironment(ctx.environment, ctx.cwd);
+    const isPublic = effectiveSandboxTrust(ctx.environment?.sandbox?.trust) === 'public';
     const sourceEnv = ctx.env || process.env;
     const configured = ctx.environment?.provider;
-    const key = configured
+    const key = isPublic ? '' : configured
       ? (await readFile(keyFile, 'utf8')).trim() : sourceEnv[DEFAULT_PROVIDER_KEY];
-    if (!key) throw new Error(`goose adapter: ${configured ? 'provider.keyFile' : DEFAULT_PROVIDER_KEY} is missing`);
+    if (!isPublic && !key) throw new Error(`goose adapter: ${configured ? 'provider.keyFile' : DEFAULT_PROVIDER_KEY} is missing`);
     const baseUrl = new URL(configured?.baseURL || `${DEFAULT_PROVIDER_HOST}/v1`);
     if (!/^https?:$/.test(baseUrl.protocol) || baseUrl.username || baseUrl.password || baseUrl.search || baseUrl.hash) {
       throw new Error('goose adapter: provider.baseURL must be a plain HTTP(S) URL');
     }
     const model = ctx.environment?.model || DEFAULT_MODEL;
-    const binary = ctx._binaryPath || 'goose';
+    const binary = ctx._binaryPath || (isPublic
+      ? String(spawnSync('which', ['goose'], { encoding: 'utf8', env: sourceEnv }).stdout || '').trim()
+      : 'goose');
     const version = ctx._version || versionOf(spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 5000 }).stdout);
     if (!TESTED_GOOSE_VERSIONS.includes(version)) {
+      if (isPublic) throw new Error(`goose adapter: public seats refuse untested version ${version || 'unknown'}`);
       // eslint-disable-next-line no-console
       console.warn(`[goose] installed ${version || 'unknown'} differs from smoke-tested ${TESTED_GOOSE_VERSIONS.join(', ')}; private seat continues`);
     }
     const home = await mkdtemp(join(tmpdir(), 'commonly-goose-'));
+    let proxy;
     try {
       const credential = writeCredentialFile(ctx.runtimeToken, {
         root: home, agentName: ctx.agentName || 'agent',
       });
+      if (isPublic) proxy = await startProviderProxy({
+        provider: configured, keyFile, tokenFile: join(home, 'provider-proxy-token'), adapterLabel: 'Goose',
+      });
+      const mcpReadDirectories = [];
+      const publicExtensions = [];
+      const recipePath = join(home, 'public-recipe.json');
       const args = [
-        'run', '--no-session', '--no-profile', '--with-builtin', 'developer',
+        'run', '--no-session', ...(!isPublic ? ['--no-profile', '--with-builtin', 'developer'] : []),
+        ...(isPublic ? ['--recipe', recipePath] : []),
         '--output-format', 'stream-json', '--provider', 'openai', '--model', model,
         ...extensionArgs(ctx.environment?.mcp, {
           credentialFile: credential?.path || '', instanceUrl: ctx.instanceUrl || '',
           runtimeToken: ctx.runtimeToken || '',
+          publicSeat: isPublic, mcpReadDirectories, publicExtensions,
         }),
-        '-t', buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true }),
+        ...(!isPublic ? ['-t', buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true })] : []),
       ];
+      if (isPublic) await writeFile(recipePath, JSON.stringify({ version: '1.0.0',
+        title: 'Commonly public seat', description: 'Only audited Commonly API tools are available.',
+        instructions: 'Respond to the user using the available Commonly tools.', extensions: publicExtensions,
+        prompt: buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true }),
+      }), { mode: 0o600 });
       const env = {
         ...Object.fromEntries(Object.entries(sourceEnv).filter(([name]) => SAFE_ENV.test(name))),
         HOME: home,
+        TMPDIR: home,
         XDG_CONFIG_HOME: join(home, 'config'),
         XDG_DATA_HOME: join(home, 'data'),
+        GOOSE_PATH_ROOT: home,
         GOOSE_PROVIDER: 'openai',
         GOOSE_MODEL: model,
         GOOSE_MODE: 'auto',
         GOOSE_TELEMETRY_ENABLED: 'false',
-        OPENAI_HOST: baseUrl.origin,
-        OPENAI_BASE_PATH: `${baseUrl.pathname.replace(/\/$/, '')}/chat/completions`.replace(/^\//, ''),
-        OPENAI_API_KEY: key,
+        OPENAI_HOST: proxy ? new URL(proxy.baseURL).origin : baseUrl.origin,
+        OPENAI_BASE_PATH: `${new URL(proxy?.baseURL || baseUrl).pathname.replace(/\/$/, '')}/chat/completions`.replace(/^\//, ''),
+        OPENAI_API_KEY: proxy ? (await readFile(proxy.tokenFile, 'utf8')).trim() : key,
       };
       withholdRuntimeCredential(env, { credentialFile: credential?.path || null });
       const requestedTimeout = Number(ctx.timeoutMs);
       const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
         ? Math.min(requestedTimeout, DEFAULT_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
+      let executable = binary;
+      let spawnArgs = args;
+      if (isPublic) {
+        if (!isAbsolute(binary)) throw new Error('goose adapter: public seats require an absolute Goose executable');
+        const sandbox = { ...ctx.environment.sandbox, trust: 'public' };
+        const mode = resolvePublicSandboxMode(sandbox, ctx._platform || process.platform);
+        if (mode === 'bwrap') {
+          const available = (ctx._detectBwrap || detectBwrap)();
+          if (!available.available) throw new Error(`goose adapter: bwrap unavailable: ${available.error}`);
+          [executable, ...spawnArgs] = (ctx._wrapArgvWithBwrap || wrapArgvWithBwrap)([binary, ...args], {
+            ...ctx.environment, sandbox: { ...sandbox, filesystem: {
+              ...(sandbox.filesystem || {}), 'write-outside': [home],
+            } },
+          }, { workspacePath: ctx.cwd, homePath: home,
+            readOnlyPaths: [binary, process.execPath, ...mcpReadDirectories] });
+        } else {
+          if ((ctx._platform || process.platform) !== 'darwin') throw new Error('goose adapter: Seatbelt requires macOS');
+          [executable, ...spawnArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([binary, ...args], {
+            workspacePath: ctx.cwd, workspaceAccess: mode === 'read-only' ? 'read' : 'write',
+            executablePath: binary, statePath: home, mcpConfigDir: home,
+            loopbackNetworkPorts: [proxy.port], readOnlyDirectories: mcpReadDirectories,
+          });
+        }
+      }
       const text = await runGoose({
-        binary, args, cwd: ctx.cwd, env, timeoutMs,
-        credentials: [...spawnCredentials(ctx, [DEFAULT_PROVIDER_KEY]), key],
+        binary: executable, args: spawnArgs, cwd: ctx.cwd, env, timeoutMs,
+        credentials: [...spawnCredentials(ctx, [DEFAULT_PROVIDER_KEY]), key, env.OPENAI_API_KEY],
         spawnImpl: ctx._spawnImpl,
       });
       return { text, newSessionId: null };
     } finally {
-      await rm(home, { recursive: true, force: true });
+      try { await proxy?.close(); } finally {
+        await rm(home, { recursive: true, force: true });
+      }
     }
   },
 };

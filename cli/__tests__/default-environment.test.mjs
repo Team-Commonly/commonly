@@ -14,7 +14,7 @@ import {
   withDefaultSandbox,
 } from '../src/lib/default-environment.js';
 import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
-import { assertNoSandboxDeclared as assertGooseNoSandboxDeclared } from '../src/lib/adapters/goose.js';
+import { assertSandboxSupported as assertGooseSandboxSupported } from '../src/lib/adapters/goose.js';
 
 describe('defaultMcpServers', () => {
   test.each(['claude', 'codex', 'pi', 'opencode', 'qwen', 'dsh', 'goose'])('hands %s the commonly server', (adapterName) => {
@@ -39,9 +39,9 @@ describe('defaultMcpServers', () => {
   });
 
   test('ADAPTERS_WITH_DEFAULT_SANDBOX is the enforcing subset, pi excluded', () => {
-    expect([...ADAPTERS_WITH_DEFAULT_SANDBOX].sort()).toEqual(['claude', 'codex', 'opencode', 'qwen']);
+    expect([...ADAPTERS_WITH_DEFAULT_SANDBOX].sort()).toEqual(['claude', 'codex', 'goose', 'opencode', 'qwen']);
     expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('pi')).toBe(false);
-    expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('goose')).toBe(false);
+    expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('goose')).toBe(true);
   });
 
   test('OpenCode sandbox support does not yet authorize the grant broker', () => {
@@ -217,12 +217,11 @@ describe('seatBaseline', () => {
       .toEqual(defaultSeatSandbox());
   });
 
-  test('gives Goose only the MCP half and refuses public trust', () => {
+  test('derives Goose public confinement and requires its provider to be explicit', () => {
     const derived = seatBaseline(null, 'goose', { sandbox: true });
-    expect(derived).toEqual({ mcp: [commonlyMcpServer()] });
-    expect(() => assertGooseNoSandboxDeclared(derived)).not.toThrow();
-    expect(() => assertGooseNoSandboxDeclared({ sandbox: { trust: 'public' } }))
-      .toThrow(/public-trust/);
+    expect(derived).toEqual({ mcp: [commonlyMcpServer()], sandbox: { trust: 'public' } });
+    expect(() => assertGooseSandboxSupported(derived)).toThrow(/explicit provider/);
+    expect(ADAPTERS_WITH_GRANT_BROKER.has('goose')).toBe(false);
   });
 
   test('derives OpenCode public confinement while withholding grant-broker eligibility', () => {

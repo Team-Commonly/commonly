@@ -1,0 +1,71 @@
+name: Goose public tool boundary
+
+on:
+  pull_request:
+    paths:
+      - 'cli/src/lib/adapters/goose.js'
+      - 'cli/src/lib/default-environment.js'
+      - 'cli/src/lib/sandbox/**'
+      - 'cli/src/lib/provider-proxy.js'
+      - 'cli/src/lib/mcp*.js'
+      - 'cli/__tests__/*goose*'
+      - 'commonly-mcp/**'
+      - '.github/workflows/goose-public-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install fixture dependencies and pinned Goose
+        run: |
+          npm ci --prefix cli --ignore-scripts --no-audit --no-fund
+          npm ci --prefix commonly-mcp --ignore-scripts --no-audit --no-fund
+          mkdir -p .dev/goose
+          case "$(uname -m)" in
+            arm64) goose_asset=aarch64; goose_sha=63738f0eed2fe9d8585a4ba988c3ffb23d600db0b43858a6cd868fa6b035a7af ;;
+            x86_64) goose_asset=x86_64; goose_sha=81fd55f4003950bb72719402e2defb1375eef4b9a739d901a365fb737b73aeee ;;
+            *) exit 1 ;;
+          esac
+          curl -fL "https://github.com/aaif-goose/goose/releases/download/v1.54.0/goose-${goose_asset}-apple-darwin.tar.bz2" -o .dev/goose/cli.tar.bz2
+          echo "$goose_sha  .dev/goose/cli.tar.bz2" | shasum -a 256 -c -
+          tar -xjf .dev/goose/cli.tar.bz2 -C .dev/goose
+      - name: Exercise real Goose under Seatbelt
+        run: |
+          export COMMONLY_GOOSE_SMOKE_BINARY="$PWD/.dev/goose/goose"
+          cd cli
+          node --experimental-vm-modules node_modules/.bin/jest __tests__/goose.public-smoke.test.mjs --runInBand
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exercise real Goose under bwrap in a disposable container
+        run: |
+          docker run --rm --privileged --security-opt apparmor=unconfined \
+            --mount "type=bind,src=$PWD,dst=/source,readonly" node:22 bash -lc '
+              set -euo pipefail
+              apt-get update -qq
+              apt-get install -y -qq bubblewrap curl >/dev/null
+              mkdir -p /work/tools
+              cp -R /source/cli /source/commonly-mcp /work/
+              rm -rf /work/cli/node_modules /work/commonly-mcp/node_modules
+              npm ci --prefix /work/cli --ignore-scripts --silent
+              npm ci --prefix /work/commonly-mcp --ignore-scripts --silent
+              curl -fL https://github.com/aaif-goose/goose/releases/download/v1.54.0/goose-x86_64-unknown-linux-gnu.tar.bz2 -o /work/tools/cli.tar.bz2
+              echo "bf01cb6359f7a2b1acb54ca4827e1d059b18aabb3d2b75202e21066cfd3a3396  /work/tools/cli.tar.bz2" | sha256sum -c -
+              tar -xjf /work/tools/cli.tar.bz2 -C /work/tools
+              chown -R node:node /work
+              su node -s /bin/bash -c "cd /work/cli && COMMONLY_GOOSE_SMOKE_BINARY=/work/tools/goose node --experimental-vm-modules node_modules/.bin/jest __tests__/goose.public-smoke.test.mjs --runInBand"
+            '
