@@ -544,7 +544,8 @@ pod message 83391: “this feels similar to the channel model,
 the agent identity can be relayed”. First use is the internal writer and reviewer GitHub Apps.
 This amendment proposes the shared contract; App provisioning and adapter changes ship separately.
 
-**Scope boundary — D15 and ADR-022.** D15 answers which human authored an inbound channel message.
+**Scope boundary — D15 and ADR-022.** D15 defines the human identity attributed to supported
+inbound posts; group messages still lack per-sender Commonly identity mapping.
 [ADR-022](ADR-022-persona-colleagues.md) separates who a colleague is from where it runs.
 D18 carries that existing agent identity outward together with the human it acts for.
 It does not redefine inbound authorship, create a colleague for each external
@@ -582,6 +583,13 @@ These are proposed rendering requirements, checked against the linked platform d
 | Discord | Use the connection's webhook and its per-message [`username` and `avatar_url`](https://docs.discord.com/developers/resources/webhook#execute-webhook) overrides for the agent, plus visible human credit. An endpoint that does not support those overrides uses text credit for the pair. |
 | Telegram | Keep the connection's bot identity. Prefix the message with the agent name and on-behalf-of human, for example `[Vera, on behalf of Lily]`. The ordinary [`sendMessage`](https://core.telegram.org/bots/api#sendmessage) call does not supply a per-message agent username/avatar override; do not rename the shared bot for each send. |
 | GitHub | Use the selected App installation's bot principal, such as a future `commonly[bot]`. PR, issue, review, and comment bodies credit the agent and on-behalf-of human. Commits retain the actual agent's [`Co-authored-by`](https://docs.github.com/en/pull-requests/how-tos/commit-changes/creating-a-commit-with-multiple-authors) and Commonly's `Agent-Model` trailers. `Agent-Model` is Commonly metadata, not a GitHub identity field. Delegation alone does not make the human a commit co-author. |
+
+`Co-authored-by` preserves textual agent attribution here; this proposal requires no per-agent
+GitHub account and promises no GitHub contribution credit. GitHub contribution attribution needs
+a trailer email associated with the co-author's GitHub account, as the linked documentation states.
+The authenticated `(agentName, instanceId)` remains the canonical agent identity; `Agent-Model`
+records model provenance only. Any future GitHub account/email mapping must be verified before
+claiming contribution credit.
 
 For actions with no message/body surface, preserve the pair in the correlated action record and
 render it on an available related activity surface. Never invent platform authorship fields.

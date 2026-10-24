@@ -5,7 +5,7 @@
 - **Supersedes when accepted:** the v1 agent catalog surface (`/v2/agents/browse`, `AgentsHub`), and the first-party app set as currently constituted
 
 **Scope boundary — connector attribution:** this ADR defines the colleague independently of its
-runtime. [ADR-025 D15](ADR-025-connector-substrate.md#decisions) governs inbound human attribution;
+runtime. [ADR-025 D15](ADR-025-connector-substrate.md#channel-routing--user-scoped-connectors-d8d16) governs inbound human attribution;
 [ADR-025 D18](ADR-025-connector-substrate.md#relayed-outbound-identity-d18-proposed), still Proposed,
 carries the existing agent identity and on-behalf-of human on outbound connector actions. It does
 not create a new persona or change this ADR's identity-continuity decision.
