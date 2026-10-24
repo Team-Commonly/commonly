@@ -499,11 +499,23 @@ export async function notifyPodAgents(
 /** Coalesced durable watcher retries, driven by the existing kernel sweep.
  * At-least-once on a crash after enqueue; each retry rechecks current membership.
  */
+let watcherRetryAfter: { revision: Date; id: unknown } | null = null;
 export async function retryTaskWatcherDigests(): Promise<void> {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const Task = require('../models/Task');
-  const rows = await Task.find({ watcherDeliveryPendingAt: { $type: 'date' } })
-    .sort({ watcherDeliveryPendingAt: 1 }).limit(100).lean();
+  const pending = { watcherDeliveryPendingAt: { $type: 'date' } };
+  const after = watcherRetryAfter;
+  let rows = await Task.find({ ...pending, ...(after ? { $or: [
+    { watcherDeliveryPendingAt: { $gt: after.revision } },
+    { watcherDeliveryPendingAt: after.revision, _id: { $gt: after.id } },
+  ] } : {}) }).sort({ watcherDeliveryPendingAt: 1, _id: 1 }).limit(100).lean();
+  if (!rows.length && after) {
+    watcherRetryAfter = null;
+    rows = await Task.find(pending).sort({ watcherDeliveryPendingAt: 1, _id: 1 }).limit(100).lean();
+  }
+  // Advance even when every enqueue fails; the next batch must get a turn.
+  const last = rows[rows.length - 1];
+  if (last) watcherRetryAfter = { revision: last.watcherDeliveryPendingAt, id: last._id };
   for (const task of rows) {
     await notifyPodAgents(task.podId, task, 'updated', undefined, undefined, true);
   }

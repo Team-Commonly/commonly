@@ -96,7 +96,7 @@ const TaskSchema = new Schema<ITask>(
 
 TaskSchema.index({ podId: 1, status: 1 });
 TaskSchema.index({ watchers: 1, podId: 1, updatedAt: -1 });
-TaskSchema.index({ watcherDeliveryPendingAt: 1 }, { partialFilterExpression: { watcherDeliveryPendingAt: { $type: 'date' } } });
+TaskSchema.index({ watcherDeliveryPendingAt: 1, _id: 1 }, { partialFilterExpression: { watcherDeliveryPendingAt: { $type: 'date' } } });
 TaskSchema.index({ podId: 1, assignee: 1, status: 1 });
 TaskSchema.index(
   { podId: 1, prUrl: 1, status: 1 },

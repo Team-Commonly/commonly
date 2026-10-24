@@ -496,6 +496,7 @@ If enqueue reports an ambiguous error, retain the slot: persistence may have
 succeeded, so clearing it could violate the cap. A later eligible tick retries
 after the interval. Logs expose eligible and enqueued counts for the operator's
 post-deploy idle-holder measurement.
+
 ### D8.5 — AMENDMENT (2026-10-24): task priority and following (D40)
 
 Task priority is P0–P3, default P2; discovery and assigned-work cues order by

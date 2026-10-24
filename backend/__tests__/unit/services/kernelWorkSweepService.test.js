@@ -427,3 +427,16 @@ test('watcher receipts retry even when work discovery is disabled', async () => 
   expect(receipts).toHaveBeenCalledTimes(1);
   expect(mockNotifyFoundWork).not.toHaveBeenCalled();
 });
+
+
+test('a watcher retry failure does not block rescue or work discovery', async () => {
+  const receipts = require('../../../services/taskEventService').retryTaskWatcherDigests;
+  receipts.mockRejectedValueOnce(new Error('lookup failed'));
+  const rescue = jest.spyOn(KernelWorkSweepService, 'rescueLapsed');
+  const discovery = jest.spyOn(KernelWorkSweepService, 'wakeForFoundWork');
+  try {
+    await KernelWorkSweepService.sweep(NOW);
+    expect(rescue).toHaveBeenCalledTimes(1);
+    expect(discovery).toHaveBeenCalledTimes(1);
+  } finally { rescue.mockRestore(); discovery.mockRestore(); }
+});
