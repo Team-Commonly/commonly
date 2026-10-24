@@ -146,6 +146,9 @@ const V2PodBoard: React.FC = () => {
   const connectionRef = useRef({ podId: null as string | null, wasConnected: false, hasConnected: false });
 
   const [tasks, setTasks] = useState<BoardTask[]>([]);
+  const [taskWriteAllowed, setTaskWriteAllowed] = useState(false);
+  const reloadTasksRef = useRef<() => void>(() => undefined);
+  const taskLoadPendingRef = useRef(false);
   const [claimClock, setClaimClock] = useState(() => Date.now());
   const [podName, setPodName] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -217,6 +220,7 @@ const V2PodBoard: React.FC = () => {
         : await api.patch<{ task: BoardTask }>(path, change);
       if (requestId !== taskMutationRef.current) return;
       taskRequestRef.current += 1;
+      if (taskLoadPendingRef.current) reloadTasksRef.current();
       const merge = (existing: BoardTask): BoardTask => {
         if (existing.taskId !== task.taskId) return existing;
         // A socket read can land after this request began. Following changes
@@ -311,19 +315,23 @@ const V2PodBoard: React.FC = () => {
   const load = useCallback(async () => {
     if (!podId) return;
     const requestId = ++taskRequestRef.current;
+    taskLoadPendingRef.current = true;
     try {
-      const data = await api.get<{ tasks: BoardTask[] }>(`/api/v1/tasks/${podId}`);
+      const data = await api.get<{ tasks: BoardTask[]; permissions?: { canWrite: boolean } }>(`/api/v1/tasks/${podId}`);
       if (requestId !== taskRequestRef.current) return;
       setTasks(data.tasks || []);
+      setTaskWriteAllowed(data.permissions?.canWrite === true);
       setSelected((previous) => previous ? (data.tasks || []).find((task) => task.taskId === previous.taskId) || null : null);
       setClaimClock(Date.now());
       setLoadError(false);
     } catch {
       if (requestId === taskRequestRef.current) setLoadError(true);
     } finally {
-      if (requestId === taskRequestRef.current) setLoading(false);
+      if (requestId === taskRequestRef.current) { taskLoadPendingRef.current = false; setLoading(false); }
     }
   }, [api, podId]);
+
+  reloadTasksRef.current = load;
 
   const loadFocus = useCallback(async () => {
     if (!podId) return;
@@ -795,7 +803,7 @@ const V2PodBoard: React.FC = () => {
               </div>
               <dl className="v2-board__ownership">
                 <dt><label htmlFor="task-priority">{t('board.detail.priority')}</label></dt>
-                <dd><select id="task-priority" value={selected.priority || 'P2'} disabled={detailSaving} onChange={(event) => updateDetail(selected, { priority: event.target.value as TaskPriority })}>
+                <dd><select id="task-priority" value={selected.priority || 'P2'} disabled={detailSaving || !taskWriteAllowed} onChange={(event) => updateDetail(selected, { priority: event.target.value as TaskPriority })}>
                   {PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
                 </select></dd>
                 <dt>{t('board.detail.assignedTo')}</dt>

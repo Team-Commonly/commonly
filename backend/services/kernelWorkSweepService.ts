@@ -352,6 +352,14 @@ class KernelWorkSweepService {
   }
 
   static async sweep(now: Date = new Date()): Promise<SweepResult> {
+    // Receipt retries remain independent of work-discovery wake policy.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { retryTaskWatcherDigests } = require('./taskEventService');
+    try {
+      await retryTaskWatcherDigests();
+    } catch (error) {
+      console.warn('[kernel-sweep] watcher receipts remain due:', (error as Error).message);
+    }
     if (String(process.env.AGENT_WORK_SWEEP_DISABLED || '').toLowerCase() === 'true') {
       return {
         scannedPods: 0, rescued: 0, deferred: 0, woken: 0, skippedNoWork: 0,

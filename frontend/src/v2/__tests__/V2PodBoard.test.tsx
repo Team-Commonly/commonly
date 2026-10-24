@@ -66,7 +66,7 @@ const FOCUS = {
 
 const wireAxios = (tasks = TASKS) => {
   axios.get.mockImplementation((url) => {
-    if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks } });
+    if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks, permissions: { canWrite: true } } });
     if (url.startsWith('/api/pods/')) return Promise.resolve({ data: { name: 'My Workspace' } });
     return Promise.resolve({ data: {} });
   });
@@ -571,4 +571,52 @@ test('follow is self-service and shows a failed request without changing subscri
   expect(screen.getByText('alice')).toBeInTheDocument();
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+
+test('viewer priority is read-only while follow remains available', async () => {
+  const task = { taskId: 'TASK-1', title: 'Read this', priority: 'P2', status: 'pending', watchers: [] };
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.startsWith('/api/v1/tasks/') ? { tasks: [task], permissions: { canWrite: false } } : {} }));
+  renderBoard();
+  fireEvent.click(await screen.findByTitle('TASK-1'));
+  expect(screen.getByLabelText('Priority')).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Follow task' })).toBeEnabled();
+});
+
+test('drawer traps keyboard focus and restores its opener', async () => {
+  wireAxios([{ taskId: 'TASK-1', title: 'Focus here', status: 'pending', watchers: [] }]);
+  renderBoard();
+  const opener = await screen.findByTitle('TASK-1');
+  opener.focus();
+  fireEvent.click(opener);
+  const close = screen.getByRole('button', { name: 'Close' });
+  expect(close).toHaveFocus();
+  fireEvent.keyDown(close, { key: 'Tab', shiftKey: true });
+  const buttons = within(screen.getByRole('dialog')).getAllByRole('button');
+  expect(buttons[buttons.length - 1]).toHaveFocus();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(opener).toHaveFocus();
+});
+
+test('a detail save replaces an invalidated socket read, preserving another row update', async () => {
+  const first = { taskId: 'TASK-1', title: 'First', priority: 'P2', status: 'pending', watchers: [] };
+  const second = { taskId: 'TASK-2', title: 'Second', priority: 'P2', status: 'pending', watchers: [] };
+  const socket = { on: jest.fn(), off: jest.fn() };
+  mockSocketValue = { socket, connected: true, joinPod: jest.fn(), leavePod: jest.fn() };
+  let resolvePending;
+  let reads = 0;
+  axios.get.mockImplementation((url) => {
+    if (!url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: {} });
+    reads += 1;
+    if (reads === 2) return new Promise((resolve) => { resolvePending = resolve; });
+    return Promise.resolve({ data: { tasks: reads === 1 ? [first, second] : [{ ...first, priority: 'P0' }, { ...second, title: 'Second changed' }], permissions: { canWrite: true } } });
+  });
+  axios.patch.mockResolvedValueOnce({ data: { task: { ...first, priority: 'P0' } } });
+  renderBoard();
+  fireEvent.click(await screen.findByTitle('TASK-1'));
+  act(() => socket.on.mock.calls.find(([name]) => name === 'task_updated')[1]({ podId: 'pod-1' }));
+  fireEvent.change(screen.getByLabelText('Priority'), { target: { value: 'P0' } });
+  expect(await screen.findByText('Second changed')).toBeInTheDocument();
+  await act(async () => { resolvePending({ data: { tasks: [first, second], permissions: { canWrite: true } } }); });
+  expect(screen.getByText('Second changed')).toBeInTheDocument();
 });
