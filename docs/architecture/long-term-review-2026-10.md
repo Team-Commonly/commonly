@@ -358,15 +358,15 @@ Items are ranked by measured cost removed per day of effort.
 
 - **Hosted turns run inside the API process** (`dispatchInProcess`, `backend/services/agentEventService.ts:1333`).
 - **Nothing lets them finish at shutdown.** A rollout gives the old pod a 10-second `preStop` sleep (`k8s/helm/commonly/templates/core/backend-deployment.yaml:659–661`) inside a 30-second grace period (`:28`), and SIGTERM comes after the sleep. No backend module handles that signal (see *Everything else*), so the process is gone within those 30 seconds, whatever turns it is running. A native turn can take up to about two minutes (`agentEventService.ts:1077`).
-- **A sweep finds the dead runs later.** `garbageCollect` (`agentEventService.ts:723`) runs every 10 minutes (`schedulerService.ts:182–186`), and once 8 seconds after the scheduler starts (`:644–648`). It re-runs a turn whose event was left delivered and stale (`redispatchStuckInProcess`, `agentEventService.ts:919`), and gives up on runs left queued or running past a cutoff (`interruptAbandonedRuns`, `:1081`). Both mark the run `interrupted` (`:952–955` and `:1084–1086`, the only writers of that status), and both set `completedAt` to the time of the sweep, not the time the turn died.
-- **So a count of interrupted runs is a count of runs the sweep found dead, not of deploys.** A daily count cannot say which restart ended which run: ten such runs on a day with ten deploys fit one per deploy, all ten at one deploy, or a crash between them. Each run died somewhere between its `startedAt` and its `completedAt`, so the join in *How to re-measure* credits a run to a restart only when exactly one backend restart falls in that span, and counts the rest apart. It needs the restart times, which only the operator can read.
+- **A sweep marks the stale rows later.** `garbageCollect` (`agentEventService.ts:723`) runs every 10 minutes (`schedulerService.ts:182–186`), and once 8 seconds after the scheduler starts (`:644–648`). It re-runs a turn whose event was left delivered and stale (`redispatchStuckInProcess`, `agentEventService.ts:919`), and gives up on runs left queued or running past a cutoff (`interruptAbandonedRuns`, `:1081`). Both mark the run `interrupted` (`:952–955` and `:1084–1086`, the only writers of that status), and both set `completedAt` to the time of the sweep, not the time the turn stopped.
+- **So the daily count is of rows the sweep marked `interrupted`, not of deploys, and not only of turns that died.** Both writers judge a turn by its row's stored status, and a turn can finish yet leave its row `running`. The row is saved as `running` when the turn starts (`backend/services/nativeRuntimeService.ts:1792–1793`); if the final save fails, the failure is logged and swallowed (`:2234–2239`), and the turn still returns its result (`:2253–2255`). Nor can a daily count say which restart a row belongs to: ten such rows on a day with ten deploys fit one per deploy, all ten at one deploy, or a crash between them. The join in *How to re-measure* pairs a row with a restart only when exactly one backend restart falls between its `startedAt` and its `completedAt`, and counts the rest apart. Each pair is a candidate that needs confirming, not a cause: a restart that comes after a lost final save pairs the same way. Operator evidence that the turn or its process was still running at that shutdown, or an equivalent check that rules out a lost final write, promotes a candidate. Until one is promoted, which restarts ended which turns stays unresolved. The join also needs the restart times, which only the operator can read.
 - **ADR-021 (Accepted) already specifies the target**, a separate `agent-runtime` Deployment. The chart has none yet.
 
 **A cheaper first step:** drain before exit. On SIGTERM, stop starting turns, let the ones in flight finish, and set the grace period past the turn bound. That covers rollouts and other graceful stops, not crashes, and it is about a day.
 
-**Trigger:** the join in *How to re-measure*. If rollouts end hosted turns, do the drain now; it does not wait for A. If crashes end them too, B itself moves up, right behind A.
+**Trigger:** a confirmed restart-caused loss: a hosted turn that operator evidence shows was still running when a backend restart ended it. The join in *How to re-measure* finds candidates. It does not settle the question alone and gives B no baseline. If a confirmed loss came at a rollout, do the drain now; it does not wait for A. If one came at a crash, B itself moves up, right behind A.
 
-**Moves:** runs ended by a backend restart, from the join's count to 0, rollouts first through the drain.
+**Moves:** hosted turns confirmed as ended by a backend restart, to 0, rollouts first through the drain. The baseline is the confirmed count, not the join's candidates, and it stays unmeasured until a candidate is confirmed.
 
 ### C. Store chat messages only in PostgreSQL (2–3 days)
 
@@ -511,7 +511,7 @@ Re-measure these numbers monthly:
 - **The row's notes.** This report works from tonight's incident list, as given with TASK-438. It has not yet been checked against the row's own notes. Any incident they add gets a line in *Tonight's incidents, mapped*.
 - **Two database counts.** Both queries are in *How to re-measure*.
   - MongoDB message rows created in the last 30 days decide whether C moves to Do now.
-  - The join of interrupted runs to backend restarts decides how soon B moves. It needs the restart times, which only the operator can read. A daily count alone cannot say which restart ended a run.
+  - Whether backend restarts end hosted turns, and how often, is unresolved. The join of interrupted rows to backend restarts lists only candidates. One counts toward B's trigger once the operator supplies the restart times and evidence that its turn was still running at that restart. Neither a daily count nor an unconfirmed candidate settles it.
 - **The efforts are estimates**, made by counting the sites each item touches. Re-estimate each one with the implementor who takes it.
 - **The PR figures are provisional until 2026-10-30.** Item 4's p90 is read a week after the window, once the PRs still open have merged or closed.
 
@@ -563,7 +563,7 @@ Read at 06:39–06:42Z, the first run printed the shares in item 4's table, 151 
 How `waits.py` labels the time:
 
 - **Heads.** A commit is the PR's head from the first time CI runs on it, it is force-pushed, or a review names it. CI keeps heads that a force push drops from the timeline. CI skips a PR that conflicts with its base, so a head CI never ran on falls back to its commit date, which is only a proxy for when it was pushed. 188 of the 706 heads were placed that way, and on only one PR was such a head the current one when a verdict or a check result came in, when the PR was queued, or at its end. Dropping the fallback moves every share by under a point.
-- **Verdicts.** A verdict is a review whose last line is `GATE: PASS`, `GATE: HOLD` or `GATE: FAIL`, with nothing else on the line but punctuation, and FAIL counts as HOLD. A verdict holds only for the commit the review names. Every account's verdicts count, and in these timelines all 454 came from user accounts, none from bots.
+- **Verdicts.** A verdict is a review whose last line is `GATE: PASS`, `GATE: HOLD` or `GATE: FAIL`, with nothing else on the line but punctuation, and FAIL counts as HOLD. A verdict holds only for the commit the review names, and each gate keeps its latest verdict per commit, so a late review of an older head never overwrites a verdict on the current one. Keeping only each gate's latest verdict instead changes no figure in this report. Every account's verdicts count, and in these timelines all 454 came from user accounts, none from bots.
 - **Gates.** Several gates review from one shared account, so a verdict belongs to the gate its byline names, or to its account when there is no byline. A gate the body names on a `Gate:` line counts before it reviews, if it has signed a verdict in the window by the cutoff. A PR's gates have all passed only when every gate that has reviewed or is named has passed the current head, and its checks are green only when its Tests run there has passed. Counting named gates moves 15 hours of the merged PRs' draft time from the draft-and-passed row to the plain draft row, and no other row by more than 0.1 hours.
 - **The freeze.** Merges under `cli/` and `commonly-mcp/` were frozen from 10-22 20:45Z to 10-23 17:45Z, as recorded on the PRs it held. Open time inside that window, on a PR that changes those paths and is neither a draft nor queued, counts as frozen. No other hold is recorded in a form a script can read, so other deliberate waits fall in the other rows.
 - **The cutoff.** Events after the cutoff are ignored, so a later fetch gives the same figures for the same cutoff, unless a PR's body, files or reviews have changed since.
@@ -637,26 +637,28 @@ def stretches(p, end):
     # the current head. 'author': a HOLD stands at the current head. 'checks': every
     # gate that has reviewed or is named passed the current head, and its Tests run
     # has not passed. 'ready': that run passed too. 'queue': queued. Drafts apart.
+    # Each gate keeps its latest verdict per head, so a late review of an old head
+    # never overwrites a verdict on the current one.
     ev = events(p)
     flips = [k for _, k, _ in ev if k in ('ready_for_review', 'convert_to_draft')]
     draft = flips[0] == 'ready_for_review' if flips else p['isDraft']
-    head, gates, green, queued = None, {g: (None, None) for g in named(p)}, {}, False
+    head, gates, green, queued = None, {g: {} for g in named(p)}, {}, False
 
     def label():
         if queued:
             return 'queue'
-        passed = bool(gates) and all(v == 'PASS' and c == head for v, c in gates.values())
+        passed = bool(gates) and all(by.get(head) == 'PASS' for by in gates.values())
         if draft:
             return 'draft, gates passed' if passed else 'draft'
         if passed:
             return 'ready' if green.get(head) == 'success' else 'checks'
-        return 'author' if any(v == 'HOLD' and c == head for v, c in gates.values()) else 'gate'
+        return 'author' if any(by.get(head) == 'HOLD' for by in gates.values()) else 'gate'
 
     out, cur, since = [], label(), t(p['createdAt'])
     for ts, k, x in [e for e in ev if e[0] < end] + [(end, 'end', None)]:
         ts = max(ts, since)
         if k == 'head': head = x
-        elif k == 'verdict': gates[x[0]] = (x[1], x[2])
+        elif k == 'verdict': gates.setdefault(x[0], {})[x[2]] = x[1]
         elif k == 'checks': green[x[0]] = x[1]
         elif k == 'added_to_merge_queue': queued = True
         elif k == 'removed_from_merge_queue': queued = False
@@ -858,39 +860,42 @@ EOF
 // as a fallback (messageController.ts:343, server.ts:681 and :716, agentMessageService.ts:1806).
 db.messages.countDocuments({ createdAt: { $gte: new Date(Date.now() - 30 * 864e5) } })
 
-// B: runs the sweep found dead, per day, by when the sweep marked them. The writers are
+// B: rows the sweep marked interrupted, per day, by when it marked them. The writers are
 // agentEventService.ts:952–955 and :1084–1086, and both set completedAt to the sweep's time,
-// so this count cannot say which restart ended a run. The join after it can, where the span allows.
+// so this count cannot say which restart a row belongs to. It also counts a turn that finished
+// but whose final save failed (nativeRuntimeService.ts:2234–2239), so it is not a count of losses.
 db.agentruns.aggregate([
   { $match: { status: 'interrupted', completedAt: { $gte: new Date(Date.now() - 30 * 864e5) } } },
   { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$completedAt' } }, n: { $sum: 1 } } },
   { $sort: { _id: 1 } },
 ])
 
-// B, the join. A run died between its startedAt and the sweep that marked it, so it is
-// credited to a restart only when exactly one restart falls in that span. Runs with none
-// or several are counted apart. Fill `restarts` with every time a backend process stopped
-// in the same 30 days, and why. Only the operator can read those times.
+// B, the join. A row's turn started at startedAt and the sweep marked it at completedAt, so
+// the row is paired with a restart only when exactly one restart falls in that span. Rows
+// with none or several are counted apart. A pair is a candidate, not a cause: a turn whose
+// final save failed pairs the same way. Confirm each with the operator's evidence that its
+// turn was still running at that restart. Fill `restarts` with every time a backend process
+// stopped in the same 30 days, and why. Only the operator can read those times.
 const restarts = [
   // { at: ISODate('YYYY-MM-DDTHH:MM:SSZ'), kind: 'rollout' },   // or 'crash'
 ];
-const ended = new Map(restarts.map((r) => [r, 0]));
+const paired = new Map(restarts.map((r) => [r, 0]));
 let none = 0, several = 0;
 db.agentruns.find(
   { status: 'interrupted', completedAt: { $gte: new Date(Date.now() - 30 * 864e5) } },
   { startedAt: 1, completedAt: 1 },
 ).forEach((run) => {
   const hit = restarts.filter((r) => r.at >= run.startedAt && r.at <= run.completedAt);
-  if (hit.length === 1) ended.set(hit[0], ended.get(hit[0]) + 1);
+  if (hit.length === 1) paired.set(hit[0], paired.get(hit[0]) + 1);
   else if (hit.length) several += 1;
   else none += 1;
 });
 for (const kind of new Set(restarts.map((r) => r.kind))) {
   const rs = restarts.filter((r) => r.kind === kind);
-  print(kind, rs.length, 'restarts,', rs.filter((r) => ended.get(r)).length, 'ended a run,',
-    rs.reduce((n, r) => n + ended.get(r), 0), 'runs');
+  print(kind, rs.length, 'restarts,', rs.filter((r) => paired.get(r)).length, 'with a candidate,',
+    rs.reduce((n, r) => n + paired.get(r), 0), 'candidate rows (unconfirmed)');
 }
-print('runs with no restart in their span', none, '- with several', several);
+print('rows with no restart in their span', none, '- with several', several);
 
 // Item 7: row created -> first claim, in hours. claimedAt keeps only the latest claim, but every
 // claim appends a "Claimed by ..." update (tasksApi.ts:585), so take the earliest of those.
