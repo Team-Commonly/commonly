@@ -250,6 +250,50 @@ describe('V2ActivityPage', () => {
     expect(second).toHaveAttribute('aria-describedby', expect.stringContaining('description'));
   });
 
+  test('clamps long queue details until the reader expands them', async () => {
+    const detail = 'This queue detail is intentionally long so the compact Activity row can reveal the complete context on demand.';
+    const queueWithLongDetail = {
+      ...decisionQueue,
+      items: [{ ...decisionQueue.items[0], detail }],
+      count: 1,
+    };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? queueWithLongDetail : recap }));
+    renderPage();
+
+    const detailButton = await screen.findByRole('button', { name: detail });
+    expect(detailButton).toHaveClass('v2-activity__queue-detail');
+    expect(detailButton).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(detailButton);
+    expect(detailButton).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(detailButton);
+    expect(detailButton).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('a keyboard user with focus on the detail collapses it on the second toggle', async () => {
+    const detail = 'Keyboard focus must not hold a queue detail open after the second Enter.';
+    const queueWithLongDetail = {
+      ...decisionQueue,
+      items: [{ ...decisionQueue.items[0], detail }],
+      count: 1,
+    };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? queueWithLongDetail : recap }));
+    renderPage();
+
+    const detailButton = await screen.findByRole('button', { name: detail });
+    // Focus stays on the button across both toggles, as it does for Enter on a focused control.
+    detailButton.focus();
+    fireEvent.click(detailButton);
+    expect(detailButton).toHaveClass('v2-activity__queue-detail--expanded');
+    fireEvent.click(detailButton);
+    expect(detailButton).not.toHaveClass('v2-activity__queue-detail--expanded');
+    expect(detailButton).toHaveClass('v2-activity__queue-detail--dismissed');
+    expect(detailButton).toHaveAttribute('aria-expanded', 'false');
+
+    // Blur clears the dismissal, so a later Tab-in previews the full copy again.
+    fireEvent.blur(detailButton);
+    expect(detailButton).not.toHaveClass('v2-activity__queue-detail--dismissed');
+  });
+
   test('changes the read window and opens the source pod from a factual queue row', async () => {
     renderPage();
     await screen.findByText('Review requested');
@@ -317,7 +361,7 @@ describe('V2ActivityPage', () => {
     expect(screen.getByText('Nothing needs you.')).toBeInTheDocument();
     expect(screen.queryByLabelText(/waiting on you/)).not.toBeInTheDocument();
     // Nobody to wake: the composer is hidden while step 1 is open.
-    expect(screen.queryByRole('heading', { name: /tell your agents/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: i18n.t('activity.compose.placeholder') })).not.toBeInTheDocument();
     const card = screen.getByRole('heading', { name: 'Get started' }).closest('section') as HTMLElement;
     expect(card.compareDocumentPosition(screen.getByRole('heading', { name: 'Needs you' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Hire an agent' }));
@@ -333,7 +377,7 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByText('2 steps · until your first ask arrives')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Hire an agent' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open Launch pod' })).toHaveClass('v2-activity__start-cta--current');
-    expect(screen.getByRole('heading', { name: /tell your agents/i })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: i18n.t('activity.compose.placeholder') })).toBeInTheDocument();
     second.unmount();
 
     // The account spoke, reply or not: step 2 leaves — with the connector row too, no card at all.
@@ -436,9 +480,9 @@ describe('V2ActivityPage', () => {
 
     renderPage();
 
-    expect(await screen.findByRole('heading', { name: /tell your agents/i })).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: i18n.t('activity.compose.placeholder') })).toBeInTheDocument();
     await act(async () => { releaseRegistry?.({ data: { agents: [] } }); });
-    await waitFor(() => expect(screen.queryByRole('heading', { name: /tell your agents/i })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: i18n.t('activity.compose.placeholder') })).not.toBeInTheDocument());
     expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
     expect(screen.getByText('Nothing needs you.')).toBeInTheDocument();
   });
@@ -456,9 +500,9 @@ describe('V2ActivityPage', () => {
 
     renderPage();
 
-    expect(await screen.findByRole('heading', { name: /tell your agents/i })).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: i18n.t('activity.compose.placeholder') })).toBeInTheDocument();
     await act(async () => { releaseRegistry?.({ data: { agents: [] } }); });
-    await waitFor(() => expect(screen.queryByRole('heading', { name: /tell your agents/i })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: i18n.t('activity.compose.placeholder') })).not.toBeInTheDocument());
     expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
   });
 
@@ -1346,7 +1390,7 @@ describe('V2ActivityPage', () => {
     const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
     renderPage();
-    await screen.findByRole('heading', { name: 'Tell your agents' });
+    await screen.findByRole('textbox', { name: i18n.t('activity.compose.placeholder') });
     const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
     expect(picker).not.toBeNull();
     fireEvent.click(picker);
@@ -1377,7 +1421,7 @@ describe('V2ActivityPage', () => {
     const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
     renderPage();
-    await screen.findByRole('heading', { name: 'Tell your agents' });
+    await screen.findByRole('textbox', { name: i18n.t('activity.compose.placeholder') });
     const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
     expect(picker).not.toBeNull();
     fireEvent.click(picker);
@@ -1392,7 +1436,7 @@ describe('V2ActivityPage', () => {
     const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
     renderPage();
-    await screen.findByRole('heading', { name: 'Tell your agents' });
+    await screen.findByRole('textbox', { name: i18n.t('activity.compose.placeholder') });
     const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
     expect(picker).not.toBeNull();
     picker.focus();
@@ -1406,7 +1450,7 @@ describe('V2ActivityPage', () => {
     const activityRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : activityRecap }));
     renderPage();
-    await screen.findByRole('heading', { name: 'Tell your agents' });
+    await screen.findByRole('textbox', { name: i18n.t('activity.compose.placeholder') });
     const picker = document.querySelector<HTMLButtonElement>('.v2-activity__compose-picker-button');
     expect(picker).not.toBeNull();
     fireEvent.click(picker);

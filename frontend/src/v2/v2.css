@@ -6730,14 +6730,14 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root .v2-connect__cta {
-  border: 1px solid var(--v2-accent);
-  background: var(--v2-accent);
-  color: #fff;
+  border: 1px solid var(--v2-ink);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
 }
 
 .v2-root .v2-connect__cta:hover:not(:disabled) {
-  border-color: var(--v2-accent-strong);
-  background: var(--v2-accent-strong);
+  border-color: var(--v2-ink-hover);
+  background: var(--v2-ink-hover);
 }
 
 .v2-root .v2-connect__cta:disabled {
@@ -8318,8 +8318,8 @@ body.modern-ui.v2-canvas {
   align-items: center;
   gap: 6px;
   border: none;
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
   font-size: 13px;
   font-weight: 600;
   padding: 8px 14px;
@@ -8329,7 +8329,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-board__new:hover {
-  background: var(--v2-accent-strong);
+  background: var(--v2-ink-hover);
 }
 
 .v2-board__focus {
@@ -8698,12 +8698,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-board__col-count {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--v2-text-tertiary);
-  background: var(--v2-surface-tint);
-  border-radius: 999px;
-  padding: 1px 8px;
+  color: var(--v2-text-secondary);
+  font: 500 11px/16px var(--v2-font-mono);
 }
 
 .v2-board__col-empty {
@@ -9692,17 +9688,6 @@ body.modern-ui.v2-canvas {
   gap: 12px;
 }
 
-.v2-activity__compose h2.v2-activity__compose-label {
-  margin: 0;
-  color: var(--v2-text-muted);
-  font-size: var(--v2-fs-label);
-  font-family: var(--v2-font-mono);
-  line-height: var(--v2-lh-label);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .v2-activity__compose-pod {
   display: inline-flex;
   align-items: center;
@@ -10092,6 +10077,57 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-secondary);
   font-size: var(--v2-fs-body);
   line-height: var(--v2-lh-body);
+}
+
+/* Activity details stay compact until the reader hovers, focuses, or taps to
+   expand them. The button keeps the full copy available without adding a
+   permanent paragraph to every queue row. */
+.v2-root .v2-activity__queue-detail {
+  display: -webkit-box;
+  min-height: 0;
+  max-width: 100%;
+  margin: 3px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--v2-text-secondary);
+  font: 400 var(--v2-fs-body)/var(--v2-lh-body) var(--v2-font);
+  text-align: left;
+  white-space: normal;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.v2-root button.v2-activity__queue-detail {
+  color: var(--v2-text-secondary);
+}
+
+.v2-root .v2-activity__queue-row--mention .v2-activity__queue-detail {
+  color: var(--v2-text-primary);
+}
+
+/* Focus previews the full copy (Tab in), but a detail the reader just
+   collapsed is marked --dismissed and stays closed while focus remains on it,
+   so aria-expanded and the visible copy agree. Blur clears the mark. */
+.v2-root .v2-activity__queue-detail:focus-visible:not(.v2-activity__queue-detail--dismissed),
+.v2-root .v2-activity__queue-detail--expanded {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
+/* Pointer hover is only a reveal affordance on devices that have hover. A
+   focused button is intentionally excluded: after a pointer click the focus
+   must not keep a second click from collapsing the detail again. */
+@media (hover: hover) {
+  .v2-root .v2-activity__queue-detail:hover:not(:focus) {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+  }
 }
 
 .v2-activity__queue-actions,
@@ -10532,7 +10568,6 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h5,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
 .v2-root:lang(zh) .v2-activity__title,
-.v2-root:lang(zh) .v2-activity__compose-label,
 .v2-root:lang(zh) .v2-activity__section h2,
 .v2-root:lang(zh) .v2-activity__agent-card h3,
 .v2-root:lang(zh) .v2-activity__board-row h3,
@@ -10581,6 +10616,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-pods__discover-description,
 .v2-root:lang(zh) .v2-pods__community-copy,
 .v2-root:lang(zh) .v2-activity__queue-copy p,
+.v2-root:lang(zh) .v2-activity__queue-detail,
 .v2-root:lang(zh) .v2-activity__board-row p,
 .v2-root:lang(zh) .v2-activity__agent-recap,
 .v2-root:lang(zh) .v2-activity__empty,
@@ -12867,8 +12903,6 @@ body.modern-ui.v2-canvas {
 /* Opening a reply or a free-text ruling gives that editor a full content row. */
 .v2-activity__queue-row .v2-activity__queue-actions:has(textarea) { grid-column: 2 / -1; grid-row: 2; max-width: none; justify-content: flex-start; }
 .v2-activity__empty--plain span { color: var(--v2-text-secondary); font: 400 13px/18px var(--v2-font); }
-.v2-activity__compose h2.v2-activity__compose-label { font: 600 11px/16px var(--v2-font-mono); }
-
 /* Keep filters on a separate row when the pane cannot fit them beside the
    title. Both rows stay in normal reading order, without a clipped title. */
 @media (max-width: 1100px) {
