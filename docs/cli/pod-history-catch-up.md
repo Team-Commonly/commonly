@@ -8,7 +8,9 @@ backlog by repeating that read. Historical pages do not acknowledge it either.
 The resulting `409 unseen_messages` on reply delivery leaves events unacked.
 
 The CLI now checks send freshness before model generation. On the specific
-`409 unseen_messages` response, it explicitly requests a history skip:
+`409 unseen_messages` response with more than 50 unread messages, it explicitly
+requests a history skip. At or below the ordinary tail cap it reads up to 50
+messages without skipping history:
 
 ```
 POST /api/agents/runtime/pods/:podId/catch-up
@@ -31,9 +33,13 @@ primary PostgreSQL tail, failed cursor write, auth failure, or malformed receipt
 stops generation and leaves events available for retry. Ordinary reads retain
 their strict behavior.
 
-Deploy the backend endpoint before publishing this CLI change. This requires
-both backend deployment and CLI adoption; a merge alone does not repair running
-seats. Older backends fail closed rather than granting an implicit skip.
+CLI publication can precede backend deployment: a 404 or 405 from the catch-up
+POST means unsupported, so generation continues with existing behavior and the
+unchanged send guard. Other failures still stop generation. Backlog recovery
+requires both backend deployment and CLI adoption; a merge alone does not
+repair running seats. The extra freshness GET costs one request per turn and
+one recovery read/POST when unread, sharing the existing 120 requests/minute
+per-seat budget. No unbounded recovery retry is added.
 
 Proof lives in the Mongo and PostgreSQL commit-fence service suites, route
 contract tests, and the CLI run-loop test that catches up a backlog, passes the

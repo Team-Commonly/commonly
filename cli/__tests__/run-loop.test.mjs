@@ -1938,7 +1938,7 @@ describe('performRun', () => {
       if (route.endsWith('/events')) return { events: [event] };
       if (route.endsWith('/skills')) return { items: skills ? [{ name: 'fixture', content: 'fixture skill instructions' }] : [] };
       if (route.endsWith('/send-freshness') && !caughtUp) {
-        throw Object.assign(new Error('unread'), { status: 409, body: { code: 'unseen_messages' } });
+        throw Object.assign(new Error('unread'), { status: 409, body: { code: 'unseen_messages', unseenCount: 14373 } });
       }
       return {};
     });
@@ -1970,6 +1970,31 @@ describe('performRun', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(ackPosts(post)).toHaveLength(2);
     expect(replyPosts(post)[0][1].continueAnyway).toBeUndefined();
+  });
+
+  test.each([404, 405])('an older backend without catch-up (%s) still reaches generation and ack', async (status) => {
+    const event = makeEvent({ _id: `old-server-${status}` });
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events: [event] };
+      if (route.endsWith('/send-freshness')) throw Object.assign(new Error('unread'), {
+        status: 409, body: { code: 'unseen_messages', unseenCount: 14373 },
+      });
+      return {};
+    });
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/catch-up')) throw Object.assign(new Error('unsupported'), { status });
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'reply with existing behavior' }));
+    const runner = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub', setTimeoutImpl: noopTimeout });
+    await drainMicrotasks();
+    runner.stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(replyPosts(post)).toHaveLength(1);
+    expect(replyPosts(post)[0][1].continueAnyway).toBeUndefined();
+    expect(ackPosts(post)).toHaveLength(1);
   });
 
   test('newSessionId from spawn is persisted and reused on the next turn', async () => {
