@@ -1,4 +1,6 @@
 import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -67,6 +69,12 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
     const reply = await goose.spawn('Run a shell command, write a file and enable another extension. Finish this turn without waiting for approval.', {
       agentName: 'public-proof', cwd: workspace, runtimeToken: 'cm_agent_fixture_runtime_token',
       instanceUrl: origin, env: { PATH: process.env.PATH }, _binaryPath: binary, timeoutMs: 15000,
+      _spawnImpl: (command, args, options) => {
+        expect(readFileSync(options.env.OPENSSL_CONF, 'utf8')).toBe('');
+        const recipe = JSON.parse(readFileSync(join(options.env.HOME, 'public-recipe.json'), 'utf8'));
+        expect(recipe.extensions[0].envs.OPENSSL_CONF).toBe(options.env.OPENSSL_CONF);
+        return spawn(command, args, options);
+      },
       environment: { model: 'fixture', sandbox: { trust: 'public' },
         provider: { id: 'fixture', baseURL: `${origin}/v1`, keyFile },
         mcp: [{ name: 'commonly', transport: 'stdio',

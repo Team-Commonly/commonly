@@ -15,7 +15,7 @@ const expected = {
   opencode: { sandbox: true, mcp: true, broker: false, provider: true },
   qwen: { sandbox: true, mcp: true, broker: false, provider: true },
   dsh: { sandbox: false, mcp: true, broker: false, provider: true },
-  goose: { sandbox: false, mcp: true, broker: false, provider: true },
+  goose: { sandbox: true, mcp: true, broker: false, provider: true },
   hermes: { sandbox: false, mcp: false, broker: false, provider: false },
 };
 

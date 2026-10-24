@@ -19,6 +19,9 @@ remain enforced by the Commonly backend.
 
 The provider key stays in the host proxy. Goose receives a temporary proxy
 bearer; the Commonly runtime credential reaches MCP through a temporary file.
+Public turns provide an empty OpenSSL configuration inside that temporary home
+to Goose and its Node MCP child. This avoids reading Node's host configuration
+outside the sandbox; Node retains its bundled TLS roots.
 The filesystem boundary does not promise network destination isolation. Both
 provider and declared Commonly transports need outbound networking; a declared
 restricted network is refused rather than silently weakened.

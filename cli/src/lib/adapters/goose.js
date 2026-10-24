@@ -271,6 +271,11 @@ export default {
       });
       const mcpReadDirectories = [];
       const publicExtensions = [];
+      // Node's compiled-in OpenSSL config can sit outside the permitted tree
+      // (including hostedtoolcache on CI). Use our empty config, retaining
+      // Node's bundled TLS roots, instead of granting host configuration reads.
+      const opensslConfig = join(home, 'openssl.cnf');
+      if (isPublic) await writeFile(opensslConfig, '', { mode: 0o600 });
       const recipePath = join(home, 'public-recipe.json');
       const args = [
         'run', '--no-session', ...(!isPublic ? ['--no-profile', '--with-builtin', 'developer'] : []),
@@ -285,7 +290,10 @@ export default {
       ];
       if (isPublic) await writeFile(recipePath, JSON.stringify({ version: '1.0.0',
         title: 'Commonly public seat', description: 'Only audited Commonly API tools are available.',
-        instructions: 'Respond to the user using the available Commonly tools.', extensions: publicExtensions,
+        instructions: 'Respond to the user using the available Commonly tools.',
+        extensions: publicExtensions.map((extension) => ({ ...extension,
+          envs: { ...extension.envs, OPENSSL_CONF: opensslConfig },
+        })),
         prompt: buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true }),
       }), { mode: 0o600 });
       const env = {
@@ -299,6 +307,7 @@ export default {
         GOOSE_MODEL: model,
         GOOSE_MODE: 'auto',
         GOOSE_TELEMETRY_ENABLED: 'false',
+        ...(isPublic ? { OPENSSL_CONF: opensslConfig } : {}),
         OPENAI_HOST: proxy ? new URL(proxy.baseURL).origin : baseUrl.origin,
         OPENAI_BASE_PATH: `${new URL(proxy?.baseURL || baseUrl).pathname.replace(/\/$/, '')}/chat/completions`.replace(/^\//, ''),
         OPENAI_API_KEY: proxy ? (await readFile(proxy.tokenFile, 'utf8')).trim() : key,
