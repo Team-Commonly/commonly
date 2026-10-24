@@ -652,6 +652,12 @@ describe('Clawdbot E2E Integration Tests', () => {
         .send({ label: 'Message Test Token' });
 
       agentToken = tokenRes.body.token;
+      // Read the current pod tail before writing; send-time freshness holds
+      // a blind first post when other participants already spoke here.
+      const contextRead = await request(app)
+        .get(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${agentToken}`);
+      expect(contextRead.status).toBe(200);
     });
 
     test('should post a message to pod via runtime API', async () => {
@@ -820,6 +826,9 @@ describe('Clawdbot E2E Integration Tests', () => {
 3. Set up daily standups to track progress`;
 
       // 4. Post response to pod
+      await request(app)
+        .get(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${agentToken}`);
       const postRes = await request(app)
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
         .set('Authorization', `Bearer ${agentToken}`)
@@ -982,6 +991,9 @@ describe('Clawdbot E2E Integration Tests', () => {
     });
 
     test('should allow both agents to post messages to the same pod', async () => {
+      await request(app)
+        .get(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${clawdbotToken}`);
       // Clawdbot posts
       const clawdbotPost = await request(app)
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
@@ -993,6 +1005,9 @@ describe('Clawdbot E2E Integration Tests', () => {
 
       expect(clawdbotPost.status).toBe(200);
 
+      await request(app)
+        .get(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${commonlyBotToken}`);
       // Commonly Bot posts
       const commonlyBotPost = await request(app)
         .post(`/api/agents/runtime/pods/${testPod._id}/messages`)

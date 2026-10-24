@@ -55,6 +55,9 @@ jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
   }
   next();
 });
+jest.mock('../../../services/agentSendFreshness', () => ({
+  unseenMessages: jest.fn().mockResolvedValue(null),
+}));
 
 const POD_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -90,6 +93,7 @@ jest.mock('../../../services/attentionItemService', () => ({
 }));
 
 const Task = require('../../../models/Task');
+const AgentSendFreshness = require('../../../services/agentSendFreshness');
 const tasksApi = require('../../../routes/tasksApi');
 
 const MIN = 60 * 1000;
@@ -131,8 +135,43 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await Task.deleteMany({});
+  AgentSendFreshness.unseenMessages.mockReset();
+  AgentSendFreshness.unseenMessages.mockResolvedValue(null);
   mockRecordTaskAttention.mockReset();
   mockRecordTaskAttention.mockResolvedValue(undefined);
+});
+
+describe('send-time freshness on board writes', () => {
+  const agentId = '6a693bfbe833c668acdce53b';
+  const agentPost = (suffix, body) => request(app)
+    .post(`/api/v1/tasks/${POD_ID}/TASK-001/${suffix}`)
+    .set('x-test-user', agentId)
+    .set('x-test-username', 'tern')
+    .send(body);
+
+  it('holds a claim without changing the row, then accepts continueAnyway', async () => {
+    await seed({ status: 'pending' });
+    AgentSendFreshness.unseenMessages.mockResolvedValueOnce({ code: 'unseen_messages', unseenCount: 2 });
+    const held = await agentPost('claim', {});
+    expect(held.status).toBe(409);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).status).toBe('pending');
+
+    const continued = await agentPost('claim', { continueAnyway: true });
+    expect(continued.status).toBe(200);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).status).toBe('claimed');
+  });
+
+  it('holds an update without appending a note, then accepts continueAnyway', async () => {
+    await seed({ status: 'pending' });
+    AgentSendFreshness.unseenMessages.mockResolvedValueOnce({ code: 'unseen_messages', unseenCount: 1 });
+    const held = await agentPost('updates', { text: 'progress' });
+    expect(held.status).toBe(409);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).updates).toHaveLength(0);
+
+    const continued = await agentPost('updates', { text: 'progress', continueAnyway: true });
+    expect(continued.status).toBe(200);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).updates).toHaveLength(1);
+  });
 });
 
 describe('POST /updates renews a holder-authored lease', () => {

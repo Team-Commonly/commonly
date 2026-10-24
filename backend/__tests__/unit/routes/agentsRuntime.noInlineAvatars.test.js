@@ -32,6 +32,11 @@ jest.mock('../../../services/agentIdentityService', () => ({
 jest.mock('../../../services/agentMessageService', () => ({
   getRecentMessages: jest.fn(),
 }));
+jest.mock('../../../services/agentSendFreshness', () => ({
+  readStart: jest.fn(() => new Date()),
+  recordRead: jest.fn().mockResolvedValue(undefined),
+  unseenMessages: jest.fn().mockResolvedValue(null),
+}));
 jest.mock('../../../services/agentThreadService', () => ({}));
 jest.mock('../../../services/podContextService', () => ({}));
 jest.mock('../../../services/globalModelConfigService', () => ({}));

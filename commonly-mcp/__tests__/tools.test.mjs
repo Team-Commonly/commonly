@@ -88,6 +88,13 @@ describe('commonly_post_message', () => {
     });
   });
 
+  it('passes an explicit freshness override to the runtime route', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ id: 'm2' }));
+    await byName.commonly_post_message.call({ podId: 'POD123', content: 'hi', continueAnyway: true });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).continueAnyway).toBe(true);
+    expect(byName.commonly_post_message.inputSchema.properties.continueAnyway.type).toBe('boolean');
+  });
+
   it('forwards threadRootId — the ping-free thread continuation (#1176 backend, added here in 0.3.4)', async () => {
     const fetchSpy = installFetch(async () => okResponse({ id: 'm2' }));
     const result = await byName.commonly_post_message.call({
@@ -261,6 +268,14 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
     await byName.commonly_claim_task.call({ podId: 'POD', taskId: 'TASK-001' });
     const [url] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://x.example/api/v1/tasks/POD/TASK-001/claim');
+  });
+
+  it('passes an explicit freshness override to task claim and update', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    await byName.commonly_claim_task.call({ podId: 'POD', taskId: 'TASK-001', continueAnyway: true });
+    await byName.commonly_update_task.call({ podId: 'POD', taskId: 'TASK-001', text: 'work', continueAnyway: true });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).continueAnyway).toBe(true);
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body).continueAnyway).toBe(true);
   });
 
   it('teaches that blocked tasks resume through claim', () => {

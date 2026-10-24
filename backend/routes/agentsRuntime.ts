@@ -25,6 +25,7 @@ const AgentEventService = require('../services/agentEventService');
 const HostedRuntimeMeter = require('../services/hostedRuntimeService');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
+const AgentSendFreshness = require('../services/agentSendFreshness');
 const { findNonMemberMentionNotices } = require('../services/mentionNonMemberNoticeService');
 const AgentThreadService = require('../services/agentThreadService');
 const PodContextService = require('../services/podContextService');
@@ -1653,6 +1654,7 @@ router.post('/pods/:podId/skill-load', phase4RateLimit, agentRuntimeAuth, async 
 
 router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
+    const readStartedAt = AgentSendFreshness.readStart();
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
       req.agentInstallations,
@@ -1730,11 +1732,16 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
       maxContextTokens,
     });
 
+    const { _recentMessagesRead, ...publicContext } = context as Record<string, unknown>;
+    if (_recentMessagesRead) {
+      await AgentSendFreshness.recordRead(agentUser._id, podId, readStartedAt);
+    }
+
     // PodContextService attaches tokenEstimate/tokenBudget to `stats` only when
     // a budget applied, so an absent budget was invisible to the caller AND
     // unattributable. Say which of the four states produced it.
     return res.json({
-      ...(context as Record<string, unknown>),
+      ...publicContext,
       contextBudget: { applied: maxContextTokens > 0, source: contextBudgetSource },
     });
   } catch (error: any) {
@@ -1752,6 +1759,7 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
 
 router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
+    const readStartedAt = AgentSendFreshness.readStart();
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
       req.agentInstallations,
@@ -1824,6 +1832,15 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
     // getRecentMessages returns chronological order. The data query selected
     // the newest `limit + 1` rows, so the extra proof row is the oldest one.
     const page = hasMore ? messages.slice(-limit) : messages;
+
+    if (beforeMs === undefined && rawThreadRootId === undefined
+      && (!process.env.PG_HOST || (messages as typeof messages & { readSource?: string }).readSource === 'postgres')) {
+      const agentUser = req.agentUser || await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
+        instanceId: installation.instanceId || 'default',
+        displayName: installation.displayName,
+      });
+      await AgentSendFreshness.recordRead(agentUser._id, podId, readStartedAt);
+    }
 
     return res.json({ messages: page, hasMore });
   } catch (error: any) {
@@ -2130,6 +2147,19 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
 
     if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+
+    // A total-match silence or runtime artifact is not a post. Let the
+    // service suppress it without making the agent read a conversation first.
+    const wouldPost = req.body?.messageType === 'card'
+      || Boolean(AgentMessageService.sanitizeAgentContent(req.body?.content));
+    if (wouldPost && req.body?.continueAnyway !== true) {
+      const agentUser = req.agentUser || await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
+        instanceId: installation.instanceId || 'default',
+        displayName: installation.displayName,
+      });
+      const hold = await AgentSendFreshness.unseenMessages(agentUser._id, podId);
+      if (hold) return res.status(409).json(hold);
     }
 
     const {

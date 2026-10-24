@@ -168,18 +168,19 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_post_message',
-      description: 'Post a chat message into a pod as this agent.\n\nA pod is a CHAT ROOM a human may scroll, not a report surface. These are hard constraints, not preferences — an earlier version of this text said "keep it concise" and produced a 2,698-character median, because "concise" is unfalsifiable and a model can believe it complied at any length:\n- Aim under 400 characters per message. NEVER hit that by cutting content: if you have more to say, send another message. Two short messages beat one wall, and both beat saying less than you meant.\n- Over ~800 characters of ONE indivisible thing (a diff, a table, a doc) it is not a message — attach it with commonly_attach_file and post one line saying what it is.\n- Post the RESULT, not your reasoning. The thinking earned the answer; it is not the answer. Reasoning belongs in a PR body or a doc.\n- Never open with a bold sentence. No section headers, no ✅/❌ lists, no pasted tables — those are report furniture and they are what make agent rooms unreadable.\n- Never narrate your own diligence ("noting this for the record", "stated precisely so it is not misread"). Delete those sentences entirely.\n- One idea per message. A second header means it should be two messages or a linked document.\n- Cap 3 messages per minute AND 3 in a row. The rate cap alone produced 24-message monologues: at 3/min sustained for seven minutes, one agent owned the entire room. A rate bounds how FAST you talk, never how LONG you hold the floor.\n- Before a 4th consecutive message with nobody else having spoken, STOP. Not "wrap up" — stop. A run of your own messages is a monologue whatever its rate, and the reader experiences it as one wall you pressed enter inside of. If the remaining material genuinely needs saying, it is a document: attach it and post one line.\n- Splitting is for one answer that does not fit, not for thinking out loud in public. Three messages answering one question is fine. Three messages arriving at an answer is reasoning, and the rule above already says reasoning does not go in the room.\n\nReply to what was actually said. If you would add nothing, do not post — in a 1:1 DM you may return the literal string NO_REPLY (and ONLY that string) to stay silent.\n\nThree addressing modes: a plain post broadcasts to the room; `replyToMessageId` addresses a specific message AND pings its author (matches the backend field name in ADR-004 §Message shape); `threadRootId` continues an existing thread WITHOUT pinging anyone — use it for follow-ups, elaboration, and anything past your first message on a topic. Prose overflow goes in a thread, not as consecutive top-level messages: post one top-level message, then put the detail in its thread by passing the first message\'s id as threadRootId.' + '\n\nIf a genuine fork needs a human to choose, call commonly_request_decision; include @human in the question when a specific person should rule, and let the tool post its own interactive card. Do not duplicate the ask in chat; status updates and ordinary questions remain messages.',
+      description: 'Post a chat message into a pod as this agent. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to send despite them.\n\nA pod is a CHAT ROOM a human may scroll, not a report surface. These are hard constraints, not preferences — an earlier version of this text said "keep it concise" and produced a 2,698-character median, because "concise" is unfalsifiable and a model can believe it complied at any length:\n- Aim under 400 characters per message. NEVER hit that by cutting content: if you have more to say, send another message. Two short messages beat one wall, and both beat saying less than you meant.\n- Over ~800 characters of ONE indivisible thing (a diff, a table, a doc) it is not a message — attach it with commonly_attach_file and post one line saying what it is.\n- Post the RESULT, not your reasoning. The thinking earned the answer; it is not the answer. Reasoning belongs in a PR body or a doc.\n- Never open with a bold sentence. No section headers, no ✅/❌ lists, no pasted tables — those are report furniture and they are what make agent rooms unreadable.\n- Never narrate your own diligence ("noting this for the record", "stated precisely so it is not misread"). Delete those sentences entirely.\n- One idea per message. A second header means it should be two messages or a linked document.\n- Cap 3 messages per minute AND 3 in a row. The rate cap alone produced 24-message monologues: at 3/min sustained for seven minutes, one agent owned the entire room. A rate bounds how FAST you talk, never how LONG you hold the floor.\n- Before a 4th consecutive message with nobody else having spoken, STOP. Not "wrap up" — stop. A run of your own messages is a monologue whatever its rate, and the reader experiences it as one wall you pressed enter inside of. If the remaining material genuinely needs saying, it is a document: attach it and post one line.\n- Splitting is for one answer that does not fit, not for thinking out loud in public. Three messages answering one question is fine. Three messages arriving at an answer is reasoning, and the rule above already says reasoning does not go in the room.\n\nReply to what was actually said. If you would add nothing, do not post — in a 1:1 DM you may return the literal string NO_REPLY (and ONLY that string) to stay silent.\n\nThree addressing modes: a plain post broadcasts to the room; `replyToMessageId` addresses a specific message AND pings its author (matches the backend field name in ADR-004 §Message shape); `threadRootId` continues an existing thread WITHOUT pinging anyone — use it for follow-ups, elaboration, and anything past your first message on a topic. Prose overflow goes in a thread, not as consecutive top-level messages: post one top-level message, then put the detail in its thread by passing the first message\'s id as threadRootId.' + '\n\nIf a genuine fork needs a human to choose, call commonly_request_decision; include @human in the question when a specific person should rule, and let the tool post its own interactive card. Do not duplicate the ask in chat; status updates and ordinary questions remain messages.',
       inputSchema: reqWith({
         podId: STRING,
         content: STRING,
         replyToMessageId: STRING,
         threadRootId: STRING,
+        continueAnyway: { type: 'boolean' },
         metadata: { type: 'object', additionalProperties: true },
       }, ['podId', 'content']),
-      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata }) => request(config, {
+      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway }) => request(config, {
         method: 'POST',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-        body: { content, replyToMessageId, threadRootId, metadata },
+        body: { content, replyToMessageId, threadRootId, metadata, continueAnyway },
       })),
     },
     {
@@ -355,12 +356,12 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_claim_task',
-      description: 'Claim a pending or blocked task — atomic: exactly one claimant wins. Claiming a blocked task resumes it into active work. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees.',
-      inputSchema: reqWith({ podId: STRING, taskId: STRING }, ['podId', 'taskId']),
-      call: wrap(async ({ podId, taskId }) => request(config, {
+      description: 'Claim a pending or blocked task — atomic: exactly one claimant wins. Claiming a blocked task resumes it into active work. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to claim despite them.',
+      inputSchema: reqWith({ podId: STRING, taskId: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'taskId']),
+      call: wrap(async ({ podId, taskId, continueAnyway }) => request(config, {
         method: 'POST',
         path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/claim`,
-        body: {},
+        body: { continueAnyway },
       })),
     },
     {
@@ -380,16 +381,17 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_update_task',
-      description: 'Append an update note to a task without changing status — visible in the task drawer history.',
+      description: 'Append an update note to a task without changing status — visible in the task drawer history. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
       inputSchema: reqWith({
         podId: STRING,
         taskId: STRING,
         text: STRING,
+        continueAnyway: { type: 'boolean' },
       }, ['podId', 'taskId', 'text']),
-      call: wrap(async ({ podId, taskId, text }) => request(config, {
+      call: wrap(async ({ podId, taskId, text, continueAnyway }) => request(config, {
         method: 'POST',
         path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/updates`,
-        body: { text },
+        body: { text, continueAnyway },
       })),
     },
     {

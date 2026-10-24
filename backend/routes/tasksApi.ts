@@ -17,6 +17,8 @@ const Task = require('../models/Task');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
+const AgentSendFreshness = require('../services/agentSendFreshness');
+// eslint-disable-next-line global-require
 const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
 // eslint-disable-next-line global-require
 const { recordTaskAttention, resolveTaskAttention } = require('../services/attentionItemService');
@@ -566,6 +568,10 @@ router.post('/:podId/:taskId/claim', rateLimit({
     const author = await resolveAuthor(req);
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
+    if (actorOf(req).isAgent && req.body?.continueAnyway !== true) {
+      const hold = await AgentSendFreshness.unseenMessages(userId, podId);
+      if (hold) return res.status(409).json(hold);
+    }
     const now = new Date();
     // Pre-read the current holder to classify this claim AFTER the CAS wins:
     // a same-holder continuation (renewal, or re-take after the holder's own
@@ -706,6 +712,10 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
+    if (actorOf(req).isAgent && req.body?.continueAnyway !== true) {
+      const hold = await AgentSendFreshness.unseenMessages(userId, podId);
+      if (hold) return res.status(409).json(hold);
+    }
     const author = await resolveAuthor(req);
     const now = new Date();
     const note = { updates: { text: text.trim(), author, authorId: userId?.toString() || null, createdAt: now } };

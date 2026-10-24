@@ -9,9 +9,14 @@ jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: jest.fn((agentName, instanceId = 'default') => (
     instanceId === 'default' ? agentName : `${agentName}-${instanceId}`
   )),
+  getOrCreateAgentUser: jest.fn().mockResolvedValue({ _id: 'bot-1' }),
 }));
 jest.mock('../../../services/agentMessageService', () => ({
   postMessage: jest.fn(),
+  sanitizeAgentContent: jest.fn((content) => content),
+}));
+jest.mock('../../../services/agentSendFreshness', () => ({
+  unseenMessages: jest.fn().mockResolvedValue(null),
 }));
 jest.mock('../../../services/mentionNonMemberNoticeService', () => ({
   findNonMemberMentionNotices: jest.fn(),
@@ -42,6 +47,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
 }));
 
 const AgentMessageService = require('../../../services/agentMessageService');
+const AgentSendFreshness = require('../../../services/agentSendFreshness');
 const { findNonMemberMentionNotices } = require('../../../services/mentionNonMemberNoticeService');
 const router = require('../../../routes/agentsRuntime');
 
@@ -173,5 +179,28 @@ describe('agentsRuntime post message installation config forwarding', () => {
 
     expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
     expect(AgentMessageService.postMessage.mock.calls[0][0]).not.toHaveProperty('answeringMessageId');
+  });
+
+  it('holds an unseen conversation and permits an explicit override', async () => {
+    const handler = getRouteHandler('/pods/:podId/messages', 'post');
+    const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'tarik', config: {} };
+    const req = {
+      params: { podId: 'pod-1' }, body: { content: 'hello' }, agentUser: { _id: 'bot-1' },
+      agentInstallation: installation, agentInstallations: [installation],
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const hold = { code: 'unseen_messages', unseenCount: 4, messages: [{ id: '7' }] };
+    AgentSendFreshness.unseenMessages.mockResolvedValueOnce(hold);
+
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(hold);
+    expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+
+    req.body.continueAnyway = true;
+    AgentMessageService.postMessage.mockResolvedValue({ success: true });
+    await handler(req, res);
+    expect(AgentSendFreshness.unseenMessages).toHaveBeenCalledTimes(1);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
   });
 });
