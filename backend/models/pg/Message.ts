@@ -1,3 +1,4 @@
+import { resolvePgMessageId } from '../../services/pgMessageId';
 interface PgPool {
   query: (sql: string, params?: unknown[]) => Promise<{
     rows: Record<string, unknown>[];
@@ -119,6 +120,15 @@ class Message {
     answeringMessageId: string | null = null,
     authorKind: 'kernel' | null = null,
   ): Promise<MessageRow> {
+    if (replyToMessageId != null && replyToMessageId !== '') {
+      const resolvedReply = await Message.resolveId(replyToMessageId);
+      if (!resolvedReply) {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { ThreadRootError } = require('../../services/threadRootResolver');
+        throw new ThreadRootError('reply_target_unavailable', 'the message being replied to is not in this pod');
+      }
+      replyToMessageId = resolvedReply;
+    }
     console.log('Creating message with params:', {
       podId, userId, content, messageType, podIdType: typeof podId,
     });
@@ -289,15 +299,7 @@ class Message {
    * was never moved, which is the caller's to look up in Mongo.
    */
   static async resolveId(id: string | number): Promise<string | null> {
-    const raw = String(id);
-    if (/^\d+$/.test(raw)) return raw;
-    if (!/^[0-9a-f]{24}$/i.test(raw)) return null;
-    const result = await (pool as PgPool).query(
-      'SELECT id FROM messages WHERE legacy_mongo_id = $1 LIMIT 1',
-      [raw],
-    );
-    const row = result.rows[0] as { id?: string | number } | undefined;
-    return row?.id != null ? String(row.id) : null;
+    return resolvePgMessageId(id);
   }
 
   static async findById(id: string): Promise<FormattedMessage | null> {

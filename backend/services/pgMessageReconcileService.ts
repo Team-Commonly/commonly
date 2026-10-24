@@ -8,28 +8,29 @@
  * - Idempotent across replicas. The PG insert is ON CONFLICT on
  *   legacy_mongo_id, so a second writer inserts nothing. The Mongo stamp is
  *   guarded on `reconciledAt` being absent, so a second stamp matches nothing.
- * - Bounded. One pass reads at most `maxPerPass` rows, oldest first.
- * - Refusals are recorded, not retried. A row the database will never accept
- *   (its pod is not in Postgres) is stamped `reconcileFailedAt` and left out
- *   of the scan, so it cannot hold back the rows behind it.
+ * - Bounded. One pass reads at most `maxPerPass` rows, unattempted rows first, then the oldest deferred attempts.
+ * - Malformed rows are permanently refused. Recoverable failures (including
+ *   missing PG pods) are deferred so later rows can progress, then retried.
  *
  * Reads never merge the two stores: chat reads Postgres when it is healthy and
  * Mongo only when it is not. A reconciled Mongo row therefore cannot be
  * returned alongside its PG copy in one response.
  */
+interface ReconcileClient {
+  query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
+  release: () => void;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { pool } = require('../config/db-pg') as {
   pool: {
+    connect: () => Promise<ReconcileClient>;
     query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
   };
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { syncPodFromMongo } = require('./pgPodSyncService') as {
   syncPodFromMongo: (podId: string, requestingUserId: string) => Promise<unknown>;
-};
-// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const MongoPod = require('../models/Pod') as {
-  exists: (q: Record<string, unknown>) => Promise<unknown>;
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const MongoMessage = require('../models/Message') as {
@@ -50,9 +51,7 @@ interface MongoFallbackDoc {
   userId: { toString(): string };
   content: string;
   messageType?: string;
-  // Both must survive the move: a card loses its face without payload, and a
-  // kernel seat post loses its marker without authorKind.
-  authorKind?: string | null;
+  authorKind?: 'kernel' | null;
   payload?: unknown;
   createdAt: Date;
 }
@@ -71,8 +70,12 @@ export interface ReconcilePassResult {
 export const LEGACY_ID_INDEX = 'messages_legacy_mongo_id_key';
 export const DEFAULT_MAX_PER_PASS = 200;
 
-// Postgres SQLSTATE 23503: foreign_key_violation (messages.pod_id has no pod row).
-const FK_VIOLATION = '23503';
+// FK failures can recover after pod synchronization; retry after a backoff.
+export const RETRY_DELAY_MS = 60_000;
+const isPermanentRowError = (err: unknown): boolean => {
+  const code = (err as { code?: string }).code;
+  return err instanceof TypeError || Boolean(code && code !== '23503' && /^(22|23)/.test(code));
+};
 
 /**
  * Builds the unique index ON CONFLICT needs, without blocking writes.
@@ -82,32 +85,40 @@ const FK_VIOLATION = '23503';
  * INVALID index behind; IF NOT EXISTS would keep that forever, so an invalid
  * one is dropped and rebuilt.
  */
-export async function ensureLegacyIdIndex(): Promise<void> {
-  const state = await pool.query(
-    `SELECT i.indisvalid FROM pg_index i
-       JOIN pg_class c ON c.oid = i.indexrelid
-      WHERE c.relname = $1`,
-    [LEGACY_ID_INDEX],
-  );
-  if (state.rows[0] && state.rows[0].indisvalid === false) {
-    await pool.query(`DROP INDEX CONCURRENTLY IF EXISTS ${LEGACY_ID_INDEX}`);
+export async function ensureLegacyIdIndex(): Promise<boolean> {
+  const client = await pool.connect();
+  let locked = false;
+  try {
+    const lock = await client.query('SELECT pg_try_advisory_lock(313, 2) AS acquired');
+    locked = lock.rows[0]?.acquired === true;
+    if (!locked) return false;
+    const state = await client.query(
+      `SELECT i.indisvalid FROM pg_index i
+         JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname = $1`,
+      [LEGACY_ID_INDEX],
+    );
+    if (state.rows[0]?.indisvalid === false) {
+      await client.query(`DROP INDEX CONCURRENTLY IF EXISTS ${LEGACY_ID_INDEX}`);
+    }
+    await client.query(
+      `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS ${LEGACY_ID_INDEX}
+         ON messages (legacy_mongo_id)`,
+    );
+    return true;
+  } finally {
+    try {
+      if (locked) await client.query('SELECT pg_advisory_unlock(313, 2)');
+    } finally {
+      client.release();
+    }
   }
-  await pool.query(
-    `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS ${LEGACY_ID_INDEX}
-       ON messages (legacy_mongo_id)`,
-  );
 }
 
-async function podExistsInMongo(podId: string): Promise<boolean> {
-  return Boolean(await MongoPod.exists({ _id: podId }));
-}
-
-async function copyOne(doc: MongoFallbackDoc): Promise<'moved' | 'present'> {
+export async function copyOne(doc: MongoFallbackDoc): Promise<'moved' | 'present'> {
   const id = doc._id.toString();
   const inserted = await pool.query(
-    `INSERT INTO messages (
-       pod_id, user_id, content, message_type, author_kind, payload, created_at, legacy_mongo_id
-     )
+    `INSERT INTO messages (pod_id, user_id, content, message_type, created_at, legacy_mongo_id, author_kind, payload)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (legacy_mongo_id) DO NOTHING
      RETURNING id`,
@@ -116,10 +127,10 @@ async function copyOne(doc: MongoFallbackDoc): Promise<'moved' | 'present'> {
       doc.userId.toString(),
       doc.content || '',
       doc.messageType || 'text',
-      doc.authorKind === 'kernel' ? 'kernel' : null,
-      doc.payload == null ? null : JSON.stringify(doc.payload),
       doc.createdAt,
       id,
+      doc.authorKind === 'kernel' ? 'kernel' : null,
+      doc.payload == null ? null : JSON.stringify(doc.payload),
     ],
   );
   let pgId = inserted.rows[0]?.id;
@@ -129,6 +140,9 @@ async function copyOne(doc: MongoFallbackDoc): Promise<'moved' | 'present'> {
       [id],
     );
     pgId = existing.rows[0]?.id;
+  }
+  if (pgId == null || !Number.isSafeInteger(Number(pgId)) || Number(pgId) <= 0) {
+    throw new Error('Reconciled PG row disappeared before stamping');
   }
   // Stamp only after Postgres has the row. A crash between the two leaves an
   // unstamped Mongo row that the next pass turns into `present`, then stamps.
@@ -152,28 +166,27 @@ export async function reconcileMongoFallbackMessages(
   }
   result.healthy = true;
 
-  await ensureLegacyIdIndex();
+  if (!await ensureLegacyIdIndex()) return result;
 
   const batch = await MongoMessage.find({
     reconciledAt: { $exists: false },
     reconcileFailedAt: { $exists: false },
+    $or: [{ reconcileRetryAt: { $exists: false } }, { reconcileRetryAt: { $lte: new Date() } }],
   })
-    .sort({ createdAt: 1, _id: 1 })
+    .sort({ reconcileRetryAt: 1, createdAt: 1, _id: 1 })
     .limit(Math.max(1, Math.trunc(maxPerPass)))
     .lean();
 
   for (const doc of batch) {
     try {
       const outcome = await copyOne(doc).catch(async (err: { code?: string }) => {
-        // The pod is missing from PG. The Mongo-only pod path leaves it that
-        // way until the next send backfills it (createMessage does the same
-        // before its insert), so backfill and retry once.
-        if (err.code !== FK_VIOLATION) throw err;
+        if (err.code !== '23503') throw err;
+        // A Mongo-only pod can be mirrored once PG returns. Keep failures
+        // retryable; even a missing Mongo pod may be restored later.
         try {
           await syncPodFromMongo(doc.podId.toString(), doc.userId.toString());
         } catch {
-          // No Mongo pod to sync from. The retry below fails the same way and
-          // the outer handler decides whether that is permanent.
+          throw err;
         }
         return copyOne(doc);
       });
@@ -182,13 +195,16 @@ export async function reconcileMongoFallbackMessages(
     } catch (err) {
       const e = err as { code?: string; message?: string };
       result.skipped += 1;
-      // Stamp a refusal only when the pod is absent from Mongo too: then no
-      // sync can ever place the message. Anything else stays in the scan and
-      // is retried on the next pass.
-      if (e.code === FK_VIOLATION && !(await podExistsInMongo(doc.podId.toString()))) {
+      if (isPermanentRowError(err)) {
         await MongoMessage.updateOne(
           { _id: doc._id, reconcileFailedAt: { $exists: false } },
           { $set: { reconcileFailedAt: new Date(), reconcileError: e.message || e.code } },
+        );
+      }
+      else {
+        await MongoMessage.updateOne(
+          { _id: doc._id, reconciledAt: { $exists: false } },
+          { $set: { reconcileRetryAt: new Date(Date.now() + RETRY_DELAY_MS) } },
         );
       }
       console.warn('[pgMessageReconcile] row not moved:', doc._id.toString(), e.message);

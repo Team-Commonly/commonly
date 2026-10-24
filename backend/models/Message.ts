@@ -30,10 +30,11 @@ export interface IMessage extends Document {
   // updateOne filters on its absence, so concurrent passes cannot re-stamp.
   reconciledAt?: Date;
   reconciledPgId?: number;
-  // A permanent refusal (e.g. the pod is not in Postgres). Excluded from the
+  // A permanent malformed-data refusal. Excluded from the
   // reconciler's scan so one such row cannot hold back the rows behind it.
   reconcileFailedAt?: Date;
   reconcileError?: string;
+  reconcileRetryAt?: Date;
 }
 
 const MessageSchema = new Schema<IMessage>({
@@ -61,6 +62,7 @@ const MessageSchema = new Schema<IMessage>({
   reconciledPgId: { type: Number },
   reconcileFailedAt: { type: Date },
   reconcileError: { type: String },
+  reconcileRetryAt: { type: Date },
 });
 
 MessageSchema.pre('save', function rememberWhetherThisIsANewPost(next) {

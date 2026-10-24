@@ -8,6 +8,8 @@ const { AgentInstallation } = require('../../../models/AgentRegistry');
 jest.mock('../../../models/Pod');
 jest.mock('../../../models/Message', () => ({
   create: jest.fn(),
+  deleteOne: jest.fn(),
+  findByIdAndDelete: jest.fn(),
   findById: jest.fn(),
   find: jest.fn(),
 }));
@@ -599,11 +601,43 @@ describe('messageController', () => {
 
   describe('deleteMessage', () => {
     it('returns 404 when message not found', async () => {
+      PGMessage.resolveId.mockResolvedValue(null);
       PGMessage.findById.mockResolvedValue(null);
       const req = { params: { id: 'm1' }, userId: 'u1', user: { id: 'u1' } };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await messageController.deleteMessage(req, res);
       expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('deletes the resolved PG row and availability copy for a reconciled Mongo id', async () => {
+      PGMessage.resolveId.mockResolvedValue('41');
+      PGMessage.findById.mockResolvedValue({ user_id: 'u1', pod_id: 'p1' });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.deleteMessage({ params: { id: '123456789012345678901234' }, userId: 'u1' }, res);
+      expect(PGMessage.delete).toHaveBeenCalledWith('41');
+      expect(MongoMessage.deleteOne).toHaveBeenCalledWith({ reconciledPgId: 41 });
+      expect(MongoMessage.findByIdAndDelete).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ msg: 'Message deleted' });
+    });
+
+    it('refuses deletion of a reconciled row while PG is down without deleting either copy', async () => {
+      PGMessage.resolveId.mockRejectedValue(new Error('PG unavailable'));
+      MongoMessage.findById.mockResolvedValue({ reconciledAt: new Date(), userId: 'u1', podId: 'p1' });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.deleteMessage({ params: { id: '123456789012345678901234' }, userId: 'u1' }, res);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(PGMessage.delete).not.toHaveBeenCalled();
+      expect(MongoMessage.deleteOne).not.toHaveBeenCalled();
+      expect(MongoMessage.findByIdAndDelete).not.toHaveBeenCalled();
+    });
+
+    it('deletes an unreconciled Mongo-only row', async () => {
+      PGMessage.resolveId.mockResolvedValue(null);
+      MongoMessage.findById.mockResolvedValue({ _id: 'mongo-only', userId: 'u1', podId: 'p1' });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.deleteMessage({ params: { id: 'mongo-only' }, userId: 'u1' }, res);
+      expect(MongoMessage.findByIdAndDelete).toHaveBeenCalledWith('mongo-only');
+      expect(PGMessage.delete).not.toHaveBeenCalled();
     });
 
     it('deletes message successfully for message owner', async () => {

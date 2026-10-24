@@ -85,7 +85,7 @@ const router: ReturnType<typeof express.Router> = express.Router();
 
 router.get('/:podId', readMessageRateLimit, auth, getMessages);
 router.post('/:podId', sendMessageRateLimit, auth, createMessage);
-router.delete('/:id', auth, deleteMessage);
+router.delete('/:id', sendMessageRateLimit, auth, deleteMessage);
 
 // Sprint B5 — reactions. Lives under /:messageId/reactions so the
 // `:podId` route above doesn't shadow it (Express routes by order +

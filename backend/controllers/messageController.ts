@@ -260,30 +260,18 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // message and change nothing. There is nothing to reconcile until there
     // are two claims to reconcile.
     let resolvedThreadRootId: number | null = null;
-    // A message the reconciler moved answers to its Mongo id, so a reply or a
-    // thread post names it that way. Map it to the PG row before validation.
-    // An id that resolves to nothing is passed through as sent, and the
-    // resolver rejects it as it always has.
-    const pgReplyToMessageId = replyToMessageId
-      ? (await PGMessage.resolveId(String(replyToMessageId))) ?? replyToMessageId
-      : replyToMessageId;
-    const pgThreadRootId = threadRootId
-      ? (await PGMessage.resolveId(String(threadRootId))) ?? threadRootId
-      : threadRootId;
     try {
-      if (pgThreadRootId != null && pgThreadRootId !== '') {
+      if (threadRootId != null && threadRootId !== '') {
         // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
         const { resolveThreadRoot } = require('../services/threadRootResolver');
-        resolvedThreadRootId = await resolveThreadRoot({
-          podId, replyToMessageId: pgReplyToMessageId, threadRootId: pgThreadRootId,
-        });
-      } else if (pgReplyToMessageId) {
+        resolvedThreadRootId = await resolveThreadRoot({ podId, replyToMessageId, threadRootId });
+      } else if (replyToMessageId) {
         // A reply's target must be in this pod (TASK-278). A store failure here
         // is left to the write below, which answers it and re-checks in SQL.
         // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
         const { assertReplyTargetInPod } = require('../services/threadRootResolver');
         try {
-          await assertReplyTargetInPod({ podId, replyToMessageId: pgReplyToMessageId });
+          await assertReplyTargetInPod({ podId, replyToMessageId });
         } catch (checkErr) {
           if ((checkErr as { name?: string })?.name === 'ThreadRootError') throw checkErr;
         }
@@ -308,7 +296,7 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
         userId,
         messageContent || '',
         'text',
-        pgReplyToMessageId || null,
+        replyToMessageId || null,
         null,
         resolvedThreadRootId,
       );
@@ -504,6 +492,13 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
 
     if (pgId) {
       await PGMessage.delete(pgId);
+      // Keep the availability copy from resurrecting a deleted message during
+      // the next PG outage. Cleanup cannot turn a committed delete into a 500.
+      try {
+        await MongoMessage.deleteOne({ reconciledPgId: Number(pgId) });
+      } catch (cleanupError) {
+        console.warn('[messageController] fallback delete cleanup failed:', (cleanupError as Error).message);
+      }
     } else {
       await MongoMessage.findByIdAndDelete(messageId);
     }

@@ -19,6 +19,8 @@ const MARKER = 'tier1-reconcile-313';
 let pool;
 let MongoMessage;
 let reconcile;
+let copyOne;
+let ensureLegacyIdIndex;
 let PGMessage;
 let MessageReaction;
 
@@ -44,7 +46,7 @@ const insertFallback = (content, extra = {}) => MongoMessage.create({
 });
 
 const pgRowsFor = async (mongoId) => (await pool.query(
-  'SELECT id, content, created_at FROM messages WHERE legacy_mongo_id = $1',
+  'SELECT id, content, created_at, payload, author_kind FROM messages WHERE legacy_mongo_id = $1',
   [String(mongoId)],
 )).rows;
 
@@ -62,7 +64,7 @@ d('TASK-313 part 2: reconcile Mongo fallback messages into PostgreSQL', () => {
     // eslint-disable-next-line global-require
     MongoMessage = require('../../models/Message');
     // eslint-disable-next-line global-require
-    ({ reconcileMongoFallbackMessages: reconcile } = require('../../services/pgMessageReconcileService'));
+    ({ reconcileMongoFallbackMessages: reconcile, copyOne, ensureLegacyIdIndex } = require('../../services/pgMessageReconcileService'));
     // eslint-disable-next-line global-require
     PGMessage = require('../../models/pg/Message');
     // eslint-disable-next-line global-require
@@ -117,12 +119,27 @@ d('TASK-313 part 2: reconcile Mongo fallback messages into PostgreSQL', () => {
   test('two concurrent passes leave exactly one Postgres row per message', async () => {
     const doc = await insertFallback('c');
 
-    const [x, y] = await Promise.all([reconcile(), reconcile()]);
+    await ensureLegacyIdIndex();
+    const [x, y] = await Promise.all([copyOne(doc), copyOne(doc)]);
 
-    expect(x.moved + y.moved).toBe(1);
+    expect([x, y].filter((outcome) => outcome === 'moved')).toHaveLength(1);
     expect(await pgRowsFor(doc._id)).toHaveLength(1);
     const stamped = await MongoMessage.findById(doc._id).lean();
     expect(stamped.reconciledAt).toBeInstanceOf(Date);
+  });
+
+  test('another replica holding the index maintenance lock defers the pass', async () => {
+    const doc = await insertFallback('index-lock');
+    const client = await pool.connect();
+    try {
+      await client.query('SELECT pg_advisory_lock(313, 2)');
+      expect((await reconcile()).moved).toBe(0);
+      expect(await pgRowsFor(doc._id)).toHaveLength(0);
+    } finally {
+      await client.query('SELECT pg_advisory_unlock(313, 2)');
+      client.release();
+    }
+    expect((await reconcile()).moved).toBe(1);
   });
 
   test('a pass is bounded by maxPerPass and the remainder moves on the next pass', async () => {
@@ -137,7 +154,7 @@ d('TASK-313 part 2: reconcile Mongo fallback messages into PostgreSQL', () => {
     expect(second.moved).toBe(1);
   });
 
-  test('a row whose pod is not in Postgres is refused once and does not block the pass behind it', async () => {
+  test('a missing PG pod is deferred without blocking later rows, then retries after sync', async () => {
     const orphan = await insertFallback('e-orphan', { podId: new mongoose.Types.ObjectId().toHexString() });
     const doc = await insertFallback('e-ok');
 
@@ -146,23 +163,92 @@ d('TASK-313 part 2: reconcile Mongo fallback messages into PostgreSQL', () => {
 
     expect(pass.skipped).toBe(1);
     const refused = await MongoMessage.findById(orphan._id).lean();
-    expect(refused.reconcileFailedAt).toBeInstanceOf(Date);
+    expect(refused.reconcileFailedAt).toBeUndefined();
+    expect(refused.reconcileRetryAt).toBeInstanceOf(Date);
+    await pool.query(`INSERT INTO pods (id, name, type, created_by) VALUES ($1, 'late-pod', 'chat', $2)`, [String(orphan.podId), USER]);
+    await MongoMessage.updateOne({ _id: orphan._id }, { $set: { reconcileRetryAt: new Date(0) } });
+    expect((await reconcile()).moved).toBe(1);
+    expect(await pgRowsFor(orphan._id)).toHaveLength(1);
+    await pool.query('DELETE FROM messages WHERE pod_id = $1', [String(orphan.podId)]);
+    await pool.query('DELETE FROM pods WHERE id = $1', [String(orphan.podId)]);
     expect(await pgRowsFor(doc._id)).toHaveLength(1);
     expect(next.moved).toBe(1);
   });
 
-  test('a card keeps its payload and a kernel post keeps its author marker', async () => {
-    const payload = { kind: 'approval', status: 'open' };
-    const doc = await insertFallback('h', { messageType: 'card', payload, authorKind: 'kernel' });
+  test('more than a full batch of poison rows cannot starve a valid message', async () => {
+    const bad = Array.from({ length: 201 }, () => ({
+      podId: new mongoose.Types.ObjectId(POD), userId: new mongoose.Types.ObjectId(USER),
+      content: `${MARKER} bad\0`, createdAt: new Date(0),
+    }));
+    await MongoMessage.collection.insertMany([...bad,
+      { content: `${MARKER} missing-pod`, userId: new mongoose.Types.ObjectId(USER), createdAt: new Date(0) },
+      { content: `${MARKER} missing-user`, podId: new mongoose.Types.ObjectId(POD), createdAt: new Date(0) },
+    ]);
+    const good = await insertFallback('after-poison');
+    expect((await reconcile()).skipped).toBe(200);
+    expect((await reconcile()).moved).toBe(1);
+    expect(await pgRowsFor(good._id)).toHaveLength(1);
+    expect(await MongoMessage.countDocuments({ reconcileFailedAt: { $exists: true } })).toBe(203);
+    expect((await reconcile()).skipped).toBe(0);
+  });
 
+  test('retry-ready orphan rows do not crowd out unattempted messages', async () => {
+    await MongoMessage.collection.insertMany(Array.from({ length: 201 }, () => ({
+      podId: new mongoose.Types.ObjectId(), userId: new mongoose.Types.ObjectId(USER),
+      content: `${MARKER} retry-orphan`, createdAt: new Date(0), reconcileRetryAt: new Date(0),
+    })));
+    const good = await insertFallback('new-after-retries');
+    expect((await reconcile({ maxPerPass: 1 })).moved).toBe(1);
+    expect(await pgRowsFor(good._id)).toHaveLength(1);
+  });
+
+  test('a second copy leaves the first reconciledAt and pgId unchanged', async () => {
+    const doc = await insertFallback('set-once');
+    await copyOne(doc);
+    const first = await MongoMessage.findById(doc._id).lean();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await copyOne(doc);
+    const second = await MongoMessage.findById(doc._id).lean();
+    expect(second.reconciledAt).toEqual(first.reconciledAt);
+    expect(second.reconciledPgId).toBe(first.reconciledPgId);
+    expect(await pgRowsFor(doc._id)).toHaveLength(1);
+  });
+
+  test('a conflict row deleted before lookup is not stamped with a NaN pgId', async () => {
+    const doc = await insertFallback('deleted-during-copy');
+    const { pool: appPool } = require('../../config/db-pg');
+    const spy = jest.spyOn(appPool, 'query').mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+    await expect(copyOne(doc)).rejects.toThrow('disappeared');
+    spy.mockRestore();
+    const after = await MongoMessage.findById(doc._id).lean();
+    expect(after.reconciledAt).toBeUndefined();
+    expect(after.reconciledPgId).toBeUndefined();
+  });
+
+  test('card payload and kernel authorship survive reconciliation', async () => {
+    const payload = { type: 'decision', options: ['continue'] };
+    const doc = await insertFallback('card', { messageType: 'card', payload, authorKind: 'kernel' });
     await reconcile();
+    expect((await pgRowsFor(doc._id))[0]).toMatchObject({ payload, author_kind: 'kernel' });
+  });
 
-    const row = (await pool.query(
-      'SELECT payload, author_kind FROM messages WHERE legacy_mongo_id = $1',
-      [String(doc._id)],
-    )).rows[0];
-    expect(row.payload).toEqual(payload);
-    expect(row.author_kind).toBe('kernel');
+  test('reconciled IDs work as replies and thread roots and reject missing or cross-pod targets', async () => {
+    const doc = await insertFallback('thread-root');
+    await reconcile();
+    const { resolveThreadRoot, assertReplyTargetInPod } = require('../../services/threadRootResolver');
+    const root = await resolveThreadRoot({ podId: POD, threadRootId: String(doc._id) });
+    await expect(assertReplyTargetInPod({ podId: POD, replyToMessageId: String(doc._id) })).resolves.toBeUndefined();
+    const reply = await PGMessage.create(POD, USER, `${MARKER} reply`, 'text', String(doc._id));
+    expect(Number(reply.reply_to_message_id)).toBe(root);
+    expect(Number(reply.thread_root_id)).toBe(root);
+    await expect(resolveThreadRoot({ podId: POD, threadRootId: new mongoose.Types.ObjectId().toHexString() })).rejects.toMatchObject({ code: 'thread_root_invalid' });
+    await expect(assertReplyTargetInPod({ podId: new mongoose.Types.ObjectId().toHexString(), replyToMessageId: String(doc._id) })).rejects.toMatchObject({ code: 'reply_target_unavailable' });
+  });
+
+  test('all-digit ObjectIds resolve as Mongo IDs rather than PG integers', async () => {
+    const doc = await insertFallback('digit-id', { _id: new mongoose.Types.ObjectId('123456789012345678901234') });
+    await reconcile();
+    expect(await PGMessage.resolveId(String(doc._id))).toBe(String((await pgRowsFor(doc._id))[0].id));
   });
 
   test('a pod that exists only in Mongo is backfilled and its message then moves', async () => {
