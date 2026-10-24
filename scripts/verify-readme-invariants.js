@@ -42,6 +42,22 @@ function hasDiscordInvite(lines) {
   });
 }
 
+// Link targets are parsed, not matched as prefixes: a prefix test accepts
+// `https://docs.commonly.me@evil.example/` and `https://docs.commonly.me.evil.example/`.
+function linkTargets(lines) {
+  return [...lines.join('\n').matchAll(/\]\(([^)\s]+)/g)].map((m) => m[1]);
+}
+
+function isDocsTarget(target) {
+  if (target.startsWith('docs/')) return true;
+  try {
+    const url = new URL(target);
+    return url.protocol === 'https:' && url.hostname === 'docs.commonly.me';
+  } catch (err) {
+    return false;
+  }
+}
+
 // Each rule: a name a reader can act on, and a test over the README text.
 const RULES = [
   {
@@ -50,7 +66,7 @@ const RULES = [
   },
   {
     name: 'a link to the docs',
-    check: (lines) => /\]\((docs\/|https:\/\/docs\.commonly\.me)/.test(lines.join('\n')),
+    check: (lines) => linkTargets(lines).some(isDocsTarget),
   },
   {
     name: 'a link to the license (LICENSE)',
@@ -83,6 +99,14 @@ function selfTest() {
   const problems = checkReadme(noInvite);
   if (!problems.some((p) => p.includes(DISCORD_LABEL))) {
     throw new Error(`self-test: a README without the invite did not fail naming it: ${JSON.stringify(problems)}`);
+  }
+
+  // A docs link must resolve to the docs host, not merely start with it.
+  for (const bogus of ['https://docs.commonly.me@evil.example/', 'https://docs.commonly.me.evil.example/']) {
+    const fake = complete.replace('[Docs](docs/README.md)', `[Docs](${bogus})`);
+    if (!checkReadme(fake).some((p) => p.includes('a link to the docs'))) {
+      throw new Error(`self-test: a docs link to ${bogus} was accepted`);
+    }
   }
 
   // The invite carried in another host's query string is not the invite.
