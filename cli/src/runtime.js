@@ -15,6 +15,9 @@
  *
  * This entry does not register/login an agent, enforce an OS sandbox around
  * an in-process harness, or make mutable global process.env safe per turn.
+ * Full-tool native sessions must verify each bound pod through the deployed
+ * GET /api/agents/runtime/pods/:podId/operator-only policy before a turn and
+ * before releasing its response. This entry alone does not authorize a pod.
  * Do not replace adapter-scoped credentials with a shared global token.
  */
 export { performRun } from './commands/agent.js';
