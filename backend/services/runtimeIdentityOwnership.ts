@@ -12,7 +12,8 @@
  * adoption). Two clauses, both must hold:
  *   - an active installation of the identity installedBy the owner exists;
  *   - no active installation of it exists installedBy anyone else.
- * The negative clause is what stops a shared identity (two humans each
+ * Agent-DM installations are conversation projections, not ownership. They
+ * do not satisfy either clause. The negative clause stops a shared identity (two humans each
  * installed it) from being bound to, or minted by, one person. Once #609 gives
  * per-owner identities it becomes redundant rather than wrong, so it stays.
  *
@@ -29,17 +30,56 @@ export type OwnershipCheck =
 
 const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
 
+type RuntimeInstallation = { installedBy?: unknown; podId?: unknown };
+
+const ownershipInstallations = async (agentName: string, instanceId: string): Promise<RuntimeInstallation[]> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentInstallation } = require('../models/AgentRegistry');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const Pod = require('../models/Pod');
+  const installations: RuntimeInstallation[] = await AgentInstallation.find({
+    agentName, instanceId, status: 'active',
+  }).collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy podId').lean();
+  const dmPods = await Pod.find({
+    _id: { $in: installations.map((installation) => installation.podId).filter(Boolean) }, type: 'agent-dm',
+  }).select('_id').lean();
+  const dmPodIds = new Set(dmPods.map((pod: { _id: unknown }) => String(pod._id)));
+  return installations.filter((installation) => !dmPodIds.has(String(installation.podId)));
+};
+
+/** Explain a genuine second installer to the first installer in Settings. */
+export const describeRuntimeIdentityBlockers = async (
+  ownerUserId: unknown,
+  agentName: string,
+  instanceId: string,
+): Promise<string[]> => {
+  const others = (await ownershipInstallations(agentName, instanceId))
+    .filter((installation) => String(installation.installedBy) !== String(ownerUserId));
+  if (!others.length) return [];
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const Pod = require('../models/Pod');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const User = require('../models/User');
+  const [pods, users] = await Promise.all([
+    Pod.find({ _id: { $in: others.map((installation) => installation.podId).filter(Boolean) } }).select('name').lean(),
+    User.find({ _id: { $in: others.map((installation) => installation.installedBy).filter(Boolean) } })
+      .select('username displayName').lean(),
+  ]);
+  const podNames = new Map(pods.map((pod: { _id: unknown; name: string }) => [String(pod._id), pod.name]));
+  const userNames = new Map(users.map((user: { _id: unknown; username: string; displayName?: string }) => [
+    String(user._id), user.displayName || user.username,
+  ]));
+  return others.map((installation) => `${podNames.get(String(installation.podId)) || 'unknown pod'} (${userNames.get(String(installation.installedBy)) || 'unknown installer'})`);
+};
+
 /** The negative clause: does an active installation by anyone else exist? */
 const otherInstallerFailure = async (
   ownerUserId: unknown,
   agentName: string,
   instanceId: string,
 ): Promise<OwnershipFailure | null> => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const { AgentInstallation } = require('../models/AgentRegistry');
-  const others = await AgentInstallation.findOne({
-    agentName, instanceId, status: 'active', installedBy: { $ne: ownerUserId },
-  }).collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy').lean();
+  const others = (await ownershipInstallations(agentName, instanceId))
+    .find((installation) => String(installation.installedBy) !== String(ownerUserId));
   if (!others) return null;
   // MongoDB $ne also matches a missing field. Keep that legacy state safely
   // non-adoptable, but report it separately so an owner can repair it.
@@ -52,13 +92,12 @@ export const ownsRuntimeIdentity = async (
   agentName: string,
   instanceId: string,
 ): Promise<OwnershipCheck> => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const { AgentInstallation } = require('../models/AgentRegistry');
-  const mine = await AgentInstallation.findOne({
-    agentName, instanceId, installedBy: ownerUserId, status: 'active',
-  }).collation(RUNTIME_INSTALLATION_COLLATION).select('_id').lean();
+  const installations = await ownershipInstallations(agentName, instanceId);
+  const mine = installations
+    .find((installation) => installation.installedBy && String(installation.installedBy) === String(ownerUserId));
   if (!mine) return { owned: false, failure: 'owner_installation_missing' };
-  const failure = await otherInstallerFailure(ownerUserId, agentName, instanceId);
+  const other = installations.find((installation) => String(installation.installedBy) !== String(ownerUserId));
+  const failure = other ? (other.installedBy ? 'another_installer' : 'unknown_installer') : null;
   return failure ? { owned: false, failure } : { owned: true };
 };
 

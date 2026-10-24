@@ -19,7 +19,7 @@ import {
   projectSeatEnvironments,
   seatEnvironmentKey,
 } from '../services/seatEnvironmentProjection';
-import { ownsRuntimeIdentity, OwnershipFailure } from '../services/runtimeIdentityOwnership';
+import { ownsRuntimeIdentity, OwnershipFailure, describeRuntimeIdentityBlockers } from '../services/runtimeIdentityOwnership';
 import { logAgentInstallRefusal } from '../middleware/logAgentInstallRefusal';
 import { machineHasLiveAuthorization } from '../services/machineService';
 
@@ -154,6 +154,12 @@ const ownershipFailureMessage: Record<OwnershipFailure, string> = {
   unknown_installer: 'An active legacy installation has no recorded installer',
 };
 
+const ownershipRefusal = async (ownerUserId: unknown, agentName: string, instanceId: string, failure: OwnershipFailure) => {
+  if (failure !== 'another_installer') return ownershipFailureMessage[failure];
+  const blockers = await describeRuntimeIdentityBlockers(ownerUserId, agentName, instanceId);
+  return `This agent is also installed in ${blockers.join(', ') || 'another pod'}. Ask that installer to remove their installation before moving it.`;
+};
+
 // Owner-only view for Settings. A removed machine can still be named by the
 // identity binding; keep that fact visible while offering only live targets.
 router.get('/placement', bindingRateLimit, auth, async (req: express.Request & { user?: { id?: string } }, res: express.Response) => {
@@ -162,7 +168,9 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
     const instanceId = normalize(req.query.instanceId) || 'default';
     if (!agentName) return res.status(400).json({ message: 'agentName required' });
     const ownership = await ownsAgent(req.user?.id, agentName, instanceId);
-    if (!ownership.owned) return res.status(403).json({ message: ownershipFailureMessage[ownership.failure], code: ownership.failure });
+    if (!ownership.owned) return res.status(403).json({
+      message: await ownershipRefusal(req.user?.id, agentName, instanceId, ownership.failure), code: ownership.failure,
+    });
     const identity = await User.findOne({
       isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
     }).select('botMetadata.machineId botMetadata.requestedMachineId').lean();
@@ -252,7 +260,7 @@ router.post('/request', logAgentInstallRefusal('/api/agent-binding/request', 'wr
     const ownership = await ownsAgent(req.user?.id, agentName, instanceId);
     if (!ownership.owned) {
       return res.status(403).json({
-        message: ownershipFailureMessage[ownership.failure],
+        message: await ownershipRefusal(req.user?.id, agentName, instanceId, ownership.failure),
         code: ownership.failure,
       });
     }
@@ -522,7 +530,7 @@ router.post('/release', bindingRateLimit, auth, async (req: express.Request & { 
       const caller = await User.findById(req.user?.id).select('role').lean();
       if (caller?.role !== 'admin') {
         return res.status(403).json({
-          message: ownershipFailureMessage[ownership.failure],
+          message: await ownershipRefusal(req.user?.id, agentName, instanceId, ownership.failure),
           code: ownership.failure,
         });
       }

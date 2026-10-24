@@ -65,6 +65,23 @@ test('revoked Runtime row offers an active computer and releases before requesti
   ]);
 });
 
+test('a changed installer refuses the move before release and explains the blocking installation', async () => {
+  let placementReads = 0;
+  axios.get.mockImplementation((url) => {
+    if (!url.includes('/agent-binding/placement')) return Promise.resolve({ data: response });
+    placementReads += 1;
+    if (placementReads > 1) return Promise.reject({ response: { data: {
+      message: 'This agent is also installed in Other human pod (alex). Ask that installer to remove their installation before moving it.',
+    } } });
+    return Promise.resolve({ data: { boundMachineId: 'old', requestedMachineId: null,
+      boundMachineRevoked: true, activeMachines: [{ machineId: 'new', name: 'New Mac' }] } });
+  });
+  renderSection();
+  fireEvent.click(await screen.findByRole('button', { name: 'Move agent' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Other human pod (alex)');
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
 test('shows this agent grant and requires a second click to revoke through the existing route', async () => {
   renderSection();
   expect(await screen.findByText('On a computer, via the daemon')).toBeInTheDocument();

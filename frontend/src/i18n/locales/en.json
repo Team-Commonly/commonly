@@ -2324,6 +2324,8 @@
       "move": "Move agent",
       "moving": "Moving…",
       "noActiveMachine": "Register another computer to move this agent.",
+      "targetUnavailable": "That computer is no longer available. Choose another computer.",
+      "placementChanged": "This agent’s computer changed. Review its current placement before moving it.",
       "placementError": "Could not load this agent’s computer placement.",
       "moveError": "Could not move this agent. Try again."
     },

@@ -157,6 +157,44 @@ describe('placement request', () => {
     expect((await User.findById(bot._id)).botMetadata).toMatchObject({ machineId: null, requestedMachineId: 'machine-b' });
   });
 
+  it('ignores agent-DM projections but names a second human installation before releasing', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { status: 'revoked', revokedAt: new Date() } });
+    const peer = await User.create({ username: `peer${Date.now() % 1e6}`, email: `peer${Date.now()}@agents.commonly.local`,
+      password: 'x'.repeat(12), isBot: true });
+    const peer2 = await User.create({ username: `peer2${Date.now() % 1e6}`, email: `peer2${Date.now()}@agents.commonly.local`,
+      password: 'x'.repeat(12), isBot: true });
+    for (const installer of [peer, bot]) {
+      // eslint-disable-next-line no-await-in-loop
+      const dm = await Pod.create({ name: `DM ${installer.username}`, type: 'agent-dm',
+        createdBy: installer._id, members: installer === bot ? [bot._id, peer2._id] : [peer._id, bot._id] });
+      // eslint-disable-next-line no-await-in-loop
+      await AgentInstallation.create({ agentName: 'wren-test', instanceId: 'default', podId: dm._id,
+        version: '1.0.0', status: 'active', installedBy: installer._id });
+    }
+    const placement = () => request(app).get('/api/agent-binding/placement')
+      .query({ agentName: 'wren-test', instanceId: 'default' });
+    await placement().expect(200);
+    await request(app).post('/api/agent-binding/release')
+      .send({ agentName: 'wren-test', instanceId: 'default' }).expect(200);
+    await requestPlacement('machine-b').expect(200);
+    await adopt(DAEMON_B).expect(200);
+
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    const secondHuman = await User.create({ username: `second${Date.now() % 1e6}`,
+      email: `second${Date.now()}@x.com`, password: 'x'.repeat(12) });
+    const otherPod = await Pod.create({ name: 'Other human pod', type: 'team',
+      createdBy: secondHuman._id, members: [secondHuman._id, bot._id] });
+    await AgentInstallation.create({ agentName: 'wren-test', instanceId: 'default', podId: otherPod._id,
+      version: '1.0.0', status: 'active', installedBy: secondHuman._id });
+    const refusal = await placement().expect(403);
+    expect(refusal.body.code).toBe('another_installer');
+    expect(refusal.body.message).toContain(`Other human pod (${secondHuman.username})`);
+    await request(app).post('/api/agent-binding/release')
+      .send({ agentName: 'wren-test', instanceId: 'default' }).expect(403);
+    expect((await User.findById(bot._id)).botMetadata.machineId).toBe('machine-a');
+  });
+
   it('records a directive without binding, and null withdraws it', async () => {
     const res = await requestPlacement('machine-a');
     expect(res.status).toBe(200);

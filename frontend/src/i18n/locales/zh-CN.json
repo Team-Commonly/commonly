@@ -2315,6 +2315,8 @@
       "move": "迁移智能体",
       "moving": "正在迁移…",
       "noActiveMachine": "请先注册另一台电脑，再迁移此智能体。",
+      "targetUnavailable": "这台电脑已不可用，请选择另一台电脑。",
+      "placementChanged": "此智能体的电脑分配已变更。请先查看当前分配，再重新迁移。",
       "placementError": "无法加载此智能体的电脑分配信息。",
       "moveError": "无法迁移此智能体，请重试。"
     },

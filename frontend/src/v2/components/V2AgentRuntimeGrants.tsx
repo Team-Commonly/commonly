@@ -90,6 +90,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     setPlacement(next);
     setMachineChoice((current) => next.activeMachines.some((machine) => machine.machineId === current)
       ? current : next.activeMachines.find((machine) => machine.machineId !== next.boundMachineId)?.machineId || '');
+    return next;
   }, [api, name, instanceId]);
 
   const load = useCallback(async () => {
@@ -112,7 +113,10 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     if (runtime.runtimeType !== 'wrapper') return;
     setPlacement(null);
     setPlacementError('');
-    void loadPlacement().catch(() => setPlacementError(t('agentManage.runtime.placementError')));
+    void loadPlacement().catch((error) => setPlacementError(
+      (error as { response?: { data?: { message?: string } } })?.response?.data?.message
+      || t('agentManage.runtime.placementError'),
+    ));
   }, [runtime.runtimeType, loadPlacement, t]);
   useEffect(() => setModelDraft(runtime.model || ''), [runtime.model]);
   useEffect(() => setEffortDraft(runtime.effort || ''), [runtime.effort]);
@@ -169,14 +173,25 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     setMoving(true);
     setPlacementError('');
     try {
-      if (placement.boundMachineId) {
+      // Recheck sole ownership and the chosen target before releasing the old
+      // binding. An agent-created DM is not a competing installer, while a
+      // second human installation must refuse before any state changes.
+      const current = await loadPlacement();
+      if (current.boundMachineId !== placement.boundMachineId || (current.boundMachineId && !current.boundMachineRevoked)) {
+        throw new Error(t('agentManage.runtime.placementChanged'));
+      }
+      if (!current.activeMachines.some((machine) => machine.machineId === machineChoice)) {
+        throw new Error(t('agentManage.runtime.targetUnavailable'));
+      }
+      if (current.boundMachineId) {
         await api.post('/api/agent-binding/release', { agentName: name, instanceId });
         setPlacement((current) => current && { ...current, boundMachineId: null, boundMachineRevoked: false });
       }
       await api.post('/api/agent-binding/request', { agentName: name, instanceId, machineId: machineChoice });
       await loadPlacement();
-    } catch {
-      setPlacementError(t('agentManage.runtime.moveError'));
+    } catch (error) {
+      setPlacementError((error as { response?: { data?: { message?: string } } })?.response?.data?.message
+        || (error instanceof Error && error.message) || t('agentManage.runtime.moveError'));
       void loadPlacement().catch(() => {});
     } finally {
       setMoving(false);
