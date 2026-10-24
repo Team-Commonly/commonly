@@ -52,6 +52,7 @@ import {
   defaultByoHandoffName,
   type ByoHandoffAdapter,
 } from './byoHandoffService';
+import { appendLongTermMemory } from './agentMemoryService';
 
 // --- public surface --------------------------------------------------------
 
@@ -763,21 +764,11 @@ async function dispatchTool(
         if (!content) {
           return { content: { ok: false, error: 'content is required' }, error: 'missing_content' };
         }
-        const AgentMemory = require('../models/AgentMemory');
-        const existing = await AgentMemory.findOne({
+        await appendLongTermMemory({
           agentName: ctx.agentName,
           instanceId: ctx.instanceId,
+          content,
         });
-        const prior = (existing?.content as string) || '';
-        const nextContent = `${prior}${prior ? '\n\n' : ''}[${new Date().toISOString()}] ${content}`;
-        // ADR-003 Phase 2: clear /memory/sync dedup cache when a non-sync
-        // writer mutates the doc, so the next sync promotion isn't wrongly
-        // short-circuited on a stale hash.
-        await AgentMemory.findOneAndUpdate(
-          { agentName: ctx.agentName, instanceId: ctx.instanceId },
-          { $set: { content: nextContent }, $unset: { lastSyncKey: '', lastSyncAt: '' } },
-          { upsert: true, new: true, setDefaultsOnInsert: true },
-        );
         return { content: { ok: true, written: true } };
       }
 
