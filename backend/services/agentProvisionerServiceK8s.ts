@@ -362,18 +362,20 @@ const readOpenClawHeartbeatFile = async (accountId: any, { gateway } : any = {})
 };
 
 const readOpenClawIdentityFile = async (accountId: any, { gateway } : any = {}) => {
-  try {
-    const podName = await resolveGatewayPodNameWithRetry(gateway);
-    const identityPath = `/workspace/${accountId}/IDENTITY.md`;
-    const result = await execInPod({
-      podName,
-      containerName: 'clawdbot-gateway',
-      command: ['sh', '-lc', `[ -f "${identityPath}" ] && cat "${identityPath}" || echo ""`],
-    });
-    return result.stdout || '';
-  } catch {
-    return '';
-  }
+  const podName = await resolveGatewayPodNameWithRetry(gateway);
+  const identityPath = `/workspace/${accountId}/IDENTITY.md`;
+  const result = await execInPod({
+    podName,
+    containerName: 'clawdbot-gateway',
+    // stat/test -e cannot distinguish an inaccessible parent from absence.
+    // Use the gateway's Node runtime to preserve every error except ENOENT.
+    command: ['node', '-e', `try {
+      process.stdout.write(require('fs').readFileSync(process.argv[1], 'utf8'));
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }`, identityPath],
+  });
+  return result.stdout || '';
 };
 
 // Cross-cutting behavioral invariants appended to every SOUL.md the

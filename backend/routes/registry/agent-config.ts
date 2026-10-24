@@ -7,6 +7,7 @@ const AgentProfile = require('../../models/AgentProfile');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const Pod = require('../../models/Pod');
 const {
+  readOpenClawIdentityFile,
   writeWorkspaceIdentityFile,
   syncOpenClawSkills,
 } = require('../../services/agentProvisionerService');
@@ -32,6 +33,9 @@ const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAg
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 
 const agentConfigRouter = express.Router();
+// Serialize this route's IDENTITY.md read/modify/write operations per account.
+// This is process-local; it does not coordinate independent backend replicas.
+const identityWrites = new Map<string, Promise<void>>();
 
 /**
  * Every field this handler writes, and so every field the installer gate below
@@ -421,10 +425,38 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         );
 
         if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
-          const identityContent = buildIdentityContent(effectiveDisplayName || normalizedInstanceId, persona || {});
-          writeWorkspaceIdentityFile(normalizedInstanceId, identityContent).catch((err: any) => {
-            console.warn('[registry] Failed to sync IDENTITY.md for', normalizedInstanceId, err.message);
-          });
+          const previousWrite = identityWrites.get(normalizedInstanceId) || Promise.resolve();
+          let releaseWrite!: () => void;
+          const currentWrite = new Promise<void>((resolve) => { releaseWrite = resolve; });
+          identityWrites.set(normalizedInstanceId, currentWrite);
+          try {
+            await previousWrite;
+            const identityContent = await readOpenClawIdentityFile(normalizedInstanceId);
+            if (persona !== undefined) {
+              // Persona-only edits retain the runtime Name. A missing file uses
+              // the installation label instead of renaming it to the instance id.
+              const existingName = identityContent.match(/^- \*\*Name:\*\* ([^\r\n]*)/m)?.[1]?.trim();
+              const identityName = effectiveDisplayName || existingName || installation.displayName
+                || normalizedInstanceId;
+              await writeWorkspaceIdentityFile(
+                normalizedInstanceId, buildIdentityContent(identityName, persona),
+              );
+            } else {
+              // Keep manually edited persona content on a name-only save.
+              const renamed = identityContent.replace(
+                /^(- \*\*Name:\*\* )[^\r\n]*/m,
+                (_line: string, prefix: string) => `${prefix}${effectiveDisplayName || normalizedInstanceId}`,
+              );
+              if (renamed !== identityContent) {
+                await writeWorkspaceIdentityFile(normalizedInstanceId, renamed);
+              }
+            }
+          } finally {
+            releaseWrite();
+            if (identityWrites.get(normalizedInstanceId) === currentWrite) {
+              identityWrites.delete(normalizedInstanceId);
+            }
+          }
         }
       }
     } catch (projectionError) {

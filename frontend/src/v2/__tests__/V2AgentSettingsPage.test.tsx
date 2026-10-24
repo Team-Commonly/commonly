@@ -140,23 +140,78 @@ test('identity edits go through the shared installation PATCH with the exact ins
     } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
-      profile: { instructions: 'Old', persona: { tone: 'friendly', specialties: ['writing'] } },
+      profile: {
+        instructions: 'Old', persona: { tone: 'friendly', specialties: ['writing'] },
+        toolPolicy: { requireApproval: ['search'] }, contextPolicy: { maxTokens: 8000 },
+      },
     } } });
     return Promise.resolve({ data: [] });
   });
   axios.patch.mockResolvedValue({ data: { success: true } });
   renderPage();
-  await screen.findByRole('button', { name: 'Save identity' });
+  const save = await screen.findByRole('button', { name: 'Save identity' });
+  expect(save).toBeDisabled();
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Maya 2' } });
-  fireEvent.change(screen.getByRole('textbox', { name: 'Instructions' }), { target: { value: 'New instructions' } });
-  fireEvent.change(screen.getByRole('combobox', { name: 'Tone' }), { target: { value: 'technical' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  expect(screen.queryByRole('textbox', { name: 'Instructions' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'Persona' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'Tone' })).not.toBeInTheDocument();
+  expect(save).toBeEnabled();
+  fireEvent.click(save);
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
     '/api/registry/pods/pod-1/agents/maya-claude',
-    expect.objectContaining({
-      instanceId: 'default', displayName: 'Maya 2', instructions: 'New instructions',
-      persona: expect.objectContaining({ tone: 'technical', specialties: ['writing'] }),
-    }),
+    { instanceId: 'default', displayName: 'Maya 2' },
+  ));
+});
+
+test('OpenClaw identity keeps the live Persona editor and saves its changes', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Scout', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'openclaw', instanceId: 'scout', displayName: 'Scout',
+      profile: { persona: { tone: 'friendly', specialties: ['writing'], customInstructions: 'Stay clear' } },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  axios.patch.mockResolvedValue({ data: { success: true } });
+  renderPage('/v2/agents/openclaw/scout');
+  expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Persona notes' }), { target: { value: 'Keep detail' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    '/api/registry/pods/pod-1/agents/openclaw',
+    { instanceId: 'scout', persona: {
+      tone: 'friendly', specialties: ['writing'], boundaries: [], customInstructions: 'Keep detail',
+    } },
+  ));
+});
+
+test('OpenClaw name-only edits leave Persona out of the PATCH', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
+      displayName: 'Scout', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'openclaw', instanceId: 'scout', displayName: 'Scout',
+      profile: { persona: { tone: 'friendly', specialties: ['writing'] } },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  axios.patch.mockResolvedValue({ data: { success: true } });
+  renderPage('/v2/agents/openclaw/scout');
+  expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Scout 2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    '/api/registry/pods/pod-1/agents/openclaw',
+    { instanceId: 'scout', displayName: 'Scout 2' },
   ));
 });
 

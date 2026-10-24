@@ -34,8 +34,10 @@ const mock = {
     // these, so this is the only place a test can assert on the delivered file
     // rather than on the source that composes it.
     execCommands: [],
+    execArgv: [],
     // What the next exec writes to its stdout sink; empty = no output.
     execStdout: '',
+    execStatus: { status: 'Success' },
   };
 
   class KubeConfig {
@@ -71,13 +73,14 @@ const mock = {
       statusCallback,
     ) {
       mock.execCommands.push(Array.isArray(_command) ? _command.join(' ') : String(_command));
+      mock.execArgv.push(_command);
       if (mock.execStdout && _stdout && typeof _stdout.write === 'function') {
         _stdout.write(mock.execStdout);
         if (typeof statusCallback === 'function') setImmediate(() => statusCallback({ status: 'Success' }));
         return Promise.resolve();
       }
       if (typeof statusCallback === 'function') {
-        statusCallback({ status: 'Success' });
+        statusCallback(mock.execStatus);
       }
       return Promise.resolve();
     }
@@ -94,6 +97,7 @@ const mock = {
 const k8s = require('@kubernetes/client-node');
 const {
   restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey,
+  readOpenClawIdentityFile,
 } = require('../../../services/agentProvisionerServiceK8s');
 const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
 
@@ -101,6 +105,41 @@ describe('agentProvisionerServiceK8s', () => {
   beforeEach(() => {
     k8s.__mock.readNamespacedDeployment.mockClear();
     k8s.__mock.replaceNamespacedDeployment.mockClear();
+  });
+
+  it('distinguishes missing identities from read and parent-access failures', async () => {
+    k8s.__mock.execStatus = { status: 'Failure', message: 'Permission denied' };
+    try {
+      await expect(readOpenClawIdentityFile('curator')).rejects.toThrow('Permission denied');
+      const command = k8s.__mock.execArgv.at(-1);
+      const fs = require('fs');
+      const os = require('os');
+      const path = require('path');
+      const { spawnSync } = require('child_process');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'identity-reader-'));
+      const identity = path.join(dir, 'IDENTITY.md');
+      const run = () => spawnSync(process.execPath, [...command.slice(1, -1), identity], { encoding: 'utf8' });
+      try {
+        expect(run().status).toBe(0);
+        fs.writeFileSync(identity, 'Name: Curator');
+        const read = run();
+        expect(read.status).toBe(0);
+        expect(read.stdout).toBe('Name: Curator');
+        fs.chmodSync(dir, 0o000);
+        const inaccessible = run();
+        expect(inaccessible.status).not.toBe(0);
+        expect(inaccessible.stderr).toContain('EACCES');
+        fs.chmodSync(dir, 0o700);
+        fs.unlinkSync(identity);
+        fs.mkdirSync(identity);
+        expect(run().status).not.toBe(0);
+      } finally {
+        fs.chmodSync(dir, 0o700);
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    } finally {
+      k8s.__mock.execStatus = { status: 'Success' };
+    }
   });
 
   it('restarts the shared gateway deployment for OpenClaw runtimes', async () => {
