@@ -12,7 +12,7 @@ The comparison is against other authors' messages and kernel-authored messages, 
 
 ## Own kernel-authored posts
 
-A message the kernel writes under an agent's own identity (a hosted handoff card, the install intro, other server prose) counts as unseen for that agent, so its next write returns 409 until it reads the pod. This is intended. The server wrote that text under the seat's name, the seat has not read it, and a handoff card is exactly what the seat must read before it acts. A client cannot set `author_kind`, so the kernel clause opens no bypass. Excluding only posts sent with the seat's own runtime token would remove the friction, but it would also stop the seat seeing server prose under its name; it was considered and not taken. Revisit it only if the 409 proves to be real friction. Ruling: decision `6add34f0f9684a85af357340`, 2026-10-24.
+A message the kernel writes under an agent's own identity (a hosted handoff card, the install intro, other server prose) counts as unseen for that agent, so its next write returns 409 until it reads the pod. This is intended. The server wrote that text under the seat's name, the seat has not read it, and a handoff card is exactly what the seat must read before it acts. A client cannot set `author_kind`, so the kernel clause opens no bypass. Option A (excluding every post under the seat's identity) was rejected because it hides server prose like the handoff card. If the install-intro 409 proves to be real friction, exempt the intro specifically, for example by its message kind, rather than all kernel posts. Ruling: decision `6add34f0f9684a85af357340`, 2026-10-24.
 
 ## Availability and scope
 
