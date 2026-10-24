@@ -27,6 +27,13 @@ interface AgentGrantsResponse {
   grants: AgentGrant[];
 }
 
+interface Placement {
+  boundMachineId: string | null;
+  requestedMachineId: string | null;
+  boundMachineRevoked: boolean;
+  activeMachines: Array<{ machineId: string; name: string }>;
+}
+
 interface Props {
   name: string;
   instanceId: string;
@@ -72,6 +79,18 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   const [modelDraft, setModelDraft] = useState(runtime.model || '');
   const [effortDraft, setEffortDraft] = useState(runtime.effort || '');
   const [confirmGrantId, setConfirmGrantId] = useState<string | null>(null);
+  const [placement, setPlacement] = useState<Placement | null>(null);
+  const [machineChoice, setMachineChoice] = useState('');
+  const [placementError, setPlacementError] = useState('');
+  const [moving, setMoving] = useState(false);
+
+  const loadPlacement = useCallback(async () => {
+    const response = await api.get<Placement>('/api/agent-binding/placement', { params: { agentName: name, instanceId } });
+    const next = { ...response, activeMachines: response.activeMachines || [] };
+    setPlacement(next);
+    setMachineChoice((current) => next.activeMachines.some((machine) => machine.machineId === current)
+      ? current : next.activeMachines.find((machine) => machine.machineId !== next.boundMachineId)?.machineId || '');
+  }, [api, name, instanceId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,6 +108,12 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   }, [api, name, instanceId, t]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (runtime.runtimeType !== 'wrapper') return;
+    setPlacement(null);
+    setPlacementError('');
+    void loadPlacement().catch(() => setPlacementError(t('agentManage.runtime.placementError')));
+  }, [runtime.runtimeType, loadPlacement, t]);
   useEffect(() => setModelDraft(runtime.model || ''), [runtime.model]);
   useEffect(() => setEffortDraft(runtime.effort || ''), [runtime.effort]);
 
@@ -139,6 +164,25 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     }
   };
 
+  const moveAgent = async () => {
+    if (!placement || !machineChoice || moving) return;
+    setMoving(true);
+    setPlacementError('');
+    try {
+      if (placement.boundMachineId) {
+        await api.post('/api/agent-binding/release', { agentName: name, instanceId });
+        setPlacement((current) => current && { ...current, boundMachineId: null, boundMachineRevoked: false });
+      }
+      await api.post('/api/agent-binding/request', { agentName: name, instanceId, machineId: machineChoice });
+      await loadPlacement();
+    } catch {
+      setPlacementError(t('agentManage.runtime.moveError'));
+      void loadPlacement().catch(() => {});
+    } finally {
+      setMoving(false);
+    }
+  };
+
   return (
     <div className="v2-agent-runtime-grants">
       <section className="v2-agent-settings__section" aria-labelledby="agent-runtime-heading">
@@ -149,6 +193,29 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
           <div><dt>{t('agentManage.runtime.model', { defaultValue: 'Model' })}</dt><dd>{model || t('agentManage.runtime.modelUnknown', { defaultValue: 'Set by the runtime' })}</dd></div>
           {runtime.effort && <div><dt>{t('agentManage.runtime.effort', { defaultValue: 'Effort' })}</dt><dd>{runtime.effort}</dd></div>}
         </dl>
+        {details.mode === 'daemon' && placement && (
+          <div className="v2-agent-runtime-grants__edit" data-testid="agent-machine-placement">
+            {placement.boundMachineRevoked && <p role="status">{t('agentManage.runtime.machineRevoked')}</p>}
+            {!placement.boundMachineRevoked && placement.boundMachineId && <p>{t('agentManage.runtime.currentMachine', {
+              name: placement.activeMachines.find((machine) => machine.machineId === placement.boundMachineId)?.name || placement.boundMachineId,
+            })}</p>}
+            {placement.requestedMachineId && !placement.boundMachineId && <p role="status">{t('agentManage.runtime.machineRequested', {
+              name: placement.activeMachines.find((machine) => machine.machineId === placement.requestedMachineId)?.name || placement.requestedMachineId,
+            })}</p>}
+            {(placement.boundMachineRevoked || !placement.boundMachineId) && (
+              placement.activeMachines.length > 0 ? <>
+                <label htmlFor="agent-runtime-machine">{t('agentManage.runtime.moveLabel')}</label>
+                <select id="agent-runtime-machine" value={machineChoice} onChange={(event) => setMachineChoice(event.target.value)}>
+                  {placement.activeMachines.map((machine) => <option key={machine.machineId} value={machine.machineId}>{machine.name}</option>)}
+                </select>
+                <button type="button" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
+                  {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
+                </button>
+              </> : <p>{t('agentManage.runtime.noActiveMachine')}</p>
+            )}
+          </div>
+        )}
+        {placementError && <p role="alert">{placementError}</p>}
         {mayEditRuntime && (
           <div className="v2-agent-runtime-grants__edit">
             <label htmlFor="agent-runtime-model">{t('agentManage.runtime.changeModel', { defaultValue: 'Model' })}</label>

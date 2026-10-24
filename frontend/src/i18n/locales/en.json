@@ -2316,7 +2316,16 @@
       "changeEffort": "Effort",
       "effortUnset": "Choose effort",
       "save": "Save runtime",
-      "saveError": "Could not save the model."
+      "saveError": "Could not save the model.",
+      "machineRevoked": "This computer was revoked. Choose another computer to run this agent.",
+      "currentMachine": "Running on {{name}}",
+      "machineRequested": "Waiting for {{name}} to start this agent",
+      "moveLabel": "Run on",
+      "move": "Move agent",
+      "moving": "Moving…",
+      "noActiveMachine": "Register another computer to move this agent.",
+      "placementError": "Could not load this agent’s computer placement.",
+      "moveError": "Could not move this agent. Try again."
     },
     "grants": {
       "title": "Connector grants",

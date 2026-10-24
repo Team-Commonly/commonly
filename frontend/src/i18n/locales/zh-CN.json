@@ -2307,7 +2307,16 @@
       "changeEffort": "推理强度",
       "effortUnset": "选择推理强度",
       "save": "保存运行设置",
-      "saveError": "无法保存模型。"
+      "saveError": "无法保存模型。",
+      "machineRevoked": "这台电脑的访问权限已撤销。请选择另一台电脑运行此智能体。",
+      "currentMachine": "正在 {{name}} 上运行",
+      "machineRequested": "等待 {{name}} 启动此智能体",
+      "moveLabel": "运行于",
+      "move": "迁移智能体",
+      "moving": "正在迁移…",
+      "noActiveMachine": "请先注册另一台电脑，再迁移此智能体。",
+      "placementError": "无法加载此智能体的电脑分配信息。",
+      "moveError": "无法迁移此智能体，请重试。"
     },
     "grants": {
       "title": "连接器授权",

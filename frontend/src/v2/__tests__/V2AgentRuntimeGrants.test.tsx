@@ -35,7 +35,9 @@ const renderSection = (runtime = { runtimeType: 'wrapper', adapter: 'claude', mo
 
 beforeEach(() => {
   jest.clearAllMocks();
-  axios.get.mockResolvedValue({ data: response });
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
+    : response }));
   axios.post.mockResolvedValue({ data: { revoked: 1 } });
   saveRuntime.mockResolvedValue(undefined);
 });
@@ -46,6 +48,21 @@ test('runtime labels only recognize walked adapters and distinguish daemon from 
   expect(describeRuntime({ runtimeType: 'wrapper', adapter: 'unwalked' })).toEqual({ mode: 'daemon', adapter: null });
   expect(describeRuntime({ runtimeType: 'hosted' })).toEqual({ mode: 'hosted', adapter: null });
   expect(describeRuntime({ runtimeType: 'webhook', host: 'byo' })).toEqual({ mode: 'unknown', adapter: null });
+});
+
+test('revoked Runtime row offers an active computer and releases before requesting placement', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true,
+      activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+  renderSection();
+  expect(await screen.findByText('This computer was revoked. Choose another computer to run this agent.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Run on')).toHaveValue('new');
+  fireEvent.click(screen.getByRole('button', { name: 'Move agent' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/agent-binding/request',
+    { agentName: 'nib', instanceId: 'default', machineId: 'new' }, expect.anything()));
+  expect(axios.post.mock.calls.slice(0, 2).map(([url]) => url)).toEqual([
+    '/api/agent-binding/release', '/api/agent-binding/request',
+  ]);
 });
 
 test('shows this agent grant and requires a second click to revoke through the existing route', async () => {

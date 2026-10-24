@@ -154,6 +154,40 @@ const ownershipFailureMessage: Record<OwnershipFailure, string> = {
   unknown_installer: 'An active legacy installation has no recorded installer',
 };
 
+// Owner-only view for Settings. A removed machine can still be named by the
+// identity binding; keep that fact visible while offering only live targets.
+router.get('/placement', bindingRateLimit, auth, async (req: express.Request & { user?: { id?: string } }, res: express.Response) => {
+  try {
+    const agentName = normalize(req.query.agentName);
+    const instanceId = normalize(req.query.instanceId) || 'default';
+    if (!agentName) return res.status(400).json({ message: 'agentName required' });
+    const ownership = await ownsAgent(req.user?.id, agentName, instanceId);
+    if (!ownership.owned) return res.status(403).json({ message: ownershipFailureMessage[ownership.failure], code: ownership.failure });
+    const identity = await User.findOne({
+      isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
+    }).select('botMetadata.machineId botMetadata.requestedMachineId').lean();
+    if (!identity) return res.status(404).json({ message: 'Agent identity not found' });
+    const machines = await Machine.find({ ownerUserId: req.user?.id }).select('machineId name').lean();
+    const activeMachines = (await Promise.all(machines.map(async (machine: { machineId: string; name: string }) => ({
+      machineId: machine.machineId,
+      name: machine.name,
+      active: Boolean(await AgentCredential.exists({ kind: 'daemon', ownerUserId: req.user?.id,
+        machineId: machine.machineId, status: 'active' }))
+        && await machineHasLiveAuthorization(machine.machineId, req.user!.id!),
+    })))).filter((machine) => machine.active).map(({ machineId, name }) => ({ machineId, name }));
+    const boundMachineId = identity.botMetadata?.machineId || null;
+    return res.json({
+      boundMachineId,
+      requestedMachineId: identity.botMetadata?.requestedMachineId || null,
+      boundMachineRevoked: Boolean(boundMachineId && !activeMachines.some((machine) => machine.machineId === boundMachineId)),
+      activeMachines,
+    });
+  } catch (err) {
+    console.error('placement status error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.post('/adopt', bindingRateLimit, daemonAuth('agents:adopt'), async (req: DaemonAuthedRequest, res: express.Response) => {
   try {
     const agentName = normalize(req.body?.agentName);
@@ -238,10 +272,14 @@ router.post('/request', logAgentInstallRefusal('/api/agent-binding/request', 'wr
     }
 
     if (requestedMachineId) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const Machine = require('../models/Machine');
       const machine = await Machine.findOne({ machineId: requestedMachineId, ownerUserId: req.user?.id }).select('_id').lean();
       if (!machine) return res.status(404).json({ message: 'Machine not found' });
+      const daemonActive = await AgentCredential.exists({
+        kind: 'daemon', machineId: requestedMachineId, ownerUserId: req.user?.id, status: 'active',
+      });
+      if (!daemonActive || !await machineHasLiveAuthorization(requestedMachineId, req.user!.id!)) {
+        return res.status(409).json({ message: 'Machine access revoked' });
+      }
     }
 
     const identity = await User.findOne({

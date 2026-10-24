@@ -135,6 +135,28 @@ const runtimeAuthProbe = (token) => new Promise((resolve, reject) => {
 });
 
 describe('placement request', () => {
+  it('lets only the sole installer view a revoked binding and request a live replacement after release', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { status: 'revoked', revokedAt: new Date() } });
+    const placement = () => request(app).get('/api/agent-binding/placement')
+      .query({ agentName: 'wren-test', instanceId: 'default' });
+
+    global.__CALLER_ID = String(new mongoose.Types.ObjectId());
+    await placement().expect(403);
+    await request(app).post('/api/agent-binding/release')
+      .send({ agentName: 'wren-test', instanceId: 'default' }).expect(403);
+    global.__CALLER_ID = String(owner._id);
+
+    const state = await placement().expect(200);
+    expect(state.body).toMatchObject({ boundMachineId: 'machine-a', boundMachineRevoked: true,
+      activeMachines: [{ machineId: 'machine-b', name: 'Mac B' }] });
+    await requestPlacement('machine-a').expect(409);
+    await request(app).post('/api/agent-binding/release')
+      .send({ agentName: 'wren-test', instanceId: 'default' }).expect(200);
+    await requestPlacement('machine-b').expect(200);
+    expect((await User.findById(bot._id)).botMetadata).toMatchObject({ machineId: null, requestedMachineId: 'machine-b' });
+  });
+
   it('records a directive without binding, and null withdraws it', async () => {
     const res = await requestPlacement('machine-a');
     expect(res.status).toBe(200);
