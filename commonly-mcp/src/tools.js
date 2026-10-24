@@ -272,7 +272,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_attach_file',
-      description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath` (a path on the local filesystem). It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
+      description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath` (a path on the local filesystem). It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true. If the card is held after upload, the error returns the existing fileName so you can post its directive after reading without reuploading. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
       inputSchema: reqWith({ podId: STRING, filePath: STRING, message: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'filePath']),
       call: wrap(async ({ podId, filePath, message, continueAnyway }) => {
         const podPath = `/api/agents/runtime/pods/${encodeURIComponent(podId)}`;
@@ -302,13 +302,14 @@ export const buildTools = (config) => {
             body: { content, continueAnyway },
           });
         } catch (postError) {
-          // A 409 guarantees no file card was posted. Remove the uploaded
-          // bytes and metadata so retrying does not leave an orphan behind.
+          // The upload is a separate pod artifact. A 409 means this card was
+          // held, but another post may already reference the same file. Keep
+          // the bytes and give the caller its name to reuse after reading.
           if (postError instanceof HttpError && postError.status === 409 && u.fileName) {
-            await request(config, {
-              method: 'DELETE',
-              path: `${podPath}/uploads/${encodeURIComponent(u.fileName)}`,
-            });
+            throw new HttpError(409, {
+              ...postError.body,
+              uploadedFile: { fileName: u.fileName, originalName: u.originalName },
+            }, `File uploaded as ${u.fileName}, but its card was held. Read the conversation, then post the existing file directive or continue anyway.`);
           }
           throw postError;
         }

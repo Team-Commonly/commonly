@@ -4157,24 +4157,6 @@ router.post('/pods/:podId/uploads', phase4RateLimit, agentRuntimeAuth, uploadSin
   }
 });
 
-router.delete('/pods/:podId/uploads/:fileName', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
-  try {
-    const { podId, fileName } = req.params;
-    if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
-      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
-    }
-    if (!req.agentUser?._id) return res.status(401).json({ message: 'Agent identity required' });
-    const file = await File.findOne({ fileName, podId, uploadedBy: req.agentUser._id }).select('_id fileName');
-    if (!file) return res.status(404).json({ message: 'Upload not found' });
-    await getObjectStore().delete(fileName);
-    await File.deleteOne({ _id: file._id, uploadedBy: req.agentUser._id });
-    return res.json({ deleted: true });
-  } catch (error: any) {
-    console.error('Agent upload cleanup error:', error);
-    return res.status(500).json({ message: 'Failed to remove upload' });
-  }
-});
-
 // Keep hook ingress in the runtime namespace so callers and tests that mount
 // only this router still receive POST /pods/:podId/hooks.  The hook router is
 // a separate module to keep its auth/rate-limit contract independently testable.

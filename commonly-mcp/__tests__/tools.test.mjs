@@ -158,19 +158,21 @@ describe('commonly_attach_file freshness', () => {
     expect(fetchSpy.mock.calls[0][0]).toContain('/pods/POD/send-freshness');
   });
 
-  it('removes an uploaded file if a new message holds its card post', async () => {
+  it('keeps an uploaded file if a new message holds its card post', async () => {
     const fetchSpy = installFetch(async (_url, _init) => {
       const n = fetchSpy.mock.calls.length;
       if (n === 1) return okResponse({ ok: true });
       if (n === 2) return okResponse({ fileName: 'file-1.json', originalName: 'package.json', size: 42 });
       if (n === 3) return held;
-      return okResponse({ deleted: true });
+      throw new Error('A held card must not trigger a cleanup request');
     });
     const result = await byName.commonly_attach_file.call({ podId: 'POD', filePath });
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0].text).status).toBe(409);
-    expect(fetchSpy.mock.calls.map(([, init]) => init.method)).toEqual(['GET', 'POST', 'POST', 'DELETE']);
-    expect(fetchSpy.mock.calls[3][0]).toContain('/pods/POD/uploads/file-1.json');
+    expect(fetchSpy.mock.calls.map(([, init]) => init.method)).toEqual(['GET', 'POST', 'POST']);
+    expect(JSON.parse(result.content[0].text).body.uploadedFile).toEqual({
+      fileName: 'file-1.json', originalName: 'package.json',
+    });
   });
 
   it('lets an explicit override attach without a freshness preflight', async () => {

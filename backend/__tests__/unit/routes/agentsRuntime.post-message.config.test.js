@@ -267,7 +267,7 @@ describe('bot-token send-time freshness', () => {
   });
 });
 
-describe('attachment freshness and cleanup', () => {
+describe('attachment freshness', () => {
   const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'default' };
   const req = {
     params: { podId: 'pod-1', fileName: 'file-1.txt' },
@@ -289,19 +289,17 @@ describe('attachment freshness and cleanup', () => {
     expect(res.json).toHaveBeenCalledWith(hold);
   });
 
-  it('only removes an upload owned by the calling agent in this pod', async () => {
-    const handler = getRouteHandler('/pods/:podId/uploads/:fileName', 'delete');
-    const store = { delete: jest.fn().mockResolvedValue() };
-    getObjectStore.mockReturnValue(store);
-    File.findOne.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: 'file-id' }) });
-    File.deleteOne.mockResolvedValue({ deletedCount: 1 });
+  it('keeps a published file card outside any cleanup route', async () => {
+    const post = getRouteHandler('/pods/:podId/messages', 'post');
+    AgentMessageService.postMessage.mockResolvedValue({ success: true, message: { id: 'm1' } });
     const res = response();
-    await handler(req, res);
-    expect(File.findOne).toHaveBeenCalledWith({
-      fileName: 'file-1.txt', podId: 'pod-1', uploadedBy: 'bot-1',
-    });
-    expect(store.delete).toHaveBeenCalledWith('file-1.txt');
-    expect(File.deleteOne).toHaveBeenCalledWith({ _id: 'file-id', uploadedBy: 'bot-1' });
-    expect(res.json).toHaveBeenCalledWith({ deleted: true });
+    await post({
+      ...req,
+      body: { content: '[[upload:file-1.txt|report.txt|42|document]]', continueAnyway: true },
+    }, res);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    expect(() => getRouteHandler('/pods/:podId/uploads/:fileName', 'delete')).toThrow('Route not found');
+    expect(File.deleteOne).not.toHaveBeenCalled();
+    expect(getObjectStore).not.toHaveBeenCalled();
   });
 });
