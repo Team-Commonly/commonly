@@ -104,6 +104,7 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
     if (await hasOtherWork(install.agentName, install.instanceId)) continue;
     eligible += 1;
     let reserved = false;
+    let enqueueStarted = false;
     try {
       // Upsert's duplicate _id loser is the capped/racing worker. The cap is
       // per seat, not per pod, and survives process restarts and event GC.
@@ -134,6 +135,7 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       }
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const AgentEventService = require('./agentEventService');
+      enqueueStarted = true;
       // eslint-disable-next-line no-await-in-loop
       await AgentEventService.enqueue({
         agentName: install.agentName, instanceId: install.instanceId, podId: String(install.podId),
@@ -150,6 +152,13 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       woken += 1;
     } catch (error) {
       if ((error as { code?: number }).code === 11000 && !reserved) continue;
+      if (reserved && !enqueueStarted) {
+        // No queue write was attempted, so returning this slot is safe.
+        // eslint-disable-next-line no-await-in-loop
+        await AgentTaskWakeState.updateOne({ _id: key, lastWakeAt: now }, { $unset: { lastWakeAt: 1 } });
+        console.error('[assigned-task-wake] preflight failed:', key, (error as Error).message);
+        continue;
+      }
       // An enqueue can persist before reporting failure. Keep its reservation
       // on an ambiguous error so a retry cannot bypass the thirty-minute cap.
       throw error;
