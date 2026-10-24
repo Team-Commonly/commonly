@@ -9,7 +9,11 @@ jest.mock('jsonwebtoken', () => ({}));
 const User = require('../../models/User');
 const NeedsYouEmail = require('../../models/NeedsYouEmail');
 const NeedsYouEmailQuota = require('../../models/NeedsYouEmailQuota');
+const AttentionItem = require('../../models/AttentionItem');
+const Pod = require('../../models/Pod');
+const Summary = require('../../models/Summary');
 const { sendNeedsYouEmail } = require('../../services/needsYouEmailService');
+const digestEmailService = require('../../services/digestEmailService');
 const emailRoutes = require('../../routes/email');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 
@@ -99,5 +103,35 @@ describe('needs-you email', () => {
     expect(after.emailPreferences.dailyDigest).toBe(true);
     await sendNeedsYouEmail(item(user, 'Second ask'));
     expect(mockSendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a queued overflow ask out of the digest after the unsubscribe route', async () => {
+    const user = await human();
+    const pod = await Pod.create({ name: 'Private pod', type: 'chat', createdBy: user._id, members: [user._id] });
+    const asks = await Promise.all(Array.from({ length: 4 }, async (_, index) => AttentionItem.create({
+      recipientUserId: user._id, podId: pod._id, kind: 'blocked',
+      source: { type: 'message', id: `overflow-${index}` },
+      title: `PRIVATE_ASK_${index}`, status: 'open',
+    })));
+    for (const ask of asks) {
+      // eslint-disable-next-line no-await-in-loop
+      await sendNeedsYouEmail(ask);
+    }
+    const overflow = await NeedsYouEmail.findOne({ recipientUserId: user._id, status: 'overflow' });
+    expect(overflow).not.toBeNull();
+    const fresh = await User.findById(user._id).select('+digestUnsubscribeToken');
+    const response = await request(app).get(`/api/email/unsubscribe/needs-you/${fresh.digestUnsubscribeToken}`);
+    expect(response.status).toBe(200);
+    const digest = await Summary.create({
+      type: 'daily-digest', title: 'Daily digest', content: '- Ordinary update',
+      timeRange: { start: new Date(Date.now() - 3600000), end: new Date() },
+      metadata: { totalItems: 1, userId: String(user._id) },
+    });
+    await digestEmailService.sendDigestEmails([{ success: true, digest }]);
+    const mail = mockSendEmail.mock.calls.at(-1)[0];
+    expect(mail.textBody).toContain('Ordinary update');
+    expect(JSON.stringify(mail)).not.toContain('PRIVATE_ASK');
+    expect(JSON.stringify(mail)).not.toContain('Waiting on you');
+    expect((await NeedsYouEmail.findById(overflow._id)).includedInDigestAt).toBeUndefined();
   });
 });
