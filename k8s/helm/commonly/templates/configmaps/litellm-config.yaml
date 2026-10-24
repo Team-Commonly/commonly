@@ -37,6 +37,19 @@ data:
           model: deepseek/deepseek-v4-flash
           api_key: os.environ/DEEPSEEK_API_KEY
 
+      # DeepSeek V4.1 Flash, 1017 build. DeepSeek publishes no dated snapshot
+      # id: per api-docs.deepseek.com/updates, 2026-10-17, `deepseek-flash` is
+      # "the latest model" and was upgraded to DeepSeek-V4.1-Flash-1017 that
+      # day, while `deepseek-v4-flash` above is only "temporarily routed" to
+      # V4.1 for compatibility. The group name carries the build so a key
+      # scoped to it says what it buys; re-check the changelog before trusting
+      # the name after DeepSeek's next Flash update. Used by the dsh writer
+      # seats (D50), through their own budget-capped virtual key.
+      - model_name: deepseek-flash-1017
+        litellm_params:
+          model: deepseek/deepseek-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+
       # --- Cloudflare Workers AI (fallback; own-account, unrevokable) ---
       # Added 2026-08-08 to unblock the guide agent, which had no working model:
       # every other provider in this file was returning 401 (OpenRouter's account
