@@ -368,10 +368,16 @@ test('runtime editor writes environment controls through the shared settings hoo
   });
   renderPage();
   const model = await screen.findByLabelText('Model');
+  await screen.findByRole('heading', { name: 'Wake' });
+  await screen.findByRole('heading', { name: 'Skills' });
   const sections = Array.from(document.querySelectorAll('.v2-agent-settings h2')).map((node) => node.textContent);
+  expect(sections).toEqual(expect.arrayContaining(['Identity', 'Skills']));
+  expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('Identity'));
+  expect(sections.indexOf('Identity')).toBeLessThan(sections.indexOf('Wake'));
   expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('Runtime'));
   expect(sections.indexOf('Wake')).toBeLessThan(sections.indexOf('Runtime'));
   expect(sections.indexOf('Runtime')).toBeLessThan(sections.indexOf('Connector grants'));
+  expect(sections.indexOf('Connector grants')).toBeLessThan(sections.indexOf('Skills'));
   fireEvent.change(model, { target: { value: 'new-model' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
