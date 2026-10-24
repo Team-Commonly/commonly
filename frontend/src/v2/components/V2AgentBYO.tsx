@@ -1201,7 +1201,8 @@ const V2AgentBYO: React.FC = () => {
               {t('agentByo.actions.chooseFirst')}
             </div>
           ) : canReconnect ? (
-              <button type="button" className="v2-byo__submit" disabled={submitting || !podId} onClick={() => {
+              <button type="button" className="v2-byo__submit" disabled={submitting || !podId}
+                onMouseDown={(event) => event.preventDefault()} onClick={() => {
                 if (existingConnection.runtimeType === 'wrapper') void requestMachineReconnect(sanitizeAgentName(name));
                 else void replaceRunningKey({ agentName: sanitizeAgentName(name), podId });
               }}>
@@ -1210,6 +1211,9 @@ const V2AgentBYO: React.FC = () => {
             ) : isOtherOwner ? null : (
             <button
               type="button"
+              // Keep the focused field's hint visible through the press. If blur
+              // hides it on mousedown, this button can move before mouseup.
+              onMouseDown={(event) => event.preventDefault()}
               onClick={submit}
               disabled={submitting || (mode === 'byo' && !namesReady) || !podId}
               className="v2-byo__submit"
@@ -1224,7 +1228,10 @@ const V2AgentBYO: React.FC = () => {
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
               are real alternatives, but shown as equals beside the button they
               read as a choice a stranger has to make before starting. */}
-          <details className="v2-byo__more" data-testid="byo-more-ways">
+          <details className="v2-byo__more" data-testid="byo-more-ways"
+            onMouseDownCapture={(event) => {
+              if ((event.target as Element).closest('summary, button, a')) event.preventDefault();
+            }}>
             <summary>{t('agentByo.otherWays.title')}</summary>
           {machines.length === 0 && (
             <div className="v2-byo__add-computer" data-testid="byo-add-computer">
