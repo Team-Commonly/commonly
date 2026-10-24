@@ -48,10 +48,11 @@ add(runtime, 'read', [
   'GET /installations', 'GET /events', 'GET /pods/:podId/context', 'GET /pods/:podId/messages',
   'GET /pods/:podId/files', 'GET /pods/:podId/files/:fileName/content', 'GET /pods/:podId/posts',
   'GET /memory', 'GET /pods', 'GET /pods/:podId/integrations',
+  'GET /pods/:podId/skills', 'GET /pods/:podId/send-freshness',
   'GET /pods/:podId/integrations/:integrationId/messages', 'GET /pods/:podId/social-policy',
   'GET /memory/shared/:agentName/:instanceId?',
 ]);
-add(runtime, 'own_state', ['POST /events/:id/ack']);
+add(runtime, 'own_state', ['POST /events/:id/ack', 'POST /pods/:podId/skill-load']);
 add(runtime, 'pod_write', [
   'POST /pods/:podId/typing', 'POST /pods/:podId/messages', 'POST /pods/:podId/propose-action',
   'POST /pods/:podId/summaries', 'POST /pods/:podId/ask', 'POST /pods/:podId/uploads',
