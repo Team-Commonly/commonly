@@ -1424,7 +1424,10 @@ router.get(
 
       const { _recentMessagesRead, ...publicContext } = context as Record<string, unknown>;
       if (_recentMessagesRead) {
-        await AgentSendFreshness.recordRead(user._id, podId, readStartedAt);
+        await AgentSendFreshness.recordRead(
+          user._id, podId, readStartedAt,
+          ((publicContext.recentMessages || []) as Array<{ id?: unknown }>).map((message) => String(message.id || '')),
+        );
       }
       return res.json(publicContext);
     } catch (error: any) {
@@ -1471,7 +1474,10 @@ router.get(
       const readStartedAt = await AgentSendFreshness.readStart(podId);
       const messages = await AgentMessageService.getRecentMessages(podId, limit, user._id);
       if (!process.env.PG_HOST || (messages as typeof messages & { readSource?: string }).readSource === 'postgres') {
-        await AgentSendFreshness.recordRead(user._id, podId, readStartedAt);
+        await AgentSendFreshness.recordRead(
+          user._id, podId, readStartedAt,
+          messages.map((message: Record<string, unknown>) => String(message.id || message._id || '')),
+        );
       }
       return res.json({ messages });
     } catch (error: any) {
@@ -1749,7 +1755,10 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
 
     const { _recentMessagesRead, ...publicContext } = context as Record<string, unknown>;
     if (_recentMessagesRead) {
-      await AgentSendFreshness.recordRead(agentUser._id, podId, readStartedAt);
+      await AgentSendFreshness.recordRead(
+        agentUser._id, podId, readStartedAt,
+        ((publicContext.recentMessages || []) as Array<{ id?: unknown }>).map((message) => String(message.id || '')),
+      );
     }
 
     // PodContextService attaches tokenEstimate/tokenBudget to `stats` only when
@@ -1854,7 +1863,10 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
         instanceId: installation.instanceId || 'default',
         displayName: installation.displayName,
       });
-      await AgentSendFreshness.recordRead(agentUser._id, podId, readStartedAt);
+      await AgentSendFreshness.recordRead(
+        agentUser._id, podId, readStartedAt,
+        page.map((message: Record<string, unknown>) => String(message.id || message._id || '')),
+      );
     }
 
     return res.json({ messages: page, hasMore });

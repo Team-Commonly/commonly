@@ -47,7 +47,7 @@ d('agent freshness: in-flight PostgreSQL insert', () => {
       expect(inserted.rows[0].created_at.getTime()).toBeLessThanOrEqual(start.at.getTime());
       expect(await pool.query('SELECT id FROM messages WHERE pod_id = $1', [String(podId)]))
         .toMatchObject({ rows: [] });
-      await Freshness.recordRead(agentId, podId, start);
+      await Freshness.recordRead(agentId, podId, start, []);
       await writer.query('COMMIT');
       const hold = await Freshness.unseenMessages(agentId, podId);
       expect(hold).toMatchObject({ code: 'unseen_messages', unseenCount: 1 });

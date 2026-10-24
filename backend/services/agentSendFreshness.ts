@@ -30,7 +30,17 @@ async function readStart(podId: unknown): Promise<ReadStart> {
 }
 const cursorId = (agentUserId: unknown, podId: unknown): string => `${String(agentUserId)}:${String(podId)}`;
 
-async function recordRead(agentUserId: unknown, podId: unknown, start: ReadStart): Promise<void> {
+async function recordRead(
+  agentUserId: unknown, podId: unknown, start: ReadStart, observedIds: string[],
+): Promise<void> {
+  if (!Array.isArray(observedIds)) throw new Error('Read acknowledgement needs returned message IDs');
+  const previous = await Cursor.findOne({ _id: cursorId(agentUserId, podId) })
+    .select('readAt readRevision').lean();
+  // The first read also needs evidence: a truncated tail cannot acknowledge
+  // older history just because no cursor existed yet.
+  if (await hasUnshownMessages(
+    agentUserId, podId, previous || { readAt: new Date(0), readRevision: -1 }, start, observedIds,
+  )) return;
   // A slow earlier read must not roll a newer read's watermark backwards.
   const filter = { _id: cursorId(agentUserId, podId) };
   const maximum = {
@@ -45,6 +55,45 @@ async function recordRead(agentUserId: unknown, podId: unknown, start: ReadStart
     // advances the winner's cursor without ever replacing a later timestamp.
     await Cursor.updateOne(filter, { $max: maximum });
   }
+}
+
+async function hasUnshownMessages(
+  agentUserId: unknown,
+  podId: unknown,
+  previous: { readAt?: Date; readRevision?: number },
+  start: ReadStart,
+  observedIds: string[],
+): Promise<boolean> {
+  const ownId = String(agentUserId);
+  if (pool && process.env.PG_HOST) {
+    if (start.revision === undefined) throw new Error('PostgreSQL read revision missing');
+    const ids = observedIds.filter((id) => /^\d+$/.test(id)).map(Number);
+    const result = await pool.query(`
+      SELECT 1 FROM messages m
+      WHERE m.pod_id = $1 AND m.freshness_revision > $2 AND m.freshness_revision <= $3
+        AND (m.user_id IS DISTINCT FROM $4 OR m.author_kind = 'kernel')
+        AND NOT (m.id = ANY($5::int[]))
+      LIMIT 1
+    `, [String(podId), previous.readRevision ?? -1, start.revision, ownId, ids]);
+    return result.rows.length > 0;
+  }
+  const observed = observedIds.filter((id) => /^[a-f\d]{24}$/i.test(id));
+  const query = {
+    podId,
+    _id: { $nin: observed },
+    $and: [
+      { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
+      { $or: [
+        { freshnessCommittedAt: { $gte: previous.readAt || new Date(0), $lte: start.at } },
+        {
+          freshnessPending: { $exists: false },
+          freshnessCommittedAt: { $exists: false },
+          createdAt: { $gt: previous.readAt || new Date(0), $lte: start.at },
+        },
+      ] },
+    ],
+  };
+  return Boolean(await MongoMessage.exists(query));
 }
 
 async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hold> {
@@ -101,7 +150,7 @@ async function unseenFromMongo(podId: unknown, ownId: string, after: Date): Prom
   };
   const [unseenCount, rows] = await Promise.all([
     MongoMessage.countDocuments(query),
-    MongoMessage.find(query).sort({ createdAt: -1, _id: -1 }).limit(3)
+    MongoMessage.find(query).sort({ freshnessPending: -1, freshnessCommittedAt: -1, createdAt: -1, _id: -1 }).limit(3)
       .populate('userId', 'username').lean(),
   ]);
   return {

@@ -237,7 +237,9 @@ describe('bot-token send-time freshness', () => {
     const getRes = response();
     await get(req, getRes);
     expect(getRes.json).toHaveBeenCalledWith({ messages });
-    expect(AgentSendFreshness.recordRead).toHaveBeenCalledWith('bot-1', 'pod-1', expect.objectContaining({ at: expect.any(Date) }));
+    expect(AgentSendFreshness.recordRead).toHaveBeenCalledWith(
+      'bot-1', 'pod-1', expect.objectContaining({ at: expect.any(Date) }), ['m1'],
+    );
 
     AgentSendFreshness.unseenMessages.mockResolvedValueOnce({ code: 'unseen_messages', unseenCount: 1 });
     const post = getRouteHandler('/bot/pods/:podId/messages', 'post');
