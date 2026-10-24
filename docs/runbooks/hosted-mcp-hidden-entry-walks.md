@@ -1,7 +1,8 @@
 # Walk a hidden hosted MCP entry
 
 Instance policy `hostedMcp.hiddenEntries` hides entries from the Tools catalogue
-and refuses new connect/reconnect starts. To offer one hidden entry to a named
+and refuses new connect/reconnect starts and new root grants for existing
+connections. To offer one hidden entry to a named
 walk user, configure an exception alongside the hidden list:
 
 ```yaml
@@ -18,15 +19,16 @@ an empty map. A deployment is required to change the environment.
 
 The map is entry ID to an array of exact, lowercase, 24-character Mongo User IDs.
 Names, email addresses, roles, query parameters and request body fields do not
-grant an exception. Catalogue reads and authenticated connect starts use the
-server-authenticated user's ID. A missing user or malformed map grants no
+grant an exception. Catalogue reads, authenticated connect starts and root-grant
+mints use the server-authenticated user's ID. A missing user or malformed map grants no
 exceptions; one invalid map member invalidates all exceptions. An exception key must also
 name an entry in the configured hidden list; a stale or mistyped key invalidates
 the entire exception map. Other users
-continue to see no offering and receive `404 unknown_entry` on start.
+continue to see no offering and receive `404 unknown_entry` on start or root-grant
+mint, including when they own a connected row created before the entry was hidden.
 
 An exception does not configure a connector client, grant access to another
-person's connections, or change tool grants. An unconfigured client remains
+person's connections, or revoke existing tool grants. An unconfigured client remains
 unavailable. Existing hidden connections retain their removal surface and pinned
 broker tools as before. Public client metadata and callbacks are not new-offering
 checks: the former is fetched by authorization servers, and the latter already
