@@ -92,6 +92,29 @@ describe('spawn retry policy', () => {
     expect(policy.delayMs).toBe(SPAWN_RETRY_MAX_MS);
   });
 
+  test('an unsupported reset zone keeps the bounded quota fallback', () => {
+    const policy = spawnRetryPolicy({
+      error: new Error('session limit · resets 4:20am (Mars/Olympus)'),
+      consecutiveFailures: 1,
+      intervalMs: 5000,
+    });
+    expect(policy).toMatchObject({ circuitOpen: true, delayMs: SPAWN_RETRY_MAX_MS });
+  });
+
+  test('a 12pm reset names local noon', () => {
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-23T18:30:00Z'));
+    try {
+      const policy = spawnRetryPolicy({
+        error: new Error('session limit · resets 12pm (America/Los_Angeles)'),
+        consecutiveFailures: 1,
+        intervalMs: 5000,
+      });
+      expect(policy.delayMs).toBe(32 * 60 * 1000);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   test('a just-passed reset clock does not defer the next probe for a day', () => {
     const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-23T11:21:00Z'));
     try {

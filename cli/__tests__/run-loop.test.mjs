@@ -1578,6 +1578,7 @@ describe('performRun', () => {
 
       const delayMs = Date.parse('2026-10-23T11:22:00Z') - now;
       expect(spawn).toHaveBeenCalledTimes(1);
+      expect(scheduled).toHaveLength(1);
       expect(scheduled[0].delayMs).toBe(delayMs);
       expect(errors[0]).toMatchObject({
         failureClass: 'quota', circuitOpen: true, retryAfterMs: delayMs,
