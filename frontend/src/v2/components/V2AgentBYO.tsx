@@ -190,6 +190,7 @@ const V2AgentBYO: React.FC = () => {
   const viewed = useRef(false);
   const commandViewed = useRef<object | null>(null);
   const fallbackStarting = useRef(false);
+  const allocatedHosted = useRef<{ issued: object; name: string } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   // Which CLI the listener runs. Pinned in the command (`--adapter`), so a Mac
   // without Claude Code says so instead of quietly starting Codex (QA BYO
@@ -586,14 +587,19 @@ const V2AgentBYO: React.FC = () => {
     try {
       // A BYO installation cannot be provisioned as hosted. Allocate a new
       // identity through the same server name allocator as the setup form.
-      const base = userSlug ? `${userSlug}-agent` : 'hosted-agent';
-      const available = await api.get<{ name: string }>(
-        `/api/registry/agents/next-free-name?base=${encodeURIComponent(base)}`,
-      );
-      if (!available.name || available.name === issued.agentName) {
-        throw new Error(t('agentByo.errors.nameLookupFailed'));
+      if (allocatedHosted.current?.issued !== issued) {
+        const base = userSlug ? `${userSlug}-agent` : 'hosted-agent';
+        const available = await api.get<{ name: string }>(
+          `/api/registry/agents/next-free-name?base=${encodeURIComponent(base)}`,
+        );
+        if (!available.name || available.name === issued.agentName) {
+          throw new Error(t('agentByo.errors.nameLookupFailed'));
+        }
+        allocatedHosted.current = { issued, name: available.name };
       }
-      if (await submitHosted(available.name)) setIssued(null);
+      // An install can succeed while provision fails. Reuse its name on retry
+      // so the existing-installation path can finish within the hosted cap.
+      if (await submitHosted(allocatedHosted.current.name)) setIssued(null);
     } catch {
       setError(t('agentByo.errors.nameLookupFailed'));
     } finally {
@@ -887,6 +893,7 @@ const V2AgentBYO: React.FC = () => {
   useEffect(() => {
     if (commandViewed.current === issued) return;
     commandViewed.current = issued;
+    allocatedHosted.current = null;
     setHasCopied(false);
     setShowHostedOffer(false);
     if (!issued) return;
@@ -1448,7 +1455,7 @@ const V2AgentBYO: React.FC = () => {
       )}
 
       {issued && (
-        <div className="v2-byo__result" onCopy={copiedIssuedContent}>
+        <div className="v2-byo__result">
           <h2>{t('agentByo.result.heading')} <code>{issued.agentName}</code></h2>
 
 
@@ -1505,7 +1512,7 @@ const V2AgentBYO: React.FC = () => {
               </button>
             </p>
             {listenerAvailable && (
-              <div className="v2-byo__command">
+              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
                 <pre className="v2-byo__pre">{listenSnippet}</pre>
                 <button
                   type="button"
@@ -1559,7 +1566,7 @@ const V2AgentBYO: React.FC = () => {
                   { name: issued.agentName },
                 )}
               </p>
-              <div className="v2-byo__command">
+              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
                 <pre className="v2-byo__pre">{setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet}</pre>
                 <button
                   type="button"
@@ -1578,7 +1585,7 @@ const V2AgentBYO: React.FC = () => {
               <div className="v2-byo__snippet-head">
                 <span>{t('agentByo.snippets.runtimeToken')}</span>
               </div>
-              <div className="v2-byo__command">
+              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
                 <pre className="v2-byo__pre">{issued.token}</pre>
                 <button type="button" onClick={() => copy('tok', issued.token)} className="v2-byo__copy">
                   {copied === 'tok' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
@@ -1591,7 +1598,7 @@ const V2AgentBYO: React.FC = () => {
               </div>
               <a className="v2-byo__cursor-link" href={cursorInstallHref}>{t('agentByo.snippets.cursorInstall')}</a>
               <p className="v2-byo__hint">{t('agentByo.snippets.cursorInstallHint')}</p>
-              <div className="v2-byo__command">
+              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
                 <pre className="v2-byo__pre">{cursorSnippet}</pre>
                 <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">
                   {copied === 'cursor' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}

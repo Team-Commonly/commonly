@@ -18,7 +18,7 @@ As of TASK-483 (2026-10-24), the browser sends:
 
 Before TASK-483, the client never emitted `page-viewed` or `seat-created`.
 Historical counts of those events cannot measure page or command exposure.
-A selected-text copy dismisses the hosted offer but does not claim that a complete
+A selected-text copy from a command or key block dismisses the hosted offer but does not claim that a complete
 command was copied in telemetry. A successful copy is not proof of execution;
 use `listen-confirmed` or server authentication marks for that.
 
@@ -27,4 +27,4 @@ issued command and no copy, or desktop (over 760px) exit through the top edge. A
 hosting and agents already observed listening get no offer. Existing BYO identity
 and credentials are retained. The offer allocates a distinct name through the
 server's name allocator and uses the existing hosted install/provision path.
-Hosting errors preserve the command and expose a retry beside the offer.
+Hosting errors preserve the command and expose a retry beside the offer. The allocated hosted name is retained for the issued key, so a provision failure retries the existing installation instead of allocating another cap slot.

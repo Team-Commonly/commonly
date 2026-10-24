@@ -85,7 +85,7 @@ test('30s offer starts a distinct hosted identity in the same pod', async () => 
 });
 test('exit intent offers immediately; manual copy dismisses permanently', async () => {
   await issue(); fireEvent.mouseLeave(document.documentElement, { clientY: 0 }); expect(offer()).toBeInTheDocument();
-  fireEvent.copy(screen.getByTestId('byo-listen')); await tick(60000); fireEvent.mouseLeave(document.documentElement, { clientY: 0 }); expect(offer()).not.toBeInTheDocument();
+  fireEvent.copy(screen.getByTestId('byo-listen').querySelector('.v2-byo__command')); await tick(60000); fireEvent.mouseLeave(document.documentElement, { clientY: 0 }); expect(offer()).not.toBeInTheDocument();
 });
 test('button copy suppresses the offer beyond the Copied label', async () => {
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: jest.fn().mockResolvedValue(undefined) } });
@@ -138,10 +138,28 @@ test('offer is a status row directly below the command and stays absent after re
   view.unmount(); await issue(); await tick(30000); fireEvent.mouseLeave(document.documentElement, { clientY: 0 }); expect(offer()).not.toBeInTheDocument();
 });
 test('copy before the offer also suppresses it across a remount', async () => {
-  const view = await issue(); fireEvent.copy(screen.getByTestId('byo-listen'));
+  const view = await issue(); fireEvent.copy(screen.getByTestId('byo-listen').querySelector('.v2-byo__command'));
   view.unmount(); await issue(); await tick(30000); expect(offer()).not.toBeInTheDocument();
 });
 test('phone exit does not trigger the offer; its timer still does', async () => {
   window.matchMedia = jest.fn().mockReturnValue({ matches: false });
   await issue(); fireEvent.mouseLeave(document.documentElement, { clientY: 0 }); expect(offer()).not.toBeInTheDocument(); await tick(30000); expect(offer()).toBeInTheDocument();
+});
+test('failed provisioning retries the same allocated hosted identity instead of consuming another cap slot', async () => {
+  await issue(); await tick(30000); const get = axios.get.getMockImplementation(); let lookups = 0; let installs = 0; let provisions = 0;
+  axios.get.mockImplementation((url) => url.startsWith('/api/registry/agents/next-free-name?') ? Promise.resolve({ data: { name: ++lookups === 1 ? 'sam-agent' : 'sam-agent-2' } }) : get(url));
+  axios.post.mockImplementation((url) => {
+    if (url === '/api/registry/install' && ++installs > 1) return Promise.reject({ response: { data: { error: 'Agent already installed in this pod' } } });
+    if (url === '/api/hosted/provision' && ++provisions === 1) return Promise.reject({ response: { data: { error: 'Runtime temporarily unreachable' } } });
+    return Promise.resolve({ data: { ready: true } });
+  });
+  fireEvent.click(offer()); await screen.findByRole('alert'); fireEvent.click(offer());
+  await waitFor(() => expect(screen.queryByText(/your connect command for/i)).not.toBeInTheDocument());
+  expect(lookups).toBe(1);
+  expect(axios.post.mock.calls.filter(([url]) => url === '/api/hosted/provision').map(([,body]) => body.agentName)).toEqual(['sam-agent', 'sam-agent']);
+});
+test('copying a heading or memory text does not count as copying the command', async () => {
+  await issue(); fireEvent.copy(screen.getByText(/your connect command for/i));
+  fireEvent.copy(document.querySelector('.v2-byo__memory-text'));
+  await tick(30000); expect(offer()).toBeInTheDocument();
 });
