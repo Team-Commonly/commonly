@@ -284,18 +284,26 @@ jobs:
           # sees the fresh publish — which false-red three sound main publishes
           # (cli 0.1.159 / run 40097709043 among them: "E404 No match found for
           # version 0.1.159" while 0.1.159 is served now). A GET of the
-          # version-specific manifest is uncached and its 200/404 is itself the
-          # assertion that this exact version exists; -m 20 bounds each request
-          # so a hung connection can't stall the loop past its ~150s budget.
-          found=""
+          # version-specific manifest is uncached. We do NOT trust `curl -f`
+          # alone: it passes a 3xx and an empty 2xx, so a redirect or a blank
+          # body would read as "found". Instead require an exact HTTP 200 (no
+          # -L, so a redirect stays a redirect and is rejected) AND parse the
+          # body, requiring .version == $NEXT — only the real manifest for this
+          # exact version passes. -m 20 bounds each request. Worst case ~335s:
+          # 10 attempts × 20s curl + 9 × 15s sleep (no sleep after the last).
+          found=""; code=000
           for i in $(seq 1 10); do
-            if curl -fsS -m 20 -o /dev/null "https://registry.npmjs.org/$NAME/$NEXT"; then
-              found=yes; break
+            code=$(curl -sS -m 20 -o /tmp/reg-manifest.json -w '%{http_code}' "https://registry.npmjs.org/$NAME/$NEXT" || echo 000)
+            if [ "$code" = 200 ]; then
+              ver=$(node -e 'try{process.stdout.write(String(require(process.argv[1]).version||""))}catch(e){}' /tmp/reg-manifest.json)
+              if [ "$ver" = "$NEXT" ]; then found=yes; break; fi
+              echo "· registry.npmjs.org returned 200 but version='$ver' (want $NEXT, try $i/10)"
+            else
+              echo "· registry.npmjs.org has no $NAME@$NEXT yet (HTTP $code, try $i/10)"
             fi
-            echo "· registry.npmjs.org has no $NAME@$NEXT yet (try $i/10); waiting 15s for propagation"
-            sleep 15
+            [ "$i" -lt 10 ] && sleep 15
           done
-          [ -n "$found" ] || { echo "::error::registry.npmjs.org still has no $NAME@$NEXT after 10 tries over ~150s"; exit 1; }
+          [ -n "$found" ] || { echo "::error::registry.npmjs.org still has no $NAME@$NEXT (last HTTP $code) after 10 tries over ~335s"; exit 1; }
           echo "✓ $NAME $NEXT = $TAG = $GITHUB_SHA"
 
       # The MCP Registry lists commonly-mcp from its server.json, after npm
