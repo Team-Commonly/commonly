@@ -565,6 +565,7 @@ test('follow is self-service and shows a failed request without changing subscri
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not save');
   expect(follow).toHaveAttribute('aria-pressed', 'false');
   axios.post.mockResolvedValueOnce({ data: { task: { ...task, watchers: ['u1'] } } });
+  wireAxios([{ ...task, watchers: ['u1'] }]);
   fireEvent.click(follow);
   expect(await screen.findByRole('button', { name: /Following/ })).toHaveAttribute('aria-pressed', 'true');
   expect(axios.post).toHaveBeenLastCalledWith('/api/v1/tasks/pod-1/TASK-1/watch', { following: true }, expect.any(Object));
@@ -637,8 +638,25 @@ test('Follow keeps focus during a pending request and refuses a second click', a
   expect(follow).toHaveFocus();
   fireEvent.click(follow);
   expect(axios.post).toHaveBeenCalledTimes(1);
+  wireAxios([{ ...task, watchers: ['u1'] }]);
   await act(async () => { finishFollow({ data: { task: { ...task, watchers: ['u1'] } } }); });
   expect(follow).toHaveAttribute('aria-disabled', 'false');
   expect(follow).toHaveAttribute('aria-pressed', 'true');
   expect(follow).toHaveFocus();
+});
+
+
+test('a delayed Follow response cannot replace another follower from the current server state', async () => {
+  const task = { taskId: 'TASK-1', title: 'Concurrent follow', status: 'pending', watchers: [] };
+  wireAxios([task]);
+  let finishFollow;
+  axios.post.mockImplementationOnce(() => new Promise((resolve) => { finishFollow = resolve; }));
+  renderBoard();
+  fireEvent.click(await screen.findByTitle('TASK-1'));
+  fireEvent.click(screen.getByRole('button', { name: 'Follow task' }));
+  // Both writes commit while the first response is delayed. No GET is pending.
+  wireAxios([{ ...task, watchers: ['u1', 'u2'] }]);
+  await act(async () => { finishFollow({ data: { task: { ...task, watchers: ['u1'] } } }); });
+  expect(await screen.findByRole('button', { name: /Following/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(document.querySelectorAll('.v2-board__watcher')).toHaveLength(2);
 });

@@ -69,3 +69,25 @@ test.each(['user', 'pod'])('failed %s lookup retains a durable retry, then reche
   expect(await AgentEvent.countDocuments({})).toBe(0);
   expect((await Task.findById(task._id).lean()).watcherDeliveryPendingAt).toBeUndefined();
 });
+
+test('a permanently failing batch cannot starve a newer watched task', async () => {
+  const bot = await User.create({ username: 'batch-watcher', email: 'batch@test.com', password: 'Password123!', isBot: true, botType: 'agent', botMetadata: { agentName: 'batch-watcher', instanceId: 'default' } });
+  const pod = await Pod.create({ name: 'Receipt fairness', type: 'team', createdBy: bot._id, members: [bot._id] });
+  const revision = new Date('2030-01-01T00:00:00Z');
+  await Task.insertMany(Array.from({ length: 101 }, (_, index) => ({ podId: pod._id, taskId: `TASK-${index + 1}`, taskNum: index + 1, title: 'Pending receipt', watchers: [bot._id], watcherDeliveryPendingAt: revision })));
+  const AgentEventService = require('../../services/agentEventService');
+  const enqueue = AgentEventService.enqueue.bind(AgentEventService);
+  const failure = jest.spyOn(AgentEventService, 'enqueue').mockImplementation((event) => {
+    if (event.payload.taskId !== 'TASK-101') return Promise.reject(new Error('permanent recipient failure'));
+    return enqueue(event);
+  });
+  const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    await retryTaskWatcherDigests();
+    expect(await AgentEvent.countDocuments({})).toBe(0);
+    await retryTaskWatcherDigests();
+    expect(await AgentEvent.countDocuments({ 'payload.taskId': 'TASK-101', deliveryMode: 'digest' })).toBe(1);
+    expect(await AgentEvent.countDocuments({ deliveryMode: { $ne: 'digest' } })).toBe(0);
+    expect(await Task.countDocuments({ watcherDeliveryPendingAt: { $type: 'date' } })).toBe(100);
+  } finally { failure.mockRestore(); warning.mockRestore(); }
+});

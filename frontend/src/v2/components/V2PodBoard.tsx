@@ -219,13 +219,16 @@ const V2PodBoard: React.FC = () => {
         ? await api.post<{ task: BoardTask }>(`${path}/watch`, change)
         : await api.patch<{ task: BoardTask }>(path, change);
       if (requestId !== taskMutationRef.current) return;
+      if ('following' in change) {
+        // The response is a snapshot from before another follower's write.
+        // A new read owns the complete set; never replace it with that snapshot.
+        reloadTasksRef.current();
+        return;
+      }
       taskRequestRef.current += 1;
       if (taskLoadPendingRef.current) reloadTasksRef.current();
       const merge = (existing: BoardTask): BoardTask => {
         if (existing.taskId !== task.taskId) return existing;
-        // A socket read can land after this request began. Following changes
-        // only watchers and must not overwrite a newer task revision.
-        if ('following' in change) return { ...existing, watchers: result.task.watchers };
         return Date.parse(existing.updatedAt || '') > Date.parse(result.task.updatedAt || '') ? existing : result.task;
       };
       setTasks((rows) => rows.map(merge));
@@ -331,7 +334,7 @@ const V2PodBoard: React.FC = () => {
     }
   }, [api, podId]);
 
-  reloadTasksRef.current = load;
+  useLayoutEffect(() => { reloadTasksRef.current = load; }, [load]);
 
   const loadFocus = useCallback(async () => {
     if (!podId) return;
