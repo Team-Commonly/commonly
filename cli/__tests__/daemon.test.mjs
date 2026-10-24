@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { spawnSync } from 'child_process';
 
 const daemonTmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'commonly-daemon-test-'));
 
@@ -53,6 +54,24 @@ afterAll(() => {
 });
 
 describe('daemon credential storage', () => {
+  test('a bad configuration exits 78 and a saved marker parks launchd on the next start', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'commonly-daemon-run-'));
+    const entry = new URL('../src/index.js', import.meta.url).pathname;
+    try {
+      const run = () => spawnSync(process.execPath, [entry, 'daemon', 'run'], {
+        env: { ...process.env, HOME: home }, encoding: 'utf8', timeout: 10_000,
+      });
+      const first = run();
+      expect(first.status).toBe(78);
+      expect(first.stderr).toContain('No local daemon is registered');
+      const marker = JSON.parse(fs.readFileSync(path.join(home, '.commonly', 'daemon', 'stopped.json'), 'utf8'));
+      expect(marker).toEqual({ machineDbId: 'unregistered', exitCode: 78 });
+      const second = run();
+      expect(second.status).toBe(process.platform === 'darwin' ? 0 : 78);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
   test('persists a private terminal verdict without the bearer and clears it after registration', () => {
     saveDaemonRecord(daemonRecord);
     saveDaemonStop(daemonRecord, 77);
