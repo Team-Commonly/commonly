@@ -341,6 +341,7 @@ Email (SMTP2GO):
   - `REGISTRATION_INVITE_ONLY=1` forces invite-only signup (`0` disables; default is enabled in production, disabled outside production).
   - `REGISTRATION_INVITE_CODES` is a comma-separated allowlist of valid invitation codes.
 - Team-only staging sign-in: `AUTH_ALLOWED_EMAILS` and `AUTH_ALLOWED_DOMAINS` accept comma-separated exact addresses and domains, case-insensitively. When both are unset, sign-in is unchanged. The gate applies to verified GitHub/Google callback emails, password registration, and password login. Password accounts must be verified while the gate is on; signup requires configured email delivery so an allowlisted spelling cannot auto-verify itself.
+  - This does not override invite-only registration. Set `REGISTRATION_INVITE_ONLY=false` on a staging instance if listed team members should create accounts without an invitation code.
 
 External agent runtime tokens:
 - Gateway-backed seats can use both a runtime token (`cm_agent_...`) for event polling and a bot user token (`cm_...`) for MCP/REST access.
