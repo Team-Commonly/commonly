@@ -12,29 +12,39 @@
 # unpublished, and by package-version-guard.yml to prove a published version
 # was built from the commit its tag names (#979 / #1017: one version, two
 # artifacts).
-set -euo pipefail
+set -uo pipefail
 
-dir=${1:?package dir}; want=${2:?published version}
-cd "$dir"
-name=$(node -p "require('./package.json').name")
-work=$(mktemp -d)
+# Exit 1 means ONLY "compared, and the files differ": the publish job reads it
+# as permission to publish. Every step that fails before the comparison is
+# finished is a 2, so a broken compare can never pass for a difference.
+cannot() { echo "::error::npm-artifact-diff: $*"; exit 2; }
+
+dir=${1:-}; want=${2:-}
+[ -n "$dir" ] && [ -n "$want" ] || cannot "usage: npm-artifact-diff.sh <package dir> <published version>"
+cd "$dir" || cannot "no such package dir: $dir"
+name=$(node -p "require('./package.json').name") || cannot "cannot read $dir/package.json"
+work=$(mktemp -d) || cannot "mktemp failed"
 trap 'rm -rf -- "${work:?}"' EXIT
-mkdir -p "$work/local" "$work/registry" "$work/tgz-local" "$work/tgz-registry"
+mkdir -p "$work/local" "$work/registry" "$work/tgz-local" "$work/tgz-registry" || cannot "cannot create work dirs"
 
 # The cli copies its skill in at prepublishOnly, which `npm pack` does not run.
-npm run --silent --if-present prepublishOnly >/dev/null
-npm pack --silent --pack-destination "$work/tgz-local" >/dev/null || { echo "::error::npm pack failed in $dir"; exit 2; }
+npm run --silent --if-present prepublishOnly >/dev/null || cannot "prepublishOnly failed in $dir"
+npm pack --silent --pack-destination "$work/tgz-local" >/dev/null || cannot "npm pack failed in $dir"
 ( cd "$work" && npm pack --silent "$name@$want" --pack-destination "$work/tgz-registry" >/dev/null ) \
-  || { echo "::error::could not fetch $name@$want from npm"; exit 2; }
-tar -xzf "$work"/tgz-local/*.tgz -C "$work/local"
-tar -xzf "$work"/tgz-registry/*.tgz -C "$work/registry"
+  || cannot "could not fetch $name@$want from npm"
+tar -xzf "$work"/tgz-local/*.tgz -C "$work/local" || cannot "cannot extract the local tarball"
+tar -xzf "$work"/tgz-registry/*.tgz -C "$work/registry" || cannot "cannot extract the registry tarball"
 for side in local registry; do
-  node -e "const f=process.argv[1],j=require(f);j.version='0.0.0';require('fs').writeFileSync(f,JSON.stringify(j,null,2))" "$work/$side/package/package.json"
+  node -e "const f=process.argv[1],j=require(f);j.version='0.0.0';require('fs').writeFileSync(f,JSON.stringify(j,null,2))" "$work/$side/package/package.json" \
+    || cannot "cannot normalize the $side package.json"
 done
-if diff -rq "$work/local/package" "$work/registry/package" >"$work/diff.txt"; then
-  echo "· $name: this tree packs the same files as $want"
-  exit 0
-fi
-echo "· $name: this tree differs from $want:"
-sed 's|'"$work"'/||g' "$work/diff.txt"
-exit 1
+# diff: 0 same, 1 different, anything else trouble (2 = I/O error).
+diff -rq "$work/local/package" "$work/registry/package" >"$work/diff.txt"
+rc=$?
+case "$rc" in
+  0) echo "· $name: this tree packs the same files as $want"; exit 0 ;;
+  1) echo "· $name: this tree differs from $want:"
+     sed 's|'"$work"'/||g' "$work/diff.txt"
+     exit 1 ;;
+  *) cannot "diff failed (exit $rc) comparing with $want" ;;
+esac

@@ -142,7 +142,10 @@ jobs:
             # The diff step ran prepublishOnly; put the tree back as checked out.
             git checkout -- . && git clean -fdq -- .
             case "$d" in
-              0) echo "action=skip" >> "$GITHUB_OUTPUT"; exit 0 ;;
+              # Already published: nothing for npm, but the MCP Registry step
+              # still lists that version, so a failed listing can be retried.
+              0) echo "version=$reg_v" >> "$GITHUB_OUTPUT"
+                 echo "action=skip" >> "$GITHUB_OUTPUT"; exit 0 ;;
               1) ;;
               *) echo "::error::$name: could not compare with $reg_v; not publishing blind"; exit 1 ;;
             esac
@@ -150,26 +153,35 @@ jobs:
 
           floor=$(printf '%s\n%s\n' "$reg_v" "$repo_v" | sort -V | tail -1)
           next=$(echo "$floor" | awk -F. '{printf "%d.%d.%d", $1, $2, $3+1}')
-          if git ls-remote --exit-code --tags origin "refs/tags/$TAG_PREFIX$next" >/dev/null; then
-            echo "::error::$name: tag $TAG_PREFIX$next already exists but npm serves $reg_v. A publish half-finished; reconcile by hand."
-            exit 1
-          fi
+          # --exit-code: 0 found, 2 no such ref. Anything else is a lookup that
+          # failed, which proves nothing about the tag, so only 2 may publish.
+          set +e; git ls-remote --exit-code --tags origin "refs/tags/$TAG_PREFIX$next" >/dev/null; t=$?; set -e
+          case "$t" in
+            2) ;;
+            0) echo "::error::$name: tag $TAG_PREFIX$next already exists but npm serves $reg_v. A publish half-finished; reconcile by hand."
+               exit 1 ;;
+            *) echo "::error::$name: could not read tag $TAG_PREFIX$next (git ls-remote exit $t); not publishing blind"
+               exit 1 ;;
+          esac
           echo "✓ $name: registry $reg_v, repo floor $repo_v → publishing $next"
           echo "next=$next"        >> "$GITHUB_OUTPUT"
+          echo "version=$next"     >> "$GITHUB_OUTPUT"
           echo "action=publish"    >> "$GITHUB_OUTPUT"
 
       # The version exists only in this job's working copy and so in the
       # tarball; nothing is committed. server.json goes with it, because the
       # MCP Registry step below lists the version server.json names and checks
-      # it against package.json.
+      # it against package.json. It also runs when the tree is already
+      # published (version = what npm serves), so a re-run after a failed
+      # registry listing lists that version, not the repo's stale floor.
       - name: Stamp the version into the working copy
-        if: steps.cmp.outputs.action == 'publish'
+        if: steps.cmp.outputs.version != ''
         env:
-          NEXT: ${{ steps.cmp.outputs.next }}
+          VERSION: ${{ steps.cmp.outputs.version }}
         run: |
-          npm version "$NEXT" --no-git-tag-version --allow-same-version
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
           if [ -f server.json ]; then
-            node -e "const f='server.json',j=require('./'+f);j.version=process.env.NEXT;(j.packages||[]).forEach(p=>p.version=process.env.NEXT);require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
+            node -e "const f='server.json',j=require('./'+f);j.version=process.env.VERSION;(j.packages||[]).forEach(p=>p.version=process.env.VERSION);require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
           fi
           node -p "'stamped ' + require('./package.json').version"
 
