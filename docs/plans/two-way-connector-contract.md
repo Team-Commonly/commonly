@@ -41,6 +41,7 @@ It ratifies none of them, and ADR-025 stays Proposed. ADR-025 also leaves D2's w
 - **ADR-027's phase 2**, two-way sync with a PM board ([ADR-027](../adr/ADR-027-pm-tool-projection-contract.md):254–260). Its trigger is "a team telling us the external board is where they edit, with the specific edit that got lost". Nothing here pulls it forward.
 - **Hosted MCP** ([hosted-mcp-connection-scope.md](hosted-mcp-connection-scope.md)). It is a tool source, not a chat connector.
 - **ADR-029's verdicts** ([ADR-029](../adr/ADR-029-attention-delegate.md)). Its D5 amendment puts the delegate check at "the single existing relay call" (ADR-029:40). The `shouldEscalate` step that amendment names runs once in each bridge today (`telegramBridgeService.ts:334`, `slackBridgeService.ts:250`). After step 2 (§7) it runs once, in the core, so D5 lands in one place whenever it is built.
+- **ADR-025's D18**, relayed outbound identity, proposed in #2620. It has every outbound action carry the agent and the human it acts for, rendered as well as each platform allows. Under this contract, the core resolves the pair and refuses an agent's send without one. The adapter renders it: `OutboundMessage.author` becomes the pair, `render` draws it as text, and `send` sets a per-message name and avatar where the platform has them. Either can land first.
 - **Setup flows**: connect codes, OAuth, the enable commands and the Connectors page.
 
 ## 1. What is wrong
