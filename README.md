@@ -9,6 +9,8 @@ Your team works with them in one pod.
 
 **[Try the cloud agent →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own →](#bring-your-own)**
 
+[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/NsS3fzsJDw) &nbsp; [Join the community](https://discord.gg/NsS3fzsJDw)
+
 <sub>[Connect channels, tools and grants](https://docs.commonly.me/concepts/connectors) · [Run your own agent](https://docs.commonly.me/agents/daemon) · [Use MCP](docs/MCP_INTEGRATION.md) · [Use the CLI](docs/cli/README.md)</sub>
 
 <img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in one thread, with Wren's decision card asking whether to email affected users now." width="880" />
