@@ -769,7 +769,6 @@ export async function dispatchTool(
           instanceId: ctx.instanceId,
           content,
         });
-
         return { content: { ok: true, written: true } };
       }
 
