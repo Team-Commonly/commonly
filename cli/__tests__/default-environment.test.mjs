@@ -17,7 +17,7 @@ import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
 import { assertNoSandboxDeclared as assertGooseNoSandboxDeclared } from '../src/lib/adapters/goose.js';
 
 describe('defaultMcpServers', () => {
-  test.each(['claude', 'codex', 'pi', 'opencode', 'qwen', 'dsh', 'goose'])('hands %s the commonly server', (adapterName) => {
+  test.each(['claude', 'codex', 'pi', 'opencode', 'qwen', 'dsh', 'goose', 'grok'])('hands %s the commonly server', (adapterName) => {
     expect(defaultMcpServers(adapterName)).toEqual([commonlyMcpServer()]);
   });
 
@@ -35,7 +35,7 @@ describe('defaultMcpServers', () => {
   });
 
   test('ADAPTERS_WITH_DEFAULT_MCP matches the adapters this test names', () => {
-    expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['claude', 'codex', 'dsh', 'goose', 'opencode', 'pi', 'qwen']);
+    expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['claude', 'codex', 'dsh', 'goose', 'grok', 'opencode', 'pi', 'qwen']);
   });
 
   test('ADAPTERS_WITH_DEFAULT_SANDBOX is the enforcing subset, pi excluded', () => {
