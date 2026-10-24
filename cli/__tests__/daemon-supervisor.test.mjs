@@ -79,6 +79,43 @@ describe('backoff', () => {
 });
 
 describe('tick', () => {
+  test('an owner reconnect rotates the bound local key and restarts exactly once', async () => {
+    const tokens = { 'wren-test': {
+      agentName: 'wren-test', runtimeToken: 'cm_agent_revoked', adapter: 'claude',
+    } };
+    let reconnectRequestedAt = null;
+    const { supervisor, client, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ reconnectRequestedAt })],
+      tokens,
+      mintResponses: [{ token: 'cm_agent_fresh' }],
+    });
+    await supervisor.tick();
+    expect(children).toHaveLength(1);
+    reconnectRequestedAt = '2026-10-23T16:30:00.000Z';
+    await supervisor.tick();
+    expect(client.post).toHaveBeenCalledWith('/api/agent-binding/runtime-token', {
+      agentName: 'wren-test', instanceId: 'default', rotate: true,
+    });
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      runtimeToken: 'cm_agent_fresh', reconnectRequestAppliedAt: '2026-10-23T16:30:00.000Z',
+    }));
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    await supervisor.tick();
+    expect(client.post.mock.calls.filter(([path]) => path === '/api/agent-binding/runtime-token')).toHaveLength(1);
+  });
+  test('a same-name local record never rotates another instance key', async () => {
+    const tokens = { 'wren-test': {
+      agentName: 'wren-test', instanceId: 'default', runtimeToken: 'cm_agent_default', adapter: 'claude',
+    } };
+    const { supervisor, client, children } = makeHarness({
+      rows: () => [boundRow({ instanceId: 'alpha', reconnectRequestedAt: '2026-10-23T16:30:00.000Z' })],
+      tokens,
+    });
+    await supervisor.tick();
+    expect(client.post).not.toHaveBeenCalledWith('/api/agent-binding/runtime-token', expect.anything());
+    expect(tokens['wren-test'].runtimeToken).toBe('cm_agent_default');
+    expect(children).toHaveLength(0);
+  });
   test('adopts a requested row, mints its token, writes the record, and spawns', async () => {
     const { supervisor, client, children, saveToken } = makeHarness({
       rows: () => [boundRow({ state: 'requested' })],

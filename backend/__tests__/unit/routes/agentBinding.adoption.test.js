@@ -15,7 +15,7 @@ jest.mock('../../../middleware/auth', () => {
 
 const { hash } = require('../../../utils/secret');
 
-let mongod; let app; let AgentCredential; let User; let AgentInstallation;
+let mongod; let app; let AgentCredential; let User; let AgentInstallation; let Machine;
 const DAEMON_A = `cm_daemon_${'a'.repeat(32)}`;
 const DAEMON_B = `cm_daemon_${'b'.repeat(32)}`;
 
@@ -24,6 +24,7 @@ beforeAll(async () => {
   await mongoose.connect(mongod.getUri());
   AgentCredential = require('../../../models/AgentCredential');
   User = require('../../../models/User');
+  Machine = require('../../../models/Machine');
   AgentInstallation = require('../../../models/AgentRegistry').AgentInstallation;
   app = express();
   app.use(express.json());
@@ -35,7 +36,7 @@ afterAll(async () => { await mongoose.disconnect(); await mongod.stop(); });
 let owner; let bot;
 beforeEach(async () => {
   await Promise.all([
-    User.deleteMany({}), AgentCredential.deleteMany({}), AgentInstallation.deleteMany({}),
+    User.deleteMany({}), AgentCredential.deleteMany({}), AgentInstallation.deleteMany({}), Machine.deleteMany({}),
   ]);
   owner = await User.create({ username: `o${Date.now() % 1e6}`, email: `o${Date.now()}@x.com`, password: 'x'.repeat(12) });
   global.__CALLER_ID = String(owner._id);
@@ -48,6 +49,7 @@ beforeEach(async () => {
     version: '1.0.0', status: 'active', installedBy: owner._id,
   });
   for (const [tok, mid] of [[DAEMON_A, 'machine-a'], [DAEMON_B, 'machine-b']]) {
+    await Machine.create({ ownerUserId: owner._id, machineId: mid, name: mid });
     await AgentCredential.create({ tokenHash: hash(tok), kind: 'daemon', ownerUserId: owner._id, machineId: mid, scopes: ['machine:heartbeat', 'agents:adopt'] });
   }
 });
@@ -84,6 +86,7 @@ describe('adoption CAS', () => {
   it('refuses adoption of an agent the daemon owner does not own', async () => {
     const stranger = await User.create({ username: 'str', email: 's@x.com', password: 'x'.repeat(12) });
     const tok = `cm_daemon_${'s'.repeat(32)}`;
+    await Machine.create({ ownerUserId: stranger._id, machineId: 'machine-s', name: 'Stranger machine' });
     await AgentCredential.create({ tokenHash: hash(tok), kind: 'daemon', ownerUserId: stranger._id, machineId: 'machine-s', scopes: ['machine:heartbeat', 'agents:adopt'] });
     const res = await adopt(tok);
     expect(res.status).toBe(403);
@@ -92,6 +95,7 @@ describe('adoption CAS', () => {
 
   it('a heartbeat-only credential cannot adopt — scopes are enforced, not decorative', async () => {
     const tok = `cm_daemon_${'h'.repeat(32)}`;
+    await Machine.create({ ownerUserId: owner._id, machineId: 'machine-h', name: 'Heartbeat machine' });
     await AgentCredential.create({
       tokenHash: hash(tok), kind: 'daemon', ownerUserId: owner._id, machineId: 'machine-h',
       scopes: ['machine:heartbeat'],

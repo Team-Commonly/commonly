@@ -66,10 +66,10 @@ AgentCredentialSchema.index({ machineId: 1, kind: 1, status: 1 });
 // today (daemon → runtime), but written as a walk so a deeper chain can
 // never orphan a live child.
 AgentCredentialSchema.statics.revokeCascade = async function revokeCascade(
-  credentialId: Types.ObjectId | string,
+  credentialId: Types.ObjectId | string | (Types.ObjectId | string)[],
 ): Promise<number> {
   const now = new Date();
-  let frontier: (Types.ObjectId | string)[] = [credentialId];
+  let frontier: (Types.ObjectId | string)[] = Array.isArray(credentialId) ? credentialId : [credentialId];
   let revoked = 0;
   while (frontier.length) {
     const res = await this.updateMany(
@@ -84,7 +84,7 @@ AgentCredentialSchema.statics.revokeCascade = async function revokeCascade(
 };
 
 export interface AgentCredentialModel extends mongoose.Model<IAgentCredential> {
-  revokeCascade(credentialId: Types.ObjectId | string): Promise<number>;
+  revokeCascade(credentialId: Types.ObjectId | string | (Types.ObjectId | string)[]): Promise<number>;
 }
 
 export default mongoose.model<IAgentCredential, AgentCredentialModel>('AgentCredential', AgentCredentialSchema);

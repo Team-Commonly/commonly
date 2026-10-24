@@ -121,6 +121,12 @@ backend:
     # every /v2 page errors. The same allowlist feeds the socket.io cors. Caught by the Tier-1
     # staging smoke 2026-10-23 (all /v2 renders failed on CORS until this landed).
     frontendUrl: "https://staging.commonly.me"
+    # Same defect, the API side: the chart default backendUrl is prod's https://api.commonly.me.
+    # hostedMcpIntakeService builds the CIMD client_id and redirect_uris from PUBLIC_API_URL ||
+    # BACKEND_URL, so without this staging's hosted-MCP client metadata advertised PROD's callback,
+    # and accepting a staging consent would have sent a staging authorization code to prod.
+    # Caught on the staging Atlassian walk 2026-10-23.
+    backendUrl: "https://api-staging.commonly.me"
   # Staging backend runs on the SPOT pool at a fraction of prod's requests, so it fits
   # the nodes we already have (spot-pool sits at single-digit % CPU) without growing a
   # pool. Prod backend stays on dev-pool because it holds session state a spot
@@ -199,3 +205,8 @@ mongodb:
       key: workload-tier
       operator: Equal
       value: spot
+
+# Staging-only connector key ring (commonly-staging-connector-secret-keys / -active-key in SM,
+# fresh keys, never prod's). Without it every hosted-MCP OAuth callback on staging threw.
+connectorSecrets:
+  enabled: true

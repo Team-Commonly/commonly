@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import i18n from '../../i18n';
 import V2MessageRow from '../components/V2MessageRow';
 
 jest.mock('../../context/AuthContext', () => ({
@@ -12,6 +13,38 @@ describe('V2MessageRow', () => {
 
   afterEach(() => {
     process.env.REACT_APP_API_URL = previousApiUrl;
+    return i18n.changeLanguage('en');
+  });
+
+  it('shows a sender-only non-member notice as a quiet system line', () => {
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={{
+          id: 'unreachable-mention', pod_id: 'pod-1', user_id: 'viewer-1',
+          message_type: 'text', content: 'Please review @rhea',
+          created_at: '2026-10-23T21:00:00.000Z', user: { username: 'viewer' },
+          mentionNotices: [{ code: 'MENTION_NOT_IN_POD', handle: 'rhea', message: "rhea isn't in this pod. Invite them, or ask in a pod they're in." }],
+        }} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('status')).toHaveClass('v2-msg__sender-notice');
+    expect(screen.getByRole('status')).toHaveTextContent("rhea isn't in this pod");
+  });
+
+  it('uses Chinese UI copy instead of the English MCP sentence', async () => {
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={{
+          id: 'zh-mention', pod_id: 'pod-1', user_id: 'viewer-1',
+          message_type: 'text', content: '@rhea',
+          created_at: '2026-10-23T21:00:00.000Z', user: { username: 'viewer' },
+          mentionNotices: [{ code: 'MENTION_NOT_IN_POD', handle: 'rhea', message: 'English MCP text' }],
+        }} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('rhea 不在这个 Pod 中');
+    expect(screen.getByRole('status')).not.toHaveTextContent('English MCP text');
   });
 
   it('keeps the runtime beside the agent name before its timestamp', () => {

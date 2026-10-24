@@ -1633,6 +1633,7 @@ describe('performRun', () => {
       // answer that route explicitly so it doesn't consume the event queue.
       if (route.endsWith('/messages')) return { messages: [] };
       if (route.endsWith('/context')) return { podId: 'pod-abc', revision: 0, focus: null };
+      if (route.endsWith('/skills')) return { items: [] };
       const id = eventIds[eventTurn];
       eventTurn += 1;
       return { events: id ? [makeEvent({ _id: id })] : [] };

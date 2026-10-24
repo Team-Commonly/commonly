@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Types } from 'mongoose';
 import DeviceAuthorization, { IDeviceAuthorization } from '../models/DeviceAuthorization';
 import User from '../models/User';
+import { removeMachinesForDeviceToken } from './machineService';
 
 export const DEVICE_AUTHORIZATION_TTL_MS = 10 * 60 * 1000;
 export const DEVICE_POLL_INTERVAL_SECONDS = 5;
@@ -185,6 +186,9 @@ export const listDeviceTokens = async (userId: string) => {
 
 export const revokeDeviceToken = async (userId: string, deviceId: string) => {
   if (!Types.ObjectId.isValid(deviceId)) return false;
+  const user = await User.findOne({ _id: userId, 'deviceTokens._id': deviceId }).select('deviceTokens');
+  const device = user?.deviceTokens.find((entry: any) => String(entry._id) === deviceId);
+  if (!device) return false;
   const result = await User.updateOne(
     {
       _id: userId,
@@ -192,5 +196,7 @@ export const revokeDeviceToken = async (userId: string, deviceId: string) => {
     },
     { $set: { 'deviceTokens.$.revokedAt': new Date() } },
   );
-  return result.modifiedCount > 0;
+  // Also run for an already-revoked token: a failed cleanup can be retried.
+  await removeMachinesForDeviceToken(userId, device.tokenHash);
+  return result.modifiedCount > 0 || Boolean(device.revokedAt);
 };

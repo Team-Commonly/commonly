@@ -58,11 +58,15 @@ test('register does not store a token and returns the response message', async (
 
 test('logout clears token and user', () => {
   localStorage.setItem('token', 't');
+  sessionStorage.setItem('commonly.pendingInvite', 'CM-LOGOUT');
+  sessionStorage.setItem('commonly.pendingInviteOAuth', '1');
   act(() => {
     global.testAuth.logout();
   });
   expect(localStorage.getItem('token')).toBeNull();
   expect(global.testAuth.currentUser).toBeNull();
+  expect(sessionStorage.getItem('commonly.pendingInvite')).toBeNull();
+  expect(sessionStorage.getItem('commonly.pendingInviteOAuth')).toBeNull();
 });
 
 test('login stores token, user, and verification state', async () => {

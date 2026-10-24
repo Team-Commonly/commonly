@@ -53,10 +53,21 @@ describe('per-installation agent settings', () => {
     expect(response.body.activePodCount).toBe(2);
     expect(response.body.podCount).toBe(2);
     expect(response.body.turnCap).toBe(30);
+    expect(response.body.userRunCeiling).toBe(120);
     expect(response.body.writablePodId).toBe(String(podA._id));
     const otherResponse = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
       .set('Authorization', `Bearer ${token(other)}`);
     expect(otherResponse.body.writablePodId).toBe(String(podB._id));
+  });
+
+  it('shows the installation owner’s quota when an admin opens settings', async () => {
+    await User.updateOne({ _id: owner._id }, { $set: { 'entitlements.pro': true } });
+    const response = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(admin)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.turnCap).toBe(200);
+    expect(response.body.userRunCeiling).toBe(300);
+    await User.updateOne({ _id: owner._id }, { $set: { 'entitlements.pro': false } });
   });
 
   it('counts active connections separately from installed pod rows', async () => {

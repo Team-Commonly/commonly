@@ -192,6 +192,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__section-head button')).toContain('background: var(--v2-ink)');
   });
 
+  test('agent Control reconnect remains an ink action with a focus edge', () => {
+    const action = ruleBody(agentSettings, '.v2-root .v2-agent-settings a.v2-agent-settings__action');
+    expect(action).toContain('background: var(--v2-ink)');
+    expect(action).toContain('color: var(--v2-on-ink)');
+    expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings a.v2-agent-settings__action:focus-visible'))
+      .toContain('box-shadow: var(--v2-focus-ring)');
+  });
+
+  test('agent profile Reconnect keeps ink chrome over the primary and link rules', () => {
+    const profile = read('../agents/v2-agent-profile.css');
+    const reconnect = ruleBody(profile, '.v2-root a.v2-aprofile__btn--reconnect');
+    expect(reconnect).toContain('background: var(--v2-ink)');
+    expect(reconnect).toContain('color: var(--v2-on-ink)');
+    expect(ruleBody(profile, '.v2-root a.v2-aprofile__btn--reconnect:hover'))
+      .toContain('background: var(--v2-ink-hover)');
+  });
+
   test('BYO hints do not add paragraph margins to flex gaps', () => {
     expect(ruleBody(v2, '.v2-byo__hint')).toContain('margin: 0');
   });
@@ -4690,5 +4707,28 @@ describe('agent Wake and Pods controls', () => {
     expect(save).toContain('background: var(--v2-surface)');
     expect(remove).toContain('background: var(--v2-surface)');
     expect(remove).toContain('border: 1px solid var(--v2-border)');
+  });
+});
+
+describe('agent runtime and grants fit the Settings column', () => {
+  const css = read('../components/V2AgentRuntimeGrants.css');
+  test('facts stack on phones and long grant details wrap', () => {
+    const phone = blockContaining(css, '@media (max-width: 760px)', '.v2-agent-runtime-grants__facts > div');
+    expect(phone).toContain('grid-template-columns: 1fr');
+    expect(ruleBody(css, '.v2-agent-runtime-grants__list li p')).toContain('overflow-wrap: anywhere');
+  });
+});
+
+describe('agent Identity editor', () => {
+  const css = read('../agents/v2-agent-settings.css');
+  test('form fields retain a visible boundary over the v2 input reset', () => {
+    const input = selectorRuleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__identity input,');
+    expect(input).toContain('border: 1px solid var(--v2-border)');
+    expect(input).toContain('background: var(--v2-surface)');
+  });
+  test('listing status and public-profile link remain visible in the Settings flow', () => {
+    expect(ruleBody(css, '.v2-agent-settings__listing')).toContain('display: grid');
+    expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a')).toContain('color: var(--v2-accent)');
+    expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
   });
 });

@@ -45,6 +45,9 @@
     "setupFiles": [
       "<rootDir>/jest.setup.cjs"
     ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.teardown.cjs"
+    ],
     "transform": {},
     "testMatch": [
       "**/__tests__/**/*.[jt]s?(x)",

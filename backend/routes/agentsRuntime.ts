@@ -25,6 +25,7 @@ const AgentEventService = require('../services/agentEventService');
 const HostedRuntimeMeter = require('../services/hostedRuntimeService');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
+const { findNonMemberMentionNotices } = require('../services/mentionNonMemberNoticeService');
 const AgentThreadService = require('../services/agentThreadService');
 const PodContextService = require('../services/podContextService');
 const GlobalModelConfigService = require('../services/globalModelConfigService');
@@ -34,6 +35,7 @@ const Activity = require('../models/Activity');
 const User = require('../models/User');
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
+const PodAsset = require('../models/PodAsset');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
@@ -499,7 +501,7 @@ router.delete('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, a
   }
 });
 
-router.get('/installations', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installations = req.agentInstallations || [];
     const agentInstallation = req.agentInstallation;
@@ -1310,7 +1312,7 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
   }
 });
 
-router.post('/events/:id/ack', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/events/:id/ack', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installation = req.agentInstallation;
     const agentUser = req.agentUser;
@@ -1592,7 +1594,64 @@ router.post(
   },
 );
 
-router.get('/pods/:podId/context', agentRuntimeAuth, async (req: any, res: any) => {
+// Active catalog skills are delivered at turn start so an add or remove takes
+// effect on the next spawn without rewriting the operator's local environment.
+router.get('/pods/:podId/skills', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    const installation = resolveInstallationForPod(req.agentInstallations, req.agentInstallation, podId);
+    if (!installation || String(installation.podId) !== podId
+      || !ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    const assets = await PodAsset.find({ podId, type: 'skill', status: 'active', 'metadata.scope': 'agent' })
+      .select('content metadata').lean();
+    const items = assets.filter((asset: any) => {
+      const meta = asset.metadata || {};
+      return String(meta.agentName || '').toLowerCase() === String(installation.agentName).toLowerCase()
+        && String(meta.instanceId || 'default').toLowerCase() === String(installation.instanceId || 'default').toLowerCase()
+        && meta.metadataOnly !== true
+        && !String(asset.content || '').includes('Imported as metadata from a local agent');
+    }).map((asset: any) => ({
+      name: String(asset.metadata.skillName || ''),
+      content: String(asset.content || ''),
+    })).filter((item: { name: string; content: string }) => item.name && item.content);
+    return res.json({ items });
+  } catch (error) {
+    console.error('Error loading agent skills:', error);
+    return res.status(500).json({ message: 'Failed to load agent skills' });
+  }
+});
+
+// The wrapper reports what its adapter actually mounted for this spawn. Keep
+// only skill names: local source paths belong to the operator's machine.
+router.post('/pods/:podId/skill-load', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    const installation = resolveInstallationForPod(req.agentInstallations, req.agentInstallation, podId);
+    if (!installation || String(installation.podId) !== podId
+      || !ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    const validNames = (value: unknown): value is string[] => Array.isArray(value)
+      && value.length <= 50
+      && value.every((name) => typeof name === 'string' && name.length > 0 && name.length <= 120 && !/[\\/]/.test(name));
+    const { mounted, conflicted, status = 'available' } = req.body || {};
+    if (!validNames(mounted) || !validNames(conflicted) || !['available', 'unavailable'].includes(status)) {
+      return res.status(400).json({ message: 'mounted and conflicted must be arrays of skill names, with a valid status' });
+    }
+    await AgentInstallation.updateOne(
+      { _id: installation._id, status: 'active' },
+      { $set: { skillLoad: { at: new Date(), mounted, conflicted, status } } },
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error recording skill load:', error);
+    return res.status(500).json({ message: 'Failed to record skill load' });
+  }
+});
+
+router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -1691,7 +1750,7 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req: any, res: any) 
   }
 });
 
-router.get('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -1919,7 +1978,7 @@ router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntime
  * Recent posts in a pod with comment counts and recent human comments.
  * postId doubles as threadId for commonly_post_thread_comment.
  */
-router.get('/pods/:podId/posts', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/posts', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
@@ -2117,7 +2176,25 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
         .catch((err: any) => console.warn('agent post-message DM/mention enqueue failed:', err.message));
     }
 
-    return res.json(result);
+    let mentionNotices: Array<{ code: 'MENTION_NOT_IN_POD'; handle: string; message: string }> = [];
+    if (result.success && !result.skipped && result.message) {
+      try {
+        mentionNotices = await findNonMemberMentionNotices(
+          podId, String((result.message as { content?: string }).content || ''),
+        );
+      } catch (noticeError) {
+        // The post already landed. A failed advisory lookup cannot make the
+        // tool report a failed send and invite a duplicate retry.
+        console.warn('[agent post-message] mention notice lookup failed:', (noticeError as Error).message);
+      }
+    }
+    return res.json({
+      ...result,
+      mentionNotices,
+      ...(mentionNotices.length > 0
+        ? { notice: mentionNotices.map((item) => item.message).join(' ') }
+        : {}),
+    });
   } catch (error: any) {
     const err = error as Error & { code?: string; statusCode?: number; name?: string };
     // A bad thread target is caller-fixable input, same as on the human
@@ -2196,7 +2273,7 @@ router.post('/pods/:podId/propose-action', phase4RateLimit, agentRuntimeAuth, as
   }
 });
 
-router.post('/pods/:podId/summaries', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/pods/:podId/summaries', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -2272,7 +2349,7 @@ router.post('/pods/:podId/summaries', agentRuntimeAuth, async (req: any, res: an
 /**
  * POST /threads/:threadId/comments (agent runtime token auth)
  */
-router.post('/threads/:threadId/comments', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/threads/:threadId/comments', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { threadId } = req.params;
     const installation = req.agentInstallation;
@@ -2542,7 +2619,7 @@ function extractCyclesAppend(sections: Record<string, unknown>): CyclesAppendPay
  * Returns this agent's memory in both v1 (`content`) and v2 (`sections`)
  * shapes. v1 callers read `content`; v2 callers read `sections` directly.
  */
-router.get('/memory', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/memory', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {
@@ -2860,7 +2937,7 @@ router.post('/memory/sync', phase4RateLimit, agentRuntimeAuth, async (req: any, 
  * POST /posts (agent runtime token auth)
  * Create a post in the feed as the agent's bot user
  */
-router.post('/posts', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/posts', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const agentUser = req.agentUser;
     if (!agentUser) {
@@ -3366,7 +3443,7 @@ router.post('/pods/:podId/self-install', phase4RateLimit, agentRuntimeAuth, asyn
  * GET /pods/:podId/integrations (agent runtime token auth)
  * Get integration configs for a pod that agents can access
  */
-router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/integrations', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -3430,7 +3507,7 @@ router.get('/pods/:podId/integrations', agentRuntimeAuth, async (req: any, res: 
  * GET /pods/:podId/integrations/:integrationId/messages (agent runtime token auth)
  * Fetch messages from Discord/GroupMe channel
  */
-router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId, integrationId } = req.params;
     const {
@@ -3517,7 +3594,7 @@ router.get('/pods/:podId/integrations/:integrationId/messages', agentRuntimeAuth
  * GET /pods/:podId/social-policy (agent runtime token auth)
  * Returns effective global social publish policy.
  */
-router.get('/pods/:podId/social-policy', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/social-policy', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
@@ -3540,7 +3617,7 @@ router.get('/pods/:podId/social-policy', agentRuntimeAuth, async (req: any, res:
  * POST /pods/:podId/integrations/:integrationId/publish (agent runtime token auth)
  * Publish curated content to an external integration (X/Instagram).
  */
-router.post('/pods/:podId/integrations/:integrationId/publish', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/pods/:podId/integrations/:integrationId/publish', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId, integrationId } = req.params;
     const {
@@ -3983,7 +4060,7 @@ router.post('/asks/:requestId/respond', phase4RateLimit, agentRuntimeAuth, async
 const { handleUpload, uploadSingle } = require('./uploads');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { validateOfficeContent } = require('../services/officeContentValidator');
-router.post('/pods/:podId/uploads', agentRuntimeAuth, uploadSingle('file'), async (req: any, res: any) => {
+router.post('/pods/:podId/uploads', phase4RateLimit, agentRuntimeAuth, uploadSingle('file'), async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {

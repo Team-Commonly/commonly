@@ -57,6 +57,11 @@ slack:
   oauth:
     enabled: false
 
+# Connector secret key ring in api-keys (connector-secret-keys + -active-key). Also mapped
+# whenever slack.oauth.enabled is on. Turn on for any instance that offers hosted-MCP connectors.
+connectorSecrets:
+  enabled: false
+
 # Google Calendar's hosted-MCP entry uses a pre-registered OAuth client
 # (backend/integrations/hostedMcp/googleCalendar.ts). The backend reads
 # GOOGLE_CALENDAR_CLIENT_ID / GOOGLE_CALENDAR_CLIENT_SECRET, the names

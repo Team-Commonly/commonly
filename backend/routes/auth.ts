@@ -226,6 +226,9 @@ const router: ReturnType<typeof express.Router> = express.Router();
 router.post('/register', registerLimiter, register);
 router.get('/oauth/providers', getOAuthProviders);
 router.get('/oauth/:provider/start', oauthLimiter, startOAuth);
+// The same start as a form POST, so an invite code rides in the body, not the URL
+// (the register page uses it whenever it holds a code; TASK-404).
+router.post('/oauth/:provider/start', oauthLimiter, express.urlencoded({ extended: false, limit: '4kb' }), startOAuth);
 router.get('/oauth/:provider/callback', oauthLimiter, oauthCallback);
 router.post('/oauth/exchange', oauthLimiter, exchangeOAuthCode);
 router.get('/registration-policy', registrationPolicyLimit, getRegistrationPolicy);

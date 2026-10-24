@@ -218,3 +218,84 @@ describe('V2Register', () => {
     expect(zh.yourTeam.redeem.success).not.toMatch(/托管/);
   });
 });
+
+// TASK-404: an invitation code arrives in the URL but must not stay there,
+// where it would sit in history and screenshots (and, in the query form, in
+// request logs). The page keeps it in state for the session and clears the URL.
+describe('V2Register invite code handoff', () => {
+  const FullLocation = () => {
+    const location = useLocation();
+    return <div data-testid="here">{`${location.pathname}${location.search}${location.hash}`}</div>;
+  };
+
+  const renderAt = (entry, inviteOnly = false) => {
+    axios.get.mockImplementation((url) => (
+      url === '/api/auth/registration-policy'
+        ? Promise.resolve({ data: { inviteOnly } })
+        : Promise.resolve({ data: { providers: [] } })
+    ));
+    axios.post.mockResolvedValue({ data: { message: 'Registered.' } });
+    const login = jest.fn().mockResolvedValue({});
+    render(
+      <AuthContext.Provider value={{ currentUser: null, user: null, token: null, loading: false, error: null, isAuthenticated: false, register: jest.fn(), login, logout: jest.fn(), updateProfile: jest.fn() }}>
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route path="/v2/register" element={<><V2Register /><FullLocation /></>} />
+            <Route path="/v2/*" element={<FullLocation />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    return { login };
+  };
+
+  const submit = async () => {
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'new@example.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
+    fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/auth/register', expect.anything()));
+    return axios.post.mock.calls.find(([url]) => url === '/api/auth/register')[1];
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    window.sessionStorage.clear();
+  });
+
+  it('reads a fragment code, clears it from the URL, keeps other parameters, and still registers with it', async () => {
+    renderAt('/v2/register?next=%2Fv2%2Fpods%2Fabc#invite=CM-AB12');
+
+    await waitFor(() => expect(screen.getByTestId('here')).toHaveTextContent(/^\/v2\/register\?next=%2Fv2%2Fpods%2Fabc$/));
+    expect(window.sessionStorage.getItem('commonly.pendingInvite')).toBe('CM-AB12');
+
+    const body = await submit();
+    expect(body.invitationCode).toBe('CM-AB12');
+    await waitFor(() => expect(window.sessionStorage.getItem('commonly.pendingInvite')).toBeNull());
+  });
+
+  it('clears a query code from links sent before the fragment form', async () => {
+    renderAt('/v2/register?invite=CM-OLD1');
+
+    await waitFor(() => expect(screen.getByTestId('here')).toHaveTextContent(/^\/v2\/register$/));
+    const body = await submit();
+    expect(body.invitationCode).toBe('CM-OLD1');
+  });
+
+  it('under invite-only, a visitor who arrived with a code stays on the form after the URL is cleared', async () => {
+    renderAt('/v2/register#invite=CM-GATE', true);
+
+    await waitFor(() => expect(screen.getByTestId('here')).toHaveTextContent(/^\/v2\/register$/));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/registration-policy'));
+    expect(screen.queryByText(/invite-required/)).toBeNull();
+    expect(screen.getByRole('button', { name: /create account/i })).toBeInTheDocument();
+  });
+
+  it('a reload after the URL was cleared still holds the code from this session', async () => {
+    window.sessionStorage.setItem('commonly.pendingInvite', 'CM-KEPT');
+    renderAt('/v2/register');
+
+    const body = await submit();
+    expect(body.invitationCode).toBe('CM-KEPT');
+  });
+});
