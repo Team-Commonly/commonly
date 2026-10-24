@@ -932,16 +932,39 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     if (fieldUpdates.prUrl !== undefined) changeParts.push(`PR: ${fieldUpdates.prUrl}`);
     if (fieldUpdates.notes !== undefined) changeParts.push('notes updated');
     if (fieldUpdates.title !== undefined) changeParts.push('title updated');
-    const update: Record<string, unknown> = { $set: fieldUpdates };
+    let writeTime = needsPriorOwner ? new Date() : null;
+    const update: Record<string, unknown> = {
+      $set: writeTime ? { ...fieldUpdates, updatedAt: writeTime } : fieldUpdates,
+    };
     if (changeParts.length > 0) update.$push = { updates: { text: `${author} updated: ${changeParts.join(', ')}`, author, authorId: userId?.toString() || null, createdAt: new Date() } };
-    const task = await Task.findOneAndUpdate({
+    const taskFilter = {
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
       ...writableLeaseCondition(req, userId, new Date()),
-    }, update, { new: !needsPriorOwner });
+    };
+    let task = null;
+    let racedRevision = false;
+    // The pre-image names the exact prior owner. Also keep updatedAt strictly
+    // increasing if a second writer commits while this request waits for Mongo.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      task = await Task.findOneAndUpdate(
+        { ...taskFilter, ...(writeTime ? { updatedAt: { $lt: writeTime } } : {}) },
+        update,
+        { new: !needsPriorOwner, ...(needsPriorOwner ? { timestamps: false } : {}) },
+      );
+      if (task || !needsPriorOwner) break;
+      // eslint-disable-next-line no-await-in-loop
+      const current = await Task.findOne({ podId: taskFilter.podId, taskId }).select('updatedAt').lean();
+      if (!current) break;
+      racedRevision = true;
+      writeTime = new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1));
+      (update.$set as Record<string, unknown>).updatedAt = writeTime;
+    }
     if (!task) {
       const racedRefusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
       if (racedRefusal) return res.status(409).json(racedRefusal);
+      if (racedRevision) return res.status(409).json({ error: 'Task changed concurrently; retry' });
       return res.status(404).json({ error: 'Task not found' });
     }
     // For ownership/status writes, the atomic update returns its pre-image.
@@ -957,7 +980,7 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
         if (!task.updates) task.updates = [];
         task.updates.push((update.$push as { updates: unknown }).updates);
       }
-      task.updatedAt = new Date();
+      task.updatedAt = writeTime;
     }
     if (fieldUpdates.status === 'blocked') await recordTaskAttention(task, { includeBlocked: true });
     if (fieldUpdates.status !== undefined && fieldUpdates.status !== 'blocked') await resolveTaskAttention(task);

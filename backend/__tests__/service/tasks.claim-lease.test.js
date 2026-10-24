@@ -347,8 +347,10 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     let gammaEntered;
     const gammaPaused = new Promise((resolve) => { releaseGamma = resolve; });
     const entered = new Promise((resolve) => { gammaEntered = resolve; });
+    let pausedGamma = false;
     const updateSpy = jest.spyOn(Task, 'findOneAndUpdate').mockImplementation((filter, update, options) => {
-      if (update?.$set?.assignee === 'gamma') {
+      if (update?.$set?.assignee === 'gamma' && !pausedGamma) {
+        pausedGamma = true;
         gammaEntered();
         return gammaPaused.then(() => originalUpdate(filter, update, options));
       }
@@ -362,6 +364,7 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     try {
       const gammaRequest = patch('gamma').then((response) => response);
       await entered;
+      await new Promise((resolve) => setTimeout(resolve, 5));
       const betaResponse = await patch('beta');
       expect(betaResponse.status).toBe(200);
       releaseGamma();
@@ -371,10 +374,34 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       const gammaWake = notifyPodAgents.mock.calls.find((call) => call[1].assignee === 'gamma');
       expect(gammaWake?.[4]).toEqual(expect.objectContaining({ assignee: 'beta' }));
       expect(gammaWake?.[1]).toEqual(expect.objectContaining({ assignee: 'gamma' }));
+      const betaWake = notifyPodAgents.mock.calls.find((call) => call[1].assignee === 'beta');
+      expect(gammaWake[1].updatedAt.getTime()).toBeGreaterThan(betaWake[1].updatedAt.getTime());
       expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).assignee).toBe('gamma');
     } finally {
       releaseGamma();
       updateSpy.mockRestore();
     }
+  });
+
+  test('PATCH unassignment offers the exact stored revision before the work sweep', async () => {
+    await seedTask({ assignee: 'claim-audit-agent' });
+    notifyPodAgents.mockClear();
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${pod._id}/T-1`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ assignee: null });
+    expect(res.status).toBe(200);
+    const wake = notifyPodAgents.mock.calls.find((call) => call[1].taskId === 'T-1');
+    expect(wake?.[4]).toEqual(expect.objectContaining({ assignee: 'claim-audit-agent' }));
+    const stored = await Task.findOne({ podId: pod._id, taskId: 'T-1' });
+    expect(wake[1].updatedAt.getTime()).toBe(stored.updatedAt.getTime());
+
+    const realNotifyPodAgents = jest.requireActual('../../services/taskEventService').notifyPodAgents;
+    await realNotifyPodAgents(pod._id, wake[1], wake[2], wake[3], wake[4]);
+    const offered = await Task.findById(stored._id);
+    expect(offered.offeredAt?.getTime()).toBe(offered.updatedAt.getTime());
+
+    const sweep = await require('../../services/kernelWorkSweepService').wakeForFoundWork(new Date());
+    expect(sweep.scannedPods).toBe(0);
   });
 });

@@ -175,7 +175,7 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
       .send({ assignee: '' });
 
     expect(res.status).toBe(200);
-    expect(mockFindOneAndUpdate.mock.calls[0][2]).toEqual({ new: false });
+    expect(mockFindOneAndUpdate.mock.calls[0][2]).toEqual({ new: false, timestamps: false });
     expect(mockNotifyPodAgents).toHaveBeenCalledWith(
       POD_ID, expect.objectContaining({ assignee: null }), 'updated',
       expect.any(Object), { assignee: 'scout', claimedBy: undefined, status: 'claimed' },

@@ -424,7 +424,7 @@ Implementation: `backend/services/wakeDefaultService.ts` (the rule), the registr
 
 **Status: ACCEPTED — Cofounder direction after SRE's one-hour wake reading, 2026-10-23.** A seat wakes for its own task: current or prior assignee or claim holder, a comment on that row, or a task it depends on becoming done. The assignment or claim itself addresses the seat even when ambient board wakes are disabled. The actor does not wake itself. Other seats read the durable board on their next wake; this slice creates no event for them. The kernel's unclaimed-work sweep keeps its existing wake policy.
 
-Prior ownership must be the pre-image of the successful board write. A separate read before a concurrent write can name a stale assignee and miss the seat just unassigned.
+Prior ownership must be the pre-image of the successful board write. A separate read before a concurrent write can name a stale assignee and miss the seat just unassigned. The wake's `updatedAt` must equal the stored revision and advance under concurrent writes, so `offeredAt` can mark that exact revision once.
 
 ### D9 — Heartbeat shrinks; it does not die
 
