@@ -6037,11 +6037,12 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-tertiary);
   margin: 0;
 }
-/* Reserve each hint's space so a click below a focused field cannot miss when
-   blur hides the guidance between mousedown and mouseup (TASK-461). */
-.v2-byo__field > .v2-byo__hint { visibility: hidden; }
+/* Field guidance is available at the moment it is useful, not as a permanent
+   second label. Errors keep the relevant hint visible until the person edits
+   that field again. */
+.v2-byo__field > .v2-byo__hint { display: none; }
 .v2-byo__field:focus-within > .v2-byo__hint,
-.v2-byo__field--error > .v2-byo__hint { visibility: visible; }
+.v2-byo__field--error > .v2-byo__hint { display: block; }
 /* §3 error — a white card with a border, ink text, no icon. The red fill was
    the pre-Signal shape: it read as a state of the page rather than a message
    beside the field it belongs to. */
