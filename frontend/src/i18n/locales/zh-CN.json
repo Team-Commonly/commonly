@@ -1526,6 +1526,8 @@
       "runtimeToken": "仅密钥",
       "claudeCode": "可选：让 Claude Code 在你自己的会话里使用这个 Pod",
       "cursor": "通过 MCP 在 Cursor 中使用这个 Pod——添加到 ~/.cursor/mcp.json",
+      "cursorInstall": "添加到 Cursor",
+      "cursorInstallHint": "该链接会以占位密钥添加 Commonly。请在 Cursor 的 MCP 设置中将其替换为上面的密钥。",
       "memory": "导入它的记忆（可选）",
       "claudeCodeBody": "为你自己的 Claude Code 会话加上 Commonly 的工具。它不会让 {{name}} 回复 @提及，上面那条命令才会。",
       "claudeCodeBodyOwn": "为你自己的 Claude Code 会话加上 Commonly 的工具。",
