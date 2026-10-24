@@ -100,8 +100,9 @@ const V2Register: React.FC = () => {
 
       // Registration succeeds before a session exists. Sign in immediately
       // with the credentials already supplied so a new user reaches the
-      // workspace without a second form. Unverified users are admitted by the
-      // login route and see the persistent verification reminder in the shell.
+      // workspace without a second form. Public instances admit unverified
+      // users with a reminder; team-gated instances keep the success state
+      // below until the mailbox is verified.
       try {
         await login(email.trim(), password);
         navigate(nextPath || '/v2', { replace: true });
