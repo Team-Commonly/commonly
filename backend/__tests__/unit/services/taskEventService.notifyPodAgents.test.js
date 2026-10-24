@@ -530,8 +530,8 @@ describe('notifyFoundWork', () => {
 
     expect(User.find).toHaveBeenCalledWith({
       isBot: true,
-      'botMetadata.agentName': 'sprint-impl',
-      'botMetadata.instanceId': { $in: ['default', 'sprint-impl', null] },
+      'botMetadata.agentName': /^sprint-impl$/i,
+      'botMetadata.instanceId': { $in: [/^default$/i, /^sprint-impl$/i, null] },
     });
     expect(Task.exists).toHaveBeenLastCalledWith({
       podId: POD_ID,

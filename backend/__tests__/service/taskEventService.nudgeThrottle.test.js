@@ -55,12 +55,27 @@ it('atomically permits one nudge per seat and pod in a rolling one-hour window',
   expect(install.lastFoundWorkAt).toEqual(new Date(now.getTime() + 60 * 60 * 1000));
 });
 
+it('still nudges an idle uppercase DEFAULT installation using its stored identity', async () => {
+  await AgentInstallation.updateOne({ podId, agentName: 'scout' }, { $set: { instanceId: 'DEFAULT' } });
+
+  expect((await notifyFoundWork(podId, work, 1, now)).woken).toBe(1);
+
+  expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+    agentName: 'scout', instanceId: 'DEFAULT',
+  }));
+  const install = await AgentInstallation.findOne({ podId, agentName: 'scout' }).lean();
+  expect(install.lastFoundWorkAt).toEqual(now);
+});
+
 it.each([
-  ['assigned', { assignee: 'scout', status: 'pending' }],
-  ['mixed-case assignment', { assignee: 'Scout', status: 'pending' }],
-  ['claimed', { claimedBy: 'scout', status: 'claimed' }],
-  ['mixed-case claim', { claimedBy: 'Scout', status: 'claimed' }],
-])('does not reserve a slot for a reviewer or an implementer with %s', async (_kind, ownership) => {
+  ['assigned', { assignee: 'scout', status: 'pending' }, 'default'],
+  ['mixed-case assignment', { assignee: 'Scout', status: 'pending' }, 'default'],
+  ['claimed', { claimedBy: 'scout', status: 'claimed' }, 'default'],
+  ['mixed-case claim', { claimedBy: 'Scout', status: 'claimed' }, 'default'],
+  ['assignment with uppercase DEFAULT', { assignee: 'scout', status: 'pending' }, 'DEFAULT'],
+  ['claim with uppercase DEFAULT', { claimedBy: 'Scout', status: 'claimed' }, 'DEFAULT'],
+])('does not reserve a slot for a reviewer or an implementer with %s', async (_kind, ownership, instanceId) => {
+  if (instanceId) await AgentInstallation.updateOne({ podId, agentName: 'scout' }, { $set: { instanceId } });
   await AgentInstallation.create({
     agentName: 'sprint-review', instanceId: 'default', podId, status: 'active',
     version: '1.0.0', installedBy: new mongoose.Types.ObjectId(),
@@ -79,10 +94,11 @@ it.each([
   expect(installs.every((install) => install.lastFoundWorkAt == null)).toBe(true);
 });
 
-it('treats a bot-principal ObjectId claim as occupied capacity', async () => {
+it.each(['default', 'DEFAULT'])('treats a bot-principal ObjectId claim as occupied capacity for %s', async (instanceId) => {
+  await AgentInstallation.updateOne({ podId, agentName: 'scout' }, { $set: { instanceId } });
   const principalId = new mongoose.Types.ObjectId();
   await User.collection.insertOne({
-    _id: principalId, isBot: true, botMetadata: { agentName: 'scout', instanceId: 'default' },
+    _id: principalId, isBot: true, botMetadata: { agentName: 'Scout', instanceId: 'DeFaUlT' },
   });
   await Task.create({
     podId, taskNum: 2, taskId: 'TASK-PRINCIPAL', title: 'Claimed by bot principal',

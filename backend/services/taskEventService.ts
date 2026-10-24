@@ -516,12 +516,13 @@ export async function notifyFoundWork(
     const outcomes = await Promise.all(installs.map(async (install: Record<string, unknown>) => {
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
+      const isDefaultInstance = String(instanceId).toLowerCase() === 'default';
       let reservedSlot = false;
       try {
         // Assigned pending work and active claims already occupy this seat in
         // this pod. The unclaimed nudge is only for spare capacity; do not
         // spend a turn offering more work to a seat with an open row.
-        const seatKey = exactSeatKeyIgnoringCase(instanceId === 'default' ? agentName : instanceId);
+        const seatKey = exactSeatKeyIgnoringCase(isDefaultInstance ? agentName : instanceId);
         let hasOpenWork = await Task.exists({
           podId: normalizedPodId,
           status: { $in: ['pending', 'claimed'] },
@@ -534,11 +535,12 @@ export async function notifyFoundWork(
           // Wrapper/MCP claim writers often store the bot User ObjectId,
           // whereas board assignments store the seat key. Resolve those
           // principals before deciding that an unassigned-looking seat is idle.
-          const principalInstances = instanceId === 'default'
-            ? ['default', agentName, null] : [instanceId];
+          const principalInstances = isDefaultInstance
+            ? [exactSeatKeyIgnoringCase('default'), exactSeatKeyIgnoringCase(agentName), null]
+            : [exactSeatKeyIgnoringCase(instanceId)];
           const principals = await User.find({
             isBot: true,
-            'botMetadata.agentName': agentName,
+            'botMetadata.agentName': exactSeatKeyIgnoringCase(agentName),
             'botMetadata.instanceId': { $in: principalInstances },
           }).select('_id').lean();
           if (principals.length) {
