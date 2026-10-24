@@ -1461,7 +1461,8 @@ class AgentEventService {
     event.digestEventIds = ids;
     event.digestRollupRevision = rollup?.revision ?? null;
     const summary = digestConversationFrame(raw, rollup?.unreadCount || 0, rollup?.conversations);
-    const baseContent = typeof event.payload?.content === 'string' ? event.payload.content : '';
+    const baseContent = [event.payload?.content, event.payload?.prompt, event.payload?.text]
+      .find((value): value is string => typeof value === 'string' && value.length > 0) || '';
     event.payload = {
       ...(event.payload || {}),
       // Existing drivers consume content; the additive field also lets a new

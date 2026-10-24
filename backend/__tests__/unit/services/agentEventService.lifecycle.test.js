@@ -420,7 +420,7 @@ describe('driver paths reach a terminal state', () => {
     expect(update['delivery.outcome']).toBe('no_action');
   });
 
-  test('a webhook wake carries and settles ambient context only after accepted delivery', async () => {
+  test.each([{ text: 'original text' }, { prompt: 'original prompt' }])('a webhook wake preserves fallback text and settles context after accepted delivery: %j', async (wakePayload) => {
     const ambient = {
       _id: 'ambient-1', agentName: 'hookbot', instanceId: 'default', podId: POD_P1,
       payload: { username: 'Alice', messageId: '42', threadRootId: 40, content: 'ambient note' },
@@ -431,7 +431,7 @@ describe('driver paths reach a terminal state', () => {
     AgentEvent.updateMany.mockResolvedValue({ modifiedCount: 1 });
     AgentEvent.create.mockResolvedValue({
       _id: 'evt-digest-wake', agentName: 'hookbot', instanceId: 'default', podId: POD_P1,
-      type: 'chat.mention', payload: {}, status: 'pending', attempts: 0,
+      type: 'chat.mention', payload: wakePayload, status: 'pending', attempts: 0,
     });
     AgentInstallation.find.mockReturnValue({
       lean: async () => [{ config: { runtime: { webhookUrl: 'https://example.test/hook' } } }],
@@ -444,6 +444,7 @@ describe('driver paths reach a terminal state', () => {
     await flush();
 
     const body = JSON.parse(postToPublicAddress.mock.calls[0][1].body);
+    expect(body.payload.content).toContain(wakePayload.prompt || wakePayload.text);
     expect(body.payload.digestSummary).toContain('thread 40: 1 unread');
     expect(body.payload.digestSummary).toContain('1 ambient update in 1 conversation');
     expect(body.payload.digestSummary).not.toContain('ambient note');
