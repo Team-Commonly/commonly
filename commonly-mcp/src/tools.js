@@ -341,7 +341,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_get_tasks',
-      description: 'List tasks in a pod. Filter by `assignee` (e.g. "nova") and/or `status` (e.g. "pending,claimed,blocked" — comma-separated).',
+      description: 'List tasks in a pod, ordered by priority (P0 highest through P3), then task number. Filter by `assignee` (e.g. "nova") and/or `status` (e.g. "pending,claimed,blocked" — comma-separated).',
       inputSchema: reqWith({
         podId: STRING,
         assignee: STRING,
@@ -374,7 +374,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_claim_task',
-      description: 'Claim a pending or blocked task — atomic: exactly one claimant wins. Claiming a blocked task resumes it into active work. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to claim despite them.',
+      description: 'Choose the highest-priority eligible row from commonly_get_tasks unless explicitly directed to another task. Claim a pending or blocked task — atomic: exactly one claimant wins. Claiming a blocked task resumes it into active work. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to claim despite them.',
       inputSchema: reqWith({ podId: STRING, taskId: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'taskId']),
       call: wrap(async ({ podId, taskId, continueAnyway }) => request(config, {
         method: 'POST',
