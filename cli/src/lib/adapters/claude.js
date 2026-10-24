@@ -79,6 +79,7 @@ import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { claudeContextTokens } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
@@ -722,6 +723,13 @@ const prepareArgv = async (innerArgv, ctx) => {
 
 export default {
   name: 'claude',
+  // TASK-440: context tokens of a session, read from claude's transcript, so
+  // the run loop can recycle a cold, large session at wake. Null means unknown.
+  sessionContextTokens: ({ cwd, sessionId, env }) => claudeContextTokens({
+    cwd,
+    sessionId,
+    configDir: env?.CLAUDE_CONFIG_DIR || undefined,
+  }),
   // Identity-bearing runtime tag written into AgentInstallation.config.runtime
   // by `commonly agent attach`. The CLI command stays `commonly agent attach
   // claude` (ergonomic) but the persisted runtimeType matches AGENT_TYPES so

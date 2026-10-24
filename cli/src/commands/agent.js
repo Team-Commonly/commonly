@@ -32,11 +32,18 @@ import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import {
   getSession,
+  getSessionEntry,
   setSession,
   clearSessions,
   wasEventHandled,
   recordHandledEvent,
 } from '../lib/session-store.js';
+import {
+  buildRecycleBriefing,
+  idleMinutesSince,
+  recycleThresholds,
+  shouldStartFreshSession,
+} from '../lib/session-recycle.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
@@ -1568,7 +1575,26 @@ export const performRun = ({
   const runTurn = async ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
   }) => {
-    const sessionId = getSession(agentName, eventPodId, { binding: sessionBinding });
+    // TASK-440: a cold, large session starts fresh at wake instead of being
+    // resumed. The restart note leads the prompt; memory still reaches the
+    // fresh session through the adapter's preamble.
+    const sessionEntry = getSessionEntry(agentName, eventPodId, { binding: sessionBinding });
+    let sessionId = getSession(agentName, eventPodId, { binding: sessionBinding });
+    let recycleBriefing = null;
+    if (sessionId && shouldStartFreshSession({
+      lastTurn: sessionEntry?.lastTurn,
+      contextTokens: sessionEntry?.contextTokens,
+      thresholds: recycleThresholds(),
+    })) {
+      recycleBriefing = buildRecycleBriefing({
+        agentName,
+        idleMinutes: idleMinutesSince(sessionEntry.lastTurn),
+        contextTokens: sessionEntry.contextTokens,
+      });
+      log(`session recycled: idle ${idleMinutesSince(sessionEntry.lastTurn)} min, `
+        + `${sessionEntry.contextTokens} context tokens; starting fresh`);
+      sessionId = null;
+    }
     // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
     // and (if the adapter returns a summary) patch-sync back after.
     const memoryLongTerm = await readLongTerm(client, { onError });
@@ -1613,6 +1639,9 @@ export const performRun = ({
     const promptWithSkills = serverSkills.text
       ? `${focusFrame}\n\n${serverSkills.text}\n\n${prompt}`
       : promptWithFocus;
+    const promptForSpawn = recycleBriefing
+      ? `${recycleBriefing}\n\n${promptWithSkills}`
+      : promptWithSkills;
 
     log(`[${event.type}] spawning ${adapter.name}`);
     // TASK-102 part B. The CHILD gets a scoped credential; the wrapper keeps
@@ -1696,7 +1725,7 @@ export const performRun = ({
           effort: seatEnvironment?.effort,
         });
       }
-      result = await adapter.spawn(frameDecisionForkRule(promptWithSkills), {
+      result = await adapter.spawn(frameDecisionForkRule(promptForSpawn), {
         sessionId,
         cwd: agentCwd,
         env: commitAttribution?.env || process.env,
@@ -1741,7 +1770,18 @@ export const performRun = ({
     }
 
     if (result.newSessionId) {
-      setSession(agentName, eventPodId, result.newSessionId, { binding: sessionBinding });
+      // TASK-440: record the context size this turn left behind, so the next
+      // wake can decide whether to recycle. Adapters without a transcript
+      // report nothing and keep resuming.
+      const contextTokens = adapter.sessionContextTokens?.({
+        cwd: agentCwd,
+        sessionId: result.newSessionId,
+        env: process.env,
+      }) ?? null;
+      setSession(agentName, eventPodId, result.newSessionId, {
+        binding: sessionBinding,
+        contextTokens,
+      });
     }
     // Decide whether to post the CLI's final text. The agent owns its posting:
     // if it already spoke this turn through commonly_post_message, echoing its
