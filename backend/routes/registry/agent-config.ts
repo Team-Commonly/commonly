@@ -326,6 +326,23 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       const { status: refusalStatus, ...refusalBody } = writeRefusal;
       return res.status(refusalStatus).json(refusalBody);
     }
+    // An installation can show a different label from its bot User. Guard
+    // against the names on the installer's active agent cards before renaming.
+    if (displayName !== undefined) {
+      const requestedName = displayName.trim().toLowerCase();
+      const ownerInstallations = await AgentInstallation.find({ installedBy: userId, status: 'active' });
+      const nameTaken = ownerInstallations.some((entry: any) => (
+        !(entry.agentName === name.toLowerCase()
+          && (entry.instanceId || 'default') === normalizedInstanceId)
+        && String(entry.displayName || entry.agentName || '').trim().toLowerCase() === requestedName
+      ));
+      if (nameTaken) {
+        return res.status(409).json({
+          code: 'agent_display_name_taken',
+          error: 'Another agent already uses this name',
+        });
+      }
+    }
     // Decide for every fan-out target before saving any row. A runtime object
     // without runtimeType also removes an existing native declaration here.
     if (config?.runtime !== undefined || status === 'active') {
