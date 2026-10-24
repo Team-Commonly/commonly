@@ -42,6 +42,11 @@ jest.mock('../../../services/runtimeIdentityOwnership', () => ({
   ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
   ownsRuntimeIdentity: jest.fn().mockResolvedValue({ owned: true }),
 }));
+jest.mock('../../../services/agentProvisionerService', () => ({
+  ...jest.requireActual('../../../services/agentProvisionerService'),
+  readOpenClawIdentityFile: jest.fn(),
+  writeWorkspaceIdentityFile: jest.fn().mockResolvedValue(undefined),
+}));
 
 const Pod = require('../../../models/Pod');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
@@ -50,6 +55,7 @@ const User = require('../../../models/User');
 const AgentIdentityService = require('../../../services/agentIdentityService');
 const { ownsRuntimeIdentity } = require('../../../services/runtimeIdentityOwnership');
 const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
+const { readOpenClawIdentityFile, writeWorkspaceIdentityFile } = require('../../../services/agentProvisionerService');
 const registryRoutes = require('../../../routes/registry');
 
 const app = express();
@@ -98,6 +104,8 @@ describe('agent config PATCH — installer gate', () => {
     jest.spyOn(AgentIdentityService, 'renameAgentDisplayName').mockImplementation(async (_name, _instanceId, label) => ({ displayName: label, mirrorSynced: true }));
     ownsRuntimeIdentity.mockResolvedValue({ owned: true });
     podHasOutsiderWritableGrant.mockResolvedValue(false);
+    readOpenClawIdentityFile.mockResolvedValue('');
+    writeWorkspaceIdentityFile.mockResolvedValue(undefined);
     setCallerRole('user');
   });
   afterEach(() => jest.restoreAllMocks());
@@ -230,6 +238,54 @@ describe('agent config PATCH — installer gate', () => {
       { agentId: 'openclaw:curator', podId: { $in: ['pod-1'] } },
       { $set: expect.objectContaining({ name: 'New name', instructions: 'Help the pod', persona }) },
       { runValidators: true },
+    );
+  });
+
+  it('keeps the existing OpenClaw persona in IDENTITY.md on a name-only edit', async () => {
+    const primary = installation({ installedBy: MEMBER, displayName: 'Old name' });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+    readOpenClawIdentityFile.mockResolvedValue('# IDENTITY.md\n\n- **Name:** Old name\n- **Vibe:** Precise\n- **Domain:** Research\n\n## Notes\n\nKeep detail\n');
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', displayName: 'New name' });
+
+    expect(res.status).toBe(200);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(readOpenClawIdentityFile).toHaveBeenCalledWith('curator');
+    expect(writeWorkspaceIdentityFile).toHaveBeenCalledWith('curator', '# IDENTITY.md\n\n- **Name:** New name\n- **Vibe:** Precise\n- **Domain:** Research\n\n## Notes\n\nKeep detail\n');
+    expect(AgentProfile.updateMany).toHaveBeenCalledWith(
+      expect.any(Object),
+      { $set: { name: 'New name' } },
+      { runValidators: true },
+    );
+  });
+
+  it('keeps the runtime Name on an OpenClaw Persona-only edit', async () => {
+    const primary = installation({ installedBy: MEMBER, displayName: 'Scout the researcher' });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValue([primary]);
+    readOpenClawIdentityFile.mockResolvedValue('# IDENTITY.md\n\n- **Name:** Scout the researcher\n- **Vibe:** Warm\n');
+
+    const persona = { tone: 'professional', specialties: ['research'], boundaries: [], customInstructions: 'Be precise' };
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', persona });
+
+    expect(res.status).toBe(200);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(AgentIdentityService.renameAgentDisplayName).not.toHaveBeenCalled();
+    expect(primary.displayName).toBe('Scout the researcher');
+    expect(writeWorkspaceIdentityFile).toHaveBeenCalledWith(
+      'curator',
+      expect.stringContaining('- **Name:** Scout the researcher\n'),
+    );
+    expect(writeWorkspaceIdentityFile).toHaveBeenCalledWith(
+      'curator',
+      expect.stringContaining('- **Domain:** research\n'),
     );
   });
 

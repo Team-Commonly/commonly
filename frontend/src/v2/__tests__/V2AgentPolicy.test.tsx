@@ -40,39 +40,19 @@ beforeEach(() => {
   axios.patch.mockResolvedValue({ data: { section: 'long_term', content: 'Changed' } });
 });
 
-it('writes approval and context policy through the shared settings hook', async () => {
+it('hides stored approval and context settings that no runtime enforces', async () => {
   renderPolicy();
   await screen.findByDisplayValue('Original');
-  fireEvent.change(screen.getByLabelText('Allowed tools'), { target: { value: 'commonly, Read, Read' } });
-  fireEvent.click(screen.getByLabelText('Include summaries'));
-  fireEvent.click(screen.getByRole('button', { name: 'Save policy' }));
-  await waitFor(() => expect(update).toHaveBeenCalledWith({
-    toolPolicy: { allowed: ['commonly', 'Read'], blocked: [], requireApproval: ['Bash'] },
-    contextPolicy: { maxTokens: 8000, compactionThreshold: 6000, summaryHours: 24,
-      includeMemory: true, includeSkills: true, includeSummaries: false },
-  }));
-});
-
-it('saves an edit immediately on the first click and confirms it', async () => {
-  renderPolicy();
-  fireEvent.change(screen.getByLabelText('Allowed tools'), { target: { value: 'commonly, Read' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save policy' }));
-
-  expect(update).toHaveBeenCalledTimes(1);
-  expect(update).toHaveBeenCalledWith(expect.objectContaining({
-    toolPolicy: { allowed: ['commonly', 'Read'], blocked: [], requireApproval: ['Bash'] },
-  }));
-  expect(await screen.findByRole('status')).toHaveTextContent('Saved');
-});
-
-it('explains why an installation without a profile cannot save policy', async () => {
-  renderPolicy({ ...installation, profile: null });
-  expect(screen.getByRole('alert')).toHaveTextContent("This agent's policy can't be changed in this pod yet.");
-  fireEvent.change(screen.getByLabelText('Allowed tools'), { target: { value: 'Read' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save policy' }));
-
+  expect(screen.queryByText('Tool approvals')).not.toBeInTheDocument();
+  expect(screen.queryByText('Context')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Maximum tokens')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Compact after')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Summary window (hours)')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Include memory')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Include skills')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Include summaries')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save policy' })).not.toBeInTheDocument();
   expect(update).not.toHaveBeenCalled();
-  expect(await screen.findByRole('alert')).toHaveTextContent('nothing was saved');
 });
 
 it('writes only the chosen trust mode and edits memory with its revision', async () => {

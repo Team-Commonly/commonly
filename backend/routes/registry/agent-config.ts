@@ -7,6 +7,7 @@ const AgentProfile = require('../../models/AgentProfile');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const Pod = require('../../models/Pod');
 const {
+  readOpenClawIdentityFile,
   writeWorkspaceIdentityFile,
   syncOpenClawSkills,
 } = require('../../services/agentProvisionerService');
@@ -421,10 +422,37 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         );
 
         if ((persona !== undefined || displayName) && normalizedInstanceId && name.toLowerCase() === 'openclaw') {
-          const identityContent = buildIdentityContent(effectiveDisplayName || normalizedInstanceId, persona || {});
-          writeWorkspaceIdentityFile(normalizedInstanceId, identityContent).catch((err: any) => {
-            console.warn('[registry] Failed to sync IDENTITY.md for', normalizedInstanceId, err.message);
-          });
+          if (persona !== undefined) {
+            // Persona-only edits do not rename the portable identity. Retain
+            // the runtime's current Name; a missing file falls back to the
+            // installation's saved display name before the instance id.
+            readOpenClawIdentityFile(normalizedInstanceId).then((existingContent: string) => {
+              const existingName = existingContent.match(/^- \*\*Name:\*\* ([^\r\n]*)/m)?.[1]?.trim();
+              const identityName = effectiveDisplayName || existingName || installation.displayName
+                || normalizedInstanceId;
+              return writeWorkspaceIdentityFile(
+                normalizedInstanceId,
+                buildIdentityContent(identityName, persona),
+              );
+            }).catch((err: any) => {
+              console.warn('[registry] Failed to sync IDENTITY.md for', normalizedInstanceId, err.message);
+            });
+          } else {
+            // A name-only edit must not rebuild the file with an empty persona:
+            // OpenClaw reads its existing vibe, domain and notes from IDENTITY.md.
+            readOpenClawIdentityFile(normalizedInstanceId).then((identityContent: string) => {
+              const renamed = identityContent.replace(
+                /^(- \*\*Name:\*\* )[^\r\n]*/m,
+                (_line: string, prefix: string) => `${prefix}${effectiveDisplayName || normalizedInstanceId}`,
+              );
+              if (renamed !== identityContent) {
+                return writeWorkspaceIdentityFile(normalizedInstanceId, renamed);
+              }
+              return undefined;
+            }).catch((err: any) => {
+              console.warn('[registry] Failed to sync IDENTITY.md name for', normalizedInstanceId, err.message);
+            });
+          }
         }
       }
     } catch (projectionError) {

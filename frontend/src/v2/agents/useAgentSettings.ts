@@ -23,11 +23,8 @@ export interface AgentSettingsInstallation {
 export interface AgentSettingsPatch {
   config?: Record<string, unknown>;
   displayName?: string;
-  instructions?: string;
   persona?: { tone?: string; specialties?: string[]; boundaries?: string[]; customInstructions?: string };
   modelPreferences?: unknown;
-  toolPolicy?: unknown;
-  contextPolicy?: unknown;
   [field: string]: unknown;
 }
 
