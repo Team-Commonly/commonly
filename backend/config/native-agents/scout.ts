@@ -124,12 +124,15 @@ export const scoutApp = {
     // Walked 2026-10-22 16:30Z (PA-1 PASS): Hermes 0.22.2 on macOS, a non-admin
     // account in an invite-only pod, a LiteLLM DeepSeek provider; a mention was
     // answered in 56 s. The walk ran on 31cc808d, before forge's probe fix, and
-    // on our LiteLLM rather than OpenRouter, so no provider is named as walked.
-    + '  * Hermes, on a model provider they choose, connects from the command line, '
-    + 'not from this page. It needs Hermes 0.22.2 exactly. Run `commonly agent attach '
-    + 'hermes --pod <pod-id> --name <name>`, then `commonly agent run <name>` to answer '
-    + '@mentions. The pod id is the last part of its URL. Do not propose a connect card '
-    + 'for it, and do not name a model provider as the one it was walked on.\n'
+    // on our LiteLLM. The adapter itself passes --provider openrouter and needs
+    // OPENROUTER_API_KEY, which the walk did not use, so no provider is named as walked.
+    + '  * Hermes connects from the command line, not from this page. It needs Hermes '
+    + '0.22.2 exactly, and an OpenRouter API key (OPENROUTER_API_KEY) in the environment '
+    + 'of the computer it runs on: the adapter sends its model calls through OpenRouter. '
+    + 'Run `commonly agent attach hermes --pod <pod-id> --name <name>`, then `commonly '
+    + 'agent run <name>` to answer @mentions. The pod id is the last part of its URL. '
+    + 'Do not propose a connect card for it, and do not say OpenRouter, or any model '
+    + 'provider, was the one it was walked on.\n'
     + '  * "Add a computer": `npm i -g @commonlyai/cli@latest && commonly login '
     + '&& commonly daemon register && commonly daemon install` registers their '
     + 'machine once; after that they add agents to it from this page with no '
