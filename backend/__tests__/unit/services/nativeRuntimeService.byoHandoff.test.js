@@ -144,6 +144,28 @@ describe('commonly_offer_local_agent', () => {
     expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
   });
 
+  test('an unbridged broker result still marks the handoff card as not relayed', async () => {
+    mockUserFindOne.mockReturnValue(chain({ _id: 'seat-1' }));
+    mockPodFindById.mockReturnValue(chain({ name: 'Build Pod', members: ['seat-1'] }));
+    mockHostedBrokerToolsForRun.mockResolvedValue({
+      tools: [{ type: 'function', function: { name: 'github_list_issues', description: 'List issues', parameters: {} } }],
+      dispatch: new Map([['github_list_issues', { grantId: 'grant-1', tool: 'github.list_issues' }]]),
+    });
+    mockPodIsBridged.mockResolvedValue(false);
+    axios.post
+      .mockResolvedValueOnce(callsTool('github_list_issues', { state: 'open' }))
+      .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'opencode', os: 'mac' }))
+      .mockResolvedValueOnce(says('Run the commands in the card above.'));
+
+    const result = await runAgent(install, ask);
+
+    expect(result.status).toBe('succeeded');
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    const posted = AgentMessageService.postMessage.mock.calls[0][0];
+    expect(posted.messageType).toBe('card');
+    expect(posted.noOutboundRelay).toBe(true);
+  });
+
   test('does not let a client post mark itself as kernel-authored', async () => {
     axios.post
       .mockResolvedValueOnce(callsTool('commonly_post_message', {
