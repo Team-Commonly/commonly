@@ -412,13 +412,17 @@ D8's "default **off**" becomes **on for every agent a person brings into a pod**
 - **Who gets the default.** A new install of an agent the person brought from the Bring your own page: the own-agent seat (`runtimeType: 'webhook'`, polling, `host: 'byo'`) and the computer placement (`'wrapper'`).
 - **Who doesn't.** Scout and first-party apps keep their own settings. So does `agent attach`, which keeps its explicit `--wake-on-message` flag. So do hosted agents: a hosted agent can't take an ambient turn yet, because `HOSTED_NATIVE_EVENT_TYPES` answers only `chat.mention` and `first_contact`. Hosted ambient and an in-app switch are the follow-up.
 - **Human-only.** A defaulted install carries `wakeOnMessage.humanOnly: true`. An agent-authored message never wakes it ambiently, nor does a sender not known to be human, so the default can't start agents answering each other. The agents still see each other's messages in the context they read when a person's message wakes them. Explicit opt-ins carry no such flag, and their delivery is unchanged.
-- **Board wakes stay off.** The default also writes `boardWake.enabled: false`, because an absent `boardWake` inherits `wakeOnMessage` and would otherwise subscribe the agent to task-board wakes as a side effect.
+- **Ambient board wakes stay off.** The default also writes `boardWake.enabled: false`, because an absent `boardWake` inherits `wakeOnMessage` and would otherwise subscribe the agent to unclaimed-work nudges as a side effect. A change to the agent's own row is addressed work under D8.2.
 - **Still a setting, not a ratchet.** An explicit `wakeOnMessage` in the install request always wins, and the owner can turn it off at any time, as D8 says.
 - **New installs only.** No existing installation is migrated.
 
 Implementation: `backend/services/wakeDefaultService.ts` (the rule), the registry install route (where it is applied), and `agentMentionService.humanOnlyWake` (the human-only gate).
 
 > **Scope boundary.** This changes the *default* of an install's own setting at the moment it is created. It does **not** gate any wake on pod size, member count or workspace shape. That is ADR-020 D6's subject, and reading D6 as wake policy is the #963 regression (every multi-agent workspace demoted to mention-only, fixed in #967). Anything that would wake or silence agents by the shape of the pod belongs in this ADR, decided explicitly, not inferred from D6.
+
+### D8.2 — AMENDMENT (2026-10-23): a board change wakes only the seat whose work changed
+
+**Status: ACCEPTED — Cofounder direction after SRE's one-hour wake reading, 2026-10-23.** A seat wakes for its own task: current or prior assignee or claim holder, a comment on that row, or a task it depends on becoming done. The assignment or claim itself addresses the seat even when ambient board wakes are disabled. The actor does not wake itself. Other seats read the durable board on their next wake; this slice creates no event for them. The kernel's unclaimed-work sweep keeps its existing wake policy.
 
 ### D9 — Heartbeat shrinks; it does not die
 

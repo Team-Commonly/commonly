@@ -57,9 +57,9 @@ const actorOf = (req: any) => {
  * into the route and turned every board write into a 500: strictly worse than
  * the silent fan-out this exists to fix.
  */
-const notifyAgents = (req: any, podId: unknown, task: unknown, kind: string) => {
+const notifyAgents = (req: any, podId: unknown, task: unknown, kind: string, previousTask?: unknown) => {
   try {
-    const pending = notifyPodAgents(podId, task, kind, actorOf(req));
+    const pending = notifyPodAgents(podId, task, kind, actorOf(req), previousTask);
     if (pending?.catch) {
       pending.catch((e: Error) => console.warn('[tasks] agent notify failed:', e.message));
     }
@@ -577,7 +577,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     const preClaim = await Task.findOne({
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
-    }).select('claimedBy lapsedFrom').lean() as { claimedBy?: string | null; lapsedFrom?: string | null } | null;
+    }).select('claimedBy lapsedFrom assignee status').lean() as { claimedBy?: string | null; lapsedFrom?: string | null; assignee?: string | null; status?: string } | null;
     // `rescueDeferrals` and `lapsedFrom` reset on every claim (#1080 part 2/3).
     // The deferral budget is per-lease, not per-task: a seat that renews
     // normally must never inherit a predecessor's spent budget, or the third
@@ -619,7 +619,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     const isSameHolderContinuation = !!preClaim
       && (preClaim.claimedBy === claimedBy || preClaim.lapsedFrom === claimedBy);
     if (!isSameHolderContinuation) {
-      notifyAgents(req, podId, task, 'updated');
+      notifyAgents(req, podId, task, 'updated', preClaim);
     }
     return res.json({ task });
   } catch (err) {
@@ -690,7 +690,7 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     // tasks completed here.
     await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
-    notifyAgents(req, podId, task, 'updated');
+    notifyAgents(req, podId, task, 'updated', { status: 'claimed' });
     return res.json({ task });
   } catch (err) {
     console.error('POST /tasks/complete error:', err);
@@ -923,6 +923,16 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     const refusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
     if (refusal) return res.status(409).json(refusal);
     const author = await resolveAuthor(req);
+    let previousTask = null;
+    if (fieldUpdates.assignee !== undefined || fieldUpdates.status !== undefined) {
+      try {
+        previousTask = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId })
+          .select('assignee claimedBy status').lean();
+      } catch (readErr) {
+        // A notification read must never prevent the board write itself.
+        console.warn('[tasks] prior owner lookup failed:', (readErr as Error).message);
+      }
+    }
     const changeParts: string[] = [];
     if (fieldUpdates.assignee !== undefined) changeParts.push(`reassigned to ${fieldUpdates.assignee || 'unassigned'}`);
     if (fieldUpdates.status !== undefined) changeParts.push(`status → ${fieldUpdates.status}`);
@@ -946,7 +956,7 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     if (fieldUpdates.status === 'blocked') await recordTaskAttention(task, { includeBlocked: true });
     if (fieldUpdates.status !== undefined && fieldUpdates.status !== 'blocked') await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
-    notifyAgents(req, podId, task, 'updated');
+    notifyAgents(req, podId, task, 'updated', previousTask);
     return res.json({ task });
   } catch (err) {
     console.error('PATCH /tasks error:', err);

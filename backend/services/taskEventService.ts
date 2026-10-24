@@ -19,6 +19,36 @@ let ioRef: SocketIOLike | null = null;
 export type TaskEventKind = 'created' | 'updated' | 'deleted';
 const MAX_NAMED_ITEMS = 5;
 const MAX_ASSIGNED_ROWS = 5;
+type BoardTask = Record<string, unknown>;
+
+function seatMatchesAssignee(install: Record<string, unknown>, assignee: unknown): boolean {
+  if (!assignee) return false;
+  const name = String(install.agentName || '').toLowerCase();
+  const instance = String(install.instanceId || 'default').toLowerCase();
+  const assigned = String(assignee).toLowerCase();
+  return assigned === instance || (instance === 'default' && assigned === name);
+}
+
+async function claimHolderKey(claimedBy: unknown): Promise<string | null> {
+  if (!claimedBy) return null;
+  const claim = String(claimedBy);
+  if (!/^[0-9a-f]{24}$/i.test(claim)) return `::${claim.toLowerCase()}`;
+  // Claims store the bot User id; installedBy can instead name the human.
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const User = require('../models/User');
+  const holder = await User.findById(claim).select('isBot botMetadata').lean();
+  if (!holder?.isBot || !holder.botMetadata?.agentName) return null;
+  return `${String(holder.botMetadata.agentName).toLowerCase()}::${String(holder.botMetadata.instanceId || 'default').toLowerCase()}`;
+}
+
+function seatHoldsClaim(install: Record<string, unknown>, holderKey: string | null): boolean {
+  if (!holderKey) return false;
+  const name = String(install.agentName || '').toLowerCase();
+  const instance = String(install.instanceId || 'default').toLowerCase();
+  return holderKey === `${name}::${instance}`
+    || (instance !== 'default' && holderKey === `::${instance}`)
+    || (instance === 'default' && holderKey === `::${name}`);
+}
 
 export interface TaskEventPayload {
   podId: string;
@@ -97,14 +127,12 @@ async function stampOfferedRevisions(revisions: OfferRevision[]): Promise<void> 
 }
 
 /**
- * Wake the pod's agents on a board change (ADR-024 D1, "producer parity").
+ * Wake a task's owning seats on a board change (ADR-024 D1).
  *
  * `emitTaskUpdated` above reaches Socket.io and stops, so a human watching the
- * Kanban sees the board move and an agent installed in the same pod learns
- * nothing. That asymmetry is why the fleet is 100% reactive: an agent can only
- * respond to being named, because being named is the only thing that reaches
- * it. Seven socket-emitting producers in this backend have zero enqueues
- * between them; this makes one of them do both.
+ * Kanban sees the board move while the agent owning that row learns nothing.
+ * Seven socket-emitting producers in this backend have zero enqueues between
+ * them; this one also delivers an addressed wake to the row's owner.
  *
  * Three deliberate choices, each with a cheaper wrong version:
  *
@@ -128,10 +156,9 @@ async function stampOfferedRevisions(revisions: OfferRevision[]): Promise<void> 
  *
  *    So the bound has to be on DELIVERY. At most one *pending* board wake per
  *    (agent, instance, pod): a second change folds into the undrained first
- *    instead of appending. 39 writes become 1 wake, and each seat looks at the
- *    board once rather than once per row. There is no messageId, deliberately
- *    — every seat SHOULD look; the per-task claim CAS already arbitrates who
- *    actually takes what, one layer down, where the contention really is.
+ *    instead of appending. Only the row's current or prior owner receives that
+ *    wake; unrelated movement remains on the durable board. There is no
+ *    messageId because an assignment is addressed to its owner.
  *
  *    This is a step toward ADR-024 D3's inbox, not a workaround around it:
  *    "collapse what is still undelivered" is what an inbox does.
@@ -168,6 +195,7 @@ export async function notifyPodAgents(
     agentName?: string;
     instanceId?: string;
   },
+  previousTask?: BoardTask | null,
 ): Promise<void> {
   // A deletion leaves nothing to pick up, and a tombstone wake spends a model
   // turn to discover there is no work.
@@ -179,8 +207,6 @@ export async function notifyPodAgents(
     const { AgentInstallation } = require('../models/AgentRegistry');
     const AgentEventService = require('./agentEventService');
     const Task = require('../models/Task');
-    // Lazy so this never forms a load-time cycle with the mention service.
-    const { boardWakeEnabled } = require('./agentMentionService');
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
 
     const normalizedPodId = String(podId);
@@ -189,15 +215,8 @@ export async function notifyPodAgents(
       status: 'active',
     }).lean();
 
-    // Gate on the SAME per-install opt-in as ADR-018 D8 wake-on-message. A
-    // board change is ambient pod activity that nobody addressed to you, which
-    // is precisely what that switch governs — so an agent whose owner turned
-    // ambient wakes OFF must not start receiving them through a second door.
-    // Measured before choosing this: of 367 active installs, 128 have it on
-    // (including every sprint seat), and the 169 that do not are `commonly-bot`
-    // and `openclaw` — user-facing and community seats where an unrequested
-    // wake is a noise incident, not a feature.
-    const installs = (active || []).filter(boardWakeEnabled);
+    // Ownership addresses a seat directly, independent of ambient wake opt-in.
+    const installs = active || [];
     if (!installs.length) return;
 
     const taskId = String(task.taskId || task.id || task._id || 'unknown');
@@ -253,11 +272,37 @@ export async function notifyPodAgents(
     const actorKey = actor?.isAgent && actor?.agentName
       ? `${String(actor.agentName).toLowerCase()}::${String(actor.instanceId || 'default')}`
       : null;
+    let currentHolder: string | null = null;
+    let previousHolder: string | null = null;
+    let dependentRows: BoardTask[] = [];
+    let dependentHolders: Array<string | null> = [];
+    try {
+      [currentHolder, previousHolder] = await Promise.all([
+        claimHolderKey(task.claimedBy), claimHolderKey(previousTask?.claimedBy),
+      ]);
+      if (String(task.status) === 'done' && previousTask && String(previousTask.status) !== 'done') {
+        dependentRows = await Task.find(
+          { podId: normalizedPodId, dep: taskId, status: { $in: ['pending', 'claimed', 'blocked'] } },
+          { assignee: 1, claimedBy: 1 },
+        ).lean();
+        dependentHolders = await Promise.all(dependentRows.map((row) => claimHolderKey(row.claimedBy)));
+      }
+    } catch (err) {
+      // Preserve known assignees even if a claim or dependency lookup fails.
+      console.warn('[task-event] own-row lookup failed:', (err as Error).message);
+    }
     const outcomes = await Promise.all(installs.map(async (install: Record<string, unknown>) => {
       const installKey = `${String(install.agentName || '').toLowerCase()}::${String(install.instanceId || 'default')}`;
       if (actorKey && installKey === actorKey) return null;
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
+      const ownRow = seatMatchesAssignee(install, task.assignee)
+        || seatMatchesAssignee(install, previousTask?.assignee)
+        || seatHoldsClaim(install, currentHolder)
+        || seatHoldsClaim(install, previousHolder)
+        || dependentRows.some((row) => seatMatchesAssignee(install, row.assignee))
+        || dependentHolders.some((holder) => seatHoldsClaim(install, holder));
+      if (!ownRow) return null;
       try {
         // Assignee is the board's agent-name string. Query the current board
         // for this seat rather than replaying only the latest pod-wide edit:
@@ -266,7 +311,7 @@ export async function notifyPodAgents(
         let assignedRows: Array<Record<string, unknown>> = [];
         try {
           const assignees = instanceId === 'default' || instanceId === agentName
-            ? [agentName] : [agentName, instanceId];
+            ? [agentName] : [instanceId];
           assignedRows = await Task.find(
             { podId: normalizedPodId, assignee: { $in: assignees }, status: { $in: ['pending', 'claimed'] } },
             { taskId: 1, title: 1, status: 1, updatedAt: 1, updates: { $slice: -1 } },
@@ -316,8 +361,7 @@ export async function notifyPodAgents(
           type: 'message.posted',
           payload: {
             content: buildContent(0, assignedRows),
-            // No messageId, deliberately — see choice 2. Every seat should
-            // look; the per-task claim CAS arbitrates who takes what.
+            // No messageId; ownership itself is the address.
             podId: normalizedPodId,
             boardWake: true,
             boardChanges: 0,

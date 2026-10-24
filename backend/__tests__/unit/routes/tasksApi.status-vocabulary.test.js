@@ -30,7 +30,7 @@ jest.mock('../../../models/Pod', () => ({
 const mockFindOneAndUpdate = jest.fn();
 jest.mock('../../../models/Task', () => ({
   findOneAndUpdate: (...args) => mockFindOneAndUpdate(...args),
-  findOne: jest.fn(),
+  findOne: jest.fn(() => ({ select: () => ({ lean: async () => null }) })),
   find: jest.fn(),
 }));
 
@@ -45,8 +45,10 @@ jest.mock('../../../services/githubAppService', () => ({
 }));
 
 const mockEmitTaskUpdated = jest.fn();
+const mockNotifyPodAgents = jest.fn();
 jest.mock('../../../services/taskEventService', () => ({
   emitTaskUpdated: (...args) => mockEmitTaskUpdated(...args),
+  notifyPodAgents: (...args) => mockNotifyPodAgents(...args),
 }));
 
 const mockRecordTaskAttention = jest.fn();
@@ -57,6 +59,7 @@ jest.mock('../../../services/attentionItemService', () => ({
 }));
 
 const tasksApi = require('../../../routes/tasksApi');
+const Task = require('../../../models/Task');
 
 const app = express();
 app.use(express.json());
@@ -68,6 +71,8 @@ beforeEach(() => {
   mockFindOneAndUpdate.mockReset();
   mockFindOneAndUpdate.mockResolvedValue({ taskId: 'TASK-001', status: 'claimed' });
   mockEmitTaskUpdated.mockReset();
+  mockNotifyPodAgents.mockReset();
+  Task.findOne.mockReturnValue({ select: () => ({ lean: async () => null }) });
   mockRecordTaskAttention.mockReset();
   mockRecordTaskAttention.mockResolvedValue(undefined);
   mockResolveTaskAttention.mockReset();
@@ -137,6 +142,9 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
       .send({ prUrl: 'https://github.com/Team-Commonly/commonly/pull/1' });
     expect(res.status).toBe(200);
     expect(mockResolveTaskAttention).toHaveBeenCalledWith(expect.objectContaining({ _id: 'task-1' }));
+    expect(mockNotifyPodAgents).toHaveBeenCalledWith(
+      POD_ID, task, 'updated', expect.any(Object), { status: 'claimed' },
+    );
   });
 
   test('rejects unknown statuses with the vocabulary in the error', async () => {
@@ -157,5 +165,34 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
 
     expect(res.status).toBe(200);
     expect(mockFindOneAndUpdate.mock.calls[0][1].$set.title).toBe('renamed');
+  });
+
+  test('passes the prior assignee to board wake routing when unassigning', async () => {
+    Task.findOne.mockReturnValueOnce({ select: () => ({ lean: async () => ({ assignee: 'scout', status: 'claimed' }) }) });
+    mockFindOneAndUpdate.mockResolvedValueOnce({ taskId: 'TASK-001', assignee: null, status: 'claimed' });
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ assignee: '' });
+
+    expect(res.status).toBe(200);
+    expect(mockNotifyPodAgents).toHaveBeenCalledWith(
+      POD_ID, expect.objectContaining({ assignee: null }), 'updated',
+      expect.any(Object), { assignee: 'scout', status: 'claimed' },
+    );
+  });
+
+  test('still writes the board when the optional prior-owner lookup fails', async () => {
+    Task.findOne.mockReturnValueOnce({ select: () => ({ lean: async () => { throw new Error('read unavailable'); } }) });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ assignee: 'scout' });
+    warn.mockRestore();
+
+    expect(res.status).toBe(200);
+    expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(1);
+    expect(mockNotifyPodAgents).toHaveBeenCalled();
   });
 });
