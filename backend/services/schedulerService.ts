@@ -472,6 +472,23 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // TASK-469: completion timestamps provide the five-minute due time. The
+    // per-identity Mongo CAS in the service bounds overlap between replicas.
+    const assignedTaskWakeJob: CronJob = cron.schedule(
+      '* * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { dispatchAssignedTaskWakes } = require('./assignedTaskWakeService');
+          const result = await dispatchAssignedTaskWakes();
+          if (result.eligible) console.log('[assigned-task-wake]', result);
+        } catch (error) {
+          console.error('[assigned-task-wake] dispatch failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     // Installable cleanup is deliberately lease-free. A rollout can run this
     // on two replicas, but every sweep mutation is a status+claimId CAS and
     // revoke/delete is idempotent. A duplicate pass is wasted work, never a
@@ -601,6 +618,7 @@ class SchedulerService {
       stalledConnectJob,
       missedAgentMentionJob,
       kernelWorkSweepJob,
+      assignedTaskWakeJob,
       installableReconcileJob,
       decisionCardReconcileJob,
       approvalToolCallSweepJob,

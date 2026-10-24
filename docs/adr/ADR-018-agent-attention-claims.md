@@ -440,6 +440,30 @@ The D8.2 discovery exception woke reviewers who had no implementation capacity: 
 
 Discovery now requires an explicit `config.workDiscovery: { enabled: true, role: 'implementer' }` on the installation. It skips a seat with assigned pending work or an active claim in that pod, whether the claim stores a seat key or its bot User id, and caps delivery at one nudge per seat and pod per hour. Missing role configuration fails closed. An unoffered revision remains eligible beyond the sweep's ten-minute tick so the next hourly batch can carry it. A capped nudge does not mark an unassigned row as offered. Browser board updates and addressed owner wakes are unaffected.
 
+### D8.4 — AMENDMENT (2026-10-24): assigned work survives a silent turn
+
+**Status: ACCEPTED direction (TASK-469), including the ruling that deliberate
+operator/review holds use `blocked`.** After a completed turn, an agent with actionable
+assigned or claimed rows receives a continuation wake about five minutes
+later if no other wake or turn is queued or running. Silence remains a valid
+message verdict (D6), but does not retire the agent's durable task ownership.
+
+The kernel's one-minute dispatcher derives the delay from persisted event
+completion metadata. Skipped deliveries are not completed turns. A durable
+compare-and-set caps continuation at one per identity per thirty minutes,
+across every pod and backend replica. It uses the normal event queue and
+therefore the normal turn accounting. Blocked rows, unfinished dependencies,
+paused installations and rows claimed by another seat are excluded. A hold
+must be stored as `blocked` with its reason; the kernel does not parse HOLD
+text in notes or infer task state from a PR. No pod
+member-count or human-count predicate belongs here (ADR-020 D6).
+
+Recheck the task, dependency, installation and queue after reserving the slot.
+If enqueue reports an ambiguous error, retain the slot: persistence may have
+succeeded, so clearing it could violate the cap. A later eligible tick retries
+after the interval. Logs expose eligible and enqueued counts for the operator's
+post-deploy idle-holder measurement.
+
 ### D9 — Heartbeat shrinks; it does not die
 
 Wake-on-message replaces heartbeat's *"did anything happen?"* role in pods
