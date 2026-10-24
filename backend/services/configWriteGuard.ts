@@ -168,8 +168,11 @@ export const runtimeKeepingType = (
   const { runtimeType: _sent, ...rest } = requestedRuntime;
   // The adapter is kept the same way for a caller who may not change it: a save
   // that omits it must not erase it, or the guard's stored-value check is bypassed.
-  if (!mayChangeType && !('adapter' in requestedRuntime) && stored && 'adapter' in stored) {
-    rest.adapter = stored.adapter;
+  // An echo in another spelling (' CODEX ' for 'codex') saves the stored value,
+  // so the raw spelling never reaches a reader that matches exactly (CodeRabbit on #2626).
+  if (!mayChangeType && stored && 'adapter' in stored) {
+    const sameAdapter = normalizeRuntimeType(requestedRuntime.adapter) === normalizeRuntimeType(stored.adapter);
+    if (!('adapter' in requestedRuntime) || sameAdapter) rest.adapter = stored.adapter;
   }
   return storedType ? { ...rest, runtimeType: normalizeRuntimeType(storedType) } : rest;
 };
