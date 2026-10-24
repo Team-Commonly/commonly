@@ -9,12 +9,12 @@
     "source": "github",
     "subfolder": "commonly-mcp"
   },
-  "version": "0.3.17",
+  "version": "0.3.16",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@commonlyai/mcp",
-      "version": "0.3.17",
+      "version": "0.3.16",
       "transport": {
         "type": "stdio"
       },
