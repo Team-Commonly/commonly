@@ -44,6 +44,8 @@ beforeEach(() => {
 
 test('runtime labels only recognize walked adapters and distinguish daemon from a single CLI', () => {
   expect(describeRuntime({ runtimeType: 'wrapper', adapter: 'claude' })).toEqual({ mode: 'daemon', adapter: 'Claude Code' });
+  expect(describeRuntime({ runtimeType: 'wrapper', adapter: 'claude', managed: false }))
+    .toEqual({ mode: 'cli', adapter: 'Claude Code' });
   expect(describeRuntime({ runtimeType: 'webhook', host: 'byo', adapter: 'dsh' })).toEqual({ mode: 'cli', adapter: 'DeepSeek Harness' });
   expect(describeRuntime({ runtimeType: 'wrapper', adapter: 'unwalked' })).toEqual({ mode: 'daemon', adapter: null });
   expect(describeRuntime({ runtimeType: 'hosted' })).toEqual({ mode: 'hosted', adapter: null });

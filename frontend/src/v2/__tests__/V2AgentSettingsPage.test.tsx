@@ -403,3 +403,52 @@ test('runtime editor keeps a wrapper model when no environment override exists',
   expect(await screen.findByLabelText('Model')).toHaveValue('selected-model');
   expect(screen.getByLabelText('Effort')).toHaveValue('medium');
 });
+
+test('runtime editor shows the daemon-selected effort instead of a different pod config', async () => {
+  axios.patch.mockResolvedValue({ data: { updated: true } });
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'skills-pod', runtimeSourcePodId: 'source-pod',
+      runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: 'opus', effort: 'high' },
+      runtimeEditable: true, installations: [
+        { podId: 'skills-pod', podName: 'Work', status: 'active' },
+        { podId: 'source-pod', podName: 'Source', status: 'active' },
+      ],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
+      runtime: { runtimeType: 'wrapper', adapter: 'claude' },
+      config: { environment: { model: 'opus', effort: 'max' } },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage();
+  const effort = await screen.findByLabelText('Effort');
+  expect(effort).toHaveValue('high');
+  fireEvent.change(effort, { target: { value: 'xhigh' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    '/api/registry/pods/source-pod/agents/maya-claude',
+    { config: { environment: { effort: 'xhigh' } }, instanceId: 'default' },
+  ));
+});
+
+test('standalone CLI settings do not claim a local effort or offer a remote save', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', runtimeSourcePodId: null, runtimeManaged: false,
+      runtimeEditable: false, runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: '', effort: '' },
+      installations: [{ podId: 'pod-1', podName: 'Work', status: 'active' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
+      runtime: { runtimeType: 'wrapper', adapter: 'claude' },
+      config: { environment: { model: 'opus', effort: 'max' } },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage();
+  expect(await screen.findByText('Single CLI')).toBeInTheDocument();
+  expect(screen.queryByText('max')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save runtime' })).not.toBeInTheDocument();
+});

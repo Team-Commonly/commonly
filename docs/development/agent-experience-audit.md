@@ -4200,3 +4200,13 @@ Gates that never appear in metadata decided several more, including the client a
 **Repair:** after a post, resolve known mentioned handles against pod membership and return a sender-only notice for each known non-member. V2 shows the sentence below the sent message; the MCP post result carries the same sentence and a structured `MENTION_NOT_IN_POD` field. Unknown handles stay silent. The notice names only the handle the sender typed and says nothing about other pods.
 
 **Lesson:** accepting a message is not proof its address resolved. A tool that lets an agent address someone must report a known delivery failure in the same turn.
+
+## 84. An installation preference appeared as the running effort (2026-10-23, kite)
+
+*Origin: TASK-434. Settings showed Effort `max` while a verified CLI spawn used `high`.*
+
+Settings read one writable pod's `config.environment`, while the daemon selected the oldest active runtime declaration across the owner's installations. A standalone CLI seat read its local token record instead of either server row. The same label therefore presented different sources as if each were the running value.
+
+**Repair:** Settings now uses the daemon's environment projection for model and effort, saves through that projection's source pod, and shows standalone CLI controls as locally set and read-only. Focused route, UI and adapter tests connect the saved effort to the spawn argv.
+
+**Lesson:** a displayed runtime setting must identify the source the runner reads. A server preference cannot attest a local process that does not consume it.

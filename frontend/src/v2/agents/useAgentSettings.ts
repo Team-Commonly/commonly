@@ -46,6 +46,10 @@ interface AgentAccess {
 
 interface ManageSettingsResponse {
   writablePodId: string | null;
+  runtimeSourcePodId?: string | null;
+  runtimeControls?: { runtimeType?: string; host?: 'cloud' | 'byo'; adapter?: string; model?: string; effort?: string };
+  runtimeEditable?: boolean;
+  runtimeManaged?: boolean;
   installations: Array<{ podId: string; podName: string; status: string }>;
 }
 
@@ -54,6 +58,10 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [access, setAccess] = useState<AgentAccess | null>(null);
   const [installation, setInstallation] = useState<AgentSettingsInstallation | null>(null);
   const [podId, setPodId] = useState<string | null>(null);
+  const [runtimeSourcePodId, setRuntimeSourcePodId] = useState<string | null>(null);
+  const [runtimeControls, setRuntimeControls] = useState<ManageSettingsResponse['runtimeControls']>({});
+  const [runtimeEditable, setRuntimeEditable] = useState(true);
+  const [runtimeManaged, setRuntimeManaged] = useState<boolean | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const requestId = useRef(0);
@@ -85,6 +93,11 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
             pods: rows.map((row) => ({ id: row.podId, name: row.podName })) });
           setInstallation(response.data.agent);
           setPodId(pod.podId);
+          setRuntimeSourcePodId(settingsResponse.data.runtimeSourcePodId === undefined
+            ? settingsResponse.data.writablePodId : settingsResponse.data.runtimeSourcePodId);
+          setRuntimeControls(settingsResponse.data.runtimeControls || {});
+          setRuntimeEditable(settingsResponse.data.runtimeEditable !== false);
+          setRuntimeManaged(settingsResponse.data.runtimeManaged);
           setError(null);
         }
         return response.data.agent;
@@ -103,6 +116,10 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     setAccess(null);
     setInstallation(null);
     setPodId(null);
+    setRuntimeSourcePodId(null);
+    setRuntimeControls({});
+    setRuntimeEditable(true);
+    setRuntimeManaged(undefined);
     void refresh().catch((requestError) => {
       if (active) setError(requestError);
     }).finally(() => {
@@ -127,5 +144,14 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     return response.data;
   }, [agentName, instanceId]);
 
-  return { access, installation, podId, loading, error, refresh, update, updatePod };
+  const updateRuntime = useCallback(async (changes: { model?: string; effort?: string }) => {
+    if (!runtimeSourcePodId) throw new Error('No writable runtime source');
+    await axios.patch(installationUrl(runtimeSourcePodId), {
+      config: { environment: changes }, instanceId,
+    });
+    await refresh();
+  }, [instanceId, installationUrl, refresh, runtimeSourcePodId]);
+
+  return { access, installation, podId, runtimeControls, runtimeEditable, runtimeManaged, loading,
+    error, refresh, update, updatePod, updateRuntime };
 };
