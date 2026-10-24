@@ -1,5 +1,6 @@
 const express = require('express');
 const auth = require('../middleware/auth');
+const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 const Installable = require('../models/Installable');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const { validateMcpComponent } = require('../utils/pluginManifestParser');
@@ -681,10 +682,19 @@ router.post('/publish/:installableId(*)/deprecate', auth, async (req: any, res: 
   }
 });
 
+// Anonymous marketplace reads do a database query per hit, so they get the
+// IP tier (middleware/platformRateLimit.ts). A threat-model budget, not one
+// fitted to traffic: the ingress log shows almost none on these routes.
+const marketplaceReadLimit = platformIpRateLimit({
+  windowMs: 60 * 1000,
+  limit: 300,
+  label: '300 marketplace reads per minute per IP',
+});
+
 /**
  * GET /api/marketplace/browse
  */
-router.get('/browse', async (req: any, res: any) => {
+router.get('/browse', marketplaceReadLimit, async (req: any, res: any) => {
   try {
     const {
       kind, category, q, sort = 'installs', page = '1', limit = '20',
@@ -731,7 +741,7 @@ router.get('/browse', async (req: any, res: any) => {
  * GET /api/marketplace/manifests/:installableId/forks
  * Must be registered before the detail route so the wildcard doesn't eat "/forks".
  */
-router.get('/manifests/:installableId(*)/forks', async (req: any, res: any) => {
+router.get('/manifests/:installableId(*)/forks', marketplaceReadLimit, async (req: any, res: any) => {
   try {
     const { installableId } = req.params;
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -763,7 +773,7 @@ router.get('/manifests/:installableId(*)/forks', async (req: any, res: any) => {
 /**
  * GET /api/marketplace/manifests/:installableId
  */
-router.get('/manifests/:installableId(*)', async (req: any, res: any) => {
+router.get('/manifests/:installableId(*)', marketplaceReadLimit, async (req: any, res: any) => {
   try {
     const { installableId } = req.params;
     const doc = await Installable.findOne({ installableId: installableId.toLowerCase() }).lean();
