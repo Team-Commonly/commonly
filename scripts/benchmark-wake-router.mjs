@@ -60,13 +60,17 @@ export async function classify(sample, context, options) {
     const data = await response.json();
     record.returnedModel = data.model ?? null;
     record.usage = data.usage ?? null;
-    const decision = JSON.parse(data.choices?.[0]?.message?.content);
+    const choice = data.choices?.[0];
+    if (choice?.finish_reason !== 'stop' || choice?.message?.refusal) {
+      throw new Error(choice?.finish_reason === 'length' ? 'truncated' : 'response_error');
+    }
+    const decision = JSON.parse(choice.message.content);
     if (!validateDecision(decision, context)) throw new Error('invalid_decision');
     record.verdict = decision;
     record.outcome = 'valid';
   } catch (error) {
     // Never print provider response text: it can echo a private message or key.
-    record.outcome = controller.signal.aborted ? 'timeout' : ['http_error', 'invalid_decision'].includes(error.message) ? error.message : 'response_error';
+    record.outcome = controller.signal.aborted ? 'timeout' : ['http_error', 'invalid_decision', 'truncated'].includes(error.message) ? error.message : 'response_error';
   } finally {
     clearTimeout(timer);
     record.latencyMs = Math.round(performance.now() - started);

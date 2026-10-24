@@ -11,7 +11,7 @@ const context = { seats: [{ id: 'writer:default' }], humans: [{ id: 'human-1' }]
 const decision = { wake: ['writer:default'], digest: true, owner: { kind: 'seat', id: 'writer:default' } };
 const sample = { id: 'message-1', author: 'human-1', content: 'Please fix the failing build' };
 const reply = (value = decision) => ({ ok: true, status: 200, json: async () => ({ model: 'fixture-model',
-  usage: { prompt_tokens: 2000, completion_tokens: 40 }, choices: [{ message: { content: JSON.stringify(value) } }] }) });
+  usage: { prompt_tokens: 2000, completion_tokens: 40 }, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(value) } }] }) });
 const options = { model: 'fixture-model', key: 'fixture-key', url: 'https://example.invalid/v1/chat/completions' };
 
 test('a valid classification records usage and puts untrusted content only in the data message', async () => {
@@ -49,6 +49,17 @@ test('HTTP refusal and malformed JSON preserve fallback without exposing respons
     assert.equal(row.verdict.digest, true);
     assert.deepEqual(row.verdict.wake, []);
     assert.equal(JSON.stringify(row).includes('private provider text'), false);
+  }
+});
+
+test('parseable JSON is rejected for truncated, refused or missing completion status', async () => {
+  for (const reason of ['length', 'content_filter', null, undefined]) {
+    const row = await classify(sample, context, { ...options, fetchImpl: async () => ({ ok: true, status: 200,
+      json: async () => ({ usage: { prompt_tokens: 2000, completion_tokens: 40 },
+        choices: [{ finish_reason: reason, message: { content: JSON.stringify(decision) } }] }) }) });
+    assert.equal(row.outcome, reason === 'length' ? 'truncated' : 'response_error');
+    assert.deepEqual(row.verdict, { wake: [], digest: true, owner: { kind: 'none', id: null } });
+    assert.equal(summarize([row], { input: 0.1, output: 0.5 }).valid, 0);
   }
 });
 
@@ -144,7 +155,7 @@ test('valid CLI control performs exactly 200 calls and reports their measured us
     calls += 1;
     response.setHeader('Content-Type', 'application/json');
     response.end(JSON.stringify({ model: 'fixture-model', usage: { prompt_tokens: 2000, completion_tokens: 40 },
-      choices: [{ message: { content: JSON.stringify(decision) } }] }));
+      choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(decision) } }] }));
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
