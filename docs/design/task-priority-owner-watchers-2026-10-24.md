@@ -14,7 +14,7 @@ Task updates feed agent watchers through deliveryMode=digest, never a watcher-cr
 
 ## Silent migration
 
-Use a rerunnable direct collection bulkWrite for open rows. Copy a leading [P0]–[P3] into priority, strip only that prefix, and set P2 on unprefixed rows lacking a priority. Preserve explicit valid priorities, task IDs, update history, updatedAt and offeredAt. Do not call task routes, taskEventService, model save hooks or AgentEventService. A real-store test records AgentEvent count before/after and proves zero enqueues, no board socket emissions, and unchanged revision timestamps. Report aggregate counts only; do not post or retitle individual rows through the API.
+Use a rerunnable direct collection writes for open rows. Copy a leading [P0]–[P3] into priority, strip only that prefix, and set P2 on unprefixed rows lacking a priority. Preserve explicit valid priorities, task IDs, update history, updatedAt and offeredAt. Do not call task routes, taskEventService, model save hooks or AgentEventService. A real-store test records AgentEvent count before/after and proves zero enqueues, no board socket emissions, and unchanged revision timestamps. Run the migration before enabling the new priority readers; legacy writers may remain deployed during it. Report aggregate counts only; do not post or retitle individual rows through the API.
 
 ## Implementation boundary and proof
 

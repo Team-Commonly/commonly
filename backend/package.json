@@ -24,6 +24,7 @@
     "bootstrap:clawd-bot": "node scripts/bootstrap-clawd-bot.js",
     "backfill:attention-items": "ts-node scripts/backfill-attention-items.ts",
     "backfill:message-author-kind": "ts-node scripts/backfill-message-author-kind.ts",
+    "migrate:task-priority": "ts-node scripts/migrate-task-priority.ts",
     "migrate:task-source-ref-identity": "ts-node scripts/migrate-task-source-ref-identity.ts",
     "sweep:resolved-mention-attention": "ts-node scripts/sweep-resolved-mention-attention.ts",
     "sweep:done-task-handoffs": "ts-node scripts/sweep-done-task-handoffs.ts",

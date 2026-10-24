@@ -372,7 +372,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       expect(Task.find).toHaveBeenCalledWith({ podId: POD, status: { $in: ['pending', 'claimed', 'blocked'] } });
       const listed = JSON.parse(toolMessages(1)[0].content);
       expect(listed).toEqual({
-        status: 'open', total: 3, tasks: [{ taskId: 'TASK-1', title: 'Say hello to the pod', status: 'pending', assignee: null }],
+        status: 'open', total: 3, tasks: [{ taskId: 'TASK-1', title: 'Say hello to the pod', priority: 'P2', status: 'pending', assignee: null }],
       });
       expect(systemPromptIn(0)).toMatch(/check the board with commonly_list_tasks before saying what is or is not on it/);
       // Walk 5: it offered to "mark TASK-002 done" with no tool that can.

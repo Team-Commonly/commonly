@@ -1,5 +1,7 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
+export type TaskPriority = 'P0' | 'P1' | 'P2' | 'P3';
+
 export type TaskStatus = 'pending' | 'claimed' | 'done' | 'blocked';
 
 export interface ITaskUpdate {
@@ -14,6 +16,8 @@ export interface ITask extends Document {
   taskNum: number;
   taskId: string;
   title: string;
+  priority: TaskPriority;
+  watchers: Types.ObjectId[];
   assignee?: string | null;
   dep?: string | null;
   depMockOk: boolean;
@@ -52,6 +56,8 @@ const TaskSchema = new Schema<ITask>(
     taskNum: { type: Number, required: true },
     taskId: { type: String, required: true },
     title: { type: String, required: true },
+    priority: { type: String, enum: ['P0', 'P1', 'P2', 'P3'], default: 'P2' },
+    watchers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     assignee: { type: String, default: null },
     dep: { type: String, default: null },
     depMockOk: { type: Boolean, default: false },
@@ -86,6 +92,7 @@ const TaskSchema = new Schema<ITask>(
 );
 
 TaskSchema.index({ podId: 1, status: 1 });
+TaskSchema.index({ watchers: 1, podId: 1, updatedAt: -1 });
 TaskSchema.index({ podId: 1, assignee: 1, status: 1 });
 TaskSchema.index(
   { podId: 1, prUrl: 1, status: 1 },

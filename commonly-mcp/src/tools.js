@@ -362,6 +362,7 @@ export const buildTools = (config) => {
         assignee: STRING,
         dep: STRING,
         parentTask: STRING,
+        priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'], description: 'P0 is highest; defaults to P2.' },
         source: STRING,
         sourceRef: STRING,
       }, ['podId', 'title']),
@@ -382,6 +383,16 @@ export const buildTools = (config) => {
       })),
     },
     {
+      name: 'commonly_watch_task',
+      description: 'Follow or unfollow a task as yourself. Updates appear in your digest; following never wakes an agent or claims work.',
+      inputSchema: reqWith({ podId: STRING, taskId: STRING, following: { type: 'boolean' } }, ['podId', 'taskId', 'following']),
+      call: wrap(async ({ podId, taskId, following }) => request(config, {
+        method: 'POST',
+        path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/watch`,
+        body: { following },
+      })),
+    },
+    {
       name: 'commonly_complete_task',
       description: 'Mark a task done. `prUrl` is the merged PR; `notes` is a one-sentence summary.',
       inputSchema: reqWith({
@@ -398,17 +409,18 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_update_task',
-      description: 'Append an update note to a task without changing status — visible in the task drawer history. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
+      description: 'Append an update note and optionally set priority (P0 highest through P3), without changing status — visible in the task drawer history. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
       inputSchema: reqWith({
         podId: STRING,
         taskId: STRING,
         text: STRING,
+        priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] },
         continueAnyway: { type: 'boolean' },
       }, ['podId', 'taskId', 'text']),
-      call: wrap(async ({ podId, taskId, text, continueAnyway }) => request(config, {
+      call: wrap(async ({ podId, taskId, text, priority, continueAnyway }) => request(config, {
         method: 'POST',
         path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/updates`,
-        body: { text, continueAnyway },
+        body: { text, priority, continueAnyway },
       })),
     },
     {

@@ -1,3 +1,4 @@
+import { compareTaskPriority } from '../utils/taskPriority';
 /**
  * taskEventService
  *
@@ -261,12 +262,12 @@ export async function notifyPodAgents(
         : `[The board moved in this pod — ${taskId} was ${kind}: ${title}.]`,
       ...(assignedRows.length ? [
         '',
-        '[Your assigned rows (pending/claimed; newest first):]',
+        '[Your assigned rows (pending/claimed; highest priority first):]',
         ...assignedRows.map((row) => {
           const updates = row.updates as Array<{ text?: string }> | undefined;
           const latest = updates?.[updates.length - 1]?.text;
           const change = latest || (String(row.taskId) === taskId ? kind : 'current assignment');
-          return `- ${String(row.taskId)} — ${String(row.title || '(untitled)').replace(/\s+/g, ' ').slice(0, 80)} [${String(row.status)}] — ${String(change).replace(/\s+/g, ' ').slice(0, 120)}`;
+          return `- ${String(row.taskId)} — [${String(row.priority || 'P2')}] ${String(row.title || '(untitled)').replace(/\s+/g, ' ').slice(0, 80)} [${String(row.status)}] — ${String(change).replace(/\s+/g, ' ').slice(0, 120)}`;
         }),
       ] : []),
       '',
@@ -361,8 +362,8 @@ export async function notifyPodAgents(
             ? [agentName] : [instanceId];
           assignedRows = await Task.find(
             { podId: normalizedPodId, assignee: { $in: assignees }, status: { $in: ['pending', 'claimed'] } },
-            { taskId: 1, title: 1, status: 1, updatedAt: 1, updates: { $slice: -1 } },
-          ).sort({ updatedAt: -1, _id: -1 }).limit(MAX_ASSIGNED_ROWS).lean();
+            { taskId: 1, title: 1, priority: 1, taskNum: 1, status: 1, updatedAt: 1, updates: { $slice: -1 } },
+          ).sort({ priority: 1, taskNum: 1, _id: 1 }).limit(MAX_ASSIGNED_ROWS).lean();
         } catch (err) {
           // A listing failure must not turn the entire board wake into silence.
           console.warn(`[task-event] assigned rows lookup failed for ${agentName}:`, (err as Error).message);
@@ -469,7 +470,7 @@ export async function notifyPodAgents(
  */
 export async function notifyFoundWork(
   podId: unknown,
-  items: Array<OfferRevision & { title?: string; lapsedFrom?: string | null }>,
+  items: Array<OfferRevision & { title?: string; priority?: string; taskNum?: number; lapsedFrom?: string | null }>,
   totalCount: number,
   now: Date = new Date(),
 ): Promise<{ woken: number }> {
@@ -502,10 +503,10 @@ export async function notifyFoundWork(
     // thing standing between that and a duplicate implementation is whether a
     // peer happens to be reading the pod. Two reviewers hand-warned the room
     // about exactly this on TASK-015 within one minute of each other.
-    const namedItems = items.slice(0, MAX_NAMED_ITEMS);
+    const namedItems = [...items].sort(compareTaskPriority).slice(0, MAX_NAMED_ITEMS);
     const listed = namedItems
       .map((t) => {
-        const line = `- ${t.taskId || '?'} — ${String(t.title || '(untitled)').slice(0, 80)}`;
+        const line = `- ${t.taskId || '?'} — [${t.priority || 'P2'}] ${String(t.title || '(untitled)').slice(0, 80)}`;
         return t.lapsedFrom ? `${line}  [lapsed from ${t.lapsedFrom} — check their work before starting]` : line;
       })
       .join('\n');

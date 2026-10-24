@@ -424,3 +424,26 @@ test('scheduler does not generate a digest for a bot', async () => {
 
   expect(generate).not.toHaveBeenCalled();
 });
+
+test('followed task updates reach only a current member digest and create no attention or wakes', async () => {
+  const Task = require('../../../models/Task');
+  const AgentEvent = require('../../../models/AgentEvent');
+  const member = await person(new Date(Date.now() - 25 * 60 * 60 * 1000));
+  const pod = await podWithSummary(member, 'Followed work');
+  const removedPod = await podWithSummary(await person(), 'Former membership');
+  const row = await Task.create({ podId: pod._id, taskId: 'TASK-WATCHED', taskNum: 1, title: 'Followed marker', watchers: [member._id] });
+  await Task.create({ podId: removedPod._id, taskId: 'TASK-SECRET', taskNum: 1, title: 'Former pod secret', watchers: [member._id] });
+  const stale = await Task.create({ podId: pod._id, taskId: 'TASK-STALE', taskNum: 2, title: 'Old watched marker', watchers: [member._id], updatedAt: new Date(Date.now() - 48 * 60 * 60 * 1000) });
+  await Task.collection.updateOne({ _id: stale._id }, { $set: { updatedAt: new Date(Date.now() - 48 * 60 * 60 * 1000) } });
+  const attentionBefore = await AttentionItem.countDocuments({});
+  const eventsBefore = await AgentEvent.countDocuments({});
+  const digest = await new DailyDigestService().generateUserDailyDigest(member._id, { requireAway: true });
+  expect(digest.content).toContain('Followed marker');
+  expect(digest.content).not.toContain('Former pod secret');
+  expect(digest.content).not.toContain('Old watched marker');
+  expect(await AttentionItem.countDocuments({})).toBe(attentionBefore);
+  expect(await AgentEvent.countDocuments({})).toBe(eventsBefore);
+  await Pod.updateOne({ _id: pod._id }, { $pull: { members: member._id } });
+  const removed = await new DailyDigestService().generateUserDailyDigest(member._id);
+  expect(removed.content).not.toContain(row.title);
+});
