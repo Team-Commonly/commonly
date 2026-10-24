@@ -175,7 +175,7 @@ export default {
     await mkdir(home, { recursive: true, mode: 0o700 });
     const env = { ...(ctx.env || process.env), HERMES_HOME: home };
     if (!readVersion(env, ctx._spawnSyncImpl)) {
-      throw new Error(`Hermes Agent ${SUPPORTED_HERMES_VERSION_RANGE} is not on PATH; install with curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`);
+      throw new Error(`Hermes Agent ${SUPPORTED_HERMES_VERSION_RANGE} is not on PATH; install for your OS: https://hermes-agent.nousresearch.com/docs/getting-started/installation`);
     }
     if (!env.OPENROUTER_API_KEY) {
       throw new Error('Supply the operator OPENROUTER_API_KEY through Secret Manager before running Hermes');

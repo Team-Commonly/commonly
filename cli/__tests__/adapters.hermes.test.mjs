@@ -150,13 +150,15 @@ test('refuses Hermes outside the supported stable range before starting a turn',
   });
 });
 
-test('missing Hermes names the supported range and install command', async () => {
+test('missing Hermes on Windows names the supported range and platform-neutral install guide', async () => {
   await withHome(async (home) => {
     const child = jest.fn();
-    await expect(hermes.spawn('hello', {
+    const missing = hermes.spawn('hello', {
       cwd: home, _hermesHome: home,
       _spawnSyncImpl: jest.fn(() => ({ error: { code: 'ENOENT' } })), _spawnImpl: child,
-    })).rejects.toThrow(`Hermes Agent ${SUPPORTED_HERMES_VERSION_RANGE} is not on PATH; install with curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`);
+    });
+    await expect(missing).rejects.toThrow(`Hermes Agent ${SUPPORTED_HERMES_VERSION_RANGE} is not on PATH; install for your OS: https://hermes-agent.nousresearch.com/docs/getting-started/installation`);
+    await expect(missing).rejects.not.toThrow(/curl|bash/);
     expect(child).not.toHaveBeenCalled();
   });
 });
