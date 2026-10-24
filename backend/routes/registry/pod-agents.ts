@@ -9,6 +9,7 @@ const AgentEvent = require('../../models/AgentEvent');
 const AgentCredential = require('../../models/AgentCredential');
 const Machine = require('../../models/Machine');
 const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
+const { hostedRunsNative } = require('../../services/hostedEngine');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
@@ -348,8 +349,19 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           lastMessage: (user && lastMessageByUserId.get(String(user._id))) || null,
         });
         const runtimeType = payload?.runtime?.runtimeType;
-        if (!connectionAvailable || !user || !['webhook', 'wrapper'].includes(runtimeType)
-          || (runtimeType === 'webhook' && payload?.runtime?.webhookUrl)) return payload;
+        // A provisioned in-process seat needs no external connection. Its
+        // runtime is available by construction, without a credential ledger.
+        if (runtimeType === 'native' || hostedRunsNative(i)) {
+          return { ...payload, connection: { state: 'available', lastSeenAt: null } };
+        }
+        // Legacy local-cli installs are normalized to their harness name
+        // (codex/claude-code) in the public payload. Host, not that label,
+        // identifies a BYO listener whose credential use proves liveness.
+        const hasRuntimeConnection = payload?.runtime?.host === 'byo'
+          || runtimeType === 'wrapper'
+          || (runtimeType === 'webhook' && !payload?.runtime?.host);
+        if (!connectionAvailable || !user || !hasRuntimeConnection
+          || payload?.runtime?.webhookUrl) return payload;
         const machineId = user.botMetadata?.machineId;
         return {
           ...payload,

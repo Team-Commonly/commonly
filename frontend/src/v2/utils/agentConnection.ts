@@ -1,5 +1,5 @@
 export type AgentConnection = {
-  state: 'connected' | 'revoked' | 'stale' | 'never';
+  state: 'connected' | 'available' | 'revoked' | 'stale' | 'never';
   lastSeenAt: string | null;
 };
 
@@ -9,6 +9,7 @@ export const connectionLabel = (
   now = Date.now(),
 ): string => {
   if (connection.state === 'revoked') return t('agentConnection.revoked');
+  if (connection.state === 'available') return t('agentConnection.available');
   if (connection.state === 'never') return t('agentConnection.never');
   if (connection.state === 'connected') return t('agentConnection.connected');
   const seen = connection.lastSeenAt ? new Date(connection.lastSeenAt).getTime() : NaN;

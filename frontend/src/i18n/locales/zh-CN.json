@@ -1455,6 +1455,7 @@
   "agentConnection": {
     "control": "控制",
     "connected": "已连接",
+    "available": "可在 Commonly 使用",
     "revoked": "密钥已撤销，连接已断开",
     "stale": "已{{count}}分钟未连接",
     "never": "尚未连接",

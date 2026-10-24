@@ -65,10 +65,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const msUntilRefresh = decoded.exp * 1000 - Date.now() - 5 * 60 * 1000;
     if (msUntilRefresh <= 0) return;
     refreshTimerRef.current = setTimeout(async () => {
+      if (localStorage.getItem('token') !== t) return;
       try {
         const res = await axios.post<{ token: string }>('/api/auth/refresh', {}, {
           headers: { Authorization: `Bearer ${t}` },
         });
+        if (localStorage.getItem('token') !== t) return;
         const newToken = res.data.token;
         localStorage.setItem('token', newToken);
         setToken(newToken);
@@ -80,30 +82,81 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    let active = true;
     const loadUser = async () => {
       if (token) {
         try {
           const res = await axios.get<User>('/api/auth/user', {
             headers: { Authorization: `Bearer ${token}` },
           });
-          setCurrentUser(res.data);
-          setError(null);
-          scheduleRefresh(token);
+          if (active && localStorage.getItem('token') === token) {
+            setCurrentUser(res.data);
+            setError(null);
+            scheduleRefresh(token);
+          }
         } catch (err: unknown) {
           const e = err as { message?: string; response?: { status?: number } };
+          if (!active) return;
           console.error('Error loading user:', e.message);
-          if (e.response?.status === 401) {
+          if (e.response?.status === 401 && localStorage.getItem('token') === token) {
             localStorage.removeItem('token');
+            setCurrentUser(null);
             setToken(null);
             if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
           }
           setError('Failed to load user data');
         }
       }
-      setLoading(false);
+      if (active) setLoading(false);
     };
-    loadUser();
+    void loadUser();
+    return () => { active = false; };
   }, [token, scheduleRefresh]);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== 'token' || event.newValue === token) return;
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      if (!event.newValue) setCurrentUser(null);
+      else setLoading(true);
+      setToken(event.newValue);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    let active = true;
+    let checking = false;
+    const checkSession = async () => {
+      if (checking || document.visibilityState === 'hidden') return;
+      checking = true;
+      try {
+        await axios.get('/api/auth/user', { headers: { Authorization: `Bearer ${token}` } });
+      } catch (err) {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (active && status === 401 && localStorage.getItem('token') === token) {
+          if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+          localStorage.removeItem('token');
+          setCurrentUser(null);
+          setToken(null);
+        }
+      } finally {
+        checking = false;
+      }
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') void checkSession(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    const interval = window.setInterval(() => { void checkSession(); }, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [token]);
 
   const register = async (formData: unknown): Promise<unknown> => {
     try {

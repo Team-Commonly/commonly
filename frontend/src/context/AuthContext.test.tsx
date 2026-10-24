@@ -69,6 +69,31 @@ test('logout clears token and user', () => {
   expect(sessionStorage.getItem('commonly.pendingInviteOAuth')).toBeNull();
 });
 
+test('another tab signing out clears this tab without navigation', async () => {
+  axios.get.mockResolvedValue({ data: { username: 'Alice' } });
+  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { username: 'Alice' } } });
+  await act(async () => { await global.testAuth.login('a', 'b'); });
+  localStorage.removeItem('token');
+  act(() => {
+    window.dispatchEvent(new StorageEvent('storage', { key: 'token', oldValue: 'tok', newValue: null }));
+  });
+  expect(global.testAuth.currentUser).toBeNull();
+  expect(global.testAuth.isAuthenticated).toBe(false);
+});
+
+test('a revoked session in another browser signs out on focus', async () => {
+  axios.get.mockResolvedValue({ data: { username: 'Alice' } });
+  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { username: 'Alice' } } });
+  await act(async () => { await global.testAuth.login('a', 'b'); });
+  axios.get.mockRejectedValueOnce({ response: { status: 401 } });
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+  });
+  expect(localStorage.getItem('token')).toBeNull();
+  expect(global.testAuth.isAuthenticated).toBe(false);
+});
+
 test('login stores token, user, and verification state', async () => {
   axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { name: 'Alice', verified: false } } });
   await act(async () => {
