@@ -8,7 +8,7 @@ A playbook is a team's written procedure run as a pod workflow: a trigger, steps
 
 **The record.** An `Installable` (`kind: 'app'`, `scope: 'pod'`, `source` `user`, `template` or `builtin`) whose `event-handler` component (`eventHandler: 'internal:playbook.start'`) holds the playbook in `metadata.playbook` (`Installable.ts:221`); a schedule adds a `scheduled-job`. Nothing projects either for a playbook (`services/installable/projectors/index.ts:5–8`, `eventHandlerProjector.ts:22`; ADR-001 Phase 5 is paused, ADR-011:60), so the runner resolves `internal:playbook.*` itself. Each pod runs its own copy.
 
-**The installation.** One `InstallableInstallation` per pod, unique under the live-target index (`InstallableInstallation.ts:272–281`), `paused` while Off and `active` while On. Its `components[].config` (`:191`) holds role bindings, approvers, the timezone and `onBy`/`onAt`; whoever turns it on owns its runs. Only `playbookService` writes these rows; the connector install route refuses a playbook. Every five minutes (`schedulerService.ts:497–498`) the installable reconciler marks an `active` installation with no Integration row as a dead channel (`installableReconciler.ts:80–112`), so it must check only installations with an `integrationId` projection (`webhookProjector.ts:66`, `eventHandlerProjector.ts:24`).
+**The installation.** One `InstallableInstallation` per pod, unique under the live-target index (`InstallableInstallation.ts:272–281`), `paused` while Off and `active` while On. Its `components[].config` (`:191`) holds role bindings, approvers, the timezone and `onBy`/`onAt`; whoever turns it on owns its runs. Only `playbookService` writes these rows; the connector install route refuses a playbook. Every five minutes (`schedulerService.ts:497–498`) the installable reconciler marks every `active` installation with no Integration row as a dead channel (`installableReconciler.ts:80–112`), and today that includes a playbook that is On. Slice 1 narrows the sweep to installations with an `integrationId` projection (`webhookProjector.ts:66`, `eventHandlerProjector.ts:24`).
 
 **The playbook.**
 
@@ -34,7 +34,7 @@ Roles, not names; the team binds them at turn-on. The source document is kept as
 
 **Moving a run.** `onStepDone`, called from the shared complete, a kernel act and the native settle, inserts the next step or runs the done check. On the ten-minute sweep (`schedulerService.ts:461–462`) the runner's reconciler inserts a missing next step, applies a decided card whose row still says `awaiting`, re-wakes an unclaimed BYO step once after 30 minutes, retries or blocks a stuck native step, and sets the run row. No agent moves a run row.
 
-**Pre-flight**, at turn-on and every run start, refuses a role bound to a non-member or the wrong kind, an approver who is not a human member, a tool not granted in the pod or not pinned by its entry, a grant step in a pod failing §5's rule, a write given to a native agent, and an invalid trigger. The routes are human-only and membership-gated, under `/api/pods/:podId/playbooks`.
+**Pre-flight**, at turn-on and every run start, refuses a role bound to a non-member or the wrong kind, an approver who is not a human member, a tool not granted in the pod or not pinned by its entry, a grant step in a pod failing §5's rule, a write given to a native agent, a point in a playbook with no agent role (§3), and an invalid trigger. The routes are human-only and membership-gated, under `/api/pods/:podId/playbooks`.
 
 ## 2. Triggers, and the label each shows
 
@@ -49,7 +49,7 @@ Each label shows on the playbook, its run rows and each step row.
 
 A `tool_call` card's decider is the person its proposer names; every other card falls to the agent's installer or the pod's creator (`approvalActionService.ts:444–446`), and only that person, as a human, can rule (`:796–807`). A new `playbook_step` type joins the `tool_call` side through `requestedOwnerUserId`, so the bound approver rules.
 
-**The card.** A pointed step is inserted with `ruling.state: 'awaiting'`, and the guards refuse its claim and complete until a person rules. `playbook_step` joins the `ApprovalAction` enum, `KNOWN_ACTION_TYPES`, `validateParams` and `executeAction` (`approvalActionService.ts:34`, `:155`, `:1030`). A card needs an agent (`ApprovalAction.ts:93`): the one whose work the point follows, else the first agent role. `describeAction` (`V2ApprovalCard.tsx:65`) renders the run, the step, the output's link and excerpt, and the effect.
+**The card.** A pointed step is inserted with `ruling.state: 'awaiting'`, and the guards refuse its claim and complete until a person rules. `playbook_step` joins the `ApprovalAction` enum, `KNOWN_ACTION_TYPES`, `validateParams` and `executeAction` (`approvalActionService.ts:34`, `:155`, `:1030`). A card needs an agent (`ApprovalAction.ts:93`): the one whose work the point follows, else the first agent role, so a playbook with no agent role can hold no point. `describeAction` (`V2ApprovalCard.tsx:65`) renders the run, the step, the output's link and excerpt, and the effect.
 
 **Deciding.** `resolveApproval` (`approvalActionService.ts:790`) calls `applyRuling` on approve, through `executeAction`, and on decline, beside the parked-call decline (`:945–950`). It is a CAS on the row's `approvalId`, `state: 'awaiting'` and an open run, and records `decidedBy` and `decidedAt`. Decline blocks the row and the run and tells the run's owner; "Ask again" raises a new card. Expiry stays advisory, as for every non-tool card (ADR-020:71–76).
 
@@ -99,6 +99,6 @@ TASK-275 is slices 1–3, with these named tests:
 - A schedule fires once per slot in both DST directions, never an hour late or before `onAt`, and save refuses any other cron.
 - A native step completes from its post, by tool or fallback, and with no post retries once, then blocks.
 - The done check blocks a missing ruling and a person step completed by a bot. No agent moves a run row.
-- Each pre-flight refusal, each PATCH refusal on a playbook row and the connector install route's refusal of a playbook has a test. The ambient and found-work notices skip playbook rows. An active playbook installation survives an installable reconciler pass.
+- Each pre-flight refusal, a point in a playbook with no agent role among them, each PATCH refusal on a playbook row and the connector install route's refusal of a playbook has a test. The ambient and found-work notices skip playbook rows. An active playbook installation survives an installable reconciler pass.
 
 Slice 4 adds one: an agent's message, #2383's card included, never fires a push.
