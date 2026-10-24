@@ -33,7 +33,8 @@ export const DEFAULT_POLL_MS = 30_000;
 export const DEFAULT_HEARTBEAT_MS = 30_000;
 export const BACKOFF_BASE_MS = 5_000;
 export const BACKOFF_MAX_MS = 60_000;
-export const MAX_AGENT_STARTS_PER_TICK = 3;
+export const MAX_CONCURRENT_AGENT_STARTS = 3;
+export const AGENT_START_WINDOW_MS = 5_000;
 export const RECONNECT_MAX_MS = 60_000;
 
 export const reconnectDelayMs = (failures, random = Math.random) => {
@@ -78,6 +79,7 @@ export const createDaemonSupervisor = ({
   let stopped = false;
   let reconnectFailures = 0;
   let reconnectAfter = 0;
+  const recentStarts = [];
 
   const connectionFailure = (error, label) => {
     if (isTerminalAuthError(error)) {
@@ -119,7 +121,19 @@ export const createDaemonSupervisor = ({
   }));
 
   const startChild = (seat) => {
-    if (stopped || !seat.desired || seat.child) return;
+    if (stopped || !seat.desired || seat.child || seat.startDelayTimer) return;
+    const at = now();
+    while (recentStarts.length && recentStarts[0] + AGENT_START_WINDOW_MS <= at) {
+      recentStarts.shift();
+    }
+    if (recentStarts.length >= MAX_CONCURRENT_AGENT_STARTS) {
+      seat.startDelayTimer = setTimeoutFn(() => {
+        seat.startDelayTimer = null;
+        startChild(seat);
+      }, Math.max(1, recentStarts[0] + AGENT_START_WINDOW_MS - at));
+      return;
+    }
+    recentStarts.push(at);
     seat.child = spawnChild(seat.agentName);
     seat.state = 'running';
     seat.pid = Number.isInteger(seat.child?.pid) ? seat.child.pid : null;
@@ -150,6 +164,10 @@ export const createDaemonSupervisor = ({
 
   const stopSeat = (seat) => {
     seat.desired = false;
+    if (seat.startDelayTimer) {
+      clearTimeoutFn(seat.startDelayTimer);
+      seat.startDelayTimer = null;
+    }
     if (seat.backoffTimer) {
       clearTimeoutFn(seat.backoffTimer);
       seat.backoffTimer = null;
@@ -471,7 +489,6 @@ export const createDaemonSupervisor = ({
     }
 
     const desiredKeys = new Set();
-    let startsThisTick = 0;
     for (const row of bound) {
       const key = identityKey(row.agentName, row.instanceId);
       desiredKeys.add(key);
@@ -484,6 +501,7 @@ export const createDaemonSupervisor = ({
           state: 'stopped',
           restarts: 0,
           backoffTimer: null,
+          startDelayTimer: null,
           desired: true,
           adapter: null,
           model: null,
@@ -519,10 +537,8 @@ export const createDaemonSupervisor = ({
         // desired stays true, so the exit handler respawns with the updated
         // record — the restart path IS the D6 path, no second spawner.
         seat.child.kill('SIGTERM');
-      } else if (ready && !seat.child && !seat.backoffTimer
-        && startsThisTick < MAX_AGENT_STARTS_PER_TICK) {
+      } else if (ready && !seat.child && !seat.backoffTimer) {
         startChild(seat);
-        startsThisTick += 1;
       }
       persist();
     }

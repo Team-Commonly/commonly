@@ -12,7 +12,7 @@ import {
   BACKOFF_MAX_MS,
   createDaemonSupervisor,
   reconnectDelayMs,
-  MAX_AGENT_STARTS_PER_TICK,
+  MAX_CONCURRENT_AGENT_STARTS,
 } from '../src/lib/daemon-supervisor.js';
 import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
 import claude from '../src/lib/adapters/claude.js';
@@ -105,18 +105,24 @@ test('a revoked machine key ends supervision instead of polling forever', async 
   expect(client.get).toHaveBeenCalledTimes(1);
 });
 
-test('a work-list tick starts at most three new seats', async () => {
+test('initial and queued starts share a three-per-window limit', async () => {
   const children = [];
+  const timers = [];
+  let time = 0;
   const supervisor = createDaemonSupervisor({
     record,
     client: { get: jest.fn(async () => ({ agents: Array.from({ length: 5 }, (_, i) => boundRow({ agentName: `seat-${i}` })) })), post: jest.fn() },
     spawnChild: jest.fn(() => { const child = makeChild(); children.push(child); return child; }),
     loadToken: jest.fn((name) => ({ agentName: name, adapter: 'claude' })),
     saveToken: jest.fn(), resolveAdapter: jest.fn(),
+    now: () => time,
+    setTimeoutFn: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
   });
   await supervisor.tick();
-  expect(children).toHaveLength(MAX_AGENT_STARTS_PER_TICK);
-  await supervisor.tick();
+  expect(children).toHaveLength(MAX_CONCURRENT_AGENT_STARTS);
+  expect(timers).toHaveLength(2);
+  time = 5_000;
+  timers.forEach(({ fn }) => fn());
   expect(children).toHaveLength(5);
   supervisor.stop();
 });
