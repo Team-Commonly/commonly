@@ -89,7 +89,11 @@
 .v2-agent-settings__identity label { display: grid; gap: 7px; font-size: 13px; font-weight: 600; }
 .v2-agent-settings__identity fieldset { display: grid; gap: 16px; margin: 0; padding: 18px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius); }
 .v2-agent-settings__identity legend { padding: 0 6px; font-weight: 700; }
-.v2-root .v2-agent-settings .v2-agent-settings__identity input,
+.v2-root .v2-agent-settings .v2-agent-settings__identity input {
+  width: 100%; padding: 9px 10px; border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-text-primary);
+  font: inherit; font-weight: 400;
+}
 .v2-root .v2-agent-settings .v2-agent-settings__identity textarea,
 .v2-root .v2-agent-settings .v2-agent-settings__identity select {
   width: 100%; padding: 9px 10px; border: 1px solid var(--v2-border);

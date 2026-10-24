@@ -1550,16 +1550,14 @@ const readOpenClawIdentityFile = async (accountId: any, options = {}) => {
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
     return k8sProvisioner.readOpenClawIdentityFile(accountId, options);
   }
-  // Local: read from filesystem
+  const workspacePath = resolveOpenClawWorkspacePath(accountId);
   try {
-    const workspacePath = process.env.OPENCLAW_WORKSPACE_PATH || '/workspace';
-    const filePath = `${workspacePath}/${accountId}/IDENTITY.md`;
-    // eslint-disable-next-line global-require
-    const fs = require('fs');
-    if (!fs.existsSync(filePath)) return '';
-    return fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return '';
+    return fs.readFileSync(path.join(workspacePath, 'IDENTITY.md'), 'utf8');
+  } catch (error: any) {
+    // Only absence is empty content. Read/modify/write callers must not
+    // report success or replace an unreadable identity with a blank one.
+    if (error.code === 'ENOENT') return '';
+    throw error;
   }
 };
 
