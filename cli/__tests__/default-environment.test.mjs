@@ -39,9 +39,9 @@ describe('defaultMcpServers', () => {
   });
 
   test('ADAPTERS_WITH_DEFAULT_SANDBOX is the enforcing subset, pi excluded', () => {
-    expect([...ADAPTERS_WITH_DEFAULT_SANDBOX].sort()).toEqual(['claude', 'codex', 'goose', 'opencode', 'qwen']);
+    expect([...ADAPTERS_WITH_DEFAULT_SANDBOX].sort()).toEqual(['claude', 'codex', 'opencode', 'qwen']);
     expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('pi')).toBe(false);
-    expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('goose')).toBe(true);
+    expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('goose')).toBe(false);
   });
 
   test('OpenCode sandbox support does not yet authorize the grant broker', () => {
@@ -217,10 +217,12 @@ describe('seatBaseline', () => {
       .toEqual(defaultSeatSandbox());
   });
 
-  test('derives Goose public confinement and requires its provider to be explicit', () => {
+  test('keeps Goose derived defaults usable until public provider settings are explicit', () => {
     const derived = seatBaseline(null, 'goose', { sandbox: true });
-    expect(derived).toEqual({ mcp: [commonlyMcpServer()], sandbox: { trust: 'public' } });
-    expect(() => assertGooseSandboxSupported(derived)).toThrow(/explicit provider/);
+    expect(derived).toEqual({ mcp: [commonlyMcpServer()] });
+    expect(() => assertGooseSandboxSupported(derived)).not.toThrow();
+    expect(() => assertGooseSandboxSupported({ ...derived, sandbox: { trust: 'public' } }))
+      .toThrow(/explicit provider/);
     expect(ADAPTERS_WITH_GRANT_BROKER.has('goose')).toBe(false);
   });
 

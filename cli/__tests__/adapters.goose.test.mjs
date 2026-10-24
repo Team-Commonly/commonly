@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { jest } from '@jest/globals';
 import goose, {
   TESTED_GOOSE_VERSIONS, assertSandboxSupported, extensionArgs, readGooseStream,
@@ -96,6 +97,14 @@ test.each([
 
 test.each(['none', 'container'])('public Goose refuses unsupported mode %s', (mode) => {
   expect(() => assertSandboxSupported({ sandbox: { trust: 'public', mode } })).toThrow(/enforced sandbox/);
+});
+
+test('public Goose refuses a recognized source entry instead of granting its ancestor', () => {
+  const mcpReadDirectories = [];
+  expect(() => extensionArgs([{ name: 'commonly', transport: 'stdio',
+    command: [process.execPath, fileURLToPath(new URL('../../commonly-mcp/src/index.js', import.meta.url))],
+  }], { publicSeat: true, mcpReadDirectories })).toThrow(/absolute prepared entry/);
+  expect(mcpReadDirectories).toEqual([]);
 });
 
 test('public Goose refuses a restricted network declaration it cannot enforce', () => {

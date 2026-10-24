@@ -5,6 +5,10 @@ an explicit model/provider key file, and an enforced Seatbelt (macOS) or bwrap
 (Linux) boundary. Other extensions, HTTP MCP declarations, untested versions,
 disabled sandboxes and restricted-network declarations fail before launch.
 Goose remains ineligible for Commonly's grant broker.
+Public confinement must be declared explicitly with provider/model settings.
+Goose is excluded from automatic default sandbox derivation, which cannot
+supply those settings. Public MCP execution requires the selected prepared
+version directory; arbitrary source commands cannot introduce read grants.
 
 Every turn gets a fresh HOME, TMPDIR and GOOSE_PATH_ROOT. Public turns use a
 per-spawn recipe containing only the Commonly extension and an explicit

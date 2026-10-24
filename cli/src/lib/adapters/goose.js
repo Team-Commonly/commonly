@@ -2,7 +2,7 @@
 import { spawn as childSpawn, spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { effectiveSandboxTrust, validateEnvironmentSpec } from '../environment.js';
@@ -109,8 +109,8 @@ export const extensionArgs = (servers, ctx) => {
     const command = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl, publicSeat: ctx.publicSeat });
     if (!command) throw new Error('goose adapter: Commonly MCP is not prepared for this public turn');
     if (ctx.publicSeat) {
-      const tree = selectedMcpVersionDir(command) || dirname(dirname(command[1] || ''));
-      if (!isAbsolute(tree)) throw new Error('goose adapter: public MCP requires an absolute prepared entry');
+      const tree = selectedMcpVersionDir(command);
+      if (!tree || !isAbsolute(tree)) throw new Error('goose adapter: public MCP requires an absolute prepared entry');
       ctx.mcpReadDirectories?.push(tree);
     }
     const delivery = deliverSeatCredential({ ...server, command }, {

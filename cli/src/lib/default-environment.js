@@ -47,7 +47,7 @@ export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'open
  * here and hoped for. A derived pi seat used to be exactly this shape and would
  * have failed every spawn with `public-trust seats are not supported`.
  */
-export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'opencode', 'qwen', 'goose']);
+export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'opencode', 'qwen']);
 
 // The server has not yet admitted OpenCode to its grant-broker confinement
 // allowlist. Keep runtime sandbox support separate from the narrower set of

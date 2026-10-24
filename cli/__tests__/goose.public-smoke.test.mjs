@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,14 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
   const root = await mkdtemp(join(tmpdir(), 'commonly-goose-public-proof-'));
   const workspace = join(root, 'workspace');
   await mkdir(workspace);
+  const previousMcpHome = process.env.COMMONLY_MCP_HOME;
+  const mcpHome = join(root, 'mcp-home');
+  const source = fileURLToPath(new URL('../../commonly-mcp/', import.meta.url));
+  const { version } = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'));
+  await cp(source, join(mcpHome, version, 'node_modules', '@commonlyai', 'mcp'), { recursive: true });
+  await writeFile(join(mcpHome, 'current'), version);
+  await writeFile(join(mcpHome, '.warm.lock'), 'fixture');
+  process.env.COMMONLY_MCP_HOME = mcpHome;
   const keyFile = join(root, 'provider-key');
   await writeFile(keyFile, 'fixture-provider-key', { mode: 0o600 });
   const podId = '0123456789abcdef01234567';
@@ -78,7 +86,7 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
       environment: { model: 'fixture', sandbox: { trust: 'public' },
         provider: { id: 'fixture', baseURL: `${origin}/v1`, keyFile },
         mcp: [{ name: 'commonly', transport: 'stdio',
-          command: [process.execPath, fileURLToPath(new URL('../../commonly-mcp/src/index.js', import.meta.url))],
+          command: ['npx', '-y', '@commonlyai/mcp@latest'],
           env: { COMMONLY_TOKEN_FILE: '${COMMONLY_TOKEN_FILE}', COMMONLY_API_URL: '${COMMONLY_API_URL}' } }],
       },
     });
@@ -96,6 +104,8 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
       await expect(readFile(join(workspace, sentinel))).rejects.toMatchObject({ code: 'ENOENT' });
     }
   } finally {
+    if (previousMcpHome === undefined) delete process.env.COMMONLY_MCP_HOME;
+    else process.env.COMMONLY_MCP_HOME = previousMcpHome;
     fixture.closeAllConnections();
     await new Promise((resolve) => fixture.close(resolve));
     await rm(root, { recursive: true, force: true });
