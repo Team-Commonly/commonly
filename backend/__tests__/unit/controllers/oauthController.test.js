@@ -40,11 +40,11 @@ const startReq = (provider, query = {}) => ({
 });
 
 // Wire axios mocks for a successful GitHub round-trip.
-const mockGithubProfile = ({ id = 4242, login = 'octo-dev', email = 'octo@example.com' } = {}) => {
+const mockGithubProfile = ({ id = 4242, login = 'octo-dev', email = 'octo@example.com', verified = true } = {}) => {
   axios.post.mockResolvedValueOnce({ data: { access_token: 'gh-access-token' } });
   axios.get.mockImplementation((url) => {
     if (url.includes('/user/emails')) {
-      return Promise.resolve({ data: [{ email, primary: true, verified: true }] });
+      return Promise.resolve({ data: [{ email, primary: true, verified }] });
     }
     return Promise.resolve({ data: { id, login } });
   });
@@ -68,6 +68,8 @@ describe('OAuth Controller', () => {
     delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;
     delete process.env.REGISTRATION_INVITE_ONLY;
     delete process.env.REGISTRATION_INVITE_CODES;
+    delete process.env.AUTH_ALLOWED_EMAILS;
+    delete process.env.AUTH_ALLOWED_DOMAINS;
   });
 
   afterEach(async () => {
@@ -75,6 +77,8 @@ describe('OAuth Controller', () => {
     jest.clearAllMocks();
     delete process.env.GITHUB_OAUTH_CLIENT_ID;
     delete process.env.GITHUB_OAUTH_CLIENT_SECRET;
+    delete process.env.AUTH_ALLOWED_EMAILS;
+    delete process.env.AUTH_ALLOWED_DOMAINS;
   });
 
   describe('getOAuthProviders', () => {
@@ -211,6 +215,65 @@ describe('OAuth Controller', () => {
       query: { code: 'gh-code', state: 'state-1', ...query },
       protocol: 'https',
       get: () => 'api.test.local',
+    });
+
+    it('admits a verified, allowlisted provider email', async () => {
+      process.env.AUTH_ALLOWED_EMAILS = ' OCTO@EXAMPLE.COM ';
+      await seedState();
+      mockGithubProfile();
+      const res = mockRes();
+      await oauthController.oauthCallback(callbackReq(), res);
+      expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('/v2/oauth/complete?'));
+      expect(await User.findOne({ email: 'octo@example.com' })).toBeTruthy();
+    });
+
+    it('refuses an unlisted verified email before creating a user or exchange code', async () => {
+      process.env.AUTH_ALLOWED_DOMAINS = 'team.example';
+      await seedState();
+      mockGithubProfile();
+      const res = mockRes();
+      await oauthController.oauthCallback(callbackReq(), res);
+      expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=team_only');
+      expect(await User.countDocuments({})).toBe(0);
+      expect((await OAuthLoginState.findOne({ state: 'state-1' })).exchangeCode).toBeUndefined();
+    });
+
+    it('refuses an existing linked account whose current address is outside the allowlist', async () => {
+      process.env.AUTH_ALLOWED_EMAILS = 'octo@example.com';
+      await User.create({ username: 'octo', email: 'old@example.com', verified: true,
+        authProviders: [{ provider: 'github', providerId: '4242', email: 'octo@example.com' }] });
+      await seedState();
+      mockGithubProfile();
+      const res = mockRes();
+      await oauthController.oauthCallback(callbackReq(), res);
+      expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=team_only');
+    });
+
+    it('refuses an unverified provider email even if listed', async () => {
+      process.env.AUTH_ALLOWED_EMAILS = 'octo@example.com';
+      await seedState();
+      mockGithubProfile({ verified: false });
+      const res = mockRes();
+      await oauthController.oauthCallback(callbackReq(), res);
+      expect(res.redirect).toHaveBeenCalledWith('https://app.test.local/v2/login?oauthError=email_unverified');
+      expect((await OAuthLoginState.findOne({ state: 'state-1' })).exchangeCode).toBeUndefined();
+    });
+
+    it.each([
+      [true, '/v2/oauth/complete?'],
+      [false, 'oauthError=email_unverified'],
+    ])('uses Google’s verified email claim before team sign-in (verified=%s)', async (verified, destination) => {
+      process.env.GOOGLE_OAUTH_CLIENT_ID = 'google-client';
+      process.env.GOOGLE_OAUTH_CLIENT_SECRET = 'google-secret';
+      process.env.AUTH_ALLOWED_DOMAINS = 'team.example';
+      await seedState({ provider: 'google' });
+      axios.post.mockResolvedValueOnce({ data: { access_token: 'google-token' } });
+      axios.get.mockResolvedValueOnce({ data: { sub: 'google-42', email: 'person@team.example',
+        email_verified: verified, name: 'Person' } });
+      const res = mockRes();
+      await oauthController.oauthCallback({ ...callbackReq(), params: { provider: 'google' } }, res);
+      expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining(destination));
+      expect(await User.countDocuments({ email: 'person@team.example' })).toBe(verified ? 1 : 0);
     });
 
     it('redirects a failed token exchange without logging token-shaped error text', async () => {

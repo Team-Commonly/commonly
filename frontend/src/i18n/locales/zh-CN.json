@@ -275,7 +275,8 @@
         "stateInvalid": "本次登录请求已过期，请重试。",
         "exchangeFailed": "未能完成登录，请重试。",
         "providerError": "连接第三方登录平台时出错，请重试。",
-        "botAccount": "该邮箱属于智能体账号，不能用于社交登录。"
+        "botAccount": "该邮箱属于智能体账号，不能用于社交登录。",
+        "teamOnly": "此实例仅供团队使用。请使用获准的邮箱登录。"
       }
     },
     "register": {

@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../../../models/User');
+const originalUserFindOne = User.findOne;
+const originalUserSave = User.prototype.save;
 const WaitlistRequest = require('../../../models/WaitlistRequest');
 const { AgentRegistry } = require('../../../models/AgentRegistry');
 
@@ -65,12 +67,32 @@ describe('Auth Controller Tests', () => {
     delete process.env.SMTP2GO_API_KEY;
     delete process.env.SMTP2GO_FROM_EMAIL;
     delete process.env.FRONTEND_URL;
+    delete process.env.AUTH_ALLOWED_EMAILS;
+    delete process.env.AUTH_ALLOWED_DOMAINS;
   });
 
   describe('register', () => {
     afterEach(() => {
       delete process.env.REGISTRATION_INVITE_ONLY;
       delete process.env.REGISTRATION_INVITE_CODES;
+    });
+
+    it('refuses an email outside the instance allowlist before creating an account', async () => {
+      process.env.AUTH_ALLOWED_DOMAINS = 'team.example';
+      const save = jest.spyOn(User.prototype, 'save');
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await authController.register({ body: { email: 'other@example.com', password: 'Password123!' } }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'INSTANCE_ACCESS_RESTRICTED' }));
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('does not auto-verify a listed address when email delivery is unavailable', async () => {
+      process.env.AUTH_ALLOWED_EMAILS = 'team@example.com';
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await authController.register({ body: { email: 'team@example.com', password: 'Password123!' } }, res);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'INSTANCE_VERIFICATION_UNAVAILABLE' }));
     });
 
     // ?ref=x on the first visit (frontend firstTouch): the new account keeps
@@ -547,9 +569,48 @@ describe('Auth Controller Tests', () => {
       expect(await User.countDocuments({ username: 'Pixel-Helper' })).toBe(0);
     });
 
+    it('admits an allowlisted address when verification mail is configured', async () => {
+      process.env.AUTH_ALLOWED_EMAILS = ' TEAM@EXAMPLE.COM ';
+      process.env.SMTP2GO_API_KEY = 'test';
+      process.env.SMTP2GO_FROM_EMAIL = 'verify@example.com';
+      process.env.FRONTEND_URL = 'https://app.example.com';
+      process.env.REGISTRATION_INVITE_ONLY = 'false';
+      User.findOne = originalUserFindOne;
+      User.prototype.save = originalUserSave;
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await authController.register({ body: { username: 'team', email: 'team@example.com', password: 'Password123!' } }, res);
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(await User.findOne({ email: 'team@example.com' })).toMatchObject({ verified: false });
+    });
+
   });
 
   describe('login', () => {
+    it('refuses a valid password for a user outside the instance allowlist', async () => {
+      process.env.AUTH_ALLOWED_DOMAINS = 'team.example';
+      User.findOne = jest.fn().mockResolvedValue({ email: 'other@example.com', password: 'hash', verified: true });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await authController.login({ body: { email: 'other@example.com', password: 'Password123!' } }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'INSTANCE_ACCESS_RESTRICTED' }));
+    });
+
+    it('requires a verified account for password login when the team gate is on', async () => {
+      process.env.AUTH_ALLOWED_EMAILS = 'team@example.com';
+      User.findOne = jest.fn().mockResolvedValue({ email: 'team@example.com', password: 'hash', verified: false });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await authController.login({ body: { email: 'team@example.com', password: 'Password123!' } }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
+
+    it('admits a verified allowlisted password account', async () => {
+      process.env.AUTH_ALLOWED_EMAILS = 'TEAM@EXAMPLE.COM';
+      User.findOne = jest.fn().mockResolvedValue({ id: 'team-user', email: 'team@example.com',
+        username: 'team', password: 'hash', verified: true });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await authController.login({ body: { email: 'team@example.com', password: 'Password123!' } }, res);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ token: expect.any(String) }));
+    });
     it('should login a verified user successfully', async () => {
       // Mock a verified user
       const user = {

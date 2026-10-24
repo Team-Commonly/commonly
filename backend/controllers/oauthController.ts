@@ -13,6 +13,7 @@ const {
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { isFreeUsername } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
+const { isInstanceEmailAllowed } = require('../services/instanceAccessPolicy');
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -275,6 +276,7 @@ exports.oauthCallback = async (req: any, res: any) => {
     if (!profile.providerId) return loginErrorRedirect(res, 'provider_error');
     // Linking by email is only safe when the provider vouches for it.
     if (!profile.email || !profile.emailVerified) return loginErrorRedirect(res, 'email_unverified');
+    if (!isInstanceEmailAllowed(profile.email)) return loginErrorRedirect(res, 'team_only');
     // The derived agent address is a reserved namespace, and a provider-asserted
     // one would create the agent-marked row an install adopts (TASK-133 b).
     if (AgentIdentityService.isReservedAgentEmail(profile.email)) {
@@ -292,6 +294,7 @@ exports.oauthCallback = async (req: any, res: any) => {
     // this is the same refusal on the path that does not consult the email
     // (TASK-133).
     if (user?.isBot) return loginErrorRedirect(res, 'bot_account');
+    if (user && !isInstanceEmailAllowed(user.email)) return loginErrorRedirect(res, 'team_only');
 
     if (!user) {
       user = await User.findOne({ email: profile.email });
