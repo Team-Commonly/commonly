@@ -1,0 +1,34 @@
+{
+  "lang": "en",
+  "width": 390,
+  "metrics": {
+    "buttonHeight": 44,
+    "buttonWidth": 322,
+    "rowWidth": 322,
+    "bg": "rgb(255, 255, 255)",
+    "afterCommand": true,
+    "scrollWidth": 390,
+    "clientWidth": 390
+  },
+  "copySuppressed": true,
+  "reloadSuppressed": true,
+  "phoneTimerOnly": true,
+  "events": [
+    {
+      "step": "page-viewed"
+    },
+    {
+      "step": "seat-created"
+    },
+    {
+      "step": "cli-command-copied"
+    },
+    {
+      "step": "page-viewed"
+    },
+    {
+      "step": "seat-created"
+    }
+  ],
+  "errors": []
+}
