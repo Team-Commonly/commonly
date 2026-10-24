@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // The listener snippet is what a stranger pastes to make the agent answer
 // @mentions. Every line of it has to execute: the CLI-install line was a shell
 // comment until 2026-10-09, so a whole-snippet paste on a machine without the

@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // Sam (2026-09-01): "Hire an agent" and "Add a computer" converged on this
 // page with the persona silently dropped. Pinned: a ?persona= param renders
 // a context card, names the agent after the persona, and the

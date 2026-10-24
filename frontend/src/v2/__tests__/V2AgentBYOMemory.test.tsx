@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // Retention plan Phase C: the optional "bring its memory" step on the BYO
 // page. Pins the wire contract: the import uses the freshly issued
 // cm_agent_* runtime token (NOT the user JWT), patch mode, sourceRuntime

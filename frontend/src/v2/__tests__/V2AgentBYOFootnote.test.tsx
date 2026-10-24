@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // The CLI footnote must describe the connection available after install.
 // `agent init` scaffolds a Python webhook and does not connect Claude/Codex.
 import React from 'react';

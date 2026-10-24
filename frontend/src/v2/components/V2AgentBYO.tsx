@@ -15,10 +15,11 @@
 // expected to paste into their MCP host config immediately. If lost, they
 // can explicitly replace the old key without changing the agent identity.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import { recordByoStep, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2FeaturePage from './V2FeaturePage';
 import V2Avatar from './V2Avatar';
@@ -180,6 +181,11 @@ const V2AgentBYO: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<'machine' | 'name' | 'pod' | null>(null);
   const [issued, setIssued] = useState<{ token: string; agentName: string; podId: string; issuedAt: number } | null>(null);
+  const [hasCopied, setHasCopied] = useState(false);
+  const [showHostedOffer, setShowHostedOffer] = useState(false);
+  const viewed = useRef(false);
+  const commandViewed = useRef<object | null>(null);
+  const fallbackStarting = useRef(false);
   const [copied, setCopied] = useState<string | null>(null);
   // Which CLI the listener runs. Pinned in the command (`--adapter`), so a Mac
   // without Claude Code says so instead of quietly starting Codex (QA BYO
@@ -556,6 +562,7 @@ const V2AgentBYO: React.FC = () => {
       }
       const provisioned = await api.post<{ ready?: boolean }>('/api/hosted/provision', { agentName: cleanName });
       setHosted({ agentName: cleanName, podId, ready: provisioned?.ready === true });
+      return true;
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
       const code = e.response?.data?.code;
@@ -563,6 +570,30 @@ const V2AgentBYO: React.FC = () => {
         ? t('agentByo.errors.hostedUnavailable')
         : (e.response?.data?.message || e.response?.data?.error || e.message || t('agentByo.errors.installFailed')));
     } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const startHostedInstead = async () => {
+    if (!issued || submitting || fallbackStarting.current) return;
+    fallbackStarting.current = true;
+    setSubmitting(true);
+    setError(null);
+    try {
+      // A BYO installation cannot be provisioned as hosted. Allocate a new
+      // identity through the same server name allocator as the setup form.
+      const base = userSlug ? `${userSlug}-agent` : 'hosted-agent';
+      const available = await api.get<{ name: string }>(
+        `/api/registry/agents/next-free-name?base=${encodeURIComponent(base)}`,
+      );
+      if (!available.name || available.name === issued.agentName) {
+        throw new Error(t('agentByo.errors.nameLookupFailed'));
+      }
+      if (await submitHosted(available.name)) setIssued(null);
+    } catch {
+      setError(t('agentByo.errors.nameLookupFailed'));
+    } finally {
+      fallbackStarting.current = false;
       setSubmitting(false);
     }
   };
@@ -839,13 +870,48 @@ const V2AgentBYO: React.FC = () => {
   // BYO funnel telemetry: 7 of 7 recent seats died between token issuance and
   // the first authenticated call, and the server cannot see whether the user
   // even copied a command. Fire-and-forget; the flow never waits on it.
-  const byoStep = (step: string) => {
-    axios.post('/api/stats/byo-step', { step }).catch(() => {});
+  const byoStep = (step: ByoStep) => {
+    recordByoStep(api, step);
+  };
+
+  useEffect(() => {
+    if (!currentUser || viewed.current) return;
+    viewed.current = true;
+    recordByoStep(api, 'page-viewed');
+  }, [api, currentUser]);
+
+  useEffect(() => {
+    if (commandViewed.current === issued) return;
+    commandViewed.current = issued;
+    setHasCopied(false);
+    setShowHostedOffer(false);
+    if (!issued) return;
+    // This event means the issued command rendered, distinct from page entry.
+    recordByoStep(api, 'seat-created');
+  }, [api, issued]);
+
+  useEffect(() => {
+    if (!issued || hasCopied || !hosting?.configured || listenState === 'listening') return undefined;
+    const timer = window.setTimeout(() => setShowHostedOffer(true), 30_000);
+    const leaving = (event: MouseEvent) => {
+      if (event.clientY <= 0) setShowHostedOffer(true);
+    };
+    document.documentElement.addEventListener('mouseleave', leaving);
+    return () => {
+      window.clearTimeout(timer);
+      document.documentElement.removeEventListener('mouseleave', leaving);
+    };
+  }, [issued, hasCopied, hosting?.configured, listenState]);
+
+  const copiedIssuedContent = () => {
+    setHasCopied(true);
+    setShowHostedOffer(false);
   };
 
   const copy = async (key: string, value: string) => {
     try {
       await navigator.clipboard.writeText(value);
+      copiedIssuedContent();
       setCopied(key);
       setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
       if (key === 'claude' || key === 'cursor') byoStep('mcp-command-copied');
@@ -1364,8 +1430,17 @@ const V2AgentBYO: React.FC = () => {
       )}
 
       {issued && (
-        <div className="v2-byo__result">
+        <div className="v2-byo__result" onCopy={copiedIssuedContent}>
           <h2>{t('agentByo.result.heading')} <code>{issued.agentName}</code></h2>
+          {showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
+            <section className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
+              <p>{t('agentByo.hosted.offerBody')}</p>
+              <button type="button" className="v2-byo__submit" disabled={submitting} onClick={startHostedInstead}>
+                {submitting ? t('agentByo.hosted.starting', { name: t('agentByo.preview.title') }) : t('agentByo.hosted.offerAction')}
+              </button>
+              {error && <p className="v2-byo__error" role="alert">{error}</p>}
+            </section>
+          )}
 
           {/*
             Above the copy sits only what the paste needs: where, what it needs,

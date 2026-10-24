@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // Guards the BYO pod-picker default after the 2026-07-24 launch incident:
 // new users auto-join Commonly HQ (publicRead), it sorts first by activity in
 // /api/pods, and the old `installablePods[0]` default silently attached

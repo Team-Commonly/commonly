@@ -1,4 +1,6 @@
 // @ts-nocheck
+// Keep setup request assertions independent of funnel telemetry.
+jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // QA BYO walk 2 (2026-10-16): after approving Scout's connect card, the page
 // still asked "Where should it run?" and showed the name and pod fields, 127
 // words before the button, most of them re-asking what the card settled.
