@@ -39,7 +39,12 @@ const item = (user, title) => ({
 
 describe('needs-you email', () => {
   const originalEnv = process.env;
-  beforeAll(setupMongoDb);
+  beforeAll(async () => {
+    await setupMongoDb();
+    // Tier 1 drops the database. Wait for the unique claim and quota indexes
+    // before racing sends; otherwise a retry can create a second claim row.
+    await Promise.all([NeedsYouEmail.syncIndexes(), NeedsYouEmailQuota.syncIndexes()]);
+  });
   afterAll(async () => { process.env = originalEnv; await closeMongoDb(); });
   beforeEach(async () => {
     await clearMongoDb();
