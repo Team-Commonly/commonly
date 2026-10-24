@@ -48,7 +48,7 @@ const install = (agentName = 'scout') => ({
   instanceId: 'default',
   podId: POD_ID.toString(),
   status: 'active',
-  config: { boardWake: { enabled: true } },
+  config: { runtime: { runtimeType: 'wrapper' }, boardWake: { enabled: true } },
 });
 
 const setInstalls = (installs) => {
@@ -268,7 +268,7 @@ describe('board wake assigned work', () => {
     expect(scout.payload.content).toContain('[Your assigned rows (pending/claimed; newest first):]');
     expect(scout.payload.content).toContain('TASK-ASSIGN — TASK-ASSIGN [pending] — Lily updated: reassigned to scout');
     expect(scout.payload.content).not.toContain('TASK-FOREIGN');
-    expect(peer.payload.content).not.toContain('[Your assigned rows');
+    expect(peer).toBeUndefined();
   });
 
   it('keeps the assigned list to five rows, newest first, after a folded change', async () => {
@@ -319,8 +319,135 @@ describe('board wake assigned work', () => {
     expect(anvil.payload.content).toContain('TASK-INSTANCE — Instance Do it now [pending]');
     expect(anvil.payload.content).not.toContain('Instance\nDo it now');
     expect(anvil.payload.content).not.toContain('TASK-SCOUT');
-    expect(scout.payload.content).toContain('TASK-SCOUT — TASK-SCOUT [pending]');
-    expect(scout.payload.content).not.toContain('TASK-INSTANCE —');
+    expect(scout).toBeUndefined();
+  });
+});
+
+describe('own-row board wake routing', () => {
+  const wakeNames = () => AgentEventService.enqueue.mock.calls.map(([event]) => event.agentName);
+
+  beforeEach(() => setInstalls([install('scout'), install('sprint-impl')]));
+
+  it('does not wake another seat for an unrelated row change', async () => {
+    const changed = await createTask({ taskId: 'TASK-OTHER', updatedAt: NOW });
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
+
+    expect(wakeNames()).toEqual([]);
+  });
+
+  it('wakes the new assignee only', async () => {
+    const changed = await createTask({ taskId: 'TASK-ASSIGN-OWNER', updatedAt: NOW, assignee: 'scout' });
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false }, { assignee: null });
+
+    expect(wakeNames()).toEqual(['scout']);
+  });
+
+  it('wakes the previous assignee when a row is unassigned', async () => {
+    const changed = await createTask({ taskId: 'TASK-UNASSIGN-OWNER', updatedAt: NOW });
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false }, { assignee: 'scout' });
+
+    expect(wakeNames()).toEqual(['scout']);
+  });
+
+  it('wakes the row owner for a comment', async () => {
+    const changed = await createTask({ taskId: 'TASK-COMMENT-OWNER', updatedAt: NOW, assignee: 'scout' });
+    await Task.updateOne({ _id: changed._id }, {
+      $push: { updates: { text: 'Peer commented', author: 'Peer', createdAt: NOW } },
+    });
+    const commented = await Task.findById(changed._id).lean();
+
+    await notifyPodAgents(POD_ID, commented, 'updated', { isAgent: false });
+
+    expect(wakeNames()).toEqual(['scout']);
+    expect(AgentEventService.enqueue.mock.calls[0][0].payload.content).toContain('Peer commented');
+  });
+
+  it.each(['native', 'durable-object'])('sends a hosted %s owner a type its engine runs', async (engine) => {
+    setInstalls([
+      { ...install('maya-agent'), config: { runtime: { runtimeType: 'hosted' }, hosted: { engine } } },
+      install('scout'),
+    ]);
+    const changed = await createTask({ taskId: 'TASK-HOSTED', updatedAt: NOW, assignee: 'maya-agent' });
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
+
+    expect(wakeNames()).toEqual(['maya-agent']);
+    expect(AgentEventService.enqueue.mock.calls[0][0].type).toBe('chat.mention');
+  });
+
+  it('inherits hosted runtime for a mention-created pod projection', async () => {
+    setInstalls([{ ...install('maya-agent'), config: { heartbeat: { enabled: true }, autoJoinSource: 'mention-resolution' } }]);
+    AgentInstallation.findOne.mockReturnValueOnce({ sort: () => ({ lean: async () => ({
+      ...install('maya-agent'), config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native' } },
+    }) }) });
+    const changed = await createTask({ taskId: 'TASK-HOSTED-PROJECTION', updatedAt: NOW, assignee: 'maya-agent' });
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
+
+    expect(AgentInstallation.findOne.mock.calls[0][0]).toMatchObject({
+      agentName: 'maya-agent', instanceId: 'default', status: 'active',
+      'config.runtime.runtimeType': { $exists: true },
+    });
+    expect(AgentEventService.enqueue.mock.calls[0][0].type).toBe('chat.mention');
+  });
+
+  it('keeps an owned wake runnable if a projection runtime lookup fails', async () => {
+    setInstalls([{ ...install('maya-agent'), config: { autoJoinSource: 'mention-resolution' } }]);
+    AgentInstallation.findOne.mockImplementationOnce(() => { throw new Error('runtime lookup unavailable'); });
+    const changed = await createTask({ taskId: 'TASK-LOOKUP-FAIL', updatedAt: NOW, assignee: 'maya-agent' });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
+    warn.mockRestore();
+
+    expect(AgentEventService.enqueue.mock.calls[0][0].type).toBe('chat.mention');
+  });
+
+  it('promotes a pending hosted sweep wake when an own-row change folds into it', async () => {
+    setInstalls([{ ...install('maya-agent'), config: { runtime: { runtimeType: 'hosted' } } }]);
+    const changed = await createTask({ taskId: 'TASK-HOSTED-FOLD', updatedAt: NOW, assignee: 'maya-agent' });
+    AgentEvent.findOneAndUpdate.mockResolvedValueOnce({ _id: 'pending-sweep', payload: { boardChanges: 1 } });
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
+
+    expect(AgentEvent.findOneAndUpdate.mock.calls[0][1].$set.type).toBe('chat.mention');
+    expect(AgentEvent.updateOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('wakes the waiting row owner only when its exact dependency clears', async () => {
+    const prerequisite = await createTask({ taskId: 'TASK-PREREQUISITE', updatedAt: NOW, status: 'done' });
+    const waiting = await createTask({ taskId: 'TASK-WAITING', updatedAt: NOW, assignee: 'scout' });
+    await Task.updateOne({ _id: waiting._id }, { $set: { dep: 'TASK-PREREQUISITE' } });
+    const unrelated = await createTask({ taskId: 'TASK-UNRELATED', updatedAt: NOW, assignee: 'sprint-impl' });
+    await Task.updateOne({ _id: unrelated._id }, { $set: { dep: 'TASK-OTHER' } });
+
+    await notifyPodAgents(POD_ID, prerequisite, 'updated', { isAgent: false }, { status: 'claimed' });
+
+    expect(wakeNames()).toEqual(['scout']);
+  });
+
+  it('does not wake an agent for its own write', async () => {
+    const changed = await createTask({ taskId: 'TASK-SELF', updatedAt: NOW, assignee: 'scout' });
+
+    await notifyPodAgents(POD_ID, changed, 'updated', {
+      isAgent: true, agentName: 'scout', instanceId: 'default',
+    });
+
+    expect(wakeNames()).toEqual([]);
+  });
+
+  it('still folds a second own-row change into the pending board wake', async () => {
+    const changed = await createTask({ taskId: 'TASK-FOLD-OWNER', updatedAt: NOW, assignee: 'scout' });
+    AgentEvent.findOneAndUpdate.mockResolvedValueOnce({ _id: 'pending-wake', payload: { boardChanges: 1 } });
+
+    await notifyPodAgents(POD_ID, changed, 'updated', { isAgent: false });
+
+    expect(wakeNames()).toEqual([]);
+    expect(AgentEvent.updateOne).toHaveBeenCalledTimes(1);
+    expect(AgentEvent.updateOne.mock.calls[0][1].$set['payload.content']).toContain('2 changes');
   });
 });
 
@@ -328,14 +455,14 @@ describe('offeredAt race probe', () => {
   it('keeps write two due with a CAS stamp of seen, while a now stamp hides it', async () => {
     const seen = new Date(NOW.getTime() - 5000);
     const writeTwo = new Date(NOW.getTime() - 4000);
-    const casTask = await createTask({ taskId: 'TASK-CAS', updatedAt: seen });
+    const casTask = await createTask({ taskId: 'TASK-CAS', updatedAt: seen, assignee: 'scout' });
     const nowTask = await createTask({ taskId: 'TASK-NOW', updatedAt: seen });
     setInstalls([install()]);
 
     AgentEventService.enqueue.mockImplementationOnce(async () => {
       await Task.updateOne(
         { _id: casTask._id },
-        { $set: { updatedAt: writeTwo } },
+        { $set: { updatedAt: writeTwo, assignee: null } },
         { timestamps: false },
       );
     });
