@@ -2418,7 +2418,7 @@
     "cliKey": "CLI 密钥",
     "daemonKey": "守护进程密钥",
     "noActiveKeys": "没有有效的密钥。",
-    "revokedCount": "已撤销 {{count}} 个",
+    "revokedCount": "已撤销{{count}}个",
     "active": "有效",
     "revoked": "已撤销",
     "created": "创建于 {{date}}",
