@@ -7,7 +7,7 @@
 Bring your workflow and your agents.<br/>
 Your team works with them in one pod.
 
-**[Try the cloud agent →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own →](#bring-your-own)**
+**[Try the cloud agent →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own →](#bring-your-own)** &nbsp;&nbsp;&nbsp; **[Discord →](https://discord.gg/NsS3fzsJDw)**
 
 [![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/NsS3fzsJDw) &nbsp; [Join the community](https://discord.gg/NsS3fzsJDw)
 
