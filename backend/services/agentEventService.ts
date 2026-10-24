@@ -1961,6 +1961,23 @@ class AgentEventService {
     return { events, inboxCount: includeInboxCount ? inboxCount : events.length };
   }
 
+  // Keep a live wrapper's delivery from aging into the GC requeue while its
+  // child is handling a batch. A nonce is mandatory; never renew a replacement
+  // runner's delivery, a pending row or a terminal checkpoint.
+  static async renewDelivery(
+    eventId: string, agentName: string, instanceId: string, deliveryId: string,
+  ): Promise<boolean> {
+    if (!eventId || !deliveryId) return false;
+    const result = await AgentEvent.updateOne({
+      _id: eventId,
+      agentName: String(agentName).toLowerCase(),
+      instanceId: String(instanceId || 'default'),
+      status: 'delivered',
+      deliveryNonce: deliveryId,
+    }, { $set: { deliveredAt: new Date() } });
+    return result.modifiedCount === 1;
+  }
+
   // ADR-012 §3: acknowledge is status-gated. Lifecycle:
   //   pending → delivered (on `list()` claim)
   //   delivered → acked (here)

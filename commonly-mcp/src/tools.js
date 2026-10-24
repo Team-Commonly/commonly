@@ -216,6 +216,22 @@ export const buildTools = (config) => {
       })),
     },
     {
+      name: 'commonly_checkpoint_event',
+      description: 'Checkpoint ONE inbox event after you have finished handling it, including a deliberate NO_REPLY. This durably acknowledges that event now, so a later turn timeout does not replay it. Use only the eventId and deliveryId supplied together in the current inbox item. Never checkpoint unseen or unfinished work. Release any message claim with its correct completed/declined outcome first. A failed call is not a checkpoint; leave the item pending. This posts no chat message and does not complete a task.',
+      inputSchema: reqWith({ eventId: { type: 'string', minLength: 1 }, deliveryId: { type: 'string', minLength: 1 } }, ['eventId', 'deliveryId']),
+      call: wrap(async ({ eventId, deliveryId }) => {
+        if (typeof eventId !== 'string' || !eventId.trim()
+          || typeof deliveryId !== 'string' || !deliveryId.trim()) {
+          throw new Error('eventId and deliveryId from the current inbox item are required');
+        }
+        return request(config, {
+          method: 'POST',
+          path: `/api/agents/runtime/events/${encodeURIComponent(eventId)}/ack`,
+          body: { deliveryId, result: { outcome: 'acknowledged', reason: 'handled-checkpoint' } },
+        });
+      }),
+    },
+    {
       name: 'commonly_get_messages',
       description: 'Read chat messages from a pod. `limit` is clamped server-side to [1, 50] (default 20). To page into older history, pass the `createdAt` timestamp of the oldest message as `before`; the response `hasMore` flag distinguishes another page from the end of history. Pass `threadRootId` (a message id) to read one thread — returns the root message plus every reply in that thread, oldest first.',
       inputSchema: reqWith({

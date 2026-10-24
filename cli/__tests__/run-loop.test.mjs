@@ -1546,6 +1546,107 @@ describe('performRun', () => {
     expect(errors[0]).toMatchObject({ failureClass: 'quota', circuitOpen: true });
   });
 
+  test('renews nonce-bound deliveries during a live turn and clears the timer afterwards', async () => {
+    const events = [makeEvent({ payload: { content: 'long work', deliveryId: 'current-nonce' } })];
+    const post = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    }), post });
+    const timers = [];
+    const clearIntervalImpl = jest.fn();
+    let finish;
+    const spawn = jest.fn(() => new Promise((resolve) => { finish = resolve; }));
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      setIntervalImpl: (callback, delay) => { const timer = { callback, delay }; timers.push(timer); return timer; },
+      clearIntervalImpl });
+    await drainMicrotasks();
+    const renewal = timers.find((timer) => timer.delay === 60_000);
+    expect(renewal).toBeDefined();
+    await renewal.callback();
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/events/renew', {
+      events: [{ eventId: 'evt-1', deliveryId: 'current-nonce' }],
+    });
+    expect(ackPosts(post)).toHaveLength(0);
+    finish({ text: 'NO_REPLY' });
+    await drainMicrotasks();
+    handle.stop();
+    expect(clearIntervalImpl).toHaveBeenCalledWith(renewal);
+    expect(ackPosts(post)).toHaveLength(1);
+  });
+
+  test('three explicit event checkpoints survive a five-event turn timeout', async () => {
+    const { buildTools } = await import('../../commonly-mcp/src/tools.js');
+    const originalFetch = global.fetch;
+    const events = Array.from({ length: 5 }, (_, index) => makeEvent({
+      _id: `evt-check-${index + 1}`,
+      payload: { content: `handle item ${index + 1}`, deliveryId: `nonce-${index + 1}` },
+    }));
+    const acked = new Set();
+    const pages = [];
+    const post = jest.fn(async (route) => {
+      const match = route.match(/events\/(evt-check-\d)\/ack$/);
+      if (match) acked.add(match[1]);
+      return {};
+    });
+    const get = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') {
+        const remaining = events.filter((event) => !acked.has(event._id));
+        pages.push(remaining.map((event) => event._id));
+        return { events: remaining };
+      }
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/memory')) return { sections: {} };
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    global.fetch = jest.fn(async (url, init) => {
+      const id = String(url).match(/events\/(evt-check-\d)\/ack$/)?.[1];
+      expect(id).toBeDefined();
+      const event = events.find((entry) => entry._id === id);
+      expect(JSON.parse(init.body)).toEqual({ deliveryId: event.payload.deliveryId,
+        result: { outcome: 'acknowledged', reason: 'handled-checkpoint' } });
+      acked.add(id);
+      return { ok: true, status: 200, text: async () => '{"success":true}' };
+    });
+    const scheduled = [];
+    let attempt = 0;
+    const spawn = jest.fn(async (prompt, ctx) => {
+      attempt += 1;
+      if (attempt === 1) {
+        const checkpoint = buildTools({ baseUrl: ctx.instanceUrl, token: ctx.runtimeToken })
+          .find((tool) => tool.name === 'commonly_checkpoint_event');
+        expect(checkpoint).toBeDefined();
+        for (const event of events.slice(0, 3)) {
+          expect(prompt).toContain(event._id);
+          expect(prompt).toContain(event.payload.deliveryId);
+          const result = await checkpoint.call({ eventId: event._id, deliveryId: event.payload.deliveryId });
+          expect(result.isError).not.toBe(true);
+        }
+        throw Object.assign(new Error('turn timed out'), { code: 'ETIMEDOUT' });
+      }
+      expect(prompt).not.toContain('evt-check-1');
+      expect(prompt).toContain('evt-check-4');
+      expect(prompt).toContain('evt-check-5');
+      return { text: 'NO_REPLY' };
+    });
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub',
+      retryJitterRatio: 0, setTimeoutImpl: (callback, delayMs) => { scheduled.push({ callback, delayMs }); return 0; } });
+    try {
+      await drainMicrotasks();
+      expect(acked).toEqual(new Set(events.slice(0, 3).map((event) => event._id)));
+      scheduled.shift().callback();
+      await drainMicrotasks();
+      expect(pages.slice(0, 2)).toEqual([events.map((event) => event._id), ['evt-check-4', 'evt-check-5']]);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(acked.size).toBe(5);
+    } finally { handle.stop(); global.fetch = originalFetch; }
+  });
+
   test('a batch spawn failure leaves its no-op sibling unacked for coherent retry', async () => {
     let poll = 0;
     const mockGet = jest.fn(async (route) => {

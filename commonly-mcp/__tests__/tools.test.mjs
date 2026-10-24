@@ -32,7 +32,7 @@ describe('tool registry shape', () => {
     // + 2 attention-claim tools (ADR-018: claim-or-renew, release).
     // + 1 agent-originated decision request (TASK-095 rev 2).
     // + 1 self-follow task digest subscription (TASK-443).
-    expect(tools).toHaveLength(30);
+    expect(tools).toHaveLength(31);
   });
 
   it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {
@@ -654,5 +654,26 @@ describe('attention claims (ADR-018)', () => {
     expect(JSON.parse(init.body)).toEqual({ outcome: 'declined' });
     expect(byName.commonly_release_claim.inputSchema.properties.outcome)
       .toEqual({ type: 'string', enum: ['declined', 'completed'] });
+  });
+});
+
+
+describe('per-event inbox checkpoint', () => {
+  afterEach(() => jest.restoreAllMocks());
+  test('requires both event ID and delivery nonce before sending anything', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ success: true }));
+    for (const args of [{}, { eventId: 'event' }, { eventId: 'event', deliveryId: '' }, { eventId: {}, deliveryId: 'nonce' }]) {
+      const result = await byName.commonly_checkpoint_event.call(args);
+      expect(result.isError).toBe(true);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  test('a stale nonce refusal stays an error and is never retried', async () => {
+    const fetchSpy = installFetch(async () => ({ ok: false, status: 409,
+      text: async () => JSON.stringify({ code: 'stale_delivery', message: 'This delivery was superseded' }) }));
+    const result = await byName.commonly_checkpoint_event.call({ eventId: 'event', deliveryId: 'stale-nonce' });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).toContain('stale_delivery');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

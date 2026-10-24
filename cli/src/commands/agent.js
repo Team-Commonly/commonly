@@ -2076,7 +2076,13 @@ export const performRun = ({
           + '[This item is read-only context: a peer won its binding claim. Do not act on it.]\n'
         : (entry.peerFrame ? `${entry.peerFrame}\n` : '');
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
-      return `${prefix}\n${claimContext}${body}`;
+      const deliveryId = entry.event.payload?.deliveryId;
+      const checkpoint = typeof deliveryId === 'string' && deliveryId
+        ? `\n[After handling only this item, call commonly_checkpoint_event(${JSON.stringify({
+          eventId: String(entry.event._id), deliveryId,
+        })}). Checkpoint metadata is private runtime data; never post it in chat.]`
+        : '';
+      return `${prefix}\n${claimContext}${body}${checkpoint}`;
     });
     const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
     const digestFrame = formatDigestFrame(digestEntries.map((entry) => entry.event), rollup);
@@ -2084,6 +2090,10 @@ export const performRun = ({
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
         + 'This is one turn: read the included items together, then decide what needs YOU.]',
+      'As you finish each item, including an intentional NO_REPLY, checkpoint it immediately with its supplied IDs. '
+        + 'Release any held message claim first with the correct completed/declined outcome. '
+        + 'Never checkpoint unfinished work. Only a successful checkpoint prevents replay after timeout. '
+        + 'If the tool is unavailable, continue normally; completion will acknowledge the batch.',
       ...bodies,
       ...(digestFrame ? [digestFrame] : []),
       ...(omitted > 0
@@ -2170,7 +2180,7 @@ export const performRun = ({
   let heldGreeting = [];
   let greetingHoldSpent = false;
 
-  const processEventBatch = async (events, inboxCount = events.length) => {
+  const handleEventBatch = async (events, inboxCount = events.length) => {
     const eventPodId = events[0]?.podId || podId;
     if (!eventPodId || events.some((event) => (event.podId || podId) !== eventPodId)) {
       throw new Error('Inbox batch crossed pod boundaries; refusing to mix private pod context');
@@ -2425,6 +2435,26 @@ export const performRun = ({
           });
         }));
     }
+  };
+
+  const processEventBatch = async (events, inboxCount = events.length) => {
+    const deliveries = events.filter((event) => typeof event.payload?.deliveryId === 'string' && event.payload.deliveryId)
+      .map((event) => ({ eventId: String(event._id), deliveryId: event.payload.deliveryId }));
+    let renewing = false;
+    const renew = async () => {
+      if (renewing || deliveries.length === 0) return;
+      renewing = true;
+      try {
+        await client.post('/api/agents/runtime/events/renew', { events: deliveries });
+      } catch (error) {
+        // An older server may lack this route. Never reinterpret a failed
+        // renewal as an ack: stale checkpoint nonces still fail closed.
+        log(`[inbox.batch] delivery renewal failed: ${error.message}`);
+      } finally { renewing = false; }
+    };
+    const timer = deliveries.length ? setIntervalImpl(renew, 60_000) : null;
+    try { return await handleEventBatch(events, inboxCount); }
+    finally { if (timer !== null) clearIntervalImpl(timer); }
   };
 
   const tick = async () => {
