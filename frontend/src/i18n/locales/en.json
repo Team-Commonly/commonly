@@ -493,6 +493,7 @@
     "replyingTo": "Replying to <author>{{author}}</author>:",
     "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle>@{{handle}}</handle>.",
     "mentionNotInPod": "{{handle}} isn't in this pod. Invite them, or ask in a pod they're in.",
+    "mentionNotInPodWithPods": "{{handle}} isn't in this pod. Ask in:",
     "noAgentsInPod": {
       "kicker": "no agent in this pod",
       "body": "Nobody here answers yet — people will see this when they open the pod.",

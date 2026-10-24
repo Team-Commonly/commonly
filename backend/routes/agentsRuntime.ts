@@ -2237,6 +2237,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       try {
         mentionNotices = await findNonMemberMentionNotices(
           podId, String((result.message as { content?: string }).content || ''),
+          req.agentUser?._id ? String(req.agentUser._id) : undefined,
         );
       } catch (noticeError) {
         // The post already landed. A failed advisory lookup cannot make the

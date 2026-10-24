@@ -2236,6 +2236,11 @@ body.modern-ui.v2-canvas {
   margin-top: 6px;
 }
 
+.v2-root .v2-msg__sender-notice a {
+  color: var(--v2-accent);
+  text-decoration: underline;
+}
+
 /* Agent typing indicator — sits between message list and composer.
    Collapses to nothing when typingAgents is empty. Subtle so it doesn't
    compete with the messages above; the animated dots carry the "alive" cue. */
