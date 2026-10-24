@@ -124,8 +124,10 @@ router.delete('/:id', credentialRateLimit, auth, async (req: AuthReq, res: expre
     if (!agentName && !isOwner && caller?.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied' });
     }
-    // Capture descendant hashes before the cascade. A daemon revoke also
-    // invalidates runtime children, whose embedded copies must be removed.
+    // Revoke first, then collect descendant hashes. A daemon can mint a child
+    // after a pre-revoke snapshot; the cascade would revoke that child while
+    // cleanup missed its embedded User copy.
+    const revoked = await AgentCredential.revokeCascade(credential._id as Types.ObjectId);
     const runtimeHashes = new Set<string>();
     let frontier: Types.ObjectId[] = [credential._id as Types.ObjectId];
     while (frontier.length) {
@@ -137,7 +139,6 @@ router.delete('/:id', credentialRateLimit, auth, async (req: AuthReq, res: expre
       const children = await AgentCredential.find({ parentId: { $in: frontier } }).select('_id').lean();
       frontier = children.map((row) => row._id as Types.ObjectId);
     }
-    const revoked = await AgentCredential.revokeCascade(credential._id as Types.ObjectId);
     await Promise.all([...runtimeHashes].map((tokenHash) => revokeRuntimeTokenEverywhere(tokenHash)));
     return res.json({ revoked });
   } catch (err) {
