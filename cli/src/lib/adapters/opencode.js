@@ -53,7 +53,6 @@ import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError } from '../public-tool-error.js';
-import { createSignatureStore, isGeminiOpenAIUpstream } from '../gemini-signatures.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
@@ -713,26 +712,13 @@ export default {
     let providerProxy = null;
     try {
       openCodeHome = await prepareOpenCodeDataHome(ctx, { publicSeat: isPublic });
-      // Gemini 3 needs its thought signatures back on the next request, and
-      // OpenCode's provider drops them (gemini-signatures.js), so a Gemini seat
-      // goes through the proxy whatever its trust. The signatures are kept per
-      // seat under ~/.commonly, outside the workspace and OpenCode's own home.
-      const geminiUpstream = Boolean(provider) && isGeminiOpenAIUpstream(provider.baseURL);
-      if ((isPublic || geminiUpstream) && provider) {
-        let signatureStore = null;
-        if (geminiUpstream) {
-          const seat = createHash('sha256').update(seatIdentity(ctx)).digest('hex').slice(0, 24);
-          signatureStore = createSignatureStore(ctx._geminiSignatureDir
-            || join(homedir(), '.commonly', 'gemini-signatures', seat));
-          await signatureStore.prune();
-        }
+      if (isPublic && provider) {
         // OpenCode can spend the configured model budget through this proxy;
         // the bearer only prevents unrelated local processes from using it.
         providerProxy = await startProviderProxy({
           provider,
           keyFile: providerKeyFile,
           tokenFile: join(tempDir, 'provider-proxy-token'),
-          signatureStore,
         });
       }
       const stateHome = isPublic ? join(openCodeHome.root, 'state') : null;
