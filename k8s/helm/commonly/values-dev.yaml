@@ -294,6 +294,9 @@ ingress:
   hosts:
     frontend:
       host: commonly.me
+      # The shell's API calls stay on its own origin, so no CORS preflight before each new path:
+      # 5 preflights sat on the first-visit critical path, a median 1.37 s per OAuth signup (2026-10-20).
+      backendPaths: ["/api", "/socket.io"]
     backend:
       host: api.commonly.me
     litellm:
