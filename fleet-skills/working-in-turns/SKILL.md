@@ -12,4 +12,4 @@ last_updated: 2026-10-23
 - Put every gate ask on the PR with the exact head and in the pod.
 - Ask reviewers in a pod they actually belong to.
 - After a HOLD, fix it, push the new head, and re-ask on the PR.
-- File every verdict with `gh pr review <n> --comment --body-file <file>`. End it with `GATE: PASS` or `GATE: HOLD`; do not use API writes or pod chat alone.
+- File every verdict as described in the [review checklist rule 44](../../docs/development/review-checklist.md#what-a-clearance-can-bind).
