@@ -22,7 +22,11 @@ async function readStart(podId: unknown): Promise<ReadStart> {
     );
     return { at, revision: Number(result.rows[0]?.revision || 0) };
   }
-  return { at };
+  const mongo = MongoMessage.db?.db;
+  if (!mongo) throw new Error('MongoDB unavailable for freshness read');
+  const hello = await mongo.admin().command({ hello: 1 });
+  if (!(hello.localTime instanceof Date)) throw new Error('MongoDB did not return a freshness clock');
+  return { at: hello.localTime };
 }
 const cursorId = (agentUserId: unknown, podId: unknown): string => `${String(agentUserId)}:${String(podId)}`;
 
@@ -83,8 +87,17 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
 async function unseenFromMongo(podId: unknown, ownId: string, after: Date): Promise<{ unseenCount: number; messages: Preview[] }> {
   const query = {
     podId,
-    createdAt: { $gt: after },
-    $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }],
+    $and: [
+      { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },
+      { $or: [
+        { freshnessPending: true },
+        // Server clocks are millisecond-granular; equality is a hold, not an
+        // acknowledgement of a message that may have committed later.
+        { freshnessCommittedAt: { $gte: after } },
+        // Rows written before this marker existed retain the old date rule.
+        { freshnessPending: { $exists: false }, freshnessCommittedAt: { $exists: false }, createdAt: { $gt: after } },
+      ] },
+    ],
   };
   const [unseenCount, rows] = await Promise.all([
     MongoMessage.countDocuments(query),

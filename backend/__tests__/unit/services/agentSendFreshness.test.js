@@ -36,8 +36,18 @@ describe('agent send-time freshness', () => {
     expect(hold.message).toContain('continueAnyway:true');
     expect(Message.countDocuments).toHaveBeenCalledWith({
       podId: 'pod-id',
-      createdAt: { $gt: new Date('2026-10-24T00:00:00Z') },
-      $or: [{ userId: { $ne: 'agent-id' } }, { authorKind: 'kernel' }],
+      $and: [
+        { $or: [{ userId: { $ne: 'agent-id' } }, { authorKind: 'kernel' }] },
+        { $or: [
+          { freshnessPending: true },
+          { freshnessCommittedAt: { $gte: new Date('2026-10-24T00:00:00Z') } },
+          {
+            freshnessPending: { $exists: false },
+            freshnessCommittedAt: { $exists: false },
+            createdAt: { $gt: new Date('2026-10-24T00:00:00Z') },
+          },
+        ] },
+      ],
     });
   });
 
