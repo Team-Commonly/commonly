@@ -129,16 +129,18 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
         const MessageReaction = require('../models/pg/MessageReaction').default;
-        const ids = (messages as Array<{ id?: string; _id?: string }>)
-          .map((m) => m.id || m._id)
+        // Keyed by the PG row id: a reconciled message's client `id` is its
+        // Mongo id, which reaction rows do not know.
+        const ids = (messages as Array<{ pgId?: string }>)
+          .map((m) => m.pgId)
           .filter(Boolean);
         if (ids.length > 0) {
           const reactionsMap = await MessageReaction.listForMessages(ids, String(userId));
           // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
           const { decorateReactionMap } = require('../services/reactionAttributionService');
           const decorated = await decorateReactionMap(reactionsMap);
-          for (const m of messages as Array<{ id?: string; _id?: string; reactions?: unknown }>) {
-            const key = String(m.id || m._id || '');
+          for (const m of messages as Array<{ pgId?: string; reactions?: unknown }>) {
+            const key = String(m.pgId || '');
             m.reactions = decorated.get(key) || [];
           }
         }
@@ -315,24 +317,11 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     } catch (pgErr) {
       const e = pgErr as { message?: string };
       console.warn('PG unavailable for createMessage, falling back to MongoDB:', e.message);
-      // Mongo messages have no reply_to_message_id column and are never
-      // reconciled into PG. A reply written here would look successful while
-      // permanently losing its parent edge, so only non-replies may use this
-      // availability fallback.
-      //
-      // "NEVER RECONCILED" IS A CURRENT FACT, NOT AN INVARIANT — and this
-      // guard is correct only while it holds (@sprint-review, pod 56881).
-      // Reconciling Mongo into PG was the other option considered on TASK-040;
-      // #1116 chose this one instead, so nothing reconciles today and the 503
-      // is the resolution rather than a stopgap.
-      //
-      // If reconciliation is ever built, this stops being a data-loss guard
-      // and becomes a rejection with no remaining reason: a user told
-      // "Replies are temporarily unavailable" about a path that would now
-      // preserve their reply. Whoever builds it must remove or relax this in
-      // the same change. The dependency runs both ways and appears in neither
-      // diff, which is why it is written at both ends — TASK-040 carries the
-      // pointer back here.
+      // Mongo rows have no reply_to_message_id column, and the reconciler
+      // (services/pgMessageReconcileService, TASK-313 part 2) copies them into
+      // PG without a reply edge. A reply written here would look successful
+      // while losing its parent edge, so replies still wait for Postgres.
+      // Non-replies take this fallback and are moved once PG is back.
       if (replyToMessageId) {
         res.status(503).json({
           error: 'Replies are temporarily unavailable. Please try again shortly.',
@@ -455,11 +444,30 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
 
 exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    // A message the reconciler moved answers to its Mongo id, and the PG row
+    // is the one to delete. Deleting only the Mongo copy would leave the
+    // message visible in PG.
+    const messageId = req.params.id;
     let message: NormalizedMessage | null = null;
+    let pgId: string | null = null;
+    let pgUnavailable = false;
     try {
-      message = await PGMessage.findById(req.params.id) as NormalizedMessage | null;
+      pgId = await PGMessage.resolveId(messageId);
+      if (pgId) message = await PGMessage.findById(pgId) as NormalizedMessage | null;
     } catch {
-      const mongoMsg = await MongoMessage.findById(req.params.id) as Record<string, unknown> | null;
+      pgUnavailable = true;
+    }
+    if (!pgId) {
+      const mongoMsg = await MongoMessage.findById(messageId) as Record<string, unknown> | null;
+      if (mongoMsg?.reconciledAt && pgUnavailable) {
+        // The PG row exists and cannot be reached. Deleting the Mongo copy
+        // now would leave it visible once PG returns.
+        res.status(503).json({
+          error: 'Message is temporarily unavailable. Please try again shortly.',
+          code: 'MESSAGE_REQUIRES_POSTGRES',
+        });
+        return;
+      }
       if (mongoMsg) message = normalizeMongo(mongoMsg);
     }
 
@@ -482,10 +490,10 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       }
     }
 
-    try {
-      await PGMessage.delete(req.params.id);
-    } catch {
-      await MongoMessage.findByIdAndDelete(req.params.id);
+    if (pgId) {
+      await PGMessage.delete(pgId);
+    } else {
+      await MongoMessage.findByIdAndDelete(messageId);
     }
 
     res.json({ msg: 'Message deleted' });
