@@ -592,6 +592,11 @@ const compareOpenCodeVersions = (left, right) => {
       return leftParts[index] > rightParts[index] ? 1 : -1;
     }
   }
+  // The smoke-tested boundaries are stable releases. A matching prerelease
+  // must not inherit their native signature-replay guarantee.
+  const leftPrerelease = left.split('+', 1)[0].includes('-');
+  const rightPrerelease = right.split('+', 1)[0].includes('-');
+  if (leftPrerelease !== rightPrerelease) return leftPrerelease ? -1 : 1;
   return 0;
 };
 

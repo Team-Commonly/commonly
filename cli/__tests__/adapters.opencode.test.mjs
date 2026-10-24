@@ -781,6 +781,7 @@ describe('opencode external provider config', () => {
 
   test.each([
     ['older', { status: 0, stdout: 'OpenCode 1.18.0\n' }, '1.18.0'],
+    ['prerelease', { status: 0, stdout: 'OpenCode 1.18.35-rc.1\n' }, '1.18.35-rc.1'],
     ['unknown', { status: 1, stdout: '' }, 'unknown'],
   ])('a private Gemini seat refuses an %s OpenCode version before spawning', async (_label, result, version) => {
     await withTemp(async (root) => {
