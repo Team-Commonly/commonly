@@ -10,9 +10,10 @@ decision in this document — Sam, 2026-09-02, by decision card — and is cited
 bare-message routing default (D12) and the digest cadence (D13) are guesses until measured. The
 landscape section is deliberately unfilled pending cl-strategist's comparison memo (TASK-078); the
 current-state audit and the shape proposal do not depend on it, so they are written now rather than
-held.
-**Date:** 2026-08-26 (substrate audit) · 2026-08-26 (channel routing, #1295) · folded 2026-09-02 · D17 ruled 2026-09-02
-**Author:** pod-architect (Lily Shen) — D1–D7 and the audit; cl-strategist (Lily Shen) — D8–D16
+held. **D18** (relayed outbound identity, 2026-10-24) is **Proposed**, pending review and
+ratification; it describes a contract to implement, not a claim that the adapters already carry it.
+**Date:** 2026-08-26 (substrate audit) · 2026-08-26 (channel routing, #1295) · folded 2026-09-02 · D17 ruled 2026-09-02 · D18 proposed 2026-10-24
+**Author:** pod-architect (Lily Shen) — D1–D7 and the audit; cl-strategist (Lily Shen) — D8–D16; Vera — D18
 **Companions:** [`ADR-001`](ADR-001-installable-taxonomy.md) (the Installable model this should
 become a component of), [`ADR-004`](ADR-004-commonly-agent-protocol.md) (CAP — the driver-facing
 verbs), [`ADR-006`](ADR-006-webhook-sdk-and-self-serve-install.md) (the webhook driver, which is
@@ -413,6 +414,10 @@ sentences ahead of D8 — 128-bit codes with a 10-minute TTL, single-use, five a
 ten minutes, and `findLiveIntegration` requiring `chatType: 'private'` so outbound gets the gate
 this decision asks for.
 
+**Scope boundary:** D15 governs inbound human attribution. [D18](#relayed-outbound-identity-d18-proposed)
+proposes the agent/human pair for outbound actions. Neither changes the persona and runtime
+separation in [ADR-022](ADR-022-persona-colleagues.md).
+
 **D16 — The Commander persona is the conversational front-end (owner: Sam, 2026-08-26).**
 Alongside raw slash commands, a user can simply talk to a **Commander** — a named persona
 (ADR-022), distinct from Scout: Scout does discovery/onboarding; Commander does attention routing
@@ -531,6 +536,79 @@ unifying `NativeAgentTrigger` and the `event-handler` vocabulary (D17 reuses the
 and stops there); external `webhook:https://…` and `agent:` handlers (ADR-006's path); the
 marketplace unlock. D6 (credentials behind a reference) still gates any *new* connector; D17
 re-platforms the existing one and its Installable row carries no secret.
+
+## Relayed outbound identity (D18, Proposed)
+
+**Status: Proposed — 2026-10-24.** Sam's direction, relayed by connector-ops in Connectors v2
+pod message 83391: “this feels similar to the channel model,
+the agent identity can be relayed”. First use is the internal writer and reviewer GitHub Apps.
+This amendment proposes the shared contract; App provisioning and adapter changes ship separately.
+
+**Scope boundary — D15 and ADR-022.** D15 answers which human authored an inbound channel message.
+[ADR-022](ADR-022-persona-colleagues.md) separates who a colleague is from where it runs.
+D18 carries that existing agent identity outward together with the human it acts for.
+It does not redefine inbound authorship, create a colleague for each external
+account, or change who may use a connection.
+
+**D18 — Every outbound connector action carries `(agent, on-behalf-of human)`, through one
+external principal per connection.**
+
+### The action carries the pair; the connection supplies the principal
+
+- **Agent:** the authenticated Commonly colleague, identified by its stable identity
+  (`agentName`, `instanceId`), with its display name and avatar used for presentation. A runtime
+  or model change does not change the colleague.
+- **On-behalf-of human:** the human whose existing connection/delegation context authorizes this
+  action. Resolve this from authenticated context; an agent-supplied name or user ID is not proof
+  of delegation. If the human cannot be resolved unambiguously, refuse the outbound action before
+  the provider call. Acting for a human does not claim that the human wrote or approved each word.
+- **External principal:** the Slack bot, Discord webhook, Telegram bot, or GitHub App installation
+  used by the selected connection. One connection selects one principal. Several agents may use
+  that connection when their grants allow it, while each action retains its own agent/human pair.
+
+The broker/adapter must preserve the resolved pair with the connection, applicable grant, and
+provider result in the action's audit trail. Retries keep the same pair. Display labels never
+select credentials or substitute for authorization. The outward label names the agent as an agent
+and identifies the human it acts for; it must not make the bot look like that human's own account.
+
+### Each adapter renders what its platform supports
+
+These are proposed rendering requirements, checked against the linked platform documentation on
+2026-10-24. They do not assert current Commonly implementation coverage.
+
+| Adapter | Principal and rendering of the pair |
+|---|---|
+| Slack | Keep the connection's bot principal. Use per-message `username` and `icon_url` for the agent via [`chat.postMessage`](https://docs.slack.dev/reference/methods/chat.postMessage/#sending-messages-as-other-entities), with `chat:write` plus [`chat:write.customize`](https://docs.slack.dev/reference/scopes/chat.write.customize/). Include the on-behalf-of human in visible message credit. Customization must follow Slack's user-permission and inciting-action requirements; when unavailable, use the bot's normal identity plus text credit for both members of the pair. |
+| Discord | Use the connection's webhook and its per-message [`username` and `avatar_url`](https://docs.discord.com/developers/resources/webhook#execute-webhook) overrides for the agent, plus visible human credit. An endpoint that does not support those overrides uses text credit for the pair. |
+| Telegram | Keep the connection's bot identity. Prefix the message with the agent name and on-behalf-of human, for example `[Vera, on behalf of Lily]`. The ordinary [`sendMessage`](https://core.telegram.org/bots/api#sendmessage) call does not supply a per-message agent username/avatar override; do not rename the shared bot for each send. |
+| GitHub | Use the selected App installation's bot principal, such as a future `commonly[bot]`. PR, issue, review, and comment bodies credit the agent and on-behalf-of human. Commits retain the actual agent's [`Co-authored-by`](https://docs.github.com/en/pull-requests/how-tos/commit-changes/creating-a-commit-with-multiple-authors) and Commonly's `Agent-Model` trailers. `Agent-Model` is Commonly metadata, not a GitHub identity field. Delegation alone does not make the human a commit co-author. |
+
+For actions with no message/body surface, preserve the pair in the correlated action record and
+render it on an available related activity surface. Never invent platform authorship fields.
+Missing optional avatar/name customization falls back to text attribution; missing verified
+identity or required text attribution on a message-bearing action refuses the send.
+
+### RoomGrant remains the authorization boundary
+
+`RoomGrant` already has a `seat` target as well as a `pod` target
+([model](../../backend/models/RoomGrant.ts)). Keep those targets, audience checks, tools, write
+mode, expiry, revocation, and broker confinement unchanged. The pair describes an action already
+authorized by that machinery; it neither widens a grant nor lets another agent borrow the named
+agent's authority. No per-agent external credential, new grant kind, or grant-schema migration
+is proposed; agents still authenticate to Commonly as themselves.
+
+### First use: internal writer and reviewer GitHub Apps (D52)
+
+The writer App and reviewer App use separate connections and principals, each restricted to the
+repositories and permissions its role needs. Within each role, actions relay the actual Commonly
+agent and human pair instead of requiring a GitHub account per agent. Reviews use the reviewer
+App's real GitHub review action; a body credit does not turn a comment into an approval. GitHub's
+permission and branch-protection rules continue to apply.
+
+Before rollout, demonstrate two agents using one connection with distinct attribution and the
+same external principal; refusal of a forged agent/human pair; and writer/reviewer actions under
+their respective App principals with body credit and commit trailers where applicable. Broader
+user-facing App availability is a later rollout, not a prerequisite for this internal use.
 
 ## What this ADR does not decide
 
