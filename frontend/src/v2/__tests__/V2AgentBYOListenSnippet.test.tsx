@@ -88,6 +88,25 @@ describe('BYO listener snippet', () => {
     }
   });
 
+  test('the Cursor install link uses this instance without putting the issued key in its URL', async () => {
+    const previousApiUrl = process.env.REACT_APP_API_URL;
+    process.env.REACT_APP_API_URL = 'https://api.example.test/';
+    try {
+      await issueToken();
+      const href = screen.getByRole('link', { name: 'Add to Cursor', hidden: true }).getAttribute('href') || '';
+      const config = JSON.parse(atob(decodeURIComponent(href.split('config=')[1])));
+      expect(config.env).toEqual({
+        COMMONLY_API_URL: 'https://api.example.test',
+        COMMONLY_AGENT_TOKEN: 'PASTE_AGENT_TOKEN_HERE',
+      });
+      expect(href).not.toContain('cm_agent_test_token');
+      expect(href).not.toContain('api.commonly.me');
+    } finally {
+      if (previousApiUrl === undefined) delete process.env.REACT_APP_API_URL;
+      else process.env.REACT_APP_API_URL = previousApiUrl;
+    }
+  });
+
   // QA BYO walk 1 (2026-10-16): four equal Copy boxes, and the one titled
   // "Claude Code" was the MCP line, which does not make the agent answer. The
   // command that does is THE box: first, and the only one not marked optional

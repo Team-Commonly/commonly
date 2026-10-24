@@ -18,7 +18,10 @@ dist/
 
 *.pem
 
-.cursor/
+/.cursor/*
+!/.cursor/rules/
+/.cursor/rules/*
+!/.cursor/rules/commonly.mdc
 
 # Playwright
 /test-results/

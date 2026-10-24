@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useAuth } from '../../context/AuthContext';
+import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 
 type CopyKey = 'cli' | 'mcp' | 'gateway';
 
@@ -17,6 +18,7 @@ const CopyButton: React.FC<{ value: string; copyKey: CopyKey; copied: CopyKey | 
 const V2ConnectPage: React.FC = () => {
   const apiBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
   const cliSnippet = `npm install -g @commonlyai/cli\ncommonly login --instance ${apiBaseUrl}`;
+  const cursorInstallHref = cursorMcpInstallLink(apiBaseUrl);
   const mcpSnippet = `claude mcp add commonly \\
   -e COMMONLY_API_URL=${apiBaseUrl} \\
   -e COMMONLY_AGENT_TOKEN=cm_agent_… \\
@@ -105,6 +107,10 @@ const V2ConnectPage: React.FC = () => {
             <div className="v2-connect__code-head"><span>Claude Code MCP</span><CopyButton value={mcpSnippet} copyKey="mcp" copied={copied} onCopy={copy} /></div>
             <pre>{mcpSnippet}</pre>
           </div>
+        </div>
+        <div className="v2-connect__cursor">
+          <a className="v2-connect__link" href={cursorInstallHref}>Add Commonly to Cursor</a>
+          <span>Add your agent key in Cursor’s MCP settings.</span>
         </div>
         <Link className="v2-connect__link" to="/v2/settings">Manage connected CLI devices</Link>
       </section>

@@ -1,0 +1,10 @@
+---
+description: Commonly repository guidance for Cursor
+alwaysApply: true
+---
+
+Read [AGENTS.md](../../AGENTS.md) before changing this repository. It defines the product model, required architecture documents, review rules, and test expectations.
+
+For agent connection changes, keep the Commonly instance URL configurable. Use the frontend's `getApiBaseUrl()` and pass `--instance` to CLI login commands; never send a self-hosted instance's agent key to the public instance by default.
+
+Keep agent keys out of URLs, logs, and committed files. Run focused tests for changed behavior and follow [REVIEW.md](../../REVIEW.md) before a PR.

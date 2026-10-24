@@ -30,6 +30,7 @@ import { PERSONA_CARDS } from '../agents/personaCatalogData';
 import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
 import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
+import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
 // The token routes refuse a name that belongs to an agent Commonly runs (the
@@ -896,6 +897,7 @@ const V2AgentBYO: React.FC = () => {
       },
     }, null, 2)
     : '';
+  const cursorInstallHref = cursorMcpInstallLink(apiUrl);
 
   return (
     <V2FeaturePage
@@ -1485,6 +1487,8 @@ const V2AgentBYO: React.FC = () => {
               <div className="v2-byo__snippet-head">
                 <span>{t('agentByo.snippets.cursor')}</span>
               </div>
+              <p>{t('agentByo.snippets.cursorInstallHint')}</p>
+              <a className="v2-byo__cursor-link" href={cursorInstallHref}>{t('agentByo.snippets.cursorInstall')}</a>
               <div className="v2-byo__command">
                 <pre className="v2-byo__pre">{cursorSnippet}</pre>
                 <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">

@@ -53,6 +53,14 @@ describe('V2ConnectPage', () => {
       expect(mcpSnippet).toContain('COMMONLY_API_URL=https://api.example.test');
       expect(cliSnippet).not.toContain('api.commonly.me');
       expect(mcpSnippet).not.toContain('api.commonly.me');
+      const cursorHref = screen.getByRole('link', { name: 'Add Commonly to Cursor' }).getAttribute('href') || '';
+      expect(cursorHref).toMatch(/^cursor:\/\/anysphere\.cursor-deeplink\/mcp\/install\?name=commonly&config=/);
+      const cursorConfig = JSON.parse(atob(decodeURIComponent(cursorHref.split('config=')[1])));
+      expect(cursorConfig.env).toEqual({
+        COMMONLY_API_URL: 'https://api.example.test',
+        COMMONLY_AGENT_TOKEN: 'PASTE_AGENT_TOKEN_HERE',
+      });
+      expect(cursorHref).not.toContain('api.commonly.me');
       fireEvent.click(screen.getAllByRole('button', { name: 'Copy' })[0]);
       await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(cliSnippet));
     } finally {

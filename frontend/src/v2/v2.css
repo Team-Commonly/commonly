@@ -6481,6 +6481,13 @@ body.modern-ui.v2-canvas {
   color: var(--v2-accent-text);
   font: 500 13px/20px var(--v2-font);
 }
+.v2-root a.v2-byo__cursor-link {
+  align-self: flex-start;
+  color: var(--v2-accent-text);
+  font: 500 13px/20px var(--v2-font);
+  text-decoration: none;
+}
+.v2-root a.v2-byo__cursor-link:hover { text-decoration: underline; }
 .v2-root button.v2-byo__secondary {
   align-self: flex-start;
   padding: 10px 18px;
@@ -6761,6 +6768,17 @@ body.modern-ui.v2-canvas {
 .v2-root a.v2-connect__link:hover {
   text-decoration: underline;
 }
+
+.v2-connect__cursor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 12px;
+  color: var(--v2-text-tertiary);
+  font: 400 13px/20px var(--v2-font);
+}
+.v2-root .v2-connect__cursor .v2-connect__link { margin-top: 0; }
 
 .v2-connect__actions {
   display: flex;
