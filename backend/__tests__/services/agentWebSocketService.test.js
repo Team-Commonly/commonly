@@ -226,6 +226,13 @@ describe('agentWebSocketService', () => {
       expect(agentWebSocketService.pingInterval).not.toBeNull();
     });
 
+    it('does not let the ping interval own process lifetime', () => {
+      jest.useRealTimers();
+      agentWebSocketService.init(mockIo);
+
+      expect(agentWebSocketService.pingInterval.hasRef()).toBe(false);
+    });
+
     it('disconnects the identity room when its last installation is removed', () => {
       agentWebSocketService.init(mockIo);
       agentWebSocketService.disconnectIdentity('OpenClaw', 'Default');
