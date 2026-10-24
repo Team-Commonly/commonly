@@ -127,6 +127,22 @@ describe('SchedulerService automatic heartbeat dispatch lease', () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it('waits an hour after a wake fails, even if it was delivered earlier', async () => {
+    const scope = { agentName: 'flint', instanceId: 'default', podId: new mongoose.Types.ObjectId() };
+    const enqueue = jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+    const old = new Date(NOW.getTime() - 61 * 60000);
+    await AgentInstallation.collection.insertOne({ ...scope, status: 'active',
+      version: '1.0.0', installedBy: new mongoose.Types.ObjectId() });
+    await AgentEvent.collection.insertOne({ ...scope, type: 'message.posted', status: 'pending',
+      deliveryMode: 'digest', attempts: 0, createdAt: old });
+    const failed = await AgentEvent.collection.insertOne({ ...scope, type: 'heartbeat', status: 'failed',
+      deliveryMode: 'wake', attempts: 1, createdAt: old, deliveredAt: old, updatedAt: NOW });
+    expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+    expect(enqueue).not.toHaveBeenCalled();
+    await AgentEvent.collection.updateOne({ _id: failed.insertedId }, { $set: { updatedAt: old } });
+    expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(1);
+  });
+
   it('also wakes for unread digest folded past full-event retention', async () => {
     const podId = new mongoose.Types.ObjectId();
     const scope = { agentName: 'flint', instanceId: 'default', podId };

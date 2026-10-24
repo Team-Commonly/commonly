@@ -1158,8 +1158,12 @@ class SchedulerService {
       // eslint-disable-next-line no-await-in-loop
       const [pendingWake, recentWake] = await Promise.all([
         AgentEvent.exists({ ...scope, status: 'pending', deliveryMode: { $ne: 'digest' } }),
-        AgentEvent.exists({ ...scope, status: { $in: ['delivered', 'acked'] },
-          deliveryMode: { $ne: 'digest' }, deliveredAt: { $gte: threshold } }),
+        AgentEvent.exists({ ...scope, deliveryMode: { $ne: 'digest' }, $or: [
+          { status: { $in: ['delivered', 'acked'] }, deliveredAt: { $gte: threshold } },
+          // AgentEvent timestamps update on every failed transition, including
+          // failures before delivery and failures after an older delivery.
+          { status: 'failed', updatedAt: { $gte: threshold } },
+        ] }),
       ]);
       if (pendingWake || recentWake) continue;
       // eslint-disable-next-line no-await-in-loop
