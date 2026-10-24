@@ -185,6 +185,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(mediaBlockContaining(agentSettings, '.v2-agent-settings__key-meta')).toContain('display: grid');
   });
 
+  test('agent Settings section headers stack at phone width so the key hint stays visible', () => {
+    const phone = mediaBlockContaining(agentSettings, '.v2-agent-settings__section-head');
+    const header = selectorRuleBody(phone, '.v2-agent-settings__section-head');
+    expect(header).toContain('flex-direction: column');
+    expect(header).toContain('align-items: flex-start');
+  });
+
   test('agent Settings buttons retain their chrome over the v2 button reset', () => {
     const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root)');
     expect(button).toContain('border: 1px solid var(--v2-border)');
