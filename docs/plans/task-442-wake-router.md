@@ -28,8 +28,11 @@ an owner. Its owner field is attribution metadata, not write authority.
    `(podId, messageId)`. Store policyRevision as metadata, never as part of
    uniqueness: a policy rollout cannot classify the same message again. Concurrent producers share that record;
    neither each target nor each backend replica makes another call. Reservation
-   failure goes to digest. A crashed reservation has a bounded lease and a
-   durable digest fallback; it cannot hold message delivery forever.
+   failure goes to digest. Reserve a terminal deadline at admission. At expiry,
+   recovery may only commit the durable digest fallback; it must never issue
+   another inference request, even if the holder crashed before sending one.
+   Compare-and-set on the reservation token prevents a late holder from
+   replacing that terminal fallback. No lease reclaim permits a second call.
 4. One LiteLLM request with an end-to-end 2,000 ms deadline, no automatic retry,
    tool use or alternate-model fallback. The selected route/key must disable
    provider/router fallbacks; record the actual upstream deployment from proxy
@@ -154,6 +157,10 @@ fixture and current context described above; not an attribution accuracy score.
 
 The characterization used mean 10,504 prompt tokens and hit the 256 completion
 cap on every response. It cannot establish latency to a *valid* decision.
+The original json_object prompt did not explicitly define the full decision
+shape. That omission is fixed in this PR, but the reported validity rate is
+confounded by both that prompt and truncation; it cannot establish intrinsic
+model accuracy. No repeat benchmark is authorized.
 The network path was laptop → Cloudflare → cluster → LiteLLM → provider.
 In-cluster latency has not been measured, and these data do not isolate network
 from model time. Reject this tested configuration for the 2 s pilot; neither

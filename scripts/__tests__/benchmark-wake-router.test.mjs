@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { classify, summarize, validateDecision } from '../benchmark-wake-router.mjs';
+import { SYSTEM, classify, summarize, validateDecision } from '../benchmark-wake-router.mjs';
 
 const context = { seats: [{ id: 'writer:default' }], humans: [{ id: 'human-1' }], rows: [], claims: [] };
 const decision = { wake: ['writer:default'], digest: true, owner: { kind: 'seat', id: 'writer:default' } };
@@ -79,6 +79,10 @@ test('json_object uses the explicit completion budget and still rejects invented
   const row = await classify(sample, context, { ...options, format: 'json_object', maxTokens: 1024, reasoningEffort: 'none',
     fetchImpl: async (_url, init) => { calls += 1; body = JSON.parse(init.body); return reply({ ...decision, wake: ['stranger'] }); } });
   assert.deepEqual(body.response_format, { type: 'json_object' });
+  assert.equal(body.messages[0].content, SYSTEM);
+  for (const contract of ['wake (an array of zero to three distinct IDs', 'digest (a boolean)', 'kind none requires null']) {
+    assert.ok(SYSTEM.includes(contract));
+  }
   assert.equal(body.max_tokens, 1024);
   assert.equal(body.reasoning_effort, 'none');
   assert.equal(calls, 1);
@@ -123,4 +127,55 @@ test('CLI rejects incomplete and malformed private inputs before making any requ
     assert.equal(result.stderr.includes(sentinel), false);
   }
   assert.equal(requests, 0);
+});
+
+
+test('valid CLI control performs exactly 200 calls and reports their measured usage', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'wake-bench-valid-'));
+  let calls = 0;
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    const body = JSON.parse(raw);
+    assert.equal(body.model, 'fixture');
+    assert.equal(body.reasoning_effort, 'none');
+    assert.equal(body.max_tokens, 256);
+    assert.deepEqual(body.response_format, { type: 'json_object' });
+    calls += 1;
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify({ model: 'fixture-model', usage: { prompt_tokens: 2000, completion_tokens: 40 },
+      choices: [{ message: { content: JSON.stringify(decision) } }] }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
+  const input = join(directory, 'samples.jsonl');
+  const contextFile = join(directory, 'context.json');
+  await writeFile(input, Array.from({ length: 200 }, (_, i) => JSON.stringify({ ...sample, id: `msg-${i}` })).join('\n'));
+  await writeFile(contextFile, JSON.stringify(context));
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [new URL('../benchmark-wake-router.mjs', import.meta.url).pathname,
+      input, contextFile, 'fixture', '0.1', '0.5'], {
+      env: { ...process.env, LITELLM_BASE_URL: `http://127.0.0.1:${server.address().port}`, LITELLM_API_KEY: 'fixture-key',
+        WAKE_BENCH_FORMAT: 'json_object', WAKE_BENCH_MAX_TOKENS: '256', WAKE_BENCH_REASONING_EFFORT: 'none' },
+    });
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', (code) => resolve({ code, stdout, stderr }));
+  });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(calls, 200);
+  const rows = result.stdout.trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(rows.length, 201);
+  assert.deepEqual(rows.slice(0, 200).map((row) => row.messageId), Array.from({ length: 200 }, (_, i) => `msg-${i}`));
+  assert.ok(rows.slice(0, 200).every((row) => row.outcome === 'valid'));
+  const { settings, summary } = rows[200];
+  assert.deepEqual(settings, { format: 'json_object', maxTokens: 256, reasoningEffort: 'none', deadlineMs: 2000 });
+  assert.equal(summary.attempted, 200);
+  assert.equal(summary.valid, 200);
+  assert.equal(summary.usageKnown, 200);
+  assert.equal(summary.costComplete, true);
+  assert.ok(Math.abs(summary.estimatedUsd - 0.044) < 1e-9);
+  assert.equal(result.stdout.includes(sample.content), false);
 });
