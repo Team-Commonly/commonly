@@ -1,0 +1,69 @@
+# Latchkey runner trial (D37). A COPY of tests.yml `tool-tests`, run side by
+# side on GitHub-hosted and Latchkey runners at the same commit so the timing
+# compares like with like. Never a required check; tests.yml is untouched.
+# Delete this file to roll back. Trigger: push to branch latchkey-trial, or
+# manual dispatch.
+name: Latchkey trial
+
+on:
+  push:
+    branches: [latchkey-trial]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tool-tests-trial:
+    name: tool-tests on ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, latchkey-small]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Runner facts
+        run: |
+          echo "runner=${{ matrix.runner }} nproc=$(nproc) mem=$(free -g | awk '/Mem/{print $2}')G"
+          . /etc/os-release && echo "os=$PRETTY_NAME"
+          node --version || true
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # The tool-contract guard compares the submodule pin against the
+          # merge base with origin/main to catch a ROLLBACK, which containment
+          # structurally cannot see. At the default depth 1 there is no
+          # origin/main and no shared history, so that check could not run at
+          # all (#2497). The guard now says so loudly instead of passing, and
+          # this is what lets it answer.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            commonly-mcp/package-lock.json
+            cli/package-lock.json
+            workers/agent-runtime/package-lock.json
+      - run: npm ci --include=dev
+      # CLI tests load backend TypeScript through ts-node.
+      - run: cd backend && npm ci --include=dev
+      - run: cd commonly-mcp && npm ci --include=dev
+      - run: cd cli && npm ci --include=dev
+      - run: cd workers/agent-runtime && npm ci --include=dev
+      - run: npm run verify:moltbot-tools
+      - run: npm run verify:litellm-patch-runner
+      # These node:test files lived only in the retired all-in-one job.
+      - name: Run agent service tests
+        run: |
+          node --test \
+            external/commonly-agent-services/shared/delivery-nonce.test.js \
+            external/commonly-agent-services/shared/summary-text.test.js \
+            external/commonly-agent-services/commonly-bot/index.test.js
+      - run: cd commonly-mcp && npm test
+      - run: cd cli && npm run lint && npm test
+      - name: Verify CLI test temp cleanup
+        run: cd cli && npm run test:temp-cleanup
+      - run: cd workers/agent-runtime && npm run typecheck && npm test
