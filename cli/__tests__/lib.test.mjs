@@ -542,7 +542,7 @@ describe('poller.js', () => {
     const digest = {
       ...makeEvent('digest-1'), deliveryMode: 'digest',
       type: 'message.posted', payload: {
-        content: 'private ambient body', username: 'Ava', messageId: '42', threadRootId: 21,
+        content: 'private ambient body', username: 'Ava', messageId: '42', threadRootId: '21',
         deliveryId: 'digest-nonce',
       },
     };
