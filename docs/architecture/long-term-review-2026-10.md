@@ -103,8 +103,8 @@ Items are ranked by measured cost removed per day of effort.
 
 - **Three incidents in two days:**
   - staging's chart pointed the API URL at production (#2529);
-  - staging's API rejected its own frontend under CORS (#2481);
-  - connect commands printed production's API URL instead of the instance's (#2568, TASK-428, open).
+  - staging's chart left the frontend URL at production's, so CORS rejected staging's own frontend (#2481);
+  - connect commands printed production's API URL instead of the instance's (#2568, merged; TASK-428 is still open).
 - **Four environment names cover two values:**
 
   | Name | Reads |
@@ -459,7 +459,7 @@ The first six rows are the list given with the task. The rest are the incidents 
 | Revoked keys still showed as connected (#2560, plus three follow-up rows). | 5 |
 | The deprecated agent manager was still being served (#2505). | 9 |
 | A skills directory resolved on one host only (fixed 10-23). | 1 (settings match what runs) |
-| Staging pointed at production URLs (#2529, #2481, and #2568 for TASK-428). | 3 |
+| Staging used production's URLs: the API URL (#2529), the frontend URL that CORS reads (#2481), and the URL in connect commands (#2568, TASK-428). | 3 |
 | Seats woke on pod messages that were not addressed to them (TASK-414). | 1. #2558 is the first part, live since the 10-24 deploy. |
 | An error in a hosted-MCP callback exited the only backend process on staging, so every user got a 502 (TASK-405). | A. #2555 now catches that error in every callback; one replica is why a single crash reached every user. |
 | A browser session could not be revoked, and refresh renewed it with no end (TASK-410). | None. #2545 added the missing check in place. See *Don't*, on auth. |
