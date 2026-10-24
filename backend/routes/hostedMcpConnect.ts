@@ -248,7 +248,7 @@ const startConnect = async (req: AuthedRequest, res: Response) => {
   if (!entry) {
     return res.status(404).json({ error: 'unknown_entry' });
   }
-  if (isHostedMcpEntryHidden(entry.id)) return res.status(404).json({ error: 'unknown_entry' });
+  if (isHostedMcpEntryHidden(entry.id, process.env, userId)) return res.status(404).json({ error: 'unknown_entry' });
 
   let client: { clientId: string; clientSecret?: string } | null = null;
   if (entry.client !== 'dcr') {
