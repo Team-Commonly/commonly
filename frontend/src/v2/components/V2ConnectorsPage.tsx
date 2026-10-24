@@ -1206,7 +1206,9 @@ const V2ConnectorsPage: React.FC = () => {
     if (!connector) return undefined;
     if (action === 'new-code') return regenerateCode(connector);
     if (action === 'authorize') return authorizeSlack(connector, item.key);
-    if (action === 'confirm') return resolveSlackBind(connector, 'confirm', item.key);
+    // The row opens the aside where the active pod's lead can be chosen.
+    // Sending a confirm here would silently omit that choice.
+    if (action === 'confirm') return undefined;
     return undefined;
   };
 
@@ -1535,17 +1537,17 @@ const V2ConnectorsPage: React.FC = () => {
                   id={`slack-lead-${connector._id}`}
                   className="v2-connectors__select"
                   value={selectedSlackLead}
-                  disabled={busy || availableLeads.length === 0}
+                  disabled={busy || pods === null || availableLeads.length === 0}
                   onChange={(event) => setSlackLeadChoices((current) => ({ ...current, [connector._id]: event.target.value }))}
                 >
                   <option value="">{t('connectors.slackBindLeadNone', { defaultValue: 'Choose an agent' })}</option>
                   {availableLeads.map((bot) => <option key={bot.username} value={bot.username}>{bot.username}</option>)}
                 </select>
-                {availableLeads.length === 0 && (
+                {pods !== null && availableLeads.length === 0 && (
                   <p>{t('connectors.slackNoAgent', { defaultValue: 'No agent is in this pod yet. Messages will reach the pod; choose a lead later.' })}</p>
                 )}
                 <div className="v2-connector-aside__actions">
-                  <button type="button" className="v2-connector-aside__primary" disabled={busy || (availableLeads.length > 0 && !selectedSlackLead)} onClick={() => { void resolveSlackBind(connector, 'confirm', item.key, selectedSlackLead); }}>
+                  <button type="button" className="v2-connector-aside__primary" disabled={busy || pods === null || (availableLeads.length > 0 && !selectedSlackLead)} onClick={() => { void resolveSlackBind(connector, 'confirm', item.key, selectedSlackLead); }}>
                     {t('connectors.slackConfirmConnection', { defaultValue: 'Confirm connection' })}
                   </button>
                   <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'reject', item.key); }}>

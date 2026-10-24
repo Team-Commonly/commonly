@@ -654,12 +654,31 @@ describe('V2ConnectorsPage', () => {
 
     const confirm = await screen.findByRole('button', { name: 'Confirm connection' });
     expect(confirm).toBeDisabled();
+    const row = (await screen.findByRole('button', { name: 'View Slack' })).closest('article') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Confirm' }));
+    expect(axios.post).not.toHaveBeenCalledWith('/api/installables/slack/confirm', expect.anything(), expect.anything());
     fireEvent.change(screen.getByLabelText('Agent for plain messages'), { target: { value: 'kai' } });
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/installables/slack/confirm', { leadAgentUsername: 'kai' }, expect.anything(),
     ));
+  });
+
+  it('does not treat a failed pod read as an empty pod at Slack confirmation', async () => {
+    mockGets([{
+      _id: 'i-slack-pending', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: { pendingBind: { teamName: 'Commonly HQ', slackUserName: 'sam' } },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    const priorGet = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => url === '/api/pods'
+      ? Promise.reject(new Error('pods unavailable')) : priorGet(url));
+    renderPage();
+
+    expect(await screen.findByText('Commonly HQ wants to connect as @sam.')).toBeInTheDocument();
+    expect(screen.queryByText('No agent is in this pod yet. Messages will reach the pod; choose a lead later.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Confirm connection' })).toBeDisabled();
   });
 
   it('keeps rejection reachable from the selected Slack aside', async () => {

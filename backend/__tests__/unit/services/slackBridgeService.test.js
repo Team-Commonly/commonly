@@ -282,9 +282,33 @@ describe('Slack installable bridge', () => {
     });
 
     expect(PGMessage.create.mock.calls[0][2]).toBe('💬 (via Slack): hello');
+    await new Promise((resolve) => setImmediate(resolve));
     expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith(
       'D1', expect.stringContaining('no lead agent is selected'),
     );
+  });
+
+  test('a stalled no-lead Slack notice cannot hold pod delivery', async () => {
+    Pod.findById.mockReturnValue(podWithMembers('Alpha'));
+    PGMessage.create.mockResolvedValue({ id: 'pg-1' });
+    PGMessage.findById.mockResolvedValue({ id: 'pg-1', content: 'relayed' });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    deliverMessageToAgents.mockResolvedValue(undefined);
+    SlackApi.mockImplementationOnce(() => ({ postMessage: jest.fn(() => new Promise(() => {})) }));
+
+    const result = await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        config: { ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: {} },
+      },
+      event: { text: 'hello', user: 'U1' },
+    });
+
+    expect(result.relayed).toBe(true);
+    expect(deliverMessageToAgents).toHaveBeenCalledTimes(1);
   });
 
   test('does not wake a selected lead after that bot leaves the pod', async () => {
@@ -307,6 +331,7 @@ describe('Slack installable bridge', () => {
     });
 
     expect(PGMessage.create.mock.calls[0][2]).toBe('💬 (via Slack): hello');
+    await new Promise((resolve) => setImmediate(resolve));
     expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith(
       'D1', expect.stringContaining('no lead agent is selected'),
     );

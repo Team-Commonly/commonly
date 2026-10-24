@@ -299,7 +299,11 @@ describe('Slack installable OAuth routes', () => {
       teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
       expiresAt: new Date(Date.now() + 60_000),
     };
-    Integration.findOne.mockResolvedValue({ ...integration, config: { pendingBind: pending } });
+    const since = new Date('2026-10-01T00:00:00.000Z');
+    Integration.findOne.mockResolvedValue({
+      ...integration,
+      config: { pendingBind: pending, gates: { [integration.podId]: { enabled: false, mode: 'attention', since } } },
+    });
     Pod.findById
       .mockResolvedValueOnce({ members: [ownerId, 'bot-1'], type: 'team' })
       .mockReturnValueOnce({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Pod' }) }) });
@@ -316,7 +320,7 @@ describe('Slack installable OAuth routes', () => {
     });
     expect(Integration.findOneAndUpdate.mock.calls[0][1].$set[
       `config.gates.${integration.podId}`
-    ]).toEqual(expect.objectContaining({ enabled: true, lead: 'kai', since: expect.any(Date) }));
+    ]).toEqual({ enabled: false, mode: 'attention', lead: 'kai', since });
   });
 
   test('refuses a selected lead who is not a bot member without binding the DM', async () => {
