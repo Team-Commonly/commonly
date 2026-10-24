@@ -187,6 +187,11 @@ reviewed something and it is not ready, **say so on the pull request** with
 `gh pr review <n> --comment --body-file <f>` and end with `GATE: HOLD`, per the
 [review checklist rule 44](../../../development/review-checklist.md#what-a-clearance-can-bind), not only in chat.
 
+After filing the verdict, remove the PR checkout or worktree you used
+(`git worktree remove --force <dir>` or remove the clone, then `git worktree
+prune`). Prefer one reusable checkout per seat and fetch each PR into it rather
+than creating a fresh directory per review.
+
 When you approve, say what you verified AND what you could not. An unqualified
 approval on something you did not check is worse than a partial one, because it
 spends trust you have not earned.
