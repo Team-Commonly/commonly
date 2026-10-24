@@ -61,6 +61,15 @@ const syntheticAccount = async (username = 'eng-smoke-journey-1015124709', { sea
   return { human, scout, seatBot, pod, seat };
 };
 
+// A refused account is left exactly as it was: the person, Scout, the pod and
+// the seat's registry row, bot and memory.
+const expectUntouched = async ({ human, scout, pod, seatBot, seat }) => {
+  expect(await User.countDocuments({ _id: { $in: [human._id, scout._id, seatBot._id] } })).toBe(3);
+  expect(await Pod.countDocuments({ _id: pod._id })).toBe(1);
+  expect(await AgentRegistry.countDocuments({ agentName: seat })).toBe(1);
+  expect(await AgentMemory.countDocuments({ agentName: seat })).toBe(1);
+};
+
 describe('syntheticAccountPurgeService', () => {
   beforeAll(setupMongoDb);
   afterAll(closeMongoDb);
@@ -133,42 +142,59 @@ describe('syntheticAccountPurgeService', () => {
     expect(await Pod.countDocuments({ _id: pod._id })).toBe(1);
   });
 
-  it('skips a seat name another user also holds, keeping their install and memory', async () => {
-    const { seat } = await syntheticAccount();
+  // A skipped seat refuses the whole account. Install refuses an ephemeral
+  // registry row to anyone but its publisher, so deleting the account would
+  // leave the seat's name dead for everyone.
+  it('refuses an account with a seat another user also holds, and deletes none of it', async () => {
+    const account = await syntheticAccount();
     const other = await insertUser({ username: 'dana', email: 'dana@example.com' });
-    await AgentInstallation.collection.insertOne({ agentName: seat, podId: id(), installedBy: other._id });
+    await AgentInstallation.collection.insertOne({ agentName: account.seat, podId: id(), installedBy: other._id });
 
     const report = await purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() });
 
-    expect(report.accounts[0].skippedSeats).toEqual([{ name: seat, reason: 'installed by another user' }]);
-    expect(await AgentInstallation.countDocuments({ agentName: seat, installedBy: other._id })).toBe(1);
-    expect(await AgentMemory.countDocuments({ agentName: seat })).toBe(1);
-    expect(await AgentRegistry.countDocuments({ agentName: seat })).toBe(1);
+    expect(report.accounts[0].skippedSeats).toEqual([{ name: account.seat, reason: 'installed by another user' }]);
+    expect(report.accounts[0].refused).toMatch(/orphan its skipped seat\(s\): .*installed by another user/);
+    expect(await AgentInstallation.countDocuments({ agentName: account.seat, installedBy: other._id })).toBe(1);
+    await expectUntouched(account);
   });
 
   // Registration is open and accepts .invalid, so the selected account may be
   // anyone's. These arms pin that its seat list cannot reach another identity.
-  it('skips a seat name without the journey prefix, keeping its bot and memory', async () => {
-    const { human, seatBot, seat } = await syntheticAccount('eng-smoke-journey-1015124709', { seat: 'acme-support' });
+  it('refuses an account with a seat name lacking the journey prefix, and deletes none of it', async () => {
+    const account = await syntheticAccount('eng-smoke-journey-1015124709', { seat: 'acme-support' });
 
     const report = await purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() });
 
-    expect(report.accounts[0].skippedSeats).toEqual([{ name: seat, reason: 'name lacks the journey prefix' }]);
-    expect(await User.countDocuments({ _id: human._id })).toBe(0);
-    expect(await User.countDocuments({ _id: seatBot._id })).toBe(1);
-    expect(await AgentMemory.countDocuments({ agentName: seat })).toBe(1);
-    expect(await AgentRegistry.countDocuments({ agentName: seat })).toBe(1);
+    expect(report.accounts[0].skippedSeats).toEqual([{ name: account.seat, reason: 'name lacks the journey prefix' }]);
+    expect(report.accounts[0].refused).toMatch(/acme-support \(name lacks the journey prefix\)/);
+    await expectUntouched(account);
   });
 
-  it('skips a prefixed seat whose bot user is older than the account', async () => {
-    const { seatBot, seat } = await syntheticAccount();
-    await User.collection.updateOne({ _id: seatBot._id }, { $set: { createdAt: new Date('2026-01-01T00:00:00Z') } });
+  it('refuses an account with a prefixed seat whose bot user is older than the account', async () => {
+    const account = await syntheticAccount();
+    await User.collection.updateOne({ _id: account.seatBot._id }, { $set: { createdAt: new Date('2026-01-01T00:00:00Z') } });
 
     const report = await purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() });
 
-    expect(report.accounts[0].skippedSeats).toEqual([{ name: seat, reason: 'its bot user predates the account' }]);
-    expect(await User.countDocuments({ _id: seatBot._id })).toBe(1);
-    expect(await AgentMemory.countDocuments({ agentName: seat })).toBe(1);
+    expect(report.accounts[0].skippedSeats).toEqual([{ name: account.seat, reason: 'its bot user predates the account' }]);
+    expect(report.accounts[0].refused).toMatch(/its bot user predates the account/);
+    await expectUntouched(account);
+  });
+
+  it('a refused account stays refused on the next run, and an ordinary one beside it is still purged', async () => {
+    const refusedOne = await syntheticAccount('eng-smoke-journey-1015124709', { seat: 'acme-support' });
+    const ordinary = await syntheticAccount('eng-smoke-journey-1015130000');
+
+    const first = await purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() });
+    const again = await purgeSyntheticAccounts({ apply: true, now: NOW, pool: fakePool() });
+
+    expect(first.accounts.map((a) => [a.username, Boolean(a.refused)])).toEqual(
+      expect.arrayContaining([['eng-smoke-journey-1015124709', true], ['eng-smoke-journey-1015130000', false]]),
+    );
+    expect(await User.countDocuments({ _id: ordinary.human._id })).toBe(0);
+    expect(again.accounts).toHaveLength(1);
+    expect(again.accounts[0].refused).toBeTruthy();
+    await expectUntouched(refusedOne);
   });
 
   it("deletes only the seat's own (name, 'default') memory, not the same name under another instance", async () => {
