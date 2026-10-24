@@ -84,8 +84,13 @@ describe('Message Model Tests', () => {
   it('accepts four-digit-year timestamp boundaries without changing them', async () => {
     for (const createdAt of ['0001-01-01T00:00:00.000Z', '9999-12-31T23:59:59.999Z']) {
       const message = new Message({ podId: testPod._id, userId: testUser._id, content: 'Boundary', createdAt });
-      await expect(message.validate()).resolves.toBeUndefined();
-      expect(message.createdAt.toISOString()).toBe(createdAt);
+      await message.save();
+      const reloaded = await Message.findById(message._id).lean();
+      expect(reloaded.createdAt.toISOString()).toBe(createdAt);
+      expect(String(reloaded.podId)).toBe(String(testPod._id));
+      expect(String(reloaded.userId)).toBe(String(testUser._id));
+      expect(reloaded.content).toBe('Boundary');
+      expect(reloaded.messageType).toBe('text');
     }
   });
 
