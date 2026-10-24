@@ -659,3 +659,81 @@ test('a non-rotating refresh seals the token it refreshed with, not one a supers
   }
 });
 
+// TASK-405 (sable, #2534 3f63c78f): a superseded refresh whose row commit matches
+// nothing must not hand back its own token after the newer one won the fence. It
+// serves the winner's live pair instead.
+test('a refresh that loses its commit serves the newer winner, not its own token', async () => {
+  const savedKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const savedActive = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+  process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 1).toString('base64')}`;
+  process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
+  await ConnectorSecret.init();
+  try {
+    const row = await Integration.create({
+      type: 'hosted-mcp',
+      podId: new mongoose.Types.ObjectId(),
+      createdBy: new mongoose.Types.ObjectId(),
+      status: 'connected',
+      config: {
+        entryId: 'linear',
+        authGeneration: 1,
+        refreshGeneration: 3,
+        expiresAt: new Date(T0 - 3600 * 1000),
+      },
+    });
+    const id = String(row._id);
+    const access0 = await connectorSecrets.put(id, HOSTED_MCP_ACCESS_TOKEN, 'access-0', secretWriteGeneration(1, 0));
+    const refresh0 = await connectorSecrets.put(id, HOSTED_MCP_REFRESH_TOKEN, 'refresh-0', secretWriteGeneration(1, 0));
+    await Integration.updateOne(
+      { _id: row._id },
+      { $set: { 'config.credentialRef': access0, 'config.refreshTokenRef': refresh0 } },
+    );
+
+    const real = defaultRowDeps();
+    const atCommit = gate();
+    const releaseCommitA = gate();
+    const store = {
+      deps: {
+        now: () => new Date(clock),
+        sleep: async (ms) => { clock += ms; },
+        entryFor: () => ENTRY,
+        clientIdFor: () => 'client-id',
+        secrets: { get: connectorSecrets.get, put: connectorSecrets.put, revoke: connectorSecrets.revoke },
+      },
+    };
+    // A's commit is held until B has committed; B's commit is not held.
+    const rowA = {
+      ...real,
+      commit: async (rowId, generation, fields) => {
+        atCommit.open();
+        await releaseCommitA.promise;
+        return real.commit(rowId, generation, fields);
+      },
+    };
+    const callA = credentialFor(await preImage(id), depsWith(store, {
+      row: rowA,
+      refreshAtVendor: async () => ({ accessToken: 'access-A', refreshToken: 'refresh-A', expiresIn: 3600 }),
+    }));
+    await atCommit.promise;
+
+    clock = T0 + 31 * 1000;
+    const b = await credentialFor(await preImage(id), depsWith(store, {
+      refreshAtVendor: async () => ({ accessToken: 'access-B', refreshToken: 'refresh-B', expiresIn: 7200 }),
+    }));
+    expect(b.token).toBe('access-B');
+
+    releaseCommitA.open();
+    const a = await callA;
+    // A lost its commit to B: it serves B's live access token, not its own.
+    expect(a.token).toBe('access-B');
+
+    const after = await live(id);
+    expect(after.config.refreshGeneration).toBe(5);
+    expect(await connectorSecrets.get(after.config.credentialRef)).toBe('access-B');
+    expect(await connectorSecrets.get(after.config.refreshTokenRef)).toBe('refresh-B');
+  } finally {
+    process.env.CONNECTOR_SECRET_KEYS = savedKeys;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = savedActive;
+  }
+});
+

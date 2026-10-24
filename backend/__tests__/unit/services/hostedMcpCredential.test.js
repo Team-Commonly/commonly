@@ -122,13 +122,14 @@ const harness = (options = {}) => {
 
   const commit = jest.fn(async (id, generation, fields) => {
     order.push('commit');
-    if ((state.config.refreshGeneration ?? 0) !== generation) return;
+    if ((state.config.refreshGeneration ?? 0) !== generation) return false;
     const next = { ...state, config: { ...state.config } };
     Object.entries(fields).forEach(([path, value]) => {
       if (path.startsWith('config.')) next.config[path.slice('config.'.length)] = value;
       else next[path] = value;
     });
     state = next;
+    return true;
   });
 
   const markError = jest.fn(async (id, generation, message) => {

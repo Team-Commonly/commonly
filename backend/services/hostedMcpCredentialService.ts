@@ -142,8 +142,12 @@ interface CredentialDeps {
       from: number,
       now: Date,
     ) => Promise<HostedMcpRow | null>;
-    /** Commit the winner's pair. Guarded on the generation it now holds. */
-    commit: (id: unknown, generation: number, fields: Record<string, unknown>) => Promise<void>;
+    /**
+     * Commit the winner's pair, guarded on the generation it now holds. Resolves
+     * false when the guard matched nothing: the caller lost its fence, and its pair
+     * must not be served as the Connection's.
+     */
+    commit: (id: unknown, generation: number, fields: Record<string, unknown>) => Promise<boolean>;
     /** The winner's error mark. Guarded the same way, so only the generation holder can set it. */
     markError: (id: unknown, generation: number, message: string) => Promise<void>;
   };
@@ -187,11 +191,12 @@ export const defaultRowDeps = (): CredentialDeps['row'] => ({
     { new: false },
   ).lean() as unknown as Promise<HostedMcpRow | null>,
   commit: async (id, generation, fields) => {
-    await Integration.findOneAndUpdate(
+    const updated = await Integration.findOneAndUpdate(
       { _id: id, 'config.refreshGeneration': generation },
       { $set: fields },
       { new: true },
     );
+    return updated !== null;
   },
   markError: async (id, generation, message) => {
     await Integration.findOneAndUpdate(
@@ -502,7 +507,7 @@ export const credentialFor = async (
   // One write, and it has to stay one: a loser serves the first re-read that
   // passes `servableRef`, so a reference written ahead of its expiry would be
   // served under the old lifetime whenever that one still reads fresh.
-  await deps.row.commit(id, nextGeneration, {
+  const committed = await deps.row.commit(id, nextGeneration, {
     'config.credentialRef': credentialRef,
     'config.refreshTokenRef': nextRefreshRef,
     'config.expiresAt': expiresAt,
@@ -513,6 +518,10 @@ export const credentialFor = async (
     // subdocument, and clearing it inside one would be dropped in silence.
     errorMessage: null,
   });
+
+  // A lost guard means a newer authorization or refresh already owns the row. This
+  // caller's pair must not be served: the winner's live pair is the Connection's.
+  if (!committed) return loseTheRace({ deps, id });
 
   // Old references are revoked LAST: until the row points at the new ones, the
   // old secret is what a concurrent loser is reading.
