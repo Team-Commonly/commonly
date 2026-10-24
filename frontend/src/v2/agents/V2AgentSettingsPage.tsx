@@ -247,7 +247,7 @@ const V2AgentSettingsPage: React.FC = () => {
       {installation && <V2AgentIdentitySection key={`${agentName}:${instanceId}`} installation={installation} update={update} />}
       <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
       <V2AgentRuntimeGrants
-        key={`${agentName}:${instanceId}`}
+        key={`runtime:${agentName}:${instanceId}`}
         name={agentName}
         instanceId={instanceId}
         runtime={runtime}
@@ -255,7 +255,7 @@ const V2AgentSettingsPage: React.FC = () => {
           await update({ config: { environment: changes } });
         }}
       />
-      <V2AgentPolicy key={`${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
+      <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
         installation={installation} update={update} />
     </main>
   );
