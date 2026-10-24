@@ -386,6 +386,53 @@ describe('agent config PATCH — installer gate', () => {
     }
   });
 
+  it.each(['OPENCLAW_WORKSPACE_ROOT', 'CLAWDBOT_WORKSPACE_DIR'])(
+    'uses the real %s identity file for name and persona edits', async (rootKey) => {
+      const fs = require('fs');
+      const os = require('os');
+      const path = require('path');
+      const actual = jest.requireActual('../../../services/agentProvisionerService');
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'identity-projection-'));
+      const envKeys = ['AGENT_PROVISIONER_K8S', 'OPENCLAW_WORKSPACE_ROOT', 'CLAWDBOT_WORKSPACE_DIR', 'OPENCLAW_WORKSPACE_PATH'];
+      const previous = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+      envKeys.forEach((key) => { delete process.env[key]; });
+      process.env.AGENT_PROVISIONER_K8S = '0';
+      process.env[rootKey] = root;
+      const primary = installation({ installedBy: MEMBER, displayName: 'Database label' });
+      setPod();
+      AgentInstallation.findOne.mockResolvedValue(primary);
+      AgentInstallation.find.mockResolvedValue([primary]);
+      readOpenClawIdentityFile.mockImplementation(actual.readOpenClawIdentityFile);
+      writeWorkspaceIdentityFile.mockImplementation(actual.writeWorkspaceIdentityFile);
+      const identityPath = path.join(root, 'curator', 'IDENTITY.md');
+      const original = '# IDENTITY.md\n\n- **Name:** Runtime name\n- **Vibe:** Warm\n- **Domain:** Research\n\n## Notes\nKeep detail\n';
+      try {
+        await actual.writeWorkspaceIdentityFile('curator', original);
+        const renamed = await request(app).patch('/api/registry/pods/pod-1/agents/openclaw')
+          .send({ instanceId: 'curator', displayName: 'New name' });
+        expect(renamed.status).toBe(200);
+        expect(fs.readFileSync(identityPath, 'utf8')).toBe(original.replace('Runtime name', 'New name'));
+
+        // Distinct runtime and database labels prove Name came from the file.
+        await actual.writeWorkspaceIdentityFile('curator', original);
+        primary.displayName = 'Database label';
+        const persona = { tone: 'professional', specialties: ['research'], boundaries: [], customInstructions: 'Be precise' };
+        const edited = await request(app).patch('/api/registry/pods/pod-1/agents/openclaw')
+          .send({ instanceId: 'curator', persona });
+        expect(edited.status).toBe(200);
+        const saved = fs.readFileSync(identityPath, 'utf8');
+        expect(saved).toContain('- **Name:** Runtime name\n');
+        expect(saved).toContain('- **Domain:** research\n');
+      } finally {
+        envKeys.forEach((key) => {
+          if (previous[key] === undefined) delete process.env[key];
+          else process.env[key] = previous[key];
+        });
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it('refuses an identity rename by an installer who shares that identity', async () => {
     const primary = installation({ installedBy: MEMBER });
     const peer = installation({ podId: 'pod-2', installedBy: 'other-installer' });

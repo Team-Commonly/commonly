@@ -1550,9 +1550,9 @@ const readOpenClawIdentityFile = async (accountId: any, options = {}) => {
     const k8sProvisioner = require('./agentProvisionerServiceK8s');
     return k8sProvisioner.readOpenClawIdentityFile(accountId, options);
   }
-  const workspacePath = process.env.OPENCLAW_WORKSPACE_PATH || '/workspace';
+  const workspacePath = resolveOpenClawWorkspacePath(accountId);
   try {
-    return fs.readFileSync(`${workspacePath}/${accountId}/IDENTITY.md`, 'utf8');
+    return fs.readFileSync(path.join(workspacePath, 'IDENTITY.md'), 'utf8');
   } catch (error: any) {
     // Only absence is empty content. Read/modify/write callers must not
     // report success or replace an unreadable identity with a blank one.
