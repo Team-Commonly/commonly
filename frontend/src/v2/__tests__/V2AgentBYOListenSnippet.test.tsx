@@ -64,6 +64,30 @@ const issueToken = async () => {
 };
 
 describe('BYO listener snippet', () => {
+  test('connect commands use the configured staging API instead of production', async () => {
+    const previousApiUrl = process.env.REACT_APP_API_URL;
+    process.env.REACT_APP_API_URL = 'https://api-staging.commonly.me/';
+    try {
+      await issueToken();
+      const commands = Array.from(document.querySelectorAll('.v2-byo__pre'))
+        .map((el) => el.textContent || '')
+        .filter((text) => text.includes('COMMONLY_API_URL='));
+      expect(commands).toHaveLength(2);
+      commands.forEach((command) => {
+        expect(command).toContain('COMMONLY_API_URL=https://api-staging.commonly.me');
+        expect(command).not.toContain('api.commonly.me');
+      });
+      const cursorConfig = Array.from(document.querySelectorAll('.v2-byo__pre'))
+        .map((el) => el.textContent || '')
+        .find((text) => text.includes('mcpServers'));
+      expect(JSON.parse(cursorConfig || '').mcpServers.commonly.env.COMMONLY_API_URL)
+        .toBe('https://api-staging.commonly.me');
+    } finally {
+      if (previousApiUrl === undefined) delete process.env.REACT_APP_API_URL;
+      else process.env.REACT_APP_API_URL = previousApiUrl;
+    }
+  });
+
   // QA BYO walk 1 (2026-10-16): four equal Copy boxes, and the one titled
   // "Claude Code" was the MCP line, which does not make the agent answer. The
   // command that does is THE box: first, and the only one not marked optional

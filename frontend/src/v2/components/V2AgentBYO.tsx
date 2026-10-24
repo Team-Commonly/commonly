@@ -19,6 +19,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2FeaturePage from './V2FeaturePage';
 import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
@@ -855,9 +856,7 @@ const V2AgentBYO: React.FC = () => {
 
   const chooseMode = (nextMode: 'hosted' | 'byo' | 'machine') => setMode(nextMode);
 
-  const apiUrl = typeof window !== 'undefined' && /api-dev|api\./.test(window.location.hostname)
-    ? `https://${window.location.hostname.replace(/^app/, 'api')}`
-    : 'https://api.commonly.me';
+  const apiUrl = getApiBaseUrl().replace(/\/+$/, '');
 
   const claudeSnippet = issued
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`
