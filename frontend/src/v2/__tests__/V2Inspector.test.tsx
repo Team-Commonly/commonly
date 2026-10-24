@@ -141,6 +141,16 @@ describe('V2Inspector', () => {
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 
+  test('uses the resolved agent label ahead of an old profile ID', () => {
+    renderInspector({ detail: { ...detail, agents: [{
+      agentName: 'scout', instanceId: 'default', displayName: 'Scout',
+      profile: { displayName: 'u1a9e5ecede' },
+    }] } as any, attentionCount: 0, attentionItems: [] });
+
+    expect(screen.getByText('Scout')).toBeInTheDocument();
+    expect(screen.queryByText('u1a9e5ecede')).not.toBeInTheDocument();
+  });
+
   test('uses the short lowercase room name in the single-line agents label', () => {
     renderInspector({ detail: { ...detail, pod: { ...detail.pod, name: 'Sharpen · decision loop' } } as any });
 

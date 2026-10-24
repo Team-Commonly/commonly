@@ -48,7 +48,9 @@ const isWorkingTask = (task: TaskItem): boolean => (
 
 
 const labelForAgent = (agent: V2Agent): string => (
-  agent.profile?.displayName || agent.displayName || agent.agentName
+  // The roster's displayName is resolved from the agent User identity. A
+  // profile name may be an older generated ID, so it is only a fallback.
+  agent.displayName || agent.profile?.displayName || agent.agentName
 );
 
 // Pods often carry a longer descriptive title, while the compact inspector
