@@ -4778,3 +4778,9 @@ test('TASK-443 phone ownership sheet keeps its inset and scroll containment', ()
   expect(modal).toContain('flex-direction: column');
   expect(read('../components/V2PodBoard.tsx')).toContain('className="v2-modal v2-board__detail"');
 });
+
+
+test('TASK-443 lease typography outranks the ownership cell font size', () => {
+  expect(ruleBody(read('../v2.css'), '.v2-board__ownership .v2-board__lease-value'))
+    .toContain('font: 500 12px/16px var(--v2-font-mono)');
+});
