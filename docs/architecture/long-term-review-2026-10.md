@@ -2,7 +2,7 @@
 
 **Status:** Full report. The row's notes and two database counts are still open (see *Still open*). Anything that arrives by 2026-10-25 01:00Z lands on this same PR, so don't merge before then.
 **Asked by:** the CTO (TASK-438).
-**Measured at:** `main` `0b22729fa` (2026-10-24 03:59Z) and GitHub at 2026-10-24 05:12Z, unless a line says otherwise.
+**Measured at:** `main` `0b22729fa` (2026-10-24 03:59Z) and GitHub as of 2026-10-24 05:12Z, unless a line says otherwise.
 
 ## The rule
 
@@ -16,7 +16,7 @@ An idea with no number behind it goes under **Don't**, along with the condition 
 
 ## The finding
 
-1. **The largest measured costs are in the pipeline, not in the code.** In 48 hours, 86% of agent turns posted nothing. A slow PR spends its time waiting. In the slowest tenth, 60% of the open time came after the PR was cleared, and 27% went to waiting for a gate. The author answering a HOLD took 3%.
+1. **The largest measured costs are in the pipeline, not in the code.** In 48 hours, 86% of agent turns posted nothing. A slow PR spends its time waiting. In the slowest tenth of merged PRs, 28% of the open time waited for a gate verdict, 23% fell inside a recorded merge freeze, and 21% came after every gate on record had passed the PR's head and its checks were green, before anyone queued it. The PR rarely records why it waited. The author answering a HOLD took 3%.
 2. **Most of tonight's incidents, and most of the 90-day fix hotspots, are one fact kept in several places.** Credentials live in three stores. Two URLs are read under four environment names. Agent identity is written from 11 places. The task revision is `updatedAt`.
 3. **The usual rewrite candidates have numbers that say to leave them alone.** That covers the language, microservices, CI speed, a token pipeline, auth and Socket.io.
 
@@ -27,8 +27,8 @@ An idea with no number behind it goes under **Don't**, along with the condition 
   - the last 600 merged PRs, created 2026-09-23 to 10-24 and read at 10-24 05:53Z;
   - the last 200 Deploy Dev runs (09-04 to 10-24);
   - the last 400 Tests runs (10-23 15:32Z to 10-24 05:08Z).
-- **PR timelines** for the 150 PRs opened in the 48 hours to 2026-10-23 22:45Z. The list was read from GitHub at 10-24 05:12Z, and the event timeline of each merged or open PR at 05:30Z. They give when each PR was opened, pushed, marked ready, gated, queued and merged. A gate verdict is a review whose last line is `GATE: PASS` or `GATE: HOLD`.
-- **Fleet logs** for the same 48 hours, from an internal SRE report. They give turns, wakes, timeouts, failures and LiteLLM status codes. The same report gives the row created → claimed times.
+- **PR timelines** for the 150 PRs opened in the 48 hours to 2026-10-23 22:45Z, read from GitHub at 10-24 06:39–06:42Z and counted up to 05:12Z. Each PR's full timeline (every page) gives when it was opened, pushed, marked ready, gated, queued and merged, and the Tests runs give each head commit and its result. A gate verdict is a review whose last line is `GATE: PASS`, `GATE: HOLD` or `GATE: FAIL` and nothing more, and it belongs to the gate its byline names.
+- **Fleet logs** for 10-21 22:30Z to 10-23 22:45Z, from an internal SRE report. They give turns, wakes, timeouts, failures and LiteLLM status codes. The same report gives the row created → claimed times.
 - **Import-graph reachability** from `frontend/src/index.tsx`, `backend/server.ts` and `cli/src/index.js`, at `0afed7ba1`.
 - **Tonight's incident list**, as given with TASK-438.
 - **The Raft study** (internal, 2026-10-23), cited by name only.
@@ -73,51 +73,7 @@ Items are ranked by measured cost removed per day of effort.
 - spawns per hour, to at least 60% below the 405 baseline as a daily average;
 - wake-semantics fixes in `agent.js`, from about 4 a month to 0–1.
 
-### 2. Route gate events from GitHub to whoever acts next (2 days)
-
-**Removes:** PRs that wait on a gate, or sit cleared and unqueued, because the ask or the clearance lived only in pod chat.
-
-**Evidence** (the 150 PRs opened in the 48 hours to 10-23 22:45Z):
-
-- **The interim's p90 was too low.** At the window's end, opened → merged measured 61 minutes median and 7.2 hours p90. That counted only the PRs that had already merged. By 10-24 05:12Z, 107 had merged, at 1.9 hours median and 10.7 hours p90. If the 13 non-draft PRs still open merge, the p90 will be at least 14.7 hours.
-- **The time goes to waiting, not to fixing.** The slowest tenth was 11 merged PRs, open 209 hours between them. This is what that time waited on:
-
-  | Waiting on | Share |
-  |---|---|
-  | a merge: the PR had a PASS at its head, and nobody had queued it | 45% |
-  | a merge, while the PR stayed a draft after its PASS | 15% |
-  | a gate verdict | 27% |
-  | the author, still drafting | 8% |
-  | the author, answering a HOLD | 3% |
-  | the merge queue itself | 1% |
-
-  All 107 merged PRs split much the same way: 57% after a PASS, 22% waiting for a gate, and 4% on the author answering a HOLD.
-- **A few long waits make the tail.** The median wait for a gate verdict was 7 minutes, and the median wait from a PASS to the queue was 2 minutes. But 11 waits from a PASS to the queue ran past 4 hours, and so did 4 waits for a verdict. Seven of those 11 ended in the same half hour, when someone queued a batch. Some of that waiting is deliberate, such as during a deploy freeze, and nothing on the PR says which.
-- **A HOLD is answered fast.** Across 135 HOLDs, the next verdict came 7 minutes later at the median and 42 minutes at p90. The first verdict was a HOLD on 65 of the 135 PRs that got one.
-- **Cleared PRs sit.** At 05:12Z, 11 of the 13 non-draft PRs still open had a PASS as their latest verdict. Those PASSes were 2.4 to 42.5 hours old.
-- **The asks are in chat.** Only 32 of the 150 PR bodies name their gate. The other asks went to pod chat, which nothing that watches PRs can see.
-- **The merge queue is not the wait.** `main` merges through a GitHub merge queue, and the Tests workflow runs on it (`.github/workflows/tests.yml:18`). The 107 merges took 116 passes through the queue, so 9 times a PR was sent back. The queue took 3% of all open time. A cleared PR waits for someone to queue it.
-
-**Shape:**
-
-- Build on the GitHub App receiver. It already verifies review events (`backend/routes/webhooks/github.ts:56`) and posts cards into a bound pod (`backend/services/githubGigService.ts`). It is off by default, and each instance switches it on (`k8s/helm/commonly/values.yaml:282`).
-- Read only a review's last line, and only from the accounts the gates post from. Copy nothing else from the review, which keeps the rule at `githubGigService.ts:60–61`.
-- On each event, tell whoever acts next:
-  - a PR opened, or pushed after a HOLD: the gate its body names;
-  - `GATE: HOLD`: the author's seat, found from the task row that links this PR;
-  - `GATE: PASS` at the PR's head: one ready-to-merge list, oldest first, for whoever merges.
-- A PR that should wait stays a draft, or says why on the PR, so the list holds only PRs that can go.
-- Whether a PASS at the head should queue the merge by itself is a ruling for the people who merge. The list helps either way.
-
-**Effort:** 2 days. The receiver, the signature check and delivery dedupe exist. The work is the verdict parse, the routing and the list.
-
-**Moves:**
-
-- opened → merged p90, read a week after the window closes, from at least 14.7 hours to under 4;
-- PR bodies that name their gate, from 21% to over 90%;
-- waits longer than 4 hours from a PASS to the queue, from 11 in the window to 0, apart from deliberate holds.
-
-### 3. Checkpoint before the turn cap, and slice rows to fit (1 day)
+### 2. Checkpoint before the turn cap, and slice rows to fit (1 day)
 
 **Removes:** turns that the 45-minute cap kills, along with their work.
 
@@ -139,7 +95,7 @@ Items are ranked by measured cost removed per day of effort.
 - timeouts per 48 hours, from 71 to under 15;
 - timed-out turns that lose a commit, to 0.
 
-### 4. One source for the instance URL (1 day)
+### 3. One source for the instance URL (1 day)
 
 **Removes:** non-production instances that link to production, call back to it, or advertise it.
 
@@ -173,6 +129,48 @@ Items are ranked by measured cost removed per day of effort.
 
 - production literals outside the module, from 30 to 0;
 - instance-URL incidents, to 0 per quarter.
+
+### 4. Record on the PR what it waits on, and list what can merge (1 day)
+
+**Removes:** waits that the PR does not explain. A PR that every gate has passed and that is held on purpose looks the same as one that nobody has queued, and most PR bodies don't name the gates they wait for.
+
+**Evidence** (the 150 PRs opened in the 48 hours to 10-23 22:45Z):
+
+- **The interim's p90 was too low.** At the window's end, opened → merged measured 61 minutes median and 7.2 hours p90. That counted only the PRs that had already merged. By 10-24 05:12Z, 107 had merged, at 1.9 hours median and 10.7 hours p90. If the 13 non-draft PRs still open then also merge, the p90 across those 120 will be at least 14.7 hours.
+- **The time goes to waiting, not to fixing.** `waits.py` (in *How to re-measure*) labels each stretch of a PR's open time by what its record shows:
+
+  | Open time spent | Slowest tenth (11 PRs, 209 h) | All 107 merged (449 h) |
+  |---|---|---|
+  | waiting for a gate verdict on the current head | 28% | 25% |
+  | inside the recorded freeze, on a PR that changes a frozen path | 23% | 11% |
+  | with every gate on record passed at the head and checks green, not yet queued | 21% | 29% |
+  | as a draft | 15% | 19% |
+  | as a draft, with every gate on record passed at the head | 8% | 9% |
+  | with a HOLD standing at the current head | 3% | 3% |
+  | in CI, or in the merge queue | 2% | 4% |
+
+- **The third row is an upper bound.** A gate is on record once it posts a verdict on the PR, or once the body names it on a `Gate:` line, and only 32 of the 150 bodies have that line. So the third row also holds PRs whose last gate was asked only in chat and had not answered, and PRs held on purpose without saying so. The record cannot tell those apart from PRs that nobody queued.
+- **This corrects the earlier draft.** It put 45% of the slowest tenth's open time on PRs that had passed and that nobody had queued. Its classifier let any PASS clear the PR: it ignored which head the PASS was for, let one gate's PASS clear another gate's HOLD, counted time inside the freeze, and read only the first page of each timeline. With those fixed, the share is 21%, and the freeze is 23%.
+- **A few long waits make the tail.** The median wait for a gate verdict was 9 minutes. Once every gate on record had passed and checks were green, the median wait to be queued was 1 minute. But 5 waits for a verdict ran past 4 hours, and so did 11 waits to be queued. Of those 11, the PR records a reason for 4: two ran into the freeze and were queued within three minutes of its end, one body says it is not urgent, and one comment times the merge to a deploy. The other 7 record nothing, and 6 of those were queued in the same half hour as the one timed to a deploy.
+- **Passed PRs sit open.** At 05:12Z, 13 PRs in the window were open and not drafts. On 10 of them, every gate on record had passed the head and its checks were green. At the window's end it was 26 of 32.
+- **The merge queue is not the wait.** `main` merges through a GitHub merge queue, and the Tests workflow runs on it (`.github/workflows/tests.yml:18`). The 107 merges took 116 passes through the queue, so 9 times a PR left the queue and was queued again. The queue took 3% of all open time.
+
+**Shape:**
+
+- **Record the wait on the PR.** The body names every gate on one `Gate:` line. A PR held on purpose is a draft, or carries a `Hold:` line with the reason and when it ends. A freeze is written down once, as paths and a window, where the list reads it.
+- **One list, from the PR timelines.** It shows each open PR as ready (oldest first), held and why, or waiting on which gate and since when. Ready means that every gate on the `Gate:` line, and every gate that has reviewed, has passed the current head, that its checks there are green, and that no `Hold:` line or freeze applies. A PASS from one gate never stands in for another gate's verdict, and a PASS on an older head counts for nothing. The list reads verdicts the way `waits.py` does, from the review's last line, but only from the accounts the gates review from, and credits each to the gate its byline names. The work is to turn `waits.py` into that list and run it on a schedule where whoever merges reads it.
+- **Route events second, if the trigger fires.** Build on the GitHub App receiver. It already verifies review events (`backend/routes/webhooks/github.ts:56`) and posts cards into a bound pod (`backend/services/githubGigService.ts`). It is off by default, and each instance switches it on (`k8s/helm/commonly/values.yaml:282`). Read only a review's last line, and copy nothing else from the review, which keeps the rule at `githubGigService.ts:60–61`. On a HOLD, tell the author. When a PR becomes ready, tell whoever merges. On a push after a verdict, tell each gate whose verdict the push made stale.
+
+**Trigger** (for the routing): run the list for two weeks. If waits over 4 hours for a gate verdict, or waits over 4 hours to be queued with no recorded reason, still happen more than once a week, add the routing.
+
+**Effort:** 1 day for the `Gate:` and `Hold:` lines and the list. The routing is 2 more days, on its trigger. The receiver, the signature check and delivery dedupe exist.
+
+**Moves:**
+
+- PR bodies with a `Gate:` line, from 21% to over 90%;
+- waits over 4 hours to be queued with no recorded reason, from 7 in the window to 0;
+- waits over 4 hours for a gate verdict, from 5 in the window to under one a week;
+- opened → merged p90, read a week after the window closes, from at least 14.7 hours to under 4 within six months.
 
 ### 5. One credential store (3–5 days)
 
@@ -354,20 +352,21 @@ Items are ranked by measured cost removed per day of effort.
 
 ### B. Move hosted turns into their own Deployment (5–8 days)
 
-**Removes:** hosted turns that die when a deploy restarts the API process.
+**Removes:** hosted turns that die whenever the API process stops, for a rollout or a crash.
 
 **Evidence:**
 
 - **Hosted turns run inside the API process** (`dispatchInProcess`, `backend/services/agentEventService.ts:1333`).
-- **A restart sweep re-runs turns that died with the process** (`redispatchStuckInProcess`, `agentEventService.ts:919`). It marks each dead turn's run `interrupted` (`:954` and `:1086`, the only places that write that status).
+- **Nothing lets them finish at shutdown.** A rollout gives the old pod a 10-second `preStop` sleep (`k8s/helm/commonly/templates/core/backend-deployment.yaml:659–661`) inside a 30-second grace period (`:28`), and SIGTERM comes after the sleep. No backend module handles that signal (see *Everything else*), so the process is gone within those 30 seconds, whatever turns it is running. A native turn can take up to about two minutes (`agentEventService.ts:1077`).
+- **A sweep finds the dead runs later.** `garbageCollect` (`agentEventService.ts:723`) runs every 10 minutes (`schedulerService.ts:182–186`), and once 8 seconds after the scheduler starts (`:644–648`). It re-runs a turn whose event was left delivered and stale (`redispatchStuckInProcess`, `agentEventService.ts:919`), and gives up on runs left queued or running past a cutoff (`interruptAbandonedRuns`, `:1081`). Both mark the run `interrupted` (`:952–955` and `:1084–1086`, the only writers of that status), and both set `completedAt` to the time of the sweep, not the time the turn died.
+- **So a count of interrupted runs is a count of runs the sweep found dead, not of deploys.** A daily count cannot say which restart ended which run: ten such runs on a day with ten deploys fit one per deploy, all ten at one deploy, or a crash between them. Each run died somewhere between its `startedAt` and its `completedAt`, so the join in *How to re-measure* credits a run to a restart only when exactly one backend restart falls in that span, and counts the rest apart. It needs the restart times, which only the operator can read.
 - **ADR-021 (Accepted) already specifies the target**, a separate `agent-runtime` Deployment. The chart has none yet.
 
-**Trigger:**
+**A cheaper first step:** drain before exit. On SIGTERM, stop starting turns, let the ones in flight finish, and set the grace period past the turn bound. That covers rollouts and other graceful stops, not crashes, and it is about a day.
 
-- Wait until A is done.
-- Wait for a count of turns interrupted per deploy, which needs a database read (the query is in *How to re-measure*). If most deploys interrupt hosted turns, this moves up behind A.
+**Trigger:** the join in *How to re-measure*. If rollouts end hosted turns, do the drain now; it does not wait for A. If crashes end them too, B itself moves up, right behind A.
 
-**Moves:** hosted turns interrupted per deploy, from the count that query returns to 0.
+**Moves:** runs ended by a backend restart, from the join's count to 0, rollouts first through the drain.
 
 ### C. Store chat messages only in PostgreSQL (2–3 days)
 
@@ -436,9 +435,9 @@ Items are ranked by measured cost removed per day of effort.
 
 | Don't | The number that says leave it alone | Revisit if |
 |---|---|---|
-| Rewrite in another language | The measured costs are wakes, gates and turn length. A *keyword* search of the 577 fix subjects in 90 days finds none about speed, CPU, memory use or timeouts. Item 3's turn timeouts are long agent turns, not slow code. | a profile shows a CPU-bound path that users feel |
+| Rewrite in another language | The measured costs are wakes, PR waits and turn length. A *keyword* search of the 577 fix subjects in 90 days finds none about speed, CPU or timeouts, and the 3 that mention memory or a leak are about agent memory and a data leak, not memory use. Item 2's turn timeouts are long agent turns, not slow code. | a profile shows a CPU-bound path that users feel |
 | Split into microservices | Tonight's incidents were one fact kept in several places, and more services multiply the places. Two process splits (A, B) cover the deploy-coupling cost. | one part needs its own release cadence |
-| Speed up CI | Queue time is 0. Successful runs take 4.2 minutes median and 9.4 minutes p90. Superseding pushes cancel 39% of runs (`cancel-in-progress`, `.github/workflows/tests.yml:48`), which costs runner time and nobody's wait. A slow PR waits hours, not minutes (item 2). | queue time appears |
+| Speed up CI | Queue time is 0. Successful runs take 4.2 minutes median and 9.4 minutes p90. Superseding pushes cancel 39% of runs (`cancel-in-progress`, `.github/workflows/tests.yml:48`), which costs runner time and nobody's wait. A slow PR waits hours, not minutes (item 4). | queue time appears |
 | Port the CLI or the MCP server to TypeScript | `agent.js` took 26 fixes in 90 days, and none names a type error. They were semantics, which is item 1. | a type-class bug turns up |
 | Burn down backend `.js` lint as a project | It has 2,279 errors, and 277 of the 282 dirty files are under `__tests__` (measured 08-28). The `.ts` gate already catches new violations. | never as a project; fix files as they are touched |
 | Build a design-token pipeline | `tokens.css` (118 variables) and `v2.css` (86) share only 7 names, all motion, and those agree, so there is no drift to automate. Instead, fix the CLAUDE.md line that says the two "must move together". | the two files start sharing colour tokens |
@@ -457,7 +456,7 @@ Items are ranked by measured cost removed per day of effort.
 | Revoked keys still showed as connected (#2560, plus three follow-up rows). | 5 |
 | The deprecated agent manager was still being served (#2505). | 9 |
 | A skills directory resolved on one host only (fixed 10-23). | 1 (settings match what runs) |
-| Staging pointed at production URLs (#2529, #2481, #2568). | 4 |
+| Staging pointed at production URLs (#2529, #2481, #2568). | 3 |
 
 ## By area
 
@@ -466,11 +465,12 @@ Items are ranked by measured cost removed per day of effort.
 | Language | Keep TypeScript in the backend and frontend, and JavaScript in the CLI and the MCP server. | Don't |
 | Stack | Keep Express, MongoDB, PostgreSQL, Redis and Socket.io. Add BullMQ on Redis after the worker split. | A, Don't |
 | System design | A modular monolith with two process splits: a worker, then the agent runtime. | A, B |
-| Structure | One place per fact. Delete what nothing reaches. | 4, 5, 6, 9 |
+| Structure | One place per fact. Delete what nothing reaches. | 3, 5, 6, 9 |
 | Data model | Credentials in one collection, one identity writer, and a task `rev` and `priority`. Messages move to one store once the fallback rows are counted. | 5, 6, 7, C |
 | Test strategy | The backend already has more test lines than product lines (131k against 126k, leaving out operator scripts). The window's misses were cross-store and layout bugs that unit tests don't reach, so add contract tests and layout checks, not more unit tests. | 6, 8 |
 | UI | Layout checks come first. Split `v2.css` and retire ChatRoom only when their triggers fire. | 8, E, F |
 | Agent context | CLAUDE.md is read on every spawn and grew 44% in 90 days. The OpenClaw sweep is its biggest cut. | D |
+| Pipeline | Wake only addressed seats, checkpoint before the turn cap, and record on each PR what it waits on. | 1, 2, 4 |
 
 ## Commonly in 6 months (April 2027)
 
@@ -483,7 +483,7 @@ The languages, databases and frameworks stay the same. Two things change: each f
   - A deploy restarts no cron job and interrupts no hosted turn.
 - **One place per fact.** There is one instance-URL module, one credential collection, one identity-creation function and one task revision counter. A revoke reaches everything, because there is only one place to reach.
 - **Addressed wakes.** A seat wakes on a mention, its own row, its own thread, or its own task or PR. Everything else arrives as a digest, and most turns do something.
-- **Gates on the PR.** Every gate ask, HOLD and PASS reaches whoever acts next without anyone relaying it, and the p90 from opened to merged is under four hours.
+- **Waits recorded on the PR.** Each PR names its gates and any hold, and one list shows what can merge. If that does not end the long waits, gate events go straight to whoever acts next. The p90 from opened to merged is under four hours.
 - **Layout-checked UI.** Every UI change is checked at phone and desktop width before it deploys.
 - **A smaller CLAUDE.md.** OpenClaw is gone, if ADR-021's trigger fires, and CLAUDE.md is under 45 KB.
 
@@ -493,9 +493,10 @@ Re-measure these numbers monthly:
 |---|---|---|---|
 | Turns that post nothing (48 h) | 86% | under 40% | 1 |
 | Spawns per hour, daily average | 405 (baseline) | at least 60% lower | 1 |
-| PR opened → merged, p90, read a week after the window | 10.7 h so far; at least 14.7 h once the open ones merge | under 4 h | 2 |
-| Turn timeouts per 48 h | 71 | under 15 | 3 |
-| Instance-URL incidents | 3 in two days | 0 per quarter | 4 |
+| Turn timeouts per 48 h | 71 | under 15 | 2 |
+| Instance-URL incidents | 3 in two days | 0 per quarter | 3 |
+| PR bodies with a `Gate:` line | 21% | over 90% | 4 |
+| PR opened → merged, p90, read a week after the window | 10.7 h so far; at least 14.7 h once the open ones merge | under 4 h | 4 |
 | Revoke-missed-a-store fixes | 5 in six weeks | 0 per quarter | 5 |
 | Identity and install fixes (90 d) | about 19 | 3 or fewer | 6 |
 | Row created → claimed, p90 | 54.3 h | under 12 h | 7 |
@@ -510,9 +511,9 @@ Re-measure these numbers monthly:
 - **The row's notes.** This report works from tonight's incident list, as given with TASK-438. It has not yet been checked against the row's own notes. Any incident they add gets a line in *Tonight's incidents, mapped*.
 - **Two database counts.** Both queries are in *How to re-measure*.
   - MongoDB message rows created in the last 30 days decide whether C moves to Do now.
-  - Turns interrupted per deploy decide how soon B moves.
+  - The join of interrupted runs to backend restarts decides how soon B moves. It needs the restart times, which only the operator can read. A daily count alone cannot say which restart ended a run.
 - **The efforts are estimates**, made by counting the sites each item touches. Re-estimate each one with the implementor who takes it.
-- **The PR figures are provisional until 2026-10-30.** Item 2's p90 is read a week after the window, once the PRs still open have merged or closed.
+- **The PR figures are provisional until 2026-10-30.** Item 4's p90 is read a week after the window, once the PRs still open have merged or closed.
 
 ## How to re-measure
 
@@ -528,6 +529,7 @@ grep -ciE '^fix' subjects.txt              # fixes: 577, which is 39% of commits
 grep -iE '^fix' subjects.txt | grep -ciE 'token|credential|revoke|auth|401|403'   # 73
 grep -iE '^fix' subjects.txt \
   | grep -ciwE 'slow|slower|latency|perf|performance|cpu|oom|heap|timeout|timeouts|timed|speed'   # 0
+grep -iE '^fix' subjects.txt | grep -ciwE 'memory|leak|leaks|leaked|leaking'   # 3
 git log $REF --no-merges --since=$SINCE --format='>%s' --name-only \
   | awk '/^>/ { fix = (tolower(substr($0, 2, 3)) == "fix"); next } fix && NF' \
   | sort | uniq -c | sort -rn | head        # fix commits per file
@@ -536,102 +538,157 @@ git log $REF --no-merges --since=$SINCE --format= --name-only \
 git show $REF:CLAUDE.md | wc -c            # 68,794 bytes
 ```
 
-The speed search leaves out `memory` and `leak`. In these fix subjects, those words match only fixes to agent memory and to data leaks, not to memory use.
+The speed search leaves out `memory` and `leak`, which get their own search. Its 3 subjects fix agent memory (two) and a data leak (one), and none is about memory use.
 
 ### PR timelines
 
 ```sh
 gh pr list --repo Team-Commonly/commonly --state all --limit 300 \
-  --search "created:2026-10-21T22:30:00Z..2026-10-23T22:45:00Z" \
-  --json number,state,isDraft,createdAt,mergedAt,reviews,body > window.json
-jq -r --arg now 2026-10-24T05:12:00Z '
-  def q($a; $p): ($a | length - 1) as $n | ($n * $p | floor) as $lo | ([$lo + 1, $n] | min) as $hi
-    | ($a[$lo] + ($a[$hi] - $a[$lo]) * ($n * $p - $lo)) * 10 | round / 10;
-  def hours($a; $b): (($b | fromdate) - ($a | fromdate)) / 3600;
-  ([.[] | select(.mergedAt) | hours(.createdAt; .mergedAt)] | sort) as $m
-  | ([.[] | select(.mergedAt and .mergedAt <= "2026-10-23T22:45:00Z") | hours(.createdAt; .mergedAt)] | sort) as $c
-  | [.[] | select(.state == "OPEN" and (.isDraft | not)) | hours(.createdAt; $now)] as $o
-  | "at the cutoff: \($c | length) merged, median \(q($c; .5)) h, p90 \(q($c; .9)) h",
-    "at \($now): \($m | length) merged, median \(q($m; .5)) h, p90 \(q($m; .9)) h",
-    "counting the \($o | length) open non-draft PRs at their age: p90 at least \(q($m + $o | sort; .9)) h"' window.json
-jq -r '"bodies naming a gate: \(map(select((.body // "") | test("(?m)^\\W*gates?\\b"; "i"))) | length) of \(length)"' window.json
-mkdir timelines
-for n in $(jq -r '.[] | select(.mergedAt or (.state == "OPEN" and (.isDraft | not))) | .number' window.json); do
-  gh api "repos/Team-Commonly/commonly/issues/$n/timeline?per_page=100" > timelines/$n.json
+  --search "created:2026-10-21T22:45:00Z..2026-10-23T22:45:00Z" \
+  --json number,state,isDraft,createdAt,closedAt,mergedAt,headRefName,body,files > window.json
+gh api --paginate \
+  "repos/Team-Commonly/commonly/actions/workflows/tests.yml/runs?event=pull_request&created=2026-10-21T22:45:00Z..2026-10-24T05:12:00Z&per_page=100" \
+  --jq '.workflow_runs[] | {head_branch, head_sha, created_at, updated_at, status, conclusion}' | jq -s . > runs.json
+mkdir -p timelines
+for n in $(jq -r '.[].number' window.json); do
+  gh api --paginate "repos/Team-Commonly/commonly/issues/$n/timeline?per_page=100" --jq '.[]' | jq -s . > timelines/$n.json
 done
-python3 -I waits.py window.json timelines 2026-10-24T05:12:00Z
+python3 -I waits.py window.json runs.json timelines 2026-10-24T05:12:00Z
+python3 -I waits.py window.json runs.json timelines 2026-10-23T22:45:00Z   # the window's end
 gh api repos/Team-Commonly/commonly/rules/branches/main --jq '.[].type'   # includes merge_queue
 ```
 
-Read at 05:12Z, the first `jq` printed 86 merged at the cutoff (61 minutes median, 7.2 hours p90), 107 merged by 05:12Z (1.9 and 10.7 hours), and a p90 of at least 14.7 hours once the 13 open PRs are counted. The second printed 32 of 150.
+Read at 06:39–06:42Z, the first run printed the shares in item 4's table, 151 waits for a verdict (median 9 minutes, 5 over 4 hours), 111 waits to be queued (median 1 minute, 11 over 4 hours), 107 merged at 112 minutes median and 10.7 hours p90 with a floor of 14.7 hours, 32 of 150 bodies with a `Gate:` line, and 116 queue passes. Of the 13 open non-draft PRs, it labelled 10 `ready`. The second run printed 86 merged at 61 minutes median and 7.2 hours p90, and 26 of 32 `ready`. Each run also prints one line per wait over 4 hours, with its PR, its length and when it ended.
 
-`waits.py` labels each stretch of a PR's open time by what the PR was waiting on, and sums the labels. Push times come from commit dates and force-push events, so a commit pushed long after it was made reads as pushed early. A fresh list also counts PRs that merged after 05:12Z, so the shares move until every PR in the window has closed.
+How `waits.py` labels the time:
+
+- **Heads.** A commit is the PR's head from the first time CI runs on it, it is force-pushed, or a review names it. CI keeps heads that a force push drops from the timeline. CI skips a PR that conflicts with its base, so a head CI never ran on falls back to its commit date, which is only a proxy for when it was pushed. 188 of the 706 heads were placed that way, and on only one PR was such a head the current one when a verdict or a check result came in, when the PR was queued, or at its end. Dropping the fallback moves every share by under a point.
+- **Verdicts.** A verdict is a review whose last line is `GATE: PASS`, `GATE: HOLD` or `GATE: FAIL`, with nothing else on the line but punctuation, and FAIL counts as HOLD. A verdict holds only for the commit the review names. Every account's verdicts count, and in these timelines all 454 came from user accounts, none from bots.
+- **Gates.** Several gates review from one shared account, so a verdict belongs to the gate its byline names, or to its account when there is no byline. A gate the body names on a `Gate:` line counts before it reviews, if it has signed a verdict in the window by the cutoff. A PR's gates have all passed only when every gate that has reviewed or is named has passed the current head, and its checks are green only when its Tests run there has passed. Counting named gates moves 15 hours of the merged PRs' draft time from the draft-and-passed row to the plain draft row, and no other row by more than 0.1 hours.
+- **The freeze.** Merges under `cli/` and `commonly-mcp/` were frozen from 10-22 20:45Z to 10-23 17:45Z, as recorded on the PRs it held. Open time inside that window, on a PR that changes those paths and is neither a draft nor queued, counts as frozen. No other hold is recorded in a form a script can read, so other deliberate waits fall in the other rows.
+- **The cutoff.** Events after the cutoff are ignored, so a later fetch gives the same figures for the same cutoff, unless a PR's body, files or reviews have changed since.
 
 <details>
 <summary><code>waits.py</code></summary>
 
 ```python
-# python3 -I waits.py window.json timelines/ 2026-10-24T05:12:00Z
+# python3 -I waits.py window.json runs.json timelines/ 2026-10-24T05:12:00Z
 import json, os, re, sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
-win, tdir, now = sys.argv[1], sys.argv[2], sys.argv[3]
+win, runs_file, tdir, now = sys.argv[1:5]
 t = lambda s: datetime.fromisoformat(s.replace('Z', '+00:00'))
-GATE = re.compile(r'^\W*GATE\s*:?\W*(PASS|HOLD)', re.I)
+NOW = t(now)
+runs = json.load(open(runs_file))
+VERDICT = re.compile(r'^\W*GATE\s*:\s*(PASS|HOLD|FAIL)\W*$', re.I)   # bare, alone on the last line
+BYLINE = re.compile(r'Written by ([^,\n]+), a Commonly agent')
+GATE_LINE = re.compile(r'^\W*gates?\b', re.I)
+# The one hold recorded as paths and a window: merges under these paths were
+# frozen from Thu 13:45 to Fri 10:45 PT. Holds on single PRs are recorded in prose.
+FROZEN, FREEZE = ('cli/', 'commonly-mcp/'), (t('2026-10-22T20:45:00Z'), t('2026-10-23T17:45:00Z'))
 
-def verdict(body):
-    lines = [l for l in (body or '').splitlines() if l.strip()]
-    m = GATE.match(lines[-1]) if lines else None
-    return m.group(1).upper() if m else None
+def verdict(e):
+    lines = [l.strip() for l in (e.get('body') or '').splitlines() if l.strip()]
+    m = VERDICT.match(lines[-1]) if lines else None
+    return m and ('PASS' if m.group(1).upper() == 'PASS' else 'HOLD')
 
-def events(n):
-    out, born_draft = [], None
-    for e in json.load(open(os.path.join(tdir, f'{n}.json'))):
+def gate(e):
+    # Several gates review from one shared account, so the byline names the gate.
+    m = BYLINE.findall(e.get('body') or '')
+    return (m[-1] if m else e['user']['login']).strip().lower()
+
+def events(p):
+    tl = json.load(open(os.path.join(tdir, f"{p['number']}.json")))
+    lo = t(p['createdAt']) - timedelta(minutes=2)
+    hi = t(p['closedAt']) if p['closedAt'] else NOW
+    seen, out = {}, []
+    def sight(ts, sha):
+        if sha and (sha not in seen or ts < seen[sha]):
+            seen[sha] = ts
+    # A commit is the head from when CI starts on it, it is force-pushed, or a
+    # review names it. A force push drops old heads from the timeline; CI keeps them.
+    for r in runs:
+        if r['head_branch'] == p['headRefName'] and lo <= t(r['created_at']) <= hi:
+            sight(t(r['created_at']), r['head_sha'])
+            if r['status'] == 'completed':
+                out.append((t(r['updated_at']), 'checks', (r['head_sha'], r['conclusion'])))
+    for e in tl:
         k = e.get('event')
-        if k == 'committed':
-            out.append((t(e['committer']['date']), 'push'))
-        elif k == 'head_ref_force_pushed':
-            out.append((t(e['created_at']), 'push'))
-        elif k == 'reviewed' and e.get('submitted_at') and verdict(e.get('body')):
-            out.append((t(e['submitted_at']), verdict(e['body'])))
+        if k == 'head_ref_force_pushed':
+            sight(t(e['created_at']), e['commit_id'])
+        elif k == 'reviewed' and e.get('submitted_at') and verdict(e):
+            sight(t(e['submitted_at']), e['commit_id'])
+            out.append((t(e['submitted_at']), 'verdict', (gate(e), verdict(e), e['commit_id'])))
         elif k in ('ready_for_review', 'convert_to_draft', 'added_to_merge_queue', 'removed_from_merge_queue'):
-            out.append((t(e['created_at']), k))
-            if born_draft is None and k in ('ready_for_review', 'convert_to_draft'):
-                born_draft = k == 'ready_for_review'
-    return sorted(out), bool(born_draft)
+            out.append((t(e['created_at']), k, None))
+    for e in tl:   # CI skips a PR that conflicts with its base, so fall back to the commit date
+        if e.get('event') == 'committed' and e['sha'] not in seen:
+            sight(t(e['committer']['date']), e['sha'])
+    out += [(ts, 'head', sha) for sha, ts in seen.items()]
+    return sorted(out, key=lambda x: (x[0], x[1] != 'head'))
+
+def named(p):
+    # The gates a Gate: line in the body names, out of the gates seen in bylines.
+    lines = [l for l in (p['body'] or '').splitlines() if GATE_LINE.match(l)]
+    return {g for g in KNOWN if any(re.search(r'\b' + re.escape(g) + r'\b', l, re.I) for l in lines)}
+
+def stretches(p, end):
+    # Label each stretch of open time by what the PR waits on. 'gate': a verdict on
+    # the current head. 'author': a HOLD stands at the current head. 'checks': every
+    # gate that has reviewed or is named passed the current head, and its Tests run
+    # has not passed. 'ready': that run passed too. 'queue': queued. Drafts apart.
+    ev = events(p)
+    flips = [k for _, k, _ in ev if k in ('ready_for_review', 'convert_to_draft')]
+    draft = flips[0] == 'ready_for_review' if flips else p['isDraft']
+    head, gates, green, queued = None, {g: (None, None) for g in named(p)}, {}, False
+
+    def label():
+        if queued:
+            return 'queue'
+        passed = bool(gates) and all(v == 'PASS' and c == head for v, c in gates.values())
+        if draft:
+            return 'draft, gates passed' if passed else 'draft'
+        if passed:
+            return 'ready' if green.get(head) == 'success' else 'checks'
+        return 'author' if any(v == 'HOLD' and c == head for v, c in gates.values()) else 'gate'
+
+    out, cur, since = [], label(), t(p['createdAt'])
+    for ts, k, x in [e for e in ev if e[0] < end] + [(end, 'end', None)]:
+        ts = max(ts, since)
+        if k == 'head': head = x
+        elif k == 'verdict': gates[x[0]] = (x[1], x[2])
+        elif k == 'checks': green[x[0]] = x[1]
+        elif k == 'added_to_merge_queue': queued = True
+        elif k == 'removed_from_merge_queue': queued = False
+        elif k == 'convert_to_draft': draft = True
+        elif k == 'ready_for_review': draft = False
+        new = label()
+        if new != cur or k == 'end':
+            out.append((cur, since, ts, k))
+            cur, since = new, ts
+    return out
+
+def hours(a, b):
+    return max((b - a).total_seconds(), 0) / 3600
 
 def split(p, end):
-    # What the PR waits on: a 'gate' until a verdict, its 'author' from a HOLD
-    # until a push, a merge ('cleared') from a PASS until queued or pushed, and
-    # the 'queue' while queued. Draft time is counted apart.
-    start = t(p['createdAt'])
-    ev, draft = events(p['number'])
-    passed, state, last, since = False, 'gate', start, start
-    acc, gate_waits, clear_waits, passes = {}, [], [], 0
-    for ts, k in [e for e in ev if start < e[0] < end] + [(end, None)]:
-        label = ('draft, cleared' if passed else 'draft') if draft else state
-        acc[label] = acc.get(label, 0) + (ts - last).total_seconds() / 3600
-        last, before = ts, (state, draft)
-        if k in ('PASS', 'HOLD') and state == 'gate' and not draft:
-            gate_waits.append((ts - since).total_seconds() / 3600)
-        if k == 'added_to_merge_queue' and state == 'cleared' and not draft:
-            clear_waits.append((ts - since).total_seconds() / 3600)
-        if k == 'push': passed, state = False, 'gate'
-        elif k == 'HOLD': passed, state = False, 'author'
-        elif k == 'PASS': passed, state = True, ('queue' if state == 'queue' else 'cleared')
-        elif k == 'added_to_merge_queue': state, passes = 'queue', passes + 1
-        elif k == 'removed_from_merge_queue': state = 'cleared' if passed else 'gate'
-        elif k == 'convert_to_draft': draft = True
-        elif k == 'ready_for_review':
-            draft = False
-            if state != 'queue':
-                state = 'cleared' if passed else ('author' if state == 'author' else 'gate')
-        if (state, draft) != before:
-            since = ts
-    now_label = ('draft, cleared' if passed else 'draft') if draft else state
-    return acc, now_label, gate_waits, clear_waits, passes
+    # Sum the stretches. Open time inside the freeze, on a PR that changes a frozen
+    # path, is counted apart: the PR could not merge then, whatever it waited on.
+    frozen = any(f['path'].startswith(FROZEN) for f in p['files'])
+    acc, waits = {}, {'gate': [], 'ready': []}
+    for lab, a, b, k in stretches(p, end):
+        live = frozen and not lab.startswith(('draft', 'queue'))
+        held = hours(max(a, FREEZE[0]), min(b, FREEZE[1])) if live else 0
+        acc[lab] = acc.get(lab, 0) + hours(a, b) - held
+        if held:
+            acc['frozen'] = acc.get('frozen', 0) + held
+        if (lab, k) in (('gate', 'verdict'), ('ready', 'added_to_merge_queue')):
+            waits[lab].append((hours(a, b), held > 0, p['number'], b))
+    return acc, waits
 
 def pct(xs, p):
+    if not xs:
+        return float('nan')
     xs = sorted(xs); k = (len(xs) - 1) * p; lo = int(k); hi = min(lo + 1, len(xs) - 1)
     return xs[lo] + (xs[hi] - xs[lo]) * (k - lo)
 
@@ -643,19 +700,34 @@ def show(name, rows):
     T = sum(tot.values())
     print(f'{name}: {len(rows)} PRs, {T:.1f} h')
     for k, v in sorted(tot.items(), key=lambda x: -x[1]):
-        print(f'  {k:15} {v:6.1f} h {100 * v / T:3.0f}%')
+        print(f'  {k:20} {v:6.1f} h {100 * v / T:3.0f}%')
 
-prs = json.load(open(win))
-merged = sorted((p for p in prs if p['mergedAt']), key=lambda p: t(p['mergedAt']) - t(p['createdAt']), reverse=True)
+# Only what had happened by the cutoff counts, so a later fetch reads the same.
+prs = [p for p in json.load(open(win)) if t(p['createdAt']) <= NOW]
+KNOWN = {gate(e) for p in prs for e in json.load(open(os.path.join(tdir, f"{p['number']}.json")))
+         if e.get('event') == 'reviewed' and e.get('submitted_at') and t(e['submitted_at']) <= NOW
+         and verdict(e) and BYLINE.search(e.get('body') or '')}
+done = lambda p, k: p[k] and t(p[k]) <= NOW
+merged = sorted((p for p in prs if done(p, 'mergedAt')), key=lambda p: t(p['mergedAt']) - t(p['createdAt']), reverse=True)
 rows = [split(p, t(p['mergedAt'])) for p in merged]
 show('slowest tenth', rows[:-(-len(rows) // 10)])
 show('all merged', rows)
-for name, i in (('waits for a gate verdict', 2), ('waits from a PASS to the queue', 3)):
-    w = [x for r in rows for x in r[i]]
-    print(f'{name}: {len(w)}, median {60 * pct(w, .5):.0f} min, p90 {pct(w, .9):.1f} h, over 4 h {sum(x > 4 for x in w)}')
-print('queue passes', sum(r[4] for r in rows), 'for', len(rows), 'merges')
-waiting = [split(p, t(now))[1] for p in prs if p['state'] == 'OPEN' and not p['isDraft']]
-print('open, not draft, now waiting on:', {s: waiting.count(s) for s in sorted(set(waiting))})
+for name, k in (('waits for the gates', 'gate'), ('waits from ready to queued', 'ready')):
+    w = [x for r in rows for x in r[1][k]]
+    h = [x[0] for x in w]
+    print(f'{name}: {len(w)}, median {60 * pct(h, .5):.0f} min, p90 {pct(h, .9):.1f} h, over 4 h {sum(x > 4 for x in h)}')
+    for x, frozen, n, end in sorted(w, key=lambda x: x[3]):
+        if x > 4:
+            print(f'  #{n} {x:5.1f} h, ended {end:%m-%d %H:%MZ}' + (', partly frozen' if frozen else ''))
+o2m = [hours(t(p['createdAt']), t(p['mergedAt'])) for p in merged]
+live = [p for p in prs if not done(p, 'mergedAt') and not done(p, 'closedAt')]
+labels = [stretches(p, NOW)[-1][0] for p in live]
+age = [hours(t(p['createdAt']), NOW) for p, s in zip(live, labels) if not s.startswith('draft')]
+print(f'opened to merged: {len(o2m)}, median {60 * pct(o2m, .5):.0f} min, p90 {pct(o2m, .9):.1f} h; '
+      f'if the {len(age)} open non-draft PRs merge, p90 at least {pct(o2m + age, .9):.1f} h')
+print('bodies with a Gate line:', sum(any(GATE_LINE.match(l) for l in (p['body'] or '').splitlines()) for p in prs), 'of', len(prs))
+print('queue passes', sum(1 for p in merged for s in stretches(p, t(p['mergedAt'])) if s[3] == 'added_to_merge_queue'), 'for', len(rows), 'merges')
+print('open at the cutoff, waiting on:', {s: labels.count(s) for s in sorted(set(labels))})
 ```
 
 </details>
@@ -786,13 +858,39 @@ EOF
 // as a fallback (messageController.ts:343, server.ts:681 and :716, agentMessageService.ts:1806).
 db.messages.countDocuments({ createdAt: { $gte: new Date(Date.now() - 30 * 864e5) } })
 
-// B: turns the restart sweep marked interrupted, per day. agentEventService.ts:954 and :1086
-// are the only writers of that status. Compare with Deploy Dev runs per day.
+// B: runs the sweep found dead, per day, by when the sweep marked them. The writers are
+// agentEventService.ts:952–955 and :1084–1086, and both set completedAt to the sweep's time,
+// so this count cannot say which restart ended a run. The join after it can, where the span allows.
 db.agentruns.aggregate([
   { $match: { status: 'interrupted', completedAt: { $gte: new Date(Date.now() - 30 * 864e5) } } },
   { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$completedAt' } }, n: { $sum: 1 } } },
   { $sort: { _id: 1 } },
 ])
+
+// B, the join. A run died between its startedAt and the sweep that marked it, so it is
+// credited to a restart only when exactly one restart falls in that span. Runs with none
+// or several are counted apart. Fill `restarts` with every time a backend process stopped
+// in the same 30 days, and why. Only the operator can read those times.
+const restarts = [
+  // { at: ISODate('YYYY-MM-DDTHH:MM:SSZ'), kind: 'rollout' },   // or 'crash'
+];
+const ended = new Map(restarts.map((r) => [r, 0]));
+let none = 0, several = 0;
+db.agentruns.find(
+  { status: 'interrupted', completedAt: { $gte: new Date(Date.now() - 30 * 864e5) } },
+  { startedAt: 1, completedAt: 1 },
+).forEach((run) => {
+  const hit = restarts.filter((r) => r.at >= run.startedAt && r.at <= run.completedAt);
+  if (hit.length === 1) ended.set(hit[0], ended.get(hit[0]) + 1);
+  else if (hit.length) several += 1;
+  else none += 1;
+});
+for (const kind of new Set(restarts.map((r) => r.kind))) {
+  const rs = restarts.filter((r) => r.kind === kind);
+  print(kind, rs.length, 'restarts,', rs.filter((r) => ended.get(r)).length, 'ended a run,',
+    rs.reduce((n, r) => n + ended.get(r), 0), 'runs');
+}
+print('runs with no restart in their span', none, '- with several', several);
 
 // Item 7: row created -> first claim, in hours. claimedAt keeps only the latest claim, but every
 // claim appends a "Claimed by ..." update (tasksApi.ts:585), so take the earliest of those.
@@ -810,10 +908,11 @@ const q = (p) => { const k = (h.length - 1) * p, lo = Math.floor(k), hi = Math.m
 print(h.length, q(0.5), q(0.9));
 ```
 
-Item 7's 3.2 and 54.3 hours come from the SRE report. This query takes the same figure from the board directly.
+Item 7's 3.2 and 54.3 hours come from the SRE report, whose window starts at 10-21 22:30Z, so this query does too. It takes the same figure from the board directly.
 
 ### Everything else
 
 - **Fleet logs.** Turns, spawns, wakes, timeouts and LiteLLM status codes come from the internal SRE report, which is built from each seat's runtime log. Only the operator can read those logs, so ask for the same report each month.
-- **Counted by hand.** Instance-URL incidents, revoke-missed-a-store fixes, identity and install fixes, and layout fixes were counted by reading fix subjects and their PRs. Items 4, 5, 6 and 8 list the PR numbers. Keep listing them each month, so the next count can be checked against this one.
+- **Counted by hand.** Instance-URL incidents, revoke-missed-a-store fixes, identity and install fixes, and layout fixes were counted by reading fix subjects and their PRs. Items 3, 5, 6 and 8 list the PR numbers. Keep listing them each month, so the next count can be checked against this one.
 - **API replicas.** The backend's `replicaCount`, at `k8s/helm/commonly/values-dev.yaml:36`.
+- **Shutdown.** `git grep -nE 'SIGTERM|SIGINT|process\.on\(' 0b22729fa -- backend ':!backend/__tests__'` prints nothing, so no backend module handles a shutdown signal.
