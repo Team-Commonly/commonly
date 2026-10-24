@@ -118,6 +118,13 @@ jobs:
             exit 0
           fi
 
+          # A dispatch can name any branch. Publishing or tagging from one
+          # would release code main does not hold.
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::$name: this workflow publishes only from main (got $GITHUB_REF)"
+            exit 1
+          fi
+
           # "Never published" (E404) is the first-release path and maps to
           # 0.0.0. Anything else — outage, auth, rate limit — must stop the
           # run: a registry we cannot read is not a registry at 0.0.0.
@@ -144,8 +151,28 @@ jobs:
             case "$d" in
               # Already published: nothing for npm, but the MCP Registry step
               # still lists that version, so a failed listing can be retried.
+              # The version's release tag must exist too: a run whose publish
+              # landed and whose tag push failed is re-run into this branch.
               0) echo "version=$reg_v" >> "$GITHUB_OUTPUT"
-                 echo "action=skip" >> "$GITHUB_OUTPUT"; exit 0 ;;
+                 set +e; git ls-remote --exit-code --tags origin "refs/tags/$TAG_PREFIX$reg_v" >/dev/null; t=$?; set -e
+                 case "$t" in
+                   0) echo "action=skip" >> "$GITHUB_OUTPUT" ;;
+                   2) if ! any=$(git ls-remote --tags origin "refs/tags/$TAG_PREFIX*"); then
+                        echo "::error::$name: could not list $TAG_PREFIX* tags; not deciding blind"; exit 1
+                      fi
+                      if [ -z "$any" ]; then
+                        # Published before TASK-466; nothing was ever tagged.
+                        echo "action=skip" >> "$GITHUB_OUTPUT"
+                      else
+                        # This commit packs exactly what npm serves for $reg_v,
+                        # which is the invariant the tag asserts, so it may
+                        # carry the missing tag.
+                        echo "· $name: $reg_v is published but $TAG_PREFIX$reg_v is missing; tagging $GITHUB_SHA, which packs the same files"
+                        echo "action=retag" >> "$GITHUB_OUTPUT"
+                      fi ;;
+                   *) echo "::error::$name: could not read tag $TAG_PREFIX$reg_v (git ls-remote exit $t)"; exit 1 ;;
+                 esac
+                 exit 0 ;;
               1) ;;
               *) echo "::error::$name: could not compare with $reg_v; not publishing blind"; exit 1 ;;
             esac
@@ -234,19 +261,19 @@ jobs:
       # does not exist; a publish whose tag push failed is caught by the next
       # run (it refuses to reuse the version) and by package-version-guard.
       - name: Tag the commit that was built
-        if: steps.cmp.outputs.action == 'publish'
+        if: steps.cmp.outputs.action == 'publish' || steps.cmp.outputs.action == 'retag'
         env:
-          TAG: ${{ env.TAG_PREFIX }}${{ steps.cmp.outputs.next }}
+          TAG: ${{ env.TAG_PREFIX }}${{ steps.cmp.outputs.version }}
         run: |
           git tag "$TAG" "$GITHUB_SHA"
           git push origin "refs/tags/$TAG"
 
       - name: Assert tag → this commit and registry → this version
-        if: steps.cmp.outputs.action == 'publish'
+        if: steps.cmp.outputs.action == 'publish' || steps.cmp.outputs.action == 'retag'
         env:
           NAME: ${{ steps.cmp.outputs.name }}
-          NEXT: ${{ steps.cmp.outputs.next }}
-          TAG: ${{ env.TAG_PREFIX }}${{ steps.cmp.outputs.next }}
+          NEXT: ${{ steps.cmp.outputs.version }}
+          TAG: ${{ env.TAG_PREFIX }}${{ steps.cmp.outputs.version }}
         run: |
           set -euo pipefail
           tag_sha=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)

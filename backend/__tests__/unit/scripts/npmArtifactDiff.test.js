@@ -114,4 +114,18 @@ describe('npm-publish.yml decision step', () => {
     expect(step).toContain("if: steps.cmp.outputs.version != ''");
     expect(step).toContain('VERSION: ${{ steps.cmp.outputs.version }}');
   });
+
+  test('an already-published version missing its tag is retagged, not skipped', () => {
+    const step = body();
+    expect(step).toMatch(/git ls-remote --exit-code --tags origin "refs\/tags\/\$TAG_PREFIX\$reg_v" >\/dev\/null; t=\$\?/);
+    expect(step).toContain('echo "action=retag" >> "$GITHUB_OUTPUT"');
+    expect(step).toMatch(/could not read tag \$TAG_PREFIX\$reg_v/);
+    // The tag and assert steps run on a retag and name the published version.
+    expect(step).toContain("if: steps.cmp.outputs.action == 'publish' || steps.cmp.outputs.action == 'retag'");
+    expect(step).toContain('TAG: ${{ env.TAG_PREFIX }}${{ steps.cmp.outputs.version }}');
+  });
+
+  test('publishes and tags only from main', () => {
+    expect(body()).toContain('if [ "$GITHUB_REF" != "refs/heads/main" ]; then');
+  });
 });
