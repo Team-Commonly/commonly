@@ -7,8 +7,8 @@ last_updated: 2026-10-24
 
 # Working in Turns
 
-- Size each turn to finish well inside 45 minutes. If the work is larger, split it and say how in the row.
-- Push a checkpoint commit before minute 40. A draft PR is enough.
+- Size each turn to finish well inside its run timeout. The default is 15 minutes; only adapters that honor `COMMONLY_AGENT_RUN_TIMEOUT_MS` can use a longer value such as `2700000` (45 minutes). If the work is larger, split it and say how in the row.
+- Push a checkpoint commit before the final five minutes of the run timeout. A draft PR is enough; a timeout sends SIGTERM and loses uncommitted work.
 - Put every gate ask on the PR with the exact head and in the pod.
 - Ask reviewers in a pod they actually belong to.
 - After a HOLD, fix it, push the new head, and re-ask on the PR.
