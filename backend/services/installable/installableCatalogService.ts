@@ -12,7 +12,7 @@ const { manifests } = require('../../integrations/manifests');
 const { mcpComponentOf, projectTools, toolInstallableMetas } = require('./toolInstallables');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { HOSTED_MCP_ENTRIES, findHostedMcpEntry } = require('../../integrations/hostedMcp/entries');
-const { hiddenHostedMcpEntryIds } = require('../../integrations/hostedMcp/visibility');
+const { isHostedMcpEntryHidden } = require('../../integrations/hostedMcp/visibility');
 const { isHostedMcpClientConfigured } = require('../hostedMcpIntakeService');
 
 type ProviderReadiness = { available: boolean; reason?: 'not_configured' };
@@ -133,12 +133,11 @@ const toolEntriesFor = async (userId: string): Promise<{ entries: unknown[]; hid
     'components.type': 'mcp-server',
   }).lean() as any[]).filter((row) => mcpComponentOf(row) && metas[row.installableId]);
   if (!allRows.length) return { entries: [], hiddenConnections: [] };
-  const hiddenIds = hiddenHostedMcpEntryIds();
   const isHidden = (row: any): boolean => {
     const meta = metas[row.installableId];
     if (meta.connectionType !== 'hosted-mcp') return false;
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, meta.entryId || '');
-    return hiddenIds.has(meta.entryId) || !entry || !isHostedMcpClientConfigured(entry);
+    return isHostedMcpEntryHidden(meta.entryId, process.env, userId) || !entry || !isHostedMcpClientConfigured(entry);
   };
   const rows = allRows.filter((row) => !isHidden(row));
   const hiddenRows = allRows.filter(isHidden);

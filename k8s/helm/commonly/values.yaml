@@ -73,6 +73,9 @@ hostedMcp:
   # Entry IDs omitted from Tools offerings. Existing connections remain listed
   # for removal; grants and revocation continue to use the pinned entry.
   hiddenEntries: []
+  # Entry ID -> exact authenticated Mongo User IDs permitted to walk hidden entries.
+  # Empty by default; operator-local values select named walk users.
+  hiddenEntryUserAllowlist: {}
   googleCalendar:
     enabled: false
 
