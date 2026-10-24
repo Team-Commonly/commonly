@@ -971,6 +971,16 @@ export const performAttach = async ({
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
 
+  if (memoryFrom) {
+    const memoryCopy = await copyHandoffMemory(client, {
+      sourceAgentName: memoryFrom, sourceInstanceId: memoryInstance,
+      targetAgentName: installation.agentName, targetInstanceId: instanceId,
+    });
+    log(memoryCopy.reason === 'source-empty'
+      ? 'hosted agent has no long-term memory to copy'
+      : 'hosted long-term memory is present in the local agent');
+  }
+
   let runtimeToken = installResult.runtimeToken;
   if (!runtimeToken) {
     // ADR-005 §detach + reattach: the agent User row's hashed token persists
@@ -989,15 +999,7 @@ export const performAttach = async ({
     throw new Error('Runtime token was not returned by install or tokens endpoint');
   }
 
-  if (memoryFrom) {
-    const memoryCopy = await copyHandoffMemory(client, {
-      sourceAgentName: memoryFrom, sourceInstanceId: memoryInstance,
-      targetAgentName: installation.agentName, targetInstanceId: instanceId,
-    });
-    log(memoryCopy.reason === 'source-empty'
-      ? 'hosted agent has no long-term memory to copy'
-      : 'hosted long-term memory is present in the local agent');
-  }
+
 
   return {
     installation,

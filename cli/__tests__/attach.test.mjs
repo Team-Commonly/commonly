@@ -452,7 +452,31 @@ describe('performAttach', () => {
       memoryFrom: 'hosted', memoryInstance: 'source-1' });
     expect(result.runtimeToken).toBe('cm_agent_local');
     expect(client.patch).toHaveBeenCalledWith('/api/agent-memory/local/default/editable/long_term',
-      { content: 'remember X', expectedUpdatedAt: null });
+      { copyFrom: { agentName: 'hosted', instanceId: 'source-1' }, expectedUpdatedAt: null });
+  });
+
+  test('a refused memory copy preserves the saved token; a safe retry can rotate and complete', async () => {
+    const existing = { agentName: 'local', instanceId: 'default', podId: 'pod-1', runtimeToken: 'cm_agent_old', adapter: 'stub' };
+    saveAgentToken('local', existing);
+    const client = makeClient();
+    const get = client.get;
+    let targetContent = 'independent note';
+    client.get = jest.fn(async (route) => {
+      if (route === '/api/agent-memory/hosted/default/editable') return { sections: { long_term: { content: 'remember X' } } };
+      if (route === '/api/agent-memory/local/default/editable') return { sections: { long_term: { content: targetContent, visibility: 'private', updatedAt: null } } };
+      return get(route);
+    });
+    client.patch = jest.fn().mockResolvedValue({});
+    const args = { client, adapterName: 'stub', agentName: 'local', podId: 'pod-1', memoryFrom: 'hosted' };
+    await expect(performAttach(args)).rejects.toThrow(/different memory/);
+    expect(loadAgentToken('local').runtimeToken).toBe('cm_agent_old');
+    expect(client.post.mock.calls.some(([route]) => route.endsWith('/runtime-tokens'))).toBe(false);
+    targetContent = '';
+    const result = await performAttach(args);
+    expect(result.runtimeToken).toBe('cm_agent_from_tokens_route');
+    expect(client.patch.mock.invocationCallOrder[0]).toBeLessThan(client.post.mock.invocationCallOrder.at(-1));
+    saveAgentToken('local', { ...existing, runtimeToken: result.runtimeToken });
+    expect(loadAgentToken('local').runtimeToken).toBe('cm_agent_from_tokens_route');
   });
 
   test('omits config.wakeOnMessage by default (ADR-018 ambient wake is opt-in)', async () => {

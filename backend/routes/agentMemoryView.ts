@@ -160,8 +160,21 @@ router.patch('/:agentName/:instanceId/editable/:section', auth, async (req: Auth
     const identity = { agentName, instanceId };
     const section = String((req.params as any).section || '');
     if (!editableSection(section)) { res.status(404).json({ error: 'Section not found' }); return; }
-    const { content, expectedUpdatedAt } = req.body || {};
-    if (typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > 64 * 1024) {
+    const { expectedUpdatedAt, copyFrom } = req.body || {};
+    let { content } = req.body || {};
+    if (copyFrom !== undefined) {
+      if (section !== 'long_term' || content !== undefined
+        || typeof copyFrom?.agentName !== 'string' || !copyFrom.agentName.trim()
+        || typeof copyFrom?.instanceId !== 'string' || !copyFrom.instanceId.trim()) {
+        res.status(400).json({ error: 'A source agent and instance are required for long-term memory copy' }); return;
+      }
+      const sourceAccess = await memoryOwnerAccess({ ...req, params: copyFrom }, res);
+      if (!sourceAccess) return;
+      const source = await AgentMemory.findOne({ agentName: sourceAccess.agentName, instanceId: sourceAccess.instanceId })
+        .select('content sections.long_term').lean();
+      content = source?.sections?.long_term?.content ?? source?.content ?? '';
+    }
+    if (typeof content !== 'string' || (copyFrom === undefined && Buffer.byteLength(content, 'utf8') > 64 * 1024)) {
       res.status(400).json({ error: 'Memory content must be at most 64 KB' }); return;
     }
     if (expectedUpdatedAt !== null && (typeof expectedUpdatedAt !== 'string'
@@ -171,6 +184,10 @@ router.patch('/:agentName/:instanceId/editable/:section', auth, async (req: Auth
     const prior = await AgentMemory.findOne(identity).select('content sections').lean();
     const before = prior?.sections?.[section] || (section === 'long_term' && prior?.content
       ? { content: prior.content, visibility: 'private' } : null);
+    // Copies never widen private memory or replace an existing local note.
+    if (copyFrom !== undefined && ((before?.visibility && before.visibility !== 'private') || before?.content)) {
+      res.status(409).json({ error: 'Memory copy requires an empty private target' }); return;
+    }
     const priorRevision = before?.updatedAt ? new Date(before.updatedAt).toISOString() : null;
     if (priorRevision !== expectedUpdatedAt) {
       res.status(409).json({ error: 'Memory changed since you opened it' }); return;

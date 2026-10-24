@@ -10,7 +10,7 @@ test('copies the selected hosted instance using the logged-in owner revision API
   expect(client.get.mock.calls).toEqual([
     ['/api/agent-memory/hosted/source-1/editable'], ['/api/agent-memory/local/default/editable'],
   ]);
-  expect(client.patch).toHaveBeenCalledWith('/api/agent-memory/local/default/editable/long_term', { content: 'remember X', expectedUpdatedAt: null });
+  expect(client.patch).toHaveBeenCalledWith('/api/agent-memory/local/default/editable/long_term', { copyFrom: { agentName: 'hosted', instanceId: 'source-1' }, expectedUpdatedAt: null });
 });
 
 test('retry with the same memory is idempotent', async () => {

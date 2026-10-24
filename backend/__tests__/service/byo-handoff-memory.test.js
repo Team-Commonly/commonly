@@ -1,5 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const request = require('supertest');
 const { promisify } = require('util');
 const { execFile } = require('child_process');
 const path = require('path');
@@ -65,6 +66,31 @@ describe('hosted memory copied into a local agent', () => {
     expect(output.preamble.indexOf('remember-X-468')).toBeLessThan(output.preamble.indexOf('first local turn'));
     const repeat = JSON.parse((await runCopy(owner)).stdout);
     expect(repeat.result.reason).toBe('already-copied');
+  });
+  it('copies hosted memory larger than the editor write limit without truncation', async () => {
+    const large = '记住'.repeat(12000);
+    await appendLongTermMemory({ agentName: 'hosted-handoff', instanceId: 'default', content: large });
+    const output = JSON.parse((await runCopy(owner)).stdout);
+    expect(output.result.copied).toBe(true);
+    const source = await AgentMemory.findOne({ agentName: 'hosted-handoff' }).lean();
+    const target = await AgentMemory.findOne({ agentName: 'local-handoff' }).lean();
+    expect(Buffer.byteLength(source.content)).toBeGreaterThan(64 * 1024);
+    expect(target.sections.long_term.content).toBe(source.sections.long_term.content);
+    expect(output.preamble).toContain(large);
+  });
+  it('the server independently refuses foreign source copy and nonempty targets', async () => {
+    await AgentInstallation.updateOne({ agentName: 'hosted-handoff' }, { $set: { installedBy: outsider._id } });
+    const auth = `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`;
+    const foreign = await request(base).patch('/api/agent-memory/local-handoff/default/editable/long_term')
+      .set('Authorization', auth).send({ copyFrom: { agentName: 'hosted-handoff', instanceId: 'default' }, expectedUpdatedAt: null });
+    expect(foreign.status).toBe(403);
+    expect(await AgentMemory.findOne({ agentName: 'local-handoff' })).toBeNull();
+    await AgentInstallation.updateOne({ agentName: 'hosted-handoff' }, { $set: { installedBy: owner._id } });
+    await appendLongTermMemory({ agentName: 'local-handoff', instanceId: 'default', content: 'independent' });
+    const denied = await request(base).patch('/api/agent-memory/local-handoff/default/editable/long_term')
+      .set('Authorization', auth).send({ copyFrom: { agentName: 'hosted-handoff', instanceId: 'default' }, expectedUpdatedAt: null });
+    expect(denied.status).toBe(409);
+    expect((await AgentMemory.findOne({ agentName: 'local-handoff' }).lean()).content).toContain('independent');
   });
   it('does not resurrect stale legacy content when canonical source memory is explicitly empty', async () => {
     await AgentMemory.updateOne({ agentName: 'hosted-handoff' }, { $set: {

@@ -16,7 +16,8 @@ export const copyHandoffMemory = async (client, {
   if (prior.content) throw new Error('Local agent already has different memory; choose a new local name');
   // A concurrent first write wins rather than being overwritten by this copy.
   await client.patch(`${targetPath}/long_term`, {
-    content, expectedUpdatedAt: prior.updatedAt ?? null,
+    copyFrom: { agentName: sourceAgentName, instanceId: sourceInstanceId },
+    expectedUpdatedAt: prior.updatedAt ?? null,
   });
   return { copied: true };
 };

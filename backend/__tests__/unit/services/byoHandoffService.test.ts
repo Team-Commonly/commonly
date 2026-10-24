@@ -74,6 +74,9 @@ describe('byoHandoffService', () => {
     }
     expect(buildByoHandoffPayload({ adapter: 'codex', os: 'mac', podId: 'pod-1',
       agentName: 'new-local', memoryFrom: 'scout; echo secret' })).toEqual({ error: 'invalid source memory identity' });
+    expect(buildByoHandoffPayload({ adapter: 'codex', os: 'mac', podId: 'pod-1',
+      agentName: 'new-local', memoryFrom: 'scout', memoryInstance: 'default; echo secret' }))
+      .toEqual({ error: 'invalid source memory identity' });
   });
 
   it('creates a safe default name from the account handle', () => {
