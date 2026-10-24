@@ -85,20 +85,20 @@ Each rule cites the pattern it comes from. A later pass that breaks a rule shoul
 
 ### 3.1 What can be claimed (the walked truth table)
 
-The source is `backend/config/native-agents/scout.ts` at `7d2d28f5`, the facts Scout is held to, plus walk records that Scout hasn't caught up with yet (cited per row). Re-read both before each README pass. If the README and Scout disagree, one of them is wrong; find out which before writing.
+Every row cites its source: `backend/config/native-agents/scout.ts` pinned at `bf0bd593` (the facts Scout is held to, each with the walk it came from), or the page code that renders the claim. A row with no citation is not a claim. Re-read the sources before each README pass. If the README and Scout disagree, one of them is wrong; find out which before writing.
 
 | Claim | Walked status |
 |---|---|
-| Your own Claude Code joins as a teammate that answers @mentions | **Mac only.** Not Linux, WSL or native Windows (sandbox, #2288) |
-| Your own Codex joins as a teammate | Mac and Linux, WSL included. Not native Windows |
-| OpenCode (any provider, e.g. DeepSeek) | Via `docs/cli/opencode.md`, walked on a Mac only |
-| DeepSeek Harness (dsh) | Attached as your own agent in a **private pod**, via its attach guide. Walked on macOS; other OSs unverified |
-| Hermes (CLI adapter) | Walked: PA-1 PASS, 2026-10-22 16:30Z. In a non-admin, invite-only pod on Hermes 0.22.2, an @mention got its reply in 56 s (sprint-scoreboard-1022, line 107). The walk ran on our LiteLLM provider, so **claim nothing about OpenRouter or other providers.** Word it only as "Hermes (CLI adapter)". Scout is the stale side here; TASK-429 adds the row |
-| Claude and GPT (via Codex) in one pod, each answering @mentions | Yes |
-| Gemini | **Cannot join yet.** Do not claim it |
-| MCP (`claude mcp add commonly …`) | Gives Commonly tools *inside your own sessions*. **Does not answer @mentions.** Only `commonly agent run` (the listener) does |
-| "Run it here" hosted agent | Yes. Commonly runs it on a model Commonly picks |
-| Add a computer once, then add agents from the page | `commonly login && commonly daemon register && commonly daemon install` |
+| Your own Claude Code joins as a teammate that answers @mentions | **Mac only.** Not Linux, WSL or native Windows (sandbox, Linux run 38982219348). [scout.ts:140-148](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L140-L148) |
+| Your own Codex joins as a teammate | Mac and Linux, WSL included. Not native Windows. [scout.ts:144-147](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L144-L147) |
+| OpenCode (any provider, e.g. DeepSeek) | Via `docs/cli/opencode.md`, walked on a Mac only. [scout.ts:114-123](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L114-L123) |
+| DeepSeek Harness (dsh) | Attached as your own agent in a **private pod**, via its attach guide. Walked on macOS; other OSs unverified. [scout.ts:145-146](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L145-L146), [scout.ts:165-171](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L165-L171) |
+| Hermes (CLI adapter) | Connects from the command line (`commonly agent attach hermes`). Walked 2026-10-22: Hermes 0.22.2 on macOS, a non-admin account in an invite-only pod, a mention answered in 56 s. The walk ran on our LiteLLM provider, so **claim nothing about OpenRouter or any other provider.** Word it only as "Hermes (CLI adapter)". [scout.ts:124-135](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L124-L135), added by #2569 (TASK-429) |
+| Claude and GPT (via Codex) in one pod, each answering @mentions | Yes. [scout.ts:150-163](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L150-L163) |
+| Gemini | **Cannot join yet.** Do not claim it. [scout.ts:154-155](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L154-L155), [scout.ts:162-163](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L162-L163) |
+| MCP (`claude mcp add commonly …`) | Gives Commonly tools *inside your own sessions*. **Does not answer @mentions.** Only `commonly agent run` (the listener) does. [scout.ts:108-113](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L108-L113) |
+| "Run it here" hosted agent | Yes. Commonly runs it on a model Commonly picks. [scout.ts:161-162](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L161-L162); the button is `SCOUT_HOSTED_START` ([scout.ts:41](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L41)) |
+| Add a computer once, then add agents from the page | `npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install`. [scout.ts:136-139](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L136-L139); the page renders the same line as `DAEMON_SETUP_COMMAND` ([V2AgentBYO.tsx:67](https://github.com/Team-Commonly/commonly/blob/bf0bd593/frontend/src/v2/components/V2AgentBYO.tsx#L67)) |
 
 ---
 
@@ -109,7 +109,7 @@ The source is `backend/config/native-agents/scout.ts` at `7d2d28f5`, the facts S
 | 1 Hero | 72 px raster PNG (`frontend/src/assets/commonly-logo.png`), no dark source | Needs the SVG mark and wordmark from TASK-423 |
 | 2 Pitch | "Bring your workflow and your agents. Your team works with them in one pod." | A slogan. It doesn't name the category, and it uses "pod" before defining it |
 | 4 Images | Five 880 px screenshots | Cut to one, or two at most |
-| 5 Claims | "Claude Code, Codex, OpenCode CLI, Hermes or DeepSeek Harness from your machine" | Platform limits are missing (Claude Code is Mac-only as a teammate). **Hermes:** keep it, worded only as "Hermes (CLI adapter)", and cite the PA-1 walk (§3.1). scout.ts at `7d2d28f5` still says "Do not claim any other tool connects". That is the stale side, and TASK-429 brings Scout in line (ruling: Cofounder, 2026-10-24). Today's README doesn't qualify it as the CLI adapter |
+| 5 Claims | "Claude Code, Codex, OpenCode CLI, Hermes or DeepSeek Harness from your machine" | Platform limits are missing (Claude Code is Mac-only as a teammate). **Hermes:** keep it, worded only as "Hermes (CLI adapter)" (§3.1). Scout now lists it, via #2569 (TASK-429). Today's README doesn't qualify it as the CLI adapter |
 | 5/6 MCP | "Bring your own" leads with the MCP command and "Then ask it for real work" | Accurate for your own session, but it reads as if this makes the agent a teammate. Per the truth table, MCP alone does not answer @mentions. The teammate path is `commonly agent run` |
 | 9 Community | Footer link only (`discord.gg/NsS3fzsJDw`, last line) | The Discord exists. It had a README badge from #694/#695 (2026-07-19) until #2477 dropped it, which Sam flagged. **Restored in the hero by this PR.** The rewrite keeps it there (rule 9), and TASK-430 guards it |
 | 7 Badges | None | Fine. Add up to four signal badges |

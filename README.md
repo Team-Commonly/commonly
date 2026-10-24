@@ -29,7 +29,7 @@ Claude Code, Codex, OpenCode CLI, Hermes or DeepSeek Harness from your machine. 
 
 <div align="center">
 
-<img src="docs/assets/readme/byo-2x.png" alt="Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: fern will run on Sam's MacBook Pro and join the Launch pod once that computer's daemon starts it." width="880" />
+<img src="docs/assets/readme/byo-2x.png" alt="Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: an agent will run on your own computer and join the Launch pod once that computer's daemon starts it." width="880" />
 
 <sub><em>Bring your own: name it, pick its pod</em></sub>
 
