@@ -7,11 +7,27 @@ name: Publish npm packages
 # that never left the repo, so every `commonly` install and every seat on this
 # laptop ran code the repo had already replaced.
 #
-# Trigger: a push to main that touches a published package. For each package,
-# compare package.json's version with what the registry serves:
-#   equal            → nothing to do (most pushes)
-#   repo > registry  → publish, then read it back from the registry
-#   repo < registry  → fail loudly; the repo walked backwards (see the guard)
+# Since TASK-466 (2026-10-24) PRs never touch a package's version line. Every
+# cli/mcp PR used to bump it, so concurrent PRs conflicted on that one line and
+# the guard refused duplicate claims (13 open PRs claimed 11 cli versions, three
+# of them 0.1.148). The version is now assigned HERE, at publish time:
+#
+# Trigger: a push to main that touches a published package. For each package:
+#   1. pack this tree and compare it with the registry's latest tarball,
+#      ignoring package.json "version" (scripts/npm-artifact-diff.sh)
+#        identical → nothing to do
+#   2. otherwise version = next patch above max(registry, repo package.json),
+#      stamped into the working copy only (npm version --no-git-tag-version;
+#      commonly-mcp's server.json too), never committed
+#   3. publish, read it back, push tag cli-v<ver> / mcp-v<ver> on the commit
+#      that was built, then assert tag → this SHA and registry → this version.
+# package-version-guard.yml re-checks each publish independently: the tag's
+# commit, packed and stamped, must equal the tarball npm serves. One version,
+# one commit (#979 / #1017).
+#
+# The repo's package.json version is therefore a floor, not the release. A
+# `commonly --version` / the MCP handshake still report the stamped version,
+# because both read the package.json that ships inside the tarball.
 #
 # Auth: npm trusted publishing (OIDC). No token is stored anywhere. Each package
 # on npmjs.com names this repo and this workflow file as its trusted publisher,
@@ -44,7 +60,7 @@ on:
         options: [ all, cli, commonly-mcp ]
 
 permissions:
-  contents: read
+  contents: write   # push the cli-v<ver> / mcp-v<ver> release tag
   id-token: write   # npm trusted publishing (OIDC) + provenance
 
 concurrency:
@@ -69,6 +85,7 @@ jobs:
     env:
       PKG: ${{ matrix.pkg }}
       PICK: ${{ github.event.inputs.package || 'all' }}
+      TAG_PREFIX: ${{ matrix.pkg == 'cli' && 'cli-v' || 'mcp-v' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -81,15 +98,14 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Compare repo version with the registry
+      - name: Decide whether this tree holds anything unpublished
         id: cmp
         shell: bash
         run: |
           set -euo pipefail
           name=$(node -p "require('./package.json').name")
           repo_v=$(node -p "require('./package.json').version")
-          echo "name=$name"     >> "$GITHUB_OUTPUT"
-          echo "repo_v=$repo_v" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
 
           if [ "$PICK" != "all" ] && [ "$PICK" != "$PKG" ]; then
             echo "· $name: not selected (package=$PICK)"
@@ -108,27 +124,49 @@ jobs:
             echo "::error::$name: npm view failed for a reason other than E404:"; cat /tmp/npm-view.err
             exit 1
           fi
-          echo "reg_v=$reg_v" >> "$GITHUB_OUTPUT"
 
-          if [ "$repo_v" = "$reg_v" ]; then
-            echo "· $name: registry already at $reg_v"
-            echo "action=skip" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Prerelease ordering is beyond `sort -V` (same limit the version
-          # guard documents). Checked AFTER equality so a repo and registry
-          # parked on the same prerelease is a no-op, not a failure.
+          # Prerelease ordering is beyond `sort -V` (same limit the guard
+          # documents), and "next patch" is undefined for one.
           case "$repo_v$reg_v" in *-*)
-            echo "::error::$name: prerelease in $reg_v → $repo_v; this workflow does not order prereleases. Publish by hand."
+            echo "::error::$name: prerelease in $reg_v / $repo_v; this workflow does not order prereleases. Publish by hand."
             exit 1;;
           esac
-          if [ "$(printf '%s\n%s\n' "$reg_v" "$repo_v" | sort -V | tail -1)" = "$repo_v" ]; then
-            echo "✓ $name: $reg_v → $repo_v, publishing"
-            echo "action=publish" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::$name: repo $repo_v is BELOW registry $reg_v. main walked the version backwards; fix the repo, do not republish."
+
+          if [ "$reg_v" != "0.0.0" ]; then
+            set +e; bash "$GITHUB_WORKSPACE/scripts/npm-artifact-diff.sh" . "$reg_v"; d=$?; set -e
+            # The diff step ran prepublishOnly; put the tree back as checked out.
+            git checkout -- . && git clean -fdq -- .
+            case "$d" in
+              0) echo "action=skip" >> "$GITHUB_OUTPUT"; exit 0 ;;
+              1) ;;
+              *) echo "::error::$name: could not compare with $reg_v; not publishing blind"; exit 1 ;;
+            esac
+          fi
+
+          floor=$(printf '%s\n%s\n' "$reg_v" "$repo_v" | sort -V | tail -1)
+          next=$(echo "$floor" | awk -F. '{printf "%d.%d.%d", $1, $2, $3+1}')
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG_PREFIX$next" >/dev/null; then
+            echo "::error::$name: tag $TAG_PREFIX$next already exists but npm serves $reg_v. A publish half-finished; reconcile by hand."
             exit 1
           fi
+          echo "✓ $name: registry $reg_v, repo floor $repo_v → publishing $next"
+          echo "next=$next"        >> "$GITHUB_OUTPUT"
+          echo "action=publish"    >> "$GITHUB_OUTPUT"
+
+      # The version exists only in this job's working copy and so in the
+      # tarball; nothing is committed. server.json goes with it, because the
+      # MCP Registry step below lists the version server.json names and checks
+      # it against package.json.
+      - name: Stamp the version into the working copy
+        if: steps.cmp.outputs.action == 'publish'
+        env:
+          NEXT: ${{ steps.cmp.outputs.next }}
+        run: |
+          npm version "$NEXT" --no-git-tag-version --allow-same-version
+          if [ -f server.json ]; then
+            node -e "const f='server.json',j=require('./'+f);j.version=process.env.NEXT;(j.packages||[]).forEach(p=>p.version=process.env.NEXT);require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
+          fi
+          node -p "'stamped ' + require('./package.json').version"
 
       # Trusted publishing needs npm >= 11.5.1; Node 22 ships npm 10.
       - name: Use an npm that supports trusted publishing
@@ -171,8 +209,34 @@ jobs:
         shell: bash
         env:
           NAME: ${{ steps.cmp.outputs.name }}
-          WANT: ${{ steps.cmp.outputs.repo_v }}
+          WANT: ${{ steps.cmp.outputs.next }}
         run: bash "$GITHUB_WORKSPACE/scripts/verify-npm-publish-readback.sh"
+
+      # The tag is the record of which commit a version was built from. Pushed
+      # only after npm serves the version, so a tag never names a release that
+      # does not exist; a publish whose tag push failed is caught by the next
+      # run (it refuses to reuse the version) and by package-version-guard.
+      - name: Tag the commit that was built
+        if: steps.cmp.outputs.action == 'publish'
+        env:
+          TAG: ${{ env.TAG_PREFIX }}${{ steps.cmp.outputs.next }}
+        run: |
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
+
+      - name: Assert tag → this commit and registry → this version
+        if: steps.cmp.outputs.action == 'publish'
+        env:
+          NAME: ${{ steps.cmp.outputs.name }}
+          NEXT: ${{ steps.cmp.outputs.next }}
+          TAG: ${{ env.TAG_PREFIX }}${{ steps.cmp.outputs.next }}
+        run: |
+          set -euo pipefail
+          tag_sha=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
+          [ "$tag_sha" = "$GITHUB_SHA" ] || { echo "::error::$TAG points at '$tag_sha', not the built commit $GITHUB_SHA"; exit 1; }
+          got=$(npm view "$NAME@$NEXT" version)
+          [ "$got" = "$NEXT" ] || { echo "::error::npm serves '$got' for $NAME@$NEXT"; exit 1; }
+          echo "✓ $NAME $NEXT = $TAG = $GITHUB_SHA"
 
       # The MCP Registry lists commonly-mcp from its server.json, after npm
       # serves the version. Runs whether or not this push published (it is a
