@@ -38,9 +38,13 @@ for side in local registry; do
   node -e "const f=process.argv[1],j=require(f);j.version='0.0.0';require('fs').writeFileSync(f,JSON.stringify(j,null,2))" "$work/$side/package/package.json" \
     || cannot "cannot normalize the $side package.json"
 done
-# diff: 0 same, 1 different, anything else trouble (2 = I/O error).
-diff -rq "$work/local/package" "$work/registry/package" >"$work/diff.txt"
-rc=$?
+# diff: 0 same, 1 different, anything else trouble (2 = I/O error). Its status
+# is taken inside the group, so a redirect that cannot open diff.txt (which
+# also returns 1, without running diff) is caught here and never read as
+# "different".
+rc=
+{ diff -rq "$work/local/package" "$work/registry/package"; rc=$?; } >"$work/diff.txt" \
+  || cannot "cannot write the diff output"
 case "$rc" in
   0) echo "· $name: this tree packs the same files as $want"; exit 0 ;;
   1) echo "· $name: this tree differs from $want:"

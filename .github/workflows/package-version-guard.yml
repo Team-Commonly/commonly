@@ -79,10 +79,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # untagged: the last version published before TASK-466, the only
+          # one allowed on npm without a tag (npm-publish's next run tags it).
           - pkg: cli
             prefix: cli-v
+            untagged: 0.1.155
           - pkg: commonly-mcp
             prefix: mcp-v
+            untagged: 0.3.16
     steps:
       # workflow_run runs with the default branch's context, so this checks out
       # main (never a PR ref), and the only other commit it runs code from is a
@@ -101,6 +105,7 @@ jobs:
         env:
           PKG: ${{ matrix.pkg }}
           PREFIX: ${{ matrix.prefix }}
+          UNTAGGED: ${{ matrix.untagged }}
         run: |
           set -euo pipefail
           name=$(node -p "require('./$PKG/package.json').name")
@@ -108,11 +113,11 @@ jobs:
           tag="$PREFIX$reg_v"
 
           if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            # Versions published before TASK-466 carry no tag. Once ANY tag
-            # with this prefix exists, every later publish must have one: a
-            # missing tag then means a publish whose tag push failed.
-            if [ -z "$(git tag --list "$PREFIX*")" ]; then
-              echo "· $name $reg_v predates release tags (TASK-466); nothing to check yet"
+            # Only the last version published before TASK-466 may be untagged.
+            # Any other missing tag is a publish whose tag push failed, even
+            # the first one (no tags at all is not evidence of an old version).
+            if [ "$reg_v" = "$UNTAGGED" ]; then
+              echo "· $name $reg_v predates release tags (TASK-466); npm-publish's next run tags it"
               exit 0
             fi
             echo "::error::$name $reg_v is on npm but tag $tag does not exist. Releases after TASK-466 are tagged; find the npm-publish run that published $reg_v."

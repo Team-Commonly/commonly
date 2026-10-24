@@ -161,19 +161,13 @@ jobs:
                  set +e; git ls-remote --exit-code --tags origin "refs/tags/$TAG_PREFIX$reg_v" >/dev/null; t=$?; set -e
                  case "$t" in
                    0) echo "action=skip" >> "$GITHUB_OUTPUT" ;;
-                   2) if ! any=$(git ls-remote --tags origin "refs/tags/$TAG_PREFIX*"); then
-                        echo "::error::$name: could not list $TAG_PREFIX* tags; not deciding blind"; exit 1
-                      fi
-                      if [ -z "$any" ]; then
-                        # Published before TASK-466; nothing was ever tagged.
-                        echo "action=skip" >> "$GITHUB_OUTPUT"
-                      else
-                        # This commit packs exactly what npm serves for $reg_v,
-                        # which is the invariant the tag asserts, so it may
-                        # carry the missing tag.
-                        echo "· $name: $reg_v is published but $TAG_PREFIX$reg_v is missing; tagging $GITHUB_SHA, which packs the same files"
-                        echo "action=retag" >> "$GITHUB_OUTPUT"
-                      fi ;;
+                   # This commit packs exactly what npm serves for $reg_v, which is
+                   # the invariant the tag asserts, so it may carry the missing
+                   # tag. That holds for a version published before TASK-466
+                   # too, so the first run tags it and there is no bootstrap
+                   # case where a missing tag is left missing.
+                   2) echo "· $name: $reg_v is published but $TAG_PREFIX$reg_v is missing; tagging $GITHUB_SHA, which packs the same files"
+                      echo "action=retag" >> "$GITHUB_OUTPUT" ;;
                    *) echo "::error::$name: could not read tag $TAG_PREFIX$reg_v (git ls-remote exit $t)"; exit 1 ;;
                  esac
                  exit 0 ;;
