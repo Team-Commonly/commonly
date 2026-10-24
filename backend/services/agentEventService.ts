@@ -373,8 +373,7 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     await AgentEvent.findByIdAndUpdate(event._id, {
       status: 'acked',
       deliveredAt: new Date(),
-      'delivery.outcome': outcome,
-      'delivery.updatedAt': new Date(),
+      delivery: AgentEventService.normalizeDeliveryMeta({ outcome, reason }),
     });
     if (outcome === 'posted' || outcome === 'acknowledged' || (outcome === 'no_action' && !reason)) {
       await AgentEventService.settleLegacyDigest(event).catch((err: Error) => {
