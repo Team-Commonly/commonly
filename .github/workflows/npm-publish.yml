@@ -274,10 +274,25 @@ jobs:
           TAG: ${{ env.TAG_PREFIX }}${{ steps.cmp.outputs.version }}
         run: |
           set -euo pipefail
+          # The tag→commit half is strict: a tag that points at the wrong commit
+          # is never a propagation delay, so one read, no retry.
           tag_sha=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
           [ "$tag_sha" = "$GITHUB_SHA" ] || { echo "::error::$TAG points at '$tag_sha', not the built commit $GITHUB_SHA"; exit 1; }
-          got=$(npm view "$NAME@$NEXT" version)
-          [ "$got" = "$NEXT" ] || { echo "::error::npm serves '$got' for $NAME@$NEXT"; exit 1; }
+          # The registry half polls: `npm view` can read a replica that is seconds
+          # behind the publish and return E404 / an older version, which failed
+          # this assert on three good publishes on main (cli 0.1.159 run
+          # 40097709043 among them: "E404 No match found for version 0.1.159"
+          # while that version is served now). The scripted readback above owns
+          # the primary propagation budget; this is a bounded tolerance on the
+          # final re-read so a lagging replica can't red a sound release.
+          got=""
+          for i in $(seq 1 10); do
+            got=$(npm view "$NAME@$NEXT" version 2>/dev/null || true)
+            [ "$got" = "$NEXT" ] && break
+            echo "· registry serves '${got:-<none>}' for $NAME@$NEXT (try $i/10); waiting 15s for propagation"
+            sleep 15
+          done
+          [ "$got" = "$NEXT" ] || { echo "::error::npm still serves '${got:-<none>}' for $NAME@$NEXT after 10 tries over ~150s"; exit 1; }
           echo "✓ $NAME $NEXT = $TAG = $GITHUB_SHA"
 
       # The MCP Registry lists commonly-mcp from its server.json, after npm
