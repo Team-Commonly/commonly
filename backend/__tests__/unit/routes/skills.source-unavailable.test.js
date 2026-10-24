@@ -48,8 +48,9 @@ const importBody = (overrides) => ({ podId: POD_ID, name: 'notes', ...overrides 
 
 const LEGACY_SOURCE = 'https://github.com/openclaw/skills/tree/main/skills/acme/notes/SKILL.md';
 const CLAWHUB_META = 'https://clawhub.ai/api/skill?owner=acme&slug=notes';
-const CLAWHUB_ZIP = 'https://clawhub.ai/api/v1/download?slug=notes&version=1.2.0';
-const SOURCE_MISSING = 'This skill is no longer published at its source.';
+const CLAWHUB_ZIP = 'https://clawhub.ai/api/v1/download?slug=notes&ownerHandle=acme&version=1.2.0';
+const SOURCE_MISSING = 'This skill is unavailable from its listed publisher. '
+  + 'Choose another skill or ask the publisher for an updated source.';
 const SOURCE_UNREACHABLE = "Couldn't reach this skill's source. Try again in a few minutes.";
 
 const zipOf = (files) => {

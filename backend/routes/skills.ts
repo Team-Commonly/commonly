@@ -38,7 +38,8 @@ const { isOutboundUrlRefused } = require('../services/outboundUrlGuard');
 const SOURCE_URL_REFUSED = 'Skill source URL must be an https link on github.com or raw.githubusercontent.com.';
 // A skill's source not having it is not our server failing (#2189): a 404 when
 // the source answered without the skill, a 502 when it could not be read.
-const SOURCE_MISSING = 'This skill is no longer published at its source.';
+const SOURCE_MISSING = 'This skill is unavailable from its listed publisher. '
+  + 'Choose another skill or ask the publisher for an updated source.';
 const SOURCE_UNREACHABLE = "Couldn't reach this skill's source. Try again in a few minutes.";
 const sourceUnavailableReply = (res: Res, error: { missing: boolean; message: string }, what: string) => {
   console.warn(`[skills] ${what} source unavailable:`, error.message);
