@@ -4939,11 +4939,16 @@ test('TASK-443 lease typography outranks the ownership cell font size', () => {
     .toContain('font: 500 12px/16px var(--v2-font-mono)');
 });
 
-test('TASK-482 hosted alternative uses the existing panel border and surface tokens', () => {
-  const offer = ruleBody(read('../v2.css'), '.v2-root button.v2-byo__hosted-offer-action');
-  expect(offer).toContain('border: 1px solid var(--v2-border)');
-  expect(offer).toContain('background: var(--v2-surface)');
-  expect(offer).toContain('height: 32px');
+test('TASK-482 sticky bar overlays reserved space with a top border and no shadow', () => {
+  const css = read('../v2.css');
+  const bar = ruleBody(css, '.v2-byo__hosted-offer');
+  expect(bar).toContain('position: sticky');
+  expect(bar).toContain('bottom: 0');
+  expect(bar).toContain('margin-top: calc(-1 * var(--v2-byo-offer-height))');
+  expect(bar).toContain('border-top: 1px solid var(--v2-border)');
+  expect(bar).toContain('background: var(--v2-surface)');
+  expect(bar).not.toContain('box-shadow');
+  expect(ruleBody(css, '.v2-byo__layout')).toContain('padding: 8px 24px calc(40px + var(--v2-byo-offer-height, 0px))');
 });
 
 test('TASK-482 offer follows the final CTA so existing commands and controls cannot move', () => {

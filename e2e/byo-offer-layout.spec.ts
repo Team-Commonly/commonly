@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 // runtime credential is needed. Run against the frontend's normal dev server.
 for (const width of [1440, 390]) {
   test(`BYO offer leaves existing commands and controls stationary at ${width}px`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height: 1000 });
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
     await page.clock.install();
     await page.addInitScript(() => {
       localStorage.setItem('token', 'fixture-only-user');
@@ -23,6 +23,8 @@ for (const width of [1440, 390]) {
       await route.fulfill({ json: data });
     });
     await page.goto('/v2/agents/byo');
+    const initialReservedHeight = await page.locator('.v2-byo__layout').evaluate((el) =>
+      parseFloat(getComputedStyle(el).paddingBottom) - 40);
     await page.getByTestId('byo-mode-byo').click();
     await page.getByRole('button', { name: 'Get my connect command', exact: true }).click();
     const result = page.locator('.v2-byo__result');
@@ -45,9 +47,9 @@ for (const width of [1440, 390]) {
     const controls = result.locator('.v2-byo__memory-text, .v2-byo__cta-row, .v2-byo__cta-row button');
     await expect(controls).toHaveCount(4);
     const controlsBefore = await controls.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
-    await expect(result.locator('.v2-byo__hosted-offer')).toHaveCount(0);
+    await expect(page.locator('.v2-byo__hosted-offer')).toHaveCount(0);
     await page.clock.fastForward(30_001);
-    await expect(result.getByRole('status', { name: 'Run it here instead' })).toBeAttached();
+    await expect(page.getByRole('status', { name: 'Run it here instead' })).toBeAttached();
     const after = await commands.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
     const controlsAfter = await controls.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
     await testInfo.attach('command-top-positions', {
@@ -56,10 +58,30 @@ for (const width of [1440, 390]) {
     });
     expect(after).toEqual(before);
     expect(controlsAfter).toEqual(controlsBefore);
-    expect(await result.evaluate((el) => {
-      const offer = el.querySelector('.v2-byo__hosted-offer')!;
-      return offer === el.lastElementChild && [...el.querySelectorAll('.v2-byo__command')].every((command) =>
-        Boolean(command.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING));
-    })).toBe(true);
+    const bar = page.getByRole('status', { name: 'Run it here instead' });
+    await expect(bar).toBeInViewport({ ratio: 1 });
+    const pane = page.locator('.v2-feature__body');
+    await pane.evaluate((el) => { el.scrollTop = 0; });
+    await expect(bar).toBeInViewport({ ratio: 1 });
+    await pane.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    await expect(bar).toBeInViewport({ ratio: 1 });
+    const lastControl = result.locator('.v2-byo__cta-row button').last();
+    await expect(lastControl).toBeInViewport({ ratio: 1 });
+    const controlBox = await lastControl.boundingBox();
+    const barBox = await bar.boundingBox();
+    expect(controlBox!.y + controlBox!.height).toBeLessThanOrEqual(barBox!.y);
+    const reservedHeight = await page.locator('.v2-byo__layout').evaluate((el) =>
+      parseFloat(getComputedStyle(el).paddingBottom) - 40);
+    expect(reservedHeight).toBe(barBox!.height);
+    expect(initialReservedHeight).toBe(barBox!.height);
+    const paneBox = await pane.boundingBox();
+    expect(Math.abs(barBox!.y + barBox!.height - paneBox!.y - paneBox!.height)).toBeLessThanOrEqual(1);
+    expect(await bar.evaluate((el) => getComputedStyle(el).boxShadow)).toBe('none');
+    await testInfo.attach('sticky-bar-clearance', {
+      body: Buffer.from(JSON.stringify({ width, barHeight: barBox!.height, reservedHeight,
+        barTop: barBox!.y, lastControlBottom: controlBox!.y + controlBox!.height }, null, 2)),
+      contentType: 'application/json',
+    });
+
   });
 }

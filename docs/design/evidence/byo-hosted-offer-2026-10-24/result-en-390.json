@@ -3,9 +3,11 @@
   "width": 390,
   "metrics": {
     "buttonHeight": 44,
-    "buttonWidth": 322,
+    "buttonWidth": 290,
     "rowWidth": 322,
-    "bg": "rgb(255, 255, 255)",
+    "barHeight": 128,
+    "position": "sticky",
+    "bg": "rgb(16, 24, 40)",
     "afterCommand": true,
     "scrollWidth": 390,
     "clientWidth": 390
