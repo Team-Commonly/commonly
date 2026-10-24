@@ -11,6 +11,7 @@ jest.mock('jsonwebtoken', () => ({ sign: jest.fn(), verify: jest.fn(), decode: j
 jest.mock('../../../services/agentEventService', () => ({
   list: jest.fn(),
   listInboxPage: jest.fn(),
+  renewDelivery: jest.fn(),
 }));
 jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: jest.fn((agentName, instanceId = 'default') => (
@@ -136,5 +137,29 @@ describe('agentsRuntime DM and event pod coverage', () => {
       instanceId: 'liz',
     });
     expect(res.json).toHaveBeenCalledWith({ dmPod: { _id: 'dm-pod-1', type: 'agent-admin' } });
+  });
+});
+
+
+describe('inbox delivery renewal route', () => {
+  const eventId = '0123456789abcdef01234567';
+  const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
+  test('uses authenticated seat/instance, ignoring identity supplied in the body', async () => {
+    AgentEventService.renewDelivery.mockResolvedValue(true);
+    const res = response();
+    await getRouteHandler('/events/renew', 'post')({
+      agentInstallation: { agentName: 'wren', instanceId: 'writer-instance' },
+      body: { agentName: 'victim', instanceId: 'victim-instance', events: [{ eventId, deliveryId: 'nonce' }] },
+    }, res);
+    expect(AgentEventService.renewDelivery).toHaveBeenLastCalledWith(eventId, 'wren', 'writer-instance', 'nonce');
+    expect(res.json).toHaveBeenCalledWith({ renewed: [eventId] });
+  });
+  test.each([undefined, [], Array(51).fill({ eventId, deliveryId: 'nonce' }),
+    [{ eventId, deliveryId: '' }], [{ eventId: {}, deliveryId: 'nonce' }]])('rejects malformed or unbounded input %j', async (events) => {
+    AgentEventService.renewDelivery.mockClear();
+    const res = response();
+    await getRouteHandler('/events/renew', 'post')({ body: { events }, agentInstallation: { agentName: 'wren' } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentEventService.renewDelivery).not.toHaveBeenCalled();
   });
 });

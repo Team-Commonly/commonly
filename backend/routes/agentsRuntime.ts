@@ -1313,6 +1313,32 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
   }
 });
 
+// A live inbox turn may outlast the stale-delivery GC interval. Renew only
+// the token owner's current nonce; this never marks work handled.
+router.post('/events/renew', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  const events = req.body?.events;
+  if (!Array.isArray(events) || events.length < 1 || events.length > 50
+    || events.some((entry: any) => !entry || typeof entry.eventId !== 'string' || !/^[a-fA-F0-9]{24}$/.test(entry.eventId)
+      || typeof entry.deliveryId !== 'string' || !entry.deliveryId)) {
+    return res.status(400).json({ message: 'events requires 1–50 eventId/deliveryId pairs' });
+  }
+  const agentName = req.agentInstallation?.agentName
+    || req.agentUser?.botMetadata?.agentName
+    || req.agentUser?.botMetadata?.agentType || req.agentUser?.username;
+  const instanceId = req.agentInstallation?.instanceId || req.agentUser?.botMetadata?.instanceId || 'default';
+  if (!agentName) return res.status(403).json({ message: 'Agent token not authorized for events' });
+  try {
+    const renewed = await Promise.all(events.map(async (entry: { eventId: string; deliveryId: string }) => (
+      await AgentEventService.renewDelivery(entry.eventId, agentName, instanceId, entry.deliveryId)
+        ? entry.eventId : null
+    )));
+    return res.json({ renewed: renewed.filter(Boolean) });
+  } catch (error: any) {
+    console.error('Error renewing inbox deliveries:', error.message);
+    return res.status(500).json({ message: 'Could not renew inbox deliveries' });
+  }
+});
+
 router.post('/events/:id/ack', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installation = req.agentInstallation;

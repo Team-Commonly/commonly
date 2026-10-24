@@ -1554,6 +1554,162 @@ describe('performRun', () => {
     expect(errors[0]).toMatchObject({ failureClass: 'quota', circuitOpen: true });
   });
 
+  test('a never-resolving child cannot renew inbox deliveries beyond the turn deadline', async () => {
+    const post = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events: [makeEvent({ payload: { content: 'hang', deliveryId: 'nonce' } })] };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    }), post });
+    const intervals = [];
+    const deadlines = [];
+    const clearIntervalImpl = jest.fn();
+    const spawn = jest.fn(() => new Promise(() => {}));
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub',
+      turnTimeoutMs: 1000, setTimeoutImpl: noopTimeout,
+      setIntervalImpl: (callback, delay) => { const timer = { callback, delay }; intervals.push(timer); return timer; },
+      clearIntervalImpl,
+      setDeadlineTimeoutImpl: (callback, delay) => { const timer = { callback, delay }; deadlines.push(timer); return timer; },
+      clearDeadlineTimeoutImpl: jest.fn() });
+    await drainMicrotasks();
+    try {
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(spawn.mock.calls[0][1].timeoutMs).toBe(1000);
+      const renewal = intervals.find((timer) => timer.delay === 60_000);
+      await renewal.callback();
+      expect(callsTo(post, '/events/renew')).toHaveLength(1);
+      expect(deadlines).toHaveLength(1);
+      expect(deadlines[0].delay).toBe(1000);
+      deadlines[0].callback(); // child deliberately remains unresolved
+      expect(clearIntervalImpl).toHaveBeenCalledWith(renewal);
+      await renewal.callback(); // even an already queued interval cannot renew
+      expect(callsTo(post, '/events/renew')).toHaveLength(1);
+      expect(ackPosts(post)).toHaveLength(0);
+    } finally { handle.stop(); }
+  });
+
+  test.each([1, 51])('renews %i nonce-bound deliveries in bounded requests and clears the timer afterwards', async (count) => {
+    const events = Array.from({ length: count }, (_, i) => makeEvent({
+      _id: `evt-${i + 1}`, payload: { content: 'long work', deliveryId: `nonce-${i + 1}` },
+    }));
+    const post = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    }), post });
+    const timers = [];
+    const clearIntervalImpl = jest.fn();
+    let finish;
+    const spawn = jest.fn(() => new Promise((resolve) => { finish = resolve; }));
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      setIntervalImpl: (callback, delay) => { const timer = { callback, delay }; timers.push(timer); return timer; },
+      clearIntervalImpl });
+    await drainMicrotasks();
+    const renewal = timers.find((timer) => timer.delay === 60_000);
+    expect(renewal).toBeDefined();
+    await renewal.callback();
+    const renewals = callsTo(post, '/events/renew');
+    expect(renewals).toHaveLength(Math.ceil(count / 50));
+    expect(renewals.every(([, body]) => body.events.length <= 50)).toBe(true);
+    expect(renewals.flatMap(([, body]) => body.events)).toEqual(events.map((event) => ({
+      eventId: event._id, deliveryId: event.payload.deliveryId,
+    })));
+    expect(ackPosts(post)).toHaveLength(0);
+    finish({ text: 'NO_REPLY' });
+    await drainMicrotasks();
+    handle.stop();
+    expect(clearIntervalImpl).toHaveBeenCalledWith(renewal);
+    expect(ackPosts(post)).toHaveLength(count);
+  });
+
+  test('an item without a delivery nonce gets no per-item checkpoint instruction', async () => {
+    createClient.mockReturnValue({ get: jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events: [makeEvent()] };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    }), post: jest.fn().mockResolvedValue({}) });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub', setTimeoutImpl: noopTimeout });
+    await drainMicrotasks();
+    handle.stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0]).not.toContain('call commonly_checkpoint_event(');
+  });
+
+  test('three explicit event checkpoints survive a five-event turn timeout', async () => {
+    const { buildTools } = await import('../../commonly-mcp/src/tools.js');
+    const originalFetch = global.fetch;
+    const events = Array.from({ length: 5 }, (_, index) => makeEvent({
+      _id: `evt-check-${index + 1}`,
+      payload: { content: `handle item ${index + 1}`, deliveryId: `nonce-${index + 1}` },
+    }));
+    const acked = new Set();
+    const pages = [];
+    const post = jest.fn(async (route) => {
+      const match = route.match(/events\/(evt-check-\d)\/ack$/);
+      if (match) acked.add(match[1]);
+      return {};
+    });
+    const get = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') {
+        const remaining = events.filter((event) => !acked.has(event._id));
+        pages.push(remaining.map((event) => event._id));
+        return { events: remaining };
+      }
+      if (route.endsWith('/messages')) return { messages: [] };
+      if (route.endsWith('/memory')) return { sections: {} };
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    global.fetch = jest.fn(async (url, init) => {
+      const id = String(url).match(/events\/(evt-check-\d)\/ack$/)?.[1];
+      expect(id).toBeDefined();
+      const event = events.find((entry) => entry._id === id);
+      expect(JSON.parse(init.body)).toEqual({ deliveryId: event.payload.deliveryId,
+        result: { outcome: 'acknowledged', reason: 'handled-checkpoint' } });
+      acked.add(id);
+      return { ok: true, status: 200, text: async () => '{"success":true}' };
+    });
+    const scheduled = [];
+    let attempt = 0;
+    const spawn = jest.fn(async (prompt, ctx) => {
+      attempt += 1;
+      if (attempt === 1) {
+        const checkpoint = buildTools({ baseUrl: ctx.instanceUrl, token: ctx.runtimeToken })
+          .find((tool) => tool.name === 'commonly_checkpoint_event');
+        expect(checkpoint).toBeDefined();
+        for (const event of events.slice(0, 3)) {
+          expect(prompt).toContain(`After completed tool-side work or intentional NO_REPLY for only this item, call commonly_checkpoint_event(${JSON.stringify({ eventId: event._id, deliveryId: event.payload.deliveryId })})`);
+          expect(prompt).toContain('Do not checkpoint a reply you are holding for final CLI output');
+          const result = await checkpoint.call({ eventId: event._id, deliveryId: event.payload.deliveryId });
+          expect(result.isError).not.toBe(true);
+        }
+        throw Object.assign(new Error('turn timed out'), { code: 'ETIMEDOUT' });
+      }
+      expect(prompt).not.toContain('evt-check-1');
+      expect(prompt).toContain('evt-check-4');
+      expect(prompt).toContain('evt-check-5');
+      return { text: 'NO_REPLY' };
+    });
+    const handle = performRun({ instanceUrl: 'https://example.test', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub',
+      retryJitterRatio: 0, setTimeoutImpl: (callback, delayMs) => { scheduled.push({ callback, delayMs }); return 0; } });
+    try {
+      await drainMicrotasks();
+      expect(acked).toEqual(new Set(events.slice(0, 3).map((event) => event._id)));
+      scheduled.shift().callback();
+      await drainMicrotasks();
+      expect(pages.slice(0, 2)).toEqual([events.map((event) => event._id), ['evt-check-4', 'evt-check-5']]);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(acked.size).toBe(5);
+    } finally { handle.stop(); global.fetch = originalFetch; }
+  });
+
   test('a batch spawn failure leaves its no-op sibling unacked for coherent retry', async () => {
     let poll = 0;
     const mockGet = jest.fn(async (route) => {
