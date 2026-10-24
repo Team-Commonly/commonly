@@ -15,10 +15,11 @@
 // expected to paste into their MCP host config immediately. If lost, they
 // can explicitly replace the old key without changing the agent identity.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import { recordByoStep, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2FeaturePage from './V2FeaturePage';
 import V2Avatar from './V2Avatar';
@@ -180,6 +181,16 @@ const V2AgentBYO: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<'machine' | 'name' | 'pod' | null>(null);
   const [issued, setIssued] = useState<{ token: string; agentName: string; podId: string; issuedAt: number } | null>(null);
+  const [hasCopied, setHasCopied] = useState(false);
+  const [showHostedOffer, setShowHostedOffer] = useState(false);
+  const offeredPanels = useRef(new Set<string>());
+  const offerSessionKey = issued
+    ? `commonly:byo-hosted-offer:${currentUser?._id || ''}:${issued.podId}:${issued.agentName}`
+    : null;
+  const viewed = useRef(false);
+  const commandViewed = useRef<object | null>(null);
+  const fallbackStarting = useRef(false);
+  const allocatedHosted = useRef<{ issued: object; name: string } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   // Which CLI the listener runs. Pinned in the command (`--adapter`), so a Mac
   // without Claude Code says so instead of quietly starting Codex (QA BYO
@@ -556,6 +567,7 @@ const V2AgentBYO: React.FC = () => {
       }
       const provisioned = await api.post<{ ready?: boolean }>('/api/hosted/provision', { agentName: cleanName });
       setHosted({ agentName: cleanName, podId, ready: provisioned?.ready === true });
+      return true;
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
       const code = e.response?.data?.code;
@@ -563,6 +575,35 @@ const V2AgentBYO: React.FC = () => {
         ? t('agentByo.errors.hostedUnavailable')
         : (e.response?.data?.message || e.response?.data?.error || e.message || t('agentByo.errors.installFailed')));
     } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const startHostedInstead = async () => {
+    if (!issued || submitting || fallbackStarting.current) return;
+    fallbackStarting.current = true;
+    setSubmitting(true);
+    setError(null);
+    try {
+      // A BYO installation cannot be provisioned as hosted. Allocate a new
+      // identity through the same server name allocator as the setup form.
+      if (allocatedHosted.current?.issued !== issued) {
+        const base = userSlug ? `${userSlug}-agent` : 'hosted-agent';
+        const available = await api.get<{ name: string }>(
+          `/api/registry/agents/next-free-name?base=${encodeURIComponent(base)}`,
+        );
+        if (!available.name || available.name === issued.agentName) {
+          throw new Error(t('agentByo.errors.nameLookupFailed'));
+        }
+        allocatedHosted.current = { issued, name: available.name };
+      }
+      // An install can succeed while provision fails. Reuse its name on retry
+      // so the existing-installation path can finish within the hosted cap.
+      if (await submitHosted(allocatedHosted.current.name)) setIssued(null);
+    } catch {
+      setError(t('agentByo.errors.nameLookupFailed'));
+    } finally {
+      fallbackStarting.current = false;
       setSubmitting(false);
     }
   };
@@ -839,13 +880,63 @@ const V2AgentBYO: React.FC = () => {
   // BYO funnel telemetry: 7 of 7 recent seats died between token issuance and
   // the first authenticated call, and the server cannot see whether the user
   // even copied a command. Fire-and-forget; the flow never waits on it.
-  const byoStep = (step: string) => {
-    axios.post('/api/stats/byo-step', { step }).catch(() => {});
+  const byoStep = (step: ByoStep) => {
+    recordByoStep(api, step);
+  };
+
+  useEffect(() => {
+    if (!currentUser || viewed.current) return;
+    viewed.current = true;
+    recordByoStep(api, 'page-viewed');
+  }, [api, currentUser]);
+
+  useEffect(() => {
+    if (commandViewed.current === issued) return;
+    commandViewed.current = issued;
+    allocatedHosted.current = null;
+    setHasCopied(false);
+    setShowHostedOffer(false);
+    if (!issued) return;
+    // This event means the issued command rendered, distinct from page entry.
+    recordByoStep(api, 'seat-created');
+  }, [api, issued]);
+
+  const rememberHostedOffer = () => {
+    if (!offerSessionKey) return;
+    offeredPanels.current.add(offerSessionKey);
+    try { sessionStorage.setItem(offerSessionKey, 'seen'); } catch { /* Storage can be disabled. */ }
+  };
+
+  useEffect(() => {
+    if (!issued || !offerSessionKey || hasCopied || !hosting?.configured || listenState === 'listening') return undefined;
+    const offer = () => {
+      if (offeredPanels.current.has(offerSessionKey)) return;
+      try { if (sessionStorage.getItem(offerSessionKey)) return; } catch { /* Use the panel guard. */ }
+      offeredPanels.current.add(offerSessionKey);
+      try { sessionStorage.setItem(offerSessionKey, 'seen'); } catch { /* Use the panel guard. */ }
+      setShowHostedOffer(true);
+    };
+    const timer = window.setTimeout(offer, 30_000);
+    const leaving = (event: MouseEvent) => {
+      if (event.clientY <= 0 && window.matchMedia('(min-width: 761px)').matches) offer();
+    };
+    document.documentElement.addEventListener('mouseleave', leaving);
+    return () => {
+      window.clearTimeout(timer);
+      document.documentElement.removeEventListener('mouseleave', leaving);
+    };
+  }, [issued, offerSessionKey, hasCopied, hosting?.configured, listenState]);
+
+  const copiedIssuedContent = () => {
+    rememberHostedOffer();
+    setHasCopied(true);
+    setShowHostedOffer(false);
   };
 
   const copy = async (key: string, value: string) => {
     try {
       await navigator.clipboard.writeText(value);
+      copiedIssuedContent();
       setCopied(key);
       setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
       if (key === 'claude' || key === 'cursor') byoStep('mcp-command-copied');
@@ -919,6 +1010,7 @@ const V2AgentBYO: React.FC = () => {
         return t('agentByo.description');
       })()}
       showPodsSidebar={false}
+      className="v2-feature--byo"
     >
       <div className="v2-byo__layout">
       <div className="v2-byo__main">
@@ -1367,6 +1459,7 @@ const V2AgentBYO: React.FC = () => {
         <div className="v2-byo__result">
           <h2>{t('agentByo.result.heading')} <code>{issued.agentName}</code></h2>
 
+
           {/*
             Above the copy sits only what the paste needs: where, what it needs,
             the command (QA BYO walk 2: 112 words down to the box). What it
@@ -1420,7 +1513,7 @@ const V2AgentBYO: React.FC = () => {
               </button>
             </p>
             {listenerAvailable && (
-              <div className="v2-byo__command">
+              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
                 <pre className="v2-byo__pre">{listenSnippet}</pre>
                 <button
                   type="button"
@@ -1465,7 +1558,7 @@ const V2AgentBYO: React.FC = () => {
                   { name: issued.agentName },
                 )}
               </p>
-              <div className="v2-byo__command">
+              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
                 <pre className="v2-byo__pre">{setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet}</pre>
                 <button
                   type="button"
@@ -1484,7 +1577,7 @@ const V2AgentBYO: React.FC = () => {
               <div className="v2-byo__snippet-head">
                 <span>{t('agentByo.snippets.runtimeToken')}</span>
               </div>
-              <div className="v2-byo__command">
+              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
                 <pre className="v2-byo__pre">{issued.token}</pre>
                 <button type="button" onClick={() => copy('tok', issued.token)} className="v2-byo__copy">
                   {copied === 'tok' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
@@ -1497,7 +1590,7 @@ const V2AgentBYO: React.FC = () => {
               </div>
               <a className="v2-byo__cursor-link" href={cursorInstallHref}>{t('agentByo.snippets.cursorInstall')}</a>
               <p className="v2-byo__hint">{t('agentByo.snippets.cursorInstallHint')}</p>
-              <div className="v2-byo__command">
+              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
                 <pre className="v2-byo__pre">{cursorSnippet}</pre>
                 <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">
                   {copied === 'cursor' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
@@ -1505,6 +1598,7 @@ const V2AgentBYO: React.FC = () => {
               </div>
             </div>
           </details>
+
 
 
           <div className="v2-byo__snippet">
@@ -1573,6 +1667,7 @@ const V2AgentBYO: React.FC = () => {
               {t('agentByo.actions.installAnother')}
             </button>
           </div>
+
         </div>
       )}
       </div>
@@ -1597,6 +1692,15 @@ const V2AgentBYO: React.FC = () => {
         </div>
       </aside>
       </div>
+          {issued && showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
+            <section role="status" className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
+              <p>{t('agentByo.hosted.offerBody')}</p>
+              <button type="button" className="v2-byo__submit v2-byo__hosted-offer-action" disabled={submitting} onClick={startHostedInstead}>
+                {submitting ? t('agentByo.hosted.starting', { name: t('agentByo.preview.title') }) : t('agentByo.hosted.offerAction')}
+              </button>
+              {error && <p className="v2-byo__error" role="alert">{error}</p>}
+            </section>
+          )}
     </V2FeaturePage>
   );
 };

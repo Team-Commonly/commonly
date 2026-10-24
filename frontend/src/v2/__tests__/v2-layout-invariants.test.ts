@@ -4938,3 +4938,28 @@ test('TASK-443 lease typography outranks the ownership cell font size', () => {
   expect(ruleBody(read('../v2.css'), '.v2-board__ownership .v2-board__lease-value'))
     .toContain('font: 500 12px/16px var(--v2-font-mono)');
 });
+
+test('TASK-482 sticky bar overlays reserved space with a top border and no shadow', () => {
+  const css = read('../v2.css');
+  const bar = ruleBody(css, '.v2-byo__hosted-offer');
+  expect(bar).toContain('position: sticky');
+  expect(bar).toContain('bottom: 0');
+  expect(bar).toContain('min-height: var(--v2-byo-offer-height)');
+  expect(bar).not.toMatch(/(?:^|[;\s])height:/);
+  expect(bar).not.toContain('overflow:');
+  expect(bar).toContain('margin-top: calc(-1 * var(--v2-byo-offer-height))');
+  expect(bar).toContain('border-top: 1px solid var(--v2-border)');
+  expect(bar).toContain('background: var(--v2-surface)');
+  expect(bar).not.toContain('box-shadow');
+  expect(ruleBody(css, '.v2-byo__layout')).toContain('padding: 8px 24px calc(40px + var(--v2-byo-offer-height, 0px))');
+});
+
+test('TASK-482 offer follows the final CTA so existing commands and controls cannot move', () => {
+  const source = read('../components/V2AgentBYO.tsx');
+  const finalCommand = source.lastIndexOf('className="v2-byo__command"');
+  const offer = source.indexOf('role="status" className="v2-byo__hosted-offer"');
+  expect(finalCommand).toBeGreaterThan(-1);
+  expect(offer).toBeGreaterThan(finalCommand);
+  expect(offer).toBeGreaterThan(source.lastIndexOf('className="v2-byo__cta-row"'));
+  // Actual before/after top coordinates are asserted by e2e/byo-offer-layout.spec.ts.
+});
