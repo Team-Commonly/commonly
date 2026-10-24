@@ -11,6 +11,7 @@ import { createHash } from 'crypto';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from '../services/installable/toolInstallables';
 import { GrantBrokerRefusal, grantBrokerRefusal } from '../services/grantBrokerConfinement';
+import { KERNEL_RUN_RUNTIME_TYPES } from '../services/configWriteGuard';
 import {
   grantBrokerServer,
   selectLiveGrantsForIdentities,
@@ -442,6 +443,10 @@ router.get('/assigned', bindingRateLimit, daemonAuth('agents:adopt'), async (req
       // An identity outside the owner's installation set (shared, or another
       // user's) never appears in this daemon's work list.
       if (!entry) return [];
+      // A seat Commonly runs is not the daemon's to run, even when its identity
+      // still names this machine from before it turned native or hosted (TASK-474).
+      const runtime = entry.runtime as { runtimeType?: unknown } | null;
+      if (KERNEL_RUN_RUNTIME_TYPES.has(String(runtime?.runtimeType ?? '').trim().toLowerCase())) return [];
       const agentId = String(identity._id || '');
       const grantProjection = grantServers.get(agentId);
       const brokerServers = grantProjection?.servers || [];
