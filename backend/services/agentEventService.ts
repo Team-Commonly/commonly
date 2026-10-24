@@ -335,7 +335,7 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     });
 
     if (!res.ok) {
-      console.warn(`[webhook] ${event.agentName} ${webhookUrl} → HTTP ${res.status}`);
+      console.warn(`[webhook] ${event.agentName} HTTP ${res.status}`);
       return;
     }
 
@@ -382,10 +382,12 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
       });
     }
   } catch (err) {
-    if ((err as Error).name === 'AbortError') {
-      console.warn(`[webhook] ${event.agentName} ${webhookUrl} timed out after 10s`);
+    // URLs and transport error text can contain installer credentials, including
+    // redirect destinations. Keep diagnostics independent of those values.
+    if ((err as Error)?.name === 'AbortError') {
+      console.warn(`[webhook] ${event.agentName} timed out after 10s`);
     } else {
-      console.warn(`[webhook] ${event.agentName} ${webhookUrl} error:`, (err as Error).message);
+      console.warn(`[webhook] ${event.agentName} delivery failed`);
     }
   }
 };
