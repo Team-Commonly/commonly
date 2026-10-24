@@ -24,7 +24,8 @@ an owner. Its owner field is attribution metadata, not write authority.
    scope. No cross-pod context or private memory enters the prompt.
 2. Resolve deterministic rules once. A rule hit bypasses inference entirely.
 3. For a non-rule message, reserve one decision record under unique
-   `(podId, messageId, policyRevision)`. Concurrent producers share that record;
+   `(podId, messageId)`. Store policyRevision as metadata, never as part of
+   uniqueness: a policy rollout cannot classify the same message again. Concurrent producers share that record;
    neither each target nor each backend replica makes another call. Reservation
    failure goes to digest. A crashed reservation has a bounded lease and a
    durable digest fallback; it cannot hold message delivery forever.
@@ -129,13 +130,56 @@ requested/returned model, HTTP status, decision, latency and usage, without
 source text, provider error text or credentials. Keep results private. Summary
 reports latency over all attempts and valid responses separately, timeout rate,
 and usage coverage. Missing timeout/error usage is unknown cost, not free.
-Output is capped at 128 tokens; record actual usage rather than assuming the
-40-token price example. Reconcile costs against LiteLLM logs, including timed
+Output defaults to 128 tokens. Set WAKE_BENCH_MAX_TOKENS explicitly (1–16384)
+when a candidate needs a larger completion budget; this does not extend the
+2,000 ms deadline. WAKE_BENCH_FORMAT=json_object selects schema-less provider
+output while preserving local validation. Default is json_schema. Unsupported
+formats fail on that single call, with no retry. The summary records these
+settings. WAKE_BENCH_REASONING_EFFORT=none explicitly disables reasoning on
+a compatible route; unset leaves the provider default. Record actual usage rather than assuming the 40-token price example. Reconcile costs against LiteLLM logs, including timed
 out requests and any unexpected upstream retries.
 
-Measurement blocker: this writer process has no LiteLLM inference credential.
-SRE needs to run the harness or supply a scoped benchmark environment. Until
-then the latency cells stay explicitly unmeasured and model selection stays open.
+### First measured candidate (SRE, 2026-10-24)
+
+Source: SRE's own run, relayed in TASK-442's 14:05Z update. These are reported
+measurements, not a run performed by this writer. Same private 200-message
+fixture and current context described above; not an attribution accuracy score.
+
+| DeepSeek flash-1017 configuration | Attempts | Valid | p50 / p95 wall time | Outcome |
+| --- | ---: | ---: | --- | --- |
+| Strict json_schema, 2 s | 200 | 0 | Not supplied | 200 HTTP 400, upstream format unsupported |
+| json_object, 2 s (cap not supplied) | 200 | 0 | ~2002 / ~2002 ms | 197 timeout, 2 response_error, 1 invalid_decision |
+| json_object, 10 s characterization, 256-token cap | 30 | 0 | 2531 / 3312 ms | All truncated/invalid; minimum 2301 ms |
+
+The characterization used mean 10,504 prompt tokens and hit the 256 completion
+cap on every response. It cannot establish latency to a *valid* decision.
+The network path was laptop → Cloudflare → cluster → LiteLLM → provider.
+In-cluster latency has not been measured, and these data do not isolate network
+from model time. Reject this tested configuration for the 2 s pilot; neither
+raising the cap nor moving the caller has been shown to meet the contract.
+Known usage from three responses implies about $0.005; timeout billing remains
+unknown. SRE reports the run stayed within its $0.50 scoped budget.
+
+### Next proposed candidate: GPT-5.4 nano (approval pending)
+
+[Official model documentation](https://developers.openai.com/api/docs/models/gpt-5.4-nano),
+checked 2026-10-24: standard uncached input $0.20/M, output $1.25/M.
+Structured outputs are supported; reasoning supports `none` (default), so
+verify the deployed LiteLLM route preserves that setting rather than assuming
+this family is intrinsically non-reasoning. Proxy availability/billing and
+actual latency remain unverified.
+
+At 2,000 input + 40 output tokens the estimate is $0.45/1k messages.
+At the observed 10,504 input + a 128 output cap it is $2.2608/1k,
+or $0.45216 for 200 calls. This is an estimate using a mean, not a spend bound.
+A 256 cap raises that estimate to $0.48416; 512 raises it to $0.54816,
+above the existing $0.50 authorization. Retain the hard key budget; budget refusals remain errors and must not be
+retried to finish a sample.
+
+Next step is CTO approval of the Nano route, explicit reasoning=none and token
+budget, then SRE's scoped run. No second candidate has been run by this writer.
+Production integration and activation remain blocked on a selected model and
+the labeled historical-context evaluation.
 
 ## Pilot and proof before activation
 

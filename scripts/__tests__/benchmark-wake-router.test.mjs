@@ -1,5 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { classify, summarize, validateDecision } from '../benchmark-wake-router.mjs';
 
 const context = { seats: [{ id: 'writer:default' }], humans: [{ id: 'human-1' }], rows: [], claims: [] };
@@ -38,8 +43,9 @@ test('invalid or invented targets and ownership fall back to unread digest', asy
 });
 
 test('HTTP refusal and malformed JSON preserve fallback without exposing response text', async () => {
-  for (const fetchImpl of [async () => ({ ok: false, status: 429 }), async () => ({ ok: true, status: 200, json: async () => { throw new Error('private provider text'); } })]) {
+  for (const [expected, fetchImpl] of [['http_error', async () => ({ ok: false, status: 429 })], ['response_error', async () => ({ ok: true, status: 200, json: async () => { throw new Error('private provider text'); } })]]) {
     const row = await classify(sample, context, { ...options, fetchImpl });
+    assert.equal(row.outcome, expected);
     assert.equal(row.verdict.digest, true);
     assert.deepEqual(row.verdict.wake, []);
     assert.equal(JSON.stringify(row).includes('private provider text'), false);
@@ -64,4 +70,57 @@ test('latency percentiles include failures and cost coverage never silently coun
   assert.equal(summary.usageKnown, 1);
   assert.equal(summary.costComplete, false);
   assert.ok(Math.abs(summary.estimatedUsd - 0.00022) < 1e-9);
+});
+
+
+test('json_object uses the explicit completion budget and still rejects invented IDs without retry', async () => {
+  let calls = 0;
+  let body;
+  const row = await classify(sample, context, { ...options, format: 'json_object', maxTokens: 1024, reasoningEffort: 'none',
+    fetchImpl: async (_url, init) => { calls += 1; body = JSON.parse(init.body); return reply({ ...decision, wake: ['stranger'] }); } });
+  assert.deepEqual(body.response_format, { type: 'json_object' });
+  assert.equal(body.max_tokens, 1024);
+  assert.equal(body.reasoning_effort, 'none');
+  assert.equal(calls, 1);
+  assert.equal(row.outcome, 'invalid_decision');
+});
+
+
+test('CLI rejects incomplete and malformed private inputs before making any request', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'wake-bench-test-'));
+  const server = createServer((_request, response) => { requests += 1; response.end('{}'); });
+  let requests = 0;
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
+  const sentinel = 'PRIVATE-INPUT-MUST-NOT-LEAK';
+  const validSamples = Array.from({ length: 200 }, (_, i) => ({ id: `msg-${i}`, content: sentinel }));
+  for (const [samples, contextText] of [
+    [validSamples.map((s, i) => i === 199 ? { id: s.id } : s), JSON.stringify(context)],
+    [validSamples.map((s, i) => i === 199 ? { ...s, content: '  ' } : s), JSON.stringify(context)],
+    [validSamples.map((s, i) => i === 199 ? { ...s, id: '' } : s), JSON.stringify(context)],
+    [validSamples.map((s, i) => i === 199 ? { ...s, id: 'msg-0' } : s), JSON.stringify(context)],
+    [`{"content":"${sentinel}" broken`, JSON.stringify(context)],
+    [validSamples, `{"private":"${sentinel}" broken`],
+  ]) {
+    const input = join(directory, 'samples.jsonl');
+    const contextFile = join(directory, 'context.json');
+    await writeFile(input, typeof samples === 'string' ? samples : samples.map((s) => JSON.stringify(s)).join('\n'));
+    await writeFile(contextFile, contextText);
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [new URL('../benchmark-wake-router.mjs', import.meta.url).pathname,
+        input, contextFile, 'fixture', '0.1', '0.5'], {
+        env: { ...process.env, LITELLM_BASE_URL: `http://127.0.0.1:${server.address().port}`, LITELLM_API_KEY: 'fixture-key' },
+      });
+      let stdout = ''; let stderr = '';
+      child.stdout.on('data', (chunk) => { stdout += chunk; });
+      child.stderr.on('data', (chunk) => { stderr += chunk; });
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, stdout, stderr }));
+    });
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, 'Benchmark failed: check inputs, configuration and file access\n');
+    assert.equal(result.stderr.includes(sentinel), false);
+  }
+  assert.equal(requests, 0);
 });

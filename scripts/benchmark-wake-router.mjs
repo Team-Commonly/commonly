@@ -46,8 +46,10 @@ export async function classify(sample, context, options) {
     const response = await (options.fetchImpl ?? fetch)(options.url, {
       method: 'POST', redirect: 'error', signal: controller.signal,
       headers: { Authorization: `Bearer ${options.key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: options.model, max_tokens: 128, stream: false,
-        response_format: { type: 'json_schema', json_schema: decisionSchema(context) },
+      body: JSON.stringify({ model: options.model, max_tokens: options.maxTokens ?? 128, stream: false,
+        ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
+        response_format: options.format === 'json_object' ? { type: 'json_object' }
+          : { type: 'json_schema', json_schema: decisionSchema(context) },
         messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: JSON.stringify({
           ...context, message: { id: sample.id, author: sample.author, content: sample.content },
         }) }],
@@ -85,6 +87,25 @@ export function summarize(records, prices) {
     effectiveModels: [...new Set(records.map((r) => r.returnedModel).filter(Boolean))] };
 }
 
+export function parseStudy(input, contextText) {
+  let samples;
+  let context;
+  try { samples = input.trim().split('\n').map((line) => JSON.parse(line)); }
+  catch { throw new Error('Invalid sample JSON'); }
+  try { context = JSON.parse(contextText); }
+  catch { throw new Error('Invalid context JSON'); }
+  const nonempty = (value) => typeof value === 'string' && value.trim().length > 0;
+  if (samples.length !== 200 || !samples.every((s) => s && nonempty(s.id) && nonempty(s.content))
+    || new Set(samples.map((s) => s.id)).size !== 200) {
+    throw new Error('Need exactly 200 distinct nonempty message IDs and message bodies');
+  }
+  if (!context || !Array.isArray(context.seats) || !context.seats.length
+    || !Array.isArray(context.humans) || !Array.isArray(context.rows) || !Array.isArray(context.claims)) {
+    throw new Error('Context requires seats, humans, rows and claims');
+  }
+  return { samples, context };
+}
+
 async function main() {
   const [inputFile, contextFile, model, inputPrice, outputPrice] = process.argv.slice(2);
   if (!inputFile || !contextFile || !model || !Number.isFinite(Number(inputPrice)) || !Number.isFinite(Number(outputPrice))) {
@@ -94,21 +115,25 @@ async function main() {
   if (base.username || base.password || (base.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(base.hostname))) throw new Error('Use HTTPS for LiteLLM');
   const key = process.env.LITELLM_API_KEY;
   if (!key) throw new Error('LITELLM_API_KEY is required; use a model-scoped benchmark key');
-  const samples = (await readFile(inputFile, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
-  if (samples.length !== 200 || new Set(samples.map((s) => s.id)).size !== 200) throw new Error('Need exactly 200 distinct real message IDs');
-  const context = JSON.parse(await readFile(contextFile, 'utf8'));
-  if (!context.seats?.length || !Array.isArray(context.humans) || !Array.isArray(context.rows) || !Array.isArray(context.claims)) throw new Error('Context requires seats, humans, rows and claims');
+  const { samples, context } = parseStudy(await readFile(inputFile, 'utf8'), await readFile(contextFile, 'utf8'));
+  // Explicit configuration only: unsupported formats never trigger a second call.
+  const format = process.env.WAKE_BENCH_FORMAT ?? 'json_schema';
+  const maxTokens = Number(process.env.WAKE_BENCH_MAX_TOKENS ?? 128);
+  const reasoningEffort = process.env.WAKE_BENCH_REASONING_EFFORT;
+  if (reasoningEffort && !['none', 'low', 'medium', 'high', 'xhigh'].includes(reasoningEffort)) throw new Error('Invalid WAKE_BENCH_REASONING_EFFORT');
+  if (!['json_schema', 'json_object'].includes(format)) throw new Error('Invalid WAKE_BENCH_FORMAT');
+  if (!Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 16384) throw new Error('Invalid WAKE_BENCH_MAX_TOKENS');
   const records = [];
   for (const sample of samples) {
     // Deliberately sequential: measure single-message service time, not load.
-    const record = await classify(sample, context, { model, key, url: `${base.href.replace(/\/$/, '')}/chat/completions` });
+    const record = await classify(sample, context, { model, key, format, maxTokens, reasoningEffort, url: `${base.href.replace(/\/$/, '')}/chat/completions` });
     records.push(record);
     process.stdout.write(`${JSON.stringify(record)}\n`);
     if (records.length % 20 === 0) process.stderr.write(`Completed ${records.length}/200\n`);
   }
-  process.stdout.write(`${JSON.stringify({ summary: summarize(records, { input: Number(inputPrice), output: Number(outputPrice) }) })}\n`);
+  process.stdout.write(`${JSON.stringify({ settings: { format, maxTokens, reasoningEffort: reasoningEffort ?? 'provider-default', deadlineMs: DEADLINE_MS }, summary: summarize(records, { input: Number(inputPrice), output: Number(outputPrice) }) })}\n`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
+  main().catch(() => { process.stderr.write('Benchmark failed: check inputs, configuration and file access\n'); process.exitCode = 1; });
 }
