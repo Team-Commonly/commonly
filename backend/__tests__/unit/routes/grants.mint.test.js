@@ -93,6 +93,15 @@ beforeEach(async () => {
 });
 
 describe('POST /api/grants', () => {
+  test('an agent User ID used as a pod target returns not-found before join-policy checks', async () => {
+    outsiderGrantPodRefusal.mockResolvedValue('pod_joinable');
+    const res = await mint({ target: { kind: 'pod', id: SEAT } });
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: 'target_not_found', message: 'target pod not found' });
+    expect(outsiderGrantPodRefusal).not.toHaveBeenCalled();
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
   test.each([
     ['pod_required', { kind: 'seat', id: SEAT }],
     ['pod_not_private', { kind: 'pod', id: POD }],
