@@ -123,6 +123,24 @@ describe('hosted memory copied into a local agent', () => {
     await expect(runCopy(owner)).rejects.toThrow(/different memory/);
     expect((await AgentMemory.findOne({ agentName: 'local-handoff' }).lean()).content).toContain('local-existing');
   });
+  it('preserves an actual runtime content-only write after server preflight', async () => {
+    await AgentMemory.create({ agentName: 'local-handoff', instanceId: 'default', content: '', sections: {
+      long_term: { content: '', visibility: 'private', updatedAt: new Date(), byteSize: 0 },
+    } });
+    const original = AgentMemory.findOneAndUpdate.bind(AgentMemory);
+    const save = jest.spyOn(AgentMemory, 'findOneAndUpdate').mockImplementationOnce(async (...args) => {
+      const lateWrite = await request(base).put('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${RAW_TOKEN}`).send({ content: 'late legacy local note' });
+      expect(lateWrite.status).toBe(200);
+      return original(...args);
+    });
+    try {
+      await expect(runCopy(owner)).rejects.toThrow();
+      const local = await AgentMemory.findOne({ agentName: 'local-handoff' }).lean();
+      expect(local.content).toBe('late legacy local note');
+      expect(local.sections.long_term.content).toBe('');
+    } finally { save.mockRestore(); }
+  });
   it('a concurrent write between target read and copy wins', async () => {
     const extra = `const patch=client.patch;client.patch=async (...args)=>{await patch(args[0],{content:'concurrent local note',expectedUpdatedAt:null});return patch(...args);};`;
     await expect(runCopy(owner, extra)).rejects.toThrow();

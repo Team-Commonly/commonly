@@ -199,8 +199,12 @@ router.patch('/:agentName/:instanceId/editable/:section', auth, async (req: Auth
       ? { ...(prior?.sections || {}), [section]: before } : prior?.sections;
     const decorated = decorateSectionsWithProvenance(priorSections, incoming, { via: 'memory-owner' });
     const revisionPath = `sections.${section}.updatedAt`;
-    const query = { ...identity, [revisionPath]: expectedUpdatedAt === null
-      ? { $exists: false } : new Date(expectedUpdatedAt) };
+    // Runtime v1 writes only change content, leaving the section revision intact.
+    // Include that mirror in copy CAS so a late legacy write cannot be erased.
+    const query = { ...identity,
+      ...(copyFrom !== undefined ? { content: prior?.content ?? null } : {}),
+      [revisionPath]: expectedUpdatedAt === null
+        ? { $exists: false } : new Date(expectedUpdatedAt) };
     const update: Record<string, unknown> = {
       [`sections.${section}`]: decorated[section], schemaVersion: 2,
     };
