@@ -15,11 +15,42 @@
  * The lock suppresses an unrelated detached warm child that could still write
  * to this fixture after Jest has moved on to the next test file.
  */
-const { mkdtempSync, writeFileSync } = require('node:fs');
+const fs = require('node:fs');
+const fsPromises = require('node:fs/promises');
+const { syncBuiltinESMExports } = require('node:module');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 
-const mcpHome = mkdtempSync(join(tmpdir(), 'commonly-mcp-home-jest-'));
+// Adapter tests create several isolated homes and fixture directories. A test
+// failure used to strand each one in the host TMPDIR, which made a full CLI
+// run grow by tens of gigabytes. Track exact paths returned by both mkdtemp
+// APIs; jest.teardown.cjs removes only those paths after this file.
+const tempDirs = new Set();
+const originalMkdtempSync = fs.mkdtempSync;
+const originalMkdtemp = fsPromises.mkdtemp;
+const trackedMkdtempSync = (...args) => {
+  const path = originalMkdtempSync(...args);
+  tempDirs.add(path);
+  return path;
+};
+const trackedMkdtemp = async (...args) => {
+  const path = await originalMkdtemp(...args);
+  tempDirs.add(path);
+  return path;
+};
+fs.mkdtempSync = trackedMkdtempSync;
+fs.promises.mkdtemp = trackedMkdtemp;
+fsPromises.mkdtemp = trackedMkdtemp;
+syncBuiltinESMExports();
+globalThis.__commonlyTempDirsForCleanup = tempDirs;
+globalThis.__commonlyRestoreTempTracking = () => {
+  fs.mkdtempSync = originalMkdtempSync;
+  fs.promises.mkdtemp = originalMkdtemp;
+  fsPromises.mkdtemp = originalMkdtemp;
+  syncBuiltinESMExports();
+};
+
+const mcpHome = originalMkdtempSync(join(tmpdir(), 'commonly-mcp-home-jest-'));
 process.env.COMMONLY_MCP_HOME = mcpHome;
 globalThis.__commonlyMcpHomeForCleanup = mcpHome;
-writeFileSync(join(mcpHome, '.warm.lock'), 'warming\n');
+fs.writeFileSync(join(mcpHome, '.warm.lock'), 'warming\n');

@@ -13,6 +13,7 @@ const {
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { isFreeUsername } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
+const { isInstanceAccessRestricted, isInstanceEmailAllowed } = require('../services/instanceAccessPolicy');
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -84,8 +85,15 @@ const PROVIDERS: Record<string, {
         axios.get('https://api.github.com/user/emails', { headers: ghHeaders, timeout: 15000 }),
       ]);
       const emails = Array.isArray(emailsRes.data) ? emailsRes.data : [];
-      const best = emails.find((e: any) => e.primary && e.verified)
-        || emails.find((e: any) => e.verified);
+      // A verified team address can be secondary to a personal primary address.
+      // On a gated instance use the verified address that grants admission;
+      // public instances keep the established primary-first selection.
+      const verified = emails.filter((e: any) => e.verified);
+      const allowed = isInstanceAccessRestricted()
+        ? verified.find((e: any) => e.primary && isInstanceEmailAllowed(e.email))
+          || verified.find((e: any) => isInstanceEmailAllowed(e.email))
+        : undefined;
+      const best = allowed || verified.find((e: any) => e.primary) || verified[0];
       return {
         providerId: String(userRes.data?.id || ''),
         email: String(best?.email || '').toLowerCase(),
@@ -275,6 +283,7 @@ exports.oauthCallback = async (req: any, res: any) => {
     if (!profile.providerId) return loginErrorRedirect(res, 'provider_error');
     // Linking by email is only safe when the provider vouches for it.
     if (!profile.email || !profile.emailVerified) return loginErrorRedirect(res, 'email_unverified');
+    if (!isInstanceEmailAllowed(profile.email)) return loginErrorRedirect(res, 'team_only');
     // The derived agent address is a reserved namespace, and a provider-asserted
     // one would create the agent-marked row an install adopts (TASK-133 b).
     if (AgentIdentityService.isReservedAgentEmail(profile.email)) {
@@ -292,6 +301,7 @@ exports.oauthCallback = async (req: any, res: any) => {
     // this is the same refusal on the path that does not consult the email
     // (TASK-133).
     if (user?.isBot) return loginErrorRedirect(res, 'bot_account');
+    if (user && !isInstanceEmailAllowed(user.email)) return loginErrorRedirect(res, 'team_only');
 
     if (!user) {
       user = await User.findOne({ email: profile.email });

@@ -30,7 +30,7 @@ jest.mock('../../../models/Pod', () => ({
 const mockFindOneAndUpdate = jest.fn();
 jest.mock('../../../models/Task', () => ({
   findOneAndUpdate: (...args) => mockFindOneAndUpdate(...args),
-  findOne: jest.fn(),
+  findOne: jest.fn(() => ({ select: () => ({ lean: async () => null }) })),
   find: jest.fn(),
 }));
 
@@ -45,8 +45,10 @@ jest.mock('../../../services/githubAppService', () => ({
 }));
 
 const mockEmitTaskUpdated = jest.fn();
+const mockNotifyPodAgents = jest.fn();
 jest.mock('../../../services/taskEventService', () => ({
   emitTaskUpdated: (...args) => mockEmitTaskUpdated(...args),
+  notifyPodAgents: (...args) => mockNotifyPodAgents(...args),
 }));
 
 const mockRecordTaskAttention = jest.fn();
@@ -57,6 +59,7 @@ jest.mock('../../../services/attentionItemService', () => ({
 }));
 
 const tasksApi = require('../../../routes/tasksApi');
+const Task = require('../../../models/Task');
 
 const app = express();
 app.use(express.json());
@@ -68,6 +71,8 @@ beforeEach(() => {
   mockFindOneAndUpdate.mockReset();
   mockFindOneAndUpdate.mockResolvedValue({ taskId: 'TASK-001', status: 'claimed' });
   mockEmitTaskUpdated.mockReset();
+  mockNotifyPodAgents.mockReset();
+  Task.findOne.mockReturnValue({ select: () => ({ lean: async () => null }) });
   mockRecordTaskAttention.mockReset();
   mockRecordTaskAttention.mockResolvedValue(undefined);
   mockResolveTaskAttention.mockReset();
@@ -131,12 +136,16 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
     // `done` — every one completed through this route, which never told the
     // attention store. Only the PATCH gate did.
     const task = { _id: 'task-1', taskId: 'TASK-001', status: 'done', podId: POD_ID, updates: [] };
+    Task.findOne.mockReturnValue({ select: () => ({ lean: async () => ({ updatedAt: new Date(Date.now() - 1) }) }) });
     mockFindOneAndUpdate.mockResolvedValueOnce(task);
     const res = await request(app)
       .post(`/api/v1/tasks/${POD_ID}/TASK-001/complete`)
       .send({ prUrl: 'https://github.com/Team-Commonly/commonly/pull/1' });
     expect(res.status).toBe(200);
     expect(mockResolveTaskAttention).toHaveBeenCalledWith(expect.objectContaining({ _id: 'task-1' }));
+    expect(mockNotifyPodAgents).toHaveBeenCalledWith(
+      POD_ID, task, 'updated', expect.any(Object), { status: 'claimed' },
+    );
   });
 
   test('rejects unknown statuses with the vocabulary in the error', async () => {
@@ -151,11 +160,42 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
   });
 
   test('non-status patches are unaffected by the gate', async () => {
+    Task.findOne.mockReturnValue({ select: () => ({ lean: async () => ({ updatedAt: new Date(Date.now() - 1) }) }) });
     const res = await request(app)
       .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
       .send({ title: 'renamed' });
 
     expect(res.status).toBe(200);
     expect(mockFindOneAndUpdate.mock.calls[0][1].$set.title).toBe('renamed');
+    expect(mockFindOneAndUpdate.mock.calls[0][2]).toEqual({ new: true, timestamps: false });
+  });
+
+  test('passes the prior assignee to board wake routing when unassigning', async () => {
+    mockFindOneAndUpdate.mockResolvedValueOnce({ taskId: 'TASK-001', assignee: 'scout', status: 'claimed' });
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ assignee: '' });
+
+    expect(res.status).toBe(200);
+    expect(mockFindOneAndUpdate.mock.calls[0][2]).toEqual({ new: false, timestamps: false });
+    expect(mockNotifyPodAgents).toHaveBeenCalledWith(
+      POD_ID, expect.objectContaining({ assignee: null }), 'updated',
+      expect.any(Object), { assignee: 'scout', claimedBy: undefined, status: 'claimed' },
+    );
+  });
+
+  test('gets prior ownership from the successful atomic write', async () => {
+    mockFindOneAndUpdate.mockResolvedValueOnce({ taskId: 'TASK-001', assignee: 'alpha', status: 'pending' });
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ assignee: 'scout' });
+
+    expect(res.status).toBe(200);
+    expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(1);
+    expect(mockNotifyPodAgents).toHaveBeenCalledWith(
+      POD_ID, expect.objectContaining({ assignee: 'scout' }), 'updated',
+      expect.any(Object), { assignee: 'alpha', claimedBy: undefined, status: 'pending' },
+    );
   });
 });

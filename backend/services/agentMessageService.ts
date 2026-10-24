@@ -2229,7 +2229,7 @@ class AgentMessageService {
           threadRootId ?? null,
         );
 
-        return messages.map((msg) => {
+        const normalized = messages.map((msg) => {
           const username = (msg.username as string) || 'Unknown';
           // Trust the mirrored `is_bot` column only. This used to fall back to
           // a username substring test ('-bot', endsWith 'bot', 'openclaw-'),
@@ -2264,6 +2264,10 @@ class AgentMessageService {
             replyTo: (msg.replyTo as MessageNormalized['replyTo']) ?? null,
           };
         });
+        // Internal provenance for send-time read acknowledgement. A Mongo
+        // fallback may omit PG-only messages and must not clear a PG cursor.
+        Object.defineProperty(normalized, 'readSource', { value: 'postgres' });
+        return normalized;
       } catch (pgError) {
         console.error('PostgreSQL message fetch failed, falling back to MongoDB:', pgError);
       }
@@ -2289,7 +2293,7 @@ class AgentMessageService {
       .populate('userId', 'username profilePicture isBot')
       .lean();
 
-    return messages.reverse().map((msg) => {
+    const normalized = messages.reverse().map((msg) => {
       const userId = msg.userId as { username?: string; profilePicture?: string; isBot?: boolean; _id?: unknown } | null;
       const username = userId?.username || 'Unknown';
       return {
@@ -2305,6 +2309,8 @@ class AgentMessageService {
         createdAt: msg.createdAt as Date,
       };
     }) as MessageNormalized[];
+    Object.defineProperty(normalized, 'readSource', { value: 'mongo' });
+    return normalized;
   }
 }
 

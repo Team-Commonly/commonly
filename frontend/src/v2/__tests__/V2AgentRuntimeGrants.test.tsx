@@ -35,17 +35,69 @@ const renderSection = (runtime = { runtimeType: 'wrapper', adapter: 'claude', mo
 
 beforeEach(() => {
   jest.clearAllMocks();
-  axios.get.mockResolvedValue({ data: response });
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
+    : response }));
   axios.post.mockResolvedValue({ data: { revoked: 1 } });
   saveRuntime.mockResolvedValue(undefined);
 });
 
 test('runtime labels only recognize walked adapters and distinguish daemon from a single CLI', () => {
   expect(describeRuntime({ runtimeType: 'wrapper', adapter: 'claude' })).toEqual({ mode: 'daemon', adapter: 'Claude Code' });
+  expect(describeRuntime({ runtimeType: 'wrapper', adapter: 'claude', managed: false }))
+    .toEqual({ mode: 'cli', adapter: 'Claude Code' });
   expect(describeRuntime({ runtimeType: 'webhook', host: 'byo', adapter: 'dsh' })).toEqual({ mode: 'cli', adapter: 'DeepSeek Harness' });
   expect(describeRuntime({ runtimeType: 'wrapper', adapter: 'unwalked' })).toEqual({ mode: 'daemon', adapter: null });
   expect(describeRuntime({ runtimeType: 'hosted' })).toEqual({ mode: 'hosted', adapter: null });
   expect(describeRuntime({ runtimeType: 'webhook', host: 'byo' })).toEqual({ mode: 'unknown', adapter: null });
+});
+
+test('revoked Runtime row offers an active computer and moves in one request', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true,
+      activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+  renderSection();
+  expect(await screen.findByText('This computer’s key was revoked. Choose another computer to run this agent.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Run on')).toHaveValue('new');
+  fireEvent.click(screen.getByRole('button', { name: 'Move agent' }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/agent-binding/move',
+    { agentName: 'nib', instanceId: 'default', machineId: 'new', fromMachineId: 'old' }, expect.anything()));
+  expect(axios.post).toHaveBeenCalledTimes(1);
+});
+
+test('without an active computer, the setup hint includes daemon installation', async () => {
+  renderSection();
+  expect(await screen.findByText(/Register another computer to move this agent/)).toBeInTheDocument();
+  expect(screen.getByText('npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install')).toBeInTheDocument();
+});
+
+test('a changed installer refuses the move before release and explains the blocking installation', async () => {
+  let placementReads = 0;
+  axios.get.mockImplementation((url) => {
+    if (!url.includes('/agent-binding/placement')) return Promise.resolve({ data: response });
+    placementReads += 1;
+    if (placementReads > 1) return Promise.reject({ response: { data: {
+      code: 'another_installer', blockers: [{ podName: 'Other human pod', installerName: 'alex' }],
+    } } });
+    return Promise.resolve({ data: { boundMachineId: 'old', requestedMachineId: null,
+      boundMachineRevoked: true, activeMachines: [{ machineId: 'new', name: 'New Mac' }] } });
+  });
+  renderSection();
+  fireEvent.click(await screen.findByRole('button', { name: 'Move agent' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Other human pod (alex)');
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('a revoked target after preflight keeps the old placement visible and shows localized error', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true,
+      activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+  axios.post.mockRejectedValue({ response: { data: { code: 'target_revoked', message: 'Machine access revoked' } } });
+  renderSection();
+  fireEvent.click(await screen.findByRole('button', { name: 'Move agent' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('That computer is no longer available.');
+  expect(screen.getByText('This computer’s key was revoked. Choose another computer to run this agent.')).toBeInTheDocument();
+  expect(axios.post).toHaveBeenCalledTimes(1);
 });
 
 test('shows this agent grant and requires a second click to revoke through the existing route', async () => {

@@ -78,6 +78,12 @@ describe('V2 routing', () => {
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
   });
 
+  test('OAuth team gate refusal explains the instance limit on the sign-in page', async () => {
+    renderAt('/v2/login?oauthError=team_only');
+    expect(await screen.findByText('This instance is limited to the team. Sign in with your approved email.'))
+      .toBeInTheDocument();
+  });
+
   test('index route shows the public landing when not authenticated', async () => {
     renderAt('/v2');
     // V2Home sends logged-out visitors to the canonical public front door,

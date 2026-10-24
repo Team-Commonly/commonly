@@ -30,6 +30,7 @@ const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
 const User = require('../../models/User');
 const { AgentInstallation } = require('../../models/AgentRegistry');
+const KernelWorkSweepService = require('../../services/kernelWorkSweepService').default;
 const tasksApiRoutes = require('../../routes/tasksApi');
 const { hash } = require('../../utils/secret');
 const {
@@ -337,5 +338,202 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       expect(res.status).toBe(200);
       expect(notifyPodAgents).not.toHaveBeenCalled();
     });
+  });
+
+  test('PATCH wakes the owner immediately before its atomic write under interleaving', async () => {
+    await seedTask({ assignee: 'alpha' });
+    notifyPodAgents.mockClear();
+    const originalUpdate = Task.findOneAndUpdate.bind(Task);
+    let releaseGamma;
+    let gammaEntered;
+    const gammaPaused = new Promise((resolve) => { releaseGamma = resolve; });
+    const entered = new Promise((resolve) => { gammaEntered = resolve; });
+    let pausedGamma = false;
+    const updateSpy = jest.spyOn(Task, 'findOneAndUpdate').mockImplementation((filter, update, options) => {
+      if (update?.$set?.assignee === 'gamma' && !pausedGamma) {
+        pausedGamma = true;
+        gammaEntered();
+        return gammaPaused.then(() => originalUpdate(filter, update, options));
+      }
+      return originalUpdate(filter, update, options);
+    });
+    const patch = (assignee) => request(app)
+      .patch(`/api/v1/tasks/${pod._id}/T-1`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ assignee });
+
+    try {
+      const gammaRequest = patch('gamma').then((response) => response);
+      await entered;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const betaResponse = await patch('beta');
+      expect(betaResponse.status).toBe(200);
+      releaseGamma();
+      const gammaResponse = await gammaRequest;
+      expect(gammaResponse.status).toBe(200);
+
+      const gammaWake = notifyPodAgents.mock.calls.find((call) => call[1].assignee === 'gamma');
+      expect(gammaWake?.[4]).toEqual(expect.objectContaining({ assignee: 'beta' }));
+      expect(gammaWake?.[1]).toEqual(expect.objectContaining({ assignee: 'gamma' }));
+      const betaWake = notifyPodAgents.mock.calls.find((call) => call[1].assignee === 'beta');
+      expect(gammaWake[1].updatedAt.getTime()).toBeGreaterThan(betaWake[1].updatedAt.getTime());
+      expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).assignee).toBe('gamma');
+    } finally {
+      releaseGamma();
+      updateSpy.mockRestore();
+    }
+  });
+
+  test('claim wakes the assignee at its successful write after a racing PATCH', async () => {
+    await seedTask({ assignee: 'alpha' });
+    notifyPodAgents.mockClear();
+    const originalUpdate = Task.findOneAndUpdate.bind(Task);
+    let releaseClaim;
+    let claimEntered;
+    const claimPaused = new Promise((resolve) => { releaseClaim = resolve; });
+    const entered = new Promise((resolve) => { claimEntered = resolve; });
+    let pausedClaim = false;
+    const updateSpy = jest.spyOn(Task, 'findOneAndUpdate').mockImplementation((filter, update, options) => {
+      if (update?.$set?.claimedBy === owner._id.toString() && !pausedClaim) {
+        pausedClaim = true;
+        claimEntered();
+        return claimPaused.then(() => originalUpdate(filter, update, options));
+      }
+      return originalUpdate(filter, update, options);
+    });
+
+    try {
+      const claimRequest = claim(ownerToken).then((response) => response);
+      await entered;
+      const patchResponse = await request(app)
+        .patch(`/api/v1/tasks/${pod._id}/T-1`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ assignee: 'beta' });
+      expect(patchResponse.status).toBe(200);
+      notifyPodAgents.mockClear();
+      releaseClaim();
+      const claimResponse = await claimRequest;
+      expect(claimResponse.status).toBe(200);
+
+      const claimWake = notifyPodAgents.mock.calls.find((call) => call[1].claimedBy === owner._id.toString());
+      expect(claimWake?.[4]).toEqual(expect.objectContaining({ assignee: 'beta' }));
+      expect(claimWake?.[1]).toEqual(expect.objectContaining({ assignee: 'beta' }));
+    } finally {
+      releaseClaim();
+      updateSpy.mockRestore();
+    }
+  });
+
+  test('claim uses the rescued owner when a sweep writes the same timestamp', async () => {
+    const task = await seedTask({
+      status: 'claimed',
+      assignee: 'alpha',
+      claimedBy: 'alpha',
+      claimedAt: new Date(Date.now() - LEASE_MS - 5000),
+      claimExpiresAt: new Date(Date.now() - 5000),
+    });
+    notifyPodAgents.mockClear();
+    const originalUpdate = Task.findOneAndUpdate.bind(Task);
+    let releaseClaim;
+    let claimEntered;
+    const claimPaused = new Promise((resolve) => { releaseClaim = resolve; });
+    const entered = new Promise((resolve) => { claimEntered = resolve; });
+    let pausedClaim = false;
+    const updateSpy = jest.spyOn(Task, 'findOneAndUpdate').mockImplementation((filter, update, options) => {
+      if (update?.$set?.claimedBy === owner._id.toString() && !pausedClaim) {
+        pausedClaim = true;
+        claimEntered();
+        return claimPaused.then(() => originalUpdate(filter, update, options));
+      }
+      return originalUpdate(filter, update, options);
+    });
+
+    try {
+      const claimRequest = claim(ownerToken).then((response) => response);
+      await entered;
+      // Mongoose normally stamps the sweep with wall-clock time. Hold its
+      // clock at the existing revision to reproduce a timestamp collision.
+      const mongoose = require('mongoose');
+      const clockSpy = jest.spyOn(mongoose, 'now').mockReturnValue(task.updatedAt);
+      try {
+        const { rescued } = await KernelWorkSweepService.rescueLapsed(new Date());
+        expect(rescued).toHaveLength(1);
+      } finally {
+        clockSpy.mockRestore();
+      }
+      const rescuedTask = await Task.findById(task._id);
+      expect(rescuedTask.updatedAt.getTime()).toBe(task.updatedAt.getTime());
+      expect(rescuedTask.assignee).toBeNull();
+      notifyPodAgents.mockClear();
+      releaseClaim();
+      const claimResponse = await claimRequest;
+      expect(claimResponse.status).toBe(200);
+
+      const claimWake = notifyPodAgents.mock.calls.find((call) => call[1].claimedBy === owner._id.toString());
+      expect(claimWake?.[4]).toEqual(expect.objectContaining({ assignee: null, claimedBy: null }));
+      expect(claimWake?.[4].assignee).not.toBe('alpha');
+    } finally {
+      releaseClaim();
+      updateSpy.mockRestore();
+    }
+  });
+
+  test('PATCH unassignment offers the exact stored revision before the work sweep', async () => {
+    await seedTask({ assignee: 'claim-audit-agent' });
+    // Force the same monotonic retry the PATCH takes when a competing writer
+    // has committed after this request chose its timestamp.
+    await Task.updateOne(
+      { podId: pod._id, taskId: 'T-1' },
+      { $set: { updatedAt: new Date(Date.now() + 1000) } },
+      { timestamps: false },
+    );
+    notifyPodAgents.mockClear();
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${pod._id}/T-1`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ assignee: null });
+    expect(res.status).toBe(200);
+    const wake = notifyPodAgents.mock.calls.find((call) => call[1].taskId === 'T-1');
+    expect(wake?.[4]).toEqual(expect.objectContaining({ assignee: 'claim-audit-agent' }));
+    const stored = await Task.findOne({ podId: pod._id, taskId: 'T-1' });
+    expect(wake[1].updatedAt.getTime()).toBe(stored.updatedAt.getTime());
+
+    const realNotifyPodAgents = jest.requireActual('../../services/taskEventService').notifyPodAgents;
+    await realNotifyPodAgents(pod._id, wake[1], wake[2], wake[3], wake[4]);
+    const offered = await Task.findById(stored._id);
+    expect(offered.offeredAt?.getTime()).toBe(offered.updatedAt.getTime());
+
+    const sweep = await require('../../services/kernelWorkSweepService').wakeForFoundWork(new Date());
+    expect(sweep.scannedPods).toBe(0);
+
+    const note = await request(app)
+      .post(`/api/v1/tasks/${pod._id}/T-1/updates`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ text: 'Still available for pickup' });
+    expect(note.status).toBe(200);
+    const afterNote = await Task.findById(stored._id);
+    expect(afterNote.updatedAt.getTime()).toBeGreaterThan(offered.offeredAt.getTime());
+    const dueSweep = await require('../../services/kernelWorkSweepService').wakeForFoundWork(new Date());
+    expect(dueSweep.scannedPods).toBe(1);
+
+    const title = await request(app)
+      .patch(`/api/v1/tasks/${pod._id}/T-1`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ title: 'Still open' });
+    expect(title.status).toBe(200);
+    const afterTitle = await Task.findById(stored._id);
+    expect(afterTitle.updatedAt.getTime()).toBeGreaterThan(afterNote.updatedAt.getTime());
+
+    const claimed = await claim(ownerToken);
+    expect(claimed.status).toBe(200);
+    expect(new Date(claimed.body.task.updatedAt).getTime()).toBeGreaterThan(afterTitle.updatedAt.getTime());
+
+    const completed = await request(app)
+      .post(`/api/v1/tasks/${pod._id}/T-1/complete`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({});
+    expect(completed.status).toBe(200);
+    expect(new Date(completed.body.task.updatedAt).getTime())
+      .toBeGreaterThan(new Date(claimed.body.task.updatedAt).getTime());
   });
 });

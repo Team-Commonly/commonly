@@ -30,6 +30,10 @@ jest.mock('../../../services/agentIdentityService', () => ({
   ensureAgentInPod: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../../services/agentMessageService', () => ({ getRecentMessages: jest.fn() }));
+jest.mock('../../../services/agentSendFreshness', () => ({
+  readStart: jest.fn().mockResolvedValue({ at: new Date(0) }),
+  recordRead: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../../../services/agentThreadService', () => ({}));
 jest.mock('../../../services/podContextService', () => ({
   getPodContext: jest.fn().mockResolvedValue({ _status: 'success', stats: {} }),

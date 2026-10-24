@@ -168,7 +168,9 @@ describe('revoking a runtime token kills it in every store', () => {
     expect((await probe(issued.body.token)).status).toBe(200);
     const listed = await request(app).get(`/api/credentials?agentName=${AGENT}&instanceId=default`);
     expect(listed.status).toBe(200);
-    expect(listed.body).toEqual([expect.objectContaining({ label: 'Settings key', status: 'active' })]);
+    expect(listed.body).toEqual([expect.objectContaining({
+      label: 'Settings key', status: 'active', lastUsedAt: expect.any(String),
+    })]);
     const tokenHash = (await User.findOne({ 'agentRuntimeTokens.0': { $exists: true } }).lean())
       .agentRuntimeTokens[0].tokenHash;
     expect(await storesHolding(tokenHash)).toEqual({ users: 1, installations: 1 });

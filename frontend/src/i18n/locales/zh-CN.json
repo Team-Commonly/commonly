@@ -275,7 +275,8 @@
         "stateInvalid": "本次登录请求已过期，请重试。",
         "exchangeFailed": "未能完成登录，请重试。",
         "providerError": "连接第三方登录平台时出错，请重试。",
-        "botAccount": "该邮箱属于智能体账号，不能用于社交登录。"
+        "botAccount": "该邮箱属于智能体账号，不能用于社交登录。",
+        "teamOnly": "此实例仅供团队使用。请使用获准的邮箱登录。"
       }
     },
     "register": {
@@ -296,6 +297,7 @@
         "createdTitle": "注册完成",
         "checkEmailMessage": "验证邮箱后即可加入 Community Pod，链接已发送至 {{email}}。",
         "verifyThenSignIn": "你可以立即<signIn>登录</signIn>；在完成验证前，提醒会一直显示。",
+        "verifyBeforeSignIn": "请先验证邮箱，再<signIn>登录</signIn>。",
         "continue": "继续登录"
       }
     },
@@ -1455,6 +1457,7 @@
   "agentConnection": {
     "control": "控制",
     "connected": "已连接",
+    "available": "可在 Commonly 使用",
     "revoked": "密钥已撤销，连接已断开",
     "stale": "已{{count}}分钟未连接",
     "never": "尚未连接",
@@ -1552,6 +1555,7 @@
       "fileTooLarge": "该文件超过 256KB 的导入上限——请精简，或只粘贴相关部分。",
       "importFailed": "导入失败。",
       "hostedCap": "你已有一个托管智能体（测试期允许{{cap}}个）。如需更多，请自带运行时。",
+      "hostedCapHeld": "{{holder}} 已占用你的托管智能体名额（测试期允许{{cap}}个）。在你的智能体中找到它，或改为在你的电脑上运行。",
       "hostedUnavailable": "此实例暂未开放托管。请改用自带运行时。",
       "machineRequired": "请先选择一台电脑。"
     },
@@ -2309,7 +2313,25 @@
       "changeEffort": "推理强度",
       "effortUnset": "选择推理强度",
       "save": "保存运行设置",
-      "saveError": "无法保存模型。"
+      "saveError": "无法保存模型。",
+      "machineRevoked": "这台电脑的密钥已撤销。请选择另一台电脑运行此智能体。",
+      "currentMachine": "正在 {{name}} 上运行",
+      "machineRequested": "等待 {{name}} 启动此智能体",
+      "moveLabel": "运行于",
+      "move": "迁移智能体",
+      "moving": "正在迁移…",
+      "noActiveMachine": "请先注册另一台电脑，再迁移此智能体：",
+      "blocker": "{{podName}}（{{installerName}}）",
+      "blockerSeparator": "、",
+      "blockedBy": "此智能体也安装在 {{blockers}}。请联系安装者移除该安装，然后再迁移。",
+      "blockedGeneric": "此智能体也安装在其他 Pod 中。需要该 Pod 的安装者先移除安装，才能迁移。",
+      "placementOwnerMissing": "你需要先将此智能体添加到你管理的 Pod，才能迁移它。",
+      "placementUnknownInstaller": "旧版安装未记录安装者，因此暂时无法迁移此智能体。",
+      "hostedCannotMove": "托管智能体无法在你的电脑上运行。",
+      "targetUnavailable": "这台电脑已不可用，请选择另一台电脑。",
+      "placementChanged": "此智能体的电脑分配已变更。请先查看当前分配，再重新迁移。",
+      "placementError": "无法加载此智能体的电脑分配信息。",
+      "moveError": "无法迁移此智能体，请重试。"
     },
     "grants": {
       "title": "连接器授权",
@@ -2440,6 +2462,8 @@
     "turnsPerDay": "托管运行次数／天",
     "userRunCeiling": "运行次数／天",
     "contextInvalid": "请检查上下文限制。",
+    "profileUnavailable": "此智能体在这个 Pod 中的策略暂时无法修改。",
+    "profileUnavailableSave": "此智能体在这个 Pod 中的策略暂时无法修改，更改未保存。",
     "loadError": "无法加载策略数据。",
     "saveError": "无法保存更改。",
     "saved": "已保存"

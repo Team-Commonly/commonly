@@ -11,7 +11,7 @@
 const mongoose = require('mongoose');
 
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { find: jest.fn() },
+  AgentInstallation: { find: jest.fn(), findOne: jest.fn() },
 }));
 
 jest.mock('../../../services/agentEventService', () => ({
@@ -21,6 +21,10 @@ jest.mock('../../../services/agentEventService', () => ({
 jest.mock('../../../models/AgentEvent', () => ({
   findOneAndUpdate: jest.fn(),
   updateOne: jest.fn(),
+}));
+
+jest.mock('../../../models/User', () => ({
+  findById: jest.fn(),
 }));
 
 const mockTaskUpdateOne = jest.fn();
@@ -33,6 +37,7 @@ const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentEventService = require('../../../services/agentEventService');
 const AgentEvent = require('../../../models/AgentEvent');
 const Task = require('../../../models/Task');
+const User = require('../../../models/User');
 const { notifyPodAgents, notifyFoundWork } = require('../../../services/taskEventService');
 
 const POD_ID = new mongoose.Types.ObjectId().toString();
@@ -49,13 +54,14 @@ const install = (agentName, installedBy) => ({
   podId: POD_ID,
   status: 'active',
   installedBy,
-  config: { wakeOnMessage: { enabled: true } },
+  config: { runtime: { runtimeType: 'wrapper' }, wakeOnMessage: { enabled: true } },
 });
 
 const task = (overrides = {}) => ({
   taskId: 'TASK-042',
   title: 'Wire the board to the fleet',
   status: 'todo',
+  assignee: 'scout',
   updatedAt: '2026-08-19T10:00:00.000Z',
   ...overrides,
 });
@@ -70,6 +76,8 @@ beforeEach(() => {
   // Default: nothing undrained, so each test exercises the fresh-enqueue path
   // unless it explicitly seeds a pending wake.
   AgentEvent.findOneAndUpdate.mockResolvedValue(null);
+  AgentInstallation.findOne.mockReturnValue({ sort: () => ({ lean: async () => null }) });
+  User.findById.mockReturnValue({ select: () => ({ lean: async () => null }) });
   AgentEvent.updateOne.mockResolvedValue({});
   mockTaskUpdateOne.mockResolvedValue({ matchedCount: 1 });
   Task.find.mockReturnValue({
@@ -81,9 +89,9 @@ describe('notifyPodAgents', () => {
   it('stamps the offered task revision only after every eligible seat succeeds', async () => {
     mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
     const offeredAt = new Date('2026-08-20T20:00:00.000Z');
-    const offeredTask = task({ _id: 'task-1', updatedAt: offeredAt });
+    const offeredTask = task({ _id: 'task-1', updatedAt: offeredAt, assignee: 'sprint-impl' });
 
-    await notifyPodAgents(POD_ID, offeredTask, 'created', { userId: HUMAN_ID, isAgent: false });
+    await notifyPodAgents(POD_ID, offeredTask, 'created', { userId: HUMAN_ID, isAgent: false }, { assignee: 'scout' });
 
     expect(mockTaskUpdateOne).toHaveBeenCalledTimes(1);
     expect(mockTaskUpdateOne).toHaveBeenCalledWith(
@@ -101,9 +109,10 @@ describe('notifyPodAgents', () => {
 
     await notifyPodAgents(
       POD_ID,
-      task({ _id: 'task-1', updatedAt: new Date('2026-08-20T20:00:00.000Z') }),
+      task({ _id: 'task-1', updatedAt: new Date('2026-08-20T20:00:00.000Z'), assignee: 'sprint-impl' }),
       'created',
       { userId: HUMAN_ID, isAgent: false },
+      { assignee: 'scout' },
     );
 
     expect(AgentEventService.enqueue).toHaveBeenCalledTimes(2);
@@ -194,10 +203,11 @@ describe('notifyPodAgents', () => {
     expect(filter.type).toBeUndefined();
   });
 
-  it('carries no messageId, so every seat looks and the task CAS arbitrates', async () => {
+  it('carries no messageId for either current or prior owner', async () => {
     mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
 
-    await notifyPodAgents(POD_ID, task(), 'created', { userId: HUMAN_ID, isAgent: false });
+    await notifyPodAgents(POD_ID, task({ assignee: 'sprint-impl' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false }, { assignee: 'scout' });
 
     // A messageId would re-engage the wrapper's claim gate and put us back to
     // one-looker-per-change — dedupe at the wrong layer. Contention belongs on
@@ -233,9 +243,9 @@ describe('notifyPodAgents', () => {
   it('never wakes the actor about their own edit', async () => {
     mockInstalls([install('scout', AGENT_ID), install('sprint-impl', HUMAN_ID)]);
 
-    await notifyPodAgents(POD_ID, task(), 'updated', {
+    await notifyPodAgents(POD_ID, task({ assignee: 'sprint-impl' }), 'updated', {
       userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'default',
-    });
+    }, { assignee: 'scout' });
 
     const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
     expect(woken).toEqual(['sprint-impl']);
@@ -249,9 +259,9 @@ describe('notifyPodAgents', () => {
     // bug from both directions, which is why the key is identity instead.
     mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
 
-    await notifyPodAgents(POD_ID, task(), 'updated', {
+    await notifyPodAgents(POD_ID, task({ assignee: 'sprint-impl' }), 'updated', {
       userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'default',
-    });
+    }, { assignee: 'scout' });
 
     const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
     expect(woken).toEqual(['sprint-impl']);
@@ -260,9 +270,9 @@ describe('notifyPodAgents', () => {
   it('matches the self-skip case-insensitively, so a capitalised name still skips', async () => {
     mockInstalls([install('Scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
 
-    await notifyPodAgents(POD_ID, task(), 'updated', {
+    await notifyPodAgents(POD_ID, task({ assignee: 'sprint-impl' }), 'updated', {
       userId: AGENT_ID, isAgent: true, agentName: 'SCOUT', instanceId: 'default',
-    });
+    }, { assignee: 'scout' });
 
     const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
     expect(woken).toEqual(['sprint-impl']);
@@ -276,12 +286,24 @@ describe('notifyPodAgents', () => {
       { ...install('scout', HUMAN_ID), instanceId: 'ucc4035c51b' },
     ]);
 
-    await notifyPodAgents(POD_ID, task(), 'updated', {
+    await notifyPodAgents(POD_ID, task({ assignee: 'ucc4035c51b' }), 'updated', {
       userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'u0da521ab41',
     });
 
     const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].instanceId);
     expect(woken).toEqual(['ucc4035c51b']);
+  });
+
+  it('does not broadcast a shared agent-name assignment to every named instance', async () => {
+    mockInstalls([
+      { ...install('openclaw', HUMAN_ID), instanceId: 'alpha' },
+      { ...install('openclaw', HUMAN_ID), instanceId: 'beta' },
+    ]);
+
+    await notifyPodAgents(POD_ID, task({ assignee: 'openclaw' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false });
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
   });
 
   it('still wakes an agent when the HUMAN who installed it edits the board', async () => {
@@ -325,21 +347,58 @@ describe('notifyPodAgents', () => {
     expect(AgentEventService.enqueue.mock.calls[0][0].payload.dmKind).toBe('agent-agent');
   });
 
-  it('respects an opt-OUT, so ambient wakes cannot arrive through a second door', async () => {
-    // 169 of 367 production installs have wake-on-message off — `commonly-bot`
-    // and `openclaw`, user-facing seats where an unrequested wake is a noise
-    // incident. A board change is ambient activity nobody addressed to them, so
-    // it is governed by the same switch as ambient chat.
+  it('wakes the owner regardless of ambient opt-in and skips unrelated seats', async () => {
     mockInstalls([
       { ...install('commonly-bot', HUMAN_ID), config: { wakeOnMessage: { enabled: false } } },
       { ...install('openclaw', HUMAN_ID), config: {} },
       install('sprint-impl', HUMAN_ID),
     ]);
 
-    await notifyPodAgents(POD_ID, task(), 'created', { userId: HUMAN_ID, isAgent: false });
+    await notifyPodAgents(POD_ID, task({ assignee: 'commonly-bot' }), 'created', { userId: HUMAN_ID, isAgent: false });
 
     const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
-    expect(woken).toEqual(['sprint-impl']);
+    expect(woken).toEqual(['commonly-bot']);
+  });
+
+  it('resolves a claimed row through the bot principal, not its installer', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({
+      isBot: true, botMetadata: { agentName: 'sprint-impl', instanceId: 'default' },
+    }) }) });
+
+    await notifyPodAgents(POD_ID, task({ assignee: null, claimedBy: AGENT_ID }), 'updated',
+      { userId: HUMAN_ID, isAgent: false });
+
+    expect(AgentEventService.enqueue.mock.calls.map(([event]) => event.agentName)).toEqual(['sprint-impl']);
+  });
+
+  it('does not treat an ambiguous default claim key as every default seat', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task({ assignee: null, claimedBy: 'default' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false });
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('does not treat an ambiguous default assignee as every default seat', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task({ assignee: 'default' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false });
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('wakes a claimed dependent row when its exact dependency clears', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+    Task.find.mockReturnValueOnce({ lean: async () => [{ assignee: 'sprint-impl' }] });
+
+    await notifyPodAgents(POD_ID, task({ assignee: null, status: 'done' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false }, { status: 'claimed' });
+
+    expect(Task.find.mock.calls[0][0]).toMatchObject({ podId: POD_ID, dep: 'TASK-042' });
+    expect(AgentEventService.enqueue.mock.calls.map(([event]) => event.agentName)).toEqual(['sprint-impl']);
   });
 
   it('stays quiet on delete, where the wake would spend a turn finding nothing', async () => {
@@ -360,7 +419,8 @@ describe('notifyPodAgents', () => {
       .mockResolvedValueOnce({});
 
     await expect(
-      notifyPodAgents(POD_ID, task(), 'created', { userId: HUMAN_ID, isAgent: false }),
+      notifyPodAgents(POD_ID, task({ assignee: 'sprint-impl' }), 'updated',
+        { userId: HUMAN_ID, isAgent: false }, { assignee: 'scout' }),
     ).resolves.toBeUndefined();
 
     expect(AgentEventService.enqueue).toHaveBeenCalledTimes(2);

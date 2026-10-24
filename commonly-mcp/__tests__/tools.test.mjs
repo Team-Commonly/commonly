@@ -88,6 +88,13 @@ describe('commonly_post_message', () => {
     });
   });
 
+  it('passes an explicit freshness override to the runtime route', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ id: 'm2' }));
+    await byName.commonly_post_message.call({ podId: 'POD123', content: 'hi', continueAnyway: true });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).continueAnyway).toBe(true);
+    expect(byName.commonly_post_message.inputSchema.properties.continueAnyway.type).toBe('boolean');
+  });
+
   it('forwards threadRootId — the ping-free thread continuation (#1176 backend, added here in 0.3.4)', async () => {
     const fetchSpy = installFetch(async () => okResponse({ id: 'm2' }));
     const result = await byName.commonly_post_message.call({
@@ -136,6 +143,48 @@ describe('commonly_get_messages', () => {
     expect(url).toContain('/pods/POD/messages?');
     expect(url).toContain('limit=5');
     expect(url).toContain('before=2026-08-01T00%3A00%3A00.000Z');
+  });
+});
+
+describe('commonly_attach_file freshness', () => {
+  const filePath = new URL('../package.json', import.meta.url).pathname;
+  const held = { ok: false, status: 409, text: async () => JSON.stringify({ code: 'unseen_messages', unseenCount: 1 }) };
+
+  it('checks freshness before reading or uploading a file', async () => {
+    const fetchSpy = installFetch(async () => held);
+    const result = await byName.commonly_attach_file.call({ podId: 'POD', filePath });
+    expect(result.isError).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toContain('/pods/POD/send-freshness');
+  });
+
+  it('keeps an uploaded file if a new message holds its card post', async () => {
+    const fetchSpy = installFetch(async (_url, _init) => {
+      const n = fetchSpy.mock.calls.length;
+      if (n === 1) return okResponse({ ok: true });
+      if (n === 2) return okResponse({ fileName: 'file-1.json', originalName: 'package.json', size: 42 });
+      if (n === 3) return held;
+      throw new Error('A held card must not trigger a cleanup request');
+    });
+    const result = await byName.commonly_attach_file.call({ podId: 'POD', filePath });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).status).toBe(409);
+    expect(fetchSpy.mock.calls.map(([, init]) => init.method)).toEqual(['GET', 'POST', 'POST']);
+    expect(JSON.parse(result.content[0].text).body.uploadedFile).toEqual({
+      fileName: 'file-1.json', originalName: 'package.json',
+    });
+  });
+
+  it('lets an explicit override attach without a freshness preflight', async () => {
+    const fetchSpy = installFetch(async (_url, _init) => (
+      fetchSpy.mock.calls.length === 1
+        ? okResponse({ fileName: 'file-2.json', originalName: 'package.json', size: 42 })
+        : okResponse({ id: 'm1' })
+    ));
+    const result = await byName.commonly_attach_file.call({ podId: 'POD', filePath, continueAnyway: true });
+    expect(result.isError).toBeUndefined();
+    expect(fetchSpy.mock.calls.map(([, init]) => init.method)).toEqual(['POST', 'POST']);
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body).continueAnyway).toBe(true);
   });
 });
 
@@ -261,6 +310,14 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
     await byName.commonly_claim_task.call({ podId: 'POD', taskId: 'TASK-001' });
     const [url] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://x.example/api/v1/tasks/POD/TASK-001/claim');
+  });
+
+  it('passes an explicit freshness override to task claim and update', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    await byName.commonly_claim_task.call({ podId: 'POD', taskId: 'TASK-001', continueAnyway: true });
+    await byName.commonly_update_task.call({ podId: 'POD', taskId: 'TASK-001', text: 'work', continueAnyway: true });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).continueAnyway).toBe(true);
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body).continueAnyway).toBe(true);
   });
 
   it('teaches that blocked tasks resume through claim', () => {

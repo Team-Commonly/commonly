@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentControlSection, { AgentControlLoader } from '../components/V2AgentControlSection';
 import i18n, { i18nReady } from '../../i18n';
@@ -65,4 +65,66 @@ it('loads connection state from an installer-owned pod', async () => {
   expect(api.get).toHaveBeenCalledWith('/api/registry/agents/local/manage-settings',
     { params: { instanceId: 'default' } });
   expect(onConnectionState).toHaveBeenCalledWith('revoked');
+});
+
+it('refreshes the header after a key change and drops the old connected state', async () => {
+  let revoked = false;
+  api.get.mockImplementation((url: string) => {
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'owned-pod' } });
+    if (url === '/api/registry/pods/owned-pod/agents') return Promise.resolve({ data: { agents: [{
+      name: 'local', instanceId: 'default', runtime: { runtimeType: 'webhook' },
+      connection: { state: revoked ? 'revoked' : 'connected', lastSeenAt: revoked ? null : new Date().toISOString() },
+    }] } });
+    return Promise.reject(new Error('Unexpected request'));
+  });
+  const renderLoader = (refreshNonce: number) => <MemoryRouter><AgentControlLoader
+    agentName="local" instanceId="default" refreshNonce={refreshNonce} /></MemoryRouter>;
+  const view = render(renderLoader(0));
+  expect(await screen.findByText('Connected')).toBeInTheDocument();
+  revoked = true;
+  view.rerender(renderLoader(1));
+  expect(await screen.findByText('Disconnected: key revoked')).toBeInTheDocument();
+  expect(screen.queryByText('Connected')).toBeNull();
+});
+
+it('keeps Control steady while a key-change refresh is pending', async () => {
+  let resolveRefresh: ((value: unknown) => void) | undefined;
+  let rosterReads = 0;
+  api.get.mockImplementation((url: string) => {
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'owned-pod' } });
+    if (url === '/api/registry/pods/owned-pod/agents') {
+      rosterReads += 1;
+      if (rosterReads === 2) return new Promise((resolve) => { resolveRefresh = resolve; });
+      return Promise.resolve({ data: { agents: [{
+        name: 'local', instanceId: 'default', runtime: { runtimeType: 'wrapper' },
+        connection: { state: 'connected', lastSeenAt: new Date().toISOString() },
+      }] } });
+    }
+    return Promise.reject(new Error('Unexpected request'));
+  });
+  const renderLoader = (refreshNonce: number) => <MemoryRouter><AgentControlLoader
+    agentName="local" instanceId="default" refreshNonce={refreshNonce} /></MemoryRouter>;
+  const view = render(renderLoader(0));
+  expect(await screen.findByRole('link', { name: 'Regenerate key' })).toBeInTheDocument();
+  view.rerender(renderLoader(1));
+  await waitFor(() => expect(rosterReads).toBe(2));
+  expect(screen.getByRole('link', { name: 'Regenerate key' })).toBeInTheDocument();
+  expect(screen.queryByText('Checking connection…')).toBeNull();
+  resolveRefresh?.({ data: { agents: [{
+    name: 'local', instanceId: 'default', runtime: { runtimeType: 'wrapper' },
+    connection: { state: 'revoked', lastSeenAt: null },
+  }] } });
+  expect(await screen.findByRole('link', { name: 'Reconnect' })).toBeInTheDocument();
+});
+
+it('uses unavailable only when the roster has no connection signal', async () => {
+  api.get.mockImplementation((url: string) => {
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'owned-pod' } });
+    if (url === '/api/registry/pods/owned-pod/agents') return Promise.resolve({ data: { agents: [{
+      name: 'local', instanceId: 'default', runtime: { runtimeType: 'native' },
+    }] } });
+    return Promise.reject(new Error('Unexpected request'));
+  });
+  render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" /></MemoryRouter>);
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Connection status unavailable'));
 });

@@ -37,7 +37,8 @@ const errorLabel = (error: unknown, fallback: string): string => (
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
-  const { access, installation, podId, loading, error: loadError, refresh, update, updatePod } = useAgentSettings(agentName, instanceId);
+  const { access, installation, podId, runtimeControls, runtimeEditable, runtimeManaged, loading,
+    error: loadError, refresh, update, updatePod, updateRuntime } = useAgentSettings(agentName, instanceId);
   const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
   const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
@@ -47,12 +48,13 @@ const V2AgentSettingsPage: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [oneTimeKey, setOneTimeKey] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<AgentConnection['state'] | null>(null);
+  const [connectionRefreshNonce, setConnectionRefreshNonce] = useState(0);
   const identityKey = `${agentName}:${instanceId}:${podId || ''}`;
   const currentIdentity = useRef(identityKey);
   currentIdentity.current = identityKey;
   const disconnected = connectionState === 'revoked' || connectionState === 'stale';
 
-  const onConnectionState = useCallback((state: AgentConnection['state']) => {
+  const onConnectionState = useCallback((state: AgentConnection['state'] | null) => {
     setConnectionState(state);
     if (state === 'revoked' || state === 'stale') setPendingAction(null);
   }, []);
@@ -113,7 +115,10 @@ const V2AgentSettingsPage: React.FC = () => {
       setOneTimeKey(response.data.token);
       setPendingAction(null);
       const rows = await fetchKeys();
-      if (currentIdentity.current === requestIdentity) setKeys(rows);
+      if (currentIdentity.current === requestIdentity) {
+        setKeys(rows);
+        setConnectionRefreshNonce((nonce) => nonce + 1);
+      }
     } catch (requestError) {
       if (currentIdentity.current === requestIdentity) setError(errorLabel(requestError, t('agentSettings.updateError')));
     } finally {
@@ -134,7 +139,10 @@ const V2AgentSettingsPage: React.FC = () => {
       setPendingAction(null);
       setOneTimeKey(null);
       const rows = await fetchKeys();
-      if (currentIdentity.current === requestIdentity) setKeys(rows);
+      if (currentIdentity.current === requestIdentity) {
+        setKeys(rows);
+        setConnectionRefreshNonce((nonce) => nonce + 1);
+      }
     } catch (requestError) {
       if (currentIdentity.current === requestIdentity) setError(errorLabel(requestError, t('agentSettings.updateError')));
     } finally {
@@ -173,6 +181,8 @@ const V2AgentSettingsPage: React.FC = () => {
     ...(typeof controls.adapter === 'string' ? { adapter: controls.adapter } : {}),
     ...(typeof controls.model === 'string' ? { model: controls.model } : {}),
     ...(typeof controls.effort === 'string' ? { effort: controls.effort } : {}),
+    ...runtimeControls,
+    ...(runtimeManaged !== undefined ? { managed: runtimeManaged } : {}),
   };
 
   return (
@@ -183,7 +193,7 @@ const V2AgentSettingsPage: React.FC = () => {
         <span aria-current="page">{t('agentSettings.settings')}</span>
       </nav>
       <AgentControlLoader agentName={agentName} instanceId={instanceId}
-        onConnectionState={onConnectionState} />
+        refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
       <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
         <div className="v2-agent-settings__section-head">
           <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>
@@ -252,9 +262,9 @@ const V2AgentSettingsPage: React.FC = () => {
         name={agentName}
         instanceId={instanceId}
         runtime={runtime}
-        onSaveRuntime={async (changes) => {
-          await update({ config: { environment: changes } });
-        }}
+        onSaveRuntime={runtimeEditable ? async (changes) => {
+          await updateRuntime(changes);
+        } : undefined}
       />
       <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
         installation={installation} update={update} />

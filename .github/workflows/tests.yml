@@ -164,6 +164,8 @@ jobs:
             external/commonly-agent-services/commonly-bot/index.test.js
       - run: cd commonly-mcp && npm test
       - run: cd cli && npm run lint && npm test
+      - name: Verify CLI test temp cleanup
+        run: cd cli && npm run test:temp-cleanup
       - run: cd workers/agent-runtime && npm run typecheck && npm test
 
   test-gate:

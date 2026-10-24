@@ -2,6 +2,9 @@
 // effect injected — no processes, no network, no real timers.
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 import {
   backoffMs,
@@ -10,6 +13,7 @@ import {
   createDaemonSupervisor,
 } from '../src/lib/daemon-supervisor.js';
 import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
+import claude from '../src/lib/adapters/claude.js';
 
 const record = {
   machineDbId: '507f1f77bcf86cd799439011',
@@ -450,6 +454,32 @@ describe('tick', () => {
     expect(supervisor.agentStates()).toEqual([
       expect.objectContaining({ adapter: 'claude', model: 'sonnet', effort: 'high' }),
     ]);
+
+    // The environment value selected from the Settings declaration must be
+    // the value the actual adapter places in argv, not the runtime overlay.
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'runtime-effort-argv-'));
+    const calls = [];
+    try {
+      await claude.spawn('check', {
+        cwd, sessionId: null,
+        environment: {
+          model: tokens['wren-test'].environment.model,
+          effort: tokens['wren-test'].environment.effort,
+        },
+        _spawnImpl: (command, args) => {
+          calls.push(args);
+          const child = new EventEmitter();
+          child.stdout = new EventEmitter();
+          child.stderr = new EventEmitter();
+          setImmediate(() => child.emit('close', 0));
+          return child;
+        },
+      });
+      expect(calls[0][calls[0].indexOf('--effort') + 1]).toBe('high');
+      expect(calls[0][calls[0].indexOf('--model') + 1]).toBe('sonnet');
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   test('a refused adapter change is reported as the adapter that kept running (TASK-065)', async () => {

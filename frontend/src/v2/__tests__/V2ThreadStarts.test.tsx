@@ -413,6 +413,24 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     expect(screen.queryByText('Beta: 1 hosted agent per account, 30 turns a day.')).not.toBeInTheDocument();
   });
 
+  test('a held agent answers the click with its running line, even when the start carries no limits', async () => {
+    answer({
+      '/api/hosted/welcome-start': [HELD],
+      '/api/hosted/provision': [{ ready: true }],
+    });
+    const noCaps = {
+      ...welcome,
+      payload: {
+        kind: 'starts',
+        starts: [{ id: 'run-hosted', label: HOSTED, href: HREF, action: 'run-hosted' }, ...welcome.payload.starts],
+      },
+    };
+    renderThread([noCaps]);
+    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    expect(await screen.findByText('maya-agent is listening.')).toHaveAttribute('role', 'status');
+    expect(calls('/api/registry/install')).toHaveLength(0);
+  });
+
   test('one click installs and starts the agent in this pod, sends nothing, and the start goes away', async () => {
     answer({
       '/api/hosted/welcome-start': [PLAN],

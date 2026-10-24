@@ -197,6 +197,17 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     expect(body.messages[0].content).toMatch(/Keeps the research log\./);
   });
 
+  test('an own-row board wake reaches the hosted model through the mention route', async () => {
+    const result = await runAgent(hostedInstall(), {
+      type: 'chat.mention', eventId: '507f1f77bcf86cd799439014',
+      payload: { boardWake: true, taskId: 'TASK-414', content: '[The board moved: TASK-414 was assigned to you.]' },
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(AgentRun.create).toHaveBeenCalledTimes(1);
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
   // Search and code runs are on every plan (Cofounder, 2026-10-16), offered
   // only where this instance holds the key, and bounded per turn.
   describe('web search and code runs', () => {

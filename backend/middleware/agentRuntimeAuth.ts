@@ -120,8 +120,13 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       )) {
         return res.status(401).json({ message: 'Machine access revoked' });
       }
-      AgentCredential.updateOne({ _id: credential._id }, { $set: { lastUsedAt: new Date() } })
-        .catch((err: Error) => console.warn('Failed to update credential usage:', err.message));
+      try {
+        // Settings reads this ledger row. A successful authenticated request
+        // must be visible to the next credential read, including first use.
+        await AgentCredential.updateOne({ _id: credential._id }, { $set: { lastUsedAt: new Date() } });
+      } catch (err) {
+        console.warn('Failed to update credential usage:', (err as Error).message);
+      }
     }
 
     // TASK-094: expose the row so routes can key on the credential (the mint

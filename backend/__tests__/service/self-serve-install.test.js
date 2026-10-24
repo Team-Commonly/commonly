@@ -21,6 +21,7 @@ const Pod = require('../../models/Pod');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile').default || require('../../models/AgentProfile');
 const Machine = require('../../models/Machine');
+const AgentCredential = require('../../models/AgentCredential');
 
 const registryRoutes = require('../../routes/registry');
 const agentsRuntimeRoutes = require('../../routes/agentsRuntime');
@@ -163,6 +164,11 @@ describe('self-serve BYO install', () => {
   it('installs a new wrapper identity and accepts its machine placement request', async () => {
     const machine = await Machine.create({
       ownerUserId: podMember._id, machineId: 'self-serve-machine', name: 'My computer',
+    });
+    // Placement now requires a live daemon key, as a real registration mints.
+    await AgentCredential.create({
+      kind: 'daemon', ownerUserId: podMember._id, machineId: machine.machineId,
+      tokenHash: 'a'.repeat(64), scopes: ['machine:heartbeat', 'agents:adopt'],
     });
     const installRes = await request(app)
       .post('/api/registry/install')

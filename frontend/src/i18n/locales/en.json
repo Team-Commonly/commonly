@@ -275,7 +275,8 @@
         "stateInvalid": "That sign-in attempt expired. Please try again.",
         "exchangeFailed": "Sign-in could not be completed. Please try again.",
         "providerError": "Something went wrong talking to the sign-in provider. Please try again.",
-        "botAccount": "This email belongs to an agent account and can't be used for social sign-in."
+        "botAccount": "This email belongs to an agent account and can't be used for social sign-in.",
+        "teamOnly": "This instance is limited to the team. Sign in with your approved email."
       }
     },
     "register": {
@@ -296,6 +297,7 @@
         "createdTitle": "Account created",
         "checkEmailMessage": "Verify your email to join the Community pod — link sent to {{email}}.",
         "verifyThenSignIn": "You can <signIn>sign in now</signIn>; a reminder stays visible until you verify.",
+        "verifyBeforeSignIn": "Verify your email first, then <signIn>sign in</signIn>.",
         "continue": "Continue to sign in"
       }
     },
@@ -1395,6 +1397,7 @@
   "agentConnection": {
     "control": "Control",
     "connected": "Connected",
+    "available": "Ready on Commonly",
     "revoked": "Disconnected: key revoked",
     "stale": "Not seen in {{count}} min",
     "never": "Not connected yet",
@@ -1492,6 +1495,7 @@
       "fileTooLarge": "That file is over the 256KB import ceiling — trim it or paste the relevant part.",
       "importFailed": "Import failed.",
       "hostedCap": "You already have a hosted agent (beta allows {{cap}}). Connect your own runtime for more.",
+      "hostedCapHeld": "{{holder}} already holds your hosted agent slot (beta allows {{cap}}). Find it under your agents, or run on your computer instead.",
       "hostedUnavailable": "Hosting isn't available on this instance yet. Connect your own runtime instead.",
       "machineRequired": "Pick a computer first."
     },
@@ -2318,7 +2322,25 @@
       "changeEffort": "Effort",
       "effortUnset": "Choose effort",
       "save": "Save runtime",
-      "saveError": "Could not save the model."
+      "saveError": "Could not save the model.",
+      "machineRevoked": "This computer’s key was revoked. Choose another computer to run this agent.",
+      "currentMachine": "Running on {{name}}",
+      "machineRequested": "Waiting for {{name}} to start this agent",
+      "moveLabel": "Run on",
+      "move": "Move agent",
+      "moving": "Moving…",
+      "noActiveMachine": "Register another computer to move this agent:",
+      "blocker": "{{podName}} ({{installerName}})",
+      "blockerSeparator": ", ",
+      "blockedBy": "This agent is also installed in {{blockers}}. Ask that installer to remove their installation before moving it.",
+      "blockedGeneric": "This agent is also installed in another pod. Its installer must remove that installation before it can move.",
+      "placementOwnerMissing": "You need to add this agent to a pod you own before moving it.",
+      "placementUnknownInstaller": "An older installation has no recorded installer, so this agent cannot be moved yet.",
+      "hostedCannotMove": "A hosted agent cannot run on a computer.",
+      "targetUnavailable": "That computer is no longer available. Choose another computer.",
+      "placementChanged": "This agent’s computer changed. Review its current placement before moving it.",
+      "placementError": "Could not load this agent’s computer placement.",
+      "moveError": "Could not move this agent. Try again."
     },
     "grants": {
       "title": "Connector grants",
@@ -2449,6 +2471,8 @@
     "turnsPerDay": "Hosted turns per day",
     "userRunCeiling": "Runs per day",
     "contextInvalid": "Check the context limits.",
+    "profileUnavailable": "This agent's policy can't be changed in this pod yet.",
+    "profileUnavailableSave": "This agent's policy can't be changed in this pod yet, so nothing was saved.",
     "loadError": "Could not load policy data.",
     "saveError": "Could not save changes.",
     "saved": "Saved"
