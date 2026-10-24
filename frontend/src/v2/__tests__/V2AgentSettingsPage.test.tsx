@@ -31,10 +31,9 @@ const renderPage = (path = '/v2/agents/maya-claude/default') => render(
 beforeEach(() => {
   jest.clearAllMocks();
   axios.get.mockImplementation((url) => {
-    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
-      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
     } } });
@@ -69,8 +68,8 @@ test('an ephemeral registry row is not presented as a marketplace listing', asyn
 
 test('wrapper key replacement cannot bypass the daemon reconnect flow', async () => {
   axios.get.mockImplementation((url) => {
-    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
-      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
     if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
@@ -90,7 +89,9 @@ test('revoked webhook key has one Reconnect action in Control', async () => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
     if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
       name: 'maya-claude', instanceId: 'default', runtime: { runtimeType: 'webhook' },
       connection: { state: 'revoked', lastSeenAt: null },
@@ -111,7 +112,9 @@ test('connected nondefault wrapper regenerates from Control without a second Key
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
     if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
       name: 'maya-claude', instanceId: 'second', runtime: { runtimeType: 'wrapper' },
       connection: { state: 'connected', lastSeenAt: new Date().toISOString() },
@@ -132,7 +135,9 @@ test('identity edits go through the shared installation PATCH with the exact ins
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
       displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
     } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
       profile: { instructions: 'Old', persona: { tone: 'friendly', specialties: ['writing'] } },
@@ -195,8 +200,8 @@ test('a partial rename tells the installer to retry Save', async () => {
 
 test('nondefault wrapper instances never link to a default-instance reconnect', async () => {
   axios.get.mockImplementation((url) => {
-    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
-      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
     if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
@@ -232,9 +237,9 @@ test('an in-flight replacement never reveals its key on another agent page', asy
   let finishPost;
   axios.post.mockImplementation(() => new Promise((resolve) => { finishPost = resolve; }));
   axios.get.mockImplementation((url, options) => {
-    const other = url.includes('/other/') || options?.params?.agentName === 'other';
-    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
-      displayName: other ? 'Other agent' : 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    const other = url.includes('/agents/other') || options?.params?.agentName === 'other';
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
     if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
@@ -276,8 +281,8 @@ test('a denied owner probe renders no key controls or metadata', async () => {
 
 test('a partial installation owner cannot see identity-wide key controls', async () => {
   axios.get.mockImplementation((url) => {
-    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
-      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
     if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
@@ -286,9 +291,12 @@ test('a partial installation owner cannot see identity-wide key controls', async
     return Promise.reject({ response: { status: 403, data: { message: 'Access denied' } } });
   });
   renderPage();
-  expect(await screen.findByRole('alert')).toHaveTextContent('Agent settings unavailable');
+  expect(await screen.findByRole('heading', { name: 'Policy' })).toBeInTheDocument();
+  expect(await screen.findByText('Key management is unavailable for this agent. Ask an admin for access.')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Pods' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByText('Laptop')).not.toBeInTheDocument();
+  expect(axios.get.mock.calls.some(([url]) => url === '/api/agent-memory/maya-claude/default')).toBe(false);
 });
 
 test('revocation uses the credential id only after confirmation', async () => {
@@ -303,12 +311,11 @@ test('revocation uses the credential id only after confirmation', async () => {
   }));
 });
 
-test('selects the owner-writable pod even when another identity pod comes first', async () => {
+test('selects an installation the owner can manage without exposing a foreign pod', async () => {
   axios.get.mockImplementation((url) => {
-    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
-      displayName: 'Maya', pods: [{ id: 'foreign', name: 'Other pod' }, { id: 'owned', name: 'My pod' }],
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'owned', installations: [{ podId: 'owned', podName: 'My pod', status: 'active' }],
     } });
-    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'owned' } });
     if (url.includes('/pods/foreign/')) return Promise.reject({ response: { status: 403 } });
     if (url.includes('/pods/owned/')) return Promise.resolve({ data: { agent: {
       name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
@@ -329,8 +336,8 @@ test('selects the owner-writable pod even when another identity pod comes first'
 test('runtime editor writes environment controls through the shared settings hook', async () => {
   axios.patch.mockResolvedValue({ data: { updated: true } });
   axios.get.mockImplementation((url) => {
-    if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
-      displayName: 'Maya', pods: [{ id: 'pod-1', name: 'Workspace' }],
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
     } });
     if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-1' } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
@@ -353,4 +360,20 @@ test('runtime editor writes environment controls through the shared settings hoo
     '/api/registry/pods/pod-1/agents/maya-claude',
     { config: { environment: { model: 'new-model' } }, instanceId: 'default' },
   ));
+});
+
+test('runtime editor keeps a wrapper model when no environment override exists', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya',
+      runtime: { runtimeType: 'wrapper', adapter: 'claude', model: 'selected-model', effort: 'medium' },
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  renderPage();
+  expect(await screen.findByLabelText('Model')).toHaveValue('selected-model');
+  expect(screen.getByLabelText('Effort')).toHaveValue('medium');
 });

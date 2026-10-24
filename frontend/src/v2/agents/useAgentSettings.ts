@@ -6,11 +6,16 @@ export interface AgentSettingsInstallation {
   instanceId: string;
   displayName: string;
   installedBy?: string;
-  runtime?: { runtimeType?: string };
+  runtime?: { runtimeType?: string; host?: string; adapter?: string; model?: string; effort?: string };
   config?: Record<string, unknown> | null;
   profile?: {
     instructions?: string;
     persona?: { tone?: string; specialties?: string[]; boundaries?: string[]; customInstructions?: string };
+    toolPolicy?: { allowed?: string[]; blocked?: string[]; requireApproval?: string[] };
+    contextPolicy?: {
+      maxTokens?: number; compactionThreshold?: number; summaryHours?: number;
+      includeMemory?: boolean; includeSkills?: boolean; includeSummaries?: boolean;
+    };
   } | null;
   [field: string]: unknown;
 }
@@ -39,6 +44,11 @@ interface AgentAccess {
   pods: Array<{ id: string; name: string }>;
 }
 
+interface ManageSettingsResponse {
+  writablePodId: string | null;
+  installations: Array<{ podId: string; podName: string; status: string }>;
+}
+
 /** The generic PATCH writes across this identity's accessible installations. */
 export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [access, setAccess] = useState<AgentAccess | null>(null);
@@ -54,29 +64,37 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
 
   const refresh = useCallback(async () => {
     const currentRequest = ++requestId.current;
-    const accessResponse = await axios.get<AgentAccess>(
-      `/api/agent-memory/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`,
-    );
-    const nextAccess = accessResponse.data;
-    // Memory includes readable pods that may have another installer. Settings
-    // selects an installer/admin-owned row so every write targets a pod the
-    // viewer can actually manage.
-    const settingsResponse = await axios.get<{ writablePodId: string | null }>(
+    const settingsResponse = await axios.get<ManageSettingsResponse>(
       `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`,
       { params: { instanceId } },
     );
-    const writablePodId = settingsResponse.data.writablePodId;
-    if (!writablePodId) throw new Error('No manageable installation');
-    const response = await axios.get<{ agent: AgentSettingsInstallation }>(installationUrl(writablePodId), {
-      params: { instanceId },
-    });
-    if (currentRequest === requestId.current) {
-      setAccess(nextAccess);
-      setInstallation(response.data.agent);
-      setPodId(writablePodId);
-      setError(null);
+    // This endpoint lists only installations managed by the caller. Shared
+    // identity memory can be private to another installer and is not a safe
+    // source for discovering this viewer's settings.
+    const rows = settingsResponse.data.installations || [];
+    const preferredPodId = settingsResponse.data.writablePodId;
+    const candidates = [...rows].sort((left, right) => Number(right.podId === preferredPodId)
+      - Number(left.podId === preferredPodId));
+    for (const pod of candidates) {
+      try {
+        const response = await axios.get<{ agent: AgentSettingsInstallation }>(installationUrl(pod.podId), {
+          params: { instanceId },
+        });
+        if (currentRequest === requestId.current) {
+          setAccess({ displayName: response.data.agent.displayName,
+            pods: rows.map((row) => ({ id: row.podId, name: row.podName })) });
+          setInstallation(response.data.agent);
+          setPodId(pod.podId);
+          setError(null);
+        }
+        return response.data.agent;
+      } catch (candidateError) {
+        if (![403, 404].includes((candidateError as { response?: { status?: number } })?.response?.status || 0)) {
+          throw candidateError;
+        }
+      }
     }
-    return response.data.agent;
+    throw new Error('No accessible installation');
   }, [agentName, instanceId, installationUrl]);
 
   useEffect(() => {
