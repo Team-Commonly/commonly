@@ -5,6 +5,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const { newDb } = require('pg-mem');
 const jwt = require('jsonwebtoken');
 const { MONGO_BINARY_VERSION, MONGOMS_DOWNLOAD_DIR } = require('./mongoBinaryConfig');
+const { markMongoMemoryServerSuiteManaged } = require('./mongoCleanup');
 
 const useRealServices = () => process.env.INTEGRATION_TEST === 'true';
 
@@ -81,6 +82,7 @@ const setupMongoDb = async () => {
     mongoServer = await createMongoServer();
 
     await mongoose.connect(mongoServer.getUri());
+    markMongoMemoryServerSuiteManaged(mongoServer);
     console.log('Connected to in-memory MongoDB');
   } catch (error) {
     console.error('Error setting up MongoDB:', error);

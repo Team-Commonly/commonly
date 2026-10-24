@@ -1,6 +1,7 @@
 const fs = require('node:fs/promises');
 
 const PATCHED = Symbol.for('commonly.mongoMemoryServerCleanup');
+const SUITE_MANAGED = Symbol.for('commonly.mongoMemoryServerSuiteManaged');
 
 const instancePaths = (server) => {
   let info;
@@ -24,6 +25,15 @@ const removePaths = async (paths) => {
       // best effort so a cleanup race does not hide the test's real failure.
     }
   }));
+};
+
+// The shared testUtils helper has its own afterAll hook. Marking that server
+// keeps this setup hook from stopping it first: setupFilesAfterEnv hooks are
+// registered before a test file's hooks, so an unconditional global cleanup
+// would close mongoose before the suite can clear its database.
+const markMongoMemoryServerSuiteManaged = (server) => {
+  if (server) server[SUITE_MANAGED] = true;
+  return server;
 };
 
 const patchMongoMemoryServer = (MongoMemoryServer, tracked) => {
@@ -82,8 +92,9 @@ const installMongoMemoryServerCleanup = () => {
   patchMongoMemoryServer(MongoMemoryServer, tracked);
 
   afterAll(async () => {
-    await Promise.all([...tracked].map((server) => server.stop({ doCleanup: true, force: true })));
+    const unowned = [...tracked].filter((server) => !server[SUITE_MANAGED]);
+    await Promise.all(unowned.map((server) => server.stop({ doCleanup: true, force: true })));
   });
 };
 
-module.exports = { installMongoMemoryServerCleanup };
+module.exports = { installMongoMemoryServerCleanup, markMongoMemoryServerSuiteManaged };
