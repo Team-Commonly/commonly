@@ -27,6 +27,16 @@ a verdict. During the trial below it is the first pass on every PR.
   - *Tier 2* (auth, credentials, security, schema or migrations, the wake and
     routing path, billing): two seat gates, as before.
 
+- **A seat gate checks out the commit; it does not only read the diff.** The
+  reviewer fetches the head (`git fetch origin +pull/<N>/head`), checks it out
+  in its own workspace and runs the focused tests for the area the PR touches.
+  For UI, that means the relevant render and layout tests, with the browser walk
+  as the second check. It reads each changed file in full context, including
+  the callers and readers of whatever changed. For example, a new setting must
+  have something that reads it. The verdict names the head SHA it checked out
+  and the commands it ran. A PASS without both does not count. Full suites
+  stay in CI, so run focused tests only.
+
   The writer names the tier in the PR body. A reviewer can raise it but
   never lower it. A seat verdict is a `lilyshen0722` review at the exact head
   whose last line is `GATE: PASS`, and the press tooling reads only those. A
