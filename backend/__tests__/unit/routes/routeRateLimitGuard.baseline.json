@@ -105,7 +105,6 @@
   "routes/marketplace-api.ts POST /publish [unlimited]",
   "routes/marketplace-api.ts POST /publish/:installableId(*)/deprecate [unlimited]",
   "routes/marketplace.ts GET /official [unlimited]",
-  "routes/messages.ts DELETE /:id [unlimited]",
   "routes/messages.ts PATCH /:id/created-at [unlimited]",
   "routes/pg-status.ts GET / [unlimited]",
   "routes/pg-status.ts POST /sync-user [unlimited]",
