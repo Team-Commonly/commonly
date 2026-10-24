@@ -338,4 +338,43 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       expect(notifyPodAgents).not.toHaveBeenCalled();
     });
   });
+
+  test('PATCH wakes the owner immediately before its atomic write under interleaving', async () => {
+    await seedTask({ assignee: 'alpha' });
+    notifyPodAgents.mockClear();
+    const originalUpdate = Task.findOneAndUpdate.bind(Task);
+    let releaseGamma;
+    let gammaEntered;
+    const gammaPaused = new Promise((resolve) => { releaseGamma = resolve; });
+    const entered = new Promise((resolve) => { gammaEntered = resolve; });
+    const updateSpy = jest.spyOn(Task, 'findOneAndUpdate').mockImplementation((filter, update, options) => {
+      if (update?.$set?.assignee === 'gamma') {
+        gammaEntered();
+        return gammaPaused.then(() => originalUpdate(filter, update, options));
+      }
+      return originalUpdate(filter, update, options);
+    });
+    const patch = (assignee) => request(app)
+      .patch(`/api/v1/tasks/${pod._id}/T-1`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ assignee });
+
+    try {
+      const gammaRequest = patch('gamma').then((response) => response);
+      await entered;
+      const betaResponse = await patch('beta');
+      expect(betaResponse.status).toBe(200);
+      releaseGamma();
+      const gammaResponse = await gammaRequest;
+      expect(gammaResponse.status).toBe(200);
+
+      const gammaWake = notifyPodAgents.mock.calls.find((call) => call[1].assignee === 'gamma');
+      expect(gammaWake?.[4]).toEqual(expect.objectContaining({ assignee: 'beta' }));
+      expect(gammaWake?.[1]).toEqual(expect.objectContaining({ assignee: 'gamma' }));
+      expect((await Task.findOne({ podId: pod._id, taskId: 'T-1' })).assignee).toBe('gamma');
+    } finally {
+      releaseGamma();
+      updateSpy.mockRestore();
+    }
+  });
 });

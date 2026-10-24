@@ -168,31 +168,31 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
   });
 
   test('passes the prior assignee to board wake routing when unassigning', async () => {
-    Task.findOne.mockReturnValueOnce({ select: () => ({ lean: async () => ({ assignee: 'scout', status: 'claimed' }) }) });
-    mockFindOneAndUpdate.mockResolvedValueOnce({ taskId: 'TASK-001', assignee: null, status: 'claimed' });
+    mockFindOneAndUpdate.mockResolvedValueOnce({ taskId: 'TASK-001', assignee: 'scout', status: 'claimed' });
 
     const res = await request(app)
       .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
       .send({ assignee: '' });
 
     expect(res.status).toBe(200);
+    expect(mockFindOneAndUpdate.mock.calls[0][2]).toEqual({ new: false });
     expect(mockNotifyPodAgents).toHaveBeenCalledWith(
       POD_ID, expect.objectContaining({ assignee: null }), 'updated',
-      expect.any(Object), { assignee: 'scout', status: 'claimed' },
+      expect.any(Object), { assignee: 'scout', claimedBy: undefined, status: 'claimed' },
     );
   });
 
-  test('still writes the board when the optional prior-owner lookup fails', async () => {
-    Task.findOne.mockReturnValueOnce({ select: () => ({ lean: async () => { throw new Error('read unavailable'); } }) });
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-
+  test('gets prior ownership from the successful atomic write', async () => {
+    mockFindOneAndUpdate.mockResolvedValueOnce({ taskId: 'TASK-001', assignee: 'alpha', status: 'pending' });
     const res = await request(app)
       .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
       .send({ assignee: 'scout' });
-    warn.mockRestore();
 
     expect(res.status).toBe(200);
     expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(1);
-    expect(mockNotifyPodAgents).toHaveBeenCalled();
+    expect(mockNotifyPodAgents).toHaveBeenCalledWith(
+      POD_ID, expect.objectContaining({ assignee: 'scout' }), 'updated',
+      expect.any(Object), { assignee: 'alpha', claimedBy: undefined, status: 'pending' },
+    );
   });
 });

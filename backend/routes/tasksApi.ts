@@ -923,16 +923,7 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     const refusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
     if (refusal) return res.status(409).json(refusal);
     const author = await resolveAuthor(req);
-    let previousTask = null;
-    if (fieldUpdates.assignee !== undefined || fieldUpdates.status !== undefined) {
-      try {
-        previousTask = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId })
-          .select('assignee claimedBy status').lean();
-      } catch (readErr) {
-        // A notification read must never prevent the board write itself.
-        console.warn('[tasks] prior owner lookup failed:', (readErr as Error).message);
-      }
-    }
+    const needsPriorOwner = fieldUpdates.assignee !== undefined || fieldUpdates.status !== undefined;
     const changeParts: string[] = [];
     if (fieldUpdates.assignee !== undefined) changeParts.push(`reassigned to ${fieldUpdates.assignee || 'unassigned'}`);
     if (fieldUpdates.status !== undefined) changeParts.push(`status → ${fieldUpdates.status}`);
@@ -947,11 +938,26 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
       ...writableLeaseCondition(req, userId, new Date()),
-    }, update, { new: true });
+    }, update, { new: !needsPriorOwner });
     if (!task) {
       const racedRefusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
       if (racedRefusal) return res.status(409).json(racedRefusal);
       return res.status(404).json({ error: 'Task not found' });
+    }
+    // For ownership/status writes, the atomic update returns its pre-image.
+    // A separate read can race a second writer and wake a stale owner. Capture
+    // the pre-image before projecting this successful write onto the response.
+    const previousTask = needsPriorOwner
+      ? { assignee: task.assignee, claimedBy: task.claimedBy, status: task.status }
+      : null;
+    if (needsPriorOwner) {
+      if (typeof task.set === 'function') task.set(fieldUpdates);
+      else Object.assign(task, fieldUpdates);
+      if (update.$push) {
+        if (!task.updates) task.updates = [];
+        task.updates.push((update.$push as { updates: unknown }).updates);
+      }
+      task.updatedAt = new Date();
     }
     if (fieldUpdates.status === 'blocked') await recordTaskAttention(task, { includeBlocked: true });
     if (fieldUpdates.status !== undefined && fieldUpdates.status !== 'blocked') await resolveTaskAttention(task);
