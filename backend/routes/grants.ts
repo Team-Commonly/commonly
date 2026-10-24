@@ -4,6 +4,7 @@ import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import { Types } from 'mongoose';
 import Integration from '../models/Integration';
+import { isHostedMcpEntryHidden } from '../integrations/hostedMcp/visibility';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
 import ToolCall from '../models/ToolCall';
@@ -318,6 +319,12 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       : String(connection.installationId || connection.config?.installationId || '').trim();
     const isConnected = connection.status === 'connected' && !connection.revokedAt;
     if (hosted) {
+      // Existing connections do not bypass instance visibility policy. Use the
+      // authenticated owner, matching the catalogue and connection-start route.
+      const entryId = String(connection.config?.entryId || '').trim();
+      if (isHostedMcpEntryHidden(entryId, process.env, userId)) {
+        return res.status(404).json({ error: 'unknown_entry' });
+      }
       // A pending row holds nothing secret and must never be grantable, and a
       // row with no credential has nothing for the broker to decrypt, so both
       // are refused here rather than at first call.

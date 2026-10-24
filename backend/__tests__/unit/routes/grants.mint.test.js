@@ -239,6 +239,51 @@ const withCatalog = async (entries, run) => {
 };
 
 describe('POST /api/grants on a hosted-mcp connection', () => {
+  describe('hidden-entry mint policy', () => {
+    let previousHidden;
+    let previousAllowlist;
+    beforeEach(() => {
+      previousHidden = process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+      previousAllowlist = process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
+      process.env.HOSTED_MCP_HIDDEN_ENTRIES = JSON.stringify(['linear']);
+      delete process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
+      Integration.findById.mockResolvedValue(hostedRow());
+    });
+    afterEach(() => {
+      if (previousHidden === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRIES;
+      else process.env.HOSTED_MCP_HIDDEN_ENTRIES = previousHidden;
+      if (previousAllowlist === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
+      else process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = previousAllowlist;
+    });
+
+    test.each([
+      ['no exception', undefined],
+      ['another user', JSON.stringify({ linear: [SEAT] })],
+      ['invalid JSON', '{broken'],
+      ['invalid user in map', JSON.stringify({ linear: [OWNER, 'invalid'] })],
+      ['unknown key in map', JSON.stringify({ linear: [OWNER], typo: [OWNER] })],
+    ])('a previously connected hidden row refuses mint with %s', async (_, allowlist) => {
+      if (allowlist !== undefined) process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = allowlist;
+      const res = await withCatalog([ENTRY], () => hostedMint({ userId: SEAT, ownerId: SEAT }));
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: 'unknown_entry' });
+      expect(await RoomGrant.countDocuments({})).toBe(0);
+    });
+
+    test('the exact authenticated allowlisted owner may mint', async () => {
+      process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = JSON.stringify({ linear: [OWNER] });
+      const res = await withCatalog([ENTRY], () => hostedMint());
+      expect(res.status).toBe(201);
+      expect(await RoomGrant.countDocuments({ grantId: res.body.grantId })).toBe(1);
+    });
+
+    test('hiding another entry leaves this connected row grantable', async () => {
+      process.env.HOSTED_MCP_HIDDEN_ENTRIES = JSON.stringify(['acme']);
+      const res = await withCatalog([ENTRY], () => hostedMint());
+      expect(res.status).toBe(201);
+    });
+  });
+
   test('a connected hosted row is admitted; what stops the mint is the catalogue, not its type', async () => {
     Integration.findById.mockResolvedValue(hostedRow());
     // The catalogue is emptied for this arm on purpose: since step 7 the shipped
