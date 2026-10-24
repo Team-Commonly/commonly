@@ -141,13 +141,17 @@ describe('V2Inspector', () => {
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 
-  test('uses the resolved agent label ahead of an old profile ID', () => {
+  test('uses the resolved agent label while matching attention under an old profile ID', () => {
     renderInspector({ detail: { ...detail, agents: [{
       agentName: 'scout', instanceId: 'default', displayName: 'Scout',
       profile: { displayName: 'u1a9e5ecede' },
-    }] } as any, attentionCount: 0, attentionItems: [] });
+    }] } as any, attentionItems: [{
+      id: 'legacy-request', kind: 'decision', title: 'Legacy request',
+      actorName: 'u1a9e5ecede', podId: 'pod-1',
+    }] });
 
-    expect(screen.getByText('Scout')).toBeInTheDocument();
+    expect(screen.getAllByText('Scout')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: /Scout needs you · Legacy request/ })).toBeInTheDocument();
     expect(screen.queryByText('u1a9e5ecede')).not.toBeInTheDocument();
   });
 

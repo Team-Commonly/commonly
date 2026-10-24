@@ -63,7 +63,15 @@ const matchesAgent = (agent: V2Agent, value?: string): boolean => {
   const candidate = (value || '').toLowerCase();
   return candidate === (agent.agentName || '').toLowerCase()
     || candidate === labelForAgent(agent).toLowerCase()
+    || candidate === (agent.profile?.displayName || '').toLowerCase()
     || candidate === (agent.instanceId || '').toLowerCase();
+};
+
+const labelForAttentionActor = (agents: V2Agent[], actorName: string): string => {
+  const legacyAgent = agents.find((agent) => (
+    agent.profile?.displayName?.toLowerCase() === actorName.toLowerCase()
+  ));
+  return legacyAgent ? labelForAgent(legacyAgent) : actorName;
 };
 
 const agentState = (
@@ -187,7 +195,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
             {attention.map((item) => (
               <button key={`${item.kind}:${item.id}`} type="button" className="v2-workspace-inspector__attention" onClick={() => openAttention(item)}>
                 <span>{item.title}</span>
-                {item.actorName && <span className="v2-workspace-inspector__actor">{item.actorName}</span>}
+                {item.actorName && <span className="v2-workspace-inspector__actor">{labelForAttentionActor(agents, item.actorName)}</span>}
               </button>
             ))}
           </div>
