@@ -67,3 +67,41 @@ describe('claude adapter reports the turn context from the child HOME', () => {
     }
   });
 });
+
+// bwrap wrapping is Linux-only (wrapArgvWithBwrap throws on macOS), so this
+// jail case runs in Linux CI and is skipped on a Mac.
+const jailTest = process.platform === 'linux' ? test : test.skip;
+
+describe('claude adapter reads the transcript inside a bwrap jail', () => {
+  jailTest('bwrap sets the child HOME to the workspace, and the count is read there', async () => {
+    const hostHome = mkdtempSync(join(tmpdir(), 'claude-host-'));
+    const cwd = join(hostHome, 'workspace');
+    mkdirSync(cwd, { recursive: true });
+    try {
+      const impl = (cmd, args) => {
+        const flag = args.includes('--resume') ? '--resume' : '--session-id';
+        const sid = args[args.indexOf(flag) + 1];
+        const dir = join(cwd, '.claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, `${sid}.jsonl`), `${JSON.stringify({
+          type: 'assistant',
+          message: { usage: { input_tokens: 1, cache_creation_input_tokens: 2, cache_read_input_tokens: 150000 } },
+        })}\n`);
+        return fakeChild();
+      };
+      const res = await claude.spawn('hi', {
+        sessionId: 'sid-jail',
+        cwd,
+        env: { PATH: process.env.PATH, HOME: hostHome },
+        environment: { sandbox: { trust: 'public', mode: 'bwrap' } },
+        memoryLongTerm: '',
+        _spawnImpl: impl,
+        _detectBwrap: () => ({ available: true, path: 'bwrap' }),
+      });
+      expect(res.newSessionId).toBe('sid-jail');
+      expect(res.contextTokens).toBe(150003);
+    } finally {
+      rmSync(hostHome, { recursive: true, force: true });
+    }
+  });
+});

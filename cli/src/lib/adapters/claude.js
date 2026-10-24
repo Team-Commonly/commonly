@@ -716,7 +716,10 @@ const prepareArgv = async (innerArgv, ctx) => {
       workspacePath: ctx.cwd,
       readOnlyPaths: [ctx.mcpConfigDir, commitHooksPath, originalHooksPath, ...(ctx.mcpReadDirectories || [])].filter(Boolean),
     });
-    return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv };
+    // bwrap sets the child's HOME to the workspace (wrapArgvWithBwrap's
+    // default), so the child's transcript lands under the workspace, not the
+    // HOME the host process sees. TASK-440 reads from here.
+    return { cmd: wrapped[0], args: wrapped.slice(1), env: claudeEnv, childHome: ctx.cwd };
   }
   return { cmd: 'claude', args: innerArgv, env: claudeEnv };
 };
@@ -882,7 +885,7 @@ export default {
         publicSkillArgs,
         claudeEnv,
       };
-      const { cmd, args, env } = await prepareArgv(baseArgs, spawnCtx);
+      const { cmd, args, env, childHome } = await prepareArgv(baseArgs, spawnCtx);
       const stdout = await runClaude({
         cmd,
         args,
@@ -899,7 +902,7 @@ export default {
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
       const contextTokens = claudeContextTokens({
-        cwd: ctx.cwd, sessionId, configDir: claudeConfigDirFor(env),
+        cwd: ctx.cwd, sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
       });
       return { text: stdout.trim(), newSessionId: sessionId, contextTokens };
     } catch (err) {
@@ -948,7 +951,8 @@ export default {
           spawnImpl: ctx._spawnImpl,
         });
         const contextTokens = claudeContextTokens({
-          cwd: ctx.cwd, sessionId: freshId, configDir: claudeConfigDirFor(retry.env),
+          cwd: ctx.cwd, sessionId: freshId,
+          configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
         });
         return { text: stdout.trim(), newSessionId: freshId, contextTokens };
       }
