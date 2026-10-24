@@ -54,6 +54,7 @@ const WALKED_ADAPTERS: Record<string, string> = {
   hermes: 'Hermes',
   dsh: 'DeepSeek Harness',
 };
+const DAEMON_SETUP_COMMAND = 'npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install';
 
 export const describeRuntime = (runtime: Runtime): { mode: 'hosted' | 'daemon' | 'cli' | 'unknown'; adapter: string | null } => {
   const type = String(runtime.runtimeType || '').toLowerCase();
@@ -91,7 +92,8 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   const placementFailure = (error: unknown, fallback: string): string => {
     const data = (error as PlacementFailure)?.response?.data;
     if (data?.code === 'another_installer') {
-      const blockers = (data.blockers || []).map(({ podName, installerName }) => t('agentManage.runtime.blocker', { podName, installerName })).join(', ');
+      const blockers = (data.blockers || []).map(({ podName, installerName }) => t('agentManage.runtime.blocker', { podName, installerName }))
+        .join(t('agentManage.runtime.blockerSeparator'));
       return blockers ? t('agentManage.runtime.blockedBy', { blockers }) : t('agentManage.runtime.blockedGeneric');
     }
     const key: Record<string, string> = {
@@ -239,7 +241,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
                 <button type="button" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
                   {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
                 </button>
-              </> : <p>{t('agentManage.runtime.noActiveMachine')} <code>commonly daemon register</code></p>
+              </> : <p>{t('agentManage.runtime.noActiveMachine')} <code>{DAEMON_SETUP_COMMAND}</code></p>
             )}
           </div>
         )}

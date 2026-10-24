@@ -63,6 +63,12 @@ test('revoked Runtime row offers an active computer and moves in one request', a
   expect(axios.post).toHaveBeenCalledTimes(1);
 });
 
+test('without an active computer, the setup hint includes daemon installation', async () => {
+  renderSection();
+  expect(await screen.findByText(/Register another computer to move this agent/)).toBeInTheDocument();
+  expect(screen.getByText('npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install')).toBeInTheDocument();
+});
+
 test('a changed installer refuses the move before release and explains the blocking installation', async () => {
   let placementReads = 0;
   axios.get.mockImplementation((url) => {
