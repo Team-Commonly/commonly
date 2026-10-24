@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const ConnectorSecret = require('../../../models/ConnectorSecret');
 const {
   ConnectorSecretKeyMissing,
+  ConnectorSecretStaleWrite,
   get,
   put,
   rewrap,
@@ -65,6 +66,15 @@ describe('connectorSecrets', () => {
     expect(await ConnectorSecret.countDocuments({ integrationId })).toBe(2);
     expect(await get(slackRef)).toBe('xoxb-secret');
     expect(await get(discordRef)).toBe(webhook);
+  });
+
+  it('refuses an older authorization after a newer generation owns the same secret ref', async () => {
+    const integrationId = new mongoose.Types.ObjectId().toString();
+    const ref = await put(integrationId, SLACK_BOT_TOKEN, 'new-token', 2);
+    await expect(put(integrationId, SLACK_BOT_TOKEN, 'old-token', 1))
+      .rejects.toBeInstanceOf(ConnectorSecretStaleWrite);
+    expect(await get(ref)).toBe('new-token');
+    expect((await ConnectorSecret.findById(ref).lean()).writeGeneration).toBe(2);
   });
 
   it('declares exactly one index, on the pair — a leftover single-field unique would still be enforced at boot', async () => {

@@ -31,6 +31,7 @@ const {
   refreshTokenAtVendor,
 } = require('../../../services/hostedMcpCredentialService');
 const { undeclaredPaths } = require('../../utils/schemaPathGuard');
+const { secretWriteGeneration } = require('../../../services/hostedMcpSecretGeneration');
 
 const DeployedIntegration = jest.requireActual('../../../models/Integration').default;
 
@@ -98,9 +99,12 @@ const harness = (options = {}) => {
     order.push(`revoke:${ref}`);
   });
 
-  const bumpGeneration = jest.fn(async (id, from, now) => {
+  const bumpGeneration = jest.fn(async (id, from, now, authority, publishedAuthority) => {
     if (options.loseRace) return null;
     if ((state.config.refreshGeneration ?? 0) !== from) return null;
+    if (state.status !== 'connected' || state.config.pendingAuth) return null;
+    if (state.config.authGeneration !== authority) return null;
+    if (state.config.credentialAuthGeneration !== publishedAuthority) return null;
     // The lease, modelled because the real filter carries it: absent, released
     // (null) and elapsed are all takeable, and a live one is not. A fake that
     // ignored it would witness a fence production does not have.
@@ -119,20 +123,25 @@ const harness = (options = {}) => {
     return preImage;
   });
 
-  const commit = jest.fn(async (id, generation, fields) => {
+  const commit = jest.fn(async (id, generation, fields, authority, publishedAuthority) => {
     order.push('commit');
-    if ((state.config.refreshGeneration ?? 0) !== generation) return;
+    if ((state.config.refreshGeneration ?? 0) !== generation) return false;
+    if (state.config.authGeneration !== authority
+      || state.config.credentialAuthGeneration !== publishedAuthority) return false;
     const next = { ...state, config: { ...state.config } };
     Object.entries(fields).forEach(([path, value]) => {
       if (path.startsWith('config.')) next.config[path.slice('config.'.length)] = value;
       else next[path] = value;
     });
     state = next;
+    return true;
   });
 
-  const markError = jest.fn(async (id, generation, message) => {
+  const markError = jest.fn(async (id, generation, message, authority, publishedAuthority) => {
     order.push('markError');
     if ((state.config.refreshGeneration ?? 0) !== generation) return;
+    if (state.config.authGeneration !== authority
+      || state.config.credentialAuthGeneration !== publishedAuthority) return;
     state = {
       ...state,
       status: 'error',
@@ -428,7 +437,7 @@ describe('the winner of the fence', () => {
       token: 'new-access',
       expiresAt: new Date(T0 + 3600 * 1000).toISOString(),
     });
-    expect(h.bumpGeneration).toHaveBeenCalledWith(ROW_ID, 3, new Date(T0));
+    expect(h.bumpGeneration).toHaveBeenCalledWith(ROW_ID, 3, new Date(T0), undefined, undefined);
     expect(h.refreshAtVendor).toHaveBeenCalledWith({
       entry: ENTRY,
       clientId: ENTRY.clientId,
@@ -445,9 +454,25 @@ describe('the winner of the fence', () => {
       // NEXT refresh a loser against a winner that has already finished.
       'config.refreshingUntil': null,
       errorMessage: null,
-    });
+    }, undefined, undefined);
     expect(h.state().config.expiresAt).toEqual(new Date(T0 + 3600 * 1000));
     expect(h.state().errorMessage).toBeNull();
+  });
+
+  test('refresh fences both stable secret writes to its authorization attempt and refresh', async () => {
+    const row = stale({ authGeneration: 7 });
+    const h = harness({ row });
+    await credentialFor(row, h.deps);
+
+    // The row's refreshGeneration is 3, so this refresh is generation 4 of
+    // authorization 7. Both writes carry that one ordered value.
+    const generation = secretWriteGeneration(7, 4);
+    expect(h.put).toHaveBeenCalledTimes(2);
+    expect(h.put.mock.calls.map(([id, kind, material, writeGeneration]) => [id, kind.kind, material, writeGeneration]))
+      .toEqual([
+        [ROW_ID, ACCESS_KIND, 'new-access', generation],
+        [ROW_ID, REFRESH_KIND, 'new-refresh', generation],
+      ]);
   });
 
   test('every path the commit names is declared on the schema, and the error text is top-level', async () => {
@@ -470,8 +495,10 @@ describe('the winner of the fence', () => {
     const got = await credentialFor(stale(), h.deps);
 
     expect(got.token).toBe('new-access');
-    expect(h.put).toHaveBeenCalledTimes(1);
-    expect(h.put.mock.calls[0][1].kind).toBe(ACCESS_KIND);
+    // Both secrets advance to this refresh's generation, even though the held
+    // refresh token is the one re-written.
+    expect(h.put.mock.calls.map(([, kind, material]) => [kind.kind, material]))
+      .toEqual([[ACCESS_KIND, 'new-access'], [REFRESH_KIND, 'old-refresh']]);
     expect(h.commit.mock.calls[0][2]['config.refreshTokenRef']).toBe(REFRESH_REF);
     expect(h.revoke).not.toHaveBeenCalled();
     expect(h.secrets.get(REFRESH_REF)).toBe('old-refresh');
@@ -516,7 +543,7 @@ describe('the winner of the fence', () => {
 
     expect(error.code).toBe('connection_error');
     expect(error.retryable).toBe(false);
-    expect(h.markError).toHaveBeenCalledWith(ROW_ID, 4, 'refresh refused (400 invalid_grant)');
+    expect(h.markError).toHaveBeenCalledWith(ROW_ID, 4, 'refresh refused (400 invalid_grant)', undefined, undefined);
     expect(h.commit).not.toHaveBeenCalled();
     expect(h.state().status).toBe('error');
   });
@@ -557,7 +584,7 @@ describe('the winner of the fence', () => {
     // never told what would fix it. The mark is guarded on the generation the
     // winner bumped, so a concurrent loser cannot overwrite a newer verdict.
     expect(h.markError).toHaveBeenCalledTimes(1);
-    expect(h.markError).toHaveBeenCalledWith(row._id, 4, expect.stringContaining('reconnect'));
+    expect(h.markError).toHaveBeenCalledWith(row._id, 4, expect.stringContaining('reconnect'), undefined, undefined);
     expect(h.bumpGeneration).toHaveBeenCalledTimes(1);
     expect(h.refreshAtVendor).not.toHaveBeenCalled();
     expect(h.commit).not.toHaveBeenCalled();
@@ -764,7 +791,7 @@ describe('the refresh call carries the shared deadline', () => {
       expect(error.code).toBe('reconnect_required');
       expect(refuse).toHaveBeenCalledWith(dcrEntry, 'old-dcr-client');
       expect(h.markError).toHaveBeenCalledWith(
-        ROW_ID, 4, 'OAuth client was refused by the provider; reconnect to continue',
+        ROW_ID, 4, 'OAuth client was refused by the provider; reconnect to continue', undefined, undefined,
       );
     } finally {
       refuse.mockRestore();
