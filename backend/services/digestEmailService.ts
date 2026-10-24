@@ -11,6 +11,10 @@ const SystemSetting = require('../models/SystemSetting');
 const NeedsYouEmail = require('../models/NeedsYouEmail');
 // eslint-disable-next-line global-require
 const AttentionItem = require('../models/AttentionItem');
+// eslint-disable-next-line global-require
+const Pod = require('../models/Pod');
+// eslint-disable-next-line global-require
+const { isListedPodMember } = require('../utils/isPodMember');
 
 /**
  * The switch that stops digest SENDING in seconds, with no deploy and no
@@ -61,7 +65,7 @@ interface DigestUser {
   email?: string;
   verified?: boolean;
   isBot?: boolean;
-  emailPreferences?: { dailyDigest?: boolean };
+  emailPreferences?: { dailyDigest?: boolean; needsYou?: boolean };
   digestUnsubscribeToken?: string;
   getOrCreateDigestUnsubscribeToken: () => string;
 }
@@ -206,13 +210,23 @@ export class DigestEmailService {
           continue;
         }
 
-        const overflow = await NeedsYouEmail.find({
+        const overflow = user.emailPreferences?.needsYou === false ? [] : await NeedsYouEmail.find({
           recipientUserId: user._id, status: 'overflow', includedInDigestAt: { $exists: false },
         }).select('_id attentionItemId').lean();
         const asks = overflow.length ? await AttentionItem.find({
-          _id: { $in: overflow.map((row: any) => row.attentionItemId) }, status: 'open',
-        }).select('title podName').lean() : [];
-        const heldAsks = asks.map((ask: any) => `${ask.title} · ${ask.podName || 'Pod'}`);
+          _id: { $in: overflow.map((row: any) => row.attentionItemId) },
+          recipientUserId: user._id, status: 'open',
+        }).select('_id podId').lean() : [];
+        const podIds = [...new Set(asks.map((ask: any) => String(ask.podId)))];
+        const pods = podIds.length ? await Pod.find({ _id: { $in: podIds } }).select('_id members').lean() : [];
+        const allowedPodIds = new Set(pods
+          .filter((pod: any) => isListedPodMember(pod, user._id))
+          .map((pod: any) => String(pod._id)));
+        const allowedAskIds = new Set(asks
+          .filter((ask: any) => allowedPodIds.has(String(ask.podId)))
+          .map((ask: any) => String(ask._id)));
+        const includedOverflow = overflow.filter((row: any) => allowedAskIds.has(String(row.attentionItemId)));
+        const heldAsks = includedOverflow.map(() => 'An item needs your attention on Commonly');
         if (Number(summary.metadata?.totalItems || 0) <= 0) {
           if (!heldAsks.length) continue;
           result.eligible += 1;
@@ -255,10 +269,10 @@ export class DigestEmailService {
         });
 
         result.sent += 1;
-        if (overflow.length) {
+        if (includedOverflow.length) {
           try {
             await NeedsYouEmail.updateMany(
-              { _id: { $in: overflow.map((row: any) => row._id) }, includedInDigestAt: { $exists: false } },
+              { _id: { $in: includedOverflow.map((row: any) => row._id) }, includedInDigestAt: { $exists: false } },
               { $set: { includedInDigestAt: emailedAt } },
             );
           } catch (markError) {

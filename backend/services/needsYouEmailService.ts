@@ -86,15 +86,14 @@ export const sendNeedsYouEmail = async (item: EmailItem): Promise<void> => {
     const backendUrl = primaryUrl(process.env.BACKEND_URL || process.env.COMMONLY_API_URL, 'http://localhost:5000');
     const clickUrl = `${backendUrl}/api/email/needs-you/open/${clickToken}`;
     const unsubscribeUrl = `${backendUrl}/api/email/unsubscribe/needs-you/${unsubscribeToken}`;
-    const agent = String(item.actorName || 'Your agent').trim();
-    const pod = String(item.podName || 'a pod').trim();
-    const ask = String(item.detail || item.title || '').replace(/\s+/g, ' ').trim().slice(0, 220);
-    const subject = `${agent} needs you in ${pod}`;
+    // Source text and names can contain private pod material. Keep the ask
+    // behind the authenticated Activity destination, including in previews.
+    const subject = 'Your agent needs you on Commonly';
     await sendEmail({
       to: user.email,
       subject,
-      textBody: `${subject}\n\n${ask}\n\nOpen the item: ${clickUrl}\n\nTurn off needs-you emails: ${unsubscribeUrl}`,
-      htmlBody: `<!doctype html><html><body style="margin:0;background:#eef0f4;font-family:Arial,sans-serif;color:#101828"><main style="max-width:560px;margin:0 auto;padding:32px 20px"><section style="background:#fff;border:1px solid #d0d5dd;border-radius:6px;padding:24px"><h1 style="font-size:24px;margin:0 0 16px">${escapeHtml(agent)} needs you</h1><p style="color:#475467">In ${escapeHtml(pod)}</p><p>${escapeHtml(ask)}</p><p><a href="${escapeHtml(clickUrl)}" style="color:#1d3fd1">Open the item</a></p></section><p style="font-size:12px;color:#667085"><a href="${escapeHtml(unsubscribeUrl)}" style="color:#1d3fd1">Turn off needs-you emails</a></p></main></body></html>`,
+      textBody: `${subject}\n\nOpen Commonly to see what needs your attention: ${clickUrl}\n\nTurn off needs-you emails: ${unsubscribeUrl}`,
+      htmlBody: `<!doctype html><html><body style="margin:0;background:#eef0f4;font-family:Arial,sans-serif;color:#101828"><main style="max-width:560px;margin:0 auto;padding:32px 20px"><section style="background:#fff;border:1px solid #d0d5dd;border-radius:6px;padding:24px"><h1 style="font-size:24px;margin:0 0 16px">Your agent needs you</h1><p>Open Commonly to see what needs your attention.</p><p><a href="${escapeHtml(clickUrl)}" style="color:#1d3fd1">Open the item</a></p></section><p style="font-size:12px;color:#667085"><a href="${escapeHtml(unsubscribeUrl)}" style="color:#1d3fd1">Turn off needs-you emails</a></p></main></body></html>`,
     });
     await NeedsYouEmail.updateOne({ _id: claim._id }, { $set: { status: 'sent', sentAt: now } });
   } catch (error) {

@@ -67,7 +67,11 @@ describe('needs-you email', () => {
     const firstClick = (await NeedsYouEmail.findById(delivered._id)).clickedAt;
     await request(app).get(`/api/email/needs-you/open/${delivered.clickToken}`);
     expect((await NeedsYouEmail.findById(delivered._id)).clickedAt.getTime()).toBe(firstClick.getTime());
-    expect(mockSendEmail.mock.calls[0][0].htmlBody).toContain('&lt;review this&gt; &amp; decide');
+    const deliveredBody = JSON.stringify(mockSendEmail.mock.calls[0][0]);
+    expect(deliveredBody).not.toContain('review this');
+    expect(deliveredBody).not.toContain('Research');
+    expect(deliveredBody).not.toContain('Scout');
+    expect(deliveredBody).not.toContain('Ask 0');
   });
 
   it('skips an active, unverified, opted-out, bot, or reserved-domain recipient', async () => {
