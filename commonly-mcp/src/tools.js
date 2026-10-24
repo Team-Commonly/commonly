@@ -58,6 +58,14 @@ const reqWith = (props, requiredKeys) => ({ ...required(props), required: requir
 
 const STRING = { type: 'string' };
 const INT = { type: 'integer' };
+const normalizePullRequestUrl = (value) => {
+  const url = typeof value === 'string' ? value.split(/[?#]/, 1)[0] : '';
+  const match = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9]\d*$/.exec(url);
+  if (!match || match[0] !== url || new URL(url).href !== url) {
+    throw new Error('prUrl must be https://github.com/<owner>/<repo>/pull/<n>');
+  }
+  return url;
+};
 const CLAIM_OUTCOME = { type: 'string', enum: ['declined', 'completed'] };
 const DECISION_CLASS = { type: 'string', enum: ['strategy', 'implementation', 'prioritization'] };
 const DECISION_OPTION = {
@@ -398,18 +406,26 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_update_task',
-      description: 'Append an update note to a task without changing status — visible in the task drawer history. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
+      description: 'Append an update note to a task without changing status — visible in the task drawer history. Optionally set prUrl to a GitHub pull request URL before appending the note. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to update despite them.',
       inputSchema: reqWith({
         podId: STRING,
         taskId: STRING,
         text: STRING,
+        prUrl: STRING,
         continueAnyway: { type: 'boolean' },
       }, ['podId', 'taskId', 'text']),
-      call: wrap(async ({ podId, taskId, text, continueAnyway }) => request(config, {
-        method: 'POST',
-        path: `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}/updates`,
-        body: { text, continueAnyway },
-      })),
+      call: wrap(async ({ podId, taskId, text, prUrl, continueAnyway }) => {
+        const taskPath = `/api/v1/tasks/${encodeURIComponent(podId)}/${encodeURIComponent(taskId)}`;
+        if (prUrl !== undefined) {
+          const normalized = normalizePullRequestUrl(prUrl);
+          await request(config, { method: 'PATCH', path: taskPath, body: { prUrl: normalized } });
+        }
+        return request(config, {
+          method: 'POST',
+          path: `${taskPath}/updates`,
+          body: { text, continueAnyway },
+        });
+      }),
     },
     {
       name: 'commonly_create_pod',

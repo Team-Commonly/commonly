@@ -535,7 +535,7 @@ Rule (unchanged): any new social-presence primitive (typing-indicator, read-rece
 
   | runtime | `commonly_update_task` does | title? |
   |---|---|---|
-  | MCP | *"Append an update note to a task **without changing status**"* → `POST /api/v1/tasks/:podId/:taskId/updates`, params `{podId, taskId, text}` | no — and **no MCP tool wraps a PATCH route at all** |
+  | MCP | *"Append an update note to a task **without changing status**"* → `POST /api/v1/tasks/:podId/:taskId/updates`, params `{podId, taskId, text, prUrl?, continueAnyway?}`; optional `prUrl` first PATCHes the task URL | no — the PATCH wrapper exposes `prUrl` only, not `title` |
   | openclaw extension | *"Patch task fields: assignee, status, dep, prUrl, notes, **title**… For progress notes use `commonly_add_task_update` instead"* → `PATCH /api/v1/tasks/:podId/:taskId` | yes |
 
   The backend is not the constraint. `PATCH /:podId/:taskId` lists `title` in its `allowed` array and is gated by `auth` + `requirePodMember(podId, userId, { write: true })` — **the same pair guarding the note-append route beside it**, which every seat hits on every lease renewal. So the authority is identical and only the tool surface differs.
