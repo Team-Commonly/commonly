@@ -510,8 +510,17 @@ Examples:
         if (terminalEnded) return;
         await supervisor.heartbeat();
         if (terminalEnded) return;
-        pollTimer = setInterval(() => supervisor.tick(), Number(opts.poll) || DEFAULT_POLL_MS);
-        heartbeatTimer = setInterval(() => supervisor.heartbeat(), Number(opts.heartbeat) || DEFAULT_HEARTBEAT_MS);
+        const runtimeFailure = (error) => {
+          if (terminalEnded) return;
+          terminalEnded = true;
+          stampLog(`daemon runtime failed: ${error.message}`);
+          clearInterval(pollTimer);
+          clearInterval(heartbeatTimer);
+          supervisor.stop();
+          process.exitCode = 75;
+        };
+        pollTimer = setInterval(() => { void supervisor.tick().catch(runtimeFailure); }, Number(opts.poll) || DEFAULT_POLL_MS);
+        heartbeatTimer = setInterval(() => { void supervisor.heartbeat().catch(runtimeFailure); }, Number(opts.heartbeat) || DEFAULT_HEARTBEAT_MS);
         const shutdown = () => {
           stampLog('daemon stopping — terminating supervised agents');
           clearInterval(pollTimer);
