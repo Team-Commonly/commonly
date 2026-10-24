@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-latest, latchkey-small]
+        runner: [latchkey-small]
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Runner facts
@@ -73,12 +73,12 @@ jobs:
   # that can break on a non-GitHub runner: it needs Docker for its Mongo and
   # Postgres service containers.
   backend-tests-trial:
-    name: Backend tests (${{ matrix.shard }}/3) on latchkey-medium
+    name: Backend tests (${{ matrix.shard }}/3) on latchkey-small
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
-    runs-on: latchkey-medium
+    runs-on: latchkey-small
     env:
       JWT_SECRET: test-jwt-secret
       SENDGRID_API_KEY: fake-api-key
@@ -107,8 +107,8 @@ jobs:
           path: backend/coverage/
 
   frontend-tests-trial:
-    name: Frontend tests on latchkey-medium
-    runs-on: latchkey-medium
+    name: Frontend tests on latchkey-small
+    runs-on: latchkey-small
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -133,8 +133,8 @@ jobs:
       - run: cd frontend && node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs
 
   service-test-trial:
-    name: Service Tests on latchkey-medium (service containers)
-    runs-on: latchkey-medium
+    name: Service Tests on latchkey-small (service containers)
+    runs-on: latchkey-small
 
     services:
       mongo:
@@ -193,3 +193,15 @@ jobs:
         run: |
           cd backend
           npx jest --testPathPattern="__tests__/service" --forceExit --runInBand
+
+      # Diagnostic (trial 2): on Latchkey the mongo service dropped every
+      # connection ~40 s into the run. Print the container's own story.
+      - name: Service container state and logs
+        if: always()
+        run: |
+          docker ps -a --format '{{.Names}} {{.Status}}'
+          for c in $(docker ps -aq); do
+            echo "== $(docker inspect -f '{{.Name}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}' $c)"
+            docker logs --tail 40 $c 2>&1 | cut -c1-300
+          done
+          free -m; dmesg 2>/dev/null | tail -20 || true
