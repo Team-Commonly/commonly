@@ -424,6 +424,25 @@ describe('TASK-213 runtime token narrowing', () => {
 });
 
 describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
+  test('a default-instance legacy token enumerates older installations with no stored instanceId', async () => {
+    mockUserFindOne.mockResolvedValue(null);
+    const matched = { _id: 'install-a', agentName: 'scout', instanceId: 'default',
+      podId: { toString: () => 'pod-a' }, runtimeTokens: [{ tokenHash: 'hashed-token', lastUsedAt: new Date() }] };
+    const older = { _id: 'install-b', agentName: 'scout',
+      podId: { toString: () => 'pod-b' }, runtimeTokens: [] };
+    mockInstallationFindOne.mockResolvedValue(matched);
+    mockInstallationFind.mockResolvedValue([matched, older]);
+    mockInstallationUpdateOne.mockResolvedValue({});
+    const req = buildReq('cm_agent_test');
+    const next = jest.fn();
+    await agentRuntimeAuth(req, buildRes(), next);
+    expect(mockInstallationFind).toHaveBeenCalledWith({
+      agentName: 'scout', $or: [{ instanceId: 'default' }, { instanceId: null }], status: 'active',
+    });
+    expect(req.agentAuthorizedPodIds).toEqual(['pod-a', 'pod-b']);
+    expect(next).toHaveBeenCalled();
+  });
+
   test('surfaces ALL active installations for the same (agentName, instanceId), not just the matched one', async () => {
     mockUserFindOne.mockResolvedValue(null);
     const matchedInstall = {
@@ -495,6 +514,21 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
     isBot: true,
     botMetadata: { agentName: 'my-byo-agent', instanceId: 'default', displayName: 'My BYO Agent' },
     agentRuntimeTokens: [{ tokenHash: 'hashed-token', ...(lastUsedAt ? { lastUsedAt } : {}) }],
+  });
+
+  test('default-instance User token includes legacy installation pods in its grant census', async () => {
+    mockUserFindOne.mockResolvedValue(buildAgentUser(new Date('2026-08-12T00:00:00Z')));
+    mockInstallationFind.mockReturnValue({ lean: async () => [
+      { podId: { toString: () => 'pod-a' }, instanceId: 'default' },
+      { podId: { toString: () => 'pod-b' } },
+    ] });
+    const next = jest.fn();
+    await agentRuntimeAuth(buildReq('cm_agent_test'), buildRes(), next);
+    expect(mockInstallationFind).toHaveBeenCalledWith({
+      agentName: 'my-byo-agent', $or: [{ instanceId: 'default' }, { instanceId: null }], status: 'active',
+    });
+    expect(mockNarrowedPods).toHaveBeenCalledWith(['pod-a', 'pod-b']);
+    expect(next).toHaveBeenCalled();
   });
 
   const narrowedRoute = () => {

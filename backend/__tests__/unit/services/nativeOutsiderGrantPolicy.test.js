@@ -91,6 +91,21 @@ test('roster marker uses every installation pod, including pods outside the view
   expect(await agentsWithMultipleOutsiderGrantPods([{ agentName: 'scout' }])).toEqual(new Set());
 });
 
+test('default-instance roster census includes an older row without instanceId', async () => {
+  mockInstallationFind.mockReturnValue(chain([
+    { agentName: 'scout', instanceId: 'default', podId: POD },
+    { agentName: 'scout', podId: OTHER },
+  ]));
+  mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }, { _id: OTHER, members: [SEAT] }]));
+  mockGrantFind.mockReturnValue(chain([grant(), grant({ target: { kind: 'pod', id: OTHER } })]));
+  expect(await agentsWithMultipleOutsiderGrantPods([{ agentName: 'scout' }]))
+    .toEqual(new Set(['scout:default']));
+  expect(mockInstallationFind).toHaveBeenCalledWith({
+    status: 'active',
+    $or: [{ agentName: 'scout', $or: [{ instanceId: 'default' }, { instanceId: null }] }],
+  });
+});
+
 test('roster marker propagates a failed grant census for the unavailable state', async () => {
   mockInstallationFind.mockReturnValue(chain([
     { agentName: 'scout', instanceId: 'default', podId: POD },

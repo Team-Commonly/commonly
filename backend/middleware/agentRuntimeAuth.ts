@@ -11,6 +11,7 @@ import { markByoConnectionAttempt } from '../services/onboardingMarks';
 import { isSpawnCredential } from '../services/spawnCredentialService';
 import { machineHasLiveAuthorization } from '../services/machineService';
 import { podsWithOutsiderWritableGrants } from '../services/nativeOutsiderGrantPolicy';
+import { installationIdentityFilter } from '../services/agentInstallationIdentity';
 import { classifyRuntimeOutsiderGrantRoute } from '../services/runtimeOutsiderGrantRoutes';
 
 // eslint-disable-next-line global-require
@@ -203,8 +204,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       const { agentName, instanceId } = resolveTokenAgentIdentity(agentUser);
 
       const installations = await AgentInstallation.find({
-        agentName,
-        instanceId,
+        ...installationIdentityFilter(agentName, instanceId),
         status: 'active',
       }).lean();
       // Old uninstall paths left User-row tokens behind. Even before a data
@@ -280,8 +280,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     // Codex Hub install couldn't see events from a new pod she'd been
     // freshly installed into.
     const allActiveInstallations = await AgentInstallation.find({
-      agentName: installation.agentName,
-      instanceId: installation.instanceId || 'default',
+      ...installationIdentityFilter(installation.agentName, installation.instanceId || 'default'),
       status: 'active',
     });
     // The matched credential is itself an active installation. Preserve its

@@ -226,9 +226,9 @@ function commentStore() {
  * MONGO_OBJECT_ID. A store that cannot answer must not unguard the fleet, and
  * refusing an unconfirmed comment id is exactly what would do that.
  */
-async function commentExists(objectId: string): Promise<boolean> {
+async function commentExists(objectId: string, podId: string): Promise<boolean> {
   try {
-    const found = await commentStore().exists({ 'comments._id': objectId });
+    const found = await commentStore().exists({ podId, 'comments._id': objectId });
     return Boolean(found);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -294,7 +294,7 @@ class MessageClaimService {
     // Comment namespace: it exists in Mongo, not in Postgres, so it is the
     // other store that answers it — and since TASK-122 it does, existence-only
     // (commentExists names the direction a store failure takes, and why).
-    if (MONGO_OBJECT_ID.test(id)) return commentExists(id);
+    if (MONGO_OBJECT_ID.test(id)) return commentExists(id, pod);
     if (!isChatMessageId(id)) return false;
     const found = await pool.query(
       'SELECT 1 FROM messages WHERE id = $1 AND pod_id = $2 LIMIT 1',

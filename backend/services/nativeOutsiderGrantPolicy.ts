@@ -8,6 +8,7 @@ import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
 import { AgentInstallation } from '../models/AgentRegistry';
 import { GRANT_BROKER_ID } from './installable/toolInstallables';
+import { installationIdentityFilter } from './agentInstallationIdentity';
 
 interface CandidateGrant {
   connectionId?: unknown;
@@ -84,7 +85,7 @@ export const agentsWithMultipleOutsiderGrantPods = async (
 ): Promise<Set<string>> => {
   const unique = [...new Map(identities.map((identity) => {
     const instanceId = identity.instanceId || 'default';
-    return [`${identity.agentName}:${instanceId}`, { agentName: identity.agentName, instanceId }];
+    return [`${identity.agentName}:${instanceId}`, installationIdentityFilter(identity.agentName, instanceId)];
   })).values()];
   if (!unique.length) return new Set();
   const installations = await AgentInstallation.find({

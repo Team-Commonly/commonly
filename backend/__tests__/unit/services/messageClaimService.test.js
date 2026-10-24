@@ -675,7 +675,7 @@ describe('messageExists', () => {
     await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
     // The id is asked of the comment's own store, by the path the comment
     // actually lives under — `comments._id`, a subdocument of Post.
-    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '507f1f77bcf86cd799439011' });
+    expect(Post.exists).toHaveBeenCalledWith({ podId: 'p1', 'comments._id': '507f1f77bcf86cd799439011' });
     // ...and NOT of Postgres, which cannot see a comment at all.
     expect(pool.query).not.toHaveBeenCalled();
     // Pod is still required first — the arm does not bypass the scope check
@@ -701,8 +701,18 @@ describe('messageExists', () => {
     await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(false);
     // The store was ASKED: this false is an answer about the comment, not a
     // shape refusal that never reached it.
-    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '123456789012345678901234' });
+    expect(Post.exists).toHaveBeenCalledWith({ podId: 'p1', 'comments._id': '123456789012345678901234' });
     expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  test('a real comment in another pod cannot be claimed under this pod', async () => {
+    Post.exists.mockImplementation(async (filter) =>
+      (filter.podId === 'pod-b' ? { _id: 'post-b' } : null));
+    const commentId = '507f1f77bcf86cd799439011';
+    await expect(MessageClaimService.messageExists(commentId, 'pod-a')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists(commentId, 'pod-b')).resolves.toBe(true);
+    expect(Post.exists).toHaveBeenCalledWith({ podId: 'pod-a', 'comments._id': commentId });
+    expect(Post.exists).toHaveBeenCalledWith({ podId: 'pod-b', 'comments._id': commentId });
   });
 
   test('a store that cannot answer passes the id through — refusing would unguard every woken seat', async () => {
@@ -743,7 +753,7 @@ describe('messageExists', () => {
     // costing a real comment wake its dedupe (wren 71962 — order matters).
     await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(true);
     // Answered by the comment store, never by the range test above it.
-    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '123456789012345678901234' });
+    expect(Post.exists).toHaveBeenCalledWith({ podId: 'p1', 'comments._id': '123456789012345678901234' });
     expect(pool.query).not.toHaveBeenCalled();
   });
 });
