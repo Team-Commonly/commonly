@@ -64,4 +64,16 @@ describe('agent send-time freshness', () => {
     await expect(Freshness.unseenMessages('agent-id', 'pod-id')).rejects.toThrow('pg down');
     expect(Message.countDocuments).not.toHaveBeenCalled();
   });
+
+  it('uses the PostgreSQL count and a bounded preview when PostgreSQL is configured', async () => {
+    process.env.PG_HOST = 'configured';
+    pool.query.mockResolvedValue({ rows: [{
+      id: 23, content: 'new plan', author: 'peer', created_at: new Date(), unseen_count: 8,
+    }] });
+    const hold = await Freshness.unseenMessages('agent-id', 'pod-id');
+    expect(hold.unseenCount).toBe(8);
+    expect(hold.messages).toEqual([expect.objectContaining({ id: '23', content: 'new plan' })]);
+    expect(pool.query.mock.calls[0][0]).toContain('LIMIT 3');
+    expect(Message.countDocuments).not.toHaveBeenCalled();
+  });
 });
