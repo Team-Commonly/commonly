@@ -226,6 +226,31 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       .toContain('display: block');
   });
 
+  test('the global button reset stays a low-specificity default', () => {
+    const reset = ruleBody(v2, '.v2-root :where(button:not(.MuiButtonBase-root))');
+    expect(reset).toContain('font-family: inherit');
+    expect(reset).toContain('border: none');
+    expect(reset).toContain('background: none');
+    expect(reset).toContain('padding: 0');
+    expect(v2).not.toMatch(/^\.v2-root button:not\(\.MuiButtonBase-root\)\s*\{/m);
+  });
+
+  test('authored utility controls remain visible after the button reset loses specificity', () => {
+    const rail = selectorRuleBody(v2, '.v2-rail__feedback');
+    const languageTrigger = ruleBody(v2, '.v2-lang-switch__trigger');
+    const languageItem = ruleBody(v2, '.v2-lang-switch__item');
+    const mobile = mediaBlockContaining(v2, '.v2-inspector-backdrop');
+
+    // These are deliberate neutral controls, not accidental reset leaks.
+    expect(rail).toContain('color: var(--v2-text-tertiary)');
+    expect(rail).toContain('background: transparent');
+    expect(rail).toContain('border-radius: var(--v2-radius-sm)');
+    expect(languageTrigger).toContain('padding: 4px 6px');
+    expect(languageItem).toContain('padding: 8px 12px');
+    expect(languageItem).toContain('color: var(--v2-text-secondary)');
+    expect(mobile).toContain('background: rgba(15, 17, 21, 0.42)');
+  });
+
   // #2287 (QA BYO walk 1): "Other ways to connect" folds the alternatives so the
   // page shows one command, and the needs line is read before the Copy button.
   // jsdom cannot see either; sprint-review deleted all three rules and every
@@ -926,6 +951,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // `.v2-root { height:100vh; overflow:hidden }` clips it. This is the general
     // rule the showcase bug taught us; keep the known-good example pinned.
     expect(ruleBody(aprofile, '.v2-root.v2-aprofile')).toContain('overflow-y: auto');
+  });
+
+  test('the authenticated agent-profile Talk button is ink, while public links stay cobalt', () => {
+    const linkPrimary = ruleBody(aprofile, '.v2-aprofile__btn--primary');
+    const buttonPrimary = ruleBody(aprofile, '.v2-root button.v2-aprofile__btn--primary');
+
+    expect(linkPrimary).toContain('background: var(--v2-accent)');
+    expect(buttonPrimary).toContain('background: var(--v2-ink)');
+    expect(buttonPrimary).toContain('border-color: var(--v2-ink)');
+    expect(aprofile).toContain('.v2-root button.v2-aprofile__btn--primary:hover');
+    expect(aprofile).toContain('background: var(--v2-ink-hover)');
   });
 
   test('the nav rail pane lets its language dropdown escape the pane clip', () => {
@@ -1962,10 +1998,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // as "slightly wrong depth" and an accent at rest destroys the ONE signal
     // the card has for being addressed.
     // Selector carries the `.v2-root button.` prefix ON PURPOSE: the global
-    // reset `.v2-root button:not(.MuiButtonBase-root)` is 0-2-1 and sets
-    // `color: inherit`, so a bare class rule loses and the card renders at
-    // body colour. Pinning the prefixed selector means dropping the prefix
-    // fails here rather than silently in production (#870's trap).
+    // The prefixed selector keeps the card's visual treatment explicit while
+    // the global reset remains a low-specificity default.
     const card = ruleBody(v2, '.v2-root button.v2-thread-card__main');
     expect(card).toContain('box-shadow: none');
     expect(card).toContain('min-height: 44px');
@@ -2920,9 +2954,9 @@ describe('the landing hero demo (TASK-147)', () => {
 //
 // Items 1–6 are presence lines. The reason they can be, rather than a cascade
 // comparison: the mode card owns its button reset locally, while
-// `button.v2-byo__submit` is rooted at `.v2-root`, so the bare reset at
-// `v2.css:201` cannot outrank them the way it did the landing pill in TASK-159.
-// That trap is pre-avoided in this component, not merely untested here.
+// `button.v2-byo__submit` is rooted at `.v2-root`, so the low-specificity
+// default at `v2.css:201` cannot override these declarations. The component
+// keeps its visual treatment explicit rather than relying on reset order.
 //
 // Item 7 gets three assertions, because each of its failure modes is invisible
 // to a presence line:
@@ -4674,18 +4708,18 @@ describe('BYO command boxes wrap at spaces', () => {
   });
 
   test('a mention item highlights on arrow-key and hover past the button reset', () => {
-    // `.v2-root button:not(.MuiButtonBase-root)` is 0,2,1 with background: none.
-    // The bare `.v2-mention-item--active` (0,1,0) and `:hover` (0,2,0) lose to it,
-    // so a <button> item never showed its highlight. The rules must be prefixed.
+    // The prefixed rules keep the interaction states explicit. The reset is
+    // intentionally low-specificity, so bare component rules can own their
+    // declarations without a specificity workaround.
     const active = ruleBody(v2, '.v2-root button.v2-mention-item--active');
     expect(active).toContain('background: var(--v2-surface-hover)');
     const hover = ruleBody(v2, '.v2-root button.v2-mention-item:hover');
     expect(hover).toContain('background: var(--v2-surface-hover)');
-    // The padding the reset erases (`padding: 0`, 0,2,1) comes back at 0,3,1.
+    // The dropdown explicitly owns the padding the reset defaults to zero.
     const padded = ruleBody(v2, '.v2-root .v2-mention-dropdown button.v2-mention-item');
     expect(padded).toContain('padding: 7px 9px');
-    // The reset stays as it was: the fix is additive, not a rewrite of the reset.
-    expect(ruleBody(v2, '.v2-root button:not(.MuiButtonBase-root)')).toContain('background: none');
+    expect(ruleBody(v2, '.v2-root :where(button:not(.MuiButtonBase-root))'))
+      .toContain('background: none');
   });
 });
 
