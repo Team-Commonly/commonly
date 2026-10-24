@@ -1598,15 +1598,7 @@ const V2AgentBYO: React.FC = () => {
             </div>
           </details>
 
-          {showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
-            <section role="status" className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
-              <p>{t('agentByo.hosted.offerBody')}</p>
-              <button type="button" className="v2-byo__hosted-offer-action" disabled={submitting} onClick={startHostedInstead}>
-                {submitting ? t('agentByo.hosted.starting', { name: t('agentByo.preview.title') }) : t('agentByo.hosted.offerAction')}
-              </button>
-              {error && <p className="v2-byo__error" role="alert">{error}</p>}
-            </section>
-          )}
+
 
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
@@ -1674,6 +1666,15 @@ const V2AgentBYO: React.FC = () => {
               {t('agentByo.actions.installAnother')}
             </button>
           </div>
+          {showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
+            <section role="status" className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
+              <p>{t('agentByo.hosted.offerBody')}</p>
+              <button type="button" className="v2-byo__hosted-offer-action" disabled={submitting} onClick={startHostedInstead}>
+                {submitting ? t('agentByo.hosted.starting', { name: t('agentByo.preview.title') }) : t('agentByo.hosted.offerAction')}
+              </button>
+              {error && <p className="v2-byo__error" role="alert">{error}</p>}
+            </section>
+          )}
         </div>
       )}
       </div>

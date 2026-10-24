@@ -23,7 +23,7 @@ command was copied in telemetry. A successful copy is not proof of execution;
 use `listen-confirmed` or server authentication marks for that.
 
 TASK-482 offers a new hosted agent in the same pod after 30 seconds with an
-issued command and no copy, or desktop (over 760px) exit through the top edge. At 390px only the timer triggers it. The secondary bordered action sits below all command blocks and uses a status announcement. It is shown once per owner/agent/pod panel per browser-tab session; a prior display or copy suppresses it after reload. Only a non-secret seen marker is stored in sessionStorage. Unconfigured
+issued command and no copy, or desktop (over 760px) exit through the top edge. At 390px only the timer triggers it. The secondary bordered action sits after the final action row and uses a status announcement. It is shown once per owner/agent/pod panel per browser-tab session; a prior display or copy suppresses it after reload. Only a non-secret seen marker is stored in sessionStorage. Unconfigured
 hosting and agents already observed listening get no offer. Existing BYO identity
 and credentials are retained. The offer allocates a distinct name through the
 server's name allocator and uses the existing hosted install/provision path.
@@ -31,5 +31,7 @@ Hosting errors preserve the command and expose a retry beside the offer. The all
 
 The placement invariant is checked in real Chromium by
 `e2e/byo-offer-layout.spec.ts`: with all command blocks expanded, each block's
-viewport top must be identical before and after the offer appears. The DOM order
+viewport top must be identical before and after the offer appears. The memory
+textarea, final action row and both action buttons must also stay stationary,
+with those controls fully in the viewport while the timer fires. The DOM order
 is also pinned in the BYO render and v2 layout-invariant Jest tests.
