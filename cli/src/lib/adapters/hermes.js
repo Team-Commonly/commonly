@@ -1,4 +1,4 @@
-/** Hermes 0.22.2 local CLI wrapper. Hermes owns provider I/O; this file only spawns it. */
+/** Hermes 0.22 local CLI wrapper. Hermes owns provider I/O; this file only spawns it. */
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { mkdir } from 'fs/promises';
@@ -9,7 +9,12 @@ import { buildMemoryPreamble } from '../memory-bridge.js';
 import { effectiveSandboxTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
-export const TESTED_HERMES_VERSION = '0.22.2';
+export const SUPPORTED_HERMES_VERSION_RANGE = '>=0.22.2 <0.23.0';
+const supportsHermesVersion = (version) => {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version || '');
+  if (!match) return false;
+  return Number(match[1]) === 0 && Number(match[2]) === 22 && Number(match[3]) >= 2;
+};
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const VERSION_TIMEOUT_MS = 15000;
 const MAX_STDERR_CHARS = 4096;
@@ -24,8 +29,8 @@ const readVersion = (env, spawnSyncImpl = spawnSync) => {
     if (probe.error?.code === 'ENOENT') return null;
     if (probe.error || probe.status !== 0) continue;
     const version = String(probe.stdout || '').match(/Hermes Agent v([^\s]+)/i)?.[1];
-    if (version !== TESTED_HERMES_VERSION) {
-      throw new Error(`Hermes ${version || 'unknown'} is unsupported; this adapter requires ${TESTED_HERMES_VERSION}`);
+    if (!supportsHermesVersion(version)) {
+      throw new Error(`Hermes ${version || 'unknown'} is unsupported; this adapter supports ${SUPPORTED_HERMES_VERSION_RANGE}. Run hermes update to install a supported release`);
     }
     return version;
   }
@@ -170,13 +175,16 @@ export default {
     await mkdir(home, { recursive: true, mode: 0o700 });
     const env = { ...(ctx.env || process.env), HERMES_HOME: home };
     if (!readVersion(env, ctx._spawnSyncImpl)) {
-      throw new Error('Hermes Agent 0.22.2 is not on PATH');
+      throw new Error(`Hermes Agent ${SUPPORTED_HERMES_VERSION_RANGE} is not on PATH; install for your OS: https://hermes-agent.nousresearch.com/docs/getting-started/installation`);
     }
     if (!env.OPENROUTER_API_KEY) {
       throw new Error('Supply the operator OPENROUTER_API_KEY through Secret Manager before running Hermes');
     }
+    const cwd = ctx.cwd || process.cwd();
+    // 0.22.5's gateway rejects --no-restore-cwd; --in pins the workspace on
+    // both fresh and resumed turns and is also supported by 0.22.2.
     const args = ['chat', '--oneshot', '--query-file', '-', '--format', 'stream-json',
-      '--provider', 'openrouter', '--source', 'tool', '--no-restore-cwd'];
+      '--provider', 'openrouter', '--source', 'tool', '--in', cwd];
     if (ctx.environment?.model) args.push('--model', ctx.environment.model);
     if (ctx.sessionId) args.push('--resume', ctx.sessionId);
     const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
@@ -186,7 +194,7 @@ export default {
     const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
       ? Math.min(requestedTimeout, DEFAULT_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
     return runHermes({
-      args, prompt: fullPrompt, cwd: ctx.cwd, env, timeoutMs,
+      args, prompt: fullPrompt, cwd, env, timeoutMs,
       spawnImpl: ctx._spawnImpl,
       credentials: spawnCredentials(ctx, ['OPENROUTER_API_KEY']),
     });
