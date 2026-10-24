@@ -48,11 +48,12 @@ const ownershipInstallations = async (agentName: string, instanceId: string): Pr
 };
 
 /** Explain a genuine second installer to the first installer in Settings. */
+export type RuntimeIdentityBlocker = { podName: string; installerName: string };
 export const describeRuntimeIdentityBlockers = async (
   ownerUserId: unknown,
   agentName: string,
   instanceId: string,
-): Promise<string[]> => {
+): Promise<RuntimeIdentityBlocker[]> => {
   const others = (await ownershipInstallations(agentName, instanceId))
     .filter((installation) => String(installation.installedBy) !== String(ownerUserId));
   if (!others.length) return [];
@@ -60,16 +61,23 @@ export const describeRuntimeIdentityBlockers = async (
   const Pod = require('../models/Pod');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const User = require('../models/User');
-  const [pods, users] = await Promise.all([
-    Pod.find({ _id: { $in: others.map((installation) => installation.podId).filter(Boolean) } }).select('name').lean(),
-    User.find({ _id: { $in: others.map((installation) => installation.installedBy).filter(Boolean) } })
-      .select('username displayName').lean(),
-  ]);
-  const podNames = new Map(pods.map((pod: { _id: unknown; name: string }) => [String(pod._id), pod.name]));
-  const userNames = new Map(users.map((user: { _id: unknown; username: string; displayName?: string }) => [
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const DMService = require('./dmService');
+  const pods = await Pod.find({ _id: { $in: others.map((installation) => installation.podId).filter(Boolean) } });
+  const visiblePods = (await Promise.all(pods.map(async (pod: { _id: unknown; name: string }) => (
+    await DMService.canViewPod(ownerUserId, pod) ? pod : null
+  )))).filter((pod: { _id: unknown; name: string } | null): pod is { _id: unknown; name: string } => pod !== null);
+  const podNames = new Map<string, string>(visiblePods.map((pod) => [String(pod._id), pod.name]));
+  const visibleOthers = others.filter((installation) => podNames.has(String(installation.podId)));
+  const users = await User.find({ _id: { $in: visibleOthers.map((installation) => installation.installedBy).filter(Boolean) } })
+    .select('username displayName').lean();
+  const userNames = new Map<string, string>(users.map((user: { _id: unknown; username: string; displayName?: string }) => [
     String(user._id), user.displayName || user.username,
   ]));
-  return others.map((installation) => `${podNames.get(String(installation.podId)) || 'unknown pod'} (${userNames.get(String(installation.installedBy)) || 'unknown installer'})`);
+  return visibleOthers.map((installation) => ({
+    podName: podNames.get(String(installation.podId))!,
+    installerName: userNames.get(String(installation.installedBy)) || 'unknown installer',
+  }));
 };
 
 /** The negative clause: does an active installation by anyone else exist? */

@@ -104,6 +104,10 @@ const requestPlacement = (machineId) => request(app)
   .post('/api/agent-binding/request')
   .send({ agentName: 'wren-test', instanceId: 'default', machineId });
 
+const movePlacement = (machineId, fromMachineId = 'machine-a') => request(app)
+  .post('/api/agent-binding/move')
+  .send({ agentName: 'wren-test', instanceId: 'default', machineId, fromMachineId });
+
 const requestReconnect = () => request(app)
   .post('/api/agent-binding/reconnect')
   .send({ agentName: 'wren-test', instanceId: 'default' });
@@ -135,6 +139,29 @@ const runtimeAuthProbe = (token) => new Promise((resolve, reject) => {
 });
 
 describe('placement request', () => {
+  it('moves a revoked binding in one update and preserves it if the target is revoked after preflight', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { status: 'revoked', revokedAt: new Date() } });
+    await request(app).get('/api/agent-binding/placement').query({ agentName: 'wren-test' }).expect(200);
+    await AgentCredential.updateOne({ machineId: 'machine-b' }, { $set: { status: 'revoked', revokedAt: new Date() } });
+    const refused = await movePlacement('machine-b').expect(409);
+    expect(refused.body.code).toBe('target_revoked');
+    expect((await User.findById(bot._id)).botMetadata).toMatchObject({ machineId: 'machine-a' });
+    await AgentCredential.updateOne({ machineId: 'machine-b' }, { $set: { status: 'active', revokedAt: null } });
+    await movePlacement('machine-b').expect(200);
+    expect((await User.findById(bot._id)).botMetadata).toMatchObject({ machineId: null, requestedMachineId: 'machine-b' });
+  });
+
+  it('does not offer or select an expired daemon credential', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    await AgentCredential.updateOne({ machineId: 'machine-b' }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+    const placement = await request(app).get('/api/agent-binding/placement').query({ agentName: 'wren-test' }).expect(200);
+    expect(placement.body.activeMachines).not.toContainEqual(expect.objectContaining({ machineId: 'machine-b' }));
+    const refused = await movePlacement('machine-b').expect(409);
+    expect(refused.body.code).toBe('target_revoked');
+    expect((await User.findById(bot._id)).botMetadata.machineId).toBe('machine-a');
+  });
+
   it('lets only the sole installer view a revoked binding and request a live replacement after release', async () => {
     await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
     await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { status: 'revoked', revokedAt: new Date() } });
@@ -189,7 +216,15 @@ describe('placement request', () => {
       version: '1.0.0', status: 'active', installedBy: secondHuman._id });
     const refusal = await placement().expect(403);
     expect(refusal.body.code).toBe('another_installer');
-    expect(refusal.body.message).toContain(`Other human pod (${secondHuman.username})`);
+    expect(refusal.body.message).toContain('another pod');
+    expect(JSON.stringify(refusal.body)).not.toContain('Other human pod');
+    expect(JSON.stringify(refusal.body)).not.toContain(secondHuman.username);
+    expect(refusal.body.blockers).toEqual([]);
+    await Pod.updateOne({ _id: otherPod._id }, { $addToSet: { members: owner._id } });
+    const visibleRefusal = await placement().expect(403);
+    expect(visibleRefusal.body.message).toContain(`Other human pod (${secondHuman.username})`);
+    expect(visibleRefusal.body.blockers).toContainEqual({ podName: 'Other human pod', installerName: secondHuman.username });
+    await movePlacement('machine-b').expect(403);
     await request(app).post('/api/agent-binding/release')
       .send({ agentName: 'wren-test', instanceId: 'default' }).expect(403);
     expect((await User.findById(bot._id)).botMetadata.machineId).toBe('machine-a');

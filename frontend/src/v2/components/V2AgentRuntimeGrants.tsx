@@ -34,6 +34,10 @@ interface Placement {
   activeMachines: Array<{ machineId: string; name: string }>;
 }
 
+interface PlacementFailure {
+  response?: { data?: { code?: string; blockers?: Array<{ podName: string; installerName: string }> } };
+}
+
 interface Props {
   name: string;
   instanceId: string;
@@ -84,6 +88,21 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   const [placementError, setPlacementError] = useState('');
   const [moving, setMoving] = useState(false);
 
+  const placementFailure = (error: unknown, fallback: string): string => {
+    const data = (error as PlacementFailure)?.response?.data;
+    if (data?.code === 'another_installer') {
+      const blockers = (data.blockers || []).map(({ podName, installerName }) => t('agentManage.runtime.blocker', { podName, installerName })).join(', ');
+      return blockers ? t('agentManage.runtime.blockedBy', { blockers }) : t('agentManage.runtime.blockedGeneric');
+    }
+    const key: Record<string, string> = {
+      owner_installation_missing: 'placementOwnerMissing', unknown_installer: 'placementUnknownInstaller',
+      target_revoked: 'targetUnavailable', target_missing: 'targetUnavailable',
+      binding_changed: 'placementChanged', agent_missing: 'placementError',
+      in_process_agent_no_token: 'hostedCannotMove',
+    };
+    return data?.code && key[data.code] ? t(`agentManage.runtime.${key[data.code]}`) : t(fallback);
+  };
+
   const loadPlacement = useCallback(async () => {
     const response = await api.get<Placement>('/api/agent-binding/placement', { params: { agentName: name, instanceId } });
     const next = { ...response, activeMachines: response.activeMachines || [] };
@@ -113,10 +132,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     if (runtime.runtimeType !== 'wrapper') return;
     setPlacement(null);
     setPlacementError('');
-    void loadPlacement().catch((error) => setPlacementError(
-      (error as { response?: { data?: { message?: string } } })?.response?.data?.message
-      || t('agentManage.runtime.placementError'),
-    ));
+    void loadPlacement().catch((error) => setPlacementError(placementFailure(error, 'agentManage.runtime.placementError')));
   }, [runtime.runtimeType, loadPlacement, t]);
   useEffect(() => setModelDraft(runtime.model || ''), [runtime.model]);
   useEffect(() => setEffortDraft(runtime.effort || ''), [runtime.effort]);
@@ -173,9 +189,8 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     setMoving(true);
     setPlacementError('');
     try {
-      // Recheck sole ownership and the chosen target before releasing the old
-      // binding. An agent-created DM is not a competing installer, while a
-      // second human installation must refuse before any state changes.
+      // Recheck sole ownership and the target for immediate feedback. The
+      // server move route checks again and updates the binding in one write.
       const current = await loadPlacement();
       if (current.boundMachineId !== placement.boundMachineId || (current.boundMachineId && !current.boundMachineRevoked)) {
         throw new Error(t('agentManage.runtime.placementChanged'));
@@ -183,15 +198,13 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
       if (!current.activeMachines.some((machine) => machine.machineId === machineChoice)) {
         throw new Error(t('agentManage.runtime.targetUnavailable'));
       }
-      if (current.boundMachineId) {
-        await api.post('/api/agent-binding/release', { agentName: name, instanceId });
-        setPlacement((current) => current && { ...current, boundMachineId: null, boundMachineRevoked: false });
-      }
-      await api.post('/api/agent-binding/request', { agentName: name, instanceId, machineId: machineChoice });
+      await api.post('/api/agent-binding/move', {
+        agentName: name, instanceId, machineId: machineChoice, fromMachineId: current.boundMachineId,
+      });
       await loadPlacement();
     } catch (error) {
-      setPlacementError((error as { response?: { data?: { message?: string } } })?.response?.data?.message
-        || (error instanceof Error && error.message) || t('agentManage.runtime.moveError'));
+      setPlacementError((error instanceof Error && !('response' in error) && error.message)
+        || placementFailure(error, 'agentManage.runtime.moveError'));
       void loadPlacement().catch(() => {});
     } finally {
       setMoving(false);
@@ -226,7 +239,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
                 <button type="button" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
                   {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
                 </button>
-              </> : <p>{t('agentManage.runtime.noActiveMachine')}</p>
+              </> : <p>{t('agentManage.runtime.noActiveMachine')} <code>commonly daemon register</code></p>
             )}
           </div>
         )}
