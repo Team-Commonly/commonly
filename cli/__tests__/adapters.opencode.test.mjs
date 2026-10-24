@@ -442,15 +442,22 @@ describe('opencode external provider config', () => {
       await writeFile(keyFile, 'upstream-secret');
       await chmod(keyFile, 0o600);
       let observed = null;
+      let observedBody = null;
+      const requestBytes = Buffer.from('{ "model": "fake", "messages": [{ "role": "assistant", "thought_signature": "σ雪" }] }');
+      const responseBytes = Buffer.from('{ "ok": true, "thought_signature": "σ雪" }\n');
       const upstream = createServer((req, res) => {
         observed = {
           authorization: req.headers.authorization,
           host: req.headers.host,
           url: req.url,
         };
-        req.resume();
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end('{"ok":true}');
+        const chunks = [];
+        req.on('data', (chunk) => chunks.push(chunk));
+        req.on('end', () => {
+          observedBody = Buffer.concat(chunks);
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(responseBytes);
+        });
       });
       await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
       const upstreamPort = upstream.address().port;
@@ -475,10 +482,11 @@ describe('opencode external provider config', () => {
         const response = await fetch(`${proxy.baseURL}/chat/completions`, {
           method: 'POST',
           headers: { authorization: `Bearer ${proxyToken}`, 'content-type': 'application/json' },
-          body: '{"model":"fake"}',
+          body: requestBytes,
         });
         expect(response.status).toBe(200);
-        expect(await response.text()).toBe('{"ok":true}');
+        expect(observedBody).toEqual(requestBytes);
+        expect(Buffer.from(await response.arrayBuffer())).toEqual(responseBytes);
         expect(observed).toEqual({
           authorization: 'Bearer upstream-secret',
           host: `127.0.0.1:${upstreamPort}`,
@@ -737,11 +745,9 @@ describe('opencode external provider config', () => {
     });
   });
 
-  // TASK-251: Gemini 3 needs its thought signatures back on the next request
-  // and OpenCode's provider drops them, so a Gemini seat goes through the
-  // signing proxy even when private. The test above is the control: any other
-  // private provider still goes direct.
-  test('a private Gemini seat goes through the loopback proxy, never direct', async () => {
+  // OpenCode 1.18.35 and 1.19.0 replay Gemini thought signatures natively.
+  // Private seats can use the same direct provider path as other private seats.
+  test('a private Gemini seat uses its provider directly', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
       const keyFile = join(root, 'secrets', 'gemini-key');
@@ -753,8 +759,8 @@ describe('opencode external provider config', () => {
         onCall: (_cmd, _args, options) => {
           const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
           const { baseURL, apiKey } = config.provider.google.options;
-          expect(baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1beta\/openai$/);
-          expect(apiKey).not.toBe(`{file:${realpathSync(keyFile)}}`);
+          expect(baseURL).toBe('https://generativelanguage.googleapis.com/v1beta/openai');
+          expect(apiKey).toBe(`{file:${realpathSync(keyFile)}}`);
         },
       });
       await opencode.spawn('gemini turn', {
@@ -766,11 +772,42 @@ describe('opencode external provider config', () => {
             id: 'google', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', keyFile,
           },
         },
-        _geminiSignatureDir: join(root, 'signatures'),
         _binaryPath: '/usr/local/bin/opencode',
         _spawnImpl: spawn.impl,
       });
       expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
+  test.each([
+    ['older', { status: 0, stdout: 'OpenCode 1.18.0\n' }, '1.18.0'],
+    ['boundary prerelease', { status: 0, stdout: 'OpenCode 1.18.35-rc.1\n' }, '1.18.35-rc.1'],
+    ['later patch prerelease', { status: 0, stdout: 'OpenCode 1.18.36-rc.1\n' }, '1.18.36-rc.1'],
+    ['later minor prerelease', { status: 0, stdout: 'OpenCode 1.19.0-rc.1\n' }, '1.19.0-rc.1'],
+    ['unknown', { status: 1, stdout: '' }, 'unknown'],
+  ])('a private Gemini seat refuses %s OpenCode before spawning', async (_label, result, version) => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const keyFile = join(root, 'secrets', 'gemini-key');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(join(root, 'secrets'), { recursive: true });
+      await writeFile(keyFile, 'gemini-test-key');
+      await chmod(keyFile, 0o600);
+      spawnSyncMock.mockReturnValue(result);
+      const spawn = makeSpawnImpl();
+      await expect(opencode.spawn('gemini turn', {
+        cwd: workspace,
+        env: { PATH: process.env.PATH },
+        environment: {
+          model: 'gemini-3-flash-preview',
+          provider: {
+            id: 'google', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', keyFile,
+          },
+        },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: spawn.impl,
+      })).rejects.toThrow(`Gemini requires stable OpenCode 1.18.35 or later for native thought-signature replay; installed version is ${version}`);
+      expect(spawn.calls).toHaveLength(0);
     });
   });
 
