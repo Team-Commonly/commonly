@@ -35,6 +35,7 @@ describe('agent send-time freshness', () => {
     const hold = await Freshness.unseenMessages('agent-id', 'pod-id');
     expect(hold.unseenCount).toBe(7);
     expect(hold.messages).toHaveLength(3);
+    expect(hold.message).toContain('There are 7 unseen messages.');
     expect(hold.message).toContain('continueAnyway:true');
     expect(Message.countDocuments).toHaveBeenCalledWith({
       podId: 'pod-id',
@@ -51,6 +52,14 @@ describe('agent send-time freshness', () => {
         ] },
       ],
     });
+  });
+
+  it('uses singular wording for one unseen message', async () => {
+    Message.countDocuments.mockResolvedValue(1);
+    Message.find.mockReturnValue({ sort: () => ({ limit: () => ({ populate: () => ({ lean: async () => [] }) }) }) });
+
+    const hold = await Freshness.unseenMessages('agent-id', 'pod-id');
+    expect(hold.message).toContain('There is 1 unseen message.');
   });
 
   it('lets a quiet pod through and fails closed when the message store fails', async () => {

@@ -125,11 +125,14 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
   }
 
   if (!unseenCount) return null;
+  const countSentence = unseenCount === 1
+    ? 'There is 1 unseen message.'
+    : `There are ${unseenCount} unseen messages.`;
   return {
     code: 'unseen_messages',
     unseenCount,
     messages,
-    message: `There are ${unseenCount} unseen messages. Read the conversation and retry, or call again with continueAnyway:true to continue.`,
+    message: `${countSentence} Read the conversation and retry, or call again with continueAnyway:true to continue.`,
   };
 }
 
