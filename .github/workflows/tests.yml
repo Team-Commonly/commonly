@@ -57,8 +57,9 @@ jobs:
     # Heavy jobs run where the repo variable HEAVY_RUNNER points (D37: Latchkey
     # runners, which don't count against the org's 20-concurrent-job cap).
     # Unset means GitHub-hosted, so rolling back is deleting one variable. The
-    # job names, and so the required check, don't change either way.
-    runs-on: ${{ vars.HEAVY_RUNNER || 'ubuntu-latest' }}
+    # job names, and so the required check, don't change either way. A fork PR
+    # always stays on GitHub: untrusted code doesn't get a third-party runner.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.HEAVY_RUNNER || 'ubuntu-latest' }}
     env:
       JWT_SECRET: test-jwt-secret
       SENDGRID_API_KEY: fake-api-key
@@ -106,8 +107,9 @@ jobs:
     # Heavy jobs run where the repo variable HEAVY_RUNNER points (D37: Latchkey
     # runners, which don't count against the org's 20-concurrent-job cap).
     # Unset means GitHub-hosted, so rolling back is deleting one variable. The
-    # job names, and so the required check, don't change either way.
-    runs-on: ${{ vars.HEAVY_RUNNER || 'ubuntu-latest' }}
+    # job names, and so the required check, don't change either way. A fork PR
+    # always stays on GitHub: untrusted code doesn't get a third-party runner.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.HEAVY_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -203,8 +205,9 @@ jobs:
     # Heavy jobs run where the repo variable HEAVY_RUNNER points (D37: Latchkey
     # runners, which don't count against the org's 20-concurrent-job cap).
     # Unset means GitHub-hosted, so rolling back is deleting one variable. The
-    # job names, and so the required check, don't change either way.
-    runs-on: ${{ vars.HEAVY_RUNNER || 'ubuntu-latest' }}
+    # job names, and so the required check, don't change either way. A fork PR
+    # always stays on GitHub: untrusted code doesn't get a third-party runner.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.HEAVY_RUNNER || 'ubuntu-latest' }}
 
     services:
       mongo:
