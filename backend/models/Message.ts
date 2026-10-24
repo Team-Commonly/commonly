@@ -35,6 +35,8 @@ export interface IMessage extends Document {
   reconcileFailedAt?: Date;
   reconcileError?: string;
   reconcileRetryAt?: Date;
+  /** Written only by the availability path, never inferred for legacy history. */
+  pgFallback?: boolean;
 }
 
 const MessageSchema = new Schema<IMessage>({
@@ -63,7 +65,14 @@ const MessageSchema = new Schema<IMessage>({
   reconcileFailedAt: { type: Date },
   reconcileError: { type: String },
   reconcileRetryAt: { type: Date },
+  pgFallback: { type: Boolean },
 });
+
+// Pending fallback work is small; keep the bounded scan off legacy history.
+MessageSchema.index(
+  { pgFallback: 1, reconcileRetryAt: 1, createdAt: 1, _id: 1 },
+  { partialFilterExpression: { pgFallback: true } },
+);
 
 MessageSchema.pre('save', function rememberWhetherThisIsANewPost(next) {
   (this as any).$locals.wasNewPost = this.isNew;

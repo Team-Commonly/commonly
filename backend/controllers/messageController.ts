@@ -330,6 +330,7 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
         return;
       }
       const mongoMsg = await MongoMessage.create({
+        pgFallback: true,
         podId,
         userId,
         content: messageContent || '',

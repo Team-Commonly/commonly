@@ -1804,6 +1804,7 @@ class AgentMessageService {
 
     if (!message) {
       const mongoMessage = new Message({
+        pgFallback: true,
         content,
         userId: agentUser._id,
         podId,

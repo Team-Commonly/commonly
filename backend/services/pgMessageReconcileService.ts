@@ -169,6 +169,7 @@ export async function reconcileMongoFallbackMessages(
   if (!await ensureLegacyIdIndex()) return result;
 
   const batch = await MongoMessage.find({
+    pgFallback: true,
     reconciledAt: { $exists: false },
     reconcileFailedAt: { $exists: false },
     $or: [{ reconcileRetryAt: { $exists: false } }, { reconcileRetryAt: { $lte: new Date() } }],

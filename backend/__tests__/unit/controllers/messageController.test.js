@@ -397,7 +397,7 @@ describe('messageController', () => {
       await messageController.createMessage(req, res);
 
       expect(MongoMessage.create).toHaveBeenCalledWith({
-        podId: 'p1', userId: 'u1', content: mongoFallbackRow.content, messageType: 'text',
+        pgFallback: true, podId: 'p1', userId: 'u1', content: mongoFallbackRow.content, messageType: 'text',
       });
       expect(res.status).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({

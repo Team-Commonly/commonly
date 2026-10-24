@@ -37,6 +37,7 @@ const connect = () => new Pool({
 });
 
 const insertFallback = (content, extra = {}) => MongoMessage.create({
+  pgFallback: true,
   podId: POD,
   userId: USER,
   content: `${MARKER} ${content}`,
@@ -100,6 +101,17 @@ d('TASK-313 part 2: reconcile Mongo fallback messages into PostgreSQL', () => {
     const after = await MongoMessage.findById(doc._id).lean();
     expect(after.reconciledAt).toBeInstanceOf(Date);
     expect(after.reconciledPgId).toBe(Number(rows[0].id));
+  });
+
+  test('old unmarked history is never imported but an explicitly marked fallback moves', async () => {
+    const old = await insertFallback('old-history', { pgFallback: undefined, createdAt: new Date('2020-01-01') });
+    const fallback = await insertFallback('marked-fallback');
+    expect((await reconcile()).moved).toBe(1);
+    expect(await pgRowsFor(old._id)).toHaveLength(0);
+    expect(await pgRowsFor(fallback._id)).toHaveLength(1);
+    const unchanged = await MongoMessage.findById(old._id).lean();
+    expect(unchanged.reconciledAt).toBeUndefined();
+    expect(unchanged.reconcileFailedAt).toBeUndefined();
   });
 
   test('each message appears once in the Postgres read after a reconcile, and a second pass moves nothing', async () => {
@@ -177,12 +189,12 @@ d('TASK-313 part 2: reconcile Mongo fallback messages into PostgreSQL', () => {
 
   test('more than a full batch of poison rows cannot starve a valid message', async () => {
     const bad = Array.from({ length: 201 }, () => ({
-      podId: new mongoose.Types.ObjectId(POD), userId: new mongoose.Types.ObjectId(USER),
+      pgFallback: true, podId: new mongoose.Types.ObjectId(POD), userId: new mongoose.Types.ObjectId(USER),
       content: `${MARKER} bad\0`, createdAt: new Date(0),
     }));
     await MongoMessage.collection.insertMany([...bad,
-      { content: `${MARKER} missing-pod`, userId: new mongoose.Types.ObjectId(USER), createdAt: new Date(0) },
-      { content: `${MARKER} missing-user`, podId: new mongoose.Types.ObjectId(POD), createdAt: new Date(0) },
+      { pgFallback: true, content: `${MARKER} missing-pod`, userId: new mongoose.Types.ObjectId(USER), createdAt: new Date(0) },
+      { pgFallback: true, content: `${MARKER} missing-user`, podId: new mongoose.Types.ObjectId(POD), createdAt: new Date(0) },
     ]);
     const good = await insertFallback('after-poison');
     expect((await reconcile()).skipped).toBe(200);
@@ -194,7 +206,7 @@ d('TASK-313 part 2: reconcile Mongo fallback messages into PostgreSQL', () => {
 
   test('retry-ready orphan rows do not crowd out unattempted messages', async () => {
     await MongoMessage.collection.insertMany(Array.from({ length: 201 }, () => ({
-      podId: new mongoose.Types.ObjectId(), userId: new mongoose.Types.ObjectId(USER),
+      pgFallback: true, podId: new mongoose.Types.ObjectId(), userId: new mongoose.Types.ObjectId(USER),
       content: `${MARKER} retry-orphan`, createdAt: new Date(0), reconcileRetryAt: new Date(0),
     })));
     const good = await insertFallback('new-after-retries');
