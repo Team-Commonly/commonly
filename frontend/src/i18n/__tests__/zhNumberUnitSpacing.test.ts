@@ -44,6 +44,8 @@ const OPAQUE_PLACEHOLDERS = [
   // common.aboutPage receives a page title, currently Latin, not a count.
   'adapter', 'title',
   'holder',
+  // Runtime ownership names the visible blocking Pods and installers.
+  'blockers',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number
