@@ -38,9 +38,13 @@ async function recordRead(
     .select('readAt readRevision').lean();
   // The first read also needs evidence: a truncated tail cannot acknowledge
   // older history just because no cursor existed yet.
-  if (await hasUnshownMessages(
+  if (await omittedMessages(
     agentUserId, podId, previous || { readAt: new Date(0), readRevision: -1 }, start, observedIds,
   )) return;
+  await advanceCursor(agentUserId, podId, start);
+}
+
+async function advanceCursor(agentUserId: unknown, podId: unknown, start: ReadStart): Promise<void> {
   // A slow earlier read must not roll a newer read's watermark backwards.
   const filter = { _id: cursorId(agentUserId, podId) };
   const maximum = {
@@ -57,25 +61,26 @@ async function recordRead(
   }
 }
 
-async function hasUnshownMessages(
+async function omittedMessages(
   agentUserId: unknown,
   podId: unknown,
   previous: { readAt?: Date; readRevision?: number },
   start: ReadStart,
   observedIds: string[],
-): Promise<boolean> {
+  count = false,
+): Promise<number> {
   const ownId = String(agentUserId);
   if (pool && process.env.PG_HOST) {
     if (start.revision === undefined) throw new Error('PostgreSQL read revision missing');
     const ids = observedIds.filter((id) => /^\d+$/.test(id)).map(Number);
     const result = await pool.query(`
-      SELECT 1 FROM messages m
+      SELECT ${count ? 'COUNT(*)::integer AS skipped_count' : '1'} FROM messages m
       WHERE m.pod_id = $1 AND m.freshness_revision > $2 AND m.freshness_revision <= $3
         AND (m.user_id IS DISTINCT FROM $4 OR m.author_kind = 'kernel')
         AND NOT (m.id = ANY($5::int[]))
-      LIMIT 1
+      ${count ? '' : 'LIMIT 1'}
     `, [String(podId), previous.readRevision ?? -1, start.revision, ownId, ids]);
-    return result.rows.length > 0;
+    return count ? Number(result.rows[0]?.skipped_count || 0) : result.rows.length;
   }
   const observed = observedIds.filter((id) => /^[a-f\d]{24}$/i.test(id));
   const query = {
@@ -93,7 +98,21 @@ async function hasUnshownMessages(
       ] },
     ],
   };
-  return Boolean(await MongoMessage.exists(query));
+  return count ? MongoMessage.countDocuments(query) : Number(Boolean(await MongoMessage.exists(query)));
+}
+
+// Only the explicit catch-up endpoint may acknowledge omitted history. Its
+// snapshot precedes the tail fetch, so later commits remain send-time holds.
+async function recordCatchUp(
+  agentUserId: unknown, podId: unknown, start: ReadStart, observedIds: string[],
+): Promise<{ skippedCount: number }> {
+  const previous = await Cursor.findOne({ _id: cursorId(agentUserId, podId) })
+    .select('readAt readRevision').lean();
+  const skippedCount = await omittedMessages(
+    agentUserId, podId, previous || { readAt: new Date(0), readRevision: -1 }, start, observedIds, true,
+  );
+  await advanceCursor(agentUserId, podId, start);
+  return { skippedCount };
 }
 
 async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hold> {
@@ -167,5 +186,5 @@ async function unseenFromMongo(podId: unknown, ownId: string, after: Date): Prom
   };
 }
 
-module.exports = { readStart, recordRead, unseenMessages };
+module.exports = { readStart, recordRead, recordCatchUp, unseenMessages };
 export {};

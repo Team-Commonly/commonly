@@ -270,6 +270,7 @@ describe('performRun', () => {
     const del = jest.fn(async () => ({ released: true }));
     const get = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       return { events, inboxCount: 7 };
     });
@@ -460,6 +461,7 @@ describe('performRun', () => {
     });
     const get = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       return { events };
     });
@@ -739,6 +741,7 @@ describe('performRun', () => {
     let messagesCall = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) {
         messagesCall += 1;
         return messagesCall === 1
@@ -784,6 +787,7 @@ describe('performRun', () => {
     let messagesCall = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) {
         messagesCall += 1;
         return messagesCall === 1
@@ -824,6 +828,7 @@ describe('performRun', () => {
     let messagesCall = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) {
         messagesCall += 1;
         return messagesCall === 1
@@ -865,6 +870,7 @@ describe('performRun', () => {
     let messagesCall = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) {
         messagesCall += 1;
         return messagesCall === 1
@@ -909,6 +915,7 @@ describe('performRun', () => {
     let messagesCall = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) {
         messagesCall += 1;
         return messagesCall === 1
@@ -1474,6 +1481,7 @@ describe('performRun', () => {
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/events') return { events: [event] };
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       return {};
     });
@@ -1716,6 +1724,7 @@ describe('performRun', () => {
         };
       }
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       return {};
     });
@@ -1761,6 +1770,7 @@ describe('performRun', () => {
         return { events: [makeEvent({ _id: `evt-reset-${poll}` })] };
       }
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       return {};
     });
@@ -1921,6 +1931,72 @@ describe('performRun', () => {
     expect(errors[0].message).toMatch(/Ack failed.*ack transport offline/);
   });
 
+  test.each([false, true])('backlog catch-up reaches the model before one reply and ack (skills: %s)', async (skills) => {
+    const event = makeEvent({ _id: 'backlog-event' });
+    let caughtUp = false;
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events: [event] };
+      if (route.endsWith('/skills')) return { items: skills ? [{ name: 'fixture', content: 'fixture skill instructions' }] : [] };
+      if (route.endsWith('/send-freshness') && !caughtUp) {
+        throw Object.assign(new Error('unread'), { status: 409, body: { code: 'unseen_messages', unseenCount: 14373 } });
+      }
+      return {};
+    });
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/catch-up')) {
+        caughtUp = true;
+        return { catchUp: { skippedCount: 14353 }, messages: [{ content: 'fresh tail from server' }] };
+      }
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async (prompt) => {
+      expect(caughtUp).toBe(true);
+      if (skills) expect(prompt).toContain('fixture skill instructions');
+      expect(prompt).toContain('fresh tail from server');
+      expect(prompt).toContain('Skipped 14353 unread historical messages');
+      return { text: 'reply after catch-up' };
+    });
+    const options = { instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub', setTimeoutImpl: noopTimeout };
+    const first = performRun(options);
+    await drainMicrotasks();
+    first.stop();
+    expect(replyPosts(post)).toHaveLength(1);
+    expect(ackPosts(post)).toHaveLength(1);
+    const second = performRun(options);
+    await drainMicrotasks();
+    second.stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(ackPosts(post)).toHaveLength(2);
+    expect(replyPosts(post)[0][1].continueAnyway).toBeUndefined();
+  });
+
+  test.each([404, 405])('an older backend without catch-up (%s) still reaches generation and ack', async (status) => {
+    const event = makeEvent({ _id: `old-server-${status}` });
+    const get = jest.fn(async (route) => {
+      if (route.endsWith('/events')) return { events: [event] };
+      if (route.endsWith('/send-freshness')) throw Object.assign(new Error('unread'), {
+        status: 409, body: { code: 'unseen_messages', unseenCount: 14373 },
+      });
+      return {};
+    });
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/catch-up')) throw Object.assign(new Error('unsupported'), { status });
+      return {};
+    });
+    createClient.mockReturnValue({ get, post });
+    const spawn = jest.fn(async () => ({ text: 'reply with existing behavior' }));
+    const runner = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn }, agentName: 'my-stub', setTimeoutImpl: noopTimeout });
+    await drainMicrotasks();
+    runner.stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(replyPosts(post)).toHaveLength(1);
+    expect(replyPosts(post)[0][1].continueAnyway).toBeUndefined();
+    expect(ackPosts(post)).toHaveLength(1);
+  });
+
   test('newSessionId from spawn is persisted and reused on the next turn', async () => {
     // Route-aware mock: /events yields a fresh event each call, /memory
     // returns an empty envelope. `mockResolvedValueOnce` chaining broke once
@@ -1929,6 +2005,7 @@ describe('performRun', () => {
     const eventIds = ['turn-1', 'turn-2'];
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       // Self-post detection snapshots pod messages before/after the spawn;
       // answer that route explicitly so it doesn't consume the event queue.
       if (route.endsWith('/messages')) return { messages: [] };
@@ -1980,6 +2057,7 @@ describe('performRun', () => {
     let eventNumber = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [] };
       if (route.endsWith('/context')) return { podId: 'pod-abc', revision: 0, focus: null };
       eventNumber += 1;
@@ -2065,6 +2143,7 @@ describe('performRun', () => {
     const events = [makeEvent({ _id: 'sum-1' })];
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       return { events };
     });
     const mockPost = jest.fn().mockResolvedValue({});
@@ -2105,6 +2184,7 @@ describe('performRun', () => {
     const events = [makeEvent({ _id: 'no-sum' })];
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       return { events };
     });
     const mockPost = jest.fn().mockResolvedValue({});
@@ -2133,6 +2213,7 @@ describe('performRun', () => {
     const events = [makeEvent({ _id: 'sync-fail' })];
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       return { events };
     });
     const mockPost = jest.fn(async (route) => {
@@ -2531,6 +2612,7 @@ describe('performRun — ADR-018 enforcement', () => {
     const del = jest.fn(delImpl);
     const get = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages };
       return { events };
     });
@@ -3322,6 +3404,7 @@ describe('performRun — ADR-018 enforcement', () => {
     });
     const get = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/send-freshness')) return { ok: true };
       if (route.endsWith('/messages')) return { messages: [{ _id: 'msg-1', isBot: false, self: false }] };
       const events = batches[Math.min(batch, batches.length - 1)];
       batch += 1;

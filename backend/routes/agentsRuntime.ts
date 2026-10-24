@@ -1806,6 +1806,41 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
   }
 });
 
+// An explicit history skip, never an implicit side effect of a bounded read.
+router.post('/pods/:podId/catch-up', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  const { podId } = req.params;
+  const installation = resolveInstallationForPod(req.agentInstallations, req.agentInstallation, podId);
+  if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
+    return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+  }
+  if (req.body?.confirmSkipHistory !== true) {
+    return res.status(400).json({ message: 'Catch-up requires confirmSkipHistory:true' });
+  }
+  try {
+    const agentUser = req.agentUser || await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
+      instanceId: installation.instanceId || 'default', displayName: installation.displayName,
+    });
+    const pod = await Pod.findById(podId).select('type members').lean();
+    if (!await DMService.canViewPod(agentUser._id, pod)) {
+      return res.status(403).json({ message: 'Agent cannot view this pod' });
+    }
+    const start = await AgentSendFreshness.readStart(podId);
+    const messages = await AgentMessageService.getRecentMessages(podId, 20, agentUser._id);
+    if (process.env.PG_HOST && (messages as typeof messages & { readSource?: string }).readSource !== 'postgres') {
+      return res.status(503).json({ message: 'PostgreSQL tail unavailable; catch-up was not applied' });
+    }
+    const catchUp = await AgentSendFreshness.recordCatchUp(
+      agentUser._id, podId, start,
+      messages.map((message: Record<string, unknown>) => String(message.id || message._id || '')),
+    );
+    res.set('Cache-Control', 'no-store');
+    return res.json({ messages, catchUp: { ...catchUp, through: start } });
+  } catch (error) {
+    console.error('Error catching up agent pod history:', error);
+    return res.status(503).json({ message: 'Catch-up unavailable; retry before generating a reply' });
+  }
+});
+
 router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
@@ -4149,8 +4184,11 @@ router.get('/pods/:podId/send-freshness', phase4RateLimit, agentRuntimeAuth, asy
     if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
-    if (!req.agentUser?._id) return res.status(401).json({ message: 'Agent identity required' });
-    const hold = await AgentSendFreshness.unseenMessages(req.agentUser._id, podId);
+    const installation = resolveInstallationForPod(req.agentInstallations, req.agentInstallation, podId);
+    const agentUser = req.agentUser || await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
+      instanceId: installation.instanceId || 'default', displayName: installation.displayName,
+    });
+    const hold = await AgentSendFreshness.unseenMessages(agentUser._id, podId);
     return hold ? res.status(409).json(hold) : res.json({ ok: true });
   } catch (error: any) {
     console.error('Agent freshness check error:', error);
