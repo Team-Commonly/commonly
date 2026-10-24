@@ -96,6 +96,35 @@ describe('legacy ambient digest bridge', () => {
     push.mockRestore();
   });
 
+  test('a full wake page reserves one slot for unread digest from the same pod', async () => {
+    const firstWake = await seedEvent();
+    const secondWake = await seedEvent();
+    const digest = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest',
+      payload: { messageId: '42', threadRootId: 21, content: 'private ambient body' },
+    });
+
+    const page = await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 2,
+    });
+    expect(page.inboxCount).toBe(3);
+    expect(page.events.map((event) => String(event._id)))
+      .toEqual([String(firstWake._id), String(digest._id)]);
+    expect((await AgentEvent.findById(secondWake._id).lean()).status).toBe('pending');
+    expect((await AgentEvent.findById(digest._id).lean()).status).toBe('delivered');
+  });
+
+  test('a full wake page keeps every wake when there is no digest', async () => {
+    const firstWake = await seedEvent();
+    const secondWake = await seedEvent();
+    const page = await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 2,
+    });
+    expect(page.events.map((event) => String(event._id)))
+      .toEqual([String(firstWake._id), String(secondWake._id)]);
+  });
+
   test('a poll after pod access is removed cannot drain a queued wake or digest', async () => {
     const digest = await AgentEvent.create({
       agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,

@@ -29,13 +29,26 @@ export const terminalDeliveryAckError = (ackErr, eventId, runner = 'poller') => 
 };
 
 const digestFrame = (events) => {
-  const lines = events.slice(-8).map((event) => {
-    const who = String(event.payload?.username || 'member').replace(/\s+/g, ' ').slice(0, 40);
-    const body = String(event.payload?.content || '').replace(/\s+/g, ' ').slice(0, 160);
-    const id = event.payload?.messageId;
-    return `- ${who}${id ? ` (message ${id})` : ''}: ${body}`;
-  });
-  return `[Since you last looked: ${events.length} ambient updates; context only, no reply needed.]\n${lines.join('\n')}`;
+  const counts = new Map();
+  const seen = new Set();
+  for (const event of events) {
+    const payload = event.payload || {};
+    const sourceId = payload.messageId != null ? `message:${payload.messageId}`
+      : (typeof payload.taskId === 'string'
+        ? `task:${payload.taskId}:${String(payload.taskKind || '')}:${String(payload.content || '')}` : null);
+    if (sourceId && seen.has(sourceId)) continue;
+    if (sourceId) seen.add(sourceId);
+    const thread = payload.threadRootId;
+    const task = payload.taskId;
+    const label = Number.isInteger(thread) && thread > 0 ? `thread ${thread}`
+      : (typeof task === 'string' && /^TASK-\d+$/.test(task) ? task : 'pod conversation');
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  const lines = [...counts].slice(0, 8).map(([label, count]) => `- ${label}: ${count} unread`);
+  if (counts.size > 8) lines.push(`- ${counts.size - 8} more conversations omitted`);
+  const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+  return `[Since you last looked: ${total} ambient update${total === 1 ? '' : 's'} in ${counts.size} conversation${counts.size === 1 ? '' : 's'}; context only, no reply needed.]\n`
+    + `${lines.join('\n')}\nPull relevant messages with commonly_get_messages. On resume, read oldest unread first; at most 8 conversations, 5 messages each, 20 messages total.`;
 };
 
 export const startPoller = ({

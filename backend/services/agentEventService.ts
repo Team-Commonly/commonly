@@ -1846,15 +1846,19 @@ class AgentEventService {
       .limit(limit)
       .select({ _id: 1 })
       .lean() as Array<{ _id: unknown }>;
-    // Digest rows are only claimed alongside a wake in the same pod. Reserve
-    // a slot for wake work so a long digest backlog cannot starve the turn.
-    const digestCandidates = onePod && wakeCandidates.length > 0 && wakeCandidates.length < limit
+    // Digest rows are only claimed alongside a wake in the same pod.
+    // A full wake page still needs to tell the driver about unread ambient
+    // context. Probe one digest on full pages and reserve its slot only when
+    // one exists; otherwise keep the entire wake page.
+    const digestSlots = limit - wakeCandidates.length || (limit > 1 ? 1 : 0);
+    const digestCandidates = onePod && wakeCandidates.length > 0 && digestSlots > 0
       ? await AgentEvent.find({ ...batchQuery, deliveryMode: 'digest' })
         .sort({ createdAt: 1 })
-        .limit(limit - wakeCandidates.length)
+        .limit(digestSlots)
         .select({ _id: 1 })
         .lean() as Array<{ _id: unknown }>
       : [];
+    if (wakeCandidates.length === limit && digestCandidates.length > 0) wakeCandidates.pop();
     const candidates = [...wakeCandidates, ...digestCandidates];
 
     // A sibling poller can claim every candidate after our pre-claim count.

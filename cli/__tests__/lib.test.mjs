@@ -541,7 +541,10 @@ describe('poller.js', () => {
   test('keeps a digest-only page quiet and attaches its frame to the next wake', async () => {
     const digest = {
       ...makeEvent('digest-1'), deliveryMode: 'digest',
-      type: 'message.posted', payload: { content: 'ambient update', username: 'Ava', deliveryId: 'digest-nonce' },
+      type: 'message.posted', payload: {
+        content: 'private ambient body', username: 'Ava', messageId: '42', threadRootId: 21,
+        deliveryId: 'digest-nonce',
+      },
     };
     const wake = {
       ...makeEvent('wake-1'), deliveryMode: 'wake',
@@ -566,10 +569,12 @@ describe('poller.js', () => {
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
       _id: 'wake-1',
       payload: expect.objectContaining({
-        content: expect.stringContaining('ambient update'),
-        digestSummary: expect.stringContaining('ambient update'),
+        content: expect.stringContaining('thread 21: 1 unread'),
+        digestSummary: expect.stringContaining('thread 21: 1 unread'),
       }),
     }));
+    expect(JSON.stringify(onEvent.mock.calls)).not.toContain('private ambient body');
+    expect(JSON.stringify(onEvent.mock.calls)).not.toContain('Ava');
     expect(mockPost.mock.calls.map(([url]) => url)).toEqual([
       '/api/agents/runtime/events/wake-1/ack',
       '/api/agents/runtime/events/digest-1/ack',
