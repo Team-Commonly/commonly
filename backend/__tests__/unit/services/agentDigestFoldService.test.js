@@ -19,9 +19,10 @@ describe('expired digest fold', () => {
     await clearMongoDb();
   });
 
-  const seed = async (createdAt, podId) => AgentEvent.collection.insertOne({
+  const seed = async (createdAt, podId, payload = {}) => AgentEvent.collection.insertOne({
     agentName: 'flint', instanceId: 'default', podId,
     type: 'message.posted', deliveryMode: 'digest', status: 'pending',
+    payload,
     attempts: 0, createdAt, updatedAt: createdAt,
   });
 
@@ -36,8 +37,27 @@ describe('expired digest fold', () => {
     expect(state.unreadCount).toBe(2);
     expect(state.unreadSince).toEqual(new Date(NOW.getTime() - 2 * 60 * 60 * 1000));
     expect(state.lastEventIds).toEqual([String(first.insertedId), String(second.insertedId)]);
+    expect(state.conversations).toEqual([{ label: 'pod conversation', count: 2 }]);
     expect(await AgentEvent.exists({ _id: recent.insertedId })).toBeTruthy();
     expect(await AgentEvent.countDocuments({ podId })).toBe(1);
+  });
+
+  it('retains conversation counts and order after full event bodies expire', async () => {
+    const podId = new mongoose.Types.ObjectId();
+    const old = new Date(NOW.getTime() - 2 * 60 * 60 * 1000);
+    await seed(old, podId, { threadRootId: 40, content: 'first body' });
+    await seed(old, podId, { threadRootId: 40, content: 'second body' });
+    await seed(old, podId, { taskId: 'TASK-7', content: 'board text' });
+
+    expect(await foldExpiredDigests(THRESHOLD)).toBe(3);
+    const state = await readFoldedDigest({ agentName: 'flint', instanceId: 'default', podId });
+    expect(state.conversations).toEqual([
+      { label: 'thread 40', count: 2 },
+      { label: 'TASK-7', count: 1 },
+    ]);
+    expect(state.otherCount).toBe(0);
+    expect(JSON.stringify(state)).not.toContain('body');
+    expect(JSON.stringify(state)).not.toContain('board text');
   });
 
   it('folds old unacked deliveries and failures before ordinary GC can delete them', async () => {
@@ -138,7 +158,9 @@ describe('expired digest fold', () => {
     const wake = await AgentEvent.create({ ...scope, type: 'heartbeat',
       status: 'delivered', deliveryMode: 'wake', attempts: 1, deliveryNonce: 'nonce-1' });
 
-    expect(await AgentEventService.attachFoldedDigest(wake)).toMatchObject({ unreadCount: 1 });
+    expect(await AgentEventService.attachFoldedDigest(wake)).toMatchObject({
+      unreadCount: 1, conversations: [{ label: 'pod conversation', count: 1 }],
+    });
     expect((await AgentEvent.findById(wake._id).lean()).digestRollupRevision).toBe(1);
     await AgentEventService.acknowledge(wake._id, 'flint', 'default', { outcome: 'no_action' }, 'nonce-1', 'cli');
     expect(await readFoldedDigest(scope)).toBeNull();

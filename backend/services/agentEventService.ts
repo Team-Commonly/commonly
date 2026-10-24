@@ -57,9 +57,16 @@ const OBJECT_ID_HEX = /^[a-f\d]{24}$/i;
 const digestConversationFrame = (
   rows: Array<{ payload?: Record<string, unknown> }>,
   olderCount = 0,
+  olderConversations: Array<{ label: string; count: number }> = [],
 ): string => {
   const counts = new Map<string, number>();
-  if (olderCount > 0) counts.set('older pod activity', olderCount);
+  let knownOlder = 0;
+  for (const conversation of olderConversations) {
+    if (!conversation.label || !Number.isInteger(conversation.count) || conversation.count < 1) continue;
+    counts.set(conversation.label, (counts.get(conversation.label) || 0) + conversation.count);
+    knownOlder += conversation.count;
+  }
+  if (olderCount > knownOlder) counts.set('older pod activity', olderCount - knownOlder);
   const seen = new Set<string>();
   for (const row of rows) {
     const payload = row.payload || {};
@@ -1401,6 +1408,7 @@ class AgentEventService {
   /** Persist the folded digest snapshot carried by this waking delivery. */
   static async attachFoldedDigest(event: EventDoc): Promise<{
     unreadCount: number; lastEventIds: string[];
+    conversations: Array<{ label: string; count: number }>;
   } | null> {
     const scope = {
       agentName: String(event.agentName || '').toLowerCase(),
@@ -1418,7 +1426,8 @@ class AgentEventService {
       { $set: { digestRollupRevision: state.revision } },
     );
     if (!updated.modifiedCount) return null;
-    return { unreadCount: state.unreadCount, lastEventIds: state.lastEventIds };
+    return { unreadCount: state.unreadCount, lastEventIds: state.lastEventIds,
+      conversations: state.conversations };
   }
 
   /** Add one bounded ambient frame to a wake consumed by an older poller or webhook. */
@@ -1451,7 +1460,7 @@ class AgentEventService {
     if (!saved.matchedCount) return;
     event.digestEventIds = ids;
     event.digestRollupRevision = rollup?.revision ?? null;
-    const summary = digestConversationFrame(raw, rollup?.unreadCount || 0);
+    const summary = digestConversationFrame(raw, rollup?.unreadCount || 0, rollup?.conversations);
     const baseContent = typeof event.payload?.content === 'string' ? event.payload.content : '';
     event.payload = {
       ...(event.payload || {}),
@@ -1522,7 +1531,7 @@ class AgentEventService {
         }
         const baseContent = String(event.payload?.content || event.payload?.prompt || event.payload?.text || '');
         const summary = digest.length || folded?.unreadCount
-          ? digestConversationFrame(digest, folded?.unreadCount || 0) : null;
+          ? digestConversationFrame(digest, folded?.unreadCount || 0, folded?.conversations) : null;
         const payload = summary ? {
           ...event.payload,
           content: `${baseContent}\n\n${summary}`,

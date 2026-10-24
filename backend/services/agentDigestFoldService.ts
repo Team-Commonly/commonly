@@ -3,6 +3,14 @@ import AgentDigestState from '../models/AgentDigestState';
 
 const FOLD_BATCH_SIZE = 100;
 const LAST_IDS_LIMIT = 8;
+const CONVERSATION_LIMIT = 8;
+
+const conversationLabel = (payload?: Record<string, unknown>): string => {
+  const thread = Number(payload?.threadRootId);
+  if (Number.isInteger(thread) && thread > 0) return `thread ${thread}`;
+  const task = payload?.taskId;
+  return typeof task === 'string' && /^TASK-\d+$/.test(task) ? task : 'pod conversation';
+};
 
 type FoldCandidate = {
   _id: unknown;
@@ -11,6 +19,7 @@ type FoldCandidate = {
   podId: unknown;
   status: string;
   createdAt?: Date;
+  payload?: Record<string, unknown>;
 };
 
 /**
@@ -63,10 +72,12 @@ export async function foldExpiredDigests(threshold: Date): Promise<number> {
       }
     }
     const idString = String(id);
+    const label = conversationLabel(candidate.payload);
     let recorded = false;
     for (let attempt = 0; attempt < 5 && !recorded; attempt += 1) {
       // eslint-disable-next-line no-await-in-loop
-      const state = await AgentDigestState.findOne(scope).select('foldedThroughId unreadCount').lean();
+      const state = await AgentDigestState.findOne(scope)
+        .select('foldedThroughId unreadCount conversations otherCount').lean();
       const cursor = state?.foldedThroughId;
       if (cursor && String(cursor) >= idString) {
         recorded = true;
@@ -77,6 +88,7 @@ export async function foldExpiredDigests(threshold: Date): Promise<number> {
           // eslint-disable-next-line no-await-in-loop
           await AgentDigestState.create({
             ...scope, unreadCount: 1, revision: 1, lastEventIds: [idString],
+            conversations: [{ label, count: 1 }], otherCount: 0,
             unreadSince: candidate.createdAt || new Date(), foldedThroughId: id,
           });
           recorded = true;
@@ -84,6 +96,15 @@ export async function foldExpiredDigests(threshold: Date): Promise<number> {
           if ((err as { code?: number }).code !== 11000) throw err;
         }
       } else {
+        const conversations = [...(state.conversations || [])].map((item) => ({
+          label: item.label, count: item.count,
+        }));
+        let otherCount = Math.max(state.otherCount || 0,
+          state.unreadCount - conversations.reduce((sum, item) => sum + item.count, 0));
+        const existing = conversations.find((item) => item.label === label);
+        if (existing) existing.count += 1;
+        else if (conversations.length < CONVERSATION_LIMIT) conversations.push({ label, count: 1 });
+        else otherCount += 1;
         // eslint-disable-next-line no-await-in-loop
         const result = await AgentDigestState.updateOne(
           { ...scope, foldedThroughId: cursor ?? null, unreadCount: state.unreadCount },
@@ -91,6 +112,8 @@ export async function foldExpiredDigests(threshold: Date): Promise<number> {
             $inc: { unreadCount: 1, revision: 1 },
             $set: {
               foldedThroughId: id,
+              conversations,
+              otherCount,
               ...(state.unreadCount === 0 ? { unreadSince: candidate.createdAt || new Date() } : {}),
             },
             $push: { lastEventIds: { $each: [idString], $slice: -LAST_IDS_LIMIT } },
@@ -111,14 +134,18 @@ export async function foldExpiredDigests(threshold: Date): Promise<number> {
 
 export async function readFoldedDigest(scope: {
   agentName: string; instanceId: string; podId: unknown;
-}): Promise<{ unreadCount: number; lastEventIds: string[]; revision: number } | null> {
+}): Promise<{ unreadCount: number; lastEventIds: string[]; revision: number;
+  conversations: Array<{ label: string; count: number }>; otherCount: number } | null> {
   const state = await AgentDigestState.findOne({ ...scope, unreadCount: { $gt: 0 } })
-    .select('unreadCount lastEventIds revision').lean();
+    .select('unreadCount lastEventIds revision conversations otherCount').lean();
   if (!state) return null;
   return {
     unreadCount: state.unreadCount,
     lastEventIds: state.lastEventIds,
     revision: state.revision,
+    conversations: state.conversations || [],
+    otherCount: Math.max(state.otherCount || 0,
+      state.unreadCount - (state.conversations || []).reduce((sum, item) => sum + item.count, 0)),
   };
 }
 
@@ -130,7 +157,8 @@ export async function settleFoldedDigest(
   // the next turn may see some IDs twice, but never loses an unseen event.
   await AgentDigestState.updateOne(
     { ...scope, revision },
-    { $set: { unreadCount: 0, lastEventIds: [], unreadSince: null }, $inc: { revision: 1 } },
+    { $set: { unreadCount: 0, lastEventIds: [], conversations: [], otherCount: 0, unreadSince: null },
+      $inc: { revision: 1 } },
   );
 }
 

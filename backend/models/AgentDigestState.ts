@@ -8,6 +8,8 @@ export interface IAgentDigestState extends Document {
   unreadCount: number;
   revision: number;
   lastEventIds: string[];
+  conversations: Array<{ label: string; count: number }>;
+  otherCount: number;
   unreadSince?: Date | null;
   foldedThroughId?: Types.ObjectId | null;
   updatedAt: Date;
@@ -20,6 +22,8 @@ const schema = new Schema<IAgentDigestState>({
   unreadCount: { type: Number, required: true, default: 0 },
   revision: { type: Number, required: true, default: 0 },
   lastEventIds: { type: [String], default: [] },
+  conversations: { type: [{ label: String, count: Number, _id: false }], default: [] },
+  otherCount: { type: Number, default: 0 },
   unreadSince: { type: Date, default: null },
   foldedThroughId: { type: Schema.Types.ObjectId, default: null },
 }, { timestamps: true });

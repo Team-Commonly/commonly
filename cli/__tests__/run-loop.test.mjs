@@ -305,10 +305,11 @@ describe('performRun', () => {
   test('a wake carries compact digest context without claiming ambient messages', async () => {
     const events = [
       makeEvent({ _id: 'evt-wake', type: 'chat.mention', payload: {
-        content: 'please review', digestRollup: { unreadCount: 3, lastEventIds: ['old-1', 'old-2'] },
+        content: 'please review', digestRollup: { unreadCount: 3, lastEventIds: ['old-1', 'old-2'],
+          conversations: [{ label: 'thread 40', count: 3 }] },
       } }),
       makeEvent({ _id: 'evt-digest', type: 'message.posted', deliveryMode: 'digest',
-        payload: { content: 'daily update', username: 'alice', messageId: '42' } }),
+        payload: { content: 'daily update', username: 'alice', messageId: '42', threadRootId: 40 } }),
     ];
     const get = jest.fn(async (route) => {
       if (route.endsWith('/messages')) return { messages: [] };
@@ -327,8 +328,8 @@ describe('performRun', () => {
     stop();
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(spawn.mock.calls[0][0]).toContain('[Since you last looked: 4 ambient updates');
-    expect(spawn.mock.calls[0][0]).toContain('older pod activity: 3 unread');
-    expect(spawn.mock.calls[0][0]).toContain('pod conversation: 1 unread');
+    expect(spawn.mock.calls[0][0]).toContain('4 ambient updates in 1 conversation');
+    expect(spawn.mock.calls[0][0]).toContain('thread 40: 4 unread');
     expect(spawn.mock.calls[0][0]).toContain('8 conversations, 5 messages each, 20 messages total');
     expect(spawn.mock.calls[0][0]).not.toContain('daily update');
     expect(spawn.mock.calls[0][0]).not.toContain('Event 2/2: message.posted');

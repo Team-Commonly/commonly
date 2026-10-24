@@ -2028,7 +2028,17 @@ export const performRun = ({
     });
     const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
     const conversationCounts = new Map();
-    if (rollup?.unreadCount > 0) conversationCounts.set('older pod activity', rollup.unreadCount);
+    let knownOlder = 0;
+    for (const conversation of Array.isArray(rollup?.conversations) ? rollup.conversations : []) {
+      if (typeof conversation.label !== 'string' || !Number.isInteger(conversation.count)
+        || conversation.count < 1) continue;
+      conversationCounts.set(conversation.label,
+        (conversationCounts.get(conversation.label) || 0) + conversation.count);
+      knownOlder += conversation.count;
+    }
+    if (rollup?.unreadCount > knownOlder) {
+      conversationCounts.set('older pod activity', rollup.unreadCount - knownOlder);
+    }
     const seenDigestSources = new Set();
     for (const entry of digestEntries) {
       const { threadRootId, taskId, taskKind, messageId, content } = entry.event.payload || {};
