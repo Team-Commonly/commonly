@@ -2438,6 +2438,7 @@
     "turnsPerDay": "托管运行次数／天",
     "userRunCeiling": "运行次数／天",
     "contextInvalid": "请检查上下文限制。",
+    "profileUnavailable": "此安装的策略不可用。更改未保存。",
     "loadError": "无法加载策略数据。",
     "saveError": "无法保存更改。",
     "saved": "已保存"

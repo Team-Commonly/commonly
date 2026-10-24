@@ -93,6 +93,9 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
   }, [agentName, instanceId, memoryUrl, t]);
 
   const savePolicy = async () => {
+    if (!installation?.profile) {
+      setFeedback({ group: 'policy', kind: 'error', text: t('agentPolicy.profileUnavailable') }); return;
+    }
     if (!Number.isInteger(maxTokens) || maxTokens < 1 || !Number.isInteger(compactionThreshold)
       || compactionThreshold < 1 || compactionThreshold > maxTokens
       || !Number.isInteger(summaryHours) || summaryHours < 1) {
@@ -168,7 +171,7 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
         <label><input type="checkbox" checked={includeSkills} onChange={(event) => setIncludeSkills(event.target.checked)} />{t('agentPolicy.includeSkills')}</label>
         <label><input type="checkbox" checked={includeSummaries} onChange={(event) => setIncludeSummaries(event.target.checked)} />{t('agentPolicy.includeSummaries')}</label>
       </div>
-      <button type="button" disabled={busy || !installation?.profile} onClick={savePolicy}>{t('agentPolicy.savePolicy')}</button>
+      <button type="button" disabled={busy} onClick={savePolicy}>{t('agentPolicy.savePolicy')}</button>
       {groupFeedback('policy')}
     </div>
     {canSetTrust && <div className="v2-agent-policy__group">

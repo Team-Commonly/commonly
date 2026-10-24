@@ -2447,6 +2447,7 @@
     "turnsPerDay": "Hosted turns per day",
     "userRunCeiling": "Runs per day",
     "contextInvalid": "Check the context limits.",
+    "profileUnavailable": "Policy is unavailable for this installation. No changes were saved.",
     "loadError": "Could not load policy data.",
     "saveError": "Could not save changes.",
     "saved": "Saved"
