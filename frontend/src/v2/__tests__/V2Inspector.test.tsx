@@ -155,6 +155,29 @@ describe('V2Inspector', () => {
     expect(screen.queryByText('u1a9e5ecede')).not.toBeInTheDocument();
   });
 
+  test('does not assign anonymous attention to an agent without a profile name', () => {
+    renderInspector({ detail: { ...detail, agents: [{
+      agentName: 'scout', instanceId: 'default', displayName: 'Scout',
+    }] } as any, attentionItems: [{
+      id: 'human-question', kind: 'decision', title: 'Human question', podId: 'pod-1',
+    }] });
+
+    expect(screen.getByText('Human question')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Scout idle/ })).toBeInTheDocument();
+  });
+
+  test('does not assign an unowned active task to an agent without a profile name', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve(url === '/api/v1/tasks/pod-1'
+      ? { tasks: [{ taskId: 'TASK-1', title: 'Unowned work', status: 'claimed' }] }
+      : { items: [], total: 0 }));
+    renderInspector({ detail: { ...detail, agents: [{
+      agentName: 'scout', instanceId: 'default', displayName: 'Scout',
+    }] } as any, attentionCount: 0, attentionItems: [] });
+
+    await screen.findByText('no files yet');
+    expect(screen.getByRole('button', { name: /Scout idle/ })).toBeInTheDocument();
+  });
+
   test('uses the short lowercase room name in the single-line agents label', () => {
     renderInspector({ detail: { ...detail, pod: { ...detail.pod, name: 'Sharpen · decision loop' } } as any });
 

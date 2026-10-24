@@ -60,7 +60,8 @@ const shortRoomName = (name: string): string => (
 );
 
 const matchesAgent = (agent: V2Agent, value?: string): boolean => {
-  const candidate = (value || '').toLowerCase();
+  const candidate = (value || '').trim().toLowerCase();
+  if (!candidate) return false;
   return candidate === (agent.agentName || '').toLowerCase()
     || candidate === labelForAgent(agent).toLowerCase()
     || candidate === (agent.profile?.displayName || '').toLowerCase()
