@@ -1,0 +1,74 @@
+# CodeRabbit threads: every review thread CodeRabbit opens gets an answer
+# before a gate ask (Sam, 2026-10-24, #2605). An answer is a reply inside the
+# thread, or a PR comment that quotes the thread's `discussion_r<id>` link
+# (seats reply that way when they cannot reply in-thread). Resolved and
+# outdated threads don't count.
+#
+# Reported as the commit status `coderabbit-threads` on the PR head, not as
+# this workflow's own check: a run started by a comment attaches to the
+# default branch and would never show on the PR. NOT a required check. It
+# never checks out PR code, so the write token on comment events only reaches
+# the statuses API.
+name: CodeRabbit threads
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+  pull_request_review_comment:
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: coderabbit-threads-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  count:
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Count unanswered CodeRabbit threads
+        run: |
+          set -euo pipefail
+          owner="${REPO%/*}"; name="${REPO#*/}"
+          head=$(gh api "repos/$REPO/pulls/$PR" -q .head.sha)
+          # 100 threads x 50 comments covers every PR on this repo so far; a
+          # page beyond that is reported, not silently dropped.
+          gh api graphql -F owner="$owner" -F name="$name" -F pr="$PR" -f query='
+            query($owner:String!,$name:String!,$pr:Int!){repository(owner:$owner,name:$name){pullRequest(number:$pr){
+              reviewThreads(first:100){pageInfo{hasNextPage} nodes{isResolved isOutdated
+                comments(first:50){nodes{author{login} databaseId url}}}}}}}' > threads.json
+          # Quotes count from PR comments and review bodies, by anyone.
+          { gh api --paginate "repos/$REPO/issues/$PR/comments" -q '.[].body'
+            gh api --paginate "repos/$REPO/pulls/$PR/reviews" -q '.[].body'; } > said.txt || true
+          jq -r '.data.repository.pullRequest.reviewThreads.nodes[]
+            | select(.isResolved|not) | select(.isOutdated|not)
+            | select(.comments.nodes[0].author.login | test("^coderabbitai"))
+            | select([.comments.nodes[1:][] | select(.author.login | test("^coderabbitai")|not)] | length == 0)
+            | "\(.comments.nodes[0].databaseId) \(.comments.nodes[0].url)"' threads.json > open.txt
+          : > unanswered.txt
+          while read -r id url; do
+            grep -q "discussion_r$id" said.txt || echo "$url" >> unanswered.txt
+          done < open.txt
+          n=$(wc -l < unanswered.txt | tr -d ' ')
+          more=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' threads.json)
+          if [ "$n" = 0 ]; then state=success; desc="All CodeRabbit threads answered"
+          else state=failure; desc="$n unanswered CodeRabbit thread(s): reply in-thread or quote the link"; fi
+          [ "$more" = true ] && desc="$desc (over 100 threads: first page only)"
+          echo "### $desc" >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^/- /' unanswered.txt >> "$GITHUB_STEP_SUMMARY"
+          cat unanswered.txt
+          gh api -X POST "repos/$REPO/statuses/$head" -f state="$state" -f context=coderabbit-threads \
+            -f description="${desc:0:140}" -f target_url="$GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID" > /dev/null \
+            || echo "::warning::could not post the status (a fork PR's token is read-only); the count is above"
