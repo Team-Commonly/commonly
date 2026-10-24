@@ -491,7 +491,9 @@ export const credentialFor = async (
   // that, a superseded refresh could still write its own refresh token after this
   // one committed, the access secret and the refresh secret left at different
   // authorities (TASK-405, sable's non-rotating interleaving).
-  const refreshMaterial = refreshed.refreshToken ?? await deps.secrets.get(refreshTokenRef);
+  // The token the vendor call was made with, read before the call. A reread here
+  // would seal whatever a superseded refresh wrote in the meantime (sable, #2534).
+  const refreshMaterial = refreshed.refreshToken ?? refreshToken;
   const nextRefreshRef = await deps.secrets.put(
     String(id), HOSTED_MCP_REFRESH_TOKEN, refreshMaterial, writeGeneration,
   );

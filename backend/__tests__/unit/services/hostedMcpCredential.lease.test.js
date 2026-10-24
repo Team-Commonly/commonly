@@ -565,3 +565,97 @@ test('a superseded refresh cannot write its refresh token after a non-rotating n
   }
 });
 
+// TASK-405 (sable, #2534 28c6a7c1): the non-rotating B must write back the token
+// it refreshed WITH, read before its vendor call. A superseded A whose refresh
+// write lands while B's vendor call is in flight must not be sealed into B's pair.
+test('a non-rotating refresh seals the token it refreshed with, not one a superseded refresh wrote mid-flight', async () => {
+  const savedKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const savedActive = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+  process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 1).toString('base64')}`;
+  process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
+  await ConnectorSecret.init();
+  try {
+    const row = await Integration.create({
+      type: 'hosted-mcp',
+      podId: new mongoose.Types.ObjectId(),
+      createdBy: new mongoose.Types.ObjectId(),
+      status: 'connected',
+      config: {
+        entryId: 'linear',
+        authGeneration: 1,
+        refreshGeneration: 3,
+        expiresAt: new Date(T0 - 3600 * 1000),
+      },
+    });
+    const id = String(row._id);
+    const access0 = await connectorSecrets.put(id, HOSTED_MCP_ACCESS_TOKEN, 'access-0', secretWriteGeneration(1, 0));
+    const refresh0 = await connectorSecrets.put(id, HOSTED_MCP_REFRESH_TOKEN, 'refresh-0', secretWriteGeneration(1, 0));
+    await Integration.updateOne(
+      { _id: row._id },
+      { $set: { 'config.credentialRef': access0, 'config.refreshTokenRef': refresh0 } },
+    );
+
+    const atPause = gate();
+    const releaseA = gate();
+    const realSecrets = { get: connectorSecrets.get, put: connectorSecrets.put, revoke: connectorSecrets.revoke };
+    const pausedA = {
+      ...realSecrets,
+      put: async (integrationId, spec, material, writeGeneration) => {
+        if (spec.kind === HOSTED_MCP_REFRESH_TOKEN.kind) {
+          atPause.open();
+          await releaseA.promise;
+        }
+        return connectorSecrets.put(integrationId, spec, material, writeGeneration);
+      },
+    };
+    const store = {
+      deps: {
+        now: () => new Date(clock),
+        sleep: async (ms) => { clock += ms; },
+        entryFor: () => ENTRY,
+        clientIdFor: () => 'client-id',
+        secrets: realSecrets,
+      },
+    };
+
+    const { deps: depsA, bumped } = fenceSignal(store, {
+      secrets: pausedA,
+      refreshAtVendor: async () => ({ accessToken: 'access-A', refreshToken: 'refresh-A', expiresIn: 3600 }),
+    });
+    const callA = credentialFor(await preImage(id), depsA);
+    callA.catch(() => {});
+    await bumped.promise;
+    await atPause.promise;
+
+    // B wins past A's lease and holds its vendor call open, non-rotating.
+    clock = T0 + 31 * 1000;
+    const vendorB = gate();
+    const vendorBStarted = gate();
+    const callB = credentialFor(await preImage(id), depsWith(store, {
+      refreshAtVendor: async () => {
+        vendorBStarted.open();
+        await vendorB.promise;
+        return { accessToken: 'access-B', expiresIn: 7200 };
+      },
+    }));
+    // A's refresh write lands INSIDE B's vendor window: B has read its token by
+    // the time it reaches the vendor, and A writes before B writes its own pair.
+    await vendorBStarted.promise;
+    releaseA.open();
+    await callA.catch(() => {});
+    vendorB.open();
+    const b = await callB;
+    expect(b.token).toBe('access-B');
+
+    const after = await live(id);
+    expect(after.status).toBe('connected');
+    expect(after.config.refreshGeneration).toBe(5);
+    expect(await connectorSecrets.get(after.config.credentialRef)).toBe('access-B');
+    // B sealed the token it refreshed with, so the pair is internally consistent.
+    expect(await connectorSecrets.get(after.config.refreshTokenRef)).toBe('refresh-0');
+  } finally {
+    process.env.CONNECTOR_SECRET_KEYS = savedKeys;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = savedActive;
+  }
+});
+
