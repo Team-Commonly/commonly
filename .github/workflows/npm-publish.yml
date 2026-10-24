@@ -119,7 +119,11 @@ jobs:
           fi
 
           # A dispatch can name any branch. Publishing or tagging from one
-          # would release code main does not hold.
+          # would release code main does not hold. This catches a mistaken
+          # dispatch; it is not a security boundary, because a branch's own
+          # copy of this file can drop it. The boundary is the trusted-publisher
+          # binding plus who can dispatch; a protected main-only environment is
+          # the planned hardening.
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
             echo "::error::$name: this workflow publishes only from main (got $GITHUB_REF)"
             exit 1
