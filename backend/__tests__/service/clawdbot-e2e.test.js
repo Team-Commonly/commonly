@@ -17,6 +17,15 @@ const mongoose = require('mongoose');
 
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 
+// This suite exercises the legacy Mongo-backed Clawdbot flow. Freshness has
+// its own real-database service coverage; Tier 1's PostgreSQL host is present
+// here without a message schema for this fixture.
+jest.mock('../../services/agentSendFreshness', () => ({
+  readStart: jest.fn().mockResolvedValue({ at: new Date(0) }),
+  recordRead: jest.fn().mockResolvedValue(undefined),
+  unseenMessages: jest.fn().mockResolvedValue(null),
+}));
+
 // Models
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');

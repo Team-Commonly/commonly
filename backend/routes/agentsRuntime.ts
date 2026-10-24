@@ -1685,8 +1685,6 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
-    const readStartedAt = await AgentSendFreshness.readStart(podId);
-
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
       instanceId: installation.instanceId || 'default',
       displayName: installation.displayName,
@@ -1739,6 +1737,7 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
       }
     }
 
+    const readStartedAt = await AgentSendFreshness.readStart(podId);
     const context = await PodContextService.getPodContext({
       podId,
       userId: agentUser._id,
