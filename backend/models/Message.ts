@@ -23,6 +23,8 @@ export interface IMessage extends Document {
   metadata?: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
+  freshnessPending?: boolean;
+  freshnessCommittedAt?: Date;
 }
 
 const MessageSchema = new Schema<IMessage>({
@@ -41,14 +43,32 @@ const MessageSchema = new Schema<IMessage>({
   metadata: { type: Schema.Types.Mixed },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
+  // New Mongo-only writes start pending. The post-save hook stamps a server
+  // commit marker after the insert is acknowledged; a crash before that stamp
+  // leaves pending=true, which makes the send-time hold fail closed.
+  freshnessPending: { type: Boolean },
+  freshnessCommittedAt: { type: Date },
 });
 
 MessageSchema.pre('save', function rememberWhetherThisIsANewPost(next) {
   (this as any).$locals.wasNewPost = this.isNew;
+  if (this.isNew) this.freshnessPending = true;
   next();
 });
 
 MessageSchema.post('save', async (doc) => {
+  if ((doc as any).$locals?.wasNewPost) {
+    try {
+      await (doc.constructor as Model<IMessage>).updateOne(
+        { _id: doc._id },
+        { $set: { freshnessPending: false }, $currentDate: { freshnessCommittedAt: true } },
+      );
+    } catch (error) {
+      // The insert already committed. Keep its pending marker (a safe hold)
+      // rather than report failure and invite a duplicate Mongo fallback.
+      console.warn('[Message] freshness commit stamp failed:', (error as Error).message);
+    }
+  }
   // Mongo is the availability fallback for chat writes, so it must materialize
   // the same recipient-owned fact as the normal PostgreSQL writer.
   // eslint-disable-next-line global-require

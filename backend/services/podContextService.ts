@@ -438,8 +438,11 @@ class PodContextService {
     // not just read a rolled-up summary. Honors the tool's "recent messages"
     // contract. Compact + capped; full history is commonly_get_messages.
     let recentMessages: Array<{ id: string; author: string; content: string; createdAt: unknown }> = [];
+    let recentMessagesRead = false;
     try {
       const recent = await AgentMessageService.getRecentMessages(podId, 12);
+      recentMessagesRead = !process.env.PG_HOST
+        || (recent as typeof recent & { readSource?: string }).readSource === 'postgres';
       recentMessages = (Array.isArray(recent) ? recent : []).map((m: Record<string, unknown>) => ({
         id: String(m.id || m._id || ''),
         author: (m.username as string)
@@ -629,6 +632,9 @@ class PodContextService {
       members,
       files,
       recentMessages,
+      // Route-only acknowledgement guard: a degraded context read must not
+      // clear the hold for messages the caller did not receive.
+      _recentMessagesRead: recentMessagesRead,
       task: task || null,
       stats: {
         summaries: finalSummaries.length,

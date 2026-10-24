@@ -68,6 +68,7 @@ describe('getRecentMessages — PG path', () => {
     const out = await AgentMessageService.getRecentMessages(POD, 10, SELF);
 
     expect(out.map((m) => m.self)).toEqual([true, false]);
+    expect(out.readSource).toBe('postgres');
   });
 
   test('passes the exclusive history cursor to PostgreSQL', async () => {
@@ -159,6 +160,7 @@ describe('getRecentMessages — Mongo fallback path', () => {
     const out = await AgentMessageService.getRecentMessages(POD, 10);
 
     expect(out[0].isBot).toBe(true);
+    expect(out.readSource).toBe('mongo');
   });
 
   test('stamps `self` on the Mongo path too', async () => {
