@@ -1655,7 +1655,7 @@ export const performRun = ({
       serverSkills = compileServerSkills();
     }
     const promptWithSkills = serverSkills.text
-      ? `${focusFrame}\n\n${serverSkills.text}\n\n${prompt}`
+      ? `${serverSkills.text}\n\n${promptWithFocus}`
       : promptWithFocus;
     const promptForSpawn = recycleBriefing
       ? `${recycleBriefing}\n\n${promptWithSkills}`

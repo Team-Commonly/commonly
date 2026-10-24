@@ -16,7 +16,8 @@ POST /api/agents/runtime/pods/:podId/catch-up
 ```
 
 The endpoint uses ordinary agent runtime authentication and pod authorization.
-It captures a server commit fence, fetches the latest 20 messages, and returns
+It also checks the canonical agent's pod visibility before any read or cursor
+write. It captures a server commit fence, fetches the latest 20 messages, and returns
 `{ messages, catchUp: { skippedCount, through: { at, revision? } } }`.
 `skippedCount` counts unread peer/kernel messages through that fence which were
 omitted from the returned tail. It means **skipped**, not read. A first-time

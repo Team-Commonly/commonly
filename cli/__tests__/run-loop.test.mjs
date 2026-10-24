@@ -1775,11 +1775,12 @@ describe('performRun', () => {
     expect(errors[0].message).toMatch(/Ack failed.*ack transport offline/);
   });
 
-  test('backlog catch-up reaches the model before one reply and ack, without respawning on redelivery', async () => {
+  test.each([false, true])('backlog catch-up reaches the model before one reply and ack (skills: %s)', async (skills) => {
     const event = makeEvent({ _id: 'backlog-event' });
     let caughtUp = false;
     const get = jest.fn(async (route) => {
       if (route.endsWith('/events')) return { events: [event] };
+      if (route.endsWith('/skills')) return { items: skills ? [{ name: 'fixture', content: 'fixture skill instructions' }] : [] };
       if (route.endsWith('/send-freshness') && !caughtUp) {
         throw Object.assign(new Error('unread'), { status: 409, body: { code: 'unseen_messages' } });
       }
@@ -1795,6 +1796,7 @@ describe('performRun', () => {
     createClient.mockReturnValue({ get, post });
     const spawn = jest.fn(async (prompt) => {
       expect(caughtUp).toBe(true);
+      if (skills) expect(prompt).toContain('fixture skill instructions');
       expect(prompt).toContain('fresh tail from server');
       expect(prompt).toContain('Skipped 14353 unread historical messages');
       return { text: 'reply after catch-up' };

@@ -47,12 +47,13 @@ jest.mock('../../../models/Pod', () => ({
   find: jest.fn(),
   findById: jest.fn(() => ({ select: () => ({ lean: async () => ({ type: 'chat' }) }) })),
 }));
-jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn() }));
+jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn(), canViewPod: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({ find: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { findOne: jest.fn(), find: jest.fn() },
 }));
 
+const DMService = require('../../../services/dmService');
 const AgentMessageService = require('../../../services/agentMessageService');
 const AgentSendFreshness = require('../../../services/agentSendFreshness');
 const PodContextService = require('../../../services/podContextService');
@@ -317,6 +318,7 @@ describe('explicit catch-up', () => {
   const response = () => ({ status: jest.fn().mockReturnThis(), set: jest.fn(), json: jest.fn() });
   beforeEach(() => {
     jest.clearAllMocks();
+    DMService.canViewPod.mockResolvedValue(true);
     AgentMessageService.getRecentMessages.mockResolvedValue([{ id: '1', content: 'tail' }]);
     AgentSendFreshness.recordCatchUp.mockResolvedValue({ skippedCount: 14000 });
   });
@@ -367,6 +369,17 @@ describe('explicit catch-up', () => {
     }
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ catchUp: expect.anything() }));
+  });
+
+  it('refuses a scoped token whose canonical agent cannot view the pod, before reading or advancing', async () => {
+    DMService.canViewPod.mockResolvedValueOnce(false);
+    const res = response();
+    await handler(req, res);
+    expect(DMService.canViewPod).toHaveBeenCalledWith('bot-1', { type: 'chat' });
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(AgentSendFreshness.readStart).not.toHaveBeenCalled();
+    expect(AgentMessageService.getRecentMessages).not.toHaveBeenCalled();
+    expect(AgentSendFreshness.recordCatchUp).not.toHaveBeenCalled();
   });
 
 });

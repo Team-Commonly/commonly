@@ -1794,6 +1794,10 @@ router.post('/pods/:podId/catch-up', phase4RateLimit, agentRuntimeAuth, async (r
     const agentUser = req.agentUser || await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
       instanceId: installation.instanceId || 'default', displayName: installation.displayName,
     });
+    const pod = await Pod.findById(podId).select('type members').lean();
+    if (!await DMService.canViewPod(agentUser._id, pod)) {
+      return res.status(403).json({ message: 'Agent cannot view this pod' });
+    }
     const start = await AgentSendFreshness.readStart(podId);
     const messages = await AgentMessageService.getRecentMessages(podId, 20, agentUser._id);
     if (process.env.PG_HOST && (messages as typeof messages & { readSource?: string }).readSource !== 'postgres') {
