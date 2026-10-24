@@ -187,6 +187,14 @@ describe('agent config PATCH — what an installer cannot write', () => {
     expect(row.save).toHaveBeenCalled();
   });
 
+  it('keeps the stored adapter when the installer saves a runtime block that omits it', async () => {
+    const row = installation({ runtime: { runtimeType: 'native', adapter: 'codex' } });
+    given(row);
+    const res = await patch({ runtime: { runtimeType: 'native' }, errorRouting: { ownerDm: true } });
+    expect(res.status).toBe(200);
+    expect(row.config.get('runtime')).toMatchObject({ runtimeType: 'native', adapter: 'codex' });
+  });
+
   it('lets the installer change the adapter of a webhook agent, which Commonly does not run', async () => {
     const row = installation({ runtime: { runtimeType: 'webhook', host: 'byo' } });
     given(row);

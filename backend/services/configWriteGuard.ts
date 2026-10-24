@@ -160,10 +160,16 @@ export const runtimeKeepingType = (
   existingConfig: unknown,
   { mayChangeType }: { mayChangeType: boolean },
 ): Record<string, any> => {
-  const storedType = asObject(asObject(existingConfig)?.runtime)?.runtimeType;
+  const stored = asObject(asObject(existingConfig)?.runtime);
+  const storedType = stored?.runtimeType;
   if (mayChangeType && 'runtimeType' in requestedRuntime) {
     return { ...requestedRuntime, runtimeType: normalizeRuntimeType(requestedRuntime.runtimeType) };
   }
   const { runtimeType: _sent, ...rest } = requestedRuntime;
+  // The adapter is kept the same way for a caller who may not change it: a save
+  // that omits it must not erase it, or the guard's stored-value check is bypassed.
+  if (!mayChangeType && !('adapter' in requestedRuntime) && stored && 'adapter' in stored) {
+    rest.adapter = stored.adapter;
+  }
   return storedType ? { ...rest, runtimeType: normalizeRuntimeType(storedType) } : rest;
 };
