@@ -10,9 +10,8 @@ import {
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import commonlyLogo from '../../assets/commonly-logo.png';
 import guides from '../../content/guides.json';
-import { guidePalette, useGuideCanvas } from './guideShell';
+import { guidePalette, guideTextButtonSx, useGuideCanvas } from './guideShell';
 
 interface GuideStrongParagraph {
   strong: string;
@@ -89,7 +88,7 @@ const GuidePage: React.FC = () => {
     return (
       <Box sx={{ minHeight: '100vh', backgroundColor: guidePalette.page, color: guidePalette.textPrimary, py: 10 }}>
         <Container maxWidth="md">
-          <Button sx={{ color: guidePalette.accentText }} startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>
+          <Button sx={guideTextButtonSx} startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>
             Back to landing
           </Button>
           <Typography variant="h4" sx={{ mt: 3, mb: 1, color: guidePalette.textPrimary, fontWeight: 700 }}>
@@ -107,11 +106,11 @@ const GuidePage: React.FC = () => {
     <Box sx={{ minHeight: '100vh', backgroundColor: guidePalette.page, color: guidePalette.textPrimary }}>
       <Container maxWidth="md" sx={{ pt: 5, pb: 10 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 6 }}>
-          <Button sx={{ color: guidePalette.accentText }} startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>
+          <Button sx={guideTextButtonSx} startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>
             Back to landing
           </Button>
           <Stack direction="row" alignItems="center" spacing={1}>
-            <img src={commonlyLogo} alt="Commonly Logo" width={26} height={26} />
+            <img src="/favicon.svg" alt="Commonly Logo" width={26} height={26} />
             <Typography sx={{ color: guidePalette.textPrimary, fontWeight: 700, letterSpacing: '-0.02em' }}>Commonly</Typography>
           </Stack>
         </Stack>
@@ -194,7 +193,7 @@ const GuidePage: React.FC = () => {
               ))}
               {section.links && (
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 2 }}>
-                  {section.links.map((link) => <Button key={link.path} component="a" href={link.path} target={link.external ? '_blank' : undefined} rel={link.external ? 'noreferrer' : undefined} sx={{ alignSelf: 'flex-start', color: guidePalette.accentText }}>{link.label}</Button>)}
+                  {section.links.map((link) => <Button key={link.path} component="a" href={link.path} target={link.external ? '_blank' : undefined} rel={link.external ? 'noreferrer' : undefined} sx={{ ...guideTextButtonSx, alignSelf: 'flex-start' }}>{link.label}</Button>)}
                 </Stack>
               )}
             </Box>
@@ -236,8 +235,8 @@ const GuidePage: React.FC = () => {
               // Compare is emitted as a static document. React Router would
               // otherwise hand this path to the V2 catch-all instead of
               // requesting build/compare/index.html.
-              ? <Button key={link.path} variant="text" component="a" href={link.path} sx={{ color: guidePalette.accentText }}>{link.label}</Button>
-              : <Button key={link.path} variant="text" sx={{ color: guidePalette.accentText }} onClick={() => navigate(link.path)}>{link.label}</Button>
+              ? <Button key={link.path} variant="text" component="a" href={link.path} sx={guideTextButtonSx}>{link.label}</Button>
+              : <Button key={link.path} variant="text" sx={guideTextButtonSx} onClick={() => navigate(link.path)}>{link.label}</Button>
           ))}
         </Stack>
       </Container>
