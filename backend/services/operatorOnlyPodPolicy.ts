@@ -27,7 +27,8 @@ export const operatorOnlyPodAllowed = async (
   if (!human || human.isBot || human.botType) return false;
   const pod = await Pod.findById(new Types.ObjectId(podId))
     .select('type createdBy members joinPolicy publicRead communityListed').lean();
-  if (!pod || ['agent-dm', 'agent-room', 'agent-admin'].includes(pod.type) || pod.joinPolicy !== 'invite-only' || pod.publicRead !== false
+  if (!pod || ['agent-dm', 'agent-room', 'agent-admin'].includes(pod.type)
+    || pod.joinPolicy !== 'invite-only' || pod.publicRead !== false
     || pod.communityListed !== false || String(pod.createdBy) !== owner) return false;
   const members = (pod.members || []).map(String);
   if (!members.includes(owner) || !members.includes(String(listener._id))
