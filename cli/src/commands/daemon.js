@@ -122,16 +122,58 @@ export const getDaemonMachineStatus = async ({ client }) => {
   return response?.machine || null;
 };
 
-// Revoke remotely before unlinking locally. A failed network call must leave
-// the bearer record intact so the operator can retry rather than orphaning a
-// year-long daemon credential they can no longer address from the CLI.
-export const unregisterDaemonMachine = async ({ client, record, remove = removeDaemonRecord }) => {
+const isRevokedDaemonKey = (error) => error?.status === 401 && [
+  'Daemon token revoked or unknown',
+  'Machine access revoked',
+].includes(error?.body?.message);
+
+const isMissingDaemonMachine = (error) => error?.status === 404;
+
+const storedDaemonState = async (client) => {
+  try {
+    return await getDaemonMachineStatus({ client }) ? 'active' : 'missing';
+  } catch (error) {
+    if (isRevokedDaemonKey(error)) return 'revoked';
+    if (isMissingDaemonMachine(error)) return 'missing';
+    throw error;
+  }
+};
+
+export const daemonStatusErrorMessage = (error) => (isRevokedDaemonKey(error)
+  ? "This computer's old key was revoked. Run: commonly daemon register"
+  : `Daemon status failed: ${error.message}`);
+
+// Keep the old record until a new registration is securely persisted. A
+// network failure or a still-live daemon key must never silently mint another.
+export const allowRevokedDaemonReplacement = async ({ existing, client }) => {
+  if (!existing) return null;
+  const state = await storedDaemonState(client);
+  if (state === 'active') {
+    throw new Error(`A local daemon is already registered for ${existing.machineName}. Run: commonly daemon status`);
+  }
+  return state;
+};
+
+// Revoke remotely before unlinking locally. An owner-session 401/403 is not
+// proof of revocation: check the stored daemon key before discarding it.
+export const unregisterDaemonMachine = async ({
+  client, daemonClient, record, remove = removeDaemonRecord,
+}) => {
+  let removedRemotely = true;
   try {
     await client.del(`/api/machines/${record.machineDbId}`);
   } catch (error) {
-    if (error?.status !== 404) throw error;
+    if (isMissingDaemonMachine(error)) {
+      removedRemotely = false;
+    } else if ([401, 403].includes(error?.status) && daemonClient) {
+      if (await storedDaemonState(daemonClient) === 'active') throw error;
+      removedRemotely = false;
+    } else {
+      throw error;
+    }
   }
   remove();
+  return { removedRemotely };
 };
 
 // The adapter names a binary on THIS machine — the one fact the server cannot
@@ -173,7 +215,13 @@ Examples:
       try {
         const existing = loadDaemonRecord();
         if (existing) {
-          throw new Error(`A local daemon is already registered for ${existing.machineName}. Run: commonly daemon status`);
+          const state = await allowRevokedDaemonReplacement({
+            existing,
+            client: createClient({ instance: existing.instanceUrl, token: existing.daemonToken }),
+          });
+          console.log(state === 'revoked'
+            ? "This computer's old key was revoked; registering it again."
+            : 'This computer is no longer registered; registering it again.');
         }
         const instanceUrl = resolveInstanceUrl(opts.instance);
         const client = createClient({ instance: instanceUrl, token: requireUserToken(opts.instance || instanceUrl) });
@@ -195,6 +243,9 @@ Examples:
           console.error('Retry with: commonly daemon heartbeat');
           process.exitCode = 1;
         }
+        if (existing && existsSync(servicePaths(process.platform, homedir()).file)) {
+          console.log('Restart the installed daemon to use the new key: commonly daemon restart');
+        }
       } catch (error) {
         console.error(`Daemon registration failed: ${error.message}`);
         process.exitCode = 1;
@@ -211,8 +262,14 @@ Examples:
           instance: record.instanceUrl,
           token: requireUserToken(record.instanceUrl),
         });
-        await unregisterDaemonMachine({ client, record });
-        console.log(`Unregistered ${record.machineName} and removed its local daemon credential.`);
+        const { removedRemotely } = await unregisterDaemonMachine({
+          client,
+          daemonClient: createClient({ instance: record.instanceUrl, token: record.daemonToken }),
+          record,
+        });
+        console.log(removedRemotely
+          ? `Unregistered ${record.machineName} and removed its local daemon credential.`
+          : `Removed ${record.machineName}'s local daemon credential. Server access was already revoked or the machine was removed.`);
       } catch (error) {
         console.error(`Daemon unregister failed: ${error.message}`);
         process.exitCode = 1;
@@ -426,6 +483,7 @@ Examples:
         });
         if (!machine) {
           console.log(`${record.machineName}: no longer registered on the server.`);
+          console.log('Run: commonly daemon register');
           return;
         }
         const lastSeen = machine.lastSeenAt ? new Date(machine.lastSeenAt).toLocaleString() : 'never';
@@ -442,7 +500,7 @@ Examples:
           }
         }
       } catch (error) {
-        console.error(`Daemon status failed: ${error.message}`);
+        console.error(daemonStatusErrorMessage(error));
         process.exitCode = 1;
       }
     });

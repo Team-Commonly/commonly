@@ -21,6 +21,8 @@ const {
   saveDaemonRecord,
 } = await import('../src/lib/daemon-store.js');
 const {
+  allowRevokedDaemonReplacement,
+  daemonStatusErrorMessage,
   getDaemonMachineStatus,
   heartbeatDaemonMachine,
   registerDaemonMachine,
@@ -84,6 +86,63 @@ describe('daemon credential storage', () => {
 });
 
 describe('daemon machine calls', () => {
+  const daemonError = (status, message) => Object.assign(new Error(message), {
+    status,
+    body: { message },
+  });
+
+  test('re-registers over a revoked local record without deleting it before secure replacement', async () => {
+    saveDaemonRecord(daemonRecord);
+    const revoked = daemonError(401, 'Machine access revoked');
+    await expect(allowRevokedDaemonReplacement({
+      existing: daemonRecord,
+      client: { get: jest.fn().mockRejectedValue(revoked) },
+    })).resolves.toBe('revoked');
+    expect(loadDaemonRecord()).toEqual(daemonRecord);
+
+    const replacement = {
+      ...daemonRecord,
+      machineDbId: '507f1f77bcf86cd799439022',
+      daemonToken: 'cm_daemon_replacement',
+    };
+    const client = {
+      post: jest.fn().mockResolvedValue({
+        machine: {
+          id: replacement.machineDbId,
+          machineId: replacement.machineId,
+          name: replacement.machineName,
+        },
+        daemonToken: replacement.daemonToken,
+      }),
+      del: jest.fn(),
+    };
+    await registerDaemonMachine({
+      client, instanceUrl: replacement.instanceUrl, name: replacement.machineName,
+    });
+    expect(loadDaemonRecord()).toEqual(expect.objectContaining({
+      machineDbId: replacement.machineDbId,
+      daemonToken: replacement.daemonToken,
+    }));
+  });
+
+  test('does not replace a live record or one whose server status cannot be determined', async () => {
+    const live = { get: jest.fn().mockResolvedValue({ machine: { id: daemonRecord.machineDbId } }) };
+    await expect(allowRevokedDaemonReplacement({ existing: daemonRecord, client: live }))
+      .rejects.toThrow(/already registered/i);
+    const unavailable = { get: jest.fn().mockRejectedValue(new Error('network unavailable')) };
+    await expect(allowRevokedDaemonReplacement({ existing: daemonRecord, client: unavailable }))
+      .rejects.toThrow(/network unavailable/i);
+    const missing = { get: jest.fn().mockRejectedValue(daemonError(404, 'Machine not found')) };
+    await expect(allowRevokedDaemonReplacement({ existing: daemonRecord, client: missing }))
+      .resolves.toBe('missing');
+  });
+
+  test('a revoked status names the recovery command without exposing the bearer', () => {
+    const message = daemonStatusErrorMessage(daemonError(401, 'Machine access revoked'));
+    expect(message).toContain('commonly daemon register');
+    expect(message).not.toContain(daemonRecord.daemonToken);
+  });
+
   test('persists the one-time daemon bearer without returning it in the machine view', async () => {
     const client = {
       post: jest.fn().mockResolvedValue({
@@ -200,6 +259,26 @@ describe('daemon machine calls', () => {
     await unregisterDaemonMachine({ client, record: daemonRecord, remove });
 
     expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([401, 403])('removes local state after owner DELETE %i only when the daemon key is revoked', async (status) => {
+    const remove = jest.fn();
+    const client = { del: jest.fn().mockRejectedValue(daemonError(status, 'Access denied')) };
+    const daemonClient = { get: jest.fn().mockRejectedValue(daemonError(401, 'Machine access revoked')) };
+
+    await expect(unregisterDaemonMachine({ client, daemonClient, record: daemonRecord, remove }))
+      .resolves.toEqual({ removedRemotely: false });
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(daemonClient.get).toHaveBeenCalledWith('/api/machines/me');
+  });
+
+  test('keeps the local key if owner DELETE fails but the daemon key still works', async () => {
+    const remove = jest.fn();
+    const client = { del: jest.fn().mockRejectedValue(daemonError(401, 'Unauthorized')) };
+    const daemonClient = { get: jest.fn().mockResolvedValue({ machine: { id: daemonRecord.machineDbId } }) };
+    await expect(unregisterDaemonMachine({ client, daemonClient, record: daemonRecord, remove }))
+      .rejects.toThrow(/Unauthorized/);
+    expect(remove).not.toHaveBeenCalled();
   });
 });
 

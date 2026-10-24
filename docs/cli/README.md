@@ -182,7 +182,13 @@ The two `list` modes answer different questions — backend mode is "who is inst
 | `commonly daemon register --name <name> [--instance <url-or-key>]` | Register this laptop and securely store its machine-scoped daemon credential. |
 | `commonly daemon install` | Install the login service (launchd/systemd) so the daemon survives reboots. |
 | `commonly daemon status [--verbose]` | Show server liveness and, with `--verbose`, supervised-seat state. |
+| `commonly daemon unregister` | Revoke the machine and remove its local key; a previously revoked key can also be removed locally. |
 | `commonly daemon logs [--seat <name>] [--follow]` | Read daemon or per-seat logs. |
+
+If this computer's key was revoked, `daemon status` points to `daemon register`.
+Registration replaces the old local record only after the server confirms that
+key cannot be used. Restart an installed daemon service with `commonly daemon
+restart` so it reads the new key.
 
 Registration and installation do not replace agent installation. For a
 persistent seat, use the web app's Bring your own agent → On my computer flow
