@@ -1,9 +1,11 @@
 /**
- * Fixtures are stdout captured from NousResearch/hermes-agent tag v0.22.2
- * (commit d923a5eb487a) on 2026-10-21. The real CLI was run twice with
+ * Fixtures are stdout captured from NousResearch/hermes-agent tags v0.22.2
+ * (commit d923a5eb487a) and v0.22.5 (commit bf0203a794a0). The real CLI was run twice with
  * --query-file - --format stream-json --provider openrouter --model test/model,
  * using an isolated HERMES_HOME and a local OpenAI-compatible test endpoint
  * answering PONG. The second capture passed --resume with the first session ID.
+ * On 0.22.5 --in replaced --no-restore-cwd for the gateway transport; the
+ * init event now has an empty session_id, while the result carries the ID.
  * No provider credential or request body is stored in these fixtures.
  */
 import { EventEmitter } from 'events';
@@ -12,14 +14,14 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { PassThrough } from 'stream';
 import { jest } from '@jest/globals';
-import hermes, { TESTED_HERMES_VERSION, readHermesJsonl } from '../src/lib/adapters/hermes.js';
+import hermes, { SUPPORTED_HERMES_VERSION_RANGE, readHermesJsonl } from '../src/lib/adapters/hermes.js';
 import { validateEnvironmentSpec } from '../src/lib/environment.js';
 
-const fixture = async (name) => readFile(
-  new URL(`./fixtures/hermes-0.22.2/${name}.jsonl`, import.meta.url), 'utf8',
+const fixture = async (name, version = '0.22.2') => readFile(
+  new URL(`./fixtures/hermes-${version}/${name}.jsonl`, import.meta.url), 'utf8',
 );
 
-const versionProbe = (version = TESTED_HERMES_VERSION) => jest.fn(() => ({
+const versionProbe = (version = '0.22.5') => jest.fn(() => ({
   status: 0, stdout: `Hermes Agent v${version} (local build)\n`,
 }));
 
@@ -58,7 +60,7 @@ test('real 0.22.2 first and resumed JSONL return one final reply and a stable se
     const calls = [];
     const context = {
       cwd: home, agentName: 'pa1-test', env: { PATH: '/bin', OPENROUTER_API_KEY: 'fixture-only' },
-      _hermesHome: join(home, 'profiles', 'pa1'), _spawnSyncImpl: versionProbe(),
+      _hermesHome: join(home, 'profiles', 'pa1'), _spawnSyncImpl: versionProbe('0.22.2'),
     };
     const firstResult = await hermes.spawn('Reply PONG', {
       ...context, _spawnImpl: recordedSpawn(first, (...call) => calls.push(call)),
@@ -79,6 +81,8 @@ test('real 0.22.2 first and resumed JSONL return one final reply and a stable se
       ]));
       expect(args.join(' ')).not.toContain('fixture-only');
       expect(args.join(' ')).not.toContain('Reply');
+      expect(args).toEqual(expect.arrayContaining(['--in', home]));
+      expect(args).not.toContain('--no-restore-cwd');
       expect(options.stdio).toEqual(['pipe', 'pipe', 'pipe']);
       expect(options.env.HERMES_HOME).toBe(join(home, 'profiles', 'pa1'));
     }
@@ -87,17 +91,72 @@ test('real 0.22.2 first and resumed JSONL return one final reply and a stable se
   });
 });
 
-test('refuses any Hermes version other than 0.22.2 before starting a turn', async () => {
+test('real 0.22.5 JSONL keeps the resumed session in the terminal result', async () => {
+  const first = await fixture('first-turn', '0.22.5');
+  const resumed = await fixture('resume', '0.22.5');
+  const firstEvents = first.trim().split('\n').map(JSON.parse);
+  const resumeEvents = resumed.trim().split('\n').map(JSON.parse);
+  expect(firstEvents.map((event) => event.type)).toEqual(['system', 'text', 'result']);
+  expect(resumeEvents.map((event) => event.type)).toEqual(['system', 'text', 'result']);
+  expect(firstEvents[0].session_id).toBe('');
+  expect(firstEvents[2].session_id).toBeTruthy();
+  expect(resumeEvents[2].session_id).toBe(firstEvents[2].session_id);
+
+  await withHome(async (home) => {
+    const calls = [];
+    const context = {
+      cwd: home, agentName: 'pa1-test', env: { OPENROUTER_API_KEY: 'fixture-only' },
+      _hermesHome: join(home, 'profiles', 'pa1'), _spawnSyncImpl: versionProbe('0.22.5'),
+    };
+    const firstResult = await hermes.spawn('Reply PONG', {
+      ...context, _spawnImpl: recordedSpawn(first, (...call) => calls.push(call)),
+    });
+    expect(firstResult).toEqual({ text: 'PONG', newSessionId: firstEvents[2].session_id });
+    const resumeResult = await hermes.spawn('Reply again', {
+      ...context, sessionId: firstResult.newSessionId,
+      _spawnImpl: recordedSpawn(resumed, (...call) => calls.push(call)),
+    });
+    expect(resumeResult).toEqual({ text: 'PONG', newSessionId: firstResult.newSessionId });
+    expect(calls[0][1]).toEqual(expect.arrayContaining(['--in', home]));
+    expect(calls[1][1]).toEqual(expect.arrayContaining(['--in', home, '--resume', firstResult.newSessionId]));
+  });
+});
+
+test('accepts stable Hermes 0.22 releases from 0.22.2 onward', async () => {
+  await withHome(async (home) => {
+    const recording = await fixture('first-turn');
+    for (const version of ['0.22.2', '0.22.3', '0.22.5']) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(hermes.spawn('hello', {
+        cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
+        _spawnSyncImpl: versionProbe(version), _spawnImpl: recordedSpawn(recording),
+      })).resolves.toMatchObject({ text: 'PONG' });
+    }
+  });
+});
+
+test('refuses Hermes outside the supported stable range before starting a turn', async () => {
   await withHome(async (home) => {
     const child = jest.fn();
-    for (const version of ['0.22.3', '0.22.1', '0.22.2+1.gabcdef0']) {
-      // A post-release checkout may retain the 0.22.2 prefix but is not the pin.
+    for (const version of ['0.22.1', '0.23.0', '1.0.0', '0.22.2+1.gabcdef0', '0.22.6-rc.1']) {
+      // Development builds and prereleases are outside the tested stable-release contract.
       // eslint-disable-next-line no-await-in-loop
       await expect(hermes.spawn('hello', {
         cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
         _spawnSyncImpl: versionProbe(version), _spawnImpl: child,
-      })).rejects.toThrow(`Hermes ${version} is unsupported; this adapter requires 0.22.2`);
+      })).rejects.toThrow(`Hermes ${version} is unsupported; this adapter supports ${SUPPORTED_HERMES_VERSION_RANGE}. Run hermes update`);
     }
+    expect(child).not.toHaveBeenCalled();
+  });
+});
+
+test('missing Hermes names the supported range and install command', async () => {
+  await withHome(async (home) => {
+    const child = jest.fn();
+    await expect(hermes.spawn('hello', {
+      cwd: home, _hermesHome: home,
+      _spawnSyncImpl: jest.fn(() => ({ error: { code: 'ENOENT' } })), _spawnImpl: child,
+    })).rejects.toThrow(`Hermes Agent ${SUPPORTED_HERMES_VERSION_RANGE} is not on PATH; install with curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`);
     expect(child).not.toHaveBeenCalled();
   });
 });
