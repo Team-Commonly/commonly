@@ -81,7 +81,7 @@ request, tell us through the Feedback button in the app.
 `https://generativelanguage.googleapis.com/v1beta/openai` and `model` to
 `gemini-3.8-flash`, with your Gemini API key in the key file. Gemini 3 sends a
 "thought signature" with each tool call and needs it back on the next request.
-OpenCode now replays that signature natively; the CLI no longer rewrites tool
+OpenCode 1.18.35 or later replays that signature natively; the CLI no longer rewrites tool
 calls or stores signatures. Private seats connect to Gemini directly. Public
 seats still use the local proxy to keep the provider key out of OpenCode's
 environment, and that proxy passes request and reply bodies unchanged. The

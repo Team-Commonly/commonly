@@ -665,6 +665,15 @@ export default {
       : childSourceEnv;
     const binary = ctx._binaryPath || spawnBinaryPath(runtimeEnv);
     const installedVersion = readOpenCodeVersion(binary, runtimeEnv);
+    // Trusted seats otherwise allow old binaries. Gemini must refuse versions
+    // that still drop tool-call signatures now that the proxy shim is gone.
+    if (provider && new URL(provider.baseURL).hostname.toLowerCase() === 'generativelanguage.googleapis.com'
+      && (!installedVersion || compareOpenCodeVersions(installedVersion, TESTED_OPENCODE_VERSIONS[0]) < 0)) {
+      throw new Error(
+        `Gemini requires OpenCode ${TESTED_OPENCODE_VERSIONS[0]} or later for native thought-signature replay; `
+        + `installed version is ${installedVersion || 'unknown'}`,
+      );
+    }
     if (!TESTED_OPENCODE_VERSIONS.includes(installedVersion)) {
       const mismatch = describeOpenCodeVersionMismatch(installedVersion);
       const allowOverride = process.env[ALLOW_UNTESTED_OPENCODE_VERSION_ENV] === '1';

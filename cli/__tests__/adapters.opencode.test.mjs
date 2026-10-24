@@ -771,6 +771,35 @@ describe('opencode external provider config', () => {
     });
   });
 
+  test.each([
+    ['older', { status: 0, stdout: 'OpenCode 1.18.0\n' }, '1.18.0'],
+    ['unknown', { status: 1, stdout: '' }, 'unknown'],
+  ])('a private Gemini seat refuses an %s OpenCode version before spawning', async (_label, result, version) => {
+    await withTemp(async (root) => {
+      const workspace = join(root, 'workspace');
+      const keyFile = join(root, 'secrets', 'gemini-key');
+      await mkdir(workspace, { recursive: true });
+      await mkdir(join(root, 'secrets'), { recursive: true });
+      await writeFile(keyFile, 'gemini-test-key');
+      await chmod(keyFile, 0o600);
+      spawnSyncMock.mockReturnValue(result);
+      const spawn = makeSpawnImpl();
+      await expect(opencode.spawn('gemini turn', {
+        cwd: workspace,
+        env: { PATH: process.env.PATH },
+        environment: {
+          model: 'gemini-3-flash-preview',
+          provider: {
+            id: 'google', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', keyFile,
+          },
+        },
+        _binaryPath: '/usr/local/bin/opencode',
+        _spawnImpl: spawn.impl,
+      })).rejects.toThrow(`Gemini requires OpenCode 1.18.35 or later for native thought-signature replay; installed version is ${version}`);
+      expect(spawn.calls).toHaveLength(0);
+    });
+  });
+
   test('refuses provider keys with unsafe paths before spawning', async () => {
     await withTemp(async (root) => {
       const workspace = join(root, 'workspace');
