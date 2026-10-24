@@ -200,13 +200,15 @@ const preparePublicClaudeState = async (ctx) => {
   return { statePath, tmpPath, configPath };
 };
 
-const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null) => {
+const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null, publicSeat = false) => {
   const source = input || process.env;
-  const output = state ? {} : { ...source };
-  if (state) {
+  const output = state || publicSeat ? {} : { ...source };
+  if (state || publicSeat) {
     for (const [key, value] of Object.entries(source)) {
       if (PUBLIC_SAFE_ENV.test(key)) output[key] = value;
     }
+  }
+  if (state) {
     output.HOME = state.statePath;
     output.TMPDIR = state.tmpPath;
     // Claude keeps its temp root at /private/tmp/claude-<uid> unless told
@@ -825,14 +827,16 @@ export default {
     let mcpConfig = null;
     let publicClaudeState = null;
     let publicSkillArgs = [];
+    const publicTrust = ctx.environment?.sandbox?.trust === 'public';
+    const publicNativeSandbox = publicTrust
+      && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
+    const publicBwrapSandbox = publicTrust
+      && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
     try {
       // Trust is normalized at entry (legacy `internal` reads as public). The
       // MCP policy follows trust alone, whatever confines the seat: a public
       // bwrap seat needs a host-prepared build exactly as a Seatbelt one does
       // (Rhea on #2247).
-      const publicTrust = ctx.environment?.sandbox?.trust === 'public';
-      const publicNativeSandbox = publicTrust
-        && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
       if (publicNativeSandbox) {
         publicClaudeState = await preparePublicClaudeState(ctx);
       }
@@ -863,8 +867,9 @@ export default {
         publicClaudeState,
         mcpConfig?.expansionEnv,
         mcpConfig?.credential?.path || null,
+        publicTrust,
       );
-      if (publicNativeSandbox && ctx.commitAttributionEnv) {
+      if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
         Object.assign(claudeEnv, ctx.commitAttributionEnv);
       }
       const spawnCtx = {
@@ -920,8 +925,12 @@ export default {
             publicClaudeState,
             mcpConfig?.expansionEnv,
             mcpConfig?.credential?.path || null,
+            publicTrust,
           ),
         };
+        if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
+          Object.assign(retryCtx.claudeEnv, ctx.commitAttributionEnv);
+        }
         const retry = await prepareArgv(retryBase, retryCtx);
         const stdout = await runClaude({
           cmd: retry.cmd,

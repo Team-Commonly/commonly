@@ -92,8 +92,10 @@ export const detectBwrap = ({ spawn = spawnSync, platform = process.platform } =
  *     user sees the gap before they think they're protected.
  *
  * The expansion order matches `bwrap`'s left-to-right argument application:
- * isolation flags first, then binds (later binds win on collision), then
- * --setenv, then `--` and the inner argv.
+ * isolation flags first, then binds (later binds win on collision), then the
+ * isolated HOME, then `--` and the inner argv. The caller passes the filtered
+ * child environment as the bwrap process environment; values must not be
+ * serialized into argv, where they would be visible in the process list.
  */
 export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   if (process.platform !== 'linux') {

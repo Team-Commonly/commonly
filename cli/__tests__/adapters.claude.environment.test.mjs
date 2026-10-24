@@ -721,7 +721,12 @@ describe('claude adapter — ctx.environment', () => {
       await claude.spawn('hi', {
         sessionId: null,
         cwd,
-        env: { PATH: process.env.PATH },
+        env: {
+          PATH: process.env.PATH,
+          COMMONLY_HOST_SECRET: 'must-not-reach-public-seat',
+          AWS_SECRET_ACCESS_KEY: 'must-not-reach-public-seat',
+        },
+        commitAttributionEnv: { COMMONLY_AGENT_SEAT_NAME: 'Public Linux Seat' },
         environment: { sandbox: { trust: 'public' } },
         _spawnImpl: impl,
         _detectBwrap: () => ({ available: true, path: 'bwrap' }),
@@ -730,6 +735,14 @@ describe('claude adapter — ctx.environment', () => {
       expect(calls[0].cmd).toBe('bwrap');
       expect(calls[0].args).toContain('--unshare-all');
       expect(calls[0].args).toContain('--die-with-parent');
+      // The adapter passes its filtered environment to bwrap as the process
+      // environment; values are not serialized into bwrap argv.
+      expect(calls[0].args).not.toContain('--clearenv');
+      expect(calls[0].args).not.toContain('must-not-reach-public-seat');
+      expect(calls[0].opts.env).toEqual({
+        PATH: process.env.PATH,
+        COMMONLY_AGENT_SEAT_NAME: 'Public Linux Seat',
+      });
       // The inner claude argv rides after `--`, inside the namespace.
       const inner = calls[0].args.slice(calls[0].args.indexOf('--') + 1);
       expect(inner[0]).toMatch(/claude$/);

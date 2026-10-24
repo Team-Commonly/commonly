@@ -327,7 +327,11 @@ export default {
               ],
             },
           },
-        }, { workspacePath: ctx.cwd, homePath: home, readOnlyPaths: [tempDir, executable, packageDir, process.execPath, ...mcpReadDirectories].filter(Boolean) });
+        }, {
+          workspacePath: ctx.cwd,
+          homePath: home,
+          readOnlyPaths: [tempDir, executable, packageDir, process.execPath, ...mcpReadDirectories].filter(Boolean),
+        });
       } else if (isPublic) {
         if ((ctx._platform || process.platform) !== 'darwin') {
           throw new Error(`public Qwen sandbox.mode=${mode} requires Seatbelt on macOS or bwrap on Linux`);
