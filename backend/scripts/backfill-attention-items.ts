@@ -83,11 +83,12 @@ export const main = async (): Promise<void> => {
       return;
     }
 
-    for (const approval of approvals) await recordApproval(approval);
-    for (const decision of decisions) await recordDecision(decision);
-    for (const task of tasks) await recordTaskAttention(task, { includeBlocked: true });
+    for (const approval of approvals) await recordApproval(approval, { suppressEmail: true });
+    for (const decision of decisions) await recordDecision(decision, { suppressEmail: true });
+    for (const task of tasks) await recordTaskAttention(task, { includeBlocked: true, suppressEmail: true });
     for (const message of messages) {
       await recordMentionedUsers(message, {
+        suppressEmail: true,
         isAlreadyAcknowledged: (recipientUserId: unknown, legacyMentionId: string) => (
           acknowledgements.get(String(recipientUserId))?.has(legacyMentionId) || false
         ),

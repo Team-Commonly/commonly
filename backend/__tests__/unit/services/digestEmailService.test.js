@@ -10,6 +10,9 @@ const User = require('../../../models/User');
 const Summary = require('../../../models/Summary');
 const digestEmailService = require('../../../services/digestEmailService');
 const SystemSetting = require('../../../models/SystemSetting');
+const AttentionItem = require('../../../models/AttentionItem');
+const NeedsYouEmail = require('../../../models/NeedsYouEmail');
+const Pod = require('../../../models/Pod');
 const {
   setupMongoDb,
   closeMongoDb,
@@ -120,6 +123,94 @@ describe('digestEmailService', () => {
     expect(freshUser.emailPreferences.dailyDigest).toBe(true);
     expect(freshUser.digestUnsubscribeToken).toMatch(/^[a-f0-9]{48}$/);
     expect(freshUser.lastDigestSent).toBeInstanceOf(Date);
+  });
+
+  it('carries held needs-you asks into the next digest once', async () => {
+    const user = await createUser({ email: `held-${sequence + 1}@gmail.com` });
+    const pod = await Pod.create({ name: 'Research', type: 'chat', createdBy: user._id, members: [user._id] });
+    const podId = pod._id;
+    const ask = await AttentionItem.create({
+      recipientUserId: user._id, podId, kind: 'blocked',
+      source: { type: 'message', id: 'blocked-1' },
+      title: 'Scout needs a key', podName: 'Research', status: 'open',
+    });
+    const held = await NeedsYouEmail.create({
+      attentionItemId: ask._id, recipientUserId: user._id,
+      clickToken: 'a'.repeat(48), status: 'overflow',
+    });
+    const digest = await createDigest(user);
+
+    const result = await digestEmailService.sendDigestEmails([runEntry(digest)]);
+
+    expect(result.sent).toBe(1);
+    expect(mockSendEmail.mock.calls[0][0].textBody).toContain('An item needs your attention on Commonly');
+    expect(JSON.stringify(mockSendEmail.mock.calls[0][0])).not.toContain('Scout needs a key');
+    expect(JSON.stringify(mockSendEmail.mock.calls[0][0])).not.toContain('Research');
+    expect((await NeedsYouEmail.findById(held._id)).includedInDigestAt).toBeInstanceOf(Date);
+  });
+
+  it('sends held asks even when the daily recap has no lines', async () => {
+    const user = await createUser({ email: `empty-held-${sequence + 1}@gmail.com` });
+    const pod = await Pod.create({ name: 'Research', type: 'chat', createdBy: user._id, members: [user._id] });
+    const ask = await AttentionItem.create({
+      recipientUserId: user._id, podId: pod._id, kind: 'blocked',
+      source: { type: 'message', id: 'blocked-empty' },
+      title: 'Scout needs a key', podName: 'Research', status: 'open',
+    });
+    await NeedsYouEmail.create({
+      attentionItemId: ask._id, recipientUserId: user._id,
+      clickToken: 'b'.repeat(48), status: 'overflow',
+    });
+    const digest = await createDigest(user, 0, 'No updates today.');
+
+    const result = await digestEmailService.sendDigestEmails([runEntry(digest)]);
+
+    expect(result).toEqual(expect.objectContaining({ eligible: 1, sent: 1 }));
+    expect(mockSendEmail.mock.calls[0][0].textBody).toContain('An item needs your attention on Commonly');
+  });
+
+  it('does not include queued needs-you overflow after opt-out', async () => {
+    const user = await createUser({ email: `opted-held-${sequence + 1}@gmail.com` });
+    const pod = await Pod.create({ name: 'Private pod', type: 'chat', createdBy: user._id, members: [user._id] });
+    const ask = await AttentionItem.create({
+      recipientUserId: user._id, podId: pod._id, kind: 'blocked',
+      source: { type: 'message', id: 'opted-overflow' }, title: 'PRIVATE_ASK', status: 'open',
+    });
+    const held = await NeedsYouEmail.create({
+      attentionItemId: ask._id, recipientUserId: user._id,
+      clickToken: 'c'.repeat(48), status: 'overflow',
+    });
+    await User.updateOne({ _id: user._id }, { $set: { 'emailPreferences.needsYou': false } });
+    const digest = await createDigest(user, 1, '- Ordinary recap');
+
+    const result = await digestEmailService.sendDigestEmails([runEntry(digest)]);
+
+    expect(result.sent).toBe(1);
+    expect(JSON.stringify(mockSendEmail.mock.calls[0][0])).not.toContain('PRIVATE_ASK');
+    expect(JSON.stringify(mockSendEmail.mock.calls[0][0])).not.toContain('Waiting on you');
+    expect((await NeedsYouEmail.findById(held._id)).includedInDigestAt).toBeUndefined();
+  });
+
+  it('does not include queued overflow after the recipient leaves the pod', async () => {
+    const user = await createUser({ email: `departed-held-${sequence + 1}@gmail.com` });
+    const pod = await Pod.create({ name: 'Private pod', type: 'chat', createdBy: user._id, members: [user._id] });
+    const ask = await AttentionItem.create({
+      recipientUserId: user._id, podId: pod._id, kind: 'blocked',
+      source: { type: 'message', id: 'departed-overflow' }, title: 'PRIVATE_ASK', status: 'open',
+    });
+    const held = await NeedsYouEmail.create({
+      attentionItemId: ask._id, recipientUserId: user._id,
+      clickToken: 'd'.repeat(48), status: 'overflow',
+    });
+    await Pod.updateOne({ _id: pod._id }, { $pull: { members: user._id } });
+    const digest = await createDigest(user, 1, '- Ordinary recap');
+
+    const result = await digestEmailService.sendDigestEmails([runEntry(digest)]);
+
+    expect(result.sent).toBe(1);
+    expect(JSON.stringify(mockSendEmail.mock.calls[0][0])).not.toContain('PRIVATE_ASK');
+    expect(JSON.stringify(mockSendEmail.mock.calls[0][0])).not.toContain('Waiting on you');
+    expect((await NeedsYouEmail.findById(held._id)).includedInDigestAt).toBeUndefined();
   });
 
   it('never sends an empty digest', async () => {

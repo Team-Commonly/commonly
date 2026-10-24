@@ -9,7 +9,7 @@ const G: React.FC<{ children: React.ReactNode; size?: number }> = ({ children, s
   </svg>
 );
 
-export type AskKind = 'mention' | 'approval' | 'decision' | 'handoff' | 'press';
+export type AskKind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked' | 'press';
 
 /** The four ask kinds (plus press) as marks. */
 export const KindGlyph: React.FC<{ kind: AskKind | string; size?: number }> = ({ kind, size }) => {
@@ -22,6 +22,8 @@ export const KindGlyph: React.FC<{ kind: AskKind | string; size?: number }> = ({
       return <G size={size}><path d="M6 3v6a4 4 0 0 0 4 4h4a4 4 0 0 0 4-4V3M12 13v8" /></G>;
     case 'handoff':
       return <G size={size}><path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3" /></G>;
+    case 'blocked':
+      return <G size={size}><path d="M4 4v16M20 4v16M9 8v8M15 8v8" /></G>;
     case 'press':
       return <G size={size}><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="12" r="3" /><path d="M8.6 7.5 15.4 10.5M8.6 16.5l6.8-3" /></G>;
     default:

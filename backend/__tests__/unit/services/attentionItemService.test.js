@@ -12,6 +12,10 @@ const mockTaskFind = jest.fn();
 jest.mock('../../../models/Task', () => ({ find: mockTaskFind }));
 const mockUserFindById = jest.fn();
 jest.mock('../../../models/User', () => ({ find: mockUserFind, findById: mockUserFindById }));
+const mockInstallationFindOne = jest.fn();
+jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { findOne: mockInstallationFindOne } }));
+const mockSendNeedsYouEmail = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../../services/needsYouEmailService', () => ({ sendNeedsYouEmail: mockSendNeedsYouEmail }));
 const mockMongoMessageFindById = jest.fn();
 const mockMongoMessageExists = jest.fn();
 jest.mock('../../../models/Message', () => ({ findById: mockMongoMessageFindById, exists: mockMongoMessageExists }));
@@ -31,6 +35,7 @@ const AttentionItemService = require('../../../services/attentionItemService');
 describe('attentionItemService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInstallationFindOne.mockReturnValue(chain(null));
     mockUpdateOne.mockResolvedValue({ modifiedCount: 1 });
     mockUpdateMany.mockResolvedValue({ modifiedCount: 1 });
   });
@@ -83,6 +88,74 @@ describe('attentionItemService', () => {
     expect(mockPodFindById).not.toHaveBeenCalled();
     expect(mockUserFind).not.toHaveBeenCalled();
     expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('routes a [BLOCKED] agent post to its installer without needing an @mention', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'creator', members: ['creator', 'sam'] }));
+    mockUserFind.mockReturnValue(chain([
+      { _id: 'creator', username: 'Creator', isBot: false },
+      { _id: 'sam', username: 'Sam', isBot: false },
+    ]));
+    mockUserFindById.mockReturnValue(chain({
+      _id: 'scout', username: 'scout', isBot: true,
+      botMetadata: { displayName: 'Scout', ownerUserId: 'sam' },
+    }));
+    mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-1' });
+
+    await AttentionItemService.recordMentionedUsers({
+      id: 45, podId: 'pod-1', userId: 'scout', content: '[BLOCKED] I need the staging key.',
+    });
+
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    expect(mockUpdateOne.mock.calls[0][0].recipientUserId).toBe('sam');
+    expect(mockUpdateOne.mock.calls[0][1].$setOnInsert).toMatchObject({ kind: 'blocked', title: 'Scout is blocked' });
+    expect(mockSendNeedsYouEmail).toHaveBeenCalledWith(expect.objectContaining({
+      recipientUserId: 'sam', actorName: 'Scout',
+    }));
+  });
+
+  it('emails a decision only to the asking agent installer, not every queue recipient', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'creator', members: ['creator', 'sam'] }));
+    mockUserFind.mockReturnValue(chain([
+      { _id: 'creator', username: 'Creator', isBot: false },
+      { _id: 'sam', username: 'Sam', isBot: false },
+    ]));
+    mockUserFindById.mockReturnValue(chain({ _id: 'scout', isBot: true, botMetadata: { ownerUserId: 'sam' } }));
+    mockUpdateOne.mockResolvedValueOnce({ upsertedId: 'attention-creator' }).mockResolvedValueOnce({ upsertedId: 'attention-sam' });
+
+    await AttentionItemService.recordDecision({
+      _id: 'decision-1', podId: 'pod-1', agentUserId: 'scout', title: 'Which release?',
+      options: [{ label: 'Now' }, { label: 'Later' }],
+    });
+
+    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+    expect(mockSendNeedsYouEmail).toHaveBeenCalledTimes(1);
+    expect(mockSendNeedsYouEmail).toHaveBeenCalledWith(expect.objectContaining({ recipientUserId: 'sam' }));
+  });
+
+  it('uses the installation in this pod before a global bot owner', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: ['sam', 'lee'] }));
+    mockUserFind.mockReturnValue(chain([
+      { _id: 'sam', username: 'Sam', isBot: false },
+      { _id: 'lee', username: 'Lee', isBot: false },
+    ]));
+    mockUserFindById.mockReturnValue(chain({
+      _id: 'scout', username: 'scout', isBot: true,
+      botMetadata: { ownerUserId: 'sam', agentName: 'scout' },
+    }));
+    mockInstallationFindOne.mockReturnValue(chain({ installedBy: 'lee' }));
+    mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-1' });
+
+    await AttentionItemService.recordDecision({
+      _id: 'decision-1', podId: 'pod-1', agentUserId: 'scout', agentName: 'scout',
+      title: 'Which release?', options: [{ label: 'Now' }, { label: 'Later' }],
+    });
+
+    expect(mockInstallationFindOne).toHaveBeenCalledWith(expect.objectContaining({
+      podId: 'pod-1', agentName: 'scout', instanceId: 'default',
+    }));
+    expect(mockSendNeedsYouEmail).toHaveBeenCalledTimes(1);
+    expect(mockSendNeedsYouEmail).toHaveBeenCalledWith(expect.objectContaining({ recipientUserId: 'lee' }));
   });
 
   it('does not re-materialize a legacy-acknowledged mention during backfill', async () => {
@@ -438,7 +511,7 @@ describe('attentionItemService', () => {
     expect(mockUpdateOne).toHaveBeenCalledTimes(1);
     expect(mockUpdateOne).toHaveBeenCalledWith(
       expect.objectContaining({ recipientUserId: 'owner', 'source.type': 'task', 'source.id': 'task-1:update-1' }),
-      expect.objectContaining({ $setOnInsert: expect.objectContaining({ kind: 'handoff', title: 'Choose a deploy shape' }) }),
+      expect.objectContaining({ $setOnInsert: expect.objectContaining({ kind: 'blocked', title: 'Choose a deploy shape' }) }),
       { upsert: true },
     );
   });
@@ -565,6 +638,7 @@ describe('attentionItemService', () => {
       $or: [
         { kind: 'mention' },
         { kind: 'handoff' },
+        { kind: 'blocked' },
         { kind: 'decision', 'source.type': 'task' },
       ],
     });

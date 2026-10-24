@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ActGlyph, KindGlyph } from '../icons/glyphs';
 import { AuthContext } from '../../context/AuthContext';
@@ -46,7 +46,7 @@ interface NeedsYouItem {
   // A settled decision keeps its ruling (from durable history) so the 0-state
   // can say when the last ask was answered.
   ruling?: { value?: string; by?: string; at?: string | null } | null;
-  kind: 'mention' | 'approval' | 'decision' | 'handoff';
+  kind: 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
   title: string;
   detail: string;
   podId: string | null;
@@ -162,12 +162,14 @@ const relativeTime = (value: string | null | undefined): string => {
 };
 
 const V2ActivityPage: React.FC = () => {
+  const location = useLocation();
   const navigate = useNavigate();
   const { t } = useTranslation();
   const auth = useContext(AuthContext);
   const currentUser = auth?.currentUser || null;
   const authLoading = auth?.loading || false;
   const accountId = currentUser?._id ? String(currentUser._id) : null;
+  const emailTargetRef = useRef(new URLSearchParams(location.search).get('item'));
   const restoredSnapshotRef = useRef<ActivitySnapshot | null>(null);
   const snapshotAccountRef = useRef<string | null | undefined>(undefined);
   const [snapshotReady, setSnapshotReady] = useState(false);
@@ -247,7 +249,11 @@ const V2ActivityPage: React.FC = () => {
     if (authLoading || snapshotAccountRef.current === accountId) return;
     snapshotAccountRef.current = accountId;
     const snapshot = accountId ? readActivitySnapshot(accountId) : null;
-    restoredSnapshotRef.current = snapshot;
+    const fromEmail = Boolean(emailTargetRef.current);
+    // A saved Back snapshot can be scoped to a different pod. An email link
+    // names a particular ask, so search across pods and let that ask win focus.
+    restoredSnapshotRef.current = fromEmail ? null : snapshot;
+    if (fromEmail && accountId) sessionStorage.removeItem(snapshotKey(accountId));
     setRuledDecisions({});
     setSettledQueueDecisions({});
     setHistoryRemaining(0);
@@ -255,21 +261,23 @@ const V2ActivityPage: React.FC = () => {
     setHistoryLoadingMore(false);
     historyOffsetRef.current = 0;
     if (snapshot) {
+      const startingScope = fromEmail ? 'all' : snapshot.podId || 'all';
+      const startingQueue = fromEmail ? [] : snapshot.queue || [];
       setWindow(snapshot.window || 'today');
-      setPodId(snapshot.podId || 'all');
+      setPodId(startingScope);
       setRecap(snapshot.recap || null);
-      queueScopeRef.current = snapshot.podId || 'all';
-      queueRef.current = snapshot.queue || [];
+      queueScopeRef.current = startingScope;
+      queueRef.current = startingQueue;
       setQueue(queueRef.current);
-      setQueueCount(snapshot.queueCount ?? null);
-      setQueueCountsByPod(snapshot.queueCountsByPod || {});
-      setQueueRemaining(snapshot.queueRemaining || 0);
+      setQueueCount(fromEmail ? null : snapshot.queueCount ?? null);
+      setQueueCountsByPod(fromEmail ? {} : snapshot.queueCountsByPod || {});
+      setQueueRemaining(fromEmail ? 0 : snapshot.queueRemaining || 0);
       setReplyDrafts(snapshot.replyDrafts || {});
       setComposePodId(snapshot.composePodId || '');
       setComposeDraft(snapshot.composeDraft || '');
       setComposeMenuOpen(false);
-      revalidationExtentRef.current = snapshot.queue?.length || 0;
-      revalidationScopeRef.current = snapshot.podId || 'all';
+      revalidationExtentRef.current = startingQueue.length;
+      revalidationScopeRef.current = startingScope;
       setLoading(!snapshot.recap);
     } else {
       setWindow('today');
@@ -663,6 +671,17 @@ const V2ActivityPage: React.FC = () => {
     void loadMoreQueue(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueHydrated, queue.length, queueRemaining, queueLoadingMore, queueMoreError, queueFailed]);
+
+  useEffect(() => {
+    const target = emailTargetRef.current;
+    if (!target || !queueHydrated || !queue.some((item) => item.attentionItemId === target)) return;
+    emailTargetRef.current = null;
+    globalThis.window.requestAnimationFrame(() => {
+      const row = document.querySelector<HTMLElement>(`[data-attention-id="${CSS.escape(target)}"]`);
+      row?.scrollIntoView({ block: 'center' });
+      row?.focus({ preventScroll: true });
+    });
+  }, [queue, queueHydrated]);
 
   // Stall detector (sprint-review 66417): a next page is expected, nothing is
   // fetching it, and no error cleared the expectation. Normal paging starts
@@ -1242,7 +1261,7 @@ const V2ActivityPage: React.FC = () => {
               {visibleQueue.length > 0 && (
               <div className="v2-activity__queue">
                 {visibleQueue.map((item) => (
-                  <article key={item.id} data-activity-item-id={item.id} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
+                  <article key={item.id} data-activity-item-id={item.id} data-attention-id={item.attentionItemId} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
                     {/* The kind is a category, so it is a mark (Sam 2026-09-11, direction A); the word stays for
                         assistive tech. The mark's colour still says who is asking: an agent is cobalt. */}
                     <span className={`v2-activity__queue-mark${item.actorName ? (isAgentActor(item) ? ' v2-activity__queue-mark--agent' : ' v2-activity__queue-mark--human') : ''}`} role="img" aria-label={t(`activity.needsYou.kinds.${item.kind}`)} title={t(`activity.needsYou.kinds.${item.kind}`)}>
@@ -1277,7 +1296,7 @@ const V2ActivityPage: React.FC = () => {
                           </button>
                         </>
                       )}
-                      {item.kind === 'handoff' && (
+                      {(item.kind === 'handoff' || item.kind === 'blocked') && (
                         <button type="button" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
                           {acknowledgingAttentionId === item.id ? t('activity.handoff.working', { defaultValue: 'Saving…' }) : t('activity.handoff.markHandled', { defaultValue: 'Mark handled' })}
                         </button>
