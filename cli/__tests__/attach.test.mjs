@@ -451,6 +451,7 @@ describe('performAttach', () => {
     const result = await performAttach({ client, adapterName: 'stub', agentName: 'local', podId: 'pod-1',
       memoryFrom: 'hosted', memoryInstance: 'source-1' });
     expect(result.runtimeToken).toBe('cm_agent_local');
+    expect(client.post.mock.calls.find(([route]) => route === '/api/registry/install')[1].resumeExisting).toBe(true);
     expect(client.patch).toHaveBeenCalledWith('/api/agent-memory/local/default/editable/long_term',
       { copyFrom: { agentName: 'hosted', instanceId: 'source-1' }, expectedUpdatedAt: null });
   });

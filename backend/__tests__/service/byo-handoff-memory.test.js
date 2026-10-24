@@ -9,7 +9,9 @@ const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const AgentMemory = require('../../models/AgentMemory');
-const { AgentInstallation } = require('../../models/AgentRegistry');
+const AgentCredential = require('../../models/AgentCredential');
+const { AgentInstallation, AgentRegistry } = require('../../models/AgentRegistry');
+const registryRoutes = require('../../routes/registry');
 const { appendLongTermMemory } = require('../../services/agentMemoryService');
 const { hash } = require('../../utils/secret');
 const ownerRoutes = require('../../routes/agentMemoryView');
@@ -30,17 +32,24 @@ describe('hosted memory copied into a local agent', () => {
     await User.create({ username: 'local-handoff', email: 'local-handoff@test.com', password: 'password123', isBot: true,
       botType: 'agent', botMetadata: { agentName: 'local-handoff', instanceId: 'default', ownerUserId: owner._id },
       agentRuntimeTokens: [{ tokenHash: hash(RAW_TOKEN), label: 'test', createdAt: new Date() }] });
+    await AgentRegistry.create({ agentName: 'local-handoff', displayName: 'local-handoff', description: 'Handoff fixture',
+      manifest: { name: 'local-handoff', version: '1.0.0', context: { required: [] } },
+      latestVersion: '1.0.0', registry: 'private', publisher: { userId: owner._id, name: owner.username } });
     const app = express(); app.use(express.json());
     app.use('/api/agent-memory', ownerRoutes);
     app.use('/api/agents/runtime', runtimeRoutes);
+    app.use('/api/registry', registryRoutes);
     server = await new Promise((resolve) => { const listening = app.listen(0, '127.0.0.1', () => resolve(listening)); });
     base = `http://127.0.0.1:${server.address().port}`;
   });
-  afterAll(async () => { await new Promise((resolve) => server.close(resolve)); await closeMongoDb(); });
+  afterAll(async () => { if (server) await new Promise((resolve) => server.close(resolve)); await closeMongoDb(); });
   beforeEach(async () => {
     await AgentMemory.deleteMany({}); await AgentInstallation.deleteMany({});
+    await AgentCredential.deleteMany({ tokenHash: hash(RAW_TOKEN) });
+    await User.updateOne({ username: 'local-handoff' }, { $set: { agentRuntimeTokens: [{ tokenHash: hash(RAW_TOKEN), label: 'test', createdAt: new Date() }] } });
     for (const agentName of ['hosted-handoff', 'local-handoff']) {
-      await AgentInstallation.create({ agentName, instanceId: 'default', podId: pod._id, version: '1', installedBy: owner._id });
+      await AgentInstallation.create({ agentName, instanceId: 'default', podId: pod._id, version: '1', installedBy: owner._id,
+        config: agentName === 'local-handoff' ? { runtime: { host: 'byo', runtimeType: 'stub', adapter: 'stub' } } : {} });
     }
     await appendLongTermMemory({ agentName: 'hosted-handoff', instanceId: 'default', content: 'remember-X-468' });
   });
@@ -91,6 +100,44 @@ describe('hosted memory copied into a local agent', () => {
       .set('Authorization', auth).send({ copyFrom: { agentName: 'hosted-handoff', instanceId: 'default' }, expectedUpdatedAt: null });
     expect(denied.status).toBe(409);
     expect((await AgentMemory.findOne({ agentName: 'local-handoff' }).lean()).content).toContain('independent');
+  });
+  it('actual CLI attach recovers an active install after a refused source copy', async () => {
+    const cliRoot = path.resolve(__dirname, '../../../cli/src');
+    const script = `
+      import {performAttach} from ${JSON.stringify(pathToFileURL(path.join(cliRoot, 'commands/agent.js')).href)};
+      import {createClient} from ${JSON.stringify(pathToFileURL(path.join(cliRoot, 'lib/api.js')).href)};
+      import {readLongTerm,buildMemoryPreamble} from ${JSON.stringify(pathToFileURL(path.join(cliRoot, 'lib/memory-bridge.js')).href)};
+      const client=createClient({instance:process.env.TEST_BASE,token:process.env.TEST_OWNER_TOKEN});
+      const result=await performAttach({client,adapterName:'stub',agentName:'local-handoff',podId:process.env.TEST_POD,memoryFrom:'hosted-handoff'});
+      const runtime=createClient({instance:process.env.TEST_BASE,token:result.runtimeToken});
+      console.log(JSON.stringify({preamble:buildMemoryPreamble('first local turn',await readLongTerm(runtime))}));`;
+    const invoke = () => execute(process.execPath, ['--input-type=module', '-e', script], { env: { ...process.env,
+      TEST_BASE: base, TEST_POD: String(pod._id), TEST_OWNER_TOKEN: jwt.sign({ id: String(owner._id) }, SECRET) } });
+    await AgentInstallation.deleteOne({ agentName: 'local-handoff' });
+    await AgentInstallation.updateOne({ agentName: 'hosted-handoff' }, { $set: { installedBy: outsider._id } });
+    await expect(invoke()).rejects.toThrow();
+    expect(await AgentInstallation.countDocuments({ agentName: 'local-handoff', status: 'active' })).toBe(1);
+    expect((await request(base).get('/api/agents/runtime/memory').set('Authorization', `Bearer ${RAW_TOKEN}`)).status).toBe(200);
+    await AgentInstallation.updateOne({ agentName: 'hosted-handoff' }, { $set: { installedBy: owner._id } });
+    const output = JSON.parse((await invoke()).stdout);
+    expect(output.preamble).toContain('remember-X-468');
+    expect(await AgentInstallation.countDocuments({ agentName: 'local-handoff', status: 'active' })).toBe(1);
+  });
+  it('resume does not adopt a foreign installation or change the runtime binding', async () => {
+    const body = { agentName: 'local-handoff', podId: String(pod._id), resumeExisting: true,
+      config: { runtime: { host: 'byo', runtimeType: 'stub', adapter: 'stub' } } };
+    const auth = `Bearer ${jwt.sign({ id: String(owner._id) }, SECRET)}`;
+    await AgentInstallation.updateOne({ agentName: 'local-handoff' }, { $set: { installedBy: outsider._id } });
+    expect((await request(base).post('/api/registry/install').set('Authorization', auth).send(body)).status).toBe(409);
+    await AgentInstallation.updateOne({ agentName: 'local-handoff' }, { $set: { installedBy: owner._id } });
+    body.config.runtime.adapter = 'codex';
+    expect((await request(base).post('/api/registry/install').set('Authorization', auth).send(body)).status).toBe(409);
+    const installation = await AgentInstallation.findOne({ agentName: 'local-handoff' }).lean();
+    expect(installation.config.runtime.adapter).toBe('stub');
+    body.config.runtime.adapter = 'stub'; body.config.runtime.host = 'cloud';
+    expect((await request(base).post('/api/registry/install').set('Authorization', auth).send(body)).status).toBe(409);
+    body.config.runtime.host = 'byo'; body.resumeExisting = false;
+    expect((await request(base).post('/api/registry/install').set('Authorization', auth).send(body)).status).toBe(400);
   });
   it('does not resurrect stale legacy content when canonical source memory is explicitly empty', async () => {
     await AgentMemory.updateOne({ agentName: 'hosted-handoff' }, { $set: {

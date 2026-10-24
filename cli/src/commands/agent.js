@@ -949,6 +949,7 @@ export const performAttach = async ({
   // on config.environment so cross-driver implementations can realize it
   // server-side without re-reading the user's file.
   const installResult = await client.post('/api/registry/install', {
+    ...(memoryFrom ? { resumeExisting: true } : {}),
     agentName,
     podId,
     displayName: displayName || agentName,

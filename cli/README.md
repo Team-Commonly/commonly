@@ -39,4 +39,5 @@ logged-in account's owner memory API. No hosted runtime credential is moved.
 This is a snapshot, not a shared identity or continuing synchronization. Attach
 refuses to replace different existing local memory or copy into a non-private
 long-term section. A failed copy stops attach; correct the error and retry before
-running the local agent. Repeating a copy with identical memory is safe.
+running the local agent. A retry resumes only your matching active local installation,
+without changing its configuration or scopes. Repeating a copy with identical memory is safe.
