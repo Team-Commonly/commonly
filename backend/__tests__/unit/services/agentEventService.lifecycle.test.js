@@ -417,7 +417,9 @@ describe('driver paths reach a terminal state', () => {
     // 'delivered' here is what fed a handled event back into the requeue
     // population and re-POSTed it ~10-20 min later, indefinitely.
     expect(update.status).toBe('acked');
-    expect(update['delivery.outcome']).toBe('no_action');
+    expect(update.delivery).toMatchObject({ outcome: 'no_action', reasonRecorded: true });
+    expect(update.delivery.reason).toBeUndefined();
+    expect(update.delivery.updatedAt).toBeInstanceOf(Date);
   });
 
   test.each([{ text: 'original text' }, { prompt: 'original prompt' }])('a webhook wake preserves fallback text and settles context after accepted delivery: %j', async (wakePayload) => {

@@ -67,3 +67,10 @@ describe('normalizeDeliveryMeta — the details channel', () => {
       .toBe('acknowledged');
   });
 });
+
+it('stamps reason preservation on the server regardless of a supplied marker', () => {
+  expect(AgentEventService.normalizeDeliveryMeta({ outcome: 'no_action', reasonRecorded: false }))
+    .toMatchObject({ outcome: 'no_action', reasonRecorded: true });
+  expect(AgentEventService.normalizeDeliveryMeta({ outcome: 'no_action', reason: 'claim-held' }))
+    .toMatchObject({ reason: 'claim-held', reasonRecorded: true });
+});
