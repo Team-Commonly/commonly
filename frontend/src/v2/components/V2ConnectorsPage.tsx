@@ -229,6 +229,7 @@ const SLACK_REFUSALS: Record<string, { key: string; defaultValue: string }> = {
   slack_installation_not_found: { key: 'connectors.slackInstallationNotFound', defaultValue: 'Slack installation not found.' },
   slack_bind_missing: { key: 'connectors.slackBindMissing', defaultValue: 'There is no Slack authorization to confirm.' },
   slack_bind_expired: { key: 'connectors.slackBindExpired', defaultValue: 'Slack authorization expired. Start again.' },
+  slack_lead_invalid: { key: 'connectors.slackLeadInvalid', defaultValue: 'Choose an agent in the active pod.' },
   slack_pod_access_denied: { key: 'connectors.slackPodAccessDenied', defaultValue: 'You no longer have access to this pod.' },
 };
 
@@ -322,6 +323,7 @@ const V2ConnectorsPage: React.FC = () => {
   // only in the page-level slot at the foot of the page.
   const [rowRefusal, setRowRefusal] = useState<{ key: string; message: string } | null>(null);
   const [slackCallbackError, setSlackCallbackError] = useState<string | null>(null);
+  const [slackLeadChoices, setSlackLeadChoices] = useState<Record<string, string>>({});
   const [hostedMcpCallbackError, setHostedMcpCallbackError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const podPickerRef = useRef<HTMLSelectElement | null>(null);
@@ -699,13 +701,14 @@ const V2ConnectorsPage: React.FC = () => {
     }
   };
 
-  const resolveSlackBind = async (connector: Connector, action: 'confirm' | 'reject', rowKey: string) => {
+  const resolveSlackBind = async (connector: Connector, action: 'confirm' | 'reject', rowKey: string, lead?: string) => {
     if (busyId) return;
     setBusyId(connector._id);
     setError(null);
     setRowRefusal(null);
     try {
-      await api.post(`/api/installables/slack/${action}`, {});
+      await api.post(`/api/installables/slack/${action}`, action === 'confirm' && lead
+        ? { leadAgentUsername: lead } : {});
       await load();
     } catch (requestError) {
       setRowRefusal({
@@ -1203,7 +1206,9 @@ const V2ConnectorsPage: React.FC = () => {
     if (!connector) return undefined;
     if (action === 'new-code') return regenerateCode(connector);
     if (action === 'authorize') return authorizeSlack(connector, item.key);
-    if (action === 'confirm') return resolveSlackBind(connector, 'confirm', item.key);
+    // The row opens the aside where the active pod's lead can be chosen.
+    // Sending a confirm here would silently omit that choice.
+    if (action === 'confirm') return undefined;
     return undefined;
   };
 
@@ -1375,7 +1380,9 @@ const V2ConnectorsPage: React.FC = () => {
                     disabled={disabled}
                     onChange={(event) => { void writeGate(connector, pod._id, { ...gate, enabled, lead: event.target.value || undefined }); }}
                   >
-                    <option value="">{t('connectors.leadAny', { defaultValue: 'Any agent leads' })}</option>
+                    <option value="">{connector.type === 'slack'
+                      ? t('connectors.slackLeadNone', { defaultValue: 'No lead selected' })
+                      : t('connectors.leadAny', { defaultValue: 'Any agent leads' })}</option>
                     {bots.map((bot) => <option key={bot.username} value={bot.username}>{bot.username}</option>)}
                   </select>
                   {!active && (
@@ -1477,6 +1484,12 @@ const V2ConnectorsPage: React.FC = () => {
     const supportsRelayControls = isTelegram || isSlack;
     const mirror = connector.config?.relayAllAgentMessages === true;
     const pendingBind = connector.config?.pendingBind;
+    const activePod = podList.find((pod) => pod._id === connectorPodId(connector));
+    const availableLeads = botMembers(activePod);
+    const candidateSlackLead = slackLeadChoices[connector._id]
+      ?? connector.config?.gates?.[String(connectorPodId(connector))]?.lead ?? '';
+    const selectedSlackLead = availableLeads.some((bot) => bot.username === candidateSlackLead)
+      ? candidateSlackLead : '';
     const userScoped = connector.scope === 'user' || Boolean(connector.config?.gates);
     const busy = busyFor(item);
 
@@ -1517,8 +1530,24 @@ const V2ConnectorsPage: React.FC = () => {
                   workspace: pendingBind.teamName || 'This Slack workspace',
                   user: pendingBind.slackUserName ? `@${pendingBind.slackUserName}` : 'your Slack user',
                 })}</p>
+                <label htmlFor={`slack-lead-${connector._id}`}>
+                  {t('connectors.slackBindLead', { defaultValue: 'Agent for plain messages' })}
+                </label>
+                <select
+                  id={`slack-lead-${connector._id}`}
+                  className="v2-connectors__select"
+                  value={selectedSlackLead}
+                  disabled={busy || pods === null || availableLeads.length === 0}
+                  onChange={(event) => setSlackLeadChoices((current) => ({ ...current, [connector._id]: event.target.value }))}
+                >
+                  <option value="">{t('connectors.slackBindLeadNone', { defaultValue: 'Choose an agent' })}</option>
+                  {availableLeads.map((bot) => <option key={bot.username} value={bot.username}>{bot.username}</option>)}
+                </select>
+                {pods !== null && availableLeads.length === 0 && (
+                  <p>{t('connectors.slackNoAgent', { defaultValue: 'No agent is in this pod yet. Messages will reach the pod; choose a lead later.' })}</p>
+                )}
                 <div className="v2-connector-aside__actions">
-                  <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'confirm', item.key); }}>
+                  <button type="button" className="v2-connector-aside__primary" disabled={busy || pods === null || (availableLeads.length > 0 && !selectedSlackLead)} onClick={() => { void resolveSlackBind(connector, 'confirm', item.key, selectedSlackLead); }}>
                     {t('connectors.slackConfirmConnection', { defaultValue: 'Confirm connection' })}
                   </button>
                   <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'reject', item.key); }}>
@@ -1662,7 +1691,7 @@ const V2ConnectorsPage: React.FC = () => {
         className="v2-connectors__header"
         title={t('connectors.title', { defaultValue: 'Connectors' })}
         meta={!loading && headMeta ? headMeta : undefined}
-        hint={t('connectors.description', { defaultValue: 'Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.' })}
+        hint={t('connectors.description', { defaultValue: 'Connect a channel to a pod. Messages arrive there as you; choose what reaches the channel.' })}
         hintLabel={t('connectors.about')}
       />
 
