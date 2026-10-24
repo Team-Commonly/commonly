@@ -84,10 +84,15 @@ jobs:
           - pkg: commonly-mcp
             prefix: mcp-v
     steps:
+      # workflow_run runs with the default branch's context, so this checks out
+      # main (never a PR ref), and the only other commit it runs code from is a
+      # release tag proven to be on main first. Read-only token throughout.
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0   # the tagged commit must be reachable, and checked against main
           fetch-tags: true
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

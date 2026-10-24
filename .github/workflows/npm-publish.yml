@@ -60,8 +60,10 @@ on:
         options: [ all, cli, commonly-mcp ]
 
 permissions:
-  contents: write   # push the cli-v<ver> / mcp-v<ver> release tag
-  id-token: write   # npm trusted publishing (OIDC) + provenance
+  contents: read
+
+# Granted on the job, not here, so a job added to this file later starts
+# read-only instead of inheriting tag-push rights.
 
 concurrency:
   group: npm-publish
@@ -71,6 +73,9 @@ jobs:
   publish:
     name: ${{ matrix.pkg }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push the cli-v<ver> / mcp-v<ver> release tag
+      id-token: write   # npm trusted publishing (OIDC) + provenance
     strategy:
       fail-fast: false
       matrix:
