@@ -73,6 +73,13 @@ jobs:
   publish:
     name: ${{ matrix.pkg }}
     runs-on: ubuntu-latest
+    # Bind the publish to the `npm-release` environment, whose deployment
+    # branch policy is `main` only (TASK-470). GitHub refuses to start a
+    # deployment to this environment from any other ref, so a publish
+    # dispatched off a branch is rejected by the platform before the OIDC
+    # id-token is minted — a boundary the earlier in-workflow main-only
+    # check (a mistake-catcher, never a security boundary) could not give.
+    environment: npm-release
     permissions:
       contents: write   # push the cli-v<ver> / mcp-v<ver> release tag
       id-token: write   # npm trusted publishing (OIDC) + provenance
@@ -120,10 +127,12 @@ jobs:
 
           # A dispatch can name any branch. Publishing or tagging from one
           # would release code main does not hold. This catches a mistaken
-          # dispatch; it is not a security boundary, because a branch's own
-          # copy of this file can drop it. The boundary is the trusted-publisher
-          # binding plus who can dispatch; a protected main-only environment is
-          # the planned hardening.
+          # dispatch with a clear error; it is not the security boundary,
+          # because a branch's own copy of this file can drop it. The boundary
+          # is the `npm-release` environment above, whose main-only deployment
+          # branch policy GitHub enforces before this job starts (TASK-470),
+          # plus the trusted-publisher binding and who can dispatch. This check
+          # stays as the earlier, friendlier failure.
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
             echo "::error::$name: this workflow publishes only from main (got $GITHUB_REF)"
             exit 1
