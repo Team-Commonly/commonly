@@ -2267,6 +2267,8 @@
     "notEnabled": "此实例尚未启用 · 联系实例管理员",
     "notGranted": "未授权",
     "nothingMatches": "没有匹配项。",
+    "multiGrantPodPostingBlocked": "连接器授权覆盖{{agents}}所在的多个 Pod，因此它们暂时无法在任何 Pod 发帖。请结束授权，直到只有一个 Pod 仍可使用连接器。",
+    "runtimePostingStatusUnavailable": "暂时无法检查连接器授权是否限制智能体发帖。请稍后重试。",
     "unknownConnector": "未知连接器",
     "unknownWritePolicy": "写入策略不可用",
     "outcomeFailed": "失败",

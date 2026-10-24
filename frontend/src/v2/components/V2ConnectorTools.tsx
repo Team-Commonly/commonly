@@ -101,7 +101,14 @@ export interface HostedMcpManualRevokeNotice {
   revokePage: string;
 }
 
-interface PodSeat { userId: string | null; displayName?: string; name: string; internal?: boolean }
+interface PodSeat {
+  userId: string | null;
+  displayName?: string;
+  name: string;
+  internal?: boolean;
+  runtimeNarrowedByMultipleGrantPods?: boolean;
+  runtimeNarrowingUnavailable?: boolean;
+}
 
 interface Props {
   pods: V2Pod[];
@@ -210,6 +217,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const [catalog, setCatalog] = useState<ToolCatalogEntry[]>([]);
   const [hiddenConnections, setHiddenConnections] = useState<HiddenToolConnection[]>([]);
   const [seats, setSeats] = useState<Record<string, PodSeat[]>>({});
+  const [seatLookupFailed, setSeatLookupFailed] = useState(false);
   const [lastUse, setLastUse] = useState<Record<string, string | null>>({});
   const [trail, setTrail] = useState<ToolTrail | null>(null);
   const [trailError, setTrailError] = useState(false);
@@ -233,18 +241,24 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const isAdmin = currentUser?.role === 'admin';
 
   const podIds = useMemo(() => pods.slice(0, MAX_PODS).map((pod) => String(pod._id)), [pods]);
+  const blockedSeatNames = [...new Map(Object.values(seats).flat()
+    .filter((seat) => seat.runtimeNarrowedByMultipleGrantPods)
+    .map((seat) => [seat.userId || seat.name, seat.displayName || seat.name])).values()];
+  const narrowingStatusUnavailable = seatLookupFailed || Object.values(seats).flat()
+    .some((seat) => seat.runtimeNarrowingUnavailable);
 
   const load = useCallback(async () => {
     const catalogRes = await api.get<{ installables?: ToolCatalogEntry[]; hiddenToolConnections?: HiddenToolConnection[] }>('/api/installables').catch(() => null);
     setCatalog((catalogRes?.installables || []).filter((entry) => entry.list === 'tools'));
     setHiddenConnections(catalogRes?.hiddenToolConnections || []);
-    if (podIds.length === 0) { setGrants([]); return; }
+    if (podIds.length === 0) { setGrants([]); setSeatLookupFailed(false); return; }
     const results = await Promise.all(podIds.map(async (podId) => {
       const [grantsRes, seatsRes] = await Promise.all([
         api.get<{ grants: ToolGrant[] }>(`/api/pods/${podId}/grants`).catch(() => null),
         api.get<{ agents?: PodSeat[] }>(`/api/registry/pods/${podId}/agents`).catch(() => null),
       ]);
-      return { podId, grants: grantsRes?.grants ?? [], seats: (seatsRes?.agents ?? []).filter((seat) => !seat.internal) };
+      return { podId, grants: grantsRes?.grants ?? [], seats: (seatsRes?.agents ?? []).filter((seat) => !seat.internal),
+        seatLookupFailed: !seatsRes };
     }));
     const seen = new Set<string>();
     const merged: ToolGrant[] = [];
@@ -260,6 +274,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     setGrants(merged);
     setSeats(seatMap);
+    setSeatLookupFailed(results.some((result) => result.seatLookupFailed));
     // "used in the last 10 min" reads the newest trail row's `at` (§6).
     const uses = await Promise.all(merged.filter((grant) => !isDead(grant)).map(async (grant) => {
       const res = await api.get<ToolTrail>(`/api/grants/${grant.grantId}/calls`, { params: { limit: 1 } }).catch(() => null);
@@ -1083,6 +1098,21 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
+        {blockedSeatNames.length > 0 && (
+          <p className="v2-connector-aside__note" role="status">
+            {t('tools.multiGrantPodPostingBlocked', {
+              defaultValue: '{{agents}} cannot post in any pod while connectors reach more than one of their pods. End a grant until only one pod has connector access.',
+              agents: blockedSeatNames.join(t('tools.listSeparator', { defaultValue: ', ' })),
+            })}
+          </p>
+        )}
+        {narrowingStatusUnavailable && (
+          <p className="v2-connector-aside__note" role="status">
+            {t('tools.runtimePostingStatusUnavailable', {
+              defaultValue: 'Could not check whether connector grants limit agent posting. Try again shortly.',
+            })}
+          </p>
+        )}
         {error && !draft && !selected && !githubAppSetup && (
           <p className="v2-connector-aside__note" role="alert">{error}</p>
         )}

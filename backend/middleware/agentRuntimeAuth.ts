@@ -10,6 +10,9 @@ import AgentCredential from '../models/AgentCredential';
 import { markByoConnectionAttempt } from '../services/onboardingMarks';
 import { isSpawnCredential } from '../services/spawnCredentialService';
 import { machineHasLiveAuthorization } from '../services/machineService';
+import { podsWithOutsiderWritableGrants } from '../services/nativeOutsiderGrantPolicy';
+import { installationIdentityFilter } from '../services/agentInstallationIdentity';
+import { classifyRuntimeOutsiderGrantRoute } from '../services/runtimeOutsiderGrantRoutes';
 
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
@@ -75,6 +78,45 @@ const extractToken = (req: Request): string | undefined => {
   return req.header('x-commonly-agent-token');
 };
 
+const checkOutsiderGrantRuntimeNarrowing = async (
+  req: Request, res: Response, installationPodIds: string[],
+): Promise<boolean> => {
+  const uniquePodIds = [...new Set(installationPodIds.filter(Boolean))];
+  if (!uniquePodIds.length) return true;
+  let narrowedPods: Set<string>;
+  try {
+    narrowedPods = await podsWithOutsiderWritableGrants(uniquePodIds);
+  } catch (error) {
+    // A failed grant read must never turn into an unrestricted token.
+    console.error('Outsider grant runtime census failed:', error);
+    narrowedPods = new Set(uniquePodIds);
+  }
+  if (!narrowedPods.size) return true;
+  let route: Awaited<ReturnType<typeof classifyRuntimeOutsiderGrantRoute>>;
+  try {
+    route = await classifyRuntimeOutsiderGrantRoute(req);
+  } catch (error) {
+    console.error('Outsider grant runtime route resolution failed:', error);
+    route = { routeClass: 'unknown', podId: null };
+  }
+  const allowed = route.routeClass === 'read'
+    || route.routeClass === 'own_state'
+    || route.routeClass === 'grant'
+    || (route.routeClass === 'pod_write' && narrowedPods.size === 1
+      && route.podId === [...narrowedPods][0]);
+  if (allowed) return true;
+  const action = req.method.toUpperCase() === 'GET' ? route.routeClass : 'write';
+  res.status(403).json({
+    code: 'outsider_grant_runtime_narrowed',
+    message: narrowedPods.size > 1
+      ? `Runtime ${action} (${route.routeClass}) refused: outsider-writable grants reach installation pods ${[...narrowedPods].join(', ')}; writes cannot be confined to one pod`
+      : `Runtime ${route.routeClass} refused while an outsider-writable grant reaches pod ${[...narrowedPods][0]}`,
+    podIds: [...narrowedPods],
+    routeClass: route.routeClass,
+  });
+  return false;
+};
+
 export default async function agentRuntimeAuth(req: Request, res: Response, next: NextFunction): Promise<void | Response> {
   try {
     const token = extractToken(req);
@@ -120,14 +162,18 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       )) {
         return res.status(401).json({ message: 'Machine access revoked' });
       }
+    }
+
+    const markCredentialUsed = async () => {
+      if (!credential) return;
       try {
-        // Settings reads this ledger row. A successful authenticated request
-        // must be visible to the next credential read, including first use.
+        // Rejected narrowed calls are not successful token use. Settings reads
+        // this ledger row after an allowed call, including its first use.
         await AgentCredential.updateOne({ _id: credential._id }, { $set: { lastUsedAt: new Date() } });
       } catch (err) {
         console.warn('Failed to update credential usage:', (err as Error).message);
       }
-    }
+    };
 
     // TASK-094: expose the row so routes can key on the credential (the mint
     // route needs the caller's row) rather than hashing the bearer again.
@@ -155,20 +201,10 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       // once per seat.
       const isFirstTokenUse = Boolean(tokenRecord) && !tokenRecord?.lastUsedAt;
 
-      try {
-        await User.updateOne(
-          { _id: agentUser._id, 'agentRuntimeTokens.tokenHash': tokenHash },
-          { $set: { 'agentRuntimeTokens.$.lastUsedAt': new Date() } },
-        );
-      } catch (err: unknown) {
-        console.warn('Failed to update agent token usage on User:', (err as Error).message);
-      }
-
       const { agentName, instanceId } = resolveTokenAgentIdentity(agentUser);
 
       const installations = await AgentInstallation.find({
-        agentName,
-        instanceId,
+        ...installationIdentityFilter(agentName, instanceId),
         status: 'active',
       }).lean();
       // Old uninstall paths left User-row tokens behind. Even before a data
@@ -191,6 +227,19 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       req.agentInstallations = installations as never[];
       req.agentAuthorizedPodIds = authorizedPodIds;
       req.agentInstallation = (installations[0] as never) || null;
+
+      if (!await checkOutsiderGrantRuntimeNarrowing(req, res, installationPodIds)) return undefined;
+
+      await markCredentialUsed();
+
+      try {
+        await User.updateOne(
+          { _id: agentUser._id, 'agentRuntimeTokens.tokenHash': tokenHash },
+          { $set: { 'agentRuntimeTokens.$.lastUsedAt': new Date() } },
+        );
+      } catch (err: unknown) {
+        console.warn('Failed to update agent token usage on User:', (err as Error).message);
+      }
 
       if (isFirstTokenUse) {
         for (const installationRow of installations) {
@@ -220,15 +269,6 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       .find((t: { tokenHash?: string }) => t.tokenHash === tokenHash);
     const isFirstLegacyTokenUse = !legacyTokenRecord?.lastUsedAt;
 
-    try {
-      await AgentInstallation.updateOne(
-        { _id: installation._id, 'runtimeTokens.tokenHash': tokenHash },
-        { $set: { 'runtimeTokens.$.lastUsedAt': new Date() } },
-      );
-    } catch (err: unknown) {
-      console.warn('Failed to update agent token usage:', (err as Error).message);
-    }
-
     // Task #66: a token may be bound to one AgentInstallation row, but the
     // agent identity (agentName + instanceId) can have multiple active
     // installations across pods. Surface ALL of them so the /events
@@ -240,26 +280,21 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     // Codex Hub install couldn't see events from a new pod she'd been
     // freshly installed into.
     const allActiveInstallations = await AgentInstallation.find({
-      agentName: installation.agentName,
-      instanceId: installation.instanceId || 'default',
+      ...installationIdentityFilter(installation.agentName, installation.instanceId || 'default'),
       status: 'active',
     });
+    // The matched credential is itself an active installation. Preserve its
+    // pod even if a legacy instanceId shape makes the identity-wide query
+    // miss it; otherwise this token would escape the grant census.
+    const identityInstallations = allActiveInstallations.some((inst: { _id?: unknown }) =>
+      String(inst._id) === String(installation._id))
+      ? allActiveInstallations : [installation, ...allActiveInstallations];
 
     req.agentInstallation = installation as never;
-    req.agentInstallations = allActiveInstallations as never[];
-    req.agentAuthorizedPodIds = allActiveInstallations
+    req.agentInstallations = identityInstallations as never[];
+    req.agentAuthorizedPodIds = identityInstallations
       .map((inst: { podId?: { toString: () => string } }) => inst?.podId?.toString())
       .filter(Boolean) as string[];
-
-    if (isFirstLegacyTokenUse) {
-      markByoConnectionAttempt(installation.installedBy, installation);
-      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-      const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
-      void completeConnectAgentStarterTask({
-        podIds: req.agentAuthorizedPodIds,
-        agentLabel: installation.displayName || installation.agentName,
-      });
-    }
 
     // Also resolve and attach the bot User so downstream routes that derive
     // `req.agentUser._id` (file-upload uploaderId, message authorship) work
@@ -302,6 +337,30 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       console.warn('[agentRuntimeAuth] failed to resolve bot user for legacy token path:', (err as Error).message);
     }
 
+    if (!await checkOutsiderGrantRuntimeNarrowing(
+      req, res, identityInstallations.map((inst: { podId?: unknown }) => String(inst.podId || '')),
+    )) return undefined;
+
+    await markCredentialUsed();
+
+    try {
+      await AgentInstallation.updateOne(
+        { _id: installation._id, 'runtimeTokens.tokenHash': tokenHash },
+        { $set: { 'runtimeTokens.$.lastUsedAt': new Date() } },
+      );
+    } catch (err: unknown) {
+      console.warn('Failed to update agent token usage:', (err as Error).message);
+    }
+
+    if (isFirstLegacyTokenUse) {
+      markByoConnectionAttempt(installation.installedBy, installation);
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
+      void completeConnectAgentStarterTask({
+        podIds: req.agentAuthorizedPodIds,
+        agentLabel: installation.displayName || installation.agentName,
+      });
+    }
     return next();
   } catch (error) {
     console.error('Agent auth error:', error);
