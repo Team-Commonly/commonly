@@ -37,7 +37,8 @@ const errorLabel = (error: unknown, fallback: string): string => (
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
-  const { access, installation, podId, loading, error: loadError, refresh, update, updatePod } = useAgentSettings(agentName, instanceId);
+  const { access, installation, podId, runtimeControls, runtimeEditable, runtimeManaged, loading,
+    error: loadError, refresh, update, updatePod, updateRuntime } = useAgentSettings(agentName, instanceId);
   const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
   const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
@@ -173,6 +174,8 @@ const V2AgentSettingsPage: React.FC = () => {
     ...(typeof controls.adapter === 'string' ? { adapter: controls.adapter } : {}),
     ...(typeof controls.model === 'string' ? { model: controls.model } : {}),
     ...(typeof controls.effort === 'string' ? { effort: controls.effort } : {}),
+    ...runtimeControls,
+    ...(runtimeManaged !== undefined ? { managed: runtimeManaged } : {}),
   };
 
   return (
@@ -252,9 +255,9 @@ const V2AgentSettingsPage: React.FC = () => {
         name={agentName}
         instanceId={instanceId}
         runtime={runtime}
-        onSaveRuntime={async (changes) => {
-          await update({ config: { environment: changes } });
-        }}
+        onSaveRuntime={runtimeEditable ? async (changes) => {
+          await updateRuntime(changes);
+        } : undefined}
       />
       <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
         installation={installation} update={update} />

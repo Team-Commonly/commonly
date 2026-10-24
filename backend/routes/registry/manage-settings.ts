@@ -2,6 +2,7 @@
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 import { hostedCapsForOwner, userRunCeilingForOwner } from '../../services/hostedRuntimeService';
+import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
@@ -57,14 +58,51 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       .select('name').lean();
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
     const visible = manageable.filter((entry: any) => names.has(String(entry.podId)));
-    const writable = visible.find((entry: any) => entry.status === 'active') || visible[0];
-    const quotaOwner = writable?.installedBy || userId;
+    const fallback = visible.find((entry: any) => entry.status === 'active') || visible[0];
+    const quotaOwner = fallback?.installedBy || userId;
+    // The daemon runs the oldest active declaration, not whichever pod this
+    // page happened to load first. Use its projection for both the displayed
+    // controls and the installation selected for edits.
+    const seat = (await projectSeatEnvironments({ installedBy: quotaOwner,
+      agentName: req.params.name }))
+      .get(seatEnvironmentKey(req.params.name, req.query.instanceId));
+    const source = visible.find((entry: any) => String(entry.podId) === seat?.sourcePodId);
+    const writable = fallback;
+    const runtime = seat?.runtime && typeof seat.runtime === 'object' ? seat.runtime as Record<string, unknown> : {};
+    const environment = seat?.environment || {};
+    const runtimeControls = Object.fromEntries(['model', 'effort']
+      .map((key) => [key, environment[key] ?? runtime[key]])
+      .filter(([, value]) => typeof value === 'string'));
+    for (const key of ['runtimeType', 'adapter']) {
+      if (typeof runtime[key] === 'string') runtimeControls[key] = runtime[key];
+    }
+    if (runtime.host === 'cloud' || runtime.host === 'byo') runtimeControls.host = runtime.host;
+    const wrapper = runtime.runtimeType === 'wrapper';
+    const binding = wrapper ? await User.findOne({
+      isBot: true,
+      'botMetadata.agentName': String(req.params.name).toLowerCase(),
+      'botMetadata.instanceId': normalizeInstanceId(req.query.instanceId),
+    }).select('botMetadata.machineId').lean() : null;
+    const runtimeManaged = wrapper && Boolean(binding?.botMetadata?.machineId);
+    // A standalone `agent run` reads only its local token record. The server
+    // cannot observe or edit those model/effort flags, so never call a stored
+    // installation preference the running value.
+    if (wrapper && !runtimeManaged) {
+      runtimeControls.model = '';
+      runtimeControls.effort = '';
+    }
     const [{ turnsPerDay }, userRunCeiling] = await Promise.all([
       hostedCapsForOwner(quotaOwner), userRunCeilingForOwner(quotaOwner),
     ]);
     return res.json({ turnCap: turnsPerDay, userRunCeiling, podCount: installations.length,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
       writablePodId: writable ? String(writable.podId) : null,
+      runtimeSourcePodId: wrapper && !runtimeManaged ? null
+        : source ? String(source.podId)
+          : (!seat?.sourcePodId && writable ? String(writable.podId) : null),
+      runtimeControls,
+      runtimeManaged,
+      runtimeEditable: (!wrapper || runtimeManaged) && (!seat?.sourcePodId || Boolean(source)),
       installations: visible
       .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod')) });
   } catch (error) {

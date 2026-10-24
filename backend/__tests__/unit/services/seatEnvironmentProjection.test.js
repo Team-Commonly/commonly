@@ -81,6 +81,7 @@ describe('projectSeatEnvironments', () => {
     // The pair comes from the OLDEST active declaration (`_id` ascending),
     // which for a duplicated identity is a rule rather than the stored order.
     expect(entry.runtime).toEqual({ adapter: 'claude' });
+    expect(entry.sourcePodId).toBe(String(podOne));
 
     const theirs = await projectSeatEnvironments({ installedBy: b._id });
     expect(theirs.get(seatEnvironmentKey('proj-seat', 'default')).runtime).toEqual({ adapter: 'pi' });
