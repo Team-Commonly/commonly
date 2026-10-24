@@ -322,8 +322,14 @@ router.post('/:podId', rateLimit({
       // discard the caller's title (TASK-063). Same pair = idempotent retry.
       // Rows written before titles were collapsed hold the raw text (`Fix\nboard`);
       // a replay of that input must still find them, or the pair index admits a twin.
-      const titleKeys = [...new Set([title, titleInput === undefined ? undefined : String(titleInput)])].filter((t) => t !== undefined);
-      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef, title: titleKeys.length > 1 ? { $in: titleKeys } : title }) as { _id: unknown; title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updatedAt: Date; toObject: () => unknown } | null;
+      // The exact raw title is tried first so a `Fix board` row cannot shadow it.
+      const titleCandidates = [titleInput === undefined ? undefined : String(titleInput), title].filter((t, i, all) => t !== undefined && all.indexOf(t) === i);
+      let existing = null as { _id: unknown; title?: string; status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updatedAt: Date; toObject: () => unknown } | null;
+      for (const candidate of titleCandidates) {
+        // eslint-disable-next-line no-await-in-loop
+        existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef, title: candidate }) as typeof existing;
+        if (existing) break;
+      }
       if (existing) {
         if (existing.status === 'done') {
           // `sourceRef` + `title` are an idempotency key (a unique partial

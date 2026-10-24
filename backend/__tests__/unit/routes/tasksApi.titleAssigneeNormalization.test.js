@@ -114,13 +114,12 @@ describe('task title and assignee normalization on write (TASK-354)', () => {
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
-    test('a replay looks up a row stored under the raw multiline title too', async () => {
+    test('a replay looks up the exact raw multiline title before the normalized one', async () => {
       const Task = require('../../../models/Task');
       await request(app)
         .post(`/api/v1/tasks/${POD}`)
         .send({ title: 'Fix\nboard', sourceRef: 'msg:1' });
-      const filter = Task.findOne.mock.calls[0][0];
-      expect(filter.title).toEqual({ $in: ['Fix board', 'Fix\nboard'] });
+      expect(Task.findOne.mock.calls[0][0].title).toBe('Fix\nboard');
     });
 
     test('a blank assignee stores as unassigned', async () => {
