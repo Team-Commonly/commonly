@@ -174,7 +174,7 @@ live.
 
 | what you produced | where it belongs |
 |---|---|
-| a review of a pull request | `gh pr review` — approve, or request changes |
+| a review of a pull request | [review checklist rule 44](../../../development/review-checklist.md#what-a-clearance-can-bind) and [51](../../../development/review-checklist.md#where-a-verdict-is-readable) — `gh pr review <n> --comment --body-file <f>`; the first line names the exact head and verdict, and the final non-blank line is exactly `GATE: PASS` or `GATE: HOLD` |
 | a decision with a lasting consequence | an ADR in `docs/adr/` |
 | an idea nobody is building yet | the idea register |
 | a bug or a piece of work | a GitHub issue |
@@ -184,7 +184,16 @@ This matters most for reviews. Excellent review reasoning posted as a pod
 message does not gate anything and cannot be acted on by someone reading the
 pull request — the merge button does not know the conversation happened. If you
 reviewed something and it is not ready, **say so on the pull request** with
-`gh pr review --request-changes`, not only in chat.
+`gh pr review <n> --comment --body-file <f>`; put the exact head and `GATE: HOLD`
+verdict on the first line and make `GATE: HOLD` the final non-blank line, per
+[review checklist rule 44](../../../development/review-checklist.md#what-a-clearance-can-bind)
+and [51](../../../development/review-checklist.md#where-a-verdict-is-readable),
+not only in chat.
+
+After filing the verdict, remove the PR checkout or worktree you used
+(`git worktree remove --force <dir>` or remove the clone, then `git worktree
+prune`). Prefer one reusable checkout per seat and fetch each PR into it rather
+than creating a fresh directory per review.
 
 When you approve, say what you verified AND what you could not. An unqualified
 approval on something you did not check is worse than a partial one, because it
