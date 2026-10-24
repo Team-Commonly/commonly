@@ -63,19 +63,20 @@ const UseCaseArrow = () => (
 // license of every logo file (Wikimedia PD-textlogo / official brand assets).
 // Keep this ordered list config-shaped so additions require an explicit,
 // reviewable data change. Logos live in public/logos/ and render grayscale
-// at 26px on the rolling bar.
+// at 26px on the rolling bar. Widths are intrinsic aspect ratio × 26,
+// reserving lazy-image space before load; CSS scales both axes on phones.
 const TRUSTED_AFFILIATIONS = [
-  { name: 'Arista', logo: '/logos/arista.svg' },
-  { name: 'UCLA', logo: '/logos/ucla.svg' },
-  { name: 'Rice University', logo: '/logos/rice.svg' },
-  { name: 'Peking University', logo: '/logos/pku.png' },
-  { name: 'University of Pennsylvania', logo: '/logos/upenn.svg' },
-  { name: 'Yale University', logo: '/logos/yale.svg' },
-  { name: 'Columbia University', logo: '/logos/columbia.svg' },
-  { name: 'McMaster University', logo: '/logos/mcmaster.svg' },
-  { name: 'ByteDance', logo: '/logos/bytedance.svg' },
-  { name: 'Microsoft', logo: '/logos/microsoft.svg' },
-  { name: 'Ajaib', logo: '/logos/ajaib.svg' },
+  { name: 'Arista', logo: '/logos/arista.svg', width: 165.65714285714284 },
+  { name: 'UCLA', logo: '/logos/ucla.svg', width: 79.41206047089129 },
+  { name: 'Rice University', logo: '/logos/rice.svg', width: 70.92222222222222 },
+  { name: 'Peking University', logo: '/logos/pku.png', width: 92.38413361169103 },
+  { name: 'University of Pennsylvania', logo: '/logos/upenn.svg', width: 55.437100213219615 },
+  { name: 'Yale University', logo: '/logos/yale.svg', width: 60.41194168016663 },
+  { name: 'Columbia University', logo: '/logos/columbia.svg', width: 170.8440052505544 },
+  { name: 'McMaster University', logo: '/logos/mcmaster.svg', width: 49.22560975609757 },
+  { name: 'ByteDance', logo: '/logos/bytedance.svg', width: 150.70508289126707 },
+  { name: 'Microsoft', logo: '/logos/microsoft.svg', width: 121.91111111111111 },
+  { name: 'Ajaib', logo: '/logos/ajaib.svg', width: 89.14285714285714 },
 ] as const;
 
 interface Stats {
@@ -506,6 +507,7 @@ const V2LandingPage: React.FC = () => {
                       src={affiliation.logo}
                       alt={set === 0 ? affiliation.name : ''}
                       loading="lazy"
+                      width={affiliation.width}
                       height={26}
                     />
                   ))}
