@@ -576,8 +576,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(detail).toContain('display: -webkit-box');
     expect(detail).toContain('-webkit-line-clamp: 2');
     expect(detail).toContain('overflow: hidden');
-    const reveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail:focus-visible');
+    const reveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail--expanded');
     expect(reveal).toContain('display: block');
+    // A focus-driven reveal would keep the detail open after a second Enter (Lumen HOLD on #2407).
+    expect(v2).not.toContain('.v2-activity__queue-detail:focus-visible');
     expect(reveal).toContain('-webkit-line-clamp: unset');
     const baseDetail = selectorRuleBody(v2, '.v2-root button.v2-activity__queue-detail');
     expect(baseDetail).toContain('color: var(--v2-text-secondary)');

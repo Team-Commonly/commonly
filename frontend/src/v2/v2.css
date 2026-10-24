@@ -10125,7 +10125,9 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-.v2-root .v2-activity__queue-detail:focus-visible,
+/* Reveal follows the toggle, not focus: a focused button that still matched
+   :focus-visible would stay open after the second Enter, so aria-expanded
+   and the visible copy would disagree for keyboard users. */
 .v2-root .v2-activity__queue-detail--expanded {
   display: block;
   overflow: visible;

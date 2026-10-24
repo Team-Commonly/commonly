@@ -269,6 +269,26 @@ describe('V2ActivityPage', () => {
     expect(detailButton).toHaveAttribute('aria-expanded', 'false');
   });
 
+  test('a keyboard user with focus on the detail collapses it on the second toggle', async () => {
+    const detail = 'Keyboard focus must not hold a queue detail open after the second Enter.';
+    const queueWithLongDetail = {
+      ...decisionQueue,
+      items: [{ ...decisionQueue.items[0], detail }],
+      count: 1,
+    };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? queueWithLongDetail : recap }));
+    renderPage();
+
+    const detailButton = await screen.findByRole('button', { name: detail });
+    // Focus stays on the button across both toggles, as it does for Enter on a focused control.
+    detailButton.focus();
+    fireEvent.click(detailButton);
+    expect(detailButton).toHaveClass('v2-activity__queue-detail--expanded');
+    fireEvent.click(detailButton);
+    expect(detailButton).not.toHaveClass('v2-activity__queue-detail--expanded');
+    expect(detailButton).toHaveAttribute('aria-expanded', 'false');
+  });
+
   test('changes the read window and opens the source pod from a factual queue row', async () => {
     renderPage();
     await screen.findByText('Review requested');
