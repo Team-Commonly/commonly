@@ -1,0 +1,36 @@
+name: Seatbelt system Keychains smoke
+
+on:
+  pull_request:
+    paths:
+      - 'cli/src/lib/sandbox/seatbelt.js'
+      - 'cli/__tests__/seatbelt.system-keychains.smoke.test.mjs'
+      - '.github/workflows/seatbelt-system-keychains.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  adapter-turns:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci --prefix cli
+      - name: Install tested OpenCode for a disposable adapter turn
+        run: npm install --prefix "$RUNNER_TEMP/opencode-smoke" opencode-ai@1.19.0
+      - name: Exercise system Keychains denials and real adapter turns
+        env:
+          COMMONLY_OPENCODE_SMOKE_BINARY: ${{ runner.temp }}/opencode-smoke/node_modules/.bin/opencode
+        run: |
+          cd cli
+          node --experimental-vm-modules node_modules/.bin/jest \
+            __tests__/seatbelt.system-keychains.smoke.test.mjs \
+            __tests__/adapters.opencode.seatbelt.smoke.test.mjs \
+            __tests__/adapters.qwen.seatbelt.smoke.test.mjs \
+            __tests__/seatbelt.claude-runtime.smoke.test.mjs \
+            --runInBand --testTimeout=60000
