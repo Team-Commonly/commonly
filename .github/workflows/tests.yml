@@ -207,7 +207,11 @@ jobs:
           '
 
   service-test:
-    name: Service Tests (Tier 1 — real DBs)
+    name: Service Tests (Tier 1 — real DBs) (${{ matrix.shard }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     # Heavy jobs run where the repo variable HEAVY_RUNNER points (D37: Latchkey
     # runners, which don't count against the org's 20-concurrent-job cap).
     # Unset means GitHub-hosted, so rolling back is deleting one variable. The
@@ -278,7 +282,7 @@ jobs:
       - name: Run service tests (Tier 1)
         run: |
           cd backend
-          npx jest --testPathPattern="__tests__/service" --forceExit --runInBand
+          npx jest --testPathPattern="__tests__/service" --forceExit --runInBand --shard=${{ matrix.shard }}/2
 
   chart-lint:
     name: Chart Lint (Tier 1.5)
