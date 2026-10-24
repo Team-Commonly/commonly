@@ -46,6 +46,33 @@ const AGENT = 'pixel';
 const INSTANCE = 'default';
 const POD_ID = new mongoose.Types.ObjectId();
 
+// Dispatch loads digest state before invoking the runner and does not await
+// the turn. Observe that boundary; a returned enqueue/sweep is not a run.
+async function waitForNativeCalls(runAgent, count) {
+  const deadline = Date.now() + 5000;
+  while (runAgent.mock.calls.length < count && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  expect(runAgent).toHaveBeenCalledTimes(count);
+}
+
+async function settleNativeRun(settle, result) {
+  let resolveAck;
+  const acknowledged = new Promise((resolve) => { resolveAck = resolve; });
+  const original = AgentEventService.acknowledge.bind(AgentEventService);
+  const ack = jest.spyOn(AgentEventService, 'acknowledge').mockImplementation(async (...args) => {
+    const result = original(...args);
+    resolveAck(result);
+    return result;
+  });
+  try {
+    settle(result);
+    await acknowledged;
+  } finally {
+    ack.mockRestore();
+  }
+}
+
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
@@ -643,10 +670,9 @@ describe('the native path carries its own delivery nonce', () => {
     const replacement = await claim();
     expect(replacement.payload.deliveryId).not.toBe(born.deliveryNonce);
 
-    // The slow native run finally finishes and acks.
-    settle('done');
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
+    // Wait for both the run and its real acknowledgement, not two event-loop ticks.
+    await waitForNativeCalls(runAgent, 1);
+    await settleNativeRun(settle, 'done');
 
     const after = await AgentEvent.findById(event._id).lean();
     expect(after.status).toBe('delivered');
@@ -682,10 +708,7 @@ describe('the sweep re-runs a stuck in-process event', () => {
     // Native dispatch now gathers pending ambient digest before calling the
     // runner. Wait for that asynchronous read so it cannot leak into the next
     // test or make an immediate runAgent assertion race the database.
-    for (let i = 0; i < 50 && runAgent.mock.calls.length === 0; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    await waitForNativeCalls(runAgent, 1);
     const born = await AgentEvent.findById(event._id).lean();
     return { event, born, settles };
   };
@@ -699,22 +722,13 @@ describe('the sweep re-runs a stuck in-process event', () => {
     expect(rerun.deliveryNonce).toEqual(expect.any(String));
     expect(rerun.deliveryNonce).not.toBe(born.deliveryNonce);
     expect(rerun.attempts).toBe(born.attempts + 1);
-    expect(runAgent).toHaveBeenCalledTimes(2);
+    await waitForNativeCalls(runAgent, 2);
 
-    settles[0]('done'); // the dead turn's late settle
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
+    await settleNativeRun(settles[0], 'done'); // the dead turn's late settle
     expect((await AgentEvent.findById(event._id).lean()).status).toBe('delivered');
 
-    settles[1]('done'); // the re-run's settle
-    let status;
-    for (let i = 0; i < 50 && status !== 'acked'; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      // eslint-disable-next-line no-await-in-loop
-      ({ status } = await AgentEvent.findById(event._id).lean());
-    }
-    expect(status).toBe('acked');
+    await settleNativeRun(settles[1], 'done');
+    expect((await AgentEvent.findById(event._id).lean()).status).toBe('acked');
   });
 
   test('two sweeps racing (two replicas) re-run it once', async () => {
@@ -726,13 +740,8 @@ describe('the sweep re-runs a stuck in-process event', () => {
       AgentEventService.redispatchStuckInProcess(threshold, 3),
     ]);
 
-    for (let i = 0; i < 50 && runAgent.mock.calls.length < 2; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-
     expect(results.reduce((sum, r) => sum + r.redispatched, 0)).toBe(1);
-    expect(runAgent).toHaveBeenCalledTimes(2); // the original turn plus one re-run
+    await waitForNativeCalls(runAgent, 2); // the original turn plus one re-run
   });
 
   test('acks instead of answering twice when the run had already succeeded', async () => {
@@ -741,7 +750,7 @@ describe('the sweep re-runs a stuck in-process event', () => {
     await requeue(event._id);
 
     expect((await AgentEvent.findById(event._id).lean()).status).toBe('acked');
-    expect(runAgent).toHaveBeenCalledTimes(1);
+    await waitForNativeCalls(runAgent, 1);
   });
 
   test('marks a run its process abandoned as interrupted, and leaves live and finished runs alone', async () => {
@@ -766,7 +775,7 @@ describe('the sweep re-runs a stuck in-process event', () => {
     await requeue(event._id);
 
     expect((await AgentEvent.findById(event._id).lean()).status).toBe('failed');
-    expect(runAgent).toHaveBeenCalledTimes(1);
+    await waitForNativeCalls(runAgent, 1);
   });
 });
 
@@ -797,7 +806,7 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
   beforeEach(async () => {
     await AgentInstallation.deleteMany({});
     runAgent.mockReset();
-    runAgent.mockResolvedValue({ status: 'succeeded' });
+    runAgent.mockImplementation(() => new Promise(() => {}));
   });
   afterEach(async () => {
     await AgentInstallation.deleteMany({});
@@ -825,10 +834,10 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
     expect(ran.status).toBe('delivered');
     expect(ran.deliveryNonce).toEqual(expect.any(String));
     expect(ran.attempts).toBe(1);
-    expect(runAgent).toHaveBeenCalledTimes(1);
+    await waitForNativeCalls(runAgent, 1);
 
     await sweep();
-    expect(runAgent).toHaveBeenCalledTimes(1);
+    await waitForNativeCalls(runAgent, 1);
   });
 
   test.each([
@@ -897,7 +906,7 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
     const result = await sweep();
 
     expect(result.rescuedPendingInProcess).toBe(1);
-    expect(runAgent).toHaveBeenCalledTimes(1);
+    await waitForNativeCalls(runAgent, 1);
     expect((await AgentEvent.findById(event._id).lean()).status).not.toBe('pending');
     expect(await AgentEvent.countDocuments({ agentName: 'stuck-agent', status: 'pending', attempts: 0 })).toBe(50);
   });
@@ -935,7 +944,7 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
       expect(runAgent).not.toHaveBeenCalled();
       releaseDigest();
       const [installation, trigger] = await runStarted;
-      expect(runAgent).toHaveBeenCalledTimes(1);
+      await waitForNativeCalls(runAgent, 1);
       expect(String(installation.podId)).toBe(String(POD_ID));
       expect(installation.config.hosted.migration.state).toBe('done');
       expect(trigger.eventId).toBe(String(event._id));
@@ -955,13 +964,8 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
       AgentEventService.rescueStrandedPendingInProcess(new Date(), 3),
     ]);
 
-    for (let i = 0; i < 50 && runAgent.mock.calls.length === 0; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-
     expect(counts[0].rescued + counts[1].rescued).toBe(1);
-    expect(runAgent).toHaveBeenCalledTimes(1);
+    await waitForNativeCalls(runAgent, 1);
   });
 
   test("a backlog of external agents' pending events does not crowd it out", async () => {
@@ -978,6 +982,7 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
     await age(event._id, 2 * 60 * 1000);
 
     expect((await AgentEventService.rescueStrandedPendingInProcess(new Date(), 3)).rescued).toBe(1);
+    await waitForNativeCalls(runAgent, 1);
     expect((await AgentEvent.findById(event._id).lean()).status).not.toBe('pending');
   });
 });
