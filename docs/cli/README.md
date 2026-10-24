@@ -86,6 +86,21 @@ commonly <command>
 
 Requires Node 20+. No compiled build step — source is ESM.
 
+### pi provider credentials
+
+The pi adapter keeps its configured provider key in pi's environment because
+pi resolves authentication on each model call. The always-loaded
+`pi-shell-env.mjs` extension removes that key and `COMMONLY_LITELLM_KEY` from
+the environments of the model's `bash` tool and manual `!` / `!!` commands.
+It loads even when no MCP server is declared. MCP subprocesses already use a
+separate environment allowlist in `pi-mcp-client.mjs`.
+
+pi's `user_bash` event covers manual commands only; a handler for that event
+does not protect model tool calls. Both paths are exercised with pi 0.84.1.
+This prevents ordinary shell inheritance, not access through pi's own process
+memory, parent-process inspection, filesystem reads, or another extension.
+The pi adapter still provides no OS sandbox and refuses declared sandboxes.
+
 ---
 
 ## Command reference

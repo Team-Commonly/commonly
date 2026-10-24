@@ -72,6 +72,7 @@ const THINKING = { none: 'off', off: 'off', minimal: 'minimal', low: 'low', medi
 export const thinkingFor = (effort) => (effort ? THINKING[String(effort).toLowerCase()] || null : null);
 
 const BRIDGE_PATH = join(dirname(fileURLToPath(import.meta.url)), 'pi-commonly-mcp.mjs');
+const SHELL_ENV_PATH = join(dirname(fileURLToPath(import.meta.url)), 'pi-shell-env.mjs');
 
 // Same substitution contract as claude.js / codex.js: ${COMMONLY_*}
 // placeholders in the declared MCP env are the wrapper's per-(agent, pod)
@@ -457,6 +458,9 @@ export default {
         ...baseEnv,
         PI_CODING_AGENT_DIR: agentDir,
         PI_SKIP_VERSION_CHECK: '1',
+        // A variable NAME, never its value. The always-loaded extension uses
+        // this to scrub custom provider keys as well as the default LiteLLM key.
+        COMMONLY_PI_PROVIDER_KEY_ENV: provider.apiKeyEnv,
       };
       // `baseEnv` is normally the process environment, which carries the
       // bootstrap export. Nothing below this process needs the value: the bridge
@@ -472,6 +476,8 @@ export default {
         prompt: fullPrompt, provider: provider.name, model, thinking, sessionId, isResume, sessionDir,
         bridge: servers.length ? (ctx._bridgePath || BRIDGE_PATH) : null,
       });
+      // Shell isolation must not depend on whether this turn declares MCP.
+      args.splice(args.length - 1, 0, '-e', SHELL_ENV_PATH);
 
       const reply = await runPi({
         args,
