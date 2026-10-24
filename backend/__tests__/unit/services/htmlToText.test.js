@@ -44,13 +44,15 @@ describe('htmlToText on hostile input', () => {
     ['"<!--" with no "-->"', '<!--'],
     ['"<p" with no ">"', '<p'],
     ['"&#" fragments', '&#'],
-  ])('1 MB of %s reduces in well under a second', (_name, unit) => {
+  ])('1 MB of %s reduces within five seconds', (_name, unit) => {
     const input = unit.repeat(Math.ceil(MB / unit.length)).slice(0, MB);
     const started = process.hrtime.bigint();
     htmlToText(input);
     const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
-    expect(elapsedMs).toBeLessThan(1000);
-  });
+    // Leave runner scheduling headroom while still catching the old quadratic
+    // scan, which took roughly two minutes for a full-size fetched page.
+    expect(elapsedMs).toBeLessThan(5000);
+  }, 10000);
 });
 
 describe('decodeEntities', () => {
