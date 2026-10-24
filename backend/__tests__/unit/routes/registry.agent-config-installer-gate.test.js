@@ -358,6 +358,10 @@ describe('agent config PATCH — installer gate', () => {
     AgentInstallation.findOne.mockResolvedValue(primary);
     AgentInstallation.find.mockResolvedValue([primary]);
     const originalRead = fs.readFileSync;
+    const originalExists = fs.existsSync;
+    const existsSpy = jest.spyOn(fs, 'existsSync').mockImplementation((file) => (
+      String(file).endsWith('/curator/IDENTITY.md') || originalExists(file)
+    ));
     let reachedReader = false;
     const readSpy = jest.spyOn(fs, 'readFileSync').mockImplementation((file, ...args) => {
       if (String(file).endsWith('/curator/IDENTITY.md')) {
@@ -376,6 +380,7 @@ describe('agent config PATCH — installer gate', () => {
       expect(writeWorkspaceIdentityFile).not.toHaveBeenCalled();
     } finally {
       readSpy.mockRestore();
+      existsSpy.mockRestore();
       if (previousMode === undefined) delete process.env.AGENT_PROVISIONER_K8S;
       else process.env.AGENT_PROVISIONER_K8S = previousMode;
     }
