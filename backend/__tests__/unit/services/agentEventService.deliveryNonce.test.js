@@ -39,6 +39,7 @@ jest.mock('../../../services/nativeRuntimeService', () => ({ runAgent: jest.fn()
 let mongod;
 let AgentEvent;
 let AgentMemory;
+let AgentDigestState;
 let AgentEventService;
 
 const AGENT = 'pixel';
@@ -50,6 +51,7 @@ beforeAll(async () => {
   await mongoose.connect(mongod.getUri());
   AgentEvent = require('../../../models/AgentEvent');
   AgentMemory = require('../../../models/AgentMemory');
+  AgentDigestState = require('../../../models/AgentDigestState');
   AgentEventService = require('../../../services/agentEventService');
 });
 
@@ -61,6 +63,200 @@ afterAll(async () => {
 beforeEach(async () => {
   await AgentEvent.deleteMany({});
   await AgentMemory.deleteMany({});
+  await AgentDigestState.deleteMany({});
+});
+
+describe('legacy ambient digest bridge', () => {
+  test('a push hint does not consume durable inbox state before the reconciling poll', async () => {
+    const ws = require('../../../services/agentWebSocketService');
+    const push = jest.spyOn(ws, 'pushEvent').mockReturnValue(true);
+    const digest = await AgentEventService.enqueue({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest',
+      payload: { username: 'Alice', content: 'context' },
+    });
+    const wake = await AgentEventService.enqueue({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'chat.mention', payload: { content: 'question' },
+    });
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(String(push.mock.calls[0][0]._id)).toBe(String(wake._id));
+    expect((await AgentEvent.findById(digest._id).lean()).status).toBe('pending');
+    expect((await AgentEvent.findById(wake._id).lean()).status).toBe('pending');
+
+    const page = await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 10,
+    });
+    expect(page.events.map((item) => String(item._id))).toEqual([String(wake._id), String(digest._id)]);
+    expect((await AgentEvent.findById(wake._id).lean()).attempts).toBe(1);
+    expect((await AgentEvent.findById(digest._id).lean()).attempts).toBe(0);
+    expect((await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 10,
+    })).events).toEqual([]);
+    push.mockRestore();
+  });
+
+  test('a full wake page reserves one slot for unread digest from the same pod', async () => {
+    const firstWake = await seedEvent();
+    const secondWake = await seedEvent();
+    const digest = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest',
+      payload: { messageId: '42', threadRootId: 21, content: 'private ambient body' },
+    });
+
+    const page = await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 2,
+    });
+    expect(page.inboxCount).toBe(3);
+    expect(page.events.map((event) => String(event._id)))
+      .toEqual([String(firstWake._id), String(digest._id)]);
+    expect((await AgentEvent.findById(secondWake._id).lean()).status).toBe('pending');
+    expect((await AgentEvent.findById(digest._id).lean()).status).toBe('delivered');
+  });
+
+  test('a full wake page keeps every wake when there is no digest', async () => {
+    const firstWake = await seedEvent();
+    const secondWake = await seedEvent();
+    const page = await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 2,
+    });
+    expect(page.events.map((event) => String(event._id)))
+      .toEqual([String(firstWake._id), String(secondWake._id)]);
+  });
+
+  test('a one-wake page still carries its unread digest companion', async () => {
+    const wake = await seedEvent();
+    const digest = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest', payload: { messageId: '42' },
+    });
+    const page = await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 1,
+    });
+    expect(page.events.map((event) => String(event._id)))
+      .toEqual([String(wake._id), String(digest._id)]);
+  });
+
+  test('a poll after pod access is removed cannot drain a queued wake or digest', async () => {
+    const digest = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest', payload: { content: 'private update' },
+    });
+    const wake = await seedEvent();
+
+    expect(await AgentEventService.listInboxPage({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [],
+    })).toEqual({ events: [], inboxCount: 0 });
+    expect(await AgentEventService.list({
+      agentName: AGENT, instanceId: INSTANCE, podIds: [],
+    })).toEqual([]);
+    expect((await AgentEvent.findById(wake._id).lean()).status).toBe('pending');
+    expect((await AgentEvent.findById(digest._id).lean()).status).toBe('pending');
+  });
+
+  test('a legacy poll carries the pending digest on its wake and settles it after ack', async () => {
+    const ambient = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest',
+      payload: { username: 'Alice', messageId: '42', content: 'ambient note' },
+    });
+    const wake = await seedEvent();
+    await AgentEvent.updateOne({ _id: wake._id }, { $set: { payload: { content: 'question' } } });
+
+    const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
+    expect(String(delivered._id)).toBe(String(wake._id));
+    expect(delivered.payload.digestSummary).toContain('pod conversation: 1 unread');
+    expect(delivered.payload.digestSummary).not.toContain('ambient note');
+    expect(delivered.payload.content).toContain('pod conversation: 1 unread');
+    expect(delivered.payload.content).not.toContain('ambient note');
+    expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('pending');
+
+    await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,
+      { outcome: 'no_action' }, delivered.payload.deliveryId);
+    expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('acked');
+  });
+
+  test('a failed legacy wake leaves its digest unread for a later wake', async () => {
+    const ambient = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest', payload: { content: 'later' },
+    });
+    const wake = await seedEvent();
+    const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
+    await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,
+      { outcome: 'error' }, delivered.payload.deliveryId);
+    expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('pending');
+  });
+
+  test('a legacy wake without content still exposes digest to the consumer', async () => {
+    await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest',
+      payload: { username: 'Alice', content: 'ambient note' },
+    });
+    await seedEvent(); // payload.text only; older consumers read payload.content.
+
+    const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
+    expect(delivered.payload.content).toContain('pod conversation: 1 unread');
+    expect(delivered.payload.content).not.toContain('ambient note');
+  });
+
+  test('a claim stand-down does not consume raw or folded digest', async () => {
+    const ambient = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest', payload: { content: 'later' },
+    });
+    await AgentDigestState.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      unreadCount: 2, revision: 1, lastEventIds: ['old-1', 'old-2'],
+    });
+    const wake = await seedEvent();
+    const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
+    await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,
+      { outcome: 'no_action', reason: 'claim-held' }, delivered.payload.deliveryId);
+
+    expect((await AgentEvent.findById(ambient._id).lean()).status).toBe('pending');
+    expect((await AgentDigestState.findOne({ agentName: AGENT, podId: POD_ID }).lean()).unreadCount).toBe(2);
+  });
+
+  test('repeated refused wakes do not exhaust the digest delivery cap', async () => {
+    const digest = await AgentEvent.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      type: 'message.posted', deliveryMode: 'digest', payload: { content: 'still unread' },
+    });
+    for (let index = 0; index < 4; index += 1) {
+      const wake = await seedEvent();
+      const page = await AgentEventService.listInboxPage({
+        agentName: AGENT, instanceId: INSTANCE, podIds: [POD_ID], limit: 10,
+      });
+      expect(page.events.map((event) => String(event._id)))
+        .toEqual([String(wake._id), String(digest._id)]);
+      await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,
+        { outcome: 'no_action', reason: 'claim-held' }, page.events[0].deliveryNonce);
+      await AgentEvent.updateOne({ _id: digest._id }, {
+        $set: { status: 'pending', deliveryNonce: null, deliveredAt: null },
+      });
+    }
+    expect((await AgentEvent.findById(digest._id).lean()).attempts).toBe(0);
+    expect((await AgentEvent.findById(digest._id).lean()).status).toBe('pending');
+  });
+
+  test('a legacy wake carries a folded count and clears only the revision it showed', async () => {
+    await AgentDigestState.create({
+      agentName: AGENT, instanceId: INSTANCE, podId: POD_ID,
+      unreadCount: 3, revision: 1, lastEventIds: ['old-1', 'old-2', 'old-3'],
+    });
+    const wake = await seedEvent();
+    const [delivered] = await AgentEventService.list({ agentName: AGENT, instanceId: INSTANCE });
+    expect(delivered.payload.digestSummary).toContain('older pod activity: 3 unread');
+    await AgentDigestState.updateOne({ agentName: AGENT, podId: POD_ID },
+      { $inc: { unreadCount: 1, revision: 1 } });
+
+    await AgentEventService.acknowledge(wake._id, AGENT, INSTANCE,
+      { outcome: 'no_action' }, delivered.payload.deliveryId);
+    expect((await AgentDigestState.findOne({ agentName: AGENT, podId: POD_ID }).lean()).unreadCount).toBe(4);
+  });
 });
 
 const seedEvent = () => AgentEvent.create({
@@ -483,6 +679,13 @@ describe('the sweep re-runs a stuck in-process event', () => {
     const event = await AgentEventService.enqueue({
       agentName: AGENT, instanceId: INSTANCE, podId: POD_ID, type: 'chat.mention', payload: { text: 'hi' },
     });
+    // Native dispatch now gathers pending ambient digest before calling the
+    // runner. Wait for that asynchronous read so it cannot leak into the next
+    // test or make an immediate runAgent assertion race the database.
+    for (let i = 0; i < 50 && runAgent.mock.calls.length === 0; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     const born = await AgentEvent.findById(event._id).lean();
     return { event, born, settles };
   };
@@ -522,6 +725,11 @@ describe('the sweep re-runs a stuck in-process event', () => {
       AgentEventService.redispatchStuckInProcess(threshold, 3),
       AgentEventService.redispatchStuckInProcess(threshold, 3),
     ]);
+
+    for (let i = 0; i < 50 && runAgent.mock.calls.length < 2; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
 
     expect(results.reduce((sum, r) => sum + r.redispatched, 0)).toBe(1);
     expect(runAgent).toHaveBeenCalledTimes(2); // the original turn plus one re-run
@@ -719,6 +927,11 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
       AgentEventService.rescueStrandedPendingInProcess(new Date(), 3),
       AgentEventService.rescueStrandedPendingInProcess(new Date(), 3),
     ]);
+
+    for (let i = 0; i < 50 && runAgent.mock.calls.length === 0; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
 
     expect(counts[0].rescued + counts[1].rescued).toBe(1);
     expect(runAgent).toHaveBeenCalledTimes(1);

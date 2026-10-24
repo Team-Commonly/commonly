@@ -463,7 +463,10 @@ const DEFERRABLE_SOLO_EVENT_TYPES = new Set(['first_contact']);
 // Inside one batch the person's item leads the prompt; the greeting follows it.
 const PERSON_WAITING_EVENT_TYPES = new Set(['chat.mention', 'message.posted', 'dm.message']);
 
-const inboxPriority = (event) => (PERSON_WAITING_EVENT_TYPES.has(event?.type) ? 0 : 1);
+const inboxPriority = (event) => {
+  if (event?.deliveryMode === 'digest') return 2;
+  return PERSON_WAITING_EVENT_TYPES.has(event?.type) ? 0 : 1;
+};
 
 // Consultations have a per-request private response channel, rather than a
 // pod-chat delivery. They stay on their existing single-event path; every
@@ -1506,7 +1509,7 @@ export const performRun = ({
         // own conversation (Sage stood down twice on Anvil's thread
         // replies, 2026-08-24). Interim for TASK-058.
         const repliesToThisSeat = event.payload?.repliesToYourMessage === true;
-        if (ADDRESSED_EVENT_TYPES.has(event.type) || repliesToThisSeat) {
+        if (ADDRESSED_EVENT_TYPES.has(event.type) || event.payload?.addressed === true || repliesToThisSeat) {
           log(
             `[${event.type}] message ${claimMessageId} held by ${claim.holder} — `
             + (repliesToThisSeat
@@ -2008,10 +2011,12 @@ export const performRun = ({
   // pull, rather than being silently consumed here.
   const buildInboxPrompt = (entries, inboxCount = entries.length) => {
     const BODY_LIMIT = batchLimit;
-    const bodies = entries.slice(0, BODY_LIMIT).map((entry, index) => {
+    const wakeEntries = entries.filter((entry) => entry.event.deliveryMode !== 'digest');
+    const digestEntries = entries.filter((entry) => entry.event.deliveryMode === 'digest');
+    const bodies = wakeEntries.slice(0, BODY_LIMIT).map((entry, index) => {
       const messageId = entry.event.payload?.messageId;
       const prefix = [
-        `Event ${index + 1}/${entries.length}: ${entry.event.type}`,
+        `Event ${index + 1}/${wakeEntries.length}: ${entry.event.type}`,
         messageId ? `message ${messageId}` : null,
       ].filter(Boolean).join(' — ');
       const claimContext = entry.readOnly
@@ -2021,11 +2026,43 @@ export const performRun = ({
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
       return `${prefix}\n${claimContext}${body}`;
     });
-    const omitted = Math.max(0, inboxCount - bodies.length);
+    const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
+    const conversationCounts = new Map();
+    let knownOlder = 0;
+    for (const conversation of Array.isArray(rollup?.conversations) ? rollup.conversations : []) {
+      if (typeof conversation.label !== 'string' || !Number.isInteger(conversation.count)
+        || conversation.count < 1) continue;
+      conversationCounts.set(conversation.label,
+        (conversationCounts.get(conversation.label) || 0) + conversation.count);
+      knownOlder += conversation.count;
+    }
+    if (rollup?.unreadCount > knownOlder) {
+      conversationCounts.set('older pod activity', rollup.unreadCount - knownOlder);
+    }
+    const seenDigestSources = new Set();
+    for (const entry of digestEntries) {
+      const { threadRootId, taskId, taskKind, messageId, content } = entry.event.payload || {};
+      const sourceId = messageId != null ? `message:${messageId}`
+        : (typeof taskId === 'string' ? `task:${taskId}:${taskKind || ''}:${content || ''}` : null);
+      if (sourceId && seenDigestSources.has(sourceId)) continue;
+      if (sourceId) seenDigestSources.add(sourceId);
+      const label = Number.isInteger(Number(threadRootId)) && Number(threadRootId) > 0
+        ? `thread ${threadRootId}`
+        : (/^TASK-\d+$/.test(String(taskId || '')) ? taskId : 'pod conversation');
+      conversationCounts.set(label, (conversationCounts.get(label) || 0) + 1);
+    }
+    const digestLines = [...conversationCounts].slice(0, 8)
+      .map(([label, count]) => `- ${label}: ${count} unread`);
+    const digestCount = [...conversationCounts.values()].reduce((sum, count) => sum + count, 0);
+    const omitted = Math.max(0, inboxCount - entries.length);
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
         + 'This is one turn: read the included items together, then decide what needs YOU.]',
       ...bodies,
+      ...(digestEntries.length > 0 || rollup?.unreadCount > 0 ? [
+        `[Since you last looked: ${digestCount} ambient update${digestCount === 1 ? '' : 's'} in ${conversationCounts.size} conversation${conversationCounts.size === 1 ? '' : 's'}; context only, no reply needed.]
+${digestLines.join('\n')}${conversationCounts.size > 8 ? `\n- ${conversationCounts.size - 8} more conversations omitted` : ''}\nPull relevant messages with commonly_get_messages. On resume, read oldest unread first; at most 8 conversations, 5 messages each, 20 messages total.`,
+      ] : []),
       ...(omitted > 0
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
         : []),
@@ -2168,12 +2205,17 @@ export const performRun = ({
       ? new Set(preSpawn.map((message) => String(message._id || message.id)))
       : null;
     const activeEntries = entries.filter((entry) => !entry.result);
-    const triggers = activeEntries.map((entry) => classifyTrigger(entry.event, preSpawn));
+    // Ambient digest entries provide context for this turn, but must never
+    // determine its admission or count as the trigger that woke the seat.
+    const wakingEntries = activeEntries.filter((entry) => entry.event.deliveryMode !== 'digest');
+    const triggers = wakingEntries.map((entry) => classifyTrigger(entry.event, preSpawn));
     const trigger = triggers.includes('human') ? 'human'
       : (triggers.includes('agent') ? 'agent' : 'unknown');
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
-    const admissionEvent = activeEntries.find((entry) => ADDRESSED_EVENT_TYPES.has(entry.event.type))
-      || activeEntries[0];
+    const admissionEvent = wakingEntries.find((entry) => (
+      ADDRESSED_EVENT_TYPES.has(entry.event.type) || entry.event.payload?.addressed === true
+    ))
+      || wakingEntries[0];
     if (admissionEvent) {
       const admission = cascadeGovernor.admit(
         eventPodId,
@@ -2182,7 +2224,7 @@ export const performRun = ({
         admissionEvent.event.payload,
       );
       if (!admission.allowed) {
-        for (const entry of activeEntries) {
+        for (const entry of wakingEntries) {
           entry.result = batchAdmissionResult(entry.event, admission);
         }
         return { entries };
@@ -2190,7 +2232,8 @@ export const performRun = ({
     }
 
     const bindingEntries = activeEntries.filter((entry) => (
-      entry.event.type === 'message.posted' && entry.event.payload?.messageId
+      entry.event.deliveryMode !== 'digest'
+      && entry.event.type === 'message.posted' && entry.event.payload?.messageId
     ));
     if (bindingEntries.length > 0) {
       const yieldMs = claimHandicap.yieldDelayMs(eventPodId);
@@ -2201,6 +2244,7 @@ export const performRun = ({
     }
 
     for (const entry of activeEntries) {
+      if (entry.event.deliveryMode === 'digest') continue;
       const messageId = entry.event.payload?.messageId;
       if (!messageId || !CLAIMABLE_EVENT_TYPES.has(entry.event.type)) continue;
       const claimKeeper = createClaimKeeper(client, {
@@ -2224,7 +2268,7 @@ export const performRun = ({
           // `message.posted`. Preserve the existing ADR-018/TASK-058
           // peer-aware exception; D3a otherwise partitions lost bindings as
           // read-only so a generic broadcast cannot widen itself after CAS.
-          if (entry.event.payload?.repliesToYourMessage === true) {
+          if (entry.event.payload?.repliesToYourMessage === true || entry.event.payload?.addressed === true) {
             entry.peerFrame = peerHoldsFrame(claim.holder, messageId);
             continue;
           }
@@ -2241,7 +2285,7 @@ export const performRun = ({
       }
     }
 
-    const actionEntries = activeEntries.filter((entry) => !entry.result);
+    const actionEntries = wakingEntries.filter((entry) => !entry.result);
     if (actionEntries.length === 0) return { entries };
 
     const claimKeepers = actionEntries
@@ -2300,6 +2344,17 @@ export const performRun = ({
           trigger,
         });
         for (const entry of actionEntries) entry.result = turnResult;
+        // A digest was context in this successful waking turn, never an
+        // independent action. If the waking work stood down or the provider
+        // refused the batch, leave it unread for the next real turn.
+        if (turnResult?.outcome === 'posted'
+          || (turnResult?.outcome === 'no_action' && !turnResult?.reason)) {
+          for (const entry of activeEntries) {
+            if (entry.event.deliveryMode === 'digest') {
+              entry.result = { outcome: 'no_action', reason: 'digest-read' };
+            }
+          }
+        }
       } catch (err) {
         if (!isContentRefusal(err)) throw err;
         if (actionEntries.length === 1) {
@@ -2352,6 +2407,7 @@ export const performRun = ({
   const tick = async () => {
     if (!running) return;
     let nextPollDelayMs = intervalMs;
+    let completedModelTurn = false;
     try {
       // ADR-024 D3: this is an inbox fetch, not a stream of interrupts. The
       // backend returns one pod's oldest pending batch, so every delivered row
@@ -2392,6 +2448,12 @@ export const performRun = ({
       }
       for (const group of eventGroups.values()) {
         if (!running) break;
+        // A current kernel never claims a digest-only page. Guard a mixed
+        // version rollout too: an ambient batch must not start a model turn.
+        if (group.every((event) => event.deliveryMode === 'digest')) {
+          log(`[inbox.batch] digest-only page (${group.length}) — no spawn or ack`);
+          continue;
+        }
         if ((group[0].podId || podId) && !PRIVATE_RESPONSE_EVENT_TYPES.has(group[0].type)) {
           // Nothing in this batch but the seat introducing itself: leave it
           // unacked for one interval so a person who mentions the agent in that
@@ -2459,13 +2521,9 @@ export const performRun = ({
           ));
           if (batchSpawned) {
             consecutiveSpawnFailures = 0;
-            // A turn is exactly when events pile up: whoever typed while the
-            // adapter was running is already waiting. Sleeping the interval on
-            // top of the turn charges them for it twice (TASK-343). Only a
-            // batch that actually spawned skips the wait; an idle poll and a
-            // batch that spawned nothing keep the interval, so this cannot
-            // become a spin.
-            nextPollDelayMs = 0;
+            // Notices arriving mid-turn get one bounded collection window.
+            // Idle polls and batches with no model turn keep their cadence.
+            completedModelTurn = true;
           }
           for (const entry of batch.entries) {
             const event = entry.event;
@@ -2643,7 +2701,9 @@ export const performRun = ({
       }
       onError?.(err);
     }
-    if (running) setTimeoutImpl(tick, nextPollDelayMs);
+    // Notices landing during a turn share one three-second collection window
+    // before the next inbox read, independent of the idle polling cadence.
+    if (running) setTimeoutImpl(tick, completedModelTurn ? 3000 : nextPollDelayMs);
   };
 
   tick();

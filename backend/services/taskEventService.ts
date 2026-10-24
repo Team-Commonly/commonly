@@ -248,6 +248,7 @@ export async function notifyPodAgents(
     }).lean();
 
     // Ownership addresses a seat directly, independent of ambient wake opt-in.
+    // Other seats still receive durable board context without a model turn.
     const installs = active || [];
     if (!installs.length) return;
 
@@ -334,8 +335,18 @@ export async function notifyPodAgents(
         || seatHoldsClaim(install, previousHolder)
         || dependentRows.some((row) => seatMatchesAssignee(install, row.assignee))
         || dependentHolders.some((holder) => seatHoldsClaim(install, holder));
-      if (!ownRow) return null;
       try {
+        if (!ownRow) {
+          await AgentEventService.enqueue({
+            agentName, instanceId, podId: normalizedPodId, type: 'message.posted',
+            deliveryMode: 'digest',
+            payload: {
+              podId: normalizedPodId, boardDigest: true, taskId, taskKind: kind,
+              content: `${taskId} ${kind}: ${title}`,
+            },
+          });
+          return true;
+        }
         // Both hosted engines answer chat.mention; they acknowledge a generic
         // message.posted without a turn. Other drivers use message.posted.
         const eventType = await usesHostedBoardWake(install, AgentInstallation)

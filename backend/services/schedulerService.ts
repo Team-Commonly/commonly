@@ -20,6 +20,8 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require
+const AgentDigestState = require('../models/AgentDigestState');
+// eslint-disable-next-line global-require
 const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
 // eslint-disable-next-line global-require
 const AgentEnsembleService = require('./agentEnsembleService');
@@ -1120,7 +1122,64 @@ class SchedulerService {
     }
 
     const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now });
-    return { ...result, skippedByLease: false };
+    const unreadWakes = await SchedulerService.dispatchUnreadDigestHeartbeats(now);
+    return { ...result, enqueued: result.enqueued + unreadWakes, skippedByLease: false };
+  }
+
+  /** One slow wake for a pod with unread digest, never for an empty inbox. */
+  static async dispatchUnreadDigestHeartbeats(now: Date = new Date()): Promise<number> {
+    const threshold = new Date(now.getTime() - 60 * 60 * 1000);
+    const rawGroups = await AgentEvent.aggregate([
+      { $match: { status: 'pending', deliveryMode: 'digest', createdAt: { $lte: threshold } } },
+      { $group: {
+        _id: { agentName: '$agentName', instanceId: '$instanceId', podId: '$podId' },
+      } },
+    ]) as Array<{ _id: { agentName: string; instanceId: string; podId: unknown } }>;
+    const foldedGroups = await AgentDigestState.find({ unreadCount: { $gt: 0 }, unreadSince: { $lte: threshold } })
+      .select('agentName instanceId podId').lean() as Array<{ agentName: string; instanceId: string; podId: unknown }>;
+    const groups = [...new Map([...rawGroups.map((row) => row._id), ...foldedGroups]
+      .map((scope) => [`${scope.agentName}:${scope.instanceId}:${scope.podId}`, { _id: scope }])).values()];
+    let enqueued = 0;
+    for (const row of groups) {
+      const scope = {
+        agentName: row._id.agentName,
+        instanceId: row._id.instanceId || 'default',
+        podId: row._id.podId,
+      };
+      // A retired projection has no listener. Its old digest remains for GC,
+      // but must not create a new wake every hour.
+      // eslint-disable-next-line no-await-in-loop
+      const active = await AgentInstallation.exists({
+        ...scope, status: 'active', 'config.autonomy.enabled': { $ne: false },
+      });
+      if (!active) continue;
+      // An existing wake will carry the digest. A recent completed wake says
+      // the seat has already had a turn inside this 60-minute window.
+      // eslint-disable-next-line no-await-in-loop
+      const [pendingWake, recentWake] = await Promise.all([
+        AgentEvent.exists({ ...scope, status: 'pending', deliveryMode: { $ne: 'digest' } }),
+        AgentEvent.exists({ ...scope, deliveryMode: { $ne: 'digest' }, $or: [
+          { status: { $in: ['delivered', 'acked'] }, deliveredAt: { $gte: threshold } },
+          // AgentEvent timestamps update on every failed transition, including
+          // failures before delivery and failures after an older delivery.
+          { status: 'failed', updatedAt: { $gte: threshold } },
+        ] }),
+      ]);
+      if (pendingWake || recentWake) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await AgentEventService.enqueue({
+        ...scope,
+        type: 'heartbeat',
+        payload: {
+          trigger: 'unread-digest',
+          podId: String(scope.podId),
+          generatedAt: now.toISOString(),
+          content: '[Unread pod activity is waiting. Read the digest in this inbox batch; respond only if useful.]',
+        },
+      });
+      enqueued += 1;
+    }
+    return enqueued;
   }
 
   static async dispatchAgentHeartbeats(

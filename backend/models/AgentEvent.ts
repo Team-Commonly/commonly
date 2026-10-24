@@ -6,7 +6,8 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 //   delivered → failed (on delivery-side terminal error; rare)
 // Existing rows without an `'acked'` value continue to read as `'delivered'`
 // indefinitely; the ack-gate below short-circuits if status is already `'acked'`.
-export type AgentEventStatus = 'pending' | 'delivered' | 'acked' | 'failed';
+export type AgentEventStatus = 'pending' | 'folding' | 'delivered' | 'acked' | 'failed';
+export type AgentEventDeliveryMode = 'wake' | 'digest';
 export type DeliveryOutcome = 'acknowledged' | 'posted' | 'no_action' | 'skipped' | 'error';
 
 // ADR-003 Phase 4: cross-agent ask/respond payloads. The `type` field on
@@ -92,6 +93,8 @@ export interface IAgentEvent extends Document {
   type: string;
   payload?: unknown;
   status: AgentEventStatus;
+  // Independent of `delivery`, which records the eventual ack outcome.
+  deliveryMode: AgentEventDeliveryMode;
   attempts: number;
   deliveredAt?: Date;
   error?: string;
@@ -107,6 +110,12 @@ export interface IAgentEvent extends Document {
   // superseded child's late ack fail instead of terminating the new child's
   // delivery. `null` for events claimed before D6 shipped.
   deliveryNonce?: string | null;
+  // Snapshot of the folded digest state included in this wake. Ack clears it
+  // only if no newer fold changed the state while the turn was running.
+  digestRollupRevision?: number | null;
+  // Raw ambient rows presented inside a legacy wake or webhook delivery.
+  // They settle only when that wake succeeds.
+  digestEventIds?: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -118,12 +127,15 @@ const AgentEventSchema = new Schema<IAgentEvent>(
     podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true, index: true },
     type: { type: String, required: true },
     payload: Schema.Types.Mixed,
-    status: { type: String, enum: ['pending', 'delivered', 'acked', 'failed'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'folding', 'delivered', 'acked', 'failed'], default: 'pending' },
+    deliveryMode: { type: String, enum: ['wake', 'digest'], default: 'wake' },
     attempts: { type: Number, default: 0 },
     deliveredAt: Date,
     error: String,
     memoryRevisionAtDelivery: { type: Number, default: null },
     deliveryNonce: { type: String, default: null },
+    digestRollupRevision: { type: Number, default: null },
+    digestEventIds: [{ type: Schema.Types.ObjectId, ref: 'AgentEvent' }],
     delivery: {
       outcome: {
         type: String,
@@ -139,6 +151,8 @@ const AgentEventSchema = new Schema<IAgentEvent>(
 );
 
 AgentEventSchema.index({ agentName: 1, instanceId: 1, status: 1, createdAt: 1 });
+AgentEventSchema.index({ status: 1, deliveryMode: 1, createdAt: 1 });
+AgentEventSchema.index({ agentName: 1, instanceId: 1, podId: 1, status: 1, deliveryMode: 1, createdAt: 1 });
 // ADR-024 D3 reads one pod-scoped inbox page after finding the global head.
 // This keeps that bounded page and its true-count query from scanning pending
 // work in every other pod for the same agent installation.

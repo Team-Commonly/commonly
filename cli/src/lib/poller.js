@@ -28,6 +28,40 @@ export const terminalDeliveryAckError = (ackErr, eventId, runner = 'poller') => 
   return null;
 };
 
+const digestFrame = (events, rollup) => {
+  const counts = new Map();
+  let knownOlder = 0;
+  for (const conversation of Array.isArray(rollup?.conversations) ? rollup.conversations : []) {
+    if (typeof conversation.label !== 'string' || !Number.isInteger(conversation.count)
+      || conversation.count < 1) continue;
+    counts.set(conversation.label, (counts.get(conversation.label) || 0) + conversation.count);
+    knownOlder += conversation.count;
+  }
+  if (rollup?.unreadCount > knownOlder) {
+    counts.set('older pod activity',
+      (counts.get('older pod activity') || 0) + rollup.unreadCount - knownOlder);
+  }
+  const seen = new Set();
+  for (const event of events) {
+    const payload = event.payload || {};
+    const sourceId = payload.messageId != null ? `message:${payload.messageId}`
+      : (typeof payload.taskId === 'string'
+        ? `task:${payload.taskId}:${String(payload.taskKind || '')}:${String(payload.content || '')}` : null);
+    if (sourceId && seen.has(sourceId)) continue;
+    if (sourceId) seen.add(sourceId);
+    const thread = payload.threadRootId;
+    const task = payload.taskId;
+    const label = Number.isInteger(thread) && thread > 0 ? `thread ${thread}`
+      : (typeof task === 'string' && /^TASK-\d+$/.test(task) ? task : 'pod conversation');
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  const lines = [...counts].slice(0, 8).map(([label, count]) => `- ${label}: ${count} unread`);
+  if (counts.size > 8) lines.push(`- ${counts.size - 8} more conversations omitted`);
+  const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+  return `[Since you last looked: ${total} ambient update${total === 1 ? '' : 's'} in ${counts.size} conversation${counts.size === 1 ? '' : 's'}; context only, no reply needed.]\n`
+    + `${lines.join('\n')}\nPull relevant messages with commonly_get_messages. On resume, read oldest unread first; at most 8 conversations, 5 messages each, 20 messages total.`;
+};
+
 export const startPoller = ({
   instanceUrl,
   token,
@@ -57,10 +91,30 @@ export const startPoller = ({
         limit: 10,
       });
 
-      for (const event of events) {
+      // A digest is received context, not a webhook invocation. The runtime
+      // inbox claims it only alongside a wake from the same pod.
+      const wakeEvents = events.filter((event) => event.deliveryMode !== 'digest');
+      const digestEvents = events.filter((event) => event.deliveryMode === 'digest'
+        && wakeEvents[0] && String(event.podId) === String(wakeEvents[0].podId));
+      const rollup = wakeEvents[0]?.payload?.digestRollup;
+      const frame = digestEvents.length > 0 || rollup?.unreadCount > 0
+        ? digestFrame(digestEvents, rollup) : null;
+      let digestConsumed = false;
+      for (const [index, event] of wakeEvents.entries()) {
+        const attachedDigest = index === 0 && frame !== null;
+        const forwarded = attachedDigest ? {
+          ...event,
+          payload: {
+            ...(event.payload || {}),
+            digestSummary: frame,
+            ...(typeof event.payload?.content === 'string' ? {
+              content: `${event.payload.content}\n\n${frame}`,
+            } : {}),
+          },
+        } : event;
         let result = { outcome: 'no_action' };
         try {
-          result = (await onEvent(event)) || { outcome: 'no_action' };
+          result = (await onEvent(forwarded)) || { outcome: 'no_action' };
         } catch (handlerErr) {
           result = { outcome: 'error', reason: handlerErr.message };
         }
@@ -72,6 +126,11 @@ export const startPoller = ({
             result,
             ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
           });
+          if (attachedDigest && (result.outcome === 'posted'
+            || result.outcome === 'acknowledged'
+            || (result.outcome === 'no_action' && !result.reason))) {
+            digestConsumed = true;
+          }
         } catch (ackErr) {
           const terminalError = terminalDeliveryAckError(ackErr, event._id);
           if (terminalError) {
@@ -81,6 +140,26 @@ export const startPoller = ({
           }
           // Non-fatal — event will be retried
           onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
+        }
+      }
+
+      if (digestConsumed) {
+        for (const event of digestEvents) {
+          try {
+            const deliveryId = event.payload?.deliveryId;
+            await client.post(`/api/agents/runtime/events/${event._id}/ack`, {
+              result: { outcome: 'no_action', reason: 'digest-read' },
+              ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
+            });
+          } catch (ackErr) {
+            const terminalError = terminalDeliveryAckError(ackErr, event._id);
+            if (terminalError) {
+              running = false;
+              onError?.(terminalError);
+              return;
+            }
+            onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
+          }
         }
       }
 

@@ -167,7 +167,8 @@ describe('notifyPodAgents', () => {
       updatedAt: new Date('2026-08-20T20:00:00.000Z'),
     }), 'updated', { userId: HUMAN_ID, isAgent: false });
 
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ deliveryMode: 'digest' }));
     expect(mockTaskUpdateOne).not.toHaveBeenCalled();
   });
 
@@ -311,7 +312,8 @@ describe('notifyPodAgents', () => {
       userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'u0da521ab41',
     });
 
-    const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].instanceId);
+    const woken = AgentEventService.enqueue.mock.calls
+      .filter(([event]) => event.deliveryMode !== 'digest').map(([event]) => event.instanceId);
     expect(woken).toEqual(['ucc4035c51b']);
   });
 
@@ -324,7 +326,8 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(POD_ID, task({ assignee: 'openclaw' }), 'updated',
       { userId: HUMAN_ID, isAgent: false });
 
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue.mock.calls).toHaveLength(2);
+    expect(AgentEventService.enqueue.mock.calls.every(([event]) => event.deliveryMode === 'digest')).toBe(true);
   });
 
   it('still wakes an agent when the HUMAN who installed it edits the board', async () => {
@@ -377,8 +380,10 @@ describe('notifyPodAgents', () => {
 
     await notifyPodAgents(POD_ID, task({ assignee: 'commonly-bot' }), 'created', { userId: HUMAN_ID, isAgent: false });
 
-    const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
+    const woken = AgentEventService.enqueue.mock.calls
+      .filter(([event]) => event.deliveryMode !== 'digest').map(([event]) => event.agentName);
     expect(woken).toEqual(['commonly-bot']);
+    expect(AgentEventService.enqueue.mock.calls.filter(([event]) => event.deliveryMode === 'digest')).toHaveLength(2);
   });
 
   it('resolves a claimed row through the bot principal, not its installer', async () => {
@@ -390,7 +395,9 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(POD_ID, task({ assignee: null, claimedBy: AGENT_ID }), 'updated',
       { userId: HUMAN_ID, isAgent: false });
 
-    expect(AgentEventService.enqueue.mock.calls.map(([event]) => event.agentName)).toEqual(['sprint-impl']);
+    expect(AgentEventService.enqueue.mock.calls
+      .filter(([event]) => event.deliveryMode !== 'digest').map(([event]) => event.agentName))
+      .toEqual(['sprint-impl']);
   });
 
   it('does not treat an ambiguous default claim key as every default seat', async () => {
@@ -399,7 +406,7 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(POD_ID, task({ assignee: null, claimedBy: 'default' }), 'updated',
       { userId: HUMAN_ID, isAgent: false });
 
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue.mock.calls.every(([event]) => event.deliveryMode === 'digest')).toBe(true);
   });
 
   it('does not treat an ambiguous default assignee as every default seat', async () => {
@@ -408,7 +415,7 @@ describe('notifyPodAgents', () => {
     await notifyPodAgents(POD_ID, task({ assignee: 'default' }), 'updated',
       { userId: HUMAN_ID, isAgent: false });
 
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue.mock.calls.every(([event]) => event.deliveryMode === 'digest')).toBe(true);
   });
 
   it('wakes a claimed dependent row when its exact dependency clears', async () => {
@@ -419,7 +426,34 @@ describe('notifyPodAgents', () => {
       { userId: HUMAN_ID, isAgent: false }, { status: 'claimed' });
 
     expect(Task.find.mock.calls[0][0]).toMatchObject({ podId: POD_ID, dep: 'TASK-042' });
-    expect(AgentEventService.enqueue.mock.calls.map(([event]) => event.agentName)).toEqual(['sprint-impl']);
+    expect(AgentEventService.enqueue.mock.calls
+      .filter(([event]) => event.deliveryMode !== 'digest').map(([event]) => event.agentName))
+      .toEqual(['sprint-impl']);
+  });
+
+  it('wakes a claimed dependent row through the bot principal', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+    Task.find.mockReturnValueOnce({ lean: async () => [{ assignee: null, claimedBy: AGENT_ID }] });
+    User.findById.mockReturnValue({ select: () => ({ lean: async () => ({
+      isBot: true, botMetadata: { agentName: 'sprint-impl', instanceId: 'default' },
+    }) }) });
+
+    await notifyPodAgents(POD_ID, task({ assignee: null, status: 'done' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false }, { status: 'claimed' });
+
+    const bySeat = Object.fromEntries(AgentEventService.enqueue.mock.calls.map(([arg]) => [arg.agentName, arg]));
+    expect(bySeat['sprint-impl'].deliveryMode).toBeUndefined();
+    expect(bySeat.scout.deliveryMode).toBe('digest');
+  });
+
+  it('does not repeat dependency wakes for a later note on an already done row', async () => {
+    mockInstalls([install('sprint-impl', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task({ assignee: null, status: 'done' }), 'updated',
+      { userId: HUMAN_ID, isAgent: false });
+
+    expect(Task.find).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue.mock.calls[0][0].deliveryMode).toBe('digest');
   });
 
   it('stays quiet on delete, where the wake would spend a turn finding nothing', async () => {
