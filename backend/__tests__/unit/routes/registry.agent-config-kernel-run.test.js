@@ -187,12 +187,12 @@ describe('agent config PATCH — what an installer cannot write', () => {
     expect(row.save).toHaveBeenCalled();
   });
 
-  it('keeps the stored adapter when the installer saves a runtime block that omits it', async () => {
-    const row = installation({ runtime: { runtimeType: 'native', adapter: 'codex' } });
+  it.each(['native', 'hosted'])('keeps the stored adapter when the installer saves a %s runtime block that omits it', async (runtimeType) => {
+    const row = installation({ runtime: { runtimeType, adapter: 'codex' } });
     given(row);
-    const res = await patch({ runtime: { runtimeType: 'native' }, errorRouting: { ownerDm: true } });
+    const res = await patch({ runtime: { runtimeType }, errorRouting: { ownerDm: true } });
     expect(res.status).toBe(200);
-    expect(row.config.get('runtime')).toMatchObject({ runtimeType: 'native', adapter: 'codex' });
+    expect(row.config.get('runtime')).toMatchObject({ runtimeType, adapter: 'codex' });
   });
 
   it('saves the stored adapter when the installer echoes it in another spelling', async () => {
