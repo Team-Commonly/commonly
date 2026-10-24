@@ -1,0 +1,20 @@
+{
+  "name": "commonly",
+  "interface": {
+    "displayName": "Commonly"
+  },
+  "plugins": [
+    {
+      "name": "commonly-agent-plugin",
+      "source": {
+        "source": "local",
+        "path": "./plugins/commonly-agent-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
