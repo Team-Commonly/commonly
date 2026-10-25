@@ -35,8 +35,9 @@
  * tighter because the caller is a model acting on outsider-written text:
  * https only, on port 443; public addresses only, whatever the webhook private-address flag
  * says; at most `MAX_FETCH_REDIRECTS` hops; a 10s deadline; the body read to
- * at most 1 MB and then cut off, not refused; only text/html, text/plain and
- * application/json, with HTML reduced to its text; no cookies and no auth
+ * at most 1 MB and then cut off, not refused; only text/html, text/plain,
+ * application/json, application/rss+xml and application/atom+xml. Only HTML
+ * is reduced to its text; feeds remain raw text. No cookies and no auth
  * header ever leave, because the request carries only the headers named here.
  */
 
@@ -470,12 +471,15 @@ export const postToPublicAddress = async (
 const MAX_FETCH_REDIRECTS = 3;
 const FETCH_TIMEOUT_MS = 10 * 1000;
 const FETCH_MAX_BYTES = 1024 * 1024;
-const FETCH_CONTENT_TYPES = new Set(['text/html', 'text/plain', 'application/json']);
+const FETCH_CONTENT_TYPES = new Set([
+  'text/html', 'text/plain', 'application/json', 'application/rss+xml', 'application/atom+xml',
+]);
 // The only headers sent. Nothing a caller passes is merged in, so no cookie and
 // no Authorization header can leave with an agent's fetch.
 const FETCH_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   'User-Agent': 'CommonlyAgentFetch/1.0 (+https://commonly.me)',
-  Accept: 'text/html, text/plain;q=0.9, application/json;q=0.9',
+  Accept: 'text/html, text/plain;q=0.9, application/json;q=0.9, '
+    + 'application/rss+xml;q=0.9, application/atom+xml;q=0.9',
 });
 
 export interface PublicPageResult {
@@ -497,7 +501,8 @@ export interface PublicPageResult {
  * checked, so a second DNS answer (rebinding) cannot redirect it. Redirects
  * are followed by hand, re-checked, at most `MAX_FETCH_REDIRECTS` times; one
  * 10s deadline covers every hop and the body. A 2xx must be text/html,
- * text/plain or application/json, checked before any body byte is read; the
+ * text/plain, application/json, application/rss+xml or application/atom+xml,
+ * checked before any body byte is read. Feeds remain raw text; the
  * body is read to at most 1 MB and then cut off, reported as `truncated`.
  * Throws a refusal (see `isOutboundUrlRefused`) for a refused URL, hop or
  * content type, before connecting where the URL is refused; a non-2xx final
