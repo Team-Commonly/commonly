@@ -171,3 +171,10 @@ deletion marks after the role handler reads its target and promotion returns 409
 See [the lock runbook](../runbooks/admin-user-mutation-lock.md) for uncertain-write
 recovery and the mixed-version rollout constraint. Synthetic purge DM cleanup
 remains a separate TASK-005 follow-up.
+
+The pre-existing administrative hard-delete endpoint remains separate from this
+lifecycle. Its `target.deleteOne()` does not condition on the self-deletion marker,
+so the global admin lock alone does not coordinate it with an in-flight
+self-deletion claim. TASK-006 tracks a controlled reproduction and atomic
+coordination/recoverable cleanup; this PR does not fix that accepted nonblocking
+finding. It is distinct from TASK-005's synthetic-purge DM cleanup.
