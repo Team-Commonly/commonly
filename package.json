@@ -20,7 +20,8 @@
     "verify:numbered-rules": "node scripts/verify-numbered-rules.js",
     "verify:ax-audit-numbering": "node scripts/verify-ax-audit-numbering.js",
     "verify:readme-invariants": "node scripts/verify-readme-invariants.js && node scripts/verify-readme-invariants.js --self-test",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:container": "node scripts/container-tests/run.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
