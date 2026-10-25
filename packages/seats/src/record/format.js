@@ -35,6 +35,28 @@ export const EGRESS_DENIED_REASONS = Object.freeze([
 const EGRESS_TARGETLESS = new Set(['bad_request', 'not_connect']);
 export const SANDBOXES = Object.freeze(['seatbelt', 'bwrap', 'none']);
 export const SESSION_METHODS = Object.freeze(['new', 'resume', 'load']);
+export const RETRY_STATES = Object.freeze(['scheduled', 'started']);
+/**
+ * agent.retry.errorType. The provider error types opencode 2.1.4 reports on a
+ * retry, read from its error formatter, plus `other` for any type outside
+ * them. A closed set, so no agent text can ride in this field.
+ */
+export const RETRY_ERROR_TYPES = Object.freeze([
+  'provider.auth',
+  'provider.content-filter',
+  'provider.free-limit',
+  'provider.internal',
+  'provider.invalid-output',
+  'provider.invalid-request',
+  'provider.no-route',
+  'provider.quota',
+  'provider.rate-limit',
+  'provider.timeout',
+  'provider.transport',
+  'provider.unknown',
+  'provider.unsupported-operation',
+  'other',
+]);
 // Why a requested session was not reopened: the two forms an ACP adapter
 // writes. The code is the JSON-RPC error's, an integer by JSON-RPC 2.0.
 const SESSION_FALLBACK = /^(?:agent supports neither session\/resume nor session\/load|session\/(?:resume|load) answered error -?\d{1,16})$/;
@@ -70,6 +92,7 @@ export const KINDS = Object.freeze({
   'turn.prompt_sent': Object.freeze({ group: 'activity', actor: 'system' }),
   'agent.message_chunk': Object.freeze({ group: 'activity', actor: 'run' }),
   'agent.thought_chunk': Object.freeze({ group: 'activity', actor: 'run' }),
+  'agent.retry': Object.freeze({ group: 'activity', actor: 'run' }),
   plan: Object.freeze({ group: 'activity', actor: 'run' }),
   usage: Object.freeze({ group: 'activity', actor: 'run' }),
   'liveness.stalled': Object.freeze({ group: 'activity', actor: 'system' }),
@@ -376,6 +399,16 @@ const CHECKS = {
         fail('session.opened.fallback must be "agent supports neither session/resume nor session/load" or "session/<resume|load> answered error <code>"');
       }
     }
+    return data;
+  },
+  'agent.retry': (data) => {
+    refuseUnknownKeys(data, ['state', 'attempt', 'nextRetryAt', 'status', 'errorType'], 'agent.retry.');
+    if (!RETRY_STATES.includes(data.state)) fail(`agent.retry.state must be one of ${RETRY_STATES.join(', ')}`);
+    // Every other field is absent when unknown, never null.
+    if ('attempt' in data && !(Number.isInteger(data.attempt) && data.attempt >= 1)) fail('agent.retry.attempt must be an integer >= 1, or absent');
+    if ('nextRetryAt' in data && !isTimestamp(data.nextRetryAt)) fail('agent.retry.nextRetryAt must be an RFC 3339 UTC timestamp, or absent');
+    if ('status' in data && !(Number.isInteger(data.status) && data.status >= 100 && data.status <= 599)) fail('agent.retry.status must be an integer HTTP status (100-599), or absent');
+    if ('errorType' in data && !RETRY_ERROR_TYPES.includes(data.errorType)) fail(`agent.retry.errorType must be one of ${RETRY_ERROR_TYPES.join(', ')}, or absent`);
     return data;
   },
   usage: (data) => {

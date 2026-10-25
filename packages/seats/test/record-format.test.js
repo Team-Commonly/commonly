@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, EGRESS_DENIED_REASONS, KINDS, ON_BEHALF_ROLES, SANDBOXES, SESSION_METHODS, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
+  RETRY_ERROR_TYPES, RETRY_STATES,
 } from '../src/record/format.js';
 
 const RUN = 'run-fmt-0001';
@@ -498,4 +501,59 @@ test('usage: contextTokens and contextSize are integers >= 0, or null when unkno
   for (const key of ['contextTokens', 'contextSize']) {
     for (const value of [-1, 1.5, '41000', Number.NaN]) assert.throws(() => at({ [key]: value }), new RegExp(`usage.${key}`), `${key} ${value}`);
   }
+});
+
+test('agent.retry: state, attempt, nextRetryAt, status and errorType, each absent when unknown', () => {
+  const at = (data) => JSON.parse(appendEntry(null, { ...ENV, ts: ts(), kind: 'agent.retry', data }, { runActor: AGENT }));
+  const full = at({ state: 'scheduled', attempt: 2, nextRetryAt: '2026-10-25T13:00:02.000Z', status: 503, errorType: 'provider.internal' });
+  assert.equal(full.kind, 'agent.retry');
+  assert.equal(full.actor.id, AGENT.id);
+  at({ state: 'started', attempt: 2 });
+  at({ state: 'started' });
+  for (const errorType of RETRY_ERROR_TYPES) at({ state: 'scheduled', errorType });
+  assert.ok(RETRY_ERROR_TYPES.includes('other'));
+  for (const state of [undefined, 'waiting', 'SCHEDULED']) assert.throws(() => at({ state }), /agent.retry.state/, String(state));
+  for (const attempt of [0, -1, 1.5, '2', null]) assert.throws(() => at({ state: 'started', attempt }), /agent.retry.attempt/, String(attempt));
+  for (const nextRetryAt of ['soon', '2026-10-25 13:00:02', 12, null]) assert.throws(() => at({ state: 'scheduled', nextRetryAt }), /agent.retry.nextRetryAt/, String(nextRetryAt));
+  // Provider text has no field to ride in.
+  for (const key of ['message', 'body', 'response', 'error']) {
+    assert.throws(() => at({ state: 'scheduled', [key]: 'upstream said no' }), new RegExp(`unknown field agent.retry.${key}`));
+  }
+  assert.deepEqual(RETRY_STATES, ['scheduled', 'started']);
+});
+
+test('agent.retry.errorType is a closed enum: any other value is refused', () => {
+  // opencode 2.1.4's provider error types, read from the installed package,
+  // plus `other`. Changing this set is a record-v1 change, so it is pinned here.
+  assert.deepEqual([...RETRY_ERROR_TYPES], [
+    'provider.auth', 'provider.content-filter', 'provider.free-limit', 'provider.internal',
+    'provider.invalid-output', 'provider.invalid-request', 'provider.no-route', 'provider.quota',
+    'provider.rate-limit', 'provider.timeout', 'provider.transport', 'provider.unknown',
+    'provider.unsupported-operation', 'other',
+  ]);
+  assert.ok(Object.isFrozen(RETRY_ERROR_TYPES));
+  const at = (data) => appendEntry(null, { ...ENV, ts: ts(), kind: 'agent.retry', data }, { runActor: AGENT });
+  for (const errorType of ['provider.made-up', 'Provider.Internal', 'provider.internal ', 'server_error', 'upstream said sk-live-1234', '', null, 42, ['provider.internal']]) {
+    assert.throws(() => at({ state: 'scheduled', errorType }), /agent.retry.errorType must be one of/, JSON.stringify(errorType));
+  }
+});
+
+test('agent.retry.status is an integer HTTP status from 100 to 599, or absent', () => {
+  const at = (data) => appendEntry(null, { ...ENV, ts: ts(), kind: 'agent.retry', data }, { runActor: AGENT });
+  at({ state: 'scheduled', status: 100 });
+  at({ state: 'scheduled', status: 599 });
+  at({ state: 'scheduled' });
+  for (const status of [99, 600, 0, -503, 503.5, '503', null, Number.NaN]) {
+    assert.throws(() => at({ state: 'scheduled', status }), /agent.retry.status/, String(status));
+  }
+});
+
+test('record-v1.md states the hook attribution rule and lists every agent.retry error type', () => {
+  const doc = readFileSync(fileURLToPath(new URL('../docs/record-v1.md', import.meta.url)), 'utf8').replace(/\s+/g, ' ');
+  assert.match(doc, /A permission hook's answer is held to the same rule\. An answer that does not name who decided \(`decidedBy` a user id, plus an owner `decidedByRole`\) gets the reject default, recorded as `decidedBy`\/`decidedByRole` `policy`\/`policy`/);
+  assert.match(doc, /A decider marked `recordsPermissions` \(the valet's policy\) writes and attributes its own entries, so it is exempt\./);
+  const retry = doc.slice(doc.indexOf('`agent.retry` is the agent reporting'), doc.indexOf('### Mapping from the trace vocabulary'));
+  assert.ok(retry.length > 0, 'the agent.retry paragraph is present');
+  for (const type of RETRY_ERROR_TYPES) assert.ok(retry.includes(`\`${type}\``), `the doc lists ${type}`);
+  for (const [, type] of retry.matchAll(/`(provider\.[a-z-]+)`/g)) assert.ok(RETRY_ERROR_TYPES.includes(type), `the doc lists only the set: ${type}`);
 });

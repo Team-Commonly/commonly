@@ -217,6 +217,12 @@ it does not prove the process lost access. That happens at `run.settled`.
   - A rule-decided call is `"policy"`. So is the default given when no
     answer came in time, or when the answer did not name a user and an owner
     role: such an answer approves nothing.
+  - A permission hook's answer is held to the same rule. An answer that does
+    not name who decided (`decidedBy` a user id, plus an owner
+    `decidedByRole`) gets the reject default, recorded as
+    `decidedBy`/`decidedByRole` `policy`/`policy` with `approval: failed`. A
+    decider marked `recordsPermissions` (the valet's policy) writes and
+    attributes its own entries, so it is exempt.
   - It is `"policy"` exactly when `decidedByRole` is `"policy"`.
 - `decidedByRole` is one of:
   - `credential-owner`: the owner of the connection the call would use. This
@@ -401,12 +407,30 @@ documented in `src/trace/events.js`.
 | kind | default actor |
 |---|---|
 | `turn.prompt_sent` | `system` |
-| `agent.message_chunk`, `agent.thought_chunk`, `plan`, `usage` | run |
+| `agent.message_chunk`, `agent.thought_chunk`, `agent.retry`, `plan`, `usage` | run |
 | `liveness.stalled`, `liveness.recovery`, `process.exited` | `system` |
 
 `usage` may also carry `contextTokens` (how much of the agent's context
 window is in use) and `contextSize` (the window's size). Each is an integer
 `>= 0`, or `null` when unknown; a writer refuses any other value.
+
+`agent.retry` is the agent reporting that it is retrying its provider:
+`{state, attempt?, nextRetryAt?, status?, errorType?}`.
+- `state` is `scheduled` (a retry waits until `nextRetryAt`) or `started`
+  (the waited-for attempt went out).
+- `attempt` is an integer `>= 1`, and `nextRetryAt` an RFC 3339 UTC
+  timestamp.
+- `status` is an integer HTTP status, `100` to `599`.
+- `errorType` is one of `provider.auth`, `provider.content-filter`,
+  `provider.free-limit`, `provider.internal`, `provider.invalid-output`,
+  `provider.invalid-request`, `provider.no-route`, `provider.quota`,
+  `provider.rate-limit`, `provider.timeout`, `provider.transport`,
+  `provider.unknown`, `provider.unsupported-operation` or `other`. These are
+  the provider error types opencode 2.1.4 reports on a retry; a writer maps
+  any other type to `other`.
+- A field that is not known is absent, never `null`. The agent's error
+  message and the provider's response body are never recorded, and a writer
+  refuses any field not listed here.
 
 ### Mapping from the trace vocabulary
 
@@ -469,9 +493,10 @@ What's new or changed in `EVENT_TYPES`:
      lines still verify.
 
    A later revision, also at `v: 1`, added the optional `actor.onBehalfOf`,
-   the kinds `session.opened`, `sandbox.applied`, `egress.allowed` and
-   `egress.denied`, `contextTokens` and `contextSize` on `usage`, and the
-   `pod-member` value of `decidedByRole`. Lines without them are unchanged.
+   the kinds `session.opened`, `sandbox.applied`, `egress.allowed`,
+   `egress.denied` and `agent.retry`, `contextTokens` and `contextSize` on
+   `usage`, and the `pod-member` value of `decidedByRole`. Lines without them
+   are unchanged.
 4. **One writer per file.** A single process appends lines in `seq` order.
 
 ## 4. What the hash chain proves, and what it doesn't

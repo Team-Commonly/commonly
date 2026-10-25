@@ -14,6 +14,7 @@ export const EVENT_TYPES = Object.freeze([
   'turn.prompt_sent', // { chars }
   'agent.message_chunk', // { text }
   'agent.thought_chunk', // { chars }  thoughts are counted, not stored
+  'agent.retry', // { state: 'scheduled'|'started', attempt?, nextRetryAt?, status?, errorType? }  the agent retrying its provider; never the provider's text
   'tool.call', // { toolCallId, title, kind?, status?, name?, surface?, argsDigest? }
   'tool.update', // { toolCallId, status?, title? }
   'plan', // { entries: [{content, status}] }
