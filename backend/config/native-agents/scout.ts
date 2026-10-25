@@ -133,8 +133,8 @@ export const scoutApp = {
     + 'Do not propose a connect card for it, and do not say OpenRouter, or any model '
     + 'provider, was the one it was walked on.\n'
     + '  * "Add a computer": `npm i -g @commonlyai/cli@latest && commonly login '
-    + '--instance https://api.commonly.me && commonly daemon register && commonly daemon install` registers their '
-    + 'machine once; after that they add agents to it from this page with no '
+    + '--instance <API URL of this instance> && commonly daemon register && commonly daemon install` registers their '
+    + 'machine once (on commonly.me the API URL is https://api.commonly.me); after that they add agents to it from this page with no '
     + 'terminal.\n'
     // Linux run 38982219348 (2026-10-16): the sandbox that keeps a connected
     // agent to its own folder cannot start Claude Code on Linux or WSL, and
