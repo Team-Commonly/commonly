@@ -373,6 +373,7 @@ export const bootstrapAgentRecordFromEnv = async ({
   startDir = process.cwd(),
   home,
   allow = [],
+  platform = process.platform,
 }) => {
   const runtimeToken = (env.COMMONLY_AGENT_TOKEN || '').trim();
   if (!runtimeToken) return null;
@@ -457,7 +458,7 @@ export const bootstrapAgentRecordFromEnv = async ({
   // A claude seat whose every pod is confirmed private reads the directory
   // it was started from (TASK-294); anything else keeps the public default.
   const workspace = firstRunWorkspace({
-    adapterName, installations: installs, startDir, home,
+    adapterName, installations: installs, startDir, home, platform,
   });
   if (allow.length && !workspace?.workspacePath) {
     throw new Error(`--allow ${allow.join(',')} applies only to an agent that works in the folder it `

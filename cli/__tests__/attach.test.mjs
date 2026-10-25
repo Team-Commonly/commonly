@@ -856,7 +856,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
       })),
     });
     const run = async ({
-      response, startDir = repo, registry = makeRegistry(), allow,
+      response, startDir = repo, registry = makeRegistry(), allow, platform = 'darwin',
     } = {}) => {
       const lines = [];
       const record = await bootstrapAgentRecordFromEnv({
@@ -867,6 +867,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
         log: (line) => lines.push(line),
         startDir,
         home,
+        platform,
         ...(allow ? { allow } : {}),
       });
       return { record, lines };
@@ -901,6 +902,16 @@ describe('bootstrapAgentRecordFromEnv', () => {
       expect(record.environment.sandbox).toEqual({ trust: 'public' });
       expect(record.workspacePath).toBeNull();
       expect(lines.some((line) => /your home directory\. To let it read a project/.test(line))).toBe(true);
+    });
+
+    test('on Linux the seat keeps the public default and says why, since its adapter refuses workspace there', async () => {
+      const { record, lines } = await run({ response: withVisibility(false), platform: 'linux' });
+      expect(record.environment.sandbox).toEqual({ trust: 'public' });
+      expect(record.workspacePath).toBeNull();
+      expect(lines.some((line) => /scratch folder, because an agent works in its folder only on macOS/
+        .test(line))).toBe(true);
+      await expect(run({ response: withVisibility(false), platform: 'linux', allow: ['write'] }))
+        .rejects.toThrow(/--allow write applies only .* only on macOS for now/);
     });
 
     test('a codex seat keeps its baseline and hears nothing about workspaces', async () => {

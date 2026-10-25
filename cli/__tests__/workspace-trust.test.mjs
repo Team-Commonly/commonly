@@ -89,13 +89,13 @@ describe('first-run workspace', () => {
 
   test('a claude seat whose pods are all private reads the project it started in', () => {
     expect(firstRunWorkspace({
-      adapterName: 'claude', installations: [priv, priv], startDir: repo, home,
+      adapterName: 'claude', installations: [priv, priv], startDir: repo, home, platform: 'darwin',
     })).toEqual({ workspacePath: realpathSync(repo), reason: null });
   });
 
   test('one public pod keeps the public default, and moving the start dir would not help', () => {
     const result = firstRunWorkspace({
-      adapterName: 'claude', installations: [priv, pub], startDir: repo, home,
+      adapterName: 'claude', installations: [priv, pub], startDir: repo, home, platform: 'darwin',
     });
     expect(result.workspacePath).toBeNull();
     expect(result.reason).toMatch(/publicly readable/);
@@ -104,12 +104,18 @@ describe('first-run workspace', () => {
 
   test('a refused start directory keeps the public default and says where to start instead', () => {
     expect(firstRunWorkspace({
-      adapterName: 'claude', installations: [priv], startDir: home, home,
+      adapterName: 'claude', installations: [priv], startDir: home, home, platform: 'darwin',
     })).toEqual({
       workspacePath: null,
       reason: 'the start directory is your home directory',
       fix: expect.stringMatching(/project's folder/),
     });
+  });
+
+  test('off macOS a claude seat keeps the public default, which its adapter can run', () => {
+    expect(firstRunWorkspace({
+      adapterName: 'claude', installations: [priv], startDir: repo, home, platform: 'linux',
+    })).toEqual({ workspacePath: null, reason: 'an agent works in its folder only on macOS for now' });
   });
 
   test('every other adapter has nothing to decide, since workspace is claude-only', () => {
