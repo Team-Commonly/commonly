@@ -16,6 +16,7 @@ const AgentRun = require('../../models/AgentRun');
 const { runAgent, resolveSeatUserId } = require('../../services/nativeRuntimeService');
 const { GRANT_BROKER_ID } = require('../../services/installable/toolInstallables');
 const axios = require('axios').default;
+const AgentIdentityService = require('../../services/agentIdentityService');
 
 jest.setTimeout(60000);
 let owner;
@@ -48,16 +49,19 @@ const grant = (over = {}) => RoomGrant.create({
   audience: [String(seat._id)], tools: ['sentry.find_organizations'], writeMode: 'read',
   expiresAt: new Date(Date.now() + 86400000), brokerId: GRANT_BROKER_ID, ...over,
 });
-const run = () => runAgent({ podId: pod._id, agentName: 'cto-walk-1016', instanceId: 'default',
+const run = (instanceId = 'default') => runAgent({ podId: pod._id, agentName: 'cto-walk-1016', instanceId,
   installedBy: owner._id, displayName: 'CTO walk',
   config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native', provisionedAt: new Date() } },
 }, { type: 'chat.mention', payload: { content: 'List available tools.' } });
 const names = () => axios.post.mock.calls[0][1].tools.map((tool) => tool.function.name);
 
-test('a real pod-targeted Sentry read grant reaches a native hosted turn', async () => {
+test.each(['default', 'cto-walk'])('a pod-targeted Sentry read grant reaches native hosted instance %s', async (instanceId) => {
+  seat.username = AgentIdentityService.buildAgentUsername('cto-walk-1016', instanceId);
+  seat.botMetadata.instanceId = instanceId;
+  await seat.save();
   await grant();
-  expect(await resolveSeatUserId(String(pod._id), 'cto-walk-1016', 'default')).toBe(String(seat._id));
-  expect(await run()).toMatchObject({ status: 'succeeded' });
+  expect(await resolveSeatUserId(String(pod._id), 'cto-walk-1016', instanceId)).toBe(String(seat._id));
+  expect(await run(instanceId)).toMatchObject({ status: 'succeeded' });
   expect(names()).toContain('sentry_find_organizations');
 });
 
