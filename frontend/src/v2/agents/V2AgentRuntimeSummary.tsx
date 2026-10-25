@@ -17,12 +17,18 @@ const V2AgentRuntimeSummary: React.FC<{
   const details = describeRuntime(runtime);
   const onCommonly = details.mode === 'native' || details.mode === 'hosted';
   const last = runtime.observation?.lastSpawn;
+  const observedHarness = last ? describeRuntime({ ...runtime, adapter: last.harness }).adapter || last.harness : null;
   const model = onCommonly ? serverModel : last?.model;
   const configCommand = `commonly agent config ${name} --model <id> --effort <level>`;
+  const copy = async () => {
+    setCopyError(false);
+    try { await navigator.clipboard.writeText(configCommand); }
+    catch { setCopyError(true); }
+  };
   return <div className="v2-agent-runtime-summary">
     <dl>
       <div><dt>{t('agentSettings.rev3.where')}</dt><dd>{t(`agentSettings.rev3.${onCommonly ? 'onCommonly' : 'onMachine'}`)}
-        {details.mode === 'native' ? `, ${t('agentSettings.rev3.builtIn')}` : details.adapter ? ` · ${details.adapter}` : ''}</dd></div>
+        {details.mode === 'native' ? `, ${t('agentSettings.rev3.builtIn')}` : observedHarness ? ` · ${observedHarness}` : ''}</dd></div>
       <div><dt>{t('agentManage.controls.model')}{!onCommonly && ` · ${t('agentManage.controls.effort')}`}</dt>
         <dd>{onCommonly && `${t('agentSettings.rev3.modelPicked')}: `}{model || t('agentManage.controls.notReported')}
           {!onCommonly && last?.effort ? ` · ${last.effort}` : ''}
@@ -30,10 +36,7 @@ const V2AgentRuntimeSummary: React.FC<{
         </dd></div>
     </dl>
     {!onCommonly && last && <div className="v2-agent-runtime-summary__command"><code>{configCommand}</code>
-      <button type="button" onClick={() => {
-        setCopyError(false);
-        void navigator.clipboard.writeText(configCommand).catch(() => setCopyError(true));
-      }}>{t('common.copy')}</button>
+      <button type="button" onClick={() => { void copy(); }}>{t('common.copy')}</button>
     </div>}
     {copyError && <p role="alert">{t('agentSettings.rev3.copyError')}</p>}
   </div>;

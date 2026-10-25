@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import V2AgentSettingsPage from '../agents/V2AgentSettingsPage';
 import { AuthContext } from '../../context/AuthContext';
@@ -591,4 +591,23 @@ test.each(['hosted', 'native'])('rev3 %s shows the server run model and never re
     await waitFor(() => expect(axios.patch).toHaveBeenCalledWith('/api/registry/pods/pod-1/agents/maya-claude',
       { status: 'paused', instanceId: 'default' }));
   }
+});
+
+test('the primary harness follows the last spawn, not a different saved choice', async () => {
+  const defaultGet = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => {
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', runtimeManaged: true,
+      runtimeControls: { runtimeType: 'wrapper', adapter: 'codex', model: 'saved-model' },
+      runtimeObservation: { lastSpawn: { harness: 'claude', model: 'actual-model', effort: 'high', at: '2026-10-25T12:00:00Z' } },
+      installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    return defaultGet(url, options);
+  });
+  renderPage();
+  const section = (await screen.findByRole('heading', { name: 'Runtime', exact: true })).closest('section');
+  expect(within(section).getByText('On your machine · Claude Code')).toBeInTheDocument();
+  expect(section).toHaveTextContent('actual-model · high');
+  expect(section).not.toHaveTextContent('saved-model');
+  expect(section).not.toHaveTextContent('On your machine · Codex');
 });

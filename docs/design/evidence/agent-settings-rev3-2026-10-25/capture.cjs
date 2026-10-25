@@ -7,9 +7,10 @@ fs.mkdirSync(outDir,{recursive:true});
 for(const lang of ['en','zh-CN']) for(const kind of ['byo','hosted','scout','never']) for(const width of [1440,390]){
  const context=await browser.newContext({viewport:{width,height:width===390?844:1000}}); const page=await context.newPage(); const errors=[];page.on('pageerror',e=>errors.push(e.message));
  let paused=false;
- const runtime={runtimeType:kind==='scout'?'native':kind==='hosted'?'hosted':'wrapper',adapter:kind==='byo'?'claude':undefined};
+ const runtime={runtimeType:kind==='scout'?'native':kind==='hosted'?'hosted':'wrapper',adapter:kind==='byo'?'codex':undefined};
  const receipt={harness:'claude',version:'2.1',model:'claude-sonnet-4-5',effort:'high',at:'2026-10-25T16:40:00Z'};
  const installation=()=>({name:kind,instanceId:'default',displayName:kind==='scout'?'Scout':kind==='hosted'?'Launch plan agent':'Maya agent',runtime,status:paused?'paused':'active'});
+ await page.route('**/*',route=>['127.0.0.1','localhost'].includes(new URL(route.request().url()).hostname)?route.continue():route.abort());
  await page.route('**/api/**',async route=>{const req=route.request();const u=new URL(req.url());let data={};
  if(req.method()==='PATCH'){paused=req.postDataJSON().status==='paused';data={agent:installation()};}
  else if(u.pathname==='/api/auth/user')data={_id:'fixture-owner',username:'alex',email:'fixture@example.invalid',verified:true};

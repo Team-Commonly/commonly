@@ -196,8 +196,9 @@ const V2AgentSettingsPage: React.FC = () => {
   };
   const activeKeys = keys.filter((key) => key.status === 'active');
   const kind = agentRuntimeKind(runtime, connectionState === 'never' ? false : processConnected);
-  const harnessLabel = describeRuntime({ ...runtime, adapter: runtimeObservation?.lastSpawn?.harness || runtime.adapter }).adapter
-    || runtimeObservation?.lastSpawn?.harness || runtime.adapter;
+  const harnessLabel = runtimeObservation?.lastSpawn
+    ? describeRuntime({ ...runtime, adapter: runtimeObservation.lastSpawn.harness }).adapter
+      || runtimeObservation.lastSpawn.harness : null;
   const revokedKeys = keys.filter((key) => key.status === 'revoked');
   const keyLabel = (key: RuntimeKey): string => {
     const defaultLabel = !key.label || key.label === 'Runtime token' || key.label === 'Agent Settings replacement';
@@ -232,6 +233,7 @@ const V2AgentSettingsPage: React.FC = () => {
       )}
     </li>
   );
+  const runtimeSummary = <V2AgentRuntimeSummary name={agentName} runtime={runtime} serverModel={runtimeRun?.model} />;
 
   return (
     <main className="v2-agent-settings">
@@ -252,8 +254,11 @@ const V2AgentSettingsPage: React.FC = () => {
         paused={installation?.status === 'paused'} builtIn={kind === 'builtIn'}
         observation={runtimeObservation} run={runtimeRun} task={heldTask} update={update}
         refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
-      <V2AgentRuntimeGrants name={agentName} instanceId={instanceId} runtime={runtime} section="runtime" runtimeTitle={t('agentSettings.rev3.runtime')}
-        runtimeSummary={<V2AgentRuntimeSummary name={agentName} runtime={runtime} serverModel={runtimeRun?.model} />} />
+      {connectionState === 'never' ? <section className="v2-agent-settings__section" aria-labelledby="agent-runtime-heading">
+        <h2 id="agent-runtime-heading">{t('agentSettings.rev3.runtime')}</h2>{runtimeSummary}
+      </section> : <V2AgentRuntimeGrants name={agentName} instanceId={instanceId} runtime={runtime} section="runtime" runtimeTitle={t('agentSettings.rev3.runtime')}
+        onSaveRuntime={runtimeEditable ? updateRuntime : undefined}
+        runtimeSummary={runtimeSummary} />}
       {runtimeManaged && runtimeEditable && <details className="v2-agent-settings__runtime-details">
         <summary>{t('agentSettings.rev3.editRuntime')}</summary>
         <V2RuntimeControls runtime={runtime} onSave={updateRuntime} />

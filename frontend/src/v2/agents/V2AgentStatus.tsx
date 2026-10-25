@@ -50,7 +50,7 @@ const V2AgentStatus: React.FC<Props> = ({ agentName, instanceId, paused, builtIn
             <p>{t(`agentSettings.rev3.${builtIn ? 'builtInStatus' : never ? 'connectHint' : off ? 'offHint' : 'pauseHint'}`)}</p>
           </div>
           {(never || connection?.state === 'revoked') && reconnect ? <Link className="v2-agent-settings__action" to={reconnect}>{t(never ? 'agentSettings.rev3.connect' : 'agentConnection.reconnect')}</Link>
-            : snapshot && !builtIn && <button type="button" disabled={busy} onClick={() => { void togglePause(); }}>
+            : snapshot && <button type="button" disabled={busy} onClick={() => { void togglePause(); }}>
               {t(`agentSettings.rev3.${paused ? 'resume' : 'pause'}`)}
             </button>}
         </div>
