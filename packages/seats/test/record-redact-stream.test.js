@@ -115,7 +115,7 @@ test('two streams interleaved, each splitting the value, are scrubbed apart', ()
   }
 }));
 
-test('held text is written before settle, never lost and never whole', () => withStore(async (store) => {
+test('a stream that ends mid-value writes the marker before settle, never the prefix', () => withStore(async (store, root) => {
   const run = store.startRun({ runId: 'run-held-settle' });
   run.redact([CANARY]);
   run.emit('agent.message_chunk', { text: `cut off at ${CANARY.slice(0, 12)}` });
@@ -123,13 +123,26 @@ test('held text is written before settle, never lost and never whole', () => wit
   const events = store.readRun('run-held-settle');
   assert.deepEqual(events.map((e) => [e.kind, e.data.text]), [
     ['agent.message_chunk', 'cut off at '],
-    ['agent.message_chunk', CANARY.slice(0, 12)],
+    ['agent.message_chunk', '[redacted]'],
     ['run.settled', undefined],
   ]);
+  assert.equal(allBytes(root).includes(CANARY.slice(0, 12)), false);
+}));
+
+// The security gate's probe: all but the last character, then the run ends.
+test('a value cut one character short never reaches the record', () => withStore(async (store, root) => {
+  const run = store.startRun({ runId: 'run-held-short' });
+  run.redact([CANARY]);
+  run.emit('agent.message_chunk', { text: `key: ${CANARY.slice(0, -1)}` });
+  run.emit('liveness.recovery', { action: 'kill', attempt: 1 });
+  run.emit('run.settled', { outcome: 'failed', failure: { kind: 'exited', detail: 'killed' }, durationMs: 1, attempts: 1 });
+  assert.deepEqual(storedText(store, 'run-held-short', 'agent.message_chunk', undefined), 'key: [redacted]');
+  assert.equal(allBytes(root).includes(CANARY.slice(0, -1)), false);
+  assert.equal(allBytes(root).includes(CANARY.slice(0, 8)), false);
 }));
 
 // The value is registered as the run's runtime token, the one the supervisor itself hands the store.
-test('a supervised run killed mid-value keeps its held text, before the settle and the retry', () => withStore(async (store, root) => {
+test('a supervised run killed mid-value writes the marker for its held tail, before the settle and the retry', () => withStore(async (store, root) => {
   let spawns = 0;
   const adapter = {
     name: 'split-then-hang',
@@ -149,9 +162,9 @@ test('a supervised run killed mid-value keeps its held text, before the settle a
   const events = store.readRun(out.runId);
   const settledAt = events.findIndex((e) => e.kind === 'run.settled');
   const chunks = events.filter((e) => e.kind === 'agent.message_chunk');
-  assert.deepEqual(chunks.map((e) => e.data.text), ['try 1: ', CANARY.slice(0, 10)]);
-  assert.ok(chunks.every((e) => e.seq < events[settledAt].seq), 'the held tail landed before run.settled');
-  assert.equal(allBytes(root).includes(CANARY), false);
+  assert.deepEqual(chunks.map((e) => e.data.text), ['try 1: ', '[redacted]']);
+  assert.ok(chunks.every((e) => e.seq < events[settledAt].seq), 'the marker landed before run.settled');
+  assert.equal(allBytes(root).includes(CANARY.slice(0, 10)), false, 'no prefix of the value on disk');
 
   // On retry, the first attempt's tail lands before the second attempt starts,
   // not glued to the second's text. (After the retry line: an adapter may still
@@ -171,9 +184,10 @@ test('a supervised run killed mid-value keeps its held text, before the settle a
   });
   assert.equal(again.outcome, 'ok');
   assert.deepEqual(store.readRun(again.runId).map((e) => e.kind === 'agent.message_chunk' ? e.data.text : e.kind), [
-    'attempt.started', 'try 1: ', 'liveness.recovery', CANARY.slice(0, 10),
-    'attempt.started', 'try 2: ', CANARY.slice(0, 10), 'run.settled',
+    'attempt.started', 'try 1: ', 'liveness.recovery', '[redacted]',
+    'attempt.started', 'try 2: ', '[redacted]', 'run.settled',
   ]);
+  assert.equal(allBytes(root).includes(CANARY.slice(0, 10)), false);
 }));
 
 test('the store scrubs a registered value of any length', () => withStore(async (store, root) => {

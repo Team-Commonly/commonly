@@ -150,11 +150,15 @@ export const createTraceStore = ({ root, now = () => new Date() } = {}) => {
 
     const write = (kind, data, actor) => writeLine(kind, windowed(kind, data, actor), actor);
 
-    /** Write every held tail as its own delta: the stream has ended. */
+    /**
+     * The stream has ended, so each held tail can no longer complete a value.
+     * A tail is held only while it is a prefix of a known value, so it is part
+     * of a credential: write the marker in its place, never the prefix.
+     */
     const flushStreams = () => {
-      for (const [key, { kind, actor, held }] of streams) {
+      for (const [key, { kind, actor }] of streams) {
         streams.delete(key);
-        writeLine(kind, { text: held }, actor);
+        writeLine(kind, { text: '[redacted]' }, actor);
       }
     };
 

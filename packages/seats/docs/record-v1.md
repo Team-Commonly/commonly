@@ -441,8 +441,12 @@ What's new or changed in `EVENT_TYPES`:
    - Message and thought chunks are scrubbed per stream, not per line, so a
      value split across chunks is caught. A writer holds back a chunk's tail
      while it could begin a known value, and writes it with the stream's next
-     chunk, or as a chunk of its own before the next `attempt.started`,
-     `attempt.settled` or `run.settled`.
+     chunk. If the stream ends first, the held tail is a partial value, so the
+     writer writes `[redacted]` as a chunk of its own in its place, before the
+     next `attempt.started`, `attempt.settled` or `run.settled`. A short
+     ordinary tail that happened to begin a value is redacted too. A held tail
+     lives only in the writer's memory: a writer that crashes before the next
+     write loses it, and never writes it.
    - That replacement covers known values only. A value the writer was not
      given, or one the agent transformed (base64, say), passes through.
 2. **Readers ignore unknown fields and skip unknown kinds.** A reader that
