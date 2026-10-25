@@ -22,4 +22,4 @@ Start the normal frontend dev server on `127.0.0.1:3546`, then run `node capture
 
 ## Completion holds
 
-This is a draft implementation. UX review proceeds section by section, beginning with Status and Runtime. Task-owner confirmation of the catalogue clause, independent gates and a non-author production walk of BYO/hosted/Scout at both widths with every displayed value checked against its real last spawn remain required. Captures alone do not complete TASK-546.
+This is a draft implementation. UX review proceeds section by section, beginning with Status and Runtime. Independent gates and a non-author production walk of BYO/hosted/Scout at both widths with every displayed value checked against its real last spawn remain required. Captures alone do not complete TASK-546.
