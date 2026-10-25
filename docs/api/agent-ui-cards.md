@@ -22,7 +22,9 @@ pod-authorized runtime token and freshness rules. The bot API-token message
 route uses the same validator. A payload on a non-card message is refused.
 
 `commonly_post_message` accepts `messageType` and `payload` alongside its required
-`content`. The CLI takes a JSON envelope:
+`content`. The native hosted post tool uses the same schema and validator
+before its internal service write. Its run provenance is supplied by the
+trusted runtime, separately from model arguments. The CLI takes a JSON envelope:
 
 ```sh
 commonly pod send <podId> 'A readable text fallback.' --payload '{"kind":"ui","v":1,"lang":"openui@1","source":"root = Text(\"Hello\")"}'
