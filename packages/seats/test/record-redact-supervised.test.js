@@ -16,15 +16,18 @@ import { join } from 'node:path';
 import { superviseRun } from '../src/supervisor.js';
 import { createTraceStore } from '../src/trace/store.js';
 import { prepareRunEnv } from '../src/valet/env.js';
+import { createPermissionPolicy } from '../src/valet/permissions.js';
 import { toOtlpJson } from '../src/record/otel.js';
 import { runFailure } from '../src/failures.js';
 import { startFakeProvider } from '../test-support/fake-provider.js';
 
 const CANARY = 'sk-test-CANARY-7f3a91c2d4e5b6a8';
 const KEY_NAME = 'FAKE_PROVIDER_KEY';
-const GRANT = { credentials: [{ name: KEY_NAME, from: 'resolver' }], tools: { allow: ['read'] } };
+const GRANT = { credentials: [{ name: KEY_NAME, from: 'resolver' }], tools: { allow: ['read'], ask: ['fetch'] } };
 const AGENT = { type: 'agent', id: 'u-agent-redact', owner: 'u-owner-redact', name: 'Redact test agent' };
-const AGENT_KINDS = new Set(['agent.message_chunk', 'tool.call', 'tool.update', 'permission.requested', 'result.reported']);
+const OWNER = { id: 'u-owner-redact', role: 'agent-owner' };
+// The kinds the adapter writes itself, naming its actor. permission.* are the valet's.
+const AGENT_KINDS = new Set(['agent.message_chunk', 'tool.call', 'tool.update', 'result.reported']);
 
 // The store's redaction is exact-match on known values (docs/record-v1.md §3,
 // rule 1): a value the agent transforms, such as base64, is not claimed and
@@ -59,7 +62,8 @@ const sseDeltas = async (response) => {
  * An adapter that does what a CLI adapter does with a granted key: asks the
  * valet for its env, calls the provider with it, and streams what comes back.
  * The provider is scripted to echo the key, so the key lands in agent text, a
- * tool result, a permission question and the final result.
+ * tool result, the question the valet's permission policy records, and the
+ * final result.
  */
 const echoingAdapter = ({ baseURL, envRoot, fail, seen }) => ({
   name: 'echo-fake',
@@ -85,11 +89,14 @@ const echoingAdapter = ({ baseURL, envRoot, fail, seen }) => ({
         toolCallId: 'tc-1', title: `printenv ${KEY_NAME}`, kind: 'execute', status: 'pending', surface: 'native',
       }, as);
       ctx.trace.emit('tool.update', { toolCallId: 'tc-1', status: 'completed', title: `${KEY_NAME}=${key}` }, as);
-      ctx.trace.emit('permission.requested', {
-        toolCallId: 'tc-2',
-        question: `Send ${key} to the deploy hook?`,
+      const decide = createPermissionPolicy(GRANT, {
+        trace: ctx.trace, askedOf: OWNER, approve: async () => ({ approved: true, by: OWNER.id, role: OWNER.role }),
+      });
+      const answer = await decide({
+        toolCall: { toolCallId: 'tc-2', title: `Send ${key} to the deploy hook?`, kind: 'fetch', rawInput: { token: key } },
         options: [{ optionId: 'allow', kind: 'allow_once' }, { optionId: 'reject', kind: 'reject_once' }],
-      }, as);
+      });
+      seen.answer = answer;
       if (fail) throw runFailure('exited', `the CLI exited after printing ${key}`);
       ctx.trace.emit('agent.message_chunk', { text: `Done. I used ${key}.` }, as);
       ctx.trace.emit('result.reported', { status: 'done', refs: [{ type: 'note', id: `used-${key}` }] }, as);
@@ -144,12 +151,17 @@ for (const fail of [false, true]) {
     assertAbsent(otlp, 'the OTLP export');
     assert.ok(otlp.includes('[redacted]'), 'positive control: a scrubbed field reached the export');
     assert.ok(otlp.includes('seats.question'), 'positive control: the permission question reached the export');
+    assert.ok(otlp.includes('Send [redacted] to the deploy hook?'), 'the exported question is the scrubbed one');
 
     const byKind = (kind) => entries.filter((e) => e.kind === kind);
     // Each place the value was planted holds the marker instead, so its absence above is a scrub, not a drop.
     assert.ok(byKind('agent.message_chunk').some((e) => e.data.text.includes('[redacted]')), 'agent text was scrubbed');
     assert.equal(byKind('tool.update')[0].data.title, `${KEY_NAME}=[redacted]`, 'the tool result was scrubbed');
-    assert.equal(byKind('permission.requested')[0].data.question, 'Send [redacted] to the deploy hook?', 'the permission question was scrubbed');
+    const [asked] = byKind('permission.requested');
+    assert.equal(asked.data.question, 'Send [redacted] to the deploy hook?', 'the permission question was scrubbed');
+    assert.deepEqual(asked.data.askedOf, OWNER);
+    assert.match(asked.data.argsDigest, /^sha256:[0-9a-f]{64}$/, 'the arguments are recorded as a digest only');
+    assert.deepEqual(seen.answer, { outcome: 'selected', optionId: 'allow' });
     const [settled] = byKind('run.settled');
     if (fail) {
       assert.equal(settled.data.failure.detail, 'the CLI exited after printing [redacted]', 'the final failure was scrubbed');
@@ -168,7 +180,7 @@ for (const fail of [false, true]) {
 
     // The adapter's own entries carry the actor it named.
     const agentEntries = entries.filter((e) => AGENT_KINDS.has(e.kind));
-    assert.ok(agentEntries.length >= (fail ? 4 : 6));
+    assert.ok(agentEntries.length >= (fail ? 3 : 5), `${agentEntries.length} adapter entries`);
     for (const entry of agentEntries) assert.deepEqual(entry.actor, AGENT, `actor on ${entry.kind} #${entry.seq}`);
   }));
 }
