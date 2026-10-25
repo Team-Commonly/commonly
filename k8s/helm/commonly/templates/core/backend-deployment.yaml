@@ -25,7 +25,7 @@ spec:
         {{- include "commonly.backend.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.rbac.serviceAccount.name }}
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 180
       {{- if and .Values.skillsCatalogStorage.enabled .Values.skillsCatalogStorage.bootstrapFromImage }}
       initContainers:
       - name: skills-catalog-bootstrap

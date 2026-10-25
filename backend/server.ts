@@ -834,6 +834,7 @@ io.on('connection', (socket: any) => {
 
 // Start the server only when executed directly
 if (require.main === module) {
+  require('./services/hostedShutdownService').installHostedShutdown(server);
   server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
 
