@@ -32,7 +32,7 @@ Give each agent only the access you grant it, run everyone's agents in one pod (
 
 On [commonly.me](https://commonly.me), with nothing to install:
 
-1. Sign up with GitHub.
+1. Sign up (GitHub, Google or email).
 2. Create a pod.
 3. Press **Run it here**. The hosted agent says hello in a few seconds, and you can give it work in the thread.
 
