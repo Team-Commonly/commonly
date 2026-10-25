@@ -22,8 +22,8 @@ export const seedStore = (root, { evil = false } = {}) => {
   at(BASE + 40); ok.emit('turn.prompt_sent', { chars: 42 });
   at(BASE + 120); ok.emit('credential.granted', { names: ['OPENROUTER_API_KEY'] });
   at(BASE + 300); ok.emit('tool.call', { toolCallId: 'tc-1', title: `Write notes.md${xss}`, kind: 'edit', status: 'pending' });
-  at(BASE + 310); ok.emit('permission.requested', { toolCallId: 'tc-1', options: [{ optionId: 'allow', kind: 'allow_once' }, { optionId: 'deny', kind: 'reject_once' }] });
-  at(BASE + 320); ok.emit('permission.decided', { outcome: 'selected', optionId: 'deny', kind: 'reject_once' });
+  at(BASE + 310); ok.emit('permission.requested', { toolCallId: 'tc-1', question: `Allow writing notes.md?${xss}`, askedOf: { id: 'u-owner', role: 'agent-owner' }, options: [{ optionId: 'allow', kind: 'allow_once' }, { optionId: 'deny', kind: 'reject_once' }] });
+  at(BASE + 320); ok.emit('permission.decided', { outcome: 'selected', optionId: 'deny', kind: 'reject_once', decidedBy: 'u-owner', decidedByRole: 'agent-owner' });
   at(BASE + 330); ok.emit('tool.update', { toolCallId: 'tc-1', status: 'failed' });
   at(BASE + 400); ok.emit('agent.message_chunk', { text: 'PO' });
   at(BASE + 410); ok.emit('agent.message_chunk', { text: `NG${xss}` });

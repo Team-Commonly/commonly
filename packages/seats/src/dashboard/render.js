@@ -239,10 +239,10 @@ const summarize = (event, tools) => {
     case 'permission.requested': {
       const title = d.toolCallId && tools.get(d.toolCallId);
       const opts = Array.isArray(d.options) ? d.options.map((o) => `${o?.optionId ?? '?'}${o?.kind ? ` (${o.kind})` : ''}`).join(', ') : '';
-      return `<span class="tag">permission</span>${title ? `<b>${esc(clip(title, 200))}</b> ` : ''}${kv([['tool', d.toolCallId], ['options', opts]])}`;
+      return `<span class="tag">permission</span>${title ? `<b>${esc(clip(title, 200))}</b> ` : ''}${kv([['ask', d.question ? clip(d.question, 200) : null], ['asked of', d.askedOf?.role], ['tool', d.toolCallId], ['options', opts]])}`;
     }
     case 'permission.decided':
-      return `<span class="tag">permission</span>${kv([['outcome', d.outcome], ['option', d.optionId], ['kind', d.kind]])}`;
+      return `<span class="tag">permission</span>${kv([['outcome', d.outcome], ['option', d.optionId], ['kind', d.kind], ['by', d.decidedByRole]])}`;
     case 'usage': {
       const n = (v) => (isNum(v) ? String(v) : 'unknown');
       return kv([['in', n(d.inputTokens)], ['out', n(d.outputTokens)], ['total', n(d.totalTokens)], ['cost', isNum(d.cost) ? d.cost : 'unknown']]);

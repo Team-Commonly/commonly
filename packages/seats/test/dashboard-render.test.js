@@ -50,7 +50,8 @@ test('run detail concatenates the reply, folds chunks and audits permissions and
   assert.match(html, /8–9<\/td>[\s\S]*?2 chunks, 4 chars/);
   assert.match(rowOf(html, 'credential.granted'), /class="audit"[\s\S]*<code>OPENROUTER_API_KEY<\/code>/);
   assert.match(rowOf(html, 'permission.requested'), /class="audit"[\s\S]*<b>Write notes\.md<\/b>[\s\S]*allow \(allow_once\), deny \(reject_once\)/);
-  assert.match(rowOf(html, 'permission.decided'), /selected[\s\S]*deny[\s\S]*reject_once/);
+  assert.match(rowOf(html, 'permission.requested'), /Allow writing notes\.md\?[\s\S]*agent-owner/);
+  assert.match(rowOf(html, 'permission.decided'), /selected[\s\S]*deny[\s\S]*reject_once[\s\S]*agent-owner/);
   assert.match(rowOf(html, '>usage<'), /cost<\/span> unknown/);
   assert.match(html, /\+0\.400s/);
 }));
