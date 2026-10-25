@@ -54,8 +54,15 @@ marked account, so a concurrent promotion and deletion cannot cross that boundar
 ## Failures and retries
 
 Cleanup spans MongoDB, the object store, PostgreSQL and Stripe, so it is not a
-single transaction. After re-authentication and billing cancellation, a durable
-`accountDeletionRequestedAt` marker prevents new uploads. Upload requests already
+single transaction. After re-authentication, an atomic non-admin claim sets
+`accountDeletionRequestedAt` before calling Stripe. The marker blocks promotion,
+new uploads and owned runtime authentication during preflight. Stripe cancellation
+has a 30-second timeout and no automatic network retry. Failure releases only
+that attempt's marker and preserves credentials, uploads and the human row.
+A crashed preflight can be reclaimed after five minutes. A timeout can have an
+unknown provider outcome; retry uses the same account-and-subscription idempotency
+key. After successful preflight, the durable cleanup receipt is created. Retries
+with a receipt skip billing cancellation. Upload requests already
 in flight recheck the marker after saving metadata and discard their upload if
 deletion has begun or the account is gone.
 
@@ -88,7 +95,7 @@ request's own storage or PG cleanup returns
 removed objects are safe to delete again. Owned API/device credentials are
 revoked during cleanup; the browser session stays available for retry until the
 human row is removed. A retry after the OAuth freshness window requires another
-provider sign-in. Subscription cancellation uses an account-specific idempotency
+provider sign-in. Subscription cancellation uses an account-and-subscription-specific idempotency
 key. This does not replace provider retention policies or remove billing audit
 records and backups.
 
@@ -104,3 +111,16 @@ identity/memory continuity, token revocation, failed-cleanup retries and an
 upload that crosses deletion, including storage cleanup failure and a failed
 metadata save after the human row is gone. The positive OAuth case consumes a real one-time
 exchange code rather than constructing the accepted JWT claim in the fixture.
+
+## Request quotas
+
+Deletion permits ten attempts per user per fifteen minutes; human uploads permit
+sixty. These quotas run after authentication and use the durable user id, so
+rotating sessions or forged forwarding headers cannot reset them. Before auth,
+a coarse transport-peer bucket permits 120 deletion or 6,000 upload requests per
+fifteen minutes. It uses the socket peer only. Behind a proxy that bucket is
+shared, so it is intentionally broader than the user quota.
+
+Agent ownership recovery after deletion is awaiting a product ruling. The current
+implementation preserves original ownership, pauses owned runtimes and revokes
+owned credentials. It does not introduce an ownership transfer mechanism.

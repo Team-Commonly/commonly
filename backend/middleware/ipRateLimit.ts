@@ -54,6 +54,17 @@ export const cloudflareIpRateLimitKeyGenerator = (req: Request): string => {
   return req.ip ? ipKeyGenerator(req.ip) : 'anon';
 };
 
+// Coarse ingress buckets use only the connection peer; user quotas provide fairness behind proxies.
+export const transportPeerRateLimitKeyGenerator = (req: Request): string => (
+  req.socket?.remoteAddress ? ipKeyGenerator(req.socket.remoteAddress) : 'unknown-peer'
+);
+
+export const authenticatedUserRateLimitKeyGenerator = (req: Request & { userId?: unknown }): string => (
+  req.userId ? `user:${String(req.userId)}` : 'unresolved-user'
+);
+
 // CJS compat for the require()-style imports used elsewhere in backend/.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { cloudflareIpRateLimitKeyGenerator };
+module.exports = {
+  cloudflareIpRateLimitKeyGenerator, transportPeerRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator,
+};

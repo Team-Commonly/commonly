@@ -153,25 +153,43 @@ export const deleteOwnAccount = async (
       'Transfer administration and ask another admin to make this a member account before deleting it.');
   }
 
-  // Cancel billing before destroying the linkage needed to stop future charges.
-  if (user.billing?.subscriptionId && user.billing.subscriptionStatus !== 'canceled') {
-    const client = stripe();
-    if (!client) throw new Error('Billing is unavailable; account deletion cannot cancel the subscription');
-    await client.subscriptions.cancel(user.billing.subscriptionId, {}, {
-      idempotencyKey: `account-deletion-${userId}`,
-    });
+  // A receipt means billing preflight already succeeded. Otherwise claim the
+  // non-admin row before Stripe. A stale claim recovers a crashed preflight;
+  // the provider request is bounded below this five-minute lease.
+  if (!await AccountDeletion.exists({ _id: userId })) {
+    const claimedAt = new Date();
+    const claimed = await User.updateOne({
+      _id: userId, isBot: { $ne: true }, role: { $ne: 'admin' },
+      $or: [{ accountDeletionRequestedAt: { $exists: false } },
+        { accountDeletionRequestedAt: { $lt: new Date(claimedAt.getTime() - 300_000) } }],
+    }, { $set: { accountDeletionRequestedAt: claimedAt } });
+    if (claimed.matchedCount !== 1) {
+      throw new AccountDeletionError(409, 'ACCOUNT_CHANGED',
+        'Your account changed or deletion is already in progress. Try again shortly.');
+    }
+    try {
+      if (user.billing?.subscriptionId && user.billing.subscriptionStatus !== 'canceled') {
+        const client = stripe();
+        if (!client) throw new Error('Billing is unavailable; account deletion cannot cancel the subscription');
+        await client.subscriptions.cancel(user.billing.subscriptionId, {}, {
+          idempotencyKey: `account-deletion-${userId}-${user.billing.subscriptionId}`,
+          timeout: 30_000,
+          maxNetworkRetries: 0,
+        });
+      }
+    } catch (error) {
+      // Release only this attempt's claim. Credentials and uploads are intact.
+      await User.updateOne({ _id: userId, accountDeletionRequestedAt: claimedAt },
+        { $unset: { accountDeletionRequestedAt: 1 } });
+      throw error;
+    }
+    await AccountDeletion.updateOne({ _id: userId }, { $setOnInsert: { createdAt: new Date() } }, { upsert: true });
   }
-
-  // Durable marker closes upload races and survives a storage failure. Keep the
-  // human row until cleanup succeeds so the same re-authenticated request can retry.
-  const marked = await User.updateOne({ _id: userId, isBot: { $ne: true }, role: { $ne: 'admin' } }, {
-    $set: { accountDeletionRequestedAt: new Date(), deviceTokens: [] },
+  // Retain the human until cleanup succeeds for authenticated retries.
+  await User.updateOne({ _id: userId }, {
+    $set: { deviceTokens: [] },
     $unset: { apiToken: 1, apiTokenCreatedAt: 1, apiTokenScopes: 1 },
   });
-  if (marked.matchedCount !== 1) {
-    throw new AccountDeletionError(409, 'ACCOUNT_CHANGED', 'Your account changed. Sign in again before deleting it.');
-  }
-  await AccountDeletion.updateOne({ _id: userId }, { $setOnInsert: { createdAt: new Date() } }, { upsert: true });
   await revokeOwnedAccess(userId);
 
   await deleteOwnedUploads(userId);

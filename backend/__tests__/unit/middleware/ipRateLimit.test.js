@@ -30,3 +30,18 @@ describe('cloudflareIpRateLimitKeyGenerator', () => {
     expect(key).toBe('anon');
   });
 });
+
+const { transportPeerRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator } = require('../../../middleware/ipRateLimit');
+
+describe('account mutation quota keys', () => {
+  it('uses the transport peer despite conflicting forwarding headers', () => {
+    expect(transportPeerRateLimitKeyGenerator({ socket: { remoteAddress: '192.0.2.4' },
+      ip: '203.0.113.5', headers: { 'cf-connecting-ip': '198.51.100.6' } }))
+      .toBe(ipKeyGenerator('192.0.2.4'));
+  });
+  it('uses the authenticated account rather than bearer or forwarding headers', () => {
+    expect(authenticatedUserRateLimitKeyGenerator({ userId: 'one', headers: { authorization: 'rotated' } }))
+      .toBe('user:one');
+    expect(authenticatedUserRateLimitKeyGenerator({ userId: 'two' })).toBe('user:two');
+  });
+});

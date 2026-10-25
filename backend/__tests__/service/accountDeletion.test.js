@@ -174,6 +174,27 @@ describe('Self-serve account deletion', () => {
     expect(await File.countDocuments()).toBe(0);
   });
 
+  it('limits deletion by account despite rotating JWTs and forwarding headers', async () => {
+    const user = await makeUser();
+    const tokens = [issueSessionToken(user), issueSessionToken(user, undefined, undefined, 1)];
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await deletion(app, tokens[attempt % 2], {}).expect(400);
+    }
+    await deletion(app, tokens[0], {}).expect(429);
+    expect(await User.findById(user._id)).not.toBeNull();
+    expect(await AccountDeletion.countDocuments()).toBe(0);
+  });
+
+  it('recovers a stale billing preflight claim and refuses an active one', async () => {
+    const user = await makeUser({ accountDeletionRequestedAt: new Date() });
+    const token = issueSessionToken(user);
+    await deletion(app, token).expect(409);
+    await User.updateOne({ _id: user._id }, {
+      $set: { accountDeletionRequestedAt: new Date(Date.now() - 301000) },
+    });
+    await deletion(app, token).expect(204);
+  });
+
   it('leaves the account and uploads intact if subscription cancellation fails', async () => {
     const user = await makeUser({ apiToken: 'cm_keep-on-billing-failure',
       billing: { subscriptionId: 'sub_fail', subscriptionStatus: 'active' } });
@@ -243,7 +264,9 @@ describe('Self-serve account deletion', () => {
   });
 
   it('refuses deletion if a promotion wins before the conditional deletion marker', async () => {
-    const user = await makeUser(); await addFile(user, 'promotion.png');
+    const user = await makeUser({ billing: { subscriptionId: 'sub_promoted', subscriptionStatus: 'active' } });
+    await addFile(user, 'promotion.png');
+    mockStripe.subscriptions.cancel.mockClear();
     const updateOne = User.updateOne.bind(User);
     jest.spyOn(User, 'updateOne').mockImplementation((filter, update, ...rest) => {
       if (update.$set?.accountDeletionRequestedAt) return (async () => {
@@ -254,6 +277,7 @@ describe('Self-serve account deletion', () => {
     });
     await deletion(app, issueSessionToken(user)).expect(409);
     expect((await User.findById(user._id)).role).toBe('admin');
+    expect(mockStripe.subscriptions.cancel).not.toHaveBeenCalled();
     expect(await File.countDocuments({ uploadedBy: user._id })).toBe(1);
     expect(await AccountDeletion.countDocuments()).toBe(0);
   });
@@ -402,6 +426,6 @@ describe('Self-serve account deletion', () => {
   it('cancels a subscription before deleting its billing linkage', async () => {
     const user = await makeUser({ billing: { subscriptionId: 'sub_delete', subscriptionStatus: 'active' } });
     await deletion(app, issueSessionToken(user)).expect(204);
-    expect(mockStripe.subscriptions.cancel).toHaveBeenCalledWith('sub_delete', {}, { idempotencyKey: `account-deletion-${user.id}` });
+    expect(mockStripe.subscriptions.cancel).toHaveBeenCalledWith('sub_delete', {}, { idempotencyKey: `account-deletion-${user.id}-sub_delete`, timeout: 30000, maxNetworkRetries: 0 });
   });
 });
