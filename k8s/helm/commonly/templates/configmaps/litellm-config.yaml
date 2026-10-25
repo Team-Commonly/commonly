@@ -232,57 +232,8 @@ data:
           model: openai/gpt-image-1
           api_key: os.environ/OPENAI_API_KEY
 
-      # --- Anthropic (cluster ANTHROPIC_API_KEY, standard BYOK pattern) ---
-      # Consumers will point at these entries:
-      #   1. cluster-side `cloud-claude-code` runtime pods (Deployment
-      #      templated parallel to cloud-codex) — set
-      #      ANTHROPIC_BASE_URL=http://litellm:4000 and
-      #      ANTHROPIC_API_KEY=<per-pod virtual key>
-      #   2. openclaw moltbots that need Claude models (dev-only, gated
-      #      the same way as openai-codex/* — see applyOpenClawModelDefaults)
-      #
-      # Auth model matches every other LiteLLM caller in the cluster
-      # (codex CLI, backend services, dev moltbots): caller sends its
-      # LiteLLM virtual key as Authorization; LiteLLM validates it
-      # against LiteLLM_VerificationTokenTable; on hit, LiteLLM calls
-      # api.anthropic.com using the cluster's own ANTHROPIC_API_KEY
-      # (which holds Anthropic's $200/mo prepaid credit, provisioned
-      # into anthropic-api-key in api-keys secret on 2026-06-15).
-      #
-      # Until the real key replaces `placeholder` in the api-keys secret
-      # (target: 2026-06-15), any call to a claude-* model will 401
-      # upstream with `invalid x-api-key`. No current consumers, so this
-      # is a harmless dormant path until provisioning day.
-      #
-      # OAuth pass-through (PR #432, x-litellm-api-key + ANTHROPIC_
-      # CUSTOM_HEADERS) was considered and rejected: TOS risk on Max
-      # subscription multiplexing, refresh sidecar complexity matching
-      # codex-auth-rotator (incident-prone), quota concentration on a
-      # single account. Predictable per-token billing against $200/mo
-      # API credit is the right trade.
-      #
-      # Per-key scoping (models[], rpm/tpm/spend limits, key_alias) is
-      # set at `/key/generate` time — see docs/runbooks/litellm-claude-code.md.
-      - model_name: claude-opus-4-7
-        litellm_params:
-          model: anthropic/claude-opus-4-7
-          api_key: os.environ/ANTHROPIC_API_KEY
-
-      - model_name: claude-sonnet-4-6
-        litellm_params:
-          model: anthropic/claude-sonnet-4-6
-          api_key: os.environ/ANTHROPIC_API_KEY
-
-      - model_name: claude-haiku-4-5
-        litellm_params:
-          model: anthropic/claude-haiku-4-5-20251001
-          api_key: os.environ/ANTHROPIC_API_KEY
-
-      # Versioned alias — Claude Code sometimes sends date-suffixed IDs
-      - model_name: claude-haiku-4-5-20251001
-        litellm_params:
-          model: anthropic/claude-haiku-4-5-20251001
-          api_key: os.environ/ANTHROPIC_API_KEY
+      # Direct Anthropic routes removed under D76. Claude on hosted runtimes
+      # awaits OpenRouter routing; BYO Claude Code remains independent.
 
     router_settings:
       # The codex-auth-rotator sidecar rotates Codex accounts every 10 min on
