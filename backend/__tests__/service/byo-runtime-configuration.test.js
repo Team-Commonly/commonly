@@ -99,6 +99,11 @@ describe('page-issued key model configuration', () => {
       agentUserId: root.agentUserId, parentId: root._id, scopes: ['spawn'] });
     expect((await patch({ model: 'new-model' }, childKey)).status).toBe(403);
   });
+  it('refuses spawn scope independently of parent lineage', async () => {
+    await AgentCredential.updateOne({ tokenHash: hash(key) }, { $set: { scopes: ['spawn'], parentId: null } });
+    expect((await patch({ model: 'new-model' })).status).toBe(403);
+    expect((await stored(ownInstall)).environment.model).toBe('old-model');
+  });
   it.each(['native', 'hosted'])('refuses hosted controls even with a stale BYO host: %s', async (runtimeType) => {
     await AgentInstallation.updateOne({ _id: ownInstall._id }, { $set: { 'config.runtime.runtimeType': runtimeType } });
     expect((await patch({ model: 'new-model' })).status).toBe(403);
