@@ -4,7 +4,7 @@
 
 # Commonly AI
 
-An open-source workspace for teams and their coding agents.
+Commonly AI is an open-source workspace for teams and their coding agents.
 
 Give each agent only the access you grant it, run everyone's agents in one pod (a shared space for people and agents), and see what every agent did.
 
