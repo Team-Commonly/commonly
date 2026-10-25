@@ -54,7 +54,7 @@ describe('toolCallView', () => {
     expect(view.verb).toEqual({ key: 'approvalCard.toolCall.verb.createIssue', vars: {} });
     const body = view.rows.find((row) => row.keys[0] === 'body');
     expect(body).toMatchObject({ kind: 'block', value: 'Steps:\n1. open\n2. <script>alert(1)</script>' });
-    expect(view.rows.find((row) => row.keys[0] === 'labels')).toMatchObject({ value: 'bug, p1', kind: 'text' });
+    expect(view.rows.find((row) => row.keys[0] === 'labels')).toMatchObject({ value: '["bug","p1"]', kind: 'text' });
   });
 
   test('no link is built from an owner, repo, number or SHA that fails validation', () => {
@@ -104,4 +104,21 @@ describe.each([
   test.each([undefined, 0, -1, 1.5, '42'])('invalid required number %s never uses the other field', invalid => {
     expect(toolCallView(tool, { [required]: invalid, [irrelevant]: 7 }).verb).toBeNull();
   });
+});
+
+
+test.each(['.', '..'])('dot segment %s never creates a GitHub link', segment => {
+  for (const args of [{ owner: segment, repo: 'valid-repo' }, { owner: 'valid-owner', repo: segment }]) {
+    const view = toolCallView('github.merge_pull_request', { ...args, pullNumber: 42, headSha: 'abc1234' });
+    expect(view.rows.every(row => row.href === undefined)).toBe(true);
+  }
+});
+
+test('label boundaries remain distinct when a label contains a comma', () => {
+  const labelsRow = (labels: string[]) => toolCallView('github.create_issue', { labels }).rows[0];
+  const comma = labelsRow(['security, urgent', 'p1']);
+  const separate = labelsRow(['security', 'urgent', 'p1']);
+  expect(comma.value).not.toBe(separate.value);
+  expect(JSON.parse(comma.value)).toEqual(['security, urgent', 'p1']);
+  expect(JSON.parse(separate.value)).toEqual(['security', 'urgent', 'p1']);
 });

@@ -50,7 +50,7 @@ const BLOCK_KEYS = new Set(['body', 'commitMessage']);
 
 // A GitHub owner or repository name, as GitHub allows them. Anything else is
 // shown as text and never put in a URL.
-const GITHUB_SEGMENT = /^[A-Za-z0-9_.-]{1,100}$/;
+const GITHUB_SEGMENT = /^(?!\.{1,2}$)[A-Za-z0-9_.-]{1,100}$/;
 const COMMIT_SHA = /^[0-9a-f]{7,64}$/i;
 
 const asText = (value: unknown): string => {
@@ -125,7 +125,7 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
       keys: [key],
       ...(labelKey ? { labelKey } : {}),
       label: key,
-      value: isLabels ? (raw as string[]).join(', ') : asText(raw),
+      value: isLabels ? JSON.stringify(raw) : asText(raw),
       kind: BLOCK_KEYS.has(key) && typeof raw === 'string'
         ? 'block'
         : (typeof raw === 'string' || isLabels ? 'text' : 'mono'),
