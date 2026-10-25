@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, KINDS, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
+  appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, KINDS, ON_BEHALF_ROLES, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
 } from '../src/record/format.js';
 
 const RUN = 'run-fmt-0001';
@@ -306,4 +306,59 @@ test('argsDigest is sha256 of the canonical args, and anything else is refused, 
       assert.throws(() => write(raw), /argsDigest/, `raw ${JSON.stringify(raw)}`);
     }
   }
+});
+
+const BEHALF = { ...AGENT, onBehalfOf: { id: 'u-ben', role: 'requester' } };
+
+test('actor.onBehalfOf: an agent entry carrying it hashes, chains and verifies, on every kind the agent authors', () => {
+  assert.deepEqual(ON_BEHALF_ROLES, ['requester', 'assigner']);
+  const lines = [];
+  const add = (kind, data) => lines.push(appendEntry(lines.at(-1) ?? null, { ...ENV, ts: ts(), kind, data }, { runActor: BEHALF }));
+  add('attempt.started', { attempt: 1, adapter: 'fake' });
+  add('tool.call', { toolCallId: 'tc-1', title: 'resolve', surface: 'connector', argsDigest: argsDigestOf({ id: 88 }) });
+  add('permission.requested', askData({ argsDigest: argsDigestOf({ id: 88 }) }));
+  lines.push(appendEntry(lines.at(-1), {
+    ...ENV, ts: ts(), kind: 'result.reported', data: { status: 'done' }, actor: { ...AGENT, onBehalfOf: { id: 'u-cy', role: 'assigner' } },
+  }));
+  const result = verifyRecord(text(lines));
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.head, hashLine(lines.at(-1)));
+  const entries = readRecord(text(lines));
+  for (const entry of entries.slice(0, 3)) assert.deepEqual(entry.actor, BEHALF, `${entry.kind} carries the pair on its actor`);
+  assert.deepEqual(entries[3].actor.onBehalfOf, { id: 'u-cy', role: 'assigner' });
+  assert.equal(entries[2].data.onBehalfOf, undefined, 'the pair lives on the actor, never in data');
+  assert.match(lines[1], /"actor":\{"id":"u-agent-1","name":"Ana's agent","onBehalfOf":\{"id":"u-ben","role":"requester"\},"owner":"u-ana","type":"agent"\}/);
+});
+
+test('actor.onBehalfOf: refused off agent actors, with a bad id, an unknown role or an extra key, by writer and verifier', () => {
+  const at = (actor) => appendEntry(null, { runId: RUN, ts: ts(), kind: 'usage', data: {}, actor });
+  const bad = [
+    [{ type: 'human', id: 'u-ana', onBehalfOf: { id: 'u-ben', role: 'requester' } }, /agent actors only/],
+    [{ type: 'system', id: 'seats', onBehalfOf: { id: 'u-ben', role: 'requester' } }, /agent actors only/],
+    [{ ...AGENT, onBehalfOf: { id: 'Ben Smith', role: 'requester' } }, /onBehalfOf.id/],
+    [{ ...AGENT, onBehalfOf: { id: 'u-ben' } }, /onBehalfOf.role/],
+    [{ ...AGENT, onBehalfOf: { id: 'u-ben', role: 'owner' } }, /onBehalfOf.role/],
+    [{ ...AGENT, onBehalfOf: { id: 'u-ben', role: 'requester', email: 'ben@example.com' } }, /unknown field actor.onBehalfOf.email/],
+    [{ ...AGENT, onBehalfOf: 'u-ben' }, /onBehalfOf must be/],
+    [{ ...AGENT, onBehalfOf: null }, /onBehalfOf must be/],
+  ];
+  const good = JSON.parse(at(BEHALF));
+  for (const [actor, message] of bad) {
+    assert.throws(() => at(actor), message, JSON.stringify(actor));
+    // A hand-written line with the same actor, canonical and chained, fails the envelope check.
+    const line = canonicalLine({ ...good, actor });
+    assert.deepEqual(reasons(verifyRecord(`${line}\n`)), ['1:bad_envelope'], JSON.stringify(actor));
+    assert.equal(verifyRecord(`${line}\n`).errors[0].detail, 'actor');
+  }
+});
+
+test('actor.onBehalfOf is additive: a record written without it is byte-identical to the writer before the field', () => {
+  // Hashes pinned from the writer at b7b71f63a, before onBehalfOf existed.
+  const env = { runId: 'run-fmt-0001', taskId: 'TASK-7', podId: 'pod-a' };
+  const l1 = appendEntry(null, { ...env, ts: '2026-10-25T12:00:01.000Z', kind: 'attempt.started', data: { attempt: 1, adapter: 'fake' } }, { runActor: AGENT });
+  const l2 = appendEntry(l1, { ...env, ts: '2026-10-25T12:00:02.000Z', kind: 'tool.call', data: { toolCallId: 'tc-1', title: 'x', surface: 'native' } }, { runActor: AGENT });
+  assert.equal(hashLine(l1), 'f91b90fc46781ca9b915b80cce5b9633f603e90742bfc8b1f6dc82d17e01c264');
+  assert.equal(hashLine(l2), '1689f865735018eafddcb3fcf0b267d8ead7d9546d45b6d9a471c23eed21cfc6');
+  assert.ok(!l1.includes('onBehalfOf') && !l2.includes('onBehalfOf'));
+  assert.deepEqual(verifyRecord(`${l1}\n${l2}\n`).errors, []);
 });

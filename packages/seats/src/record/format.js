@@ -21,6 +21,9 @@ export const WRITE_MODES = Object.freeze(['read', 'write', 'write-with-confirm']
 export const GRANT_TARGET_KINDS = Object.freeze(['pod', 'seat']);
 export const OUTCOMES = Object.freeze(['ok', 'failed', 'stuck', 'cancelled']);
 export const RESULT_STATUSES = Object.freeze(['done', 'partial', 'blocked', 'failed']);
+// Whose request an agent acts on: 'requester' sent the message that started
+// the run, 'assigner' assigned its task. Absent when no human asked.
+export const ON_BEHALF_ROLES = Object.freeze(['requester', 'assigner']);
 
 /** The actors a writer records for its own bookkeeping, and for the board. */
 export const SYSTEM_ACTOR = Object.freeze({ type: 'system', id: 'seats' });
@@ -132,6 +135,15 @@ const actorProblem = (actor) => {
   if (!isUserId(actor.id)) return 'actor.id must be an id token (a user id for agent and human actors), never a display name';
   if (actor.owner !== undefined && (actor.type !== 'agent' || !isUserId(actor.owner))) return 'actor.owner is a user id, on agent actors only';
   if (actor.name !== undefined && !isText(actor.name)) return 'actor.name must be a non-empty string';
+  if (actor.onBehalfOf !== undefined) {
+    const behalf = actor.onBehalfOf;
+    if (actor.type !== 'agent') return 'actor.onBehalfOf is on agent actors only';
+    if (!isPlainObject(behalf)) return 'actor.onBehalfOf must be {id, role}';
+    const extra = Object.keys(behalf).find((key) => key !== 'id' && key !== 'role');
+    if (extra !== undefined) return `unknown field actor.onBehalfOf.${extra}`;
+    if (!isUserId(behalf.id)) return 'actor.onBehalfOf.id must be an id token (a user id), never a display name';
+    if (!ON_BEHALF_ROLES.includes(behalf.role)) return `actor.onBehalfOf.role must be one of ${ON_BEHALF_ROLES.join(', ')}`;
+  }
   return null;
 };
 
@@ -140,7 +152,11 @@ export const validateActor = (actor) => {
   if (problem) fail(problem);
   if (actor === null) return null;
   return Object.freeze({
-    type: actor.type, id: actor.id, ...(actor.owner ? { owner: actor.owner } : {}), ...(actor.name ? { name: actor.name } : {}),
+    type: actor.type,
+    id: actor.id,
+    ...(actor.owner ? { owner: actor.owner } : {}),
+    ...(actor.onBehalfOf ? { onBehalfOf: Object.freeze({ id: actor.onBehalfOf.id, role: actor.onBehalfOf.role }) } : {}),
+    ...(actor.name ? { name: actor.name } : {}),
   });
 };
 

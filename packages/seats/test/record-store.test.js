@@ -149,3 +149,16 @@ test('redact: known values never reach a line, even inside agent text', () => wi
   assert.ok(raw.includes('[redacted]'));
   assert.equal(store.verifyRun('run-st-0012').ok, true, 'scrubbing happens before hashing');
 }));
+
+test('the store writes actor.onBehalfOf through emit, and refuses it on a non-agent run actor', () => withStore((store, root) => {
+  const actor = { ...AGENT, onBehalfOf: { id: 'u-ben', role: 'requester' } };
+  const run = store.startRun({ runId: 'run-st-obo1', adapter: 'fake', taskId: 'TASK-9', podId: 'pod-a', actor });
+  run.emit('run.started', { adapter: 'fake', attempt: 1 });
+  run.emit('tool.call', { toolCallId: 'tc-1', title: 'resolve', surface: 'connector' });
+  run.emit('run.settled', { outcome: 'ok', durationMs: 5, attempts: 1 });
+  const events = store.readRun('run-st-obo1');
+  assert.deepEqual(events[1].actor, actor);
+  assert.deepEqual(verifyRecord(readFileSync(fileOf(root, 'run-st-obo1'), 'utf8')).errors, []);
+  assert.throws(() => store.startRun({ runId: 'run-st-obo2', actor: { type: 'human', id: 'u-ana', onBehalfOf: { id: 'u-ben', role: 'requester' } } }), /agent actors only/);
+  assert.throws(() => store.startRun({ runId: 'run-st-obo3', actor: { ...AGENT, onBehalfOf: { id: 'u-ben', role: 'boss' } } }), /onBehalfOf.role/);
+}));

@@ -153,3 +153,29 @@ test('decision.ruled joins the tool span of the request on its card, else the sp
   const again = spansOf(toOtlpJson(extra)).find((s) => s.name === 'execute_tool sentry.resolve_issue');
   assert.ok(again.events.some((e) => e.name === 'decision.ruled'));
 });
+
+test('actor.onBehalfOf maps beside actor.owner: on every event, and on the attempt span', () => {
+  const base = { v: 1, schema: 'seats.record', runId: 'run-obo-0001', prev: null };
+  const actor = { type: 'agent', id: 'u-agent-ana', owner: 'u-ana', onBehalfOf: { id: 'u-ben', role: 'requester' } };
+  const entries = [
+    { ...base, seq: 1, ts: '2026-10-25T12:00:00.000Z', kind: 'attempt.started', actor, data: { attempt: 1 } },
+    { ...base, seq: 2, ts: '2026-10-25T12:00:01.000Z', kind: 'tool.call', actor, data: { toolCallId: 'tc-1', name: 'sentry.resolve_issue' } },
+    {
+      ...base, seq: 3, ts: '2026-10-25T12:00:02.000Z', kind: 'permission.requested', actor,
+      data: { toolCallId: 'tc-1', question: 'Resolve?', askedOf: { id: 'u-ben', role: 'credential-owner' } },
+    },
+    { ...base, seq: 4, ts: '2026-10-25T12:00:03.000Z', kind: 'run.settled', actor: { type: 'system', id: 'seats' }, data: { outcome: 'ok' } },
+  ];
+  const spans = spansOf(toOtlpJson(entries));
+  const attempt = spans.find((s) => s.name.startsWith('invoke_agent'));
+  assert.equal(attrOf(attempt, 'seats.agent.owner').stringValue, 'u-ana');
+  assert.equal(attrOf(attempt, 'seats.agent.on_behalf_of.id').stringValue, 'u-ben');
+  assert.equal(attrOf(attempt, 'seats.agent.on_behalf_of.role').stringValue, 'requester');
+  const asked = spans.find((s) => s.name === 'execute_tool sentry.resolve_issue').events.find((e) => e.name === 'permission.requested');
+  assert.equal(attrOf(asked, 'seats.actor.owner').stringValue, 'u-ana');
+  assert.equal(attrOf(asked, 'seats.actor.on_behalf_of.id').stringValue, 'u-ben');
+  assert.equal(attrOf(asked, 'seats.actor.on_behalf_of.role').stringValue, 'requester');
+  // Without the field, no attribute appears.
+  const plain = spansOf(toOtlpJson(entries.map((e) => (e.actor.type === 'agent' ? { ...e, actor: { type: 'agent', id: 'u-agent-ana', owner: 'u-ana' } } : e))));
+  assert.ok(!JSON.stringify(plain).includes('on_behalf_of'));
+});

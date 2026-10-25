@@ -42,7 +42,7 @@ Each line is one JSON object, followed by `\n` (UTF-8):
 | `data` | object | Kind-specific fields (section 2). |
 | `prev` | string or `null` | Lowercase hex SHA-256 of the previous line's bytes. `null` on `seq` 1. |
 
-**`actor`** is `{type, id, owner?, name?}`:
+**`actor`** is `{type, id, owner?, onBehalfOf?, name?}`:
 - `type` is `agent`, `human`, `policy` or `system`.
 - `id` is an identity, never a display name.
   - For `agent` and `human` it is the instance's user id. Agents are users too.
@@ -54,6 +54,8 @@ Each line is one JSON object, followed by `\n` (UTF-8):
     can't pass for one.
 - `owner` is set on `agent` actors only. It is the user id of the person the
   agent belongs to.
+- `onBehalfOf` is set on `agent` actors only, and is optional. It is the
+  human whose request the agent is acting on (below).
 - `name` is an optional display name. It is never part of the identity.
 
 The owner of an agent and the person who approves what it does are separate
@@ -63,6 +65,35 @@ fields on purpose:
 
 In the case this format exists for, they differ: Ana's agent asks, and Ben
 approves.
+
+**`actor.onBehalfOf`** is `{id, role}`. It records the pair an audit trail
+needs for an agent's action: the agent, and the human it acted for
+(ADR-025 D18). `owner` can't say this, because it only says whose agent it is.
+- `id` is the human's user id, an id token under the same rule as `actor.id`.
+- `role` is one of:
+  - `requester`: the human whose message started the run;
+  - `assigner`: the human who assigned the task.
+- No other key is allowed. A writer throws on an unknown role or key, and a
+  verifier reports `bad_envelope` (`actor`) for a line that has one.
+- It is allowed on `agent` actors only. Any other actor type carrying it is a
+  malformed actor.
+- It lives on the actor, never in `data`, so it covers every entry the agent
+  authors (`tool.call` and `permission.requested` included), and the pair is
+  never split across two places.
+- A run with no human behind it (a schedule, a heartbeat, an agent-to-agent
+  DM) writes no `onBehalfOf`. A writer never fills it in with the agent's
+  owner: `owner` already says whose agent it is, and `onBehalfOf` means a
+  human asked. The writer does not enforce this by comparing `id` to `owner`,
+  because the owner can really be the requester (Ana asks her own agent), and
+  that line must be accepted.
+
+Adding it kept `v: 1` (section 3, rule 3), and a line without it is
+byte-identical to one written before the field existed. Ana's agent, acting
+on a message from Ben, calls a Sentry tool:
+
+```json
+{"actor":{"id":"u-agent-ana-opencode","onBehalfOf":{"id":"u-ben","role":"requester"},"owner":"u-ana","type":"agent"},"data":{"name":"sentry.resolve_issue","surface":"connector","title":"Resolve CHECKOUT-88","toolCallId":"tc-1"},"kind":"tool.call","podId":"pod-checkout","prev":"cbe33a93d273b1ad959fb6e836995ac8c9a119921ddbcce7b785c7d63ccf2a9e","runId":"run-ana-0002","schema":"seats.record","seq":2,"taskId":"TASK-101","ts":"2026-10-25T16:01:05.000Z","v":1}
+```
 
 `actor: null` means the writer did not know who caused the entry. A reader
 must not fill it in. Each kind has a default actor (section 2), which a
@@ -336,6 +367,9 @@ What's new or changed in `EVENT_TYPES`:
      revision.
    - The verifier checks the envelope and the chain, never data, so those
      lines still verify.
+
+   A later revision, also at `v: 1`, added the optional `actor.onBehalfOf`.
+   Lines without it are unchanged.
 4. **One writer per file.** A single process appends lines in `seq` order.
 
 ## 4. What the hash chain proves, and what it doesn't
@@ -442,10 +476,11 @@ to that commit. `error.type` is Stable.
   - these named attributes: `seats.run.id`, `seats.task.id`, `seats.pod.id`,
     `seats.run.outcome`, `seats.run.attempts`, `seats.attempt.number`,
     `seats.attempt.outcome`, `seats.adapter`, `seats.cli.name`,
-    `seats.cli.version`, `seats.agent.owner`, `seats.tool.kind`,
+    `seats.cli.version`, `seats.agent.owner`, `seats.agent.on_behalf_of.id`,
+    `seats.agent.on_behalf_of.role`, `seats.tool.kind`,
     `seats.tool.surface` and `seats.tool.args_digest`;
-  - on every event, `seats.seq` and `seats.actor.type`, `.id`, `.owner` and
-    `.name`;
+  - on every event, `seats.seq` and `seats.actor.type`, `.id`, `.owner`,
+    `.name`, `.on_behalf_of.id` and `.on_behalf_of.role`;
   - the event's data, flattened as `seats.<path>` with camelCase segments in
     snake_case. For example, `decidedBy` becomes `seats.decided_by`, and
     `scope.connectionId` becomes `seats.scope.connection_id`, and
