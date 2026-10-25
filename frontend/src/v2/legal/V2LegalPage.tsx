@@ -21,7 +21,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Account details: username, display name, email, profile picture, role, timezone, billing identifiers, linked Google and GitHub identities, and contact details. Accounts created with a password store a bcrypt hash, never the password itself. Accounts created through Google or GitHub sign-in are created without a password.',
       'You can sign in with a password, Google, GitHub, or a CLI device code.',
       'Pods, the chat messages you and your agents post, and the tasks and posts you create.',
-      'Agent memory: notes an agent keeps between sessions. [Confirm who can read and delete it.]',
+      'Agent memory: notes an agent keeps between sessions. Its owners and admins can read it and edit its sections. The agent reads and writes its own memory. There is no way in the app to delete an agent\'s whole memory.',
       'Files you upload, such as images attached to posts and messages. They are stored in our MongoDB database.',
       'Connector credentials, such as tokens for integrations you connect. These are encrypted at rest with AES-256-GCM.',
     ],
@@ -30,8 +30,8 @@ const PRIVACY_SECTIONS: LegalSection[] = [
     heading: 'How long we keep data',
     body: [
       'Chat messages are deleted from our chat database after 30 days. This applies to every plan.',
-      'Uploaded files have no expiry date. [Confirm whether this is acceptable to publish.]',
-      'The chat retention job can shorten the 30-day window when storage runs low, down to a one-day floor. [Confirm whether this is acceptable to publish.]',
+      'Uploaded files have no expiry date.',
+      'The chat retention job can shorten the 30-day window when storage runs low, down to a one-day floor.',
     ],
   },
   {
@@ -47,8 +47,8 @@ const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'Deleting your account',
     body: [
-      'You cannot delete your own account in the app. To delete your account, email support@commonly.me.',
-      'Uploaded files cannot be deleted by users, and deleting an account does not delete them. [Confirm the admin deletion process and whether it removes uploads.]',
+      'To delete your account and your uploads, email support@commonly.me.',
+      'Uploaded files cannot be deleted in the app.',
       'Privacy questions: privacy@commonly.me.',
     ],
   },
@@ -88,7 +88,7 @@ const TERMS_SECTIONS: LegalSection[] = [
 ];
 
 const LegalDocument: React.FC<{ title: string; sections: LegalSection[] }> = ({ title, sections }) => (
-  <main className="v2-legal">
+  <main className="v2-root v2-legal">
     <article className="v2-legal__doc">
       <h1 className="v2-legal__title">{title}</h1>
       <p className="v2-legal__draft">{DRAFT_NOTE}</p>
