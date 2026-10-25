@@ -66,6 +66,38 @@ test('a failed in-flight turn settles failure before drain completes', async () 
   const drain = Service.drainInProcess(2000); turn.resolve({ status: 'failed', error: 'provider refused' }); await drain;
   expect((await AgentEvent.findById(event._id)).status).toBe('failed');
 });
+test('deadline waits for sibling requeues before propagating a cleanup failure', async () => {
+  const turn = deferred(), cleanup = deferred(), entered = deferred();
+  runAgent.mockReturnValue(turn.promise);
+  await Service.enqueue(input); const second = await Service.enqueue(input);
+  await waitFor(() => runAgent.mock.calls.length === 2);
+  const original = AgentEvent.updateOne.bind(AgentEvent);
+  jest.spyOn(AgentEvent, 'updateOne').mockImplementation((filter, update, ...rest) => {
+    if (update.$set?.status !== 'pending') return original(filter, update, ...rest);
+    if (String(filter._id) !== String(second._id)) return Promise.reject(new Error('first requeue failed'));
+    entered.resolve();
+    return cleanup.promise.then(() => original(filter, update, ...rest));
+  });
+  let settled = false;
+  const drain = Service.drainInProcess(20).finally(() => { settled = true; });
+  const rejection = expect(drain).rejects.toThrow('first requeue failed');
+  await entered.promise; await new Promise((resolve) => setImmediate(resolve));
+  expect(settled).toBe(false);
+  cleanup.resolve(); await rejection;
+  expect((await AgentEvent.findById(second._id)).status).toBe('pending');
+  turn.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+});
+test('SIGTERM during digest lookup requeues before runAgent starts', async () => {
+  const entered = deferred(), release = deferred();
+  const digest = require('../../services/agentDigestFoldService');
+  digest.readFoldedDigest.mockImplementationOnce(async () => { entered.resolve(); await release.promise; return null; });
+  const event = await Service.enqueue(input); await entered.promise;
+  expect(Service.inProcessRunning.size).toBe(1);
+  const drain = Service.drainInProcess(2000); release.resolve();
+  await expect(drain).resolves.toEqual({ timedOut: false, requeued: 1 });
+  expect((await AgentEvent.findById(event._id)).status).toBe('pending');
+  expect(runAgent).not.toHaveBeenCalled();
+});
 test('deadline cleanup cannot steal a delivery reclaimed by a sibling', async () => {
   const turn = deferred(); runAgent.mockReturnValue(turn.promise);
   const event = await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);

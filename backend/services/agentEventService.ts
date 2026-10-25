@@ -546,7 +546,11 @@ class AgentEventService {
       // Requeue only this process's unfinished deliveries, never a pod-wide
       // query that could steal a sibling replica's turn. The nonce fences late
       // success/failure settlement from a replacement's claim.
-      await Promise.all([...this.inProcessRunning.values()].map((event) => this.requeueInProcess(event)));
+      const requeues = await Promise.allSettled(
+        [...this.inProcessRunning.values()].map((event) => this.requeueInProcess(event)),
+      );
+      const failed = requeues.find((result) => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
       return { timedOut: true, requeued: this.inProcessRequeued };
     })();
     return this.inProcessDrain;

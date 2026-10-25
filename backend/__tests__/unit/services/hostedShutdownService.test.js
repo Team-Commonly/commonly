@@ -7,7 +7,7 @@ const { installHostedShutdown, HOSTED_SHUTDOWN_WATCHDOG_MS } = require('../../..
 let handlers, server, exit;
 beforeEach(() => {
   jest.useFakeTimers(); jest.clearAllMocks(); handlers = {};
-  jest.spyOn(process, 'once').mockImplementation((name, handler) => { handlers[name] = handler; return process; });
+  jest.spyOn(process, 'on').mockImplementation((name, handler) => { handlers[name] = handler; return process; });
   exit = jest.spyOn(process, 'exit').mockImplementation(() => {});
   server = { close: jest.fn(), closeIdleConnections: jest.fn() };
 });
@@ -15,7 +15,7 @@ afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
 test('SIGTERM gates admission before closing HTTP; exits after drain; repeated signals are idempotent', async () => {
   let resolve; service.drainInProcess.mockImplementation(() => new Promise((done) => { resolve = done; }));
-  installHostedShutdown(server); handlers.SIGTERM(); handlers.SIGINT();
+  installHostedShutdown(server); handlers.SIGTERM(); handlers.SIGTERM(); handlers.SIGINT();
   expect(service.drainInProcess).toHaveBeenCalledTimes(1); expect(scheduler.stop).toHaveBeenCalledTimes(1);
   expect(service.drainInProcess.mock.invocationCallOrder[0]).toBeLessThan(server.close.mock.invocationCallOrder[0]);
   expect(server.close).toHaveBeenCalledTimes(1); expect(exit).not.toHaveBeenCalled();

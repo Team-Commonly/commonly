@@ -14,6 +14,8 @@ This is at-least-once recovery, not exactly-once provider execution. A provider 
 
 ## Verify a rollout
 
+Verify that the replacement process responsible for scheduling actually starts the scheduler, especially in worker-split deployments. Startup garbage collection can recover eligible wakes immediately; otherwise recovery waits for the ten-minute scheduled sweep. Its one-minute minimum event age can skip a fresh wake at one sweep, so allow roughly 11 minutes for pickup plus turn execution before a human-visible reply. This is scheduled recovery, not immediate delivery.
+
 Use a non-production test pod and a controlled long-turn provider. Start one native turn, then send SIGTERM. Confirm readiness refuses new traffic, a second wake remains pending, the original turn and its event acknowledgement finish, and `[shutdown] hosted drain complete` appears before process exit. Check the replacement process handles the pending wake. A forced deadline case should show the unfinished event pending with its old nonce invalidated; confirm any provider write independently before retrying it.
 
 Also force-kill a test process during a controlled turn. SIGKILL runs no shutdown handler, so confirm the delivery stays delivered until the replacement's stuck-redispatch sweep recovers it. A spot reclaim can provide less notice than the drain budget and needs the same recovery path. Record the recovery delay and verify that an old nonce cannot settle the replacement's claim.

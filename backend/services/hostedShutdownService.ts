@@ -32,6 +32,6 @@ export const installHostedShutdown = (server: Server): void => {
       process.exit(1);
     });
   };
-  process.once('SIGTERM', shutdown);
-  process.once('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 };
