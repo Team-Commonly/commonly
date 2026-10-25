@@ -1,0 +1,83 @@
+name: Seats compatibility nightly
+
+# Runs each pinned agent CLI (packages/seats/compat/targets.json) through the
+# compatibility suite against a local fake provider: no model provider, no
+# real key. A failing check is a result, not a job failure; the job fails
+# only when the matrix itself could not be produced.
+
+on:
+  schedule:
+    - cron: '23 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seats-compat-nightly
+  cancel-in-progress: false
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The runner context is not available in job-level env, so the
+      # job-local paths are set here for every later step.
+      - name: Choose job-local paths
+        run: |
+          echo "COMPAT_PREFIX=$RUNNER_TEMP/compat-bin" >> "$GITHUB_ENV"
+          echo "COMPAT_OUT=$RUNNER_TEMP/compat-out" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Job-local prefix only: release assets are sha256-checked before they
+      # are unpacked, npm packages install with --ignore-scripts. A CLI that
+      # fails to install shows up in the matrix as "binary not installed".
+      - name: Install pinned CLIs
+        continue-on-error: true
+        run: node packages/seats/compat/install.js --targets packages/seats/compat/targets.json --prefix "$COMPAT_PREFIX"
+
+      - name: Run the compatibility matrix
+        run: node packages/seats/compat/run.js --targets packages/seats/compat/targets.json --prefix "$COMPAT_PREFIX" --out "$COMPAT_OUT"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seats-compat
+          path: ${{ env.COMPAT_OUT }}
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    # Disabled on purpose: publishing needs a maintainer to enable GitHub Pages
+    # for this repository (Settings → Pages → Source: GitHub Actions). Flip this
+    # to `if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'`
+    # once Pages is on.
+    if: false
+    needs: matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: seats-compat
+          path: site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
