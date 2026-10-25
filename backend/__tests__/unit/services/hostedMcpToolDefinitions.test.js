@@ -836,6 +836,17 @@ describe('SDK transport with Linear and Atlassian fixtures', () => {
     expect(deps.fetcher.mock.calls.every(([url]) => String(url) === ENTRY.resource)).toBe(true);
   });
 
+  it('still attempts DELETE after a failed HTTP request closes the SDK failure signal', async () => {
+    const deps = makeDeps({ fetcher: jest.fn(async () => new Response('first vendor failure', { status: 400 })) });
+    await expect(definitionFor('linear.list_issues', deps).call({}, CONNECTION)).rejects.toMatchObject({
+      code: 'provider_error', details: { vendorStatus: 400, vendorError: 'first vendor failure' },
+    });
+    const deletes = deps.fetcher.mock.calls.filter(([, init]) => init.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(new Headers(deletes[0][1].headers).get('mcp-session-id')).toBe('session-1');
+    expect(deletes[0][1].signal.aborted).toBe(false);
+  });
+
   it('preserves the supported protocol policy even when the SDK supports an older version', async () => {
     const deps = makeDeps();
     deps.fetcher = jest.fn(async (_url, init) => {

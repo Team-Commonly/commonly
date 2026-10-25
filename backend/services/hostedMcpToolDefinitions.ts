@@ -258,7 +258,11 @@ const openHostedMcpSession = async (
     // event channel after initialized; do not open a background vendor stream
     // for this short-lived, request/response-only broker session.
     if (init.method === 'GET') return new Response(null, { status: 405 });
-    const combinedSignal = AbortSignal.any([signal, fault.signal, ...(init.signal ? [init.signal] : [])]);
+    // SDK closes its transport on initialize failure. Cleanup still gets one
+    // best-effort DELETE, bounded by the original deadline, not that closed
+    // transport's signal or the failure latch.
+    const combinedSignal = init.method === 'DELETE' ? signal
+      : AbortSignal.any([signal, fault.signal, ...(init.signal ? [init.signal] : [])]);
     let response: Response;
     try {
       combinedSignal.throwIfAborted();
