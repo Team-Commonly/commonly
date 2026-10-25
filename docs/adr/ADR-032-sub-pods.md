@@ -97,7 +97,7 @@ enforces this and no reader compensates.
 
 | Axis | Already enforced today | Must be added |
 |---|---|---|
-| **Read access** | `canViewPod` is membership-only (`dmService.ts:479-511`), so parent membership grants **nothing** in a child. That is the right direction, and nothing to add. | — |
+| **Read access** | `canViewPod` admits members and global admins (`dmService.ts:479-514`; the admin read is `:491-498`), plus an `agent-dm` fan-out that a child can't use, since a child is never a DM kind. So parent membership grants **nothing** in a child, and the admin read doesn't make C wider than P, because admins read P too. That is the right direction, and nothing to add. | — |
 | **Create** | nothing (`podController.ts:442`) | parent exists; caller is a writing member of P; P is not a DM kind (`DM_POD_TYPES_GUARD`, `agentIdentityService.ts:44`) and not `agent-admin`; P is not itself a child (depth 1, §10-2); C is born `private` |
 | **Visibility tier** | the owner route checks owner, Pro and non-DM type only (`routes/pods.ts:703-739`), then sets both flags (`:741`) | refuse `community` on C unless P is `community`; the admin `showcase.publish` writer gets the same check; **un-listing P cascades to its children** (mirrors ADR-016 invariant 1's unpublish-cascades-unlist) |
 | **Join** | `joinPod` gates on `isDirectlyJoinable` (`podController.ts:541`); invite redeem pushes the member (`podInvites.ts:268`); agents enter via `ensureAgentInPod` (`agentIdentityService.ts:730`) and the runtime create's join-by-name (`agentsRuntime.ts:3295`) | each of these four paths refuses a non-member of P: `403 parent_membership_required`. No auto-join of P, since that would widen P on C's behalf. |
@@ -116,7 +116,7 @@ or carry a named exemption, as ADR-016 did for it at `ADR-016:164`.
 - **The `requirePodMember` constraint.** Every task write requires membership of the row's pod
   (`tasksApi.ts:198-219`; write refusal at `:209-211`; create `:322`, claim `:636`, complete `:707`,
   updates `:805`, PATCH `:1041`). A parent member who isn't in C **can't write C's rows**, and that
-  stays. They also **can't read** them: a non-member read falls through to `canViewPod` (`:212-215`), which is membership-only.
+  stays. They also **can't read** them: a non-member read falls through to `canViewPod` (`:212-215`), which admits only members and global admins to a non-DM pod.
 - **Rollup.** New `GET /api/v1/tasks/:podId/rollup` returns, for each child the caller passes
   `canViewPod` on (the same filter as `/children`, `routes/pods.ts:619-622`): name, goal, `subPod.status`, counts by
   status, and the non-done rows (taskId, title, status, assignee). It is read-only, with no claim or
