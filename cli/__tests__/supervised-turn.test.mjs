@@ -353,9 +353,13 @@ describe('the run loop', () => {
     });
     try {
       await until(() => run.errors.length === 1 && run.scheduled.length === 1);
-      expect(run.logs.some((l) => /^\[chat\.mention\] supervised turn failed: stuck \(child killed\)$/.test(l))).toBe(true);
+      // The run loop takes a single event or an inbox batch; either way the
+      // turn is named in the seat log and surfaces through onError.
+      expect(run.logs).toEqual(expect.arrayContaining([
+        expect.stringMatching(/^\[(chat\.mention|inbox\.batch)\] supervised turn failed: stuck \(child killed\)$/),
+      ]));
       expect(run.errors[0]).toMatchObject({ code: 'agent_spawn_retry_scheduled', eventId: 'evt-a' });
-      expect(run.errors[0].message).toMatch(/remains unacked.*stuck: no progress signal/);
+      expect(run.errors[0].message).toMatch(/remains? unacked.*stuck: no progress signal/);
       expect(run.acks()).toEqual([]);
       expect(isRunning(pid)).toBe(false);
       run.scheduled.shift().callback();
