@@ -71,6 +71,9 @@ Approval cards bind to the stored run, step and approver. A preceding native
 post is shown as output only after checking its pod and author. Otherwise
 the card can link the PR or show clearly labelled step notes; notes alone
 are not evidence that a post was stored or an external send happened.
+BYO actors include the pod permalink to their result in completion notes.
+The same scoped post check applies to that citation; the kernel never opens
+the model-supplied URL.
 
 ## Required acceptance witnesses
 

@@ -52,7 +52,8 @@ export const deliverPlaybookStep = async (
   await publishPlaybookTask(offered);
   const content = [`[Playbook step assigned to you: ${taskId}]`, step.title, step.notes || '',
     actor.runtime === 'native' ? 'Post the result in this pod. The workflow records completion from that post.'
-      : 'Claim this task, do the step, then complete it with your task tools. Keep any PR link on the row.',
+      : 'Claim this task, do the step, then complete it with your task tools. Keep any PR link on the row. '
+        + 'Include the pod link to your result in completion notes.',
   ].join('\n\n');
   try {
     await enqueue({ podId, agentName: actor.agentName, instanceId: actor.instanceId || 'default', type: 'chat.mention',

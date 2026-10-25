@@ -16,7 +16,13 @@ const precedingOutput = async (podId: string, source: any, actorId: string) => {
     url: `/v2/pods/${podId}/board`, excerpt: String(source.notes || '').slice(0, 600) };
   const receipt = [...source.updates].reverse().find((entry: any) => entry.author === 'playbook'
     && entry.text.startsWith('Native result posted: '));
-  const ids = String(receipt?.text || '').replace(/^Native result posted: /, '').split(', ').slice(-10).reverse();
+  // BYO agents can cite their stored result using the existing completion notes.
+  // Extract an ID only: the URL is never fetched, and the returned link is rebuilt.
+  const linked = Array.from(String(source.notes || '').matchAll(new RegExp(
+    `/v2/pods/${podId}(?:#message-|\\?message=)([a-f0-9]{24}|\\d+)(?=[\\s)\\]<>]|$|&)`, 'gi',
+  )), (match) => match[1].toLowerCase());
+  const recorded = String(receipt?.text || '').replace(/^Native result posted: /, '').split(', ');
+  const ids = Array.from(new Set([...linked, ...recorded])).slice(-10).reverse();
   for (const id of ids) {
     let message: { pod?: unknown; author?: unknown; content?: string; at?: unknown } | null = null;
     if (/^[a-f0-9]{24}$/.test(id)) {

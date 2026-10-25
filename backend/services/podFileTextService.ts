@@ -63,6 +63,7 @@ export const readPodFileText = async (podId: string, fileName: string) => {
       obj.stream.on('error', reject);
     });
   } else {
+    // Keep Mongoose's Buffer casting: lean() returns BSON Binary for legacy data.
     const legacy = await File.findOne({ _id: file._id, podId }).select('data');
     if (legacy && legacy.data && legacy.data.length > 0) buffer = legacy.data;
   }

@@ -175,6 +175,11 @@ test('approval context links the preceding actor’s stored post, and refuses fo
   const card = await describe();
   expect(card.params.output).toEqual({ taskId: prior.taskId, kind: 'post',
     url: `/v2/pods/${pod._id}#message-${postId}`, excerpt: 'Checked reply: our response is ready.' });
+  await Task.updateOne({ _id: prior._id }, {
+    $set: { notes: `Checked result: https://commonly.me/v2/pods/${pod._id}#message-${postId}` },
+    $pull: { updates: { text: { $regex: '^Native result posted: ' } } },
+  });
+  expect((await describe()).params.output).toEqual(card.params.output);
   await Message.collection.updateOne({ _id: postId }, { $set: { podId: new mongoose.Types.ObjectId() } });
   expect((await describe()).params.output.kind).toBe('notes');
   await Message.collection.updateOne({ _id: postId }, { $set: { podId: pod._id, userId: person._id } });
