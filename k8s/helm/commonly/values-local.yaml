@@ -4,7 +4,7 @@
 #   - In-cluster MongoDB and PostgreSQL (no Aiven)
 #   - No GCP Secret Manager / ExternalSecrets
 #   - No Cloudflare tunnel
-#   - No agent runtime (clawdbot/litellm) — enable manually if needed
+#   - No hosted model proxy (litellm) — enable manually if needed
 #
 # Requires: kind, kubectl, helm
 #
@@ -47,8 +47,6 @@ backend:
     frontendUrl: "http://localhost:3000"
     backendUrl: "http://localhost:5000"
     commonlyApiUrl: ""
-    clawdbotGatewayUrl: ""
-    moltbotGatewayUrl: ""
     # In-cluster Postgres (no Aiven, no SSL)
     pgHost: ""                           # empty → defaults to postgres.<namespace>.svc.cluster.local
     pgPort: "5432"
@@ -184,7 +182,6 @@ localSecrets:
   googleClientSecret: ""
   githubClientId: ""
   githubClientSecret: ""
-  githubPat: ""
   xOauthClientId: ""
   xOauthClientSecret: ""
   slackClientId: ""
@@ -198,19 +195,11 @@ localSecrets:
   braveApiKey2: ""
   firecrawlApiKey: ""
   deepgramApiKey: ""
-  clawdbotGatewayToken: "local-gateway-token"
   commonlyBotRuntimeToken: "local-bot-token"
 
 # ── Disabled cloud-only services ──────────────────────────────────────────────
 
 agents:
-  clawdbot:
-    enabled: false       # enable manually: --set agents.clawdbot.enabled=true
-    persistence:
-      config:
-        enabled: false   # no PVCs needed when clawdbot is disabled
-      workspace:
-        enabled: false
   commonlyBot:
     enabled: false
 
@@ -255,7 +244,6 @@ rbac:
 
 agentProvisioning:
   enabled: true
-  createWorkspacePvc: false
 
 # ── Autoscaling / monitoring off ──────────────────────────────────────────────
 

@@ -12,8 +12,8 @@ name: Deploy Staging
 # Modelled on deploy-dev.yml: same WIF auth, same secret names, same private
 # values overlay pattern. Differences: namespace/release commonly-staging, a
 # staging-only private-values secret, a single staging frontend variant per SHA
-# (the shared prod tag is NOT pushed from staging — see the build step), no
-# clawdbot-gateway (parked everywhere; staging never runs it), cancel-in-progress.
+# (the shared prod tag is NOT pushed from staging — see the build step), and
+# cancel-in-progress.
 #
 # DRAFT until the Thursday-night staging install lands — unmerged, this workflow
 # never runs. It goes live once commonly-staging exists (secrets, WI, DBs, tunnel).
@@ -56,7 +56,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
-          submodules: recursive
 
       - name: Compute tag + full SHA of the checked-out ref
         id: tag
@@ -105,8 +104,7 @@ jobs:
       # NOT serialize the writers). The promotion path that would justify a shared
       # artifact (deploy-dev promote_sha reusing a staging-verified build) does not
       # exist yet — reintroduce the shared-tag prod build only once it does, with
-      # enforced input parity. clawdbot-gateway is deliberately NOT built — it is
-      # parked everywhere (agents.clawdbot.enabled: false) and staging never runs it.
+      # enforced input parity.
       - name: Build + push backend image
         env:
           TAG: ${{ steps.tag.outputs.tag }}

@@ -147,13 +147,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
-          # The tool-contract guard compares the submodule pin against the
-          # merge base with origin/main to catch a ROLLBACK, which containment
-          # structurally cannot see. At the default depth 1 there is no
-          # origin/main and no shared history, so that check could not run at
-          # all (#2497). The guard now says so loudly instead of passing, and
-          # this is what lets it answer.
+          # Preserve merge-base history for release and source checks.
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -171,7 +165,6 @@ jobs:
       - run: cd commonly-mcp && npm ci --include=dev
       - run: cd cli && npm ci --include=dev
       - run: cd workers/agent-runtime && npm ci --include=dev
-      - run: npm run verify:moltbot-tools
       - run: npm run verify:litellm-patch-runner
       - run: npm run verify:readme-invariants
       # These node:test files lived only in the retired all-in-one job.
@@ -329,6 +322,9 @@ jobs:
           chmod +x yq
           sudo mv yq /usr/local/bin/yq
           yq --version
+
+      - name: Verify retired gateway stays absent
+        run: bash scripts/verify-retired-gateway-chart.sh
 
       - name: Render dev chart
         run: |
