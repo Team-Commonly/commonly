@@ -123,6 +123,14 @@ const clearMongoDb = async () => {
 let pgDb;
 let pgPool;
 
+const resetRealPgFixtures = async () => {
+  // Claims self-bootstrap outside schema.sql and have no FK to messages.
+  // Reset them before reusing message IDs, including on a warm fixture DB.
+  const claims = await pgPool.query("SELECT to_regclass('public.message_claims') AS relation");
+  if (claims.rows[0].relation) await pgPool.query('TRUNCATE TABLE message_claims');
+  await pgPool.query('TRUNCATE TABLE messages, pod_members, pods, users RESTART IDENTITY CASCADE');
+};
+
 const setupPgDb = async () => {
   try {
     if (useRealServices()) {
@@ -143,7 +151,7 @@ const setupPgDb = async () => {
       await runPgMigrations(pgPool);
       // Same cross-file-contamination concern as Mongo: TRUNCATE on setup so
       // each suite starts with an empty schema.
-      await pgPool.query('TRUNCATE TABLE messages, pod_members, pods, users RESTART IDENTITY CASCADE');
+      await resetRealPgFixtures();
       console.log('[tier1] Connected to real Postgres, applied migrations, truncated tables');
       return pgPool;
     }
@@ -203,7 +211,7 @@ const clearPgDb = async () => {
     if (!pgPool) return;
     // Real PG: TRUNCATE ... CASCADE handles FK ordering; pg-mem doesn't support TRUNCATE.
     if (useRealServices()) {
-      await pgPool.query('TRUNCATE TABLE messages, pod_members, pods, users RESTART IDENTITY CASCADE');
+      await resetRealPgFixtures();
     } else {
       await pgPool.query('DELETE FROM messages');
       await pgPool.query('DELETE FROM pod_members');
