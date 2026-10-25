@@ -66,7 +66,7 @@ import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
-import { buildMemoryPreamble } from '../memory-bridge.js';
+import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -650,14 +650,20 @@ export default {
 
   async spawn(prompt, ctx = {}) {
     const seatModel = requireSeatModel(ctx.environment, 'codex');
+    const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
     // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
     // `null || ''` is `''` — which routed the unreadable case straight into
     // the empty-memory branch and made the whole distinction unreachable from
     // the only two paths that build a real prompt. buildPrompt handles
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
+    //
+    // Codex has no subagent tool, so of D48's two habits (TASK-545) it is
+    // taught row slicing alone; claude.js adds parallel reads. A public seat
+    // answers strangers rather than working board rows, so it is taught neither.
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
+      workCues: sandbox?.trust === 'public' ? [] : [ROW_SLICING_CUE],
     });
 
     // Per-spawn temp dir for --output-last-message. Cleaned up in `finally`
@@ -674,7 +680,6 @@ export default {
     });
 
     try {
-      const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
       const mcp = buildMcpOverrideArgs(ctx.environment?.mcp, {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
