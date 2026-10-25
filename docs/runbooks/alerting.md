@@ -355,7 +355,11 @@ virtual key with a `max_budget` has spent 80% of it for the current
 key (`GET /key/list`, `backend/services/litellmBudgetAlarmService.ts`) and logs
 one `{"alarm":"litellm_budget", ...}` line per key per budget period, naming
 the key alias, the spend, the budget and the reset time. The same text goes to
-the "SRE alerts" pod as described under *User spend*.
+the "SRE alerts" pod as described under *User spend*; a failed post is retried
+on the next sweep without a second log line. If `/key/list` has more pages
+than the sweep reads (20 pages of 100), it logs one `scanTruncated` line on
+the same metric, so the alert also means "some keys were not checked". Raise
+the page bound in the service when that happens.
 
 The keys that matter (TASK-555, minted 2026-10-25):
 

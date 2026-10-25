@@ -82,7 +82,14 @@ export const keysNearBudget = (
     };
   });
 
-export const listLiteLLMKeys = async (): Promise<LiteLLMKeyRow[] | null> => {
+export interface KeyScan {
+  rows: LiteLLMKeyRow[];
+  // Set when /key/list reported more pages than the bound allowed, so a
+  // budgeted key on a later page went unchecked.
+  truncated: { pagesRead: number; totalPages: number } | null;
+}
+
+export const listLiteLLMKeys = async (): Promise<KeyScan | null> => {
   const baseUrl = (process.env.LITELLM_BASE_URL || '').trim().replace(/\/$/, '');
   const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
   if (!baseUrl || !masterKey) return null;
@@ -97,9 +104,10 @@ export const listLiteLLMKeys = async (): Promise<LiteLLMKeyRow[] | null> => {
     const keys = Array.isArray(resp?.data?.keys) ? resp.data.keys : [];
     rows.push(...keys);
     const totalPages = Number(resp?.data?.total_pages) || 1;
-    if (page >= totalPages || keys.length === 0) break;
+    if (page >= totalPages || keys.length === 0) return { rows, truncated: null };
+    if (page === MAX_PAGES) return { rows, truncated: { pagesRead: page, totalPages } };
   }
-  return rows;
+  return { rows, truncated: null };
 };
 
 export const composeBudgetPage = (alarm: BudgetAlarm, mention?: string): string => {
@@ -109,32 +117,64 @@ export const composeBudgetPage = (alarm: BudgetAlarm, mention?: string): string 
     + `$${alarm.maxBudgetUsd} budget (${alarm.percent}%). At 100% its calls fail.${reset}${handle}`;
 };
 
-// One line per key per budget period (keyed on the key and its reset time). In memory
-// only, like the user spend alarm: after a restart a key still over the line
-// is logged once more.
+// Two memories, in process only like the user spend alarm (after a restart a
+// key still over the line is logged once more). `alarmed` holds keys already
+// logged this budget period, keyed on the key and its reset time. `unpaged`
+// holds logged alarms whose SRE page has not gone out yet, so a failed post
+// is retried on the next sweep instead of being lost. The log line is what
+// the email alert counts, so it is never repeated for a retry.
 const alarmed = new Set<string>();
+const unpaged = new Map<string, BudgetAlarm>();
+let truncationReported = false;
+
+const sendPage = async (content: string): Promise<boolean> => {
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { pageSre } = require('./spendAlarmService');
+    await pageSre(content);
+    return true;
+  } catch (error) {
+    console.warn('[budget-alarm] SRE page failed; it is retried next sweep:', (error as Error).message);
+    return false;
+  }
+};
 
 export const checkLiteLLMBudgets = async (): Promise<BudgetAlarm[]> => {
-  const rows = await listLiteLLMKeys();
-  if (!rows) return [];
-  const freshRows = rows.filter((row) => nearBudget(row, BUDGET_ALARM_FRACTION)
-    && !alarmed.has(`${keyIdentity(row)}:${row.budget_reset_at || null}`));
-  const fresh = keysNearBudget(freshRows);
+  const scan = await listLiteLLMKeys();
+  if (!scan) return [];
   const mention = String(process.env.SPEND_ALARM_MENTION || '').trim() || undefined;
-  freshRows.forEach((row) => alarmed.add(`${keyIdentity(row)}:${row.budget_reset_at || null}`));
-  for (const alarm of fresh) {
+
+  // An unfinished scan can hide a key near its budget, so it alarms too:
+  // once per process, on the same metric, toward over-delivery.
+  if (scan.truncated && !truncationReported) {
+    truncationReported = true;
+    console.warn(JSON.stringify({ alarm: 'litellm_budget', scanTruncated: true, ...scan.truncated }));
+    const handle = mention ? ` @${mention}` : '';
+    await sendPage(`[budget alarm] The LiteLLM key scan stopped at ${scan.truncated.pagesRead} of `
+      + `${scan.truncated.totalPages} pages, so some keys were not checked against their budget.${handle}`);
+  }
+
+  const fresh: BudgetAlarm[] = [];
+  scan.rows.filter((row) => nearBudget(row, BUDGET_ALARM_FRACTION)).forEach((row) => {
+    const id = `${keyIdentity(row)}:${row.budget_reset_at || null}`;
+    if (alarmed.has(id)) return;
+    const [alarm] = keysNearBudget([row]);
+    alarmed.add(id);
+    unpaged.set(id, alarm);
+    fresh.push(alarm);
     console.warn(JSON.stringify({ alarm: 'litellm_budget', thresholdFraction: BUDGET_ALARM_FRACTION, ...alarm }));
-    try {
-      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-      const { pageSre } = require('./spendAlarmService');
-      // eslint-disable-next-line no-await-in-loop
-      await pageSre(composeBudgetPage(alarm, mention));
-    } catch (error) {
-      console.warn(`[budget-alarm] SRE page failed for ${alarm.keyAlias}; the log line stands:`, (error as Error).message);
-    }
+  });
+
+  for (const [id, alarm] of [...unpaged.entries()]) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await sendPage(composeBudgetPage(alarm, mention))) unpaged.delete(id);
   }
   return fresh;
 };
 
-/** Test seam: forget which keys were already logged. */
-export const resetBudgetAlarmMemory = (): void => { alarmed.clear(); };
+/** Test seam: forget which keys were already logged and paged. */
+export const resetBudgetAlarmMemory = (): void => {
+  alarmed.clear();
+  unpaged.clear();
+  truncationReported = false;
+};

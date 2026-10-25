@@ -100,8 +100,9 @@ describe('listLiteLLMKeys', () => {
     axios.get
       .mockResolvedValueOnce(page([key({ key_alias: 'a' })], 2))
       .mockResolvedValueOnce(page([key({ key_alias: 'b' })], 2));
-    const rows = await budget.listLiteLLMKeys();
+    const { rows, truncated } = await budget.listLiteLLMKeys();
     expect(rows.map((r) => r.key_alias)).toEqual(['a', 'b']);
+    expect(truncated).toBeNull();
     expect(axios.get).toHaveBeenCalledTimes(2);
     const [url, opts] = axios.get.mock.calls[0];
     expect(url).toBe('http://litellm:4000/key/list');
@@ -110,10 +111,11 @@ describe('listLiteLLMKeys', () => {
     expect(axios.get.mock.calls[1][1].params.page).toBe(2);
   });
 
-  test('stops at the page bound when total_pages never ends', async () => {
+  test('stops at the page bound and reports the scan as truncated', async () => {
     axios.get.mockResolvedValue(page([key()], 9999));
-    await budget.listLiteLLMKeys();
+    const { truncated } = await budget.listLiteLLMKeys();
     expect(axios.get).toHaveBeenCalledTimes(20);
+    expect(truncated).toEqual({ pagesRead: 20, totalPages: 9999 });
   });
 });
 
@@ -151,11 +153,31 @@ describe('checkLiteLLMBudgets', () => {
     expect(mockPageSre).toHaveBeenCalledTimes(2);
   });
 
-  test('a failed page keeps the log line', async () => {
-    mockPageSre.mockRejectedValue(new Error('pod gone'));
+  test('a failed page keeps the log line and is retried next sweep without a second line', async () => {
+    mockPageSre.mockRejectedValueOnce(new Error('pod gone'));
     axios.get.mockResolvedValue(page([key({ spend: 40 })]));
     expect((await budget.checkLiteLLMBudgets()).length).toBe(1);
     expect(alarmLines().length).toBe(1);
+    expect(mockPageSre).toHaveBeenCalledTimes(1);
+
+    expect(await budget.checkLiteLLMBudgets()).toEqual([]);
+    expect(mockPageSre).toHaveBeenCalledTimes(2);
+    expect(alarmLines().length).toBe(1);
+
+    await budget.checkLiteLLMBudgets();
+    expect(mockPageSre).toHaveBeenCalledTimes(2);
+  });
+
+  test('a truncated scan alarms once, still checks the keys it read', async () => {
+    axios.get.mockResolvedValue(page([key({ spend: 39 })], 9999));
+    await budget.checkLiteLLMBudgets();
+    expect(alarmLines()).toEqual([
+      { alarm: 'litellm_budget', scanTruncated: true, pagesRead: 20, totalPages: 9999 },
+      expect.objectContaining({ keyAlias: 'svc-backend' }),
+    ]);
+    expect(mockPageSre.mock.calls[0][0]).toMatch(/stopped at 20 of 9999 pages/);
+    await budget.checkLiteLLMBudgets();
+    expect(alarmLines().filter((l) => l.scanTruncated).length).toBe(1);
   });
 
   test('does nothing without the master key', async () => {
