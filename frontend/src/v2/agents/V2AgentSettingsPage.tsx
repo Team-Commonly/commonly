@@ -16,6 +16,7 @@ import V2AgentProviderKey from '../components/V2AgentProviderKey';
 import V2AgentStatus from './V2AgentStatus';
 import V2AgentRuntimeSummary, { agentRuntimeKind } from './V2AgentRuntimeSummary';
 import './v2-agent-settings.css';
+import { formatAgentTimestamp } from './formatAgentTimestamp';
 
 interface RuntimeKey {
   _id: string;
@@ -28,10 +29,10 @@ interface RuntimeKey {
   status: 'active' | 'revoked';
 }
 
-const dateLabel = (value: string | null | undefined, t: (key: string) => string): string => {
+const dateLabel = (value: string | null | undefined, t: (key: string) => string, language: string): string => {
   if (!value) return t('agentSettings.never');
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? t('agentSettings.unknown') : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? t('agentSettings.unknown') : formatAgentTimestamp(value, language);
 };
 
 const errorLabel = (error: unknown, fallback: string): string => (
@@ -41,7 +42,7 @@ const errorLabel = (error: unknown, fallback: string): string => (
 );
 
 const V2AgentSettingsPage: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
   const { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, runtimeRun, heldTask, loading,
     error: loadError, refresh, update, updatePod, updateRuntime } = useAgentSettings(agentName, instanceId);
@@ -214,9 +215,9 @@ const V2AgentSettingsPage: React.FC = () => {
         <span>{key.status === 'revoked' ? t('agentSettings.revoked') : t('agentSettings.active')}</span>
       </div>
       <div className="v2-agent-settings__key-meta">
-        <span>{t('agentSettings.created', { date: dateLabel(key.createdAt, t) })}</span>
-        <span>{t('agentSettings.lastUsed', { date: dateLabel(key.lastUsedAt, t) })}</span>
-        {key.status === 'revoked' && <span>{t('agentSettings.revokedAt', { date: dateLabel(key.revokedAt, t) })}</span>}
+        <span>{t('agentSettings.created', { date: dateLabel(key.createdAt, t, i18n.language) })}</span>
+        <span>{t('agentSettings.lastUsed', { date: dateLabel(key.lastUsedAt, t, i18n.language) })}</span>
+        {key.status === 'revoked' && <span>{t('agentSettings.revokedAt', { date: dateLabel(key.revokedAt, t, i18n.language) })}</span>}
       </div>
       {key.status === 'active' && pendingAction === key._id && (
         <div className="v2-agent-settings__confirm">

@@ -36,6 +36,10 @@ The catalog search inherits the page font and has a 44px minimum height on phone
 
 The userRunCeiling row identifies the owner's daily limit across all agents, including when an admin opens another owner's installation. Status and Usage share `formatAgentTimestamp`, which uses the selected app language and omits seconds. The default fixture saves BYO/hosted Usage crops and asserts the hosted owner-wide label and localized reset line in both languages. Scout continues to omit Usage.
 
+## Access key review follow-up
+
+Created, Last used and Revoked dates use the shared app-language formatter without seconds. Missing and invalid timestamps retain their localized fallback labels. The default fixture captures folded and expanded key history at both widths in en/zh, then asserts all three historical date lines against localized formatting. No key is issued or revoked.
+
 ## Reproduce
 
 Start the normal frontend dev server on `127.0.0.1:3546`, then run `node capture.cjs` in an environment with Playwright installed. `PLAYWRIGHT_MODULE` can point to an existing installation; `OUTPUT_DIR` changes the destination. The fixture defaults to the system Chrome executable on macOS. If node_modules is a worktree symlink, allow its real directory in the local Vite server’s `server.fs.allow`; otherwise font URLs are refused. The capture asserts the Signal font loads before taking images. The source uses fake identities and a fixed receipt, so the displayed values can be checked against the intercepted responses.

@@ -20,7 +20,7 @@ for(const lang of ['en','zh-CN']) for(const kind of (toolsProof?['byo','hosted',
  else if(u.pathname===`/api/registry/pods/fixture-pod/agents`)data={agents:[{...installation(),connection:{state:kind==='never'?'never':kind==='byo'?'stale':'available',lastSeenAt:'2026-10-25T16:40:00Z'}}]};
  else if(u.pathname===`/api/registry/pods/fixture-pod/agents/${kind}`)data={agent:installation()};
  else if(u.pathname==='/api/agent-binding/placement')data={boundMachineId:'fixture-machine',activeMachines:[{machineId:'fixture-machine',name:'Laptop'}],boundMachineRevoked:false};
- else if(u.pathname==='/api/credentials')data=[{_id:'fixture-key',label:'Runtime token',status:'active',lastUsedAt:'2026-10-25T16:40:00Z'},{_id:'fixture-old',label:'Runtime token',status:'revoked'}];
+ else if(u.pathname==='/api/credentials')data=[{_id:'fixture-key',label:'Runtime token',status:'active',createdAt:'2026-10-01T00:00:00Z',lastUsedAt:'2026-10-25T16:40:00Z'},{_id:'fixture-old',label:'Runtime token',status:'revoked',createdAt:'2026-10-01T00:00:00Z',lastUsedAt:'2026-10-24T16:40:00Z',revokedAt:'2026-10-25T16:40:00Z'}];
  else if(u.pathname.endsWith('/grants'))data={grants:toolsProof&&kind!=='hosted'?[{grantId:'fixture-grant',tools:['repo.read'],connector:'Repository',podName:'Launch plan',grantedBy:'Alex',createdAt:'2026-10-20T12:00:00Z',expiresAt:'2099-01-01T00:00:00Z',revokedAt:null,canRevoke:true}]:[]};
  else if(u.pathname.endsWith('/editable'))data={sections:{long_term:{content:'Remembers the launch plan.',updatedAt:null},soul:{content:'',updatedAt:null},shared:{content:'',updatedAt:null}}};
  else if(u.pathname.includes('attention'))data={items:[],count:0};
@@ -50,6 +50,18 @@ for(const lang of ['en','zh-CN']) for(const kind of (toolsProof?['byo','hosted',
  await page.locator('.v2-agent-settings').evaluate(el=>el.closest('.v2-feature__body').scrollTop=0);
  await page.screenshot({path:`${outDir}/${lang}-${kind}-${width}.png`,fullPage:true});
  console.log(lang,kind,width,JSON.stringify({errors,overflow:await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),h2:await page.locator('h2').allTextContents()}));
+ if(kind==='byo') {
+ const keys=page.getByRole('heading',{name:lang==='en'?'Access key':'访问密钥',exact:true}).locator('..').locator('..');
+ await keys.screenshot({path:`${outDir}/${lang}-byo-keys-folded-${width}.png`});
+ const history=keys.locator('details');await history.locator('summary').click();
+ const labels=lang==='en'?['Created','Last used','Revoked']:['创建于','上次使用','撤销于'];
+ for(const [index,value] of ['2026-10-01T00:00:00Z','2026-10-24T16:40:00Z','2026-10-25T16:40:00Z'].entries()) {
+ const date=await page.evaluate(({value,lang})=>new Date(value).toLocaleString(lang,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}),{value,lang});
+ await history.getByText(`${labels[index]} ${date}`,{exact:true}).waitFor();
+ }
+ await keys.screenshot({path:`${outDir}/${lang}-byo-keys-expanded-${width}.png`});
+ await history.locator('summary').click();
+ }
  if(kind!=='never' && kind!=='scout') {
  const usage=page.getByRole('heading',{name:lang==='en'?'Usage':'用量',exact:true}).locator('..');
  if(kind==='hosted') {

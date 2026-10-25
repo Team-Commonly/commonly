@@ -2,6 +2,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
+import i18n from '../../i18n';
 import V2AgentSettingsPage from '../agents/V2AgentSettingsPage';
 import { AuthContext } from '../../context/AuthContext';
 
@@ -691,4 +692,26 @@ test('BYO without a receipt describes a future connection without a missing comm
   expect(within(section).getByText('On your machine, once connected')).toBeInTheDocument();
   expect(section).not.toHaveTextContent('To change it, run this there:');
   expect(within(section).queryByRole('button', { name: 'Copy' })).toBeNull();
+});
+
+
+test.each(['en', 'zh-CN'])('key timestamps follow the selected language (%s)', async (language) => {
+  await i18n.changeLanguage(language);
+  const defaultGet = axios.get.getMockImplementation();
+  const dates = { createdAt: '2026-10-01T00:00:00Z', lastUsedAt: '2026-10-24T16:40:00Z', revokedAt: '2026-10-25T16:40:00Z' };
+  axios.get.mockImplementation((url, options) => url === '/api/credentials'
+    ? Promise.resolve({ data: [{ _id: 'old', label: 'Previous key', status: 'revoked', ...dates }] })
+    : defaultGet(url, options));
+  const view = renderPage();
+  try {
+    const text = await screen.findByText(language === 'en' ? '1 revoked' : '已撤销1个');
+    const disclosure = text.closest('details');
+    fireEvent.click(text);
+    disclosure.open = true;
+    const labels = language === 'en' ? ['Created', 'Last used', 'Revoked'] : ['创建于', '上次使用', '撤销于'];
+    for (const [index, value] of Object.values(dates).entries()) {
+      const date = new Date(value).toLocaleString(language, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      expect(within(disclosure).getByText(`${labels[index]} ${date}`)).toBeInTheDocument();
+    }
+  } finally { view.unmount(); await i18n.changeLanguage('en'); }
 });
