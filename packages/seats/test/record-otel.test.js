@@ -153,3 +153,74 @@ test('decision.ruled joins the tool span of the request on its card, else the sp
   const again = spansOf(toOtlpJson(extra)).find((s) => s.name === 'execute_tool sentry.resolve_issue');
   assert.ok(again.events.some((e) => e.name === 'decision.ruled'));
 });
+
+test('actor.onBehalfOf maps beside actor.owner: on every event, the attempt span and the tool span', () => {
+  const base = { v: 1, schema: 'seats.record', runId: 'run-obo-0001', prev: null };
+  const actor = { type: 'agent', id: 'u-agent-ana', owner: 'u-ana', onBehalfOf: { id: 'u-ben', role: 'requester' } };
+  const entries = [
+    { ...base, seq: 1, ts: '2026-10-25T12:00:00.000Z', kind: 'attempt.started', actor, data: { attempt: 1 } },
+    { ...base, seq: 2, ts: '2026-10-25T12:00:01.000Z', kind: 'tool.call', actor, data: { toolCallId: 'tc-1', name: 'sentry.resolve_issue' } },
+    {
+      ...base, seq: 3, ts: '2026-10-25T12:00:02.000Z', kind: 'permission.requested', actor,
+      data: { toolCallId: 'tc-1', question: 'Resolve?', askedOf: { id: 'u-ben', role: 'credential-owner' } },
+    },
+    { ...base, seq: 4, ts: '2026-10-25T12:00:03.000Z', kind: 'run.settled', actor: { type: 'system', id: 'seats' }, data: { outcome: 'ok' } },
+  ];
+  const spans = spansOf(toOtlpJson(entries));
+  const attempt = spans.find((s) => s.name.startsWith('invoke_agent'));
+  assert.equal(attrOf(attempt, 'seats.agent.owner').stringValue, 'u-ana');
+  assert.equal(attrOf(attempt, 'seats.agent.on_behalf_of.id').stringValue, 'u-ben');
+  assert.equal(attrOf(attempt, 'seats.agent.on_behalf_of.role').stringValue, 'requester');
+  const tool = spans.find((s) => s.name === 'execute_tool sentry.resolve_issue');
+  assert.equal(attrOf(tool, 'seats.actor.on_behalf_of.id').stringValue, 'u-ben', 'the pair is on the action itself');
+  assert.equal(attrOf(tool, 'seats.actor.on_behalf_of.role').stringValue, 'requester');
+  const asked = tool.events.find((e) => e.name === 'permission.requested');
+  assert.equal(attrOf(asked, 'seats.actor.owner').stringValue, 'u-ana');
+  assert.equal(attrOf(asked, 'seats.actor.on_behalf_of.id').stringValue, 'u-ben');
+  assert.equal(attrOf(asked, 'seats.actor.on_behalf_of.role').stringValue, 'requester');
+  // Without the field, no attribute appears.
+  const plain = spansOf(toOtlpJson(entries.map((e) => (e.actor.type === 'agent' ? { ...e, actor: { type: 'agent', id: 'u-agent-ana', owner: 'u-ana' } } : e))));
+  assert.ok(!JSON.stringify(plain).includes('on_behalf_of'));
+});
+
+test('egress entries are events on the span current at the time', () => {
+  const base = { v: 1, schema: 'seats.record', runId: 'run-egr-0001', prev: null, actor: { type: 'system', id: 'seats' } };
+  const entries = [
+    { ...base, seq: 1, ts: '2026-10-25T12:00:00.000Z', kind: 'egress.denied', data: { host: null, port: null, reason: 'bad_request' } },
+    { ...base, seq: 2, ts: '2026-10-25T12:00:01.000Z', kind: 'attempt.started', actor: { type: 'agent', id: 'u-agent-ana' }, data: { attempt: 1 } },
+    { ...base, seq: 3, ts: '2026-10-25T12:00:02.000Z', kind: 'egress.allowed', data: { host: 'api.sentry.io', port: 443 } },
+    { ...base, seq: 4, ts: '2026-10-25T12:00:03.000Z', kind: 'egress.denied', data: { host: '[redacted]', port: 443, reason: 'not_allowed' } },
+    { ...base, seq: 5, ts: '2026-10-25T12:00:04.000Z', kind: 'run.settled', data: { outcome: 'ok' } },
+  ];
+  const spans = spansOf(toOtlpJson(entries));
+  const run = spans.find((s) => s.name === 'seats.run');
+  const attempt = spans.find((s) => s.name.startsWith('invoke_agent'));
+  const early = run.events.find((e) => e.name === 'egress.denied');
+  assert.equal(attrOf(early, 'seats.reason').stringValue, 'bad_request');
+  assert.equal(attrOf(early, 'seats.host'), undefined, 'a null host is left out');
+  assert.equal(attrOf(early, 'seats.actor.id').stringValue, 'seats');
+  const allowed = attempt.events.find((e) => e.name === 'egress.allowed');
+  assert.equal(attrOf(allowed, 'seats.host').stringValue, 'api.sentry.io');
+  assert.equal(attrOf(allowed, 'seats.port').intValue, '443');
+  const denied = attempt.events.find((e) => e.name === 'egress.denied');
+  assert.equal(attrOf(denied, 'seats.host').stringValue, '[redacted]');
+  assert.equal(attrOf(denied, 'seats.reason').stringValue, 'not_allowed');
+  assert.equal(attrOf(attempt, 'error.type'), undefined, 'a denial is an event, not an error status');
+});
+
+test('sandbox.applied is an event on the span current at the time', () => {
+  const base = { v: 1, schema: 'seats.record', runId: 'run-sbx-0001', prev: null, actor: { type: 'system', id: 'seats' } };
+  const entries = [
+    { ...base, seq: 1, ts: '2026-10-25T12:00:00.000Z', kind: 'sandbox.applied', data: { sandbox: 'none', reason: 'no supported OS sandbox on win32' } },
+    { ...base, seq: 2, ts: '2026-10-25T12:00:01.000Z', kind: 'attempt.started', actor: { type: 'agent', id: 'u-agent-ana' }, data: { attempt: 1 } },
+    { ...base, seq: 3, ts: '2026-10-25T12:00:02.000Z', kind: 'sandbox.applied', data: { sandbox: 'seatbelt' } },
+    { ...base, seq: 4, ts: '2026-10-25T12:00:03.000Z', kind: 'run.settled', data: { outcome: 'ok' } },
+  ];
+  const spans = spansOf(toOtlpJson(entries));
+  const none = spans.find((s) => s.name === 'seats.run').events.find((e) => e.name === 'sandbox.applied');
+  assert.equal(attrOf(none, 'seats.sandbox').stringValue, 'none');
+  assert.equal(attrOf(none, 'seats.reason').stringValue, 'no supported OS sandbox on win32');
+  const seatbelt = spans.find((s) => s.name.startsWith('invoke_agent')).events.find((e) => e.name === 'sandbox.applied');
+  assert.equal(attrOf(seatbelt, 'seats.sandbox').stringValue, 'seatbelt');
+  assert.equal(attrOf(seatbelt, 'seats.reason'), undefined);
+});

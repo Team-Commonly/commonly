@@ -5,6 +5,7 @@
  * the store, so another tool can vendor it alone.
  */
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 import { FAILURE_KINDS } from '../failures.js';
 
 export const RECORD_VERSION = 1;
@@ -21,6 +22,16 @@ export const WRITE_MODES = Object.freeze(['read', 'write', 'write-with-confirm']
 export const GRANT_TARGET_KINDS = Object.freeze(['pod', 'seat']);
 export const OUTCOMES = Object.freeze(['ok', 'failed', 'stuck', 'cancelled']);
 export const RESULT_STATUSES = Object.freeze(['done', 'partial', 'blocked', 'failed']);
+// Whose request an agent acts on: 'requester' sent the message that started
+// the run, 'assigner' assigned its task. Absent when no human asked.
+export const ON_BEHALF_ROLES = Object.freeze(['requester', 'assigner']);
+// Why the egress proxy refused a request. The first two can leave host and port null.
+export const EGRESS_DENIED_REASONS = Object.freeze([
+  'bad_request', 'not_connect', 'ip_literal', 'not_allowed', 'unresolved', 'private_address', 'unreachable',
+]);
+const EGRESS_TARGETLESS = new Set(['bad_request', 'not_connect']);
+export const SANDBOXES = Object.freeze(['seatbelt', 'bwrap', 'none']);
+export const REDACTED = '[redacted]';
 
 /** The actors a writer records for its own bookkeeping, and for the board. */
 export const SYSTEM_ACTOR = Object.freeze({ type: 'system', id: 'seats' });
@@ -56,6 +67,10 @@ export const KINDS = Object.freeze({
   'liveness.stalled': Object.freeze({ group: 'activity', actor: 'system' }),
   'liveness.recovery': Object.freeze({ group: 'activity', actor: 'system' }),
   'process.exited': Object.freeze({ group: 'activity', actor: 'system' }),
+  // The run's confinement, recorded once per spawn, beside its egress.
+  'sandbox.applied': Object.freeze({ group: 'sandbox', actor: 'system' }),
+  'egress.allowed': Object.freeze({ group: 'egress', actor: 'system' }),
+  'egress.denied': Object.freeze({ group: 'egress', actor: 'system' }),
 });
 
 const TRACE_TO_KIND = new Map(Object.entries(KINDS).filter(([, spec]) => spec.trace).map(([kind, spec]) => [spec.trace, kind]));
@@ -83,20 +98,28 @@ const isTimestamp = (value) => typeof value === 'string' && RFC3339_UTC.test(val
  * RFC 8785 (JCS) serialization. For the JSON values a record holds, JCS is
  * JSON.stringify with object keys sorted by UTF-16 code units, which is what
  * Array.prototype.sort does by default.
+ *
+ * `strict` also refuses a lone surrogate in any string or key, as RFC 8785
+ * requires. Lines are not strict: agent text from a stream cut mid-pair must
+ * still record, and JSON.stringify writes the lone half as a \u escape.
  */
-const canonical = (value) => {
-  if (value !== null && typeof value === 'object' && typeof value.toJSON === 'function') return canonical(value.toJSON());
+const canonicalString = (text, strict) => {
+  if (strict && !text.isWellFormed()) fail('strings must be well-formed UTF-16 (no lone surrogates)');
+  return JSON.stringify(text);
+};
+const canonical = (value, strict = false) => {
+  if (value !== null && typeof value === 'object' && typeof value.toJSON === 'function') return canonical(value.toJSON(), strict);
   if (value === null) return 'null';
   switch (typeof value) {
-    case 'string': return JSON.stringify(value);
+    case 'string': return canonicalString(value, strict);
     case 'boolean': return value ? 'true' : 'false';
     case 'number':
       if (!Number.isFinite(value)) fail('numbers must be finite');
       return JSON.stringify(value);
     case 'object':
-      if (Array.isArray(value)) return `[${value.map((item) => (item === undefined ? 'null' : canonical(item))).join(',')}]`;
+      if (Array.isArray(value)) return `[${value.map((item) => (item === undefined ? 'null' : canonical(item, strict))).join(',')}]`;
       return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort()
-        .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+        .map((key) => `${canonicalString(key, strict)}:${canonical(value[key], strict)}`).join(',')}}`;
     default: return fail(`cannot serialize a ${typeof value}`);
   }
 };
@@ -115,12 +138,13 @@ export const hashLine = (line) => createHash('sha256').update(String(line), 'utf
  * lowercase hex SHA-256 of the arguments' RFC 8785 form. The same arguments
  * give the same digest wherever they are seen, so a reader can match a
  * tool.call to the permission entries that approved it. Returns undefined
- * when there are no arguments, or they are not JSON (a function, NaN).
+ * when there are no arguments, or they are not JSON (a function, NaN, a
+ * string or key holding a lone surrogate): a writer then omits argsDigest.
  */
 const ARGS_DIGEST = /^sha256:[0-9a-f]{64}$/;
 export const argsDigestOf = (args) => {
   if (args === undefined) return undefined;
-  try { return `sha256:${hashLine(canonical(args))}`; } catch { return undefined; }
+  try { return `sha256:${hashLine(canonical(args, true))}`; } catch { return undefined; }
 };
 export const isArgsDigest = (value) => typeof value === 'string' && ARGS_DIGEST.test(value);
 
@@ -132,6 +156,15 @@ const actorProblem = (actor) => {
   if (!isUserId(actor.id)) return 'actor.id must be an id token (a user id for agent and human actors), never a display name';
   if (actor.owner !== undefined && (actor.type !== 'agent' || !isUserId(actor.owner))) return 'actor.owner is a user id, on agent actors only';
   if (actor.name !== undefined && !isText(actor.name)) return 'actor.name must be a non-empty string';
+  if (actor.onBehalfOf !== undefined) {
+    const behalf = actor.onBehalfOf;
+    if (actor.type !== 'agent') return 'actor.onBehalfOf is on agent actors only';
+    if (!isPlainObject(behalf)) return 'actor.onBehalfOf must be {id, role}';
+    const extra = Object.keys(behalf).find((key) => key !== 'id' && key !== 'role');
+    if (extra !== undefined) return `unknown field actor.onBehalfOf.${extra}`;
+    if (!isUserId(behalf.id)) return 'actor.onBehalfOf.id must be an id token (a user id), never a display name';
+    if (!ON_BEHALF_ROLES.includes(behalf.role)) return `actor.onBehalfOf.role must be one of ${ON_BEHALF_ROLES.join(', ')}`;
+  }
   return null;
 };
 
@@ -140,7 +173,11 @@ export const validateActor = (actor) => {
   if (problem) fail(problem);
   if (actor === null) return null;
   return Object.freeze({
-    type: actor.type, id: actor.id, ...(actor.owner ? { owner: actor.owner } : {}), ...(actor.name ? { name: actor.name } : {}),
+    type: actor.type,
+    id: actor.id,
+    ...(actor.owner ? { owner: actor.owner } : {}),
+    ...(actor.onBehalfOf ? { onBehalfOf: Object.freeze({ id: actor.onBehalfOf.id, role: actor.onBehalfOf.role }) } : {}),
+    ...(actor.name ? { name: actor.name } : {}),
   });
 };
 
@@ -163,6 +200,21 @@ const userIdOrPolicy = (value, where) => {
 const optionalArgsDigest = (data, kind) => {
   if (data.argsDigest !== undefined && !isArgsDigest(data.argsDigest)) fail(`${kind}.argsDigest must be sha256:<64 hex>, a digest of the arguments, never the arguments`);
 };
+// A host as the egress proxy traces it: a lowercase DNS name, an IP literal
+// (IPv6 without brackets), or [redacted] when it held a run credential.
+const DNS_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const isEgressHost = (host) => typeof host === 'string' && (host === REDACTED || isIP(host) !== 0
+  || (host.length <= 253 && host.split('.').every((label) => DNS_LABEL.test(label))));
+const isPort = (port) => Number.isInteger(port) && port >= 1 && port <= 65535;
+const checkEgressTarget = (data, kind, { nullable }) => {
+  if (data.host === null && data.port === null && nullable) return;
+  if (data.host === null || data.port === null) {
+    fail(nullable ? `${kind}: host and port are null together, or both set` : `${kind} needs a host and a port`);
+  }
+  if (!isEgressHost(data.host)) fail(`${kind}.host must be a lowercase DNS name, an IP literal or "${REDACTED}"`);
+  if (!isPort(data.port)) fail(`${kind}.port must be an integer from 1 to 65535`);
+};
+
 const checkRole = (role, where) => {
   if (!DECIDED_BY_ROLES.includes(role)) fail(`${where} must be one of ${DECIDED_BY_ROLES.join(', ')}`);
 };
@@ -298,6 +350,26 @@ const CHECKS = {
       const { kind } = data.failure;
       if (kind !== null && kind !== undefined && !FAILURE_KINDS[kind]) fail(`attempt.settled.failure.kind ${kind} is not a FAILURE_KINDS key`);
     }
+    return data;
+  },
+  'sandbox.applied': (data) => {
+    refuseUnknownKeys(data, ['sandbox', 'reason'], 'sandbox.applied.');
+    if (!SANDBOXES.includes(data.sandbox)) fail(`sandbox.applied.sandbox must be one of ${SANDBOXES.join(', ')}`);
+    if (data.reason !== undefined) {
+      if (data.sandbox !== 'none') fail('sandbox.applied.reason is set only when sandbox is none');
+      if (!isText(data.reason)) fail('sandbox.applied.reason must be a non-empty string');
+    }
+    return data;
+  },
+  'egress.allowed': (data) => {
+    refuseUnknownKeys(data, ['host', 'port'], 'egress.allowed.');
+    checkEgressTarget(data, 'egress.allowed', { nullable: false });
+    return data;
+  },
+  'egress.denied': (data) => {
+    refuseUnknownKeys(data, ['host', 'port', 'reason'], 'egress.denied.');
+    if (!EGRESS_DENIED_REASONS.includes(data.reason)) fail(`egress.denied.reason must be one of ${EGRESS_DENIED_REASONS.join(', ')}`);
+    checkEgressTarget(data, 'egress.denied', { nullable: EGRESS_TARGETLESS.has(data.reason) });
     return data;
   },
   'result.reported': (data) => {

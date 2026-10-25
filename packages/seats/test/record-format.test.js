@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, KINDS, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
+  appendEntry, argsDigestOf, canonicalLine, hashLine, readRecord, verifyRecord, EGRESS_DENIED_REASONS, KINDS, ON_BEHALF_ROLES, SANDBOXES, RECORD_VERSION, RECORD_SCHEMA, toolSurfaceOf,
 } from '../src/record/format.js';
 
 const RUN = 'run-fmt-0001';
@@ -298,6 +298,8 @@ test('argsDigest is sha256 of the canonical args, and anything else is refused, 
   assert.equal(argsDigestOf({ a: [1, 'x'], b: 2 }), digest, 'key order does not change it');
   assert.equal(argsDigestOf(undefined), undefined);
   assert.equal(argsDigestOf({ n: Number.NaN }), undefined);
+  assert.equal(argsDigestOf({ s: '\ud800' }), undefined, 'a lone surrogate has no digest (RFC 8785)');
+  assert.equal(argsDigestOf({ ['k\udc00']: 1 }), undefined, 'in a key too');
   const call = (argsDigest) => appendEntry(null, { ...ENV, ts: ts(), kind: 'tool.call', data: { toolCallId: 't', title: 'x', argsDigest } });
   const decided = (argsDigest) => appendEntry(null, { ...ENV, ts: ts(), kind: 'permission.decided', data: { outcome: 'cancelled', toolCallId: 't', argsDigest } });
   for (const write of [call, decided, (d) => request(askData({ argsDigest: d }))]) {
@@ -306,4 +308,140 @@ test('argsDigest is sha256 of the canonical args, and anything else is refused, 
       assert.throws(() => write(raw), /argsDigest/, `raw ${JSON.stringify(raw)}`);
     }
   }
+});
+
+const BEHALF = { ...AGENT, onBehalfOf: { id: 'u-ben', role: 'requester' } };
+
+test('actor.onBehalfOf: an agent entry carrying it hashes, chains and verifies, on every kind the agent authors', () => {
+  assert.deepEqual(ON_BEHALF_ROLES, ['requester', 'assigner']);
+  const lines = [];
+  const add = (kind, data) => lines.push(appendEntry(lines.at(-1) ?? null, { ...ENV, ts: ts(), kind, data }, { runActor: BEHALF }));
+  add('attempt.started', { attempt: 1, adapter: 'fake' });
+  add('tool.call', { toolCallId: 'tc-1', title: 'resolve', surface: 'connector', argsDigest: argsDigestOf({ id: 88 }) });
+  add('permission.requested', askData({ argsDigest: argsDigestOf({ id: 88 }) }));
+  lines.push(appendEntry(lines.at(-1), {
+    ...ENV, ts: ts(), kind: 'result.reported', data: { status: 'done' }, actor: { ...AGENT, onBehalfOf: { id: 'u-cy', role: 'assigner' } },
+  }));
+  const result = verifyRecord(text(lines));
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.head, hashLine(lines.at(-1)));
+  const entries = readRecord(text(lines));
+  for (const entry of entries.slice(0, 3)) assert.deepEqual(entry.actor, BEHALF, `${entry.kind} carries the pair on its actor`);
+  assert.deepEqual(entries[3].actor.onBehalfOf, { id: 'u-cy', role: 'assigner' });
+  assert.equal(entries[2].data.onBehalfOf, undefined, 'the pair lives on the actor, never in data');
+  assert.match(lines[1], /"actor":\{"id":"u-agent-1","name":"Ana's agent","onBehalfOf":\{"id":"u-ben","role":"requester"\},"owner":"u-ana","type":"agent"\}/);
+});
+
+test('actor.onBehalfOf: refused off agent actors, with a bad id, an unknown role or an extra key, by writer and verifier', () => {
+  const at = (actor) => appendEntry(null, { runId: RUN, ts: ts(), kind: 'usage', data: {}, actor });
+  const bad = [
+    [{ type: 'human', id: 'u-ana', onBehalfOf: { id: 'u-ben', role: 'requester' } }, /agent actors only/],
+    [{ type: 'system', id: 'seats', onBehalfOf: { id: 'u-ben', role: 'requester' } }, /agent actors only/],
+    [{ ...AGENT, onBehalfOf: { id: 'Ben Smith', role: 'requester' } }, /onBehalfOf.id/],
+    [{ ...AGENT, onBehalfOf: { id: 'u-ben' } }, /onBehalfOf.role/],
+    [{ ...AGENT, onBehalfOf: { id: 'u-ben', role: 'owner' } }, /onBehalfOf.role/],
+    [{ ...AGENT, onBehalfOf: { id: 'u-ben', role: 'requester', email: 'ben@example.com' } }, /unknown field actor.onBehalfOf.email/],
+    [{ ...AGENT, onBehalfOf: 'u-ben' }, /onBehalfOf must be/],
+    [{ ...AGENT, onBehalfOf: null }, /onBehalfOf must be/],
+  ];
+  const good = JSON.parse(at(BEHALF));
+  for (const [actor, message] of bad) {
+    assert.throws(() => at(actor), message, JSON.stringify(actor));
+    // A hand-written line with the same actor, canonical and chained, fails the envelope check.
+    const line = canonicalLine({ ...good, actor });
+    assert.deepEqual(reasons(verifyRecord(`${line}\n`)), ['1:bad_envelope'], JSON.stringify(actor));
+    assert.equal(verifyRecord(`${line}\n`).errors[0].detail, 'actor');
+  }
+});
+
+test('actor.onBehalfOf is additive: a record written without it is byte-identical to the writer before the field', () => {
+  // Hashes pinned from the writer at b7b71f63a, before onBehalfOf existed.
+  const env = { runId: 'run-fmt-0001', taskId: 'TASK-7', podId: 'pod-a' };
+  const l1 = appendEntry(null, { ...env, ts: '2026-10-25T12:00:01.000Z', kind: 'attempt.started', data: { attempt: 1, adapter: 'fake' } }, { runActor: AGENT });
+  const l2 = appendEntry(l1, { ...env, ts: '2026-10-25T12:00:02.000Z', kind: 'tool.call', data: { toolCallId: 'tc-1', title: 'x', surface: 'native' } }, { runActor: AGENT });
+  assert.equal(hashLine(l1), 'f91b90fc46781ca9b915b80cce5b9633f603e90742bfc8b1f6dc82d17e01c264');
+  assert.equal(hashLine(l2), '1689f865735018eafddcb3fcf0b267d8ead7d9546d45b6d9a471c23eed21cfc6');
+  assert.ok(!l1.includes('onBehalfOf') && !l2.includes('onBehalfOf'));
+  assert.deepEqual(verifyRecord(`${l1}\n${l2}\n`).errors, []);
+});
+
+test('a lone surrogate in agent text still records: only the args digest refuses it', () => {
+  // A stream cut mid-pair leaves half a surrogate pair in a chunk.
+  const chunk = `cut here ${'\ud83d'}`;
+  const first = appendEntry(null, { ...ENV, ts: ts(), kind: 'agent.message_chunk', data: { text: chunk } }, { runActor: AGENT });
+  assert.ok(first.includes('cut here \\ud83d'), 'the lone half is written as a \\u escape');
+  const second = appendEntry(first, {
+    ...ENV, ts: ts(), kind: 'tool.call', data: { toolCallId: 'tc-1', title: chunk, argsDigest: argsDigestOf({ q: 'ok' }) },
+  }, { runActor: AGENT });
+  assert.deepEqual(verifyRecord(`${first}\n${second}\n`).errors, []);
+  assert.equal(readRecord(`${first}\n`)[0].data.text, chunk);
+  assert.equal(argsDigestOf({ q: chunk }), undefined);
+});
+
+const egress = (kind, data) => JSON.parse(appendEntry(null, { ...ENV, ts: ts(), kind, data }, { runActor: AGENT }));
+
+test('egress.allowed: {host, port}, written by the system', () => {
+  assert.deepEqual(KINDS['egress.allowed'], { group: 'egress', actor: 'system' });
+  const ok = egress('egress.allowed', { host: 'api.sentry.io', port: 443 });
+  assert.deepEqual(ok.data, { host: 'api.sentry.io', port: 443 });
+  assert.deepEqual(ok.actor, { type: 'system', id: 'seats' });
+  // host: a lowercase DNS name, an IP literal, or [redacted]; anything else is refused.
+  for (const host of ['localhost', '[redacted]', '203.0.113.7', '2001:db8::1']) egress('egress.allowed', { host, port: 443 });
+  for (const host of ['API.sentry.io', 'https://api.sentry.io', 'user@api.sentry.io', 'a b.io', '-x.io', '', '[REDACTED]', 42]) {
+    assert.throws(() => egress('egress.allowed', { host, port: 443 }), /egress.allowed.host/, `host ${JSON.stringify(host)}`);
+  }
+  assert.throws(() => egress('egress.allowed', { host: `${'a'.repeat(60)}.`.repeat(5), port: 443 }), /egress.allowed.host/, 'over 253 characters');
+  // port: an integer from 1 to 65535.
+  egress('egress.allowed', { host: 'api.sentry.io', port: 65535 });
+  for (const port of [0, 65536, 443.5, '443', -1]) assert.throws(() => egress('egress.allowed', { host: 'api.sentry.io', port }), /egress.allowed.port/, `port ${port}`);
+  // An opened tunnel always names its target: no nulls, no missing fields.
+  assert.throws(() => egress('egress.allowed', { host: null, port: null }), /needs a host and a port/);
+  assert.throws(() => egress('egress.allowed', { port: 443 }), /egress.allowed.host/);
+  assert.throws(() => egress('egress.allowed', { host: 'api.sentry.io' }), /egress.allowed.port/);
+  // No other field: a header or an address can't ride in.
+  assert.throws(() => egress('egress.allowed', { host: 'api.sentry.io', port: 443, address: '203.0.113.7' }), /unknown field egress.allowed.address/);
+});
+
+test('egress.denied: {host, port, reason}, the reason from a closed set, null target only on a malformed request', () => {
+  assert.deepEqual(KINDS['egress.denied'], { group: 'egress', actor: 'system' });
+  assert.deepEqual(EGRESS_DENIED_REASONS, ['bad_request', 'not_connect', 'ip_literal', 'not_allowed', 'unresolved', 'private_address', 'unreachable']);
+  const denied = egress('egress.denied', { host: 'evil.example', port: 443, reason: 'not_allowed' });
+  assert.deepEqual(denied.data, { host: 'evil.example', port: 443, reason: 'not_allowed' });
+  assert.deepEqual(denied.actor, { type: 'system', id: 'seats' });
+  // reason: every listed reason is accepted; anything else is refused.
+  for (const reason of EGRESS_DENIED_REASONS) egress('egress.denied', { host: '10.0.0.1', port: 80, reason });
+  for (const reason of ['forbidden', undefined, null, 'NOT_ALLOWED']) {
+    assert.throws(() => egress('egress.denied', { host: 'evil.example', port: 443, reason }), /egress.denied.reason/, `reason ${reason}`);
+  }
+  // host and port may be null, together, when the request was malformed.
+  for (const reason of ['bad_request', 'not_connect']) {
+    assert.deepEqual(egress('egress.denied', { host: null, port: null, reason }).data, { host: null, port: null, reason });
+  }
+  assert.throws(() => egress('egress.denied', { host: null, port: null, reason: 'not_allowed' }), /needs a host and a port/, 'a parsed target is never null');
+  assert.throws(() => egress('egress.denied', { host: null, port: 443, reason: 'bad_request' }), /null together/);
+  assert.throws(() => egress('egress.denied', { host: 'evil.example', port: null, reason: 'not_connect' }), /null together/);
+  // host and port follow the egress.allowed rules when set.
+  egress('egress.denied', { host: '[redacted]', port: 443, reason: 'not_allowed' });
+  assert.throws(() => egress('egress.denied', { host: 'Evil.example', port: 443, reason: 'not_allowed' }), /egress.denied.host/);
+  assert.throws(() => egress('egress.denied', { host: 'evil.example', port: 70000, reason: 'not_allowed' }), /egress.denied.port/);
+  assert.throws(() => egress('egress.denied', { host: 'evil.example', port: 443, reason: 'not_allowed', status: 403 }), /unknown field egress.denied.status/);
+});
+
+test('sandbox.applied: {sandbox, reason?}, the reason only when the run is unsandboxed', () => {
+  assert.deepEqual(KINDS['sandbox.applied'], { group: 'sandbox', actor: 'system' });
+  assert.deepEqual(SANDBOXES, ['seatbelt', 'bwrap', 'none']);
+  const at = (data) => JSON.parse(appendEntry(null, { ...ENV, ts: ts(), kind: 'sandbox.applied', data }, { runActor: AGENT }));
+  const applied = at({ sandbox: 'seatbelt' });
+  assert.deepEqual(applied.data, { sandbox: 'seatbelt' });
+  assert.deepEqual(applied.actor, { type: 'system', id: 'seats' });
+  // sandbox: one of seatbelt, bwrap, none.
+  at({ sandbox: 'bwrap' });
+  for (const sandbox of ['docker', undefined, null, 'Seatbelt']) assert.throws(() => at({ sandbox }), /sandbox.applied.sandbox/, `sandbox ${sandbox}`);
+  // reason: a non-empty string, and only beside none.
+  assert.deepEqual(at({ sandbox: 'none', reason: 'no supported OS sandbox on win32' }).data, { sandbox: 'none', reason: 'no supported OS sandbox on win32' });
+  at({ sandbox: 'none' });
+  assert.throws(() => at({ sandbox: 'seatbelt', reason: 'because' }), /only when sandbox is none/);
+  for (const reason of ['', 42, null]) assert.throws(() => at({ sandbox: 'none', reason }), /sandbox.applied.reason/, `reason ${reason}`);
+  // No other field.
+  assert.throws(() => at({ sandbox: 'bwrap', egress: 'proxy' }), /unknown field sandbox.applied.egress/);
 });

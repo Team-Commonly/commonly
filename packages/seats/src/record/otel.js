@@ -71,6 +71,7 @@ const eventOf = (entry) => ({
     ...(entry.actor ? attrs([
       ['seats.actor.type', entry.actor.type], ['seats.actor.id', entry.actor.id],
       ['seats.actor.owner', entry.actor.owner], ['seats.actor.name', entry.actor.name],
+      ['seats.actor.on_behalf_of.id', entry.actor.onBehalfOf?.id], ['seats.actor.on_behalf_of.role', entry.actor.onBehalfOf?.role],
     ]) : []),
     ...flatten(entry.data),
   ],
@@ -137,6 +138,7 @@ const spansOfRun = (entries) => {
           ['gen_ai.agent.id', entry.actor?.id], ['gen_ai.agent.name', agentName],
           ['gen_ai.conversation.id', data.sessionId],
           ['seats.agent.owner', entry.actor?.owner],
+          ['seats.agent.on_behalf_of.id', entry.actor?.onBehalfOf?.id], ['seats.agent.on_behalf_of.role', entry.actor?.onBehalfOf?.role],
           ['seats.attempt.number', data.attempt], ['seats.adapter', data.adapter],
           ['seats.cli.name', data.cli?.name], ['seats.cli.version', data.cli?.version],
         ]),
@@ -168,6 +170,7 @@ const spansOfRun = (entries) => {
           ['gen_ai.operation.name', 'execute_tool'],
           ['gen_ai.tool.name', toolName], ['gen_ai.tool.call.id', data.toolCallId],
           ['gen_ai.agent.name', attempt?.agentName],
+          ['seats.actor.on_behalf_of.id', entry.actor?.onBehalfOf?.id], ['seats.actor.on_behalf_of.role', entry.actor?.onBehalfOf?.role],
           ['seats.tool.kind', data.kind], ['seats.tool.surface', data.surface], ['seats.tool.args_digest', data.argsDigest],
         ]),
       });

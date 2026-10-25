@@ -149,3 +149,36 @@ test('redact: known values never reach a line, even inside agent text', () => wi
   assert.ok(raw.includes('[redacted]'));
   assert.equal(store.verifyRun('run-st-0012').ok, true, 'scrubbing happens before hashing');
 }));
+
+test('the store writes actor.onBehalfOf through emit, and refuses it on a non-agent run actor', () => withStore((store, root) => {
+  const actor = { ...AGENT, onBehalfOf: { id: 'u-ben', role: 'requester' } };
+  const run = store.startRun({ runId: 'run-st-obo1', adapter: 'fake', taskId: 'TASK-9', podId: 'pod-a', actor });
+  run.emit('run.started', { adapter: 'fake', attempt: 1 });
+  run.emit('tool.call', { toolCallId: 'tc-1', title: 'resolve', surface: 'connector' });
+  run.emit('run.settled', { outcome: 'ok', durationMs: 5, attempts: 1 });
+  const events = store.readRun('run-st-obo1');
+  assert.deepEqual(events[1].actor, actor);
+  assert.deepEqual(verifyRecord(readFileSync(fileOf(root, 'run-st-obo1'), 'utf8')).errors, []);
+  assert.throws(() => store.startRun({ runId: 'run-st-obo2', actor: { type: 'human', id: 'u-ana', onBehalfOf: { id: 'u-ben', role: 'requester' } } }), /agent actors only/);
+  assert.throws(() => store.startRun({ runId: 'run-st-obo3', actor: { ...AGENT, onBehalfOf: { id: 'u-ben', role: 'boss' } } }), /onBehalfOf.role/);
+}));
+
+test('the store records the egress proxy\'s trace types', () => withStore((store, root) => {
+  const run = store.startRun({ runId: 'run-st-egr1', actor: AGENT });
+  run.emit('egress.allowed', { host: 'api.sentry.io', port: 443 });
+  run.emit('egress.denied', { host: null, port: null, reason: 'bad_request' });
+  run.emit('egress.denied', { host: '[redacted]', port: 443, reason: 'not_allowed' });
+  assert.throws(() => run.emit('egress.denied', { host: 'x.io', port: 443, reason: 'nope' }), /egress.denied.reason/);
+  run.emit('run.settled', { outcome: 'ok', durationMs: 1, attempts: 1 });
+  assert.deepEqual(store.readRun('run-st-egr1').map((e) => e.kind), ['egress.allowed', 'egress.denied', 'egress.denied', 'run.settled']);
+  assert.deepEqual(verifyRecord(readFileSync(fileOf(root, 'run-st-egr1'), 'utf8')).errors, []);
+}));
+
+test('the store records sandbox.applied', () => withStore((store, root) => {
+  const run = store.startRun({ runId: 'run-st-sbx1', actor: AGENT });
+  run.emit('sandbox.applied', { sandbox: 'none', reason: 'no supported OS sandbox on win32' });
+  assert.throws(() => run.emit('sandbox.applied', { sandbox: 'bwrap', reason: 'x' }), /only when sandbox is none/);
+  run.emit('run.settled', { outcome: 'ok', durationMs: 1, attempts: 1 });
+  assert.deepEqual(store.readRun('run-st-sbx1').map((e) => e.kind), ['sandbox.applied', 'run.settled']);
+  assert.deepEqual(verifyRecord(readFileSync(fileOf(root, 'run-st-sbx1'), 'utf8')).errors, []);
+}));

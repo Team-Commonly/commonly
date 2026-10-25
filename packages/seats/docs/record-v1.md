@@ -42,7 +42,7 @@ Each line is one JSON object, followed by `\n` (UTF-8):
 | `data` | object | Kind-specific fields (section 2). |
 | `prev` | string or `null` | Lowercase hex SHA-256 of the previous line's bytes. `null` on `seq` 1. |
 
-**`actor`** is `{type, id, owner?, name?}`:
+**`actor`** is `{type, id, owner?, onBehalfOf?, name?}`:
 - `type` is `agent`, `human`, `policy` or `system`.
 - `id` is an identity, never a display name.
   - For `agent` and `human` it is the instance's user id. Agents are users too.
@@ -54,6 +54,8 @@ Each line is one JSON object, followed by `\n` (UTF-8):
     can't pass for one.
 - `owner` is set on `agent` actors only. It is the user id of the person the
   agent belongs to.
+- `onBehalfOf` is set on `agent` actors only, and is optional. It is the
+  human whose request the agent is acting on (below).
 - `name` is an optional display name. It is never part of the identity.
 
 The owner of an agent and the person who approves what it does are separate
@@ -63,6 +65,35 @@ fields on purpose:
 
 In the case this format exists for, they differ: Ana's agent asks, and Ben
 approves.
+
+**`actor.onBehalfOf`** is `{id, role}`. It records the pair an audit trail
+needs for an agent's action: the agent, and the human it acted for
+(ADR-025 D18). `owner` can't say this, because it only says whose agent it is.
+- `id` is the human's user id, an id token under the same rule as `actor.id`.
+- `role` is one of:
+  - `requester`: the human whose message started the run;
+  - `assigner`: the human who assigned the task.
+- No other key is allowed. A writer throws on an unknown role or key, and a
+  verifier reports `bad_envelope` (`actor`) for a line that has one.
+- It is allowed on `agent` actors only. Any other actor type carrying it is a
+  malformed actor.
+- It lives on the actor, never in `data`, so it covers every entry the agent
+  authors (`tool.call` and `permission.requested` included), and the pair is
+  never split across two places.
+- A run with no human behind it (a schedule, a heartbeat, an agent-to-agent
+  DM) writes no `onBehalfOf`. A writer never fills it in with the agent's
+  owner: `owner` already says whose agent it is, and `onBehalfOf` means a
+  human asked. The writer does not enforce this by comparing `id` to `owner`,
+  because the owner can really be the requester (Ana asks her own agent), and
+  that line must be accepted.
+
+Adding it kept `v: 1` (section 3, rule 3), and a line without it is
+byte-identical to one written before the field existed. Ana's agent, acting
+on a message from Ben, calls a Sentry tool:
+
+```json
+{"actor":{"id":"u-agent-ana-opencode","onBehalfOf":{"id":"u-ben","role":"requester"},"owner":"u-ana","type":"agent"},"data":{"name":"sentry.resolve_issue","surface":"connector","title":"Resolve CHECKOUT-88","toolCallId":"tc-1"},"kind":"tool.call","podId":"pod-checkout","prev":"cbe33a93d273b1ad959fb6e836995ac8c9a119921ddbcce7b785c7d63ccf2a9e","runId":"run-ana-0002","schema":"seats.record","seq":2,"taskId":"TASK-101","ts":"2026-10-25T16:01:05.000Z","v":1}
+```
 
 `actor: null` means the writer did not know who caused the entry. A reader
 must not fill it in. Each kind has a default actor (section 2), which a
@@ -256,6 +287,29 @@ request, and the OTLP export places it there.
   - A digest of low-entropy arguments can be confirmed by guessing them. It
     hides the values from a casual reader, not from someone who can guess them.
 
+**Conformance gate for writers in other languages.** Every record writer,
+in any language, must pass every vector in
+[`test/vectors/args-digest.json`](../test/vectors/args-digest.json), and a
+writer that fails it does not ship. `test/args-digest-vectors.test.js` holds
+the file to `argsDigestOf`, so the file is the definition, not a sample. The
+vectors cover:
+- key order by UTF-16 code units;
+- string escaping, with U+2028 and U+2029 written raw;
+- number formatting: `1.0` is `1`, `-0` is `0`, `1e21`, small floats, and an
+  integer past 2^53, which a writer parses as an IEEE 754 double first, so
+  `9007199254740993` on the wire is written `9007199254740992`;
+- the cases where a hand-rolled key-sorted serializer drifts: an undefined
+  value in an object drops its key, one in an array becomes `null`, and `NaN`
+  or `Infinity` anywhere means the arguments have no digest.
+
+A lone surrogate (half of a UTF-16 pair) in any string or key also means no
+digest, as RFC 8785 requires. Only the digest refuses it: a line still
+records agent text holding one, as a `\u` escape, because a stream cut
+mid-pair must not lose the chunk. On arguments that can't be digested, a
+writer omits `argsDigest` rather than writing a different digest, because a
+different digest would not match the approval the call ran under. A writer
+built in Go runs its tests with `-race` in CI.
+
 ### Credentials
 
 | kind | data | default actor |
@@ -266,6 +320,51 @@ request, and the OTLP export places it there.
 These cover the environment credentials a run is started with. Values never
 appear here: `NAME` is an environment variable name matching
 `[A-Z_][A-Z0-9_]*`.
+
+### Sandbox
+
+| kind | data | default actor |
+|---|---|---|
+| `sandbox.applied` | `{sandbox, reason?}` | `system` |
+
+- `sandbox` is the OS sandbox the run's process was started in: `seatbelt`
+  (macOS), `bwrap` (Linux), or `none`.
+- `reason` says why there was none. It is set only when `sandbox` is `none`,
+  and is a non-empty string. A writer may leave it out when it has no
+  reason to give.
+- No other field is allowed.
+- It is its own group, not part of Attempt: it records how the process was
+  confined, not what the attempt did or how it ended.
+
+### Egress
+
+A sandboxed run reaches the network only through the egress proxy, which
+admits the hosts its grant names, plus its model provider. These lines
+record what the proxy did.
+
+| kind | data | default actor |
+|---|---|---|
+| `egress.allowed` | `{host, port}`: a tunnel opened | `system` |
+| `egress.denied` | `{host, port, reason}`: a request was refused | `system` |
+
+- `host` is a lowercase DNS name, an IP literal (IPv6 without brackets), or
+  the literal string `"[redacted]"` when the requested name held one of the
+  run's credentials.
+- `port` is an integer from 1 to 65535.
+- `reason` is one of:
+  - `bad_request`: the request could not be parsed;
+  - `not_connect`: a method other than `CONNECT`;
+  - `ip_literal`: the target was an address, not a name;
+  - `not_allowed`: no grant entry names the host and port;
+  - `unresolved`: the name did not resolve;
+  - `private_address`: it resolved to a non-public address that no exact
+    entry names;
+  - `unreachable`: the connection failed.
+- `host` and `port` are `null` together, and only on a malformed request
+  (`bad_request`, or `not_connect` when the target can't be read). Every
+  other line names both.
+- No other field is allowed, so no header, body or resolved address is
+  recorded.
 
 ### Result
 
@@ -336,6 +435,10 @@ What's new or changed in `EVENT_TYPES`:
      revision.
    - The verifier checks the envelope and the chain, never data, so those
      lines still verify.
+
+   A later revision, also at `v: 1`, added the optional `actor.onBehalfOf`
+   and the kinds `sandbox.applied`, `egress.allowed` and `egress.denied`.
+   Lines without them are unchanged.
 4. **One writer per file.** A single process appends lines in `seq` order.
 
 ## 4. What the hash chain proves, and what it doesn't
@@ -387,8 +490,8 @@ operates it.
   that carried its `decisionCardId`, and otherwise on the span current at
   the time.
 - **Every other kind is an event on the span current at the time.** That
-  covers grants, credentials, claims, `task.done`, results, liveness and
-  `tool.update`.
+  covers grants, credentials, claims, `task.done`, results, liveness,
+  `sandbox.applied`, egress and `tool.update`. An egress denial is an event, not an error status.
 - **Span ids** are the first 8 bytes of
   SHA-256(`"seats.record/span/" + runId + "/" + seq`), where `seq` belongs to
   the entry that opens the span. The run span uses `0`. Exporting the same
@@ -442,10 +545,13 @@ to that commit. `error.type` is Stable.
   - these named attributes: `seats.run.id`, `seats.task.id`, `seats.pod.id`,
     `seats.run.outcome`, `seats.run.attempts`, `seats.attempt.number`,
     `seats.attempt.outcome`, `seats.adapter`, `seats.cli.name`,
-    `seats.cli.version`, `seats.agent.owner`, `seats.tool.kind`,
+    `seats.cli.version`, `seats.agent.owner`, `seats.agent.on_behalf_of.id`,
+    `seats.agent.on_behalf_of.role`, `seats.tool.kind`,
     `seats.tool.surface` and `seats.tool.args_digest`;
-  - on every event, `seats.seq` and `seats.actor.type`, `.id`, `.owner` and
-    `.name`;
+  - on every event, `seats.seq` and `seats.actor.type`, `.id`, `.owner`,
+    `.name`, `.on_behalf_of.id` and `.on_behalf_of.role`;
+  - on the tool span, `seats.actor.on_behalf_of.id` and `.role` from the
+    `tool.call` actor, so the pair sits on the action itself;
   - the event's data, flattened as `seats.<path>` with camelCase segments in
     snake_case. For example, `decidedBy` becomes `seats.decided_by`, and
     `scope.connectionId` becomes `seats.scope.connection_id`, and
