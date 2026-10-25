@@ -13,8 +13,15 @@ Only the one-time OAuth exchange stamps `oauthAuthenticatedAt` on its signed JWT
 ordinary JWT issuance and session refresh do not supply that proof. API tokens,
 device tokens and agent runtime credentials cannot call this route.
 
+The human upload endpoint is also limited to sixty requests per fifteen minutes
+per client address, ahead of authentication and multipart parsing.
+
 The endpoint is limited to ten attempts per fifteen minutes per client address.
-It refuses to remove the last human administrator.
+Administrators must hand off their role before deletion: another administrator
+must first make the deleting account a member. Concurrent admin deletion
+requests are refused without changing either account. The deletion marker is
+conditional on the account still being a non-admin, and role updates refuse a
+marked account, so a concurrent promotion and deletion cannot cross that boundary.
 
 ## Data and identity rules
 
@@ -52,13 +59,28 @@ single transaction. After re-authentication and billing cancellation, a durable
 in flight recheck the marker after saving metadata and discard their upload if
 deletion has begun or the account is gone.
 
-An `AccountDeletion` receipt retains only the opaque user id and creation time.
-The scheduler retries that identity's access revocation, chat-author redaction
-and upload cleanup every minute, including
-bytes in its namespace that have no `File` record. The receipt survives User
+An `AccountDeletion` receipt retains the opaque user id, creation time and last
+attempt time.
+A scheduler tick runs every minute under a renewable two-minute cluster lease.
+Each tick processes at most 100 receipts, ordered by the oldest attempt. Failed
+receipts also rotate to the back of the queue. One cleanup failure does not stop
+other receipts: the sweep reports their failures as an aggregate after the batch,
+with opaque receipt ids in the scheduler log. Lease expiry recovers a crashed
+worker; operations are idempotent if an expired worker finishes a late operation.
+
+Each attempt retries access revocation, chat-author redaction and upload cleanup,
+including bytes in its namespace that have no `File` record. The receipt survives User
 deletion: a late upload that fails its own cleanup is removed on a subsequent
 sweep when storage recovers. These receipts deliberately have no TTL so a delayed
 write cannot outlive its cleanup intent. They contain no profile, email or token.
+Processing progress stores only `lastSweptAt`. A busy queue can take multiple ticks to revisit a receipt.
+
+Runtime-token issuance checks both the live deletion marker and the durable
+receipt before mint/backfill and after its writes. A late write owned by the
+deleting account is revoked from all token stores before issuance refuses. An
+existing token owned by someone else is preserved. Runtime authentication also
+refuses credentials whose owner has a deletion marker or receipt, covering the
+interval before the issuer completes its post-write check.
 
 Bytes are removed before their `File` metadata. A failure in the deletion
 request's own storage or PG cleanup returns
@@ -71,7 +93,7 @@ key. This does not replace provider retention policies or remove billing audit
 records and backups.
 
 Relevant errors: `CONFIRMATION_REQUIRED` (400), `PASSWORD_REQUIRED` or
-`REAUTH_REQUIRED` (401), `BROWSER_SESSION_REQUIRED` (403), `LAST_ADMIN` (409).
+`REAUTH_REQUIRED` (401), `BROWSER_SESSION_REQUIRED` (403), `ADMIN_HANDOFF_REQUIRED` or `ACCOUNT_CHANGED` (409).
 
 ## Verification
 

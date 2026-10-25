@@ -1,3 +1,6 @@
+// These unit cases isolate runtime identity behavior. The deletion fence is
+// exercised with real models in service/accountDeletion.test.js.
+jest.mock('../../../services/accountDeletionState', () => ({ isAccountDeleting: jest.fn().mockResolvedValue(false) }));
 // agentRuntimeAuth path 2 (legacy installation-token) needs to surface ALL
 // active AgentInstallation rows for the same (agentName, instanceId), not
 // just the one whose runtimeTokens.tokenHash matches. Otherwise the /events

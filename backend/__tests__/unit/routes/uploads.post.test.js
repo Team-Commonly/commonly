@@ -72,6 +72,13 @@ describe('uploads POST / (ADR-002 Phase 1)', () => {
     expect(res.body.url).not.toMatch(/^https?:\/\//);
   });
 
+  it('limits uploads to 60 per address per fifteen minutes', async () => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await request(app).post('/api/uploads').set('cf-connecting-ip', '198.51.100.73').expect(400);
+    }
+    await request(app).post('/api/uploads').set('cf-connecting-ip', '198.51.100.73').expect(429);
+  });
+
   it('returns 400 when no file is provided', async () => {
     const res = await request(app).post('/api/uploads').expect(400);
     expect(res.body.msg).toBe('No file uploaded');

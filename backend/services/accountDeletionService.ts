@@ -1,4 +1,6 @@
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
+import SchedulerHeartbeatLease from '../models/SchedulerHeartbeatLease';
 import User from '../models/User';
 import AccountDeletion from '../models/AccountDeletion';
 import File from '../models/File';
@@ -58,16 +60,63 @@ const deleteOwnedUploads = async (userId: string): Promise<void> => {
   }
 };
 
-/** Retried by the scheduler even after the human row has been removed. */
+export const ACCOUNT_DELETION_SWEEP_BATCH = 100;
+const SWEEP_LEASE_ID = 'account-deletion-sweep';
+const SWEEP_LEASE_MS = 120_000;
+
+/** Bounded, fair retries retain intents until all late producers are fenced. */
 export const sweepAccountDeletions = async (): Promise<void> => {
-  const receipts = AccountDeletion.find().select('_id').lean().cursor();
-  for await (const receipt of receipts) {
-    const userId = String(receipt._id);
-    // Reapply revocation/redaction too: a request authenticated before deletion
-    // can finish a credential mint or profile mirror after the first scan.
-    await revokeOwnedAccess(userId);
-    await anonymizeChatAuthor(userId);
-    await deleteOwnedUploads(userId);
+  const ownerId = randomUUID();
+  const now = new Date();
+  try {
+    await SchedulerHeartbeatLease.findOneAndUpdate(
+      { _id: SWEEP_LEASE_ID, expiresAt: { $lte: now } },
+      { $set: { ownerId, expiresAt: new Date(now.getTime() + SWEEP_LEASE_MS) } },
+      { upsert: true, new: true },
+    );
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) return;
+    throw error;
+  }
+  const errors: unknown[] = [];
+  const failedIds: string[] = [];
+  try {
+    const receipts = await AccountDeletion.find().sort({ lastSweptAt: 1, _id: 1 })
+      .limit(ACCOUNT_DELETION_SWEEP_BATCH).select('_id').lean();
+    for (const receipt of receipts) {
+      // Renew between receipts. If this worker lost its lease, stop starting
+      // work; expiry recovers a crashed worker and deletes remain idempotent.
+      // eslint-disable-next-line no-await-in-loop
+      const renewed = await SchedulerHeartbeatLease.updateOne(
+        { _id: SWEEP_LEASE_ID, ownerId },
+        { $set: { expiresAt: new Date(Date.now() + SWEEP_LEASE_MS) } },
+      );
+      if (renewed.matchedCount !== 1) throw new Error('Account deletion sweep lease lost');
+      const userId = String(receipt._id);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await revokeOwnedAccess(userId);
+        // eslint-disable-next-line no-await-in-loop
+        await anonymizeChatAuthor(userId);
+        // eslint-disable-next-line no-await-in-loop
+        await deleteOwnedUploads(userId);
+      } catch (error) {
+        errors.push(error);
+        failedIds.push(userId);
+      }
+      // Rotate failed receipts too: one persistent failure cannot starve the
+      // remaining queue. Keep the intent, so every later round retries it.
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await AccountDeletion.updateOne({ _id: receipt._id }, { $set: { lastSweptAt: new Date() } });
+      } catch (error) {
+        errors.push(error);
+        failedIds.push(userId);
+      }
+    }
+    if (errors.length) throw new AggregateError(errors, `Account deletion cleanup failed: ${failedIds.join(',')}`);
+  } finally {
+    await SchedulerHeartbeatLease.deleteOne({ _id: SWEEP_LEASE_ID, ownerId });
   }
 };
 
@@ -97,8 +146,11 @@ export const deleteOwnAccount = async (
         'Sign in again with your OAuth provider, then confirm deletion within five minutes.');
     }
   }
-  if (user.role === 'admin' && await User.countDocuments({ role: 'admin', isBot: { $ne: true } }) <= 1) {
-    throw new AccountDeletionError(409, 'LAST_ADMIN', 'Assign another administrator before deleting your account.');
+  // Admins hand off their role before deleting. A separate count followed by
+  // deletion lets two admins both pass and remove the final administrators.
+  if (user.role === 'admin') {
+    throw new AccountDeletionError(409, 'ADMIN_HANDOFF_REQUIRED',
+      'Transfer administration and ask another admin to make this a member account before deleting it.');
   }
 
   // Cancel billing before destroying the linkage needed to stop future charges.
@@ -112,16 +164,19 @@ export const deleteOwnAccount = async (
 
   // Durable marker closes upload races and survives a storage failure. Keep the
   // human row until cleanup succeeds so the same re-authenticated request can retry.
-  await User.updateOne({ _id: userId }, {
+  const marked = await User.updateOne({ _id: userId, isBot: { $ne: true }, role: { $ne: 'admin' } }, {
     $set: { accountDeletionRequestedAt: new Date(), deviceTokens: [] },
     $unset: { apiToken: 1, apiTokenCreatedAt: 1, apiTokenScopes: 1 },
   });
+  if (marked.matchedCount !== 1) {
+    throw new AccountDeletionError(409, 'ACCOUNT_CHANGED', 'Your account changed. Sign in again before deleting it.');
+  }
   await AccountDeletion.updateOne({ _id: userId }, { $setOnInsert: { createdAt: new Date() } }, { upsert: true });
   await revokeOwnedAccess(userId);
 
   await deleteOwnedUploads(userId);
 
   await anonymizeChatAuthor(userId);
-  await User.deleteOne({ _id: userId, isBot: { $ne: true } });
+  await User.deleteOne({ _id: userId, isBot: { $ne: true }, role: { $ne: 'admin' } });
   disconnectUserSessionSockets(userId);
 };

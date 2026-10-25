@@ -8,6 +8,7 @@ jest.mock('../../../middleware/adminAuth', () => (_req, _res, next) => next());
 jest.mock('../../../models/User', () => ({
   find: jest.fn(),
   findById: jest.fn(),
+  findOneAndUpdate: jest.fn(),
   countDocuments: jest.fn(),
 }));
 
@@ -140,11 +141,15 @@ describe('admin users routes', () => {
       save: jest.fn().mockResolvedValue(true),
     };
     User.findById.mockResolvedValue(target);
+    User.findOneAndUpdate.mockResolvedValue({ ...target, role: 'admin' });
 
     await handler(req, res);
 
-    expect(target.role).toBe('admin');
-    expect(target.save).toHaveBeenCalledTimes(1);
+    expect(User.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: 'u2', accountDeletionRequestedAt: { $exists: false } },
+      { $set: { role: 'admin' } }, { new: true },
+    );
+    expect(target.save).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         message: 'User role updated successfully',

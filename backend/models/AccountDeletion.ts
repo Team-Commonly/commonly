@@ -6,11 +6,14 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 export interface IAccountDeletion extends Document {
   _id: Types.ObjectId;
   createdAt: Date;
+  lastSweptAt?: Date;
 }
 const schema = new Schema<IAccountDeletion>({
   _id: { type: Schema.Types.ObjectId, required: true },
   createdAt: { type: Date, default: Date.now },
+  lastSweptAt: { type: Date },
 });
+schema.index({ lastSweptAt: 1, _id: 1 });
 export default mongoose.model<IAccountDeletion>('AccountDeletion', schema);
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = exports.default; Object.assign(module.exports, exports);

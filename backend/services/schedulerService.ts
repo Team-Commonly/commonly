@@ -557,7 +557,8 @@ class SchedulerService {
           const { sweepAccountDeletions } = require('./accountDeletionService');
           await sweepAccountDeletions();
         } catch (error) {
-          const errorName = error instanceof Error ? error.name : 'Unknown error';
+          const errorName = error instanceof AggregateError ? error.message
+            : error instanceof Error ? error.name : 'Unknown error';
           console.error('[account-deletion] sweep failed:', errorName);
         }
       },

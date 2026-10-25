@@ -273,7 +273,15 @@ const handleUpload = async (
   }
 };
 
-router.post('/', auth, uploadSingle('image'), async (req: AuthReq, res: Res) => {
+const uploadRateLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+});
+
+router.post('/', uploadRateLimit, auth, uploadSingle('image'), async (req: AuthReq, res: Res) => {
   if (!req.userId) {
     res.status(401).json({ msg: 'auth required' });
     return;

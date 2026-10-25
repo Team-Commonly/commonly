@@ -1,3 +1,6 @@
+// These unit cases isolate runtime identity behavior. The deletion fence is
+// exercised with real models in service/accountDeletion.test.js.
+jest.mock('../../../services/accountDeletionState', () => ({ isAccountDeleting: jest.fn().mockResolvedValue(false) }));
 const request = require('supertest');
 const express = require('express');
 

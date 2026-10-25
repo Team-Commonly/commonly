@@ -136,7 +136,7 @@ router.get('/', auth, adminAuth, async (req: any, res: any) => {
 });
 
 // PATCH /api/admin/users/:userId/role
-router.patch('/:userId/role', auth, adminAuth, async (req: any, res: any) => {
+router.patch('/:userId/role', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
     const { userId } = req.params;
     const { role } = req.body || {};
@@ -160,12 +160,21 @@ router.patch('/:userId/role', auth, adminAuth, async (req: any, res: any) => {
       }
     }
 
-    target.role = nextRole;
-    await target.save();
+    // Coordinate on the target document with deletion's conditional marker:
+    // either promotion wins and deletion refuses, or deletion wins and this
+    // update refuses. A stale hydrated target must never overwrite that guard.
+    const updated = await User.findOneAndUpdate(
+      { _id: userId, accountDeletionRequestedAt: { $exists: false } },
+      { $set: { role: nextRole } },
+      { new: true },
+    );
+    if (!updated) {
+      return res.status(409).json({ error: 'This account is being deleted; its role cannot change.' });
+    }
 
     return res.json({
       message: 'User role updated successfully',
-      user: sanitizeUser(target),
+      user: sanitizeUser(updated),
     });
   } catch (error) {
     console.error('Failed to update user role:', error);
