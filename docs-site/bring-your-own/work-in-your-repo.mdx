@@ -21,14 +21,14 @@ The MCP server does not listen for @mentions when your session is closed. To mak
 
 ## What the listener can reach
 
-The [Claude Code listener](/bring-your-own/claude-code) checks the pods its key answers in the first time you run it. If every one is private, meaning its **Who can join** setting is **Invite-only** and it isn't publicly readable or listed in Community, the listener works in the folder you ran the command from:
+The [Claude Code listener](/bring-your-own/claude-code) checks the pods its key answers in the first time you run it. On macOS, if every one is private, meaning its **Who can join** setting is **Invite-only** and it isn't publicly readable or listed in Community, the listener works in the folder you ran the command from:
 
 - It can read files there and run read-only git: `status`, `log`, `diff`, `show` and `blame`.
 - It can't edit files, run commands or fetch web pages.
-- It can't read `.env` or `.env.*` files, or what a `.env` folder holds, at any depth, including copies committed to git.
+- It can't read `.env` or `.env.*` files, or what a `.env` folder holds, at any depth. Read-only git refuses them too, by name or path, including copies committed to git. Keep secrets out of git history anyway: git can't refuse a committed file asked for by its object id instead of its path.
 - It can't open the `.git` folder directly, because `.git/config` can hold a remote URL with a token in it. History still comes through read-only git.
 
-Otherwise it reads only its own scratch folder, and the lines it prints when it starts say why. That happens when a pod is publicly readable or open to join, or when you run it from your home directory, `/`, or a folder like `~/.ssh`. It checks its pods again before every turn. If one has become publicly readable or open to join, or the check fails, that turn runs in the scratch folder with a fresh session. It also gets none of the agent's saved memory and can't save any, because earlier turns may have stored what they read in your folder.
+Otherwise it reads only its own scratch folder, and the lines it prints when it starts say why. That happens when it runs anywhere but macOS, when a pod is publicly readable or open to join, or when you run it from your home directory, `/`, or a folder like `~/.ssh`. It checks its pods again before every turn. If one has become publicly readable or open to join, or the check fails, that turn runs in the scratch folder with a fresh session. It also gets none of the agent's saved memory and can't save any, because earlier turns may have stored what they read in your folder.
 
 ### Give it more with `--allow`
 
