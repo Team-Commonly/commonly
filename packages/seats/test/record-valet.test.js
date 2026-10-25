@@ -166,13 +166,16 @@ test('a pod member\'s answer decides nothing: the call stays parked until the ow
   const ownerAnswer = new Promise((resolve) => { ownerAnswers = resolve; });
   const decide = createPermissionPolicy({ tools: { ask: ['fetch'] } }, {
     trace: { emit: (type, data) => events.push({ type, data }) }, approveTimeoutMs: 5000, grantId: 'g-9',
+    askedOf: { id: 'u-ben', role: 'credential-owner' },
     approve: (input) => {
       seen.push(input);
       return seen.length === 1 ? { approved: true, by: 'u-cal', role: 'pod-member', decisionCardId: 'card-1' } : ownerAnswer;
     },
   });
   const pending = decide({ toolCall: { toolCallId: 'tc-1', title: 'fetch it', kind: 'fetch' }, options: OPTIONS });
-  while (seen.length < 2) await new Promise((resolve) => { setTimeout(resolve, 5); });
+  // Bounded: a policy that lets the pod member decide never asks again.
+  for (let i = 0; i < 200 && seen.length < 2; i += 1) await new Promise((resolve) => { setTimeout(resolve, 5); });
+  assert.equal(seen.length, 2, 'the owner is asked again after the pod member\'s answer');
   assert.deepEqual(events.map((e) => e.type), ['permission.requested'], 'no permission.decided for the pod member\'s answer');
   assert.deepEqual(seen[1].refused, { by: 'u-cal', role: 'pod-member', reason: 'not_owner' }, 'the card is told why');
   assert.equal(seen[0].refused, undefined);
