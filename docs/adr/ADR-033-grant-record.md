@@ -6,7 +6,7 @@ neither Proposed nor Accepted settles them:**
 cards by any human pod member. The spec reserves `decidedByRole: decision-owner` and forbids writers
 from emitting it. Who "owns a decision" stays undefined until TASK-512 lands and is walked.
 (2) **Who writes `commonly_*` calls.** The spec defines `tool.call {surface: commonly}`, and the
-Moonjelly runner writes it for a local seat. Nothing on the server records `commonly_*` calls
+seat runner writes it for a local seat. Nothing on the server records `commonly_*` calls
 (`tool_calls` requires a grant), so "every call is in the record" doesn't hold until TASK-513 ships a
 server writer and someone other than its author walks it.
 
@@ -67,7 +67,7 @@ Today that record exists in five pieces with different id spaces that don't link
 ## 2. Decision
 
 **D1. One record, defined once.** Commonly's grants, tasks, approvals and decision cards emit
-`seats.record` lines exactly as record-v1 defines them. It is the same format the Moonjelly runner
+`seats.record` lines exactly as record-v1 defines them. It is the same format the seat runner
 writes for local runs, so one reader opens a local seat's run and the room's server-side history
 alike.
 
@@ -94,11 +94,13 @@ written by the board (`actor {type: system, id: board}`).
   actor. `decidedByRole` is never `null` (the format refuses it) and never `decision-owner` (reserved).
   A ruler who owns the asking agent is `agent-owner`; **any other member is `pod-member`** (CTO
   ruling, 2026-10-25). `pod-member` is valid only on `decision.ruled`: a `permission.decided` line
-  carrying it is refused, so parked calls stay owner-only. record-v1 at `50437c91` doesn't have the
-  value yet (`DECIDED_BY_ROLES` in `src/record/format.js` is `credential-owner`, `decision-owner`,
-  `agent-owner`, `policy`); it is being added on `feat/moonjelly-record` as an additive enum value,
-  which keeps `v: 1` (spec §3 rule 3). This writer goes live once that commit lands (open
-  question 8).
+  carrying it is refused, so parked calls stay owner-only. record-v1 gains the value at `fb686d4f`
+  on `feat/jellymoon-record` (`DECIDED_BY_ROLES` in `src/record/format.js`), as an additive enum
+  value that keeps `v: 1` (spec §3 rule 3). The same commits close the null cases: `decidedBy` and
+  `decidedByRole` are required on both decision kinds and a writer refuses `null`; `decidedBy` is
+  `"policy"` exactly when the role is `policy`; and an answer that names no owner is recorded as
+  `approval: failed`, decided by policy, so it approves nothing. This writer goes live once that
+  branch merges (open question 8).
 
 **R1. Redact forwarding is a launch blocker.** Agent-authored text (message chunks, tool titles, and
 the `question` of `permission.requested`, which is normally the tool call's title) is scrubbed only of
@@ -121,7 +123,7 @@ path may treat the absence of `grant.revoked` as "still usable", or its presence
 lost access (spec §2, "What revocation means in v1": an environment credential lasts until the
 process exits).
 
-## 3. The record (summary of record-v1 at `50437c91`)
+## 3. The record (summary of record-v1 at `fb686d4f`)
 
 **Envelope (spec §1).** One RFC 8785 (JCS) canonical JSON object per line, `\n`-terminated. A
 verifier rejects a non-canonical line. An absent field is omitted, never written as `null`; `actor`
@@ -168,8 +170,8 @@ and a writer whose trigger has no human omits it.
 | `grant.issued` | `{grantId, parentGrantId?, scope, target?, issuedBy?, expiresAt?, binding?}`; `scope = {connectionId?, tools: [exact name], writeMode?: read\|write\|write-with-confirm, budget?: {calls?, windowMs?}, audience: [userId]}`; `target = {kind: pod\|seat, id}`; `issuedBy` = user id or `policy`; `binding = {taskId, podId, endsOn: task.done\|expiresAt}`, which must match the run's own `taskId`/`podId`, with `expiresAt` required when `endsOn: expiresAt` | from `issuedBy` |
 | `grant.revoked` | `{grantIds: [grantId…], reason}`; reason `task.done`, `expired`, `cascade` (`grantIds[0]` is the revoked ancestor), or `manual`. In a hosted pod, server writers (TASK-513) supply `expired` and `cascade`. | `system` |
 | `permission.requested` | `{toolCallId?, options: [{optionId, kind}], question, askedOf: {id, role}, grantId?, decisionCardId?, argsDigest?}`. `question` and `askedOf` are required. `askedOf.id` is an id token and `askedOf.role` is from the `decidedByRole` enum. A call that a rule decides, with no person asked, is asked of the policy: `{id: "grant:<grantId>", role: "policy"}`. | run |
-| `permission.decided` | `{outcome: selected\|cancelled, optionId?, kind?, toolCallId, rule: {list: allow\|ask\|deny\|default, pattern}, approval?: approved\|rejected\|timed_out\|failed\|aborted, decidedBy: userId\|"policy"\|null, decidedByRole: credential-owner\|decision-owner (reserved)\|agent-owner\|policy\|null, decisionCardId?, grantId?, argsDigest?}` | the decider |
-| `decision.ruled` | `{decisionCardId, value, decidedBy, decidedByRole}`. A ruling on a card **not** tied to a parked tool call. `value` is a string, number or boolean. `decidedBy` is a user id or `"policy"`, and both it and `decidedByRole` are required. | the decider |
+| `permission.decided` | `{outcome: selected\|cancelled, optionId?, kind?, toolCallId, rule: {list: allow\|ask\|deny\|default, pattern}, approval?: approved\|rejected\|timed_out\|failed\|aborted, decidedBy: userId\|"policy", decidedByRole: credential-owner\|decision-owner (reserved)\|agent-owner\|policy, decisionCardId?, grantId?, argsDigest?}` | the decider |
+| `decision.ruled` | `{decisionCardId, value, decidedBy, decidedByRole}`. A ruling on a card **not** tied to a parked tool call. `value` is a string, number or boolean. `decidedBy` is a user id or `"policy"`, and both it and `decidedByRole` are required; `pod-member` is valid here only. | the decider |
 | `attempt.started` | `{attempt, adapter, cli?: {name, version}, sessionId?}` | run |
 | `attempt.settled` | `{attempt, outcome: ok\|failed\|stuck\|cancelled, failure?: {kind, detail}}` | `system` |
 | `run.settled` | `{outcome, failure?, durationMs, attempts}`. Last line. | `system` |
@@ -234,7 +236,7 @@ semantic-conventions-genai `9ffc7e00` (Development status); `argsDigest` exports
 | `chooseDecision` on any other card | `DecisionRequest.ruling` | `decision.ruled {decisionCardId, value: ruling.value, decidedBy: ruling.byUserId, decidedByRole}`, actor = the ruling human (D5). Every ruling by a member who may rule writes a line. `decidedByRole` is `agent-owner` when the ruler owns the asking agent, otherwise `pod-member` (D5; valid on `decision.ruled` only). Never `null`, never `decision-owner`. |
 | Native runtime (`AgentRun`) | AgentRun subdocs | `attempt.started/settled`, `tool.call {surface: native}`, `run.settled` |
 | `commonly_*` calls (CAP via MCP) | **not recorded anywhere server-side** | `tool.call {surface: commonly}` (TASK-513) |
-| Moonjelly runner (local seat) | its own JSONL (the spec's reference writer) | everything in the spec |
+| seat runner (local seat) | its own JSONL (the spec's reference writer) | everything in the spec |
 
 A rule-decided call is written with a `permission.requested` asked of the grant's policy, as the
 spec's sample does for a denied `git push` and an allowed `commonly_post_message`. That keeps one
