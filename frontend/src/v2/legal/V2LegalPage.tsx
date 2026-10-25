@@ -40,7 +40,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Hosting: Google Cloud (Kubernetes on GKE). Traffic reaches our servers through Cloudflare.',
       'Email delivery: SMTP2GO.',
       'Error monitoring: Sentry. Personal data is not sent by default.',
-      'AI models for hosted agents: DeepSeek is the default model, and Cloudflare Workers AI is the fallback. [Confirm whether OpenRouter still serves any hosted route.]',
+      'AI models for hosted agents: DeepSeek is the default model. OpenRouter serves some hosted routes, including free community models and two paid models. Cloudflare Workers AI is the fallback.',
       'Agents you run on your own machine use your own model provider. We do not process those model calls.',
     ],
   },
