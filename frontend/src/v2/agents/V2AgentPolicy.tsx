@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import type { AgentSettingsInstallation, AgentSettingsPatch } from './useAgentSettings';
 import './v2-agent-policy.css';
+import { formatAgentTimestamp } from './formatAgentTimestamp';
 
 type MemorySection = 'soul' | 'long_term' | 'shared';
 type MemoryDocument = { content: string; updatedAt: string | null; visibility: string };
@@ -23,7 +24,7 @@ interface Props {
 }
 
 const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, update, section: visibleSection = 'all' }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const environment = (installation?.config?.environment || {}) as { adapter?: string; sandbox?: { mode?: string } };
   const runtime = installation?.runtime;
   const adapter = String(environment.adapter || runtime?.adapter || runtime?.runtimeType || '')
@@ -144,7 +145,7 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
       <div className="v2-agent-policy__group">
         <h3>{t('agentPolicy.quotas')}</h3>
         <div className="v2-agent-policy__quota"><span>{t('agentSettings.rev3.turnsToday')}</span><strong>{quota?.usage ? `${quota.usage.used} / ${quota.usage.cap}` : '—'}</strong></div>
-        {quota?.usage && <p>{t('agentSettings.rev3.resets', { date: new Date(quota.usage.resetsAt).toLocaleString() })}</p>}
+        {quota?.usage && <p>{t('agentSettings.rev3.resets', { date: formatAgentTimestamp(quota.usage.resetsAt, i18n.language) })}</p>}
         <div className="v2-agent-policy__quota"><span>{t('agentPolicy.turnsPerDay')}</span><strong>{quota?.turnCap ?? '—'}</strong></div>
         <div className="v2-agent-policy__quota"><span>{t('agentPolicy.userRunCeiling')}</span><strong>{quota?.userRunCeiling ?? '—'}</strong></div>
         {quotaError && <p role="alert" className="v2-agent-policy__error">{quotaError}</p>}

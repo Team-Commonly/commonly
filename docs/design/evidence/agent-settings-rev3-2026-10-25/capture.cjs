@@ -50,6 +50,15 @@ for(const lang of ['en','zh-CN']) for(const kind of (toolsProof?['byo','hosted',
  await page.locator('.v2-agent-settings').evaluate(el=>el.closest('.v2-feature__body').scrollTop=0);
  await page.screenshot({path:`${outDir}/${lang}-${kind}-${width}.png`,fullPage:true});
  console.log(lang,kind,width,JSON.stringify({errors,overflow:await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),h2:await page.locator('h2').allTextContents()}));
+ if(kind!=='never' && kind!=='scout') {
+ const usage=page.getByRole('heading',{name:lang==='en'?'Usage':'用量',exact:true}).locator('..');
+ if(kind==='hosted') {
+ await usage.getByText(lang==='en'?'Owner’s daily limit, all agents':'所有者全部智能体的每日运行上限',{exact:true}).waitFor();
+ const date=await page.evaluate(lang=>new Date('2026-10-26T00:00:00Z').toLocaleString(lang,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}),lang);
+ await usage.getByText(`${lang==='en'?'Resets':'重置时间'} ${date}`,{exact:true}).waitFor();
+ }
+ await usage.screenshot({path:`${outDir}/${lang}-${kind}-usage-${width}.png`});
+ }
  if(toolsProof) {
  if(kind!=='hosted') {
  await page.locator('.v2-agent-runtime-grants').getByRole('button',{name:lang==='en'?'Revoke':'撤销',exact:true}).click();

@@ -2760,7 +2760,7 @@
     "retry": "Try again",
     "quotas": "Quotas",
     "turnsPerDay": "Hosted turns per day",
-    "userRunCeiling": "Runs per day",
+    "userRunCeiling": "Owner’s daily limit, all agents",
     "loadError": "Could not load policy data.",
     "saveError": "Could not save changes.",
     "saved": "Saved"

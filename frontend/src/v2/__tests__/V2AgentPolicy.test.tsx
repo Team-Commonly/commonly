@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import i18n from '../../i18n';
 import V2AgentPolicy from '../agents/V2AgentPolicy';
 
 jest.mock('axios', () => {
@@ -74,7 +75,7 @@ it('writes only the chosen trust mode and edits memory with its revision', async
 it('shows server quota for hosted agents without editable trust controls', async () => {
   renderPolicy({ ...installation, runtime: { runtimeType: 'hosted' } });
   expect(await screen.findByText('Hosted turns per day')).toBeInTheDocument();
-  expect(screen.getByText('Runs per day')).toBeInTheDocument();
+  expect(screen.getByText('Owner’s daily limit, all agents')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Save trust mode' })).not.toBeInTheDocument();
 });
 
@@ -96,4 +97,25 @@ it('shows a retry in Memory when loading fails, then opens the editor', async ()
     : Promise.resolve({ data: { turnCap: 30, userRunCeiling: 120 } }));
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   expect(await screen.findByDisplayValue('Original')).toBeInTheDocument();
+});
+
+
+it.each(['en', 'zh-CN'])('uses the app language for Usage resets (%s)', async (language) => {
+  await i18n.changeLanguage(language);
+  const resetsAt = '2026-10-26T00:00:00Z';
+  axios.get.mockImplementation((url) => url.endsWith('/editable')
+    ? Promise.resolve({ data: { sections: docs() } })
+    : Promise.resolve({ data: { turnCap: 30, userRunCeiling: 120, usage: { used: 12, cap: 30, resetsAt } } }));
+  const view = render(<V2AgentPolicy agentName="maya-claude" instanceId="machine-1"
+    installation={{ ...installation, runtime: { runtimeType: 'hosted' } }} update={update} section="usage" />);
+  try {
+    const date = new Date(resetsAt).toLocaleString(language, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+    expect(await screen.findByText(`${language === 'en' ? 'Resets' : '重置时间'} ${date}`)).toBeInTheDocument();
+    expect(screen.getByText(language === 'en' ? 'Owner’s daily limit, all agents' : '所有者全部智能体的每日运行上限')).toBeInTheDocument();
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage('en');
+  }
 });

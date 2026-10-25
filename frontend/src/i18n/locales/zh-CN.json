@@ -2751,7 +2751,7 @@
     "retry": "重试",
     "quotas": "配额",
     "turnsPerDay": "托管运行次数／天",
-    "userRunCeiling": "运行次数／天",
+    "userRunCeiling": "所有者全部智能体的每日运行上限",
     "loadError": "无法加载策略数据。",
     "saveError": "无法保存更改。",
     "saved": "已保存"
