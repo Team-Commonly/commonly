@@ -1,37 +1,18 @@
-/* eslint-disable import/no-unresolved, import/extensions */
-jest.mock('fs');
-// The unit under test is initializeDatabase; its pool dependency is stubbed. This
-// suite previously reached for a REAL Pool object, which existed only because
-// setup.js left PG_HOST as the truthy string 'undefined' and db-pg.ts:75 built a
-// Pool for that host — so it broke the moment the harness stopped lying about the
-// host, not because initializeDatabase changed (TASK-128).
+/* eslint-disable import/no-unresolved, import/extensions -- TypeScript modules expose CJS exports. */
 jest.mock('../../../config/db-pg', () => ({ pool: { connect: jest.fn() } }));
-const fs = require('fs');
+jest.mock('../../../config/run-pg-migrations', () => ({ runPgMigrations: jest.fn() }));
 const { pool } = require('../../../config/db-pg');
+const { runPgMigrations } = require('../../../config/run-pg-migrations');
+const initialize = require('../../../config/init-pg-db');
 
-delete require.cache[require.resolve('../../../config/init-pg-db')];
-const initDb = require('../../../config/init-pg-db');
+it('reports ready only after all pending migrations complete', async () => {
+  runPgMigrations.mockResolvedValue(['0001_legacy_schema.sql']);
+  expect(await initialize()).toBe(true);
+  expect(runPgMigrations).toHaveBeenCalledWith(pool);
+});
 
-describe('initializeDatabase', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('executes schema when file exists', async () => {
-    fs.existsSync.mockReturnValue(true);
-    fs.readFileSync.mockReturnValue('SQL');
-    const client = { query: jest.fn(), release: jest.fn() };
-    pool.connect = jest.fn().mockResolvedValue(client);
-    const result = await initDb();
-    expect(client.query).toHaveBeenCalledWith('SQL');
-    expect(result).toBe(true);
-  });
-
-  it('returns false when schema file missing', async () => {
-    fs.existsSync.mockReturnValue(false);
-    const client = { release: jest.fn() };
-    pool.connect = jest.fn().mockResolvedValue(client);
-    const result = await initDb();
-    expect(result).toBe(false);
-  });
+it('keeps boot unready on migration failure and can retry', async () => {
+  runPgMigrations.mockRejectedValueOnce(new Error('bad migration')).mockResolvedValueOnce([]);
+  expect(await initialize()).toBe(false);
+  expect(await initialize()).toBe(true);
 });

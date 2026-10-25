@@ -88,6 +88,14 @@ agentProvisioning:
 backend:
   enabled: true
   replicaCount: 1
+  worker:
+    # Opt in only when a dedicated worker can replace web's background jobs.
+    enabled: false
+    # Enabling the worker first disables web jobs but keeps worker replicas at
+    # zero. After old web pods terminate, set this false to start the worker.
+    startPaused: true
+    nodeSelector: {}
+    tolerations: []
   image:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
     tag: latest
@@ -447,11 +455,11 @@ discord:
 email:
   enabled: true
 
-# Shared GitHub PAT for agent git operations (api-keys -> GITHUB_PAT). On (default)
-# for prod/dev. Off (staging) omits the ref entirely, so the reckless,
-# auto-deploy-every-merge lane holds no credential with write power over prod
-# repos. The backend reads GITHUB_PAT lazily and degrades (GitHub routes report
-# not-configured) rather than crashing when it is absent.
+# Shared GitHub PAT (api-keys -> GITHUB_PAT), now consumed only by the clawdbot
+# gateway (retires with ADR-021). The backend, ops-runner and cloud-codex no longer
+# read it: backend GitHub calls use GitHub App installation tokens. On (default)
+# for prod/dev. Off (staging) omits the ref entirely, so the auto-deploy-every-merge
+# lane holds no credential with write power over prod repos.
 githubPat:
   enabled: true
 

@@ -1,3 +1,5 @@
+jest.mock('../../../models/Message', () => ({ find: jest.fn() }));
+
 jest.mock('../../../models/pg/Message', () => ({ findByPodId: jest.fn() }));
 
 const PGMessage = require('../../../models/pg/Message');
@@ -28,4 +30,17 @@ describe('ActivityService.getMessageActivities', () => {
       flags: expect.objectContaining({ isAgentAction: true }),
     })]);
   });
+});
+
+const MongoMessage = require('../../../models/Message');
+test('Activity excludes system action rows before its PG and Mongo fetch limits', async () => {
+  PGMessage.findByPodId.mockResolvedValue([]);
+  const lean = jest.fn().mockResolvedValue([]);
+  const populate = jest.fn().mockReturnValue({ lean });
+  const limit = jest.fn().mockReturnValue({ populate });
+  MongoMessage.find.mockReturnValue({ sort: () => ({ limit }) });
+  await ActivityService.getMessageActivities(['pod-1'], new Map(), { limit: 1 });
+  expect(PGMessage.findByPodId).toHaveBeenCalledWith('pod-1', 1, null, null, { excludeSystemActions: true });
+  expect(MongoMessage.find).toHaveBeenCalledWith({ podId: { $in: ['pod-1'] }, $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }] });
+  expect(limit).toHaveBeenCalledWith(1);
 });

@@ -764,6 +764,69 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].args[calls[0].args.length - 1]).not.toContain('=== Fresh session ===');
   });
 
+  // D48 (TASK-545). Codex has no subagent tool, so it is taught row slicing
+  // and not parallel reads; claude.js carries that half.
+  test('a fresh private Codex seat is taught row slicing alone', async () => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
+      outputContents: 'ok',
+    });
+    await codex.spawn('current message', { environment: { model: 'test-model' },
+      sessionId: null,
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    const promptArg = calls[0].args[calls[0].args.length - 1];
+    expect(promptArg).toContain('=== Working a row ===');
+    expect(promptArg).toContain('commonly_create_task with parentTask');
+    expect(promptArg).not.toContain('Agent tool');
+  });
+
+  test('a resumed Codex seat is not re-taught row slicing', async () => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
+      outputContents: 'ok',
+    });
+    await codex.spawn('current message', { environment: { model: 'test-model' },
+      sessionId: 'sid-1',
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    expect(calls[0].args[calls[0].args.length - 1]).not.toContain('=== Working a row ===');
+  });
+
+  // The legacy `internal` record reads as public, so it is held to the same line.
+  test.each(['public', 'internal'])('a fresh trust=%s Codex seat is not taught row slicing', async (trust) => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    const publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-public-home-'));
+    try {
+      await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+      const { impl, calls } = makeSpawnImpl({
+        stdoutChunks: ['{"type":"thread.started","thread_id":"sid-public"}\n'],
+        outputContents: 'ok',
+      });
+      await codex.spawn('current message', {
+        sessionId: null,
+        cwd: '/tmp/public-agent-workspace',
+        environment: { model: 'test-model', sandbox: { trust } },
+        env: { ...process.env, CODEX_HOME: operatorHome },
+        agentName: 'public-work-cue-agent',
+        memoryLongTerm: 'open gate: #123',
+        _publicCodexHome: publicHome,
+        _spawnImpl: impl,
+      });
+
+      const promptArg = calls[0].args[calls[0].args.length - 1];
+      expect(promptArg).toContain('=== Fresh session ===');
+      expect(promptArg).not.toContain('=== Working a row ===');
+    } finally {
+      await rm(operatorHome, { recursive: true, force: true });
+      await rm(publicHome, { recursive: true, force: true });
+    }
+  });
+
   // Same swap as the claude adapter: both delegate to `buildMemoryPreamble`, so
   // the empty case is a cue rather than a bare prompt. Pinned on both adapters
   // deliberately — a shared helper is only shared until someone re-inlines one.

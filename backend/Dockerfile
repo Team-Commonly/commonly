@@ -49,6 +49,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     officecli --version && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Parse stored agent cards locally; never send install/runtime telemetry.
+ENV OPENUI_TELEMETRY_DISABLED=1
+
 COPY package*.json ./
 
 # Install all dependencies including dev dependencies
@@ -57,10 +60,9 @@ RUN npm install --include=dev
 COPY . .
 
 # Compile TypeScript to dist/
-RUN npx tsc -p tsconfig.build.json
+RUN npm run build
 
 # Copy non-JS assets that tsc doesn't copy
-RUN cp config/schema.sql dist/config/schema.sql
 RUN cp -r external dist/external 2>/dev/null || true
 
 EXPOSE 5000

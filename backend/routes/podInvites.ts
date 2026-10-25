@@ -14,7 +14,8 @@ import { assertInstalledAgentMayJoinPod } from '../services/outsiderGrantAgentJo
 const router = express.Router();
 const auth = require('../middleware/auth');
 const Pod = require('../models/Pod');
-const { PodInvite } = require('../models/PodInvite');
+const { PodInvite, INVITE_SOURCES } = require('../models/PodInvite');
+const { HUMAN_FILTER, internalAccountExclusion } = require('../services/userClassification');
 
 const getUserId = (req: any) => req.userId || req.user?.id || req.user?._id;
 
@@ -65,6 +66,16 @@ router.post('/pods/:podId/invites', inviteWriteRateLimit, auth, async (req: any,
       return res.status(403).json({ msg: 'Only pod members can create invites' });
     }
     const { expiresInHours, maxUses } = req.body || {};
+    // Attribution is optional telemetry. Old clients still mint the same link.
+    // Source is a closed UI label; the cohort is always read from User.
+    const source = INVITE_SOURCES.find((candidate: string) => candidate === req.body?.source) || 'pod-menu';
+    let inviterFirstSessionAt: Date | undefined;
+    try {
+      const inviter = await User.findById(userId).select('onboarding.podOpenedAt').lean();
+      inviterFirstSessionAt = inviter?.onboarding?.podOpenedAt || undefined;
+    } catch (error) {
+      console.warn('[invite-funnel] cohort read failed:', (error as Error).message);
+    }
     const token = crypto.randomBytes(16).toString('hex');
     const expiresAt = expiresInHours && Number(expiresInHours) > 0
       ? new Date(Date.now() + Number(expiresInHours) * 3600 * 1000)
@@ -73,6 +84,8 @@ router.post('/pods/:podId/invites', inviteWriteRateLimit, auth, async (req: any,
       token,
       podId: pod._id,
       createdBy: userId,
+      source,
+      ...(inviterFirstSessionAt ? { inviterFirstSessionAt } : {}),
       expiresAt,
       maxUses: maxUses && Number(maxUses) > 0 ? Number(maxUses) : null,
     });
@@ -117,6 +130,7 @@ router.get('/pods/:podId/invites', inviteReadRateLimit, auth, async (req: any, r
       expiresAt: invite.expiresAt,
       maxUses: invite.maxUses,
       uses: Number(invite.useCount) || 0,
+      source: invite.source || null,
     })));
   } catch (err: any) {
     console.error('List invites failed:', err.message);
@@ -268,6 +282,22 @@ router.post('/invites/:token/redeem', inviteWriteRateLimit, auth, async (req: an
       pod.members.push(userId);
       pod.updatedAt = new Date();
       await pod.save();
+      // A token use by its author, an existing member, a bot or an internal
+      // account is not the outside team's second-person conversion.
+      if (String(invite.createdBy) !== String(userId)) {
+        try {
+          const outsidePerson = await User.exists({
+            _id: userId, ...HUMAN_FILTER, ...internalAccountExclusion(),
+          });
+          if (outsidePerson) await PodInvite.updateOne({
+            _id: invite._id, firstTeammateJoinedAt: { $exists: false },
+          }, { $set: { firstTeammateJoinedAt: new Date() } });
+        } catch (error) {
+          // Membership has already been committed. Telemetry cannot undo a
+          // successful join or turn it into a misleading client error.
+          console.warn('[invite-funnel] conversion write failed:', (error as Error).message);
+        }
+      }
     }
     invite.useCount += 1;
     invite.lastUsedAt = new Date();

@@ -267,6 +267,37 @@ class ToolCall {
     );
   }
 
+  /** Only server-recorded references from an already-authorized run. */
+  static async listRunReferences(podId: string, callIds: string[]): Promise<Array<{
+    callId: string; grantId: string; credentialOwnerId: string | null;
+    outcome: string; tool: string; at: Date; durationMs: number | null;
+  }>> {
+    if (!callIds.length) return [];
+    const db = await ensureTables();
+    const ids = [...new Set(callIds)].slice(0, 8192);
+    const placeholders = ids.map((_id, index) => `$${index + 2}`).join(', ');
+    const result = await db.query(
+      `SELECT tc.call_id, tc.grant_id, tc.credential_owner_id, tc.tool,
+              tc.occurred_at, tc.duration_ms,
+              CASE WHEN tc.outcome = 'pending_approval' AND resolved.approval_id IS NOT NULL
+                   THEN 'superseded' ELSE tc.outcome END AS effective_outcome
+         FROM tool_calls tc
+         LEFT JOIN (SELECT DISTINCT grant_id, approval_id FROM tool_calls
+                     WHERE pod_id = $1 AND outcome <> 'pending_approval'
+                       AND approval_id IS NOT NULL) resolved
+           ON resolved.grant_id = tc.grant_id AND resolved.approval_id = tc.approval_id
+        WHERE tc.pod_id = $1 AND tc.call_id IN (${placeholders})`,
+      [podId, ...ids],
+    );
+    return result.rows.map((row) => ({
+      callId: String(row.call_id), grantId: String(row.grant_id),
+      credentialOwnerId: row.credential_owner_id ? String(row.credential_owner_id) : null,
+      outcome: String(row.effective_outcome), tool: String(row.tool),
+      at: new Date(String(row.occurred_at)),
+      durationMs: row.duration_ms == null ? null : Number(row.duration_ms),
+    }));
+  }
+
   static async listForGrant(grantId: string, limit = 100): Promise<ToolCallListRecord[]> {
     const db = await ensureTables();
     const result = await db.query(

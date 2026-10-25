@@ -4,6 +4,13 @@
 // that carries an `apiBase` and assert the request still goes to the official
 // host, which is where the row's access token is sent.
 jest.mock('axios', () => ({ get: jest.fn(), post: jest.fn() }));
+// The row holds a ref to its token (`services/feedCredentials`); resolve it to
+// a fixed value so the assertion below can see where the token is sent.
+jest.mock('../../../services/feedCredentials', () => ({
+  ...jest.requireActual('../../../services/feedCredentials'),
+  readFeedAccessToken: jest.fn(async (config) => (config?.feedAccessTokenRef ? 'row-token' : undefined)),
+  readFeedRefreshToken: jest.fn(async () => undefined),
+}));
 
 const axios = require('axios');
 const createXProvider = require('../../../integrations/providers/xProvider');
@@ -32,7 +39,7 @@ describe('social providers take the API base from the instance, not the row', ()
     axios.get.mockResolvedValue({ data: {} });
     const provider = createXProvider({
       _id: 'integration-x',
-      config: { accessToken: 'row-token', username: 'acme', apiBase: ROW_API_BASE },
+      config: { feedAccessTokenRef: 'ref-row-token', username: 'acme', apiBase: ROW_API_BASE },
     });
 
     await provider.syncRecent({}).catch(() => {});
@@ -49,7 +56,7 @@ describe('social providers take the API base from the instance, not the row', ()
     axios.get.mockResolvedValue({ data: {} });
     const provider = createXProvider({
       _id: 'integration-x',
-      config: { accessToken: 'row-token', username: 'acme', apiBase: ROW_API_BASE },
+      config: { feedAccessTokenRef: 'ref-row-token', username: 'acme', apiBase: ROW_API_BASE },
     });
 
     await provider.syncRecent({}).catch(() => {});
@@ -61,7 +68,7 @@ describe('social providers take the API base from the instance, not the row', ()
     axios.get.mockResolvedValue({ data: { data: [] } });
     const provider = createInstagramProvider({
       _id: 'integration-ig',
-      config: { accessToken: 'row-token', igUserId: '1789', apiBase: ROW_API_BASE },
+      config: { feedAccessTokenRef: 'ref-row-token', igUserId: '1789', apiBase: ROW_API_BASE },
     });
 
     await provider.syncRecent({}).catch(() => {});

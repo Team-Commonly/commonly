@@ -104,6 +104,9 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   // cannot un-revoke anything, but it does decide where a person is sent to
   // revoke by hand — a body that could write it would repoint that.
   'revokePage',
+  // The X / Instagram feed refs. Only `services/feedCredentials` writes them; a
+  // body that supplied one would point its row at another row's secret.
+  'feedAccessTokenRef', 'feedRefreshTokenRef',
 ];
 
 export const isServerOwnedConfigKey = (key: string): boolean => SERVER_OWNED_CONFIG_KEYS.includes(key);

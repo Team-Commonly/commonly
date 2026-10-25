@@ -1,3 +1,4 @@
+import { boundAgentRun } from '../services/agentRunLimits';
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 /**
@@ -78,6 +79,9 @@ export interface IAgentRun extends Document {
   triggerEventId?: Types.ObjectId;
   status: AgentRunStatus;
   turns: IAgentRunTurn[];
+  traceTruncated?: boolean;
+  omittedTurns?: number;
+  omittedToolCalls?: number;
   totalTokens: number;
   /** Seconds the turn's run-code sandbox ran (TASK-266); absent when no code ran. */
   sandboxSeconds?: number;
@@ -150,6 +154,9 @@ const AgentRunSchema = new Schema<IAgentRun>(
       default: 'queued',
     },
     turns: { type: [AgentRunTurnSchema], default: [] },
+    traceTruncated: { type: Boolean },
+    omittedTurns: { type: Number },
+    omittedToolCalls: { type: Number },
     totalTokens: { type: Number, default: 0 },
     sandboxSeconds: { type: Number },
     webSearches: { type: Number },
@@ -166,6 +173,12 @@ const AgentRunSchema = new Schema<IAgentRun>(
   },
   { timestamps: true },
 );
+
+// Bound every document save, including writers outside the native loop.
+AgentRunSchema.pre('validate', function capTrace() {
+  const bounded = boundAgentRun(this.toObject());
+  this.set(bounded);
+});
 
 AgentRunSchema.index({ podId: 1, agentName: 1, instanceId: 1, startedAt: -1 });
 // The per-user ceiling's count (D5) — sparse: only stamped rows carry userId.

@@ -224,7 +224,7 @@ describe('a provider content refusal', () => {
     expect(run.acks()).toEqual([{ id: 'evt-poison', result: REFUSED_ACK('vera') }]);
     const retries = run.errors.filter((e) => e.code === 'agent_spawn_retry_scheduled');
     expect(retries).toHaveLength(1);
-    expect(retries[0].message).toContain('1 events remain unacked');
+    expect(retries[0].message).toContain('retrying 1 held event in 5s');
     expect(retries[0].failureClass).toBe('runtime');
     // First failure of a streak: the ordinary first retry, not the circuit.
     expect(run.scheduled[0].delayMs).toBe(5000);
@@ -252,7 +252,7 @@ describe('a provider content refusal', () => {
     expect(run.acks()).toEqual([{ id: 'evt-poison', result: REFUSED_ACK('vera') }]);
     const retries = run.errors.filter((e) => e.code === 'agent_spawn_retry_scheduled');
     expect(retries).toHaveLength(1);
-    expect(retries[0].message).toContain('2 events remain unacked');
+    expect(retries[0].message).toContain('retrying 2 held events in');
   });
 
   test('an ordinary runtime failure is still retried and never acked (unchanged)', async () => {

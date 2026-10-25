@@ -8,7 +8,7 @@ import V2AuthBrand from './V2AuthBrand';
 import { Trans, useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { safeNextPath } from '../utils/safeNextPath';
-import { readFirstTouchRef } from '../utils/firstTouch';
+import { readFirstTouchRef, readFirstTouchSource } from '../utils/firstTouch';
 import {
   readInviteFromUrl, searchWithoutInvite, rememberInvite, recallInvite, forgetInvite,
   forgetInviteOAuthStart,
@@ -94,6 +94,7 @@ const V2Register: React.FC = () => {
         invitationCode: invitationCode.trim(),
         // Where this signup came from (?ref=x on the first visit), stored once.
         signupRef: readFirstTouchRef(),
+        signupSource: readFirstTouchSource(),
       });
       const data = res.data as { message?: string };
       const message = data?.message || t('auth.register.success.ready');
