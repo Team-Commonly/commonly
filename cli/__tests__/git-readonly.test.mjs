@@ -23,6 +23,15 @@ import {
 
 const execFileAsync = promisify(execFile);
 const GIT = 'git';
+// Test git inherits no GIT_* from the shell: under a git hook, GIT_DIR,
+// GIT_WORK_TREE and GIT_INDEX_FILE would point it at the outer repository.
+// System and global config are off, so a developer's own settings can't
+// change what a control shows.
+const testGitEnv = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_GLOBAL: '/dev/null',
+};
 
 // A repo with one commit, a tracked file, and a second directory beside it to
 // reach for. Every test runs real git here, so refusals are measured, not
@@ -32,7 +41,7 @@ let outside;
 
 const bareGit = (args, opts = {}) => execFileAsync(GIT, args, {
   cwd: repo,
-  env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+  env: testGitEnv,
   ...opts,
 });
 
@@ -235,10 +244,10 @@ describe('read-only git runs the five subcommands', () => {
     // walks up and finds the parent; ours stops at the ceiling.
     const parent = mkdtempSync(join(tmpdir(), 'git-ro-parent-'));
     try {
-      await execFileAsync(GIT, ['init', '-q', parent]);
+      await bareGit(['init', '-q', parent]);
       const nested = join(parent, 'nested');
       mkdirSync(nested);
-      const bare = await execFileAsync(GIT, ['status'], { cwd: nested }).then(() => 'found', () => 'not-found');
+      const bare = await bareGit(['status'], { cwd: nested }).then(() => 'found', () => 'not-found');
       expect(bare).toBe('found'); // control: bare git walks up to the parent repo
       const confined = await runReadonlyGit({ subcommand: 'status', args: [], root: nested, git: GIT });
       expect(confined.ok).toBe(false);
@@ -343,9 +352,7 @@ describe('read-only git runs no gpg and no textconv', () => {
   let signed;
   const cfgGit = (args, opts = {}) => execFileAsync(GIT, args, {
     cwd: cfgRepo,
-    env: {
-      ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', PATH: `${bin}:${process.env.PATH}`,
-    },
+    env: { ...testGitEnv, PATH: `${bin}:${process.env.PATH}` },
     ...opts,
   });
   const run = (subcommand, args) => runReadonlyGit({
@@ -378,7 +385,7 @@ describe('read-only git runs no gpg and no textconv', () => {
     const { stdout: body } = await cfgGit(['cat-file', 'commit', 'HEAD']);
     const split = body.indexOf('\n\n');
     const header = ['gpgsig -----BEGIN PGP SIGNATURE-----', ' ', ' aGVsbG8=', ' -----END PGP SIGNATURE-----'].join('\n');
-    const child = execFile(GIT, ['hash-object', '-t', 'commit', '-w', '--stdin'], { cwd: cfgRepo });
+    const child = execFile(GIT, ['hash-object', '-t', 'commit', '-w', '--stdin'], { cwd: cfgRepo, env: testGitEnv });
     const out = new Promise((done) => { let text = ''; child.stdout.on('data', (d) => { text += d; }); child.on('close', () => done(text)); });
     child.stdin.end(`${body.slice(0, split)}\n${header}${body.slice(split)}`);
     signed = (await out).trim();
@@ -542,9 +549,7 @@ describe('read-only git never contacts a remote', () => {
   let clone;
   const present = (oid) => bareGit(['cat-file', '-e', oid], {
     cwd: clone,
-    env: {
-      ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_NO_LAZY_FETCH: '1',
-    },
+    env: { ...testGitEnv, GIT_NO_LAZY_FETCH: '1' },
   }).then(() => true, () => false);
   const missingBlob = async (rev) => {
     const oid = (await bareGit(['rev-parse', `${rev}:f.txt`], { cwd: clone })).stdout.trim();

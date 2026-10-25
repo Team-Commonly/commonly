@@ -25,7 +25,13 @@ let repo;
 
 beforeAll(async () => {
   repo = mkdtempSync(join(tmpdir(), 'git-ro-srv-'));
-  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
+  // No GIT_* from the shell: under a git hook, GIT_DIR and GIT_WORK_TREE
+  // would point this git at the outer repository.
+  const env = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+  };
   await execFileAsync('git', ['init', '-q', '-b', 'main'], { cwd: repo, env });
   await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: repo, env });
   await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: repo, env });
