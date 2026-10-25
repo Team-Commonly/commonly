@@ -799,6 +799,9 @@ export async function dispatchTool(
           runId: ctx.runId,
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
+        if (result?.refused) {
+          return { content: { ok: false, posted: false, result }, error: 'message_post_refused' };
+        }
         return { content: { ok: true, posted: true, result } };
       }
 

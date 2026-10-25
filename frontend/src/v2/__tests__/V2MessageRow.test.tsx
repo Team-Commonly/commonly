@@ -306,7 +306,7 @@ describe('V2MessageRow', () => {
   });
 });
 
-it('server-bound origin pod links a private approval to its original run without widening trace access', () => {
+it('server-bound origin pod links a plain message after its content', () => {
   const runPodId = 'aaaaaaaaaaaaaaaaaaaaaaa1';
   const runId = 'bbbbbbbbbbbbbbbbbbbbbbb1';
   render(<MemoryRouter><V2MessageRow message={{ id: 'origin-run', pod_id: 'ccccccccccccccccccccccc1',
@@ -317,4 +317,17 @@ it('server-bound origin pod links a private approval to its original run without
   expect(link).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
   const content = link.closest('.v2-msg__body').querySelector('.v2-msg__content');
   expect(content.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it('the approval-card branch links to its server-bound original pod', () => {
+  const runPodId = 'aaaaaaaaaaaaaaaaaaaaaaa1', runId = 'bbbbbbbbbbbbbbbbbbbbbbb1';
+  render(<MemoryRouter><V2MessageRow message={{ id: 'approval-origin-run', pod_id: 'ccccccccccccccccccccccc1',
+    user_id: 'agent-1', message_type: 'card', content: 'Approve the research pod', created_at: '2026-10-25T00:00:00Z',
+    user: { username: 'lark', isBot: true }, payload: { kind: 'approval-card', runId, runPodId,
+      approvalId: 'approval-1', actionType: 'create_pod', params: { name: 'Research' },
+      summary: 'Approve the research pod', status: 'resolved', decision: 'declined', ownerUserId: 'owner-1',
+    },
+  }} /></MemoryRouter>);
+  expect(screen.getByTestId('approval-card')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View run trace' })).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
 });

@@ -124,6 +124,21 @@ describe('native turn with commonly_web_search', () => {
     mockProposeAction.mockResolvedValue({ ok: true, approvalId: 'approval-1' });
   });
 
+  test.each([
+    [{ success: false, refused: true, reason: 'consecutive_agent_cap' }, 'failed', false],
+    [{ success: true, message: { id: 'posted-1' } }, 'ok', true],
+  ])('records the actual post result %j as %s', async (postResult, outcome, posted) => {
+    AgentMessageService.postMessage.mockResolvedValueOnce(postResult);
+    axios.post.mockResolvedValueOnce(toolCalls(call('p1', 'commonly_post_message', { content: 'Here is the update.' })))
+      .mockResolvedValueOnce(finalReply);
+    await runAgent(install, mention);
+    const recorded = savedRun.turns[0].toolCalls[0];
+    expect(recorded.name).toBe('commonly_post_message');
+    expect(recorded.outcome).toBe(outcome);
+    expect(recorded.error).toBe(posted ? undefined : 'message_post_refused');
+    expect(JSON.parse(toolMessages(1)[0].content)).toEqual(expect.objectContaining({ posted, ok: posted }));
+  });
+
   test('results reach the model marked untrusted; the run keeps the count and the addresses only', async () => {
     axios.post
       .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_web_search', { query: 'node 26 release' })))
