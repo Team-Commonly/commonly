@@ -88,3 +88,20 @@ test.each(['toString', 'constructor', 'hasOwnProperty', '__proto__', 'extra'])('
 test.each(['toString','constructor','__proto__'])('unknown tool %s has no inherited verb', tool => {
   expect(toolCallView(tool,{issueNumber:1,extra:'kept'}).verb).toBeNull();
 });
+
+
+describe.each([
+  ['github.merge_pull_request', 'mergePullRequest', 'pullNumber', 'issueNumber'],
+  ['github.comment_on_issue', 'commentOnIssue', 'issueNumber', 'pullNumber'],
+  ['github.close_issue', 'closeIssue', 'issueNumber', 'pullNumber'],
+])('%s number selection', (tool, verb, required, irrelevant) => {
+  test('uses the required field when both numbers differ', () => {
+    expect(toolCallView(tool, { [required]: 42, [irrelevant]: 7 }).verb).toEqual({
+      key: `approvalCard.toolCall.verb.${verb}`, vars: { number: '42' },
+    });
+  });
+
+  test.each([undefined, 0, -1, 1.5, '42'])('invalid required number %s never uses the other field', invalid => {
+    expect(toolCallView(tool, { [required]: invalid, [irrelevant]: 7 }).verb).toBeNull();
+  });
+});

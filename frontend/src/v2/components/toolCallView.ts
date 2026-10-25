@@ -133,8 +133,9 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
   }
 
   const verbKey = Object.prototype.hasOwnProperty.call(VERB_KEYS, tool) ? VERB_KEYS[tool] : undefined;
-  const number = isPositiveInteger(args.pullNumber) ? args.pullNumber
-    : (isPositiveInteger(args.issueNumber) ? args.issueNumber : null);
+  const requiredNumber = tool === 'github.merge_pull_request' ? args.pullNumber
+    : (tool === 'github.comment_on_issue' || tool === 'github.close_issue' ? args.issueNumber : null);
+  const number = isPositiveInteger(requiredNumber) ? requiredNumber : null;
   // A numbered verb with no valid number would read "#undefined"; fall back to the tool name.
   const needsNumber = verbKey && verbKey !== VERB_KEYS['github.create_issue'];
   const verb = verbKey && (!needsNumber || number !== null)

@@ -386,3 +386,26 @@ test.each(['toString', 'constructor', 'hasOwnProperty', '__proto__', 'extra'])('
   expect(screen.getByText(en.approvalCard.approve)).toBeEnabled();
   expect(screen.getByText(en.approvalCard.decline)).toBeEnabled();
 });
+
+
+test.each([
+  ['github.merge_pull_request', { pullNumber: 42, issueNumber: 7 }, 'Merge pull request #42'],
+  ['github.comment_on_issue', { pullNumber: 7, issueNumber: 42 }, 'Comment on issue #42'],
+  ['github.close_issue', { pullNumber: 7, issueNumber: 42 }, 'Close issue #42'],
+  ['github.merge_pull_request', { pullNumber: 0, issueNumber: 7 }, null],
+  ['github.comment_on_issue', { pullNumber: 7, issueNumber: 0 }, null],
+  ['github.close_issue', { pullNumber: 7, issueNumber: 0 }, null],
+])('consent for %s uses only its required number (%j)', async (tool, canonicalArgs, expected) => {
+  mockGet.mockResolvedValue({ approvals: [{
+    approvalId: 'number-selection', messageId: 'm1', toolCall: { tool, canonicalArgs },
+  }] });
+  renderCard({ kind: 'approval-card', approvalId: 'number-selection', status: 'flagged',
+    ownerUserId: 'viewer-1', actionType: 'tool_call' });
+  await waitFor(() => expect(screen.getByTestId('approval-args')).toBeInTheDocument());
+  const action = screen.getByTestId('approval-action');
+  expect(action).toHaveTextContent(tool);
+  if (expected) expect(action).toHaveTextContent(expected);
+  else expect(action).not.toHaveTextContent(/#7/);
+  expect(screen.getByTestId('approval-arg-pullNumber')).toBeInTheDocument();
+  expect(screen.getByTestId('approval-arg-issueNumber')).toBeInTheDocument();
+});
