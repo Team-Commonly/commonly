@@ -60,12 +60,12 @@ test('real 0.22.2 first and resumed JSONL return one final reply and a stable se
       cwd: home, agentName: 'pa1-test', env: { PATH: '/bin', OPENROUTER_API_KEY: 'fixture-only' },
       _hermesHome: join(home, 'profiles', 'pa1'), _spawnSyncImpl: versionProbe(),
     };
-    const firstResult = await hermes.spawn('Reply PONG', { environment: { model: 'test-model' },
+    const firstResult = await hermes.spawn('Reply PONG', {
       ...context, _spawnImpl: recordedSpawn(first, (...call) => calls.push(call)),
     });
     expect(firstResult).toEqual({ text: 'PONG', newSessionId: firstEvents[0].session_id });
 
-    const resumeResult = await hermes.spawn('Reply again', { environment: { model: 'test-model' },
+    const resumeResult = await hermes.spawn('Reply again', {
       ...context, sessionId: firstResult.newSessionId,
       _spawnImpl: recordedSpawn(resumed, (...call) => calls.push(call)),
     });
@@ -93,7 +93,7 @@ test('refuses any Hermes version other than 0.22.2 before starting a turn', asyn
     for (const version of ['0.22.3', '0.22.1', '0.22.2+1.gabcdef0']) {
       // A post-release checkout may retain the 0.22.2 prefix but is not the pin.
       // eslint-disable-next-line no-await-in-loop
-      await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
+      await expect(hermes.spawn('hello', {
         cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
         _spawnSyncImpl: versionProbe(version), _spawnImpl: child,
       })).rejects.toThrow(`Hermes ${version} is unsupported; this adapter requires 0.22.2`);
@@ -108,7 +108,7 @@ test('retries a failed cold-home version probe before the first turn', async () 
       .mockReturnValueOnce({ status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT' } })
       .mockReturnValueOnce({ status: 0, stdout: 'Hermes Agent v0.22.2 (local build)\n' });
     const recording = await fixture('first-turn');
-    await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
+    await expect(hermes.spawn('hello', {
       cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
       _spawnSyncImpl: probe, _spawnImpl: recordedSpawn(recording),
     })).resolves.toMatchObject({ text: 'PONG' });
@@ -123,7 +123,7 @@ test('reports timeout, signal and status when a version probe fails twice', asyn
       status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT' },
     }));
     const child = jest.fn();
-    await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
+    await expect(hermes.spawn('hello', {
       cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
       _spawnSyncImpl: probe, _spawnImpl: child,
     })).rejects.toThrow('status=none, signal=SIGTERM, code=ETIMEDOUT, timeout=15000ms');
@@ -135,7 +135,7 @@ test('reports timeout, signal and status when a version probe fails twice', asyn
 test('reports a non-zero cold-home probe status without suggesting a reinstall', async () => {
   await withHome(async (home) => {
     const probe = jest.fn(() => ({ status: 1, signal: null }));
-    await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
+    await expect(hermes.spawn('hello', {
       cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
       _spawnSyncImpl: probe, _spawnImpl: jest.fn(),
     })).rejects.toThrow('status=1, signal=none, code=none, timeout=15000ms');
@@ -147,7 +147,7 @@ test('refuses a public seat before probing or spawning Hermes', async () => {
   const probe = jest.fn();
   const child = jest.fn();
   await expect(hermes.spawn('hello', {
-    environment: { model: 'test-model', sandbox: { trust: 'public' } },
+    environment: { sandbox: { trust: 'public' } },
     _spawnSyncImpl: probe, _spawnImpl: child,
   })).rejects.toThrow('no enforced confinement adapter exists');
   expect(probe).not.toHaveBeenCalled();
@@ -190,7 +190,7 @@ test('preserves a UTF-8 JSONL result split inside a character', async () => {
       });
       return child;
     };
-    await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
+    await expect(hermes.spawn('hello', {
       cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
       _spawnSyncImpl: versionProbe(), _spawnImpl: spawnImpl,
     })).resolves.toMatchObject({ text: '你好🙂' });
@@ -206,7 +206,7 @@ test('malformed JSONL still force-kills a child that ignores TERM', async () => 
       child.stdout = new PassThrough();
       child.stderr = new PassThrough();
       child.kill = jest.fn();
-      await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
+      await expect(hermes.spawn('hello', {
         cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
         _spawnSyncImpl: versionProbe(),
         _spawnImpl: () => {
@@ -230,7 +230,7 @@ test('stdin failure also retains force-kill escalation', async () => {
       child.stdout = new PassThrough();
       child.stderr = new PassThrough();
       child.kill = jest.fn();
-      await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
+      await expect(hermes.spawn('hello', {
         cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
         _spawnSyncImpl: versionProbe(),
         _spawnImpl: () => {
@@ -253,7 +253,7 @@ test('rejects invalid JSONL and a process that exits before its terminal result'
 
   await withHome(async (home) => {
     const recording = (await fixture('first-turn')).split('\n')[0];
-    await expect(hermes.spawn('hello', { environment: { model: 'test-model' },
+    await expect(hermes.spawn('hello', {
       cwd: home, _hermesHome: home, env: { OPENROUTER_API_KEY: 'fixture-only' },
       _spawnSyncImpl: versionProbe(), _spawnImpl: recordedSpawn(`${recording}\n`),
     })).rejects.toThrow('without a complete JSONL result');

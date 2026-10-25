@@ -74,7 +74,7 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     await writeFile(join(ctx.cwd, '.qwen', 'settings.json'), '{"mcpServers":{"shadow":{}}}');
     const calls = [];
     const profiles = [];
-    const result = await qwen.spawn('hello', { environment: { model: 'test-model' },
+    const result = await qwen.spawn('hello', {
       ...ctx,
       _wrapArgvWithSeatbelt: (argv, options) => {
         profiles.push({
@@ -133,7 +133,7 @@ test('public version drift refuses before launching a provider proxy or child', 
   await withSeat(async (ctx) => {
     spawnSyncMock.mockImplementation(() => ({ status: 0, stdout: '0.26.0\n' }));
     const spawn = jest.fn();
-    await expect(qwen.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: spawn }))
+    await expect(qwen.spawn('hello', { ...ctx, _spawnImpl: spawn }))
       .rejects.toThrow(/Public Qwen seats refuse version 0.26.0/);
     expect(spawn).not.toHaveBeenCalled();
   });
@@ -144,7 +144,7 @@ test('a plain-file executable does not grant its whole bin directory', async () 
     await rm(ctx._binaryPath);
     await writeFile(ctx._binaryPath, '#!/usr/bin/env node\n', { mode: 0o755 });
     let profileOptions;
-    await qwen.spawn('hello', { environment: { model: 'test-model' },
+    await qwen.spawn('hello', {
       ...ctx,
       _wrapArgvWithSeatbelt: (argv, options) => {
         profileOptions = options;
@@ -164,15 +164,15 @@ test('only an exact host-process version override admits a public mismatch', asy
     const previous = process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
     try {
       delete process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
-      await expect(qwen.spawn('hello', { environment: { model: 'test-model' },
+      await expect(qwen.spawn('hello', {
         ...ctx, env: { ...ctx.env, [ALLOW_UNTESTED_QWEN_VERSION_ENV]: '1' },
         _spawnImpl: () => fakeChild(),
       })).rejects.toThrow(/refuse version/);
       process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV] = 'yes';
-      await expect(qwen.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: () => fakeChild() }))
+      await expect(qwen.spawn('hello', { ...ctx, _spawnImpl: () => fakeChild() }))
         .rejects.toThrow(/refuse version/);
       process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV] = '1';
-      await expect(qwen.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: () => fakeChild() }))
+      await expect(qwen.spawn('hello', { ...ctx, _spawnImpl: () => fakeChild() }))
         .resolves.toMatchObject({ text: 'Qwen reply' });
     } finally {
       if (previous === undefined) delete process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
@@ -186,7 +186,7 @@ test('the bwrap launch binds the fresh HOME instead of the workspace', async () 
     const wraps = [];
     await qwen.spawn('hello', {
       ...ctx,
-      environment: { model: 'test-model', ...ctx.environment, sandbox: { trust: 'public', mode: 'bwrap' } },
+      environment: { ...ctx.environment, sandbox: { trust: 'public', mode: 'bwrap' } },
       _detectBwrap: () => ({ available: true }),
       _wrapArgvWithBwrap: (argv, environment, options) => {
         wraps.push({ argv, environment, options });
@@ -225,7 +225,7 @@ test('an explicit MCP server reaches --mcp-config alongside --safe-mode', async 
     let observed;
     await qwen.spawn('hello', {
       ...ctx,
-      environment: { model: 'test-model',
+      environment: {
         ...ctx.environment,
         mcp: [{ name: 'probe', transport: 'stdio', command: ['/usr/bin/true'] }],
       },
@@ -247,7 +247,7 @@ test('private Qwen approves only declared Commonly MCP tools in the non-interact
     let observed;
     await qwen.spawn('hello', {
       ...ctx,
-      environment: { model: 'test-model',
+      environment: {
         ...ctx.environment,
         sandbox: undefined,
         mcp: [
@@ -276,7 +276,7 @@ test('private Qwen does not approve Commonly tools when that server was not conf
     let args;
     await qwen.spawn('hello', {
       ...ctx,
-      environment: { model: 'test-model', ...ctx.environment, sandbox: undefined },
+      environment: { ...ctx.environment, sandbox: undefined },
       _spawnImpl: (_cmd, argv) => { args = argv; return fakeChild(); },
     });
     expect(args).not.toContain('--allowed-tools');
@@ -297,7 +297,7 @@ test('a public cold MCP refuses the turn before Qwen runs', async () => {
       let spawned = false;
       await expect(qwen.spawn('hello', {
         ...ctx,
-        environment: { model: 'test-model',
+        environment: {
           ...ctx.environment,
           mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
         },
@@ -331,7 +331,7 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
       let launchArgs;
       await qwen.spawn('hello', {
         ...ctx,
-        environment: { model: 'test-model', ...ctx.environment, mcp: [{
+        environment: { ...ctx.environment, mcp: [{
           name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'],
         }] },
         _wrapArgvWithSeatbelt: (argv, options) => { profileOptions = options; return argv; },

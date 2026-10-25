@@ -1,5 +1,4 @@
 /** Goose 1.54.0 wrapper. Public seats wait for TASK-236's deny-by-default proof. */
-import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,6 +16,7 @@ import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 export const TESTED_GOOSE_VERSIONS = Object.freeze(['1.54.0']);
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
+const DEFAULT_MODEL = 'deepseek-v4-flash';
 const DEFAULT_PROVIDER_HOST = 'https://litellm.commonly.me';
 const DEFAULT_PROVIDER_KEY = 'COMMONLY_LITELLM_KEY';
 const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
@@ -174,7 +174,6 @@ const runGoose = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = 
 });
 
 export default {
-  requiresModel: true,
   name: 'goose',
   providerKeyEnv: DEFAULT_PROVIDER_KEY,
   supportsProvider: true,
@@ -194,7 +193,6 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
-    const seatModel = requireSeatModel(ctx.environment, 'goose');
     const keyFile = await this.validateEnvironment(ctx.environment, ctx.cwd);
     const sourceEnv = ctx.env || process.env;
     const configured = ctx.environment?.provider;
@@ -205,7 +203,7 @@ export default {
     if (!/^https?:$/.test(baseUrl.protocol) || baseUrl.username || baseUrl.password || baseUrl.search || baseUrl.hash) {
       throw new Error('goose adapter: provider.baseURL must be a plain HTTP(S) URL');
     }
-    const model = seatModel;
+    const model = ctx.environment?.model || DEFAULT_MODEL;
     const binary = ctx._binaryPath || 'goose';
     const version = ctx._version || versionOf(spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 5000 }).stdout);
     if (!TESTED_GOOSE_VERSIONS.includes(version)) {

@@ -1019,7 +1019,7 @@ describe('opencode external provider config', () => {
       await expect(opencode.spawn('public unconfigured turn', {
         cwd: workspace,
         env: { PATH: process.env.PATH, XDG_DATA_HOME: join(root, 'empty-operator-data') },
-        environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
+        environment: { sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
         agentName: 'public-unconfigured-seat',
         _binaryPath: '/usr/local/bin/opencode',
         _platform: 'darwin',
@@ -1052,7 +1052,7 @@ describe('opencode adapter — spawn()', () => {
         await opencode.spawn('trusted turn', {
           cwd: workspace,
           env: { PATH: process.env.PATH },
-          environment: { model: 'test-model', mcp: [] },
+          environment: { mcp: [] },
           agentName: 'trusted-agent',
           _binaryPath: '/usr/local/bin/opencode',
           _platform: 'darwin',
@@ -1131,7 +1131,7 @@ describe('opencode adapter — spawn()', () => {
           await opencode.spawn('trusted turn', {
             cwd: workspace,
             env: { PATH: process.env.PATH, [ALLOW_UNTESTED_OPENCODE_VERSION_ENV]: '1' },
-            environment: { model: 'test-model', mcp: [] },
+            environment: { mcp: [] },
             _binaryPath: '/usr/local/bin/opencode',
             _spawnImpl: spawn.impl,
           });
@@ -1388,7 +1388,7 @@ describe('opencode adapter — spawn()', () => {
           expect(options.env.XDG_DATA_HOME).toBe(xdgData);
         },
       });
-      await expect(opencode.spawn('second turn', { environment: { model: 'test-model' },
+      await expect(opencode.spawn('second turn', {
         ...baseContext, sessionId: 'ses-created', _spawnImpl: resumed.impl,
       })).resolves.toMatchObject({ newSessionId: 'ses-created' });
     });
@@ -1413,7 +1413,7 @@ describe('opencode adapter — spawn()', () => {
           OPENAI_API_KEY: 'operator-provider-key',
           AWS_SECRET_ACCESS_KEY: 'operator-cloud-key',
         },
-        environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
+        environment: { sandbox: { trust: 'public', mode: 'workspace' }, mcp: [] },
         agentName: 'public-agent',
         _opencodeHomeRoot: seatRoot,
         _binaryPath: '/usr/local/bin/opencode',
