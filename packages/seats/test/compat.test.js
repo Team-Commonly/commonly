@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CHECKS, runCheck } from '../compat/checks.js';
-import { createHarness, watchArgv } from '../compat/harness.js';
+import { createHarness, descendantsFrom, watchArgv } from '../compat/harness.js';
 import {
   isLimitRow, limitOf, loadTargets, runMatrix, runTarget, totalsOf, writeOutputs, RESULTS_SCHEMA,
 } from '../compat/run.js';
@@ -193,6 +193,23 @@ test('the argv watch sees a key in a child process argv and ignores its own ps',
   await new Promise((resolve) => setTimeout(resolve, 250));
   quiet.stop();
   assert.deepEqual(quiet.report, { available: true, processes: 0, leaks: 0 });
+});
+
+// The watch's own probes, in the states its argv filter cannot recognise:
+// exited but not yet reaped, and caught mid-exec. Measured in node:22 on Linux.
+test('a probe the watch spawned is not a descendant, whatever state ps lists it in', () => {
+  const listing = [
+    '  100     1 node --test test/compat.test.js',
+    '  101   100 /usr/local/bin/node -e x sk-k',
+    '  102   100 [ps] <defunct>',
+    '  103   100 [node]',
+    '  104   100 ps -A -ww -o pid=,ppid=,args=',
+    '  105   103 sh -c child-of-a-probe',
+  ].join('\n');
+  const own = descendantsFrom(listing, 100, 'sk-k', new Set([102, 103]));
+  assert.deepEqual(own.map((r) => [r.pid, r.leaks]), [[101, true]]);
+  // Without the pids, the same listing counts the probes as the adapter's.
+  assert.deepEqual(descendantsFrom(listing, 100, 'sk-k').map((r) => r.pid), [101, 102, 103, 105]);
 });
 
 test('the two opencode lines are separate targets, and only 1.x carries the retry-status limit', () => {

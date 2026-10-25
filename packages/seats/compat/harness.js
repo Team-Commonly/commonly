@@ -20,12 +20,16 @@ const SELF = new RegExp(`^(\\S*/)?ps ${PS_ARGS.join(' ')}\\s*$`);
 
 // One `ps` listing, reduced to this process's descendants. Argv is matched
 // against the key here and never kept, so a leak cannot travel further.
-const descendantsFrom = (listing, rootPid, key) => {
+// `ownPids` are the watch's own ps probes. Matching them by argv alone is not
+// enough: a probe that has exited but is not yet reaped lists as
+// "[ps] <defunct>", and one caught mid-exec lists as "[node]" or with this
+// runner's argv. Neither is the adapter's.
+export const descendantsFrom = (listing, rootPid, key, ownPids = new Set()) => {
   const rows = [];
   for (const line of String(listing || '').split('\n')) {
     const match = /^\s*(\d+)\s+(\d+)\s(.*)$/.exec(line);
-    // The watch's own ps listings are descendants too; they are not the adapter's.
-    if (match && !SELF.test(match[3])) rows.push({ pid: Number(match[1]), ppid: Number(match[2]), leaks: !!key && match[3].includes(key) });
+    if (!match || SELF.test(match[3]) || ownPids.has(Number(match[1]))) continue;
+    rows.push({ pid: Number(match[1]), ppid: Number(match[2]), leaks: !!key && match[3].includes(key) });
   }
   const tree = new Set([rootPid]);
   let grew = true;
@@ -47,15 +51,20 @@ const descendantsFrom = (listing, rootPid, key) => {
 export const watchArgv = (key, { rootPid = process.pid } = {}) => {
   const seen = new Set();
   const leaked = new Set();
+  // Every probe's pid, kept for the watch's life: a poll's listing can show a
+  // sync probe mid-exec and is only absorbed after spawnSync has returned it.
+  const probes = new Set();
   let available = true;
+  let stopped = false;
   const absorb = (listing) => {
-    for (const row of descendantsFrom(listing, rootPid, key)) {
+    for (const row of descendantsFrom(listing, rootPid, key, probes)) {
       seen.add(row.pid);
       if (row.leaks) leaked.add(row.pid);
     }
   };
   const snapshot = () => {
     const probe = spawnSync('ps', PS_ARGS, { encoding: 'utf8', timeout: 5000 });
+    if (Number.isInteger(probe.pid)) probes.add(probe.pid);
     if (probe.error || probe.status !== 0) { available = false; return; }
     absorb(probe.stdout);
   };
@@ -63,15 +72,18 @@ export const watchArgv = (key, { rootPid = process.pid } = {}) => {
   const timer = setInterval(() => {
     if (inFlight) return;
     inFlight = true;
-    execFile('ps', PS_ARGS, { encoding: 'utf8', timeout: 5000, maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
+    const child = execFile('ps', PS_ARGS, { encoding: 'utf8', timeout: 5000, maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
       inFlight = false;
+      // A poll that lands after stop() would change a report already read.
+      if (stopped) return;
       if (error) available = false; else absorb(stdout);
     });
+    if (Number.isInteger(child.pid)) probes.add(child.pid);
   }, POLL_MS);
   timer.unref();
   return {
     snapshot,
-    stop() { clearInterval(timer); snapshot(); },
+    stop() { clearInterval(timer); snapshot(); stopped = true; },
     get report() { return { available, processes: seen.size, leaks: leaked.size }; },
   };
 };
