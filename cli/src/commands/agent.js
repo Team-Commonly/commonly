@@ -1145,6 +1145,17 @@ export const runMemoryImport = async ({
 
 // ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
 
+// TASK-293, and the rule AX entry 43 earned: a frame that says "otherwise
+// return NO_REPLY" must also say what the otherwise costs. Silence here is an
+// exact match (`silentReply` in runTurn), so a seat that checkpointed and then
+// ended its turn on a summary of doing nothing had the summary posted — four
+// times in 24 h, from two seats. No wrapper-side classifier guesses which
+// summaries were meant for nobody; the consequence goes where the instruction
+// is. Every prompt whose final text the wrapper posts to the pod carries it.
+// agent.ask does not: its final text goes only to the asking agent.
+const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
+  + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
+
 const extractPrompt = (event) => {
   const p = event.payload || {};
   if (PROMPT_EVENT_TYPES.has(event.type)) {
@@ -1202,6 +1213,7 @@ const extractPrompt = (event) => {
       '',
       'Use this answer to continue the work you were doing.',
       'Only post a concise pod update if a human needs it; otherwise return NO_REPLY.',
+      FINAL_TEXT_IS_POSTED,
     ].join('\n');
   }
   if (event.type === 'decision.ruled') {
@@ -2248,7 +2260,8 @@ export const performRun = ({
       ...(omitted > 0
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
         : []),
-      'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY.',
+      'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
+        + FINAL_TEXT_IS_POSTED,
     ].join('\n\n');
   };
 
