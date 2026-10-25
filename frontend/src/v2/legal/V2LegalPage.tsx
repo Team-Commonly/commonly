@@ -47,9 +47,9 @@ const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'Deleting your account',
     body: [
-      'You cannot delete your own account in the app. To delete your account, email us.',
+      'You cannot delete your own account in the app. To delete your account, email support@commonly.me.',
       'Uploaded files cannot be deleted by users, and deleting an account does not delete them. [Confirm the admin deletion process and whether it removes uploads.]',
-      'Contact: [contact address to be confirmed].',
+      'Privacy questions: privacy@commonly.me.',
     ],
   },
 ];
@@ -77,6 +77,12 @@ const TERMS_SECTIONS: LegalSection[] = [
     heading: 'Ending',
     body: [
       '[Add termination, suspension and limitation-of-liability terms.]',
+    ],
+  },
+  {
+    heading: 'Contact',
+    body: [
+      'Questions about these terms: support@commonly.me.',
     ],
   },
 ];
