@@ -1,10 +1,11 @@
 # ADR-033: The grant record, one portable log of who let which agent do what
 
-**Status:** **Proposed** (2026-10-25). Nothing here is ratified. **Two questions are open, and
-neither Proposed nor Accepted settles them:**
+**Status:** **Proposed** (2026-10-25). Nothing here is ratified. **Two launch questions are called
+out below; §8 lists the remaining decisions. Neither Proposed nor Accepted settles them:**
 (1) **The decision-owner model.** Today approvals are decided by the credential owner, and decision
 cards by any human pod member. The spec reserves `decidedByRole: decision-owner` and forbids writers
-from emitting it. Who "owns a decision" stays undefined until TASK-512 lands and is walked.
+from emitting it. Lily's 2026-10-25 13:36Z ruling defers TASK-512: launch keeps credential-owner
+approval. Delegation requires an explicit later ruling, implementation and non-author walk.
 (2) **Who writes `commonly_*` calls.** The spec defines `tool.call {surface: commonly}`, and the
 seat runner writes it for a local seat. Nothing on the server records `commonly_*` calls
 (`tool_calls` requires a grant), so "every call is in the record" doesn't hold until TASK-513 ships a
@@ -84,11 +85,18 @@ mirror the board's transitions (spec §2, Claim). A record line never moves the 
 written by the board (`actor {type: system, id: board}`).
 
 **D5. A card ruling is never off the record (CTO ruling, 2026-10-25).**
-- **A card tied to a parked call** (B3) may be ruled only by the credential owner, as ADR-020 D3
-  requires: the asking agent's owner does not own the credential and must not approve its use.
+- **A card tied to a parked call** (B3) may be ruled only by the credential owner. For this tool-call
+  path, ADR-020 D3's "workspace owner" means the connection's credential owner:
+  `toolBrokerService.callTool` supplies `connection.ownerUserId` to `ApprovalAction.ownerUserId`,
+  and `resolveApproval` checks that stored owner. This interpretation changes no ADR-020 authority.
+  The asking agent's owner, when a different person, must not approve the credential's use.
+  Only the broker's park path (B2) writes the stored card-to-call tie. Once set it is immutable;
+  `chooseDecision` derives its authorization branch from that stored tie, never request input or
+  an agent-created link.
   `chooseDecision` refuses anyone else with a 403 and a reason shown on the card, so
-  no ruling exists without its line, and every `permission.requested` gets exactly one
-  `permission.decided`. This is authorization, so it fails closed. The review checklist's rule 19
+  no ruling exists without its line. Each `permission.requested` that reaches a terminal state
+  (B3 or B4) gets exactly one `permission.decided`; a pending request has none yet.
+  This is authorization, so it fails closed. The review checklist's rule 19
   (a degraded guard fails toward over-delivery) governs delivery guards, not who may approve a
   credential's use.
 - **Any other card:** any pod member who may rule writes a `decision.ruled` line, with that human as
@@ -107,19 +115,27 @@ written by the board (`actor {type: system, id: board}`).
 - On a parked-call card, the credential owner can rule. The asking agent's owner (when a different
   person) and any other pod member each get a 403, and after the refusal the card is still `pending`, has no `ruling`, and no
   record line was written.
+- Request-supplied ties are ignored, an agent cannot choose the authorization branch, and an
+  existing broker-written tie cannot be replaced or removed.
 - Each successful ruling writes exactly one line. A parked-call card writes one `permission.decided`
   with `decisionCardId` and `decidedByRole: credential-owner`. Any other card writes
   one `decision.ruled`, with `agent-owner` for the agent's owner and `pod-member` for anyone else.
 - A `permission.decided` line carrying `pod-member`, or a `null` `decidedBy`, is refused by the
-  format (`fb686d4f` covers this at the format layer; the service test covers the route).
+  format (`fb686d4f` covers this at the format layer). The route-level service test above is
+  required before the writer ships; it is not implemented or proved by that format test.
 
 **R1. Redact forwarding is a launch blocker.** Agent-authored text (message chunks, tool titles, and
 the `question` of `permission.requested`, which is normally the tool call's title) is scrubbed only of
 credential values the writer was given (spec §3 rule 1, and spec §2 Approval for `question`). The
 store's `redact()` hook feeds `redactKnownCredentials`, which runs over every string in `data` before
-the line is hashed. **No writer that records agent text goes live until the supervisor's trace
-wrapper forwards both `actor` and `redact` to the store**, with a test that places a resolved
-credential value in agent text and asserts the value never reaches the record bytes. At `50437c91`
+the line is hashed. At the cited implementation, known-value redaction skips values shorter than
+8 characters and affects only writes after `redact()` registration. **The launch rule is to refuse
+agent-text recording if any resolved credential is shorter than 8 characters. No writer that records
+agent text goes live until the supervisor's trace wrapper forwards both `actor` and `redact` to the
+store, and registers resolved values before the first agent-authored text is written.** The launch
+test must put an exactly 8-character resolved credential in the first agent-authored event and
+assert that the raw value is absent from record bytes while `[redacted]` is present. A second case
+must supply a 7-character credential and assert refusal before any agent text is recorded. At `50437c91`
 the store and the valet (`valet/env.js` calls `hook.redact(values)`) carry the hook; no supervisor
 wrapper is on that branch, so this is unproven for the supervised path. Writers that record no agent
 text (grants, the board) are not gated by R1. Approval writers are gated, because `question` is agent
@@ -259,7 +275,8 @@ every field the spec requires. `?` marks a field the writer omits when it has no
 - `toolCallId` = the broker's `callId` (`tool_calls.call_id`, `ApprovalAction.toolCall.callId`).
 - `name` = `tool_calls.tool`, the exact tool name. `question` and `title` are that same name: the
   broker holds no agent-written title.
-- `argsDigest?` = `"sha256:" + args_digest`, only when the equality test below passes.
+- `argsDigest?` is omitted under the launch privacy rule in §8 question 9. The equality test below
+  is additionally required before any future emission is enabled.
 - `OPTS` = `[{optionId: "approve", kind: "allow_once"}, {optionId: "decline", kind: "reject_once"}]`,
   the two answers an approval card offers. `kind` is the ACP option kind, as the spec requires.
 - `rule.pattern` is `null` on every broker line: RoomGrant names exact tools, so no run-policy
@@ -280,7 +297,8 @@ the policy (`grant:<grantId>`) or the human decider.
 **`argsDigest` from `tool_calls.args_digest`.** The broker already stores a digest (`digestArgs` in
 `models/ToolCall.ts`): bare hex SHA-256 over a key-sorted JSON form. For arguments parsed from JSON
 that form matches RFC 8785 (keys sorted by UTF-16 code units, `JSON.stringify` for scalars), so the
-writer emits `"sha256:" + args_digest`. They can differ on inputs that JSON can't carry
+writer could emit `"sha256:" + args_digest` after §8 question 9 is settled. They can differ on
+inputs that JSON can't carry
 (`undefined` values, non-finite numbers, and the number and escaping cases the vectors pin), so
 each broker writer ships a test that runs `digestArgs` over all 36 vectors in
 `test/vectors/args-digest.json` (§3) and asserts the spec's digest, or no digest where the vector
@@ -318,7 +336,7 @@ record lines is held to the same vectors gate and `-race` rule (§3).
   user or agent who is a pod member, and sees exactly what that identity sees. A scoped,
   task-bounded collector token is a separate decision, and would need its own ADR before any such
   route ships. All three readers return the whole record (grant metadata, `question` text,
-  `argsDigest`), so all three get leakMatrix coverage (§7).
+  and `argsDigest` only if §8 question 9 later permits it), so all three get leakMatrix coverage (§7).
 
 ## 5. The three Trust clauses
 
@@ -328,13 +346,15 @@ in `assertGrantUsable` (R2): a bound grant is usable only while its task is `cla
 member, and dies when `endsOn` fires (`done` → revoke with reason `task.done`, through the existing
 cascade). An unbound grant behaves as today.
 
-**5.2 Teammate approval (TASK-512).** The approver should be the teammate who **owns the decision**,
-not necessarily the credential owner. *Today* `ApprovalAction.ownerUserId` is the connection owner,
+**5.2 Teammate approval (TASK-512, deferred for launch).** Launch keeps the credential owner as
+approver (Lily's 2026-10-25 13:36Z ruling). *Today* `ApprovalAction.ownerUserId` is the connection owner,
 and `DecisionRequest` lets any human pod member rule. Writers emit `askedOf.role` and `decidedByRole`
 as `credential-owner` for today's approvals. `decision-owner` is reserved in the spec; it becomes
 emittable only when TASK-512 defines the role (open question 1) and the spec admits it. A decision
-card that carries a parked call's approval links them through `decisionCardId` on both permission
-entries. Until TASK-512, D5 limits rulings on such a card to the credential owner. Human only; ADR-020 D3 is unchanged.
+card may carry a parked call's approval only through the immutable broker-written tie required by
+D5. The proposed writer then carries `decisionCardId` on both permission entries; this link is not
+implemented in today's `DecisionRequest`. D5 limits such a ruling to the credential owner.
+Human only; ADR-020 D3 is unchanged.
 
 **5.3 One openable record (TASK-513).** The three readers join every source in §4 by
 `(podId, taskId)`. Acceptance: for one real task, the export opens in a stock OTel viewer and shows
@@ -362,6 +382,10 @@ hand-editing one line breaks `prev`; re-exporting yields identical bytes.
 - **Risk:** "visible to the room" widens who sees grant metadata (tool names, connection ids, and now
   `question` text and `argsDigest`). leakMatrix tests must cover the new read routes
   (`leakMatrix.grants.test.js` is the template).
+- **Disclosure:** whole-record readers expose credential-owner identity in `askedOf.id` and
+  agent-owner identity in `actor.owner` to authorized pod readers, including member agents.
+  A collector using a member's JWT or agent token can copy the full record outside Commonly;
+  pod membership controls retrieval, not retention or onward disclosure.
 - **Risk:** `argsDigest` of easily guessed arguments (a short issue id, a boolean flag) can be
   confirmed by guessing them (spec §2). A room member who can read the record and guess the
   arguments learns them. Readers must not treat the digest as hiding them.
@@ -370,8 +394,9 @@ hand-editing one line breaks `prev`; re-exporting yields identical bytes.
 
 ## 8. Open questions
 
-1. **Who owns a decision?** TASK-512: task watcher, creator, a pod role, or one the requester names.
-   Sam's call. Until then `decision-owner` stays reserved.
+1. **Who owns a delegated decision?** TASK-512 is deferred by Lily's 2026-10-25 13:36Z ruling.
+   Launch uses credential-owner approval. A future delegation rule is Sam's call;
+   `decision-owner` stays reserved until explicitly reopened and walked.
 2. **Who writes `commonly_*` calls on the server?** TASK-513. `tool_calls` requires a `grant_id`, so
    a writer needs its own source, or `tool_calls` needs a grantless row.
 3. **`runId` and file for server writers.** The spec is one file per run, one writer per file. A
@@ -385,9 +410,17 @@ hand-editing one line breaks `prev`; re-exporting yields identical bytes.
 6. ~~**The ADR-025 D18 pair.**~~ **Resolved at `50437c91`:** record-v1 carries it as
    `actor.onBehalfOf {id, role: requester|assigner}`, on agent actors only (§3).
 7. **`surface: commonly` volume.** Every CAP call (heartbeats, reads), or writes only?
-8. ~~**A role for a non-owner card ruling.**~~ **Ruled by CTO 10-25; spec commit pending (SWE):**
+8. ~~**A role for a non-owner card ruling.**~~ **Ruled by CTO 10-25; spec at `fb686d4f`:**
    `decidedByRole: pod-member`, valid on `decision.ruled` only and refused on `permission.decided`
-   (D5). Spec sha: `<pending>`.
+   (D5), on `feat/jellymoon-record`. The release writer must cite the merged spec commit in its
+   implementation PR before activation.
+9. **Guessable `argsDigest` values.** CTO owns the privacy decision, with Otto implementing it in
+   TASK-513: a keyed digest in a separately specified field versus omission for low-entropy tools.
+   **Interim launch rule: omit `argsDigest` from all server record lines and exports**, including
+   B1–B5, until that decision and its conformance/privacy tests are accepted. Broker-internal
+   `args_digest` remains unchanged for approval integrity. Do not put a keyed digest in the v1
+   `sha256:` field, whose canonical unkeyed meaning is fixed by the spec. Optional omission preserves
+   v1; writers and readers must not infer that omission means there were no arguments.
 
 ## Appendix: conflicts between the code and the fields
 
@@ -425,4 +458,4 @@ Open, writer-side (TASK-513):
     context, not the column.
 14. **`DecisionRequest` rulings have no defined role.** Any human member may rule. D5 closes the
     parked-call case by authorization (owners only, others 403). Other cards record a non-owner
-    ruler as `pod-member` (D5; spec commit pending, open question 8).
+    ruler as `pod-member` (D5; `fb686d4f`, open question 8).
