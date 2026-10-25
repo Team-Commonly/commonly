@@ -582,6 +582,7 @@ const V2AgentBYO: React.FC = () => {
   const startHostedInstead = async () => {
     if (!issued || submitting || fallbackStarting.current) return;
     fallbackStarting.current = true;
+    recordByoStep(api, 'hosted-offer-clicked');
     setSubmitting(true);
     setError(null);
     try {
@@ -915,6 +916,7 @@ const V2AgentBYO: React.FC = () => {
       offeredPanels.current.add(offerSessionKey);
       try { sessionStorage.setItem(offerSessionKey, 'seen'); } catch { /* Use the panel guard. */ }
       setShowHostedOffer(true);
+      recordByoStep(api, 'hosted-offer-shown');
     };
     const timer = window.setTimeout(offer, 30_000);
     const leaving = (event: MouseEvent) => {
@@ -925,7 +927,7 @@ const V2AgentBYO: React.FC = () => {
       window.clearTimeout(timer);
       document.documentElement.removeEventListener('mouseleave', leaving);
     };
-  }, [issued, offerSessionKey, hasCopied, hosting?.configured, listenState]);
+  }, [api, issued, offerSessionKey, hasCopied, hosting?.configured, listenState]);
 
   const copiedIssuedContent = () => {
     rememberHostedOffer();

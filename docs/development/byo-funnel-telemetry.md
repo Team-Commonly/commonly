@@ -4,7 +4,7 @@ The authenticated BYO page posts fixed event names to `POST /api/stats/byo-step`
 The endpoint stores `userId`, `step`, and server time in `byo_telemetry`.
 Commands, keys, names, and clipboard contents are never sent.
 
-As of TASK-483 (2026-10-24), the browser sends:
+As of TASK-483 and TASK-493 (2026-10-24), the browser sends:
 
 | Event | Observed state |
 | --- | --- |
@@ -14,6 +14,8 @@ As of TASK-483 (2026-10-24), the browser sends:
 | `cli-command-copied` | The listener copy button successfully wrote the command. |
 | `token-copied` | The token copy button successfully wrote the key. |
 | `listen-confirmed` | The connection poll observed this agent using its key after issuance (with existing clock-skew allowance). |
+| `hosted-offer-shown` | The timer or desktop exit-intent path displayed the hosted offer. The shared session guard records it once, including when both triggers run. |
+| `hosted-offer-clicked` | The user activated the offer to start hosted setup. Recorded before name lookup, including failed attempts; concurrent duplicate activations are suppressed. A retry records another activation. This is separate from choosing the initial hosted mode. |
 | `listen-timeout` | The page's connection polling window expired. |
 
 Before TASK-483, the client never emitted `page-viewed` or `seat-created`.
