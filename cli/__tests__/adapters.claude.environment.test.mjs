@@ -1077,7 +1077,10 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
   // legacy `internal` record reads as public, so it is held to the same line.
   // Seatbelt wraps argv and spends `-p` on its profile, so the prompt is found
   // by its content rather than by the flag.
-  test.each(['public', 'internal'])('a fresh trust=%s seat is not taught the row-working habits', async (trust) => {
+  // A workspace seat holds its project read-only and is denied the Agent tool,
+  // so both cues would teach it things it cannot do: parallel subagents, and
+  // slicing a row before writing code.
+  test.each(['public', 'internal', 'workspace'])('a fresh trust=%s seat is not taught the row-working habits', async (trust) => {
     const { impl, calls } = makeSpawnImpl();
     await publicSpawn(impl, {
       environment: { model: 'test-model',
