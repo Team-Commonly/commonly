@@ -488,7 +488,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
     return <V2BYOHandoffCard message={message} authorLabel={author} time={time} />;
   }
   if (message.payload?.kind === 'ui') {
-    return <CardRenderBoundary key={message.id} fallback={<div className="v2-msg__content">{message.content}</div>}><Suspense fallback={<div className="v2-msg__content">{message.content}</div>}><V2UICard message={message} authorLabel={author} time={time} /></Suspense></CardRenderBoundary>;
+    return <CardRenderBoundary key={message.id} fallback={<div id={`message-${message.id}`} tabIndex={-1} className="v2-msg__content">{message.content}</div>}><Suspense fallback={<div id={`message-${message.id}`} tabIndex={-1} className="v2-msg__content">{message.content}</div>}><V2UICard message={message} authorLabel={author} time={time} /></Suspense></CardRenderBoundary>;
   }
   if (message.payload?.kind === 'gig-card') {
     return <V2GigCard message={message} time={time} />;

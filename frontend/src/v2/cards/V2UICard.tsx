@@ -29,7 +29,7 @@ function CardBody({ message }: { message: V2Message }) {
   </Suspense></CardRenderBoundary>;
 }
 export default function V2UICard({ message, authorLabel, time }: { message: V2Message; authorLabel: string; time?: string }) {
-  return <div className="v2-msg v2-ui-card" data-testid="ui-card">
+  return <div id={`message-${message.id}`} tabIndex={-1} className="v2-msg v2-ui-card" data-testid="ui-card">
     <div className="ui-meta">{authorLabel}{time && <> · <time>{time}</time></>}</div>
     <CardContext.Provider value={{ podId: message.pod_id, runId: message.payload?.runId || '', runPodId: message.payload?.runPodId }}>
       <CardBody key={`${message.id}:${message.payload?.catalogId}:${message.payload?.catalogRev}:${message.payload?.catalogHash}:${message.payload?.source}`} message={message} />

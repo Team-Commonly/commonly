@@ -110,7 +110,8 @@ export function TraceView({ limit }: { limit: number }) {
   const data = state.key === key ? state.data : undefined;
   const calls = data?.turns.flatMap(turn => turn.toolCalls) || [];
   const elapsed = data?.completedAt ? Math.max(0, new Date(data.completedAt).getTime() - new Date(data.startedAt).getTime()) : null;
-  return <div className="ui-rt"><div className="rh"><b>{data ? `run · ${calls.length + (data.omittedToolCalls || 0)} calls${elapsed === null ? '' : ` · ${Math.floor(elapsed / 60000)}m ${Math.round((elapsed % 60000) / 1000)}s`}` : 'Run trace'}</b><TraceLink /></div>
+  const elapsedSeconds = elapsed === null ? null : Math.round(elapsed / 1000);
+  return <div className="ui-rt"><div className="rh"><b>{data ? `run · ${calls.length + (data.omittedToolCalls || 0)} calls${elapsedSeconds === null ? '' : ` · ${Math.floor(elapsedSeconds / 60)}m ${elapsedSeconds % 60}s`}` : 'Run trace'}</b><TraceLink /></div>
     {data ? <ul>{calls.slice(-Math.max(1, Math.min(5, limit))).map((call, i) => <li key={i}><span className="t">{call.name}</span><span className={`s${['failed', 'refused'].includes(call.outcome) ? ' x' : ''}`}>{call.outcome}</span><span className="d">{call.elapsedMs < 1000 ? `${call.elapsedMs}ms` : `${Math.round(call.elapsedMs / 1000)}s`}</span></li>)}</ul>
       : !valid || state.key === key ? <p className="ui-meta ui-trace-state">Trace unavailable</p> : <ul aria-label="Loading trace">{Array.from({ length: Math.max(1, Math.min(5, limit)) }, (_, i) => <li key={i} aria-hidden="true"><span className="ui-trace-skeleton" /></li>)}</ul>}
   </div>;

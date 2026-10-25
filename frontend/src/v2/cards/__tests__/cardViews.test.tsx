@@ -60,3 +60,10 @@ test('forwarded traces use the original pod while TaskStatus uses the displayed 
   expect(mockGet).toHaveBeenCalledWith(`/api/v1/tasks/${podId}`);
   expect(screen.getByRole('link',{name:'Open trace'})).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
 });
+
+test('trace duration rounds across a minute boundary without 60 seconds', async () => {
+  mockGet.mockResolvedValue({run:{id:runId,podId,startedAt:'2026-10-25T00:00:00Z',completedAt:'2026-10-25T00:00:59.500Z',omittedToolCalls:0,turns:[]}});
+  show(<TraceView limit={1} />);
+  expect(await screen.findByText('run · 0 calls · 1m 0s')).toBeInTheDocument();
+  expect(screen.queryByText(/0m 60s/)).not.toBeInTheDocument();
+});

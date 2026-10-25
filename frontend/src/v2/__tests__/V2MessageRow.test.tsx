@@ -318,5 +318,8 @@ test('dispatches a kind ui message into the real catalogue renderer', async () =
     payload:{...uiCardRevision,kind:'ui',v:1,lang:'openui@1',source:'root = Card("Dispatch proof", [Text("Actual rendered card")])'},
   }} /></MemoryRouter>);
   expect(await screen.findByText('Actual rendered card', {}, { timeout: 15000 })).toBeInTheDocument();
-  expect(screen.getByTestId('ui-card')).toBeInTheDocument();
+  const card = screen.getByTestId('ui-card');
+  expect(card).toHaveAttribute('id', 'message-ui-dispatch');
+  card.focus();
+  expect(card).toHaveFocus();
 }, 20000);
