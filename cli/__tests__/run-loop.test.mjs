@@ -1405,9 +1405,10 @@ describe('performRun', () => {
     }
   });
 
-  test.each(['claude', 'codex'])('%s missing model posts one notice and retains the event even if credential minting would refuse', async (name) => {
+  test.each([['claude', '1'], ['codex', '1'], ['qwen', undefined], ['dsh', undefined]])('%s missing model posts one notice and retains the event even if credential minting would refuse', async (name, requirement) => {
     const priorModelRequirement = process.env.COMMONLY_REQUIRE_SEAT_MODEL;
-    process.env.COMMONLY_REQUIRE_SEAT_MODEL = '1';
+    if (requirement === undefined) delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
+    else process.env.COMMONLY_REQUIRE_SEAT_MODEL = requirement;
     const realAdapter = (await import(`../src/lib/adapters/${name}.js`)).default;
     const event = makeEvent({ _id: `evt-model-${name}` });
     const get = jest.fn(async (route) => route.endsWith('/messages')

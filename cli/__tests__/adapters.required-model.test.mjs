@@ -40,7 +40,7 @@ describe.each(adapters)('%s requires the seat model before any subprocess', (nam
 });
 
 // These adapters construct provider config and have no valid implicit model.
-test.each(['pi', 'goose'])('%s still requires a model without fleet opt-in', async (name) => {
+test.each(['pi', 'goose', 'qwen', 'dsh'])('%s still requires a model without fleet opt-in', async (name) => {
   delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
   expect(getAdapter(name).requiresModel).toBe(true);
   await expect(getAdapter(name).spawn('hello', { environment: {} }))

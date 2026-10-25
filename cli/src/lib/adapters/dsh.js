@@ -1,5 +1,5 @@
 /** DeepSeek Harness 0.2.1-rc.2, private seats only. Configuration is per spawn. */
-import { requireSeatModel, seatModelRequired } from './seat-model.js';
+import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { existsSync } from 'fs';
@@ -219,7 +219,7 @@ export const runDsh = ({ binary, args, cwd, env, timeoutMs, credentials, spawnIm
 });
 
 export default {
-  get requiresModel() { return seatModelRequired(); },
+  requiresModel: true,
   name: 'dsh', runtimeType: 'dsh', supportsProvider: true,
 
   async validateEnvironment(environment, workspacePath) {
@@ -248,7 +248,7 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
-    const seatModel = requireSeatModel(ctx.environment, 'dsh');
+    const seatModel = requireSeatModel(ctx.environment, 'dsh', true);
     assertPrivateDsh(ctx.environment);
     if (!ctx.environment?.provider || !ctx.environment?.model) {
       throw new Error('dsh requires environment.provider and environment.model');

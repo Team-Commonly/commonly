@@ -1,5 +1,5 @@
 /** Qwen Code 0.25.1 wrapper. Public turns have fresh HOME, config and keys. */
-import { requireSeatModel, seatModelRequired } from './seat-model.js';
+import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
@@ -209,7 +209,7 @@ const runQwen = ({ cmd, args, cwd, env, timeoutMs, spawnImpl, credentials }) => 
 });
 
 export default {
-  get requiresModel() { return seatModelRequired(); },
+  requiresModel: true,
   name: 'qwen',
   runtimeType: 'qwen',
   supportsProvider: true,
@@ -232,7 +232,7 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
-    const seatModel = requireSeatModel(ctx.environment, 'qwen');
+    const seatModel = requireSeatModel(ctx.environment, 'qwen', true);
     const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
     const isPublic = sandbox?.trust === 'public';
     const mode = isPublic ? resolvePublicSandboxMode(sandbox) : null;

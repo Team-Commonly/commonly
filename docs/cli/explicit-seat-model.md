@@ -3,7 +3,8 @@
 A person connecting their own CLI may use that CLI's own default model.
 Without `COMMONLY_REQUIRE_SEAT_MODEL=1`, Claude, Codex, OpenCode and Hermes
 pass a model argument only when `environment.model` declares one. Qwen and
-dsh retain their existing provider/model configuration requirements. pi and
+dsh retain their existing provider/model configuration requirements, checked
+before credential minting even with the flag off. pi and
 Goose always require an explicit model because their adapters construct a
 provider configuration; neither restores a hidden adapter default.
 
