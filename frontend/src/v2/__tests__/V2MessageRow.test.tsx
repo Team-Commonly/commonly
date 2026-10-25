@@ -312,9 +312,9 @@ describe('V2MessageRow', () => {
           id: '45', pod_id: 'pod-1', user_id: 'agent-1',
           content: 'Forge claimed TASK-406', message_type: 'system',
           created_at: '2026-10-23T20:00:00.000Z',
-          payload: { kind: 'system-action', action: 'task-claimed', actorName: 'forge-agent', taskId: 'TASK-406' },
+          payload: { kind: 'system-action', action: 'task-claimed', actorName: 'Forge', taskId: 'TASK-406' },
           user: { username: 'forge-agent', isBot: true },
-        }} agentDisplayNames={new Map([['forge-agent', 'Forge']])} />
+        }} />
       </MemoryRouter>,
     );
     const line = screen.getByText('Forge').closest('.v2-system-action-line');

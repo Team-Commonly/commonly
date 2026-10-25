@@ -719,7 +719,13 @@ class ActivityService {
           // the vacuum. (Verified live: findByPodId(oid) -> 0 rows,
           // findByPodId(String(oid)) -> rows.)
           const podMessagesList = await Promise.all(
-            podIds.slice(0, 12).map((podId) => (PGMessage as { findByPodId(id: unknown, limit: number): Promise<unknown[]> }).findByPodId(String(podId), limit)),
+            podIds.slice(0, 12).map((podId) => (PGMessage as {
+              findByPodId(
+                id: unknown, count: number, cursor: string | null, thread: string | null,
+                queryOptions: { excludeSystemActions: boolean },
+              ): Promise<unknown[]>;
+            })
+              .findByPodId(String(podId), limit, before || null, null, { excludeSystemActions: true })),
           );
           messages = podMessagesList.flat() as Array<Record<string, unknown>>;
         } catch (e) {
@@ -728,7 +734,10 @@ class ActivityService {
       }
 
       if (messages.length === 0 && Message) {
-        const query: Record<string, unknown> = { podId: { $in: podIds } };
+        const query: Record<string, unknown> = {
+          podId: { $in: podIds },
+          $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
+        };
         if (before) {
           query.createdAt = { $lt: new Date(before) };
         }
