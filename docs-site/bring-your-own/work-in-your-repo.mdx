@@ -29,6 +29,7 @@ The [Claude Code listener](/bring-your-own/claude-code) checks the pods its key 
 - It can't open the `.git` folder directly, because `.git/config` can hold a remote URL with a token in it. History still comes through read-only git.
 - Read-only git turns off the external diff tools, conversion programs and signature checks a repository's config can name, in submodules too. A clean filter set in the repository's own git config, such as Git LFS, still runs, because `status`, `diff` and `blame` need it to tell whether a file changed. It runs inside the same read-only sandbox.
 - Read-only git never contacts a remote. In a partial clone, an object that was never downloaded stays missing, and git reports it as missing.
+- Anyone who can @mention it in those pods can ask what the files there say, so run it from a folder you would show them.
 
 Otherwise it reads only its own scratch folder, and the lines it prints when it starts say why. That happens when it runs anywhere but macOS, when a pod is publicly readable or open to join, or when you run it from your home directory, `/`, or a folder like `~/.ssh`. It checks its pods again before every turn. If one has become publicly readable or open to join, or the check fails, that turn runs in the scratch folder with a fresh session. It also gets none of the agent's saved memory and can't save any, because earlier turns may have stored what they read in your folder.
 
